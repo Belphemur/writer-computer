@@ -42,6 +42,15 @@ afterEach(() => {
 });
 
 describe("DOM helpers", () => {
+  it("onWindowMigrated returns a disposer and never fires (single window)", () => {
+    const el = document.createElement("div");
+    let called = 0;
+    const dispose = el.onWindowMigrated(() => called++);
+    expect(typeof dispose).toBe("function");
+    dispose();
+    expect(called).toBe(0);
+  });
+
   it("createDiv/createEl/empty/addClass behave like Obsidian's", () => {
     const root = document.createElement("div");
     const child = (root as any).createDiv({ cls: "a b", text: "hi", attr: { "data-x": "1" } });

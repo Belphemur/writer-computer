@@ -71,17 +71,17 @@ export interface StreamOptions {
   autoDestroy?: boolean;
   decodeStrings?: boolean;
   defaultEncoding?: string;
-  read?(this: Readable, size: number): void;
-  write?(this: Writable, chunk: any, encoding: string, cb: Cb): void;
-  final?(this: Writable, cb: Cb): void;
-  destroy?(this: StreamBase, err: Error | null, cb: Cb): void;
-  transform?(
+  read?: (this: Readable, size: number) => void;
+  write?: (this: Writable, chunk: any, encoding: string, cb: Cb) => void;
+  final?: (this: Writable, cb: Cb) => void;
+  destroy?: (this: StreamBase, err: Error | null, cb: Cb) => void;
+  transform?: (
     this: Transform,
     chunk: any,
     encoding: string,
     cb: (err?: Error | null, data?: unknown) => void,
-  ): void;
-  flush?(this: Transform, cb: (err?: Error | null, data?: unknown) => void): void;
+  ) => void;
+  flush?: (this: Transform, cb: (err?: Error | null, data?: unknown) => void) => void;
 }
 
 export class StreamBase extends Stream {
@@ -352,7 +352,7 @@ export class Readable extends StreamBase {
 
   unpipe(dest?: WritableLike): this {
     const rs = this.rs;
-    for (const p of [...rs.pipes]) {
+    for (const p of rs.pipes.slice()) {
       if (dest && p.dest !== dest) continue;
       this.removeListener("data", p.onData);
       this.removeListener("end", p.onEnd);
@@ -390,7 +390,7 @@ export class Readable extends StreamBase {
       this.removeListener("close", onEnd);
       this.removeListener("error", onError);
     };
-    const self = this;
+    const destroyStream = (): void => void this.destroy();
     return {
       async next(): Promise<IteratorResult<any>> {
         for (;;) {
@@ -411,7 +411,7 @@ export class Readable extends StreamBase {
       },
       async return(): Promise<IteratorResult<any>> {
         cleanup();
-        self.destroy();
+        destroyStream();
         return { value: undefined, done: true };
       },
       [Symbol.asyncIterator]() {
@@ -787,6 +787,9 @@ export class Writable extends StreamBase {
 
 // ---------------------------------------------------------------- Duplex / Transform
 
+// Node's stream.Duplex is a class that also carries Writable's members; the interface adds the
+// type side without a second implementation.
+// eslint-disable-next-line typescript/no-unsafe-declaration-merging
 export interface Duplex extends Pick<
   Writable,
   | "write"

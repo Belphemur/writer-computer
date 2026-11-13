@@ -27,6 +27,8 @@ import type { NodeIpc } from "./node/ipc";
 import { getSharedProcess } from "./node/process";
 import { ensureDeviceId } from "./node/device-id";
 import { installNodeGlobals, preloadNodeRuntime } from "./node/runtime";
+import { installObsidianTheme } from "./api/theme-compat";
+import { recordPluginError } from "./error-log";
 import { seedCopilotDataIfAbsent } from "./node/seed-plugin-data";
 import { getNodeIpc } from "./node/state";
 import { installGlobalFetch, pluginScopedFetch } from "./api/network";
@@ -148,6 +150,7 @@ export class PluginHost {
   private seq = 0;
   private snapshot: HostSnapshot;
   private uninstallDom: (() => void) | null = null;
+  private uninstallTheme: (() => void) | null = null;
   private uninstallFetch: (() => void) | null = null;
   private uninstallNode: (() => void) | null = null;
   private nodeReady: Promise<void> | null = null;
@@ -343,6 +346,7 @@ export class PluginHost {
       this.setStatus(id, { state: "enabled" });
     } catch (e) {
       console.error(`[plugin] ${id} failed:`, e);
+      recordPluginError(id, "load", e);
       await this.teardown(id);
       this.setStatus(id, { state: "failed", error: messageOf(e) });
     } finally {
@@ -362,6 +366,7 @@ export class PluginHost {
         record.plugin.unload();
       } catch (e) {
         console.error(`[plugin] ${id} unload threw:`, e);
+        recordPluginError(id, "unload", e);
       }
       record.removeStyle?.();
     }
@@ -381,10 +386,19 @@ export class PluginHost {
         claudePath: await getNodeIpc()
           .which("claude")
           .catch(() => null),
-        deviceId: ensureDeviceId(),
+        // Through the app's own localStorage API (vault-scoped key, JSON-encoded): that is what
+        // Copilot's `getDeviceId` reads, so the deviceProfiles key we seed is the one it looks up.
+        deviceId: ensureDeviceId({
+          getItem: (k) => {
+            const v = this.app.loadLocalStorage(k);
+            return typeof v === "string" ? v : null;
+          },
+          setItem: (k, v) => this.app.saveLocalStorage(k, v),
+        }),
       });
     } catch (e) {
       console.warn(`[plugin] ${id}: settings seed skipped: ${messageOf(e)}`);
+      recordPluginError(id, "seed", e);
     }
   }
 
@@ -404,6 +418,7 @@ export class PluginHost {
     );
     if (typeof window === "undefined") return;
     this.uninstallDom ??= installDomHelpers();
+    this.uninstallTheme ??= installObsidianTheme();
     this.uninstallFetch ??= installGlobalFetch();
   }
 
@@ -411,6 +426,8 @@ export class PluginHost {
     if (this.records.size > 0 || this.loading > 0) return;
     this.uninstallDom?.();
     this.uninstallDom = null;
+    this.uninstallTheme?.();
+    this.uninstallTheme = null;
     this.uninstallFetch?.();
     this.uninstallFetch = null;
     this.uninstallNode?.();

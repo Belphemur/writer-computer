@@ -53,6 +53,8 @@ declare global {
     hasClass(cls: string): boolean;
     setAttr(key: string, value: string | number | boolean | null): void;
     getAttr(key: string): string | null;
+    /** Pop-out window migration hook. Writer has one window, so the callback never fires. */
+    onWindowMigrated(callback: (win: Window) => void): () => void;
     find(selector: string): Element | null;
     findAll(selector: string): Element[];
   }
@@ -146,6 +148,8 @@ export function installDomHelpers(win: Window & typeof globalThis = window): () 
   };
   define(N, "instanceOf", instanceOf);
   define(win.Event.prototype as unknown as Record<string, unknown>, "instanceOf", instanceOf);
+
+  define(E, "onWindowMigrated", () => () => {});
 
   const child = function (
     this: Node,

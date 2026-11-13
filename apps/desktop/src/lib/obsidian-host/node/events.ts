@@ -90,13 +90,13 @@ export class EventEmitter {
     const list = this._events.get(name);
     if (name === "error" && !list) {
       const monitor = this._events.get(EventEmitter.errorMonitor);
-      if (monitor) for (const e of [...monitor]) e.fn.apply(this, args);
+      if (monitor) for (const e of monitor.slice()) e.fn.apply(this, args);
       const err = args[0];
       if (err instanceof Error) throw err;
       throw nodeError("ERR_UNHANDLED_ERROR", `Unhandled error. (${String(err)})`, { context: err });
     }
     if (!list) return false;
-    for (const entry of [...list]) {
+    for (const entry of list.slice()) {
       if (entry.once) this.removeListener(name, entry.fn);
       const result = entry.fn.apply(this, args);
       if (

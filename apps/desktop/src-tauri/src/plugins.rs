@@ -425,26 +425,40 @@ pub fn sanitize_css(src: &str) -> String {
         out.push(ch);
         i += ch.len_utf8();
     }
-    // 3. neutralise dangerous functions/declarations
+    // 3. neutralise dangerous functions/declarations, one statement at a time. Minified
+    //    stylesheets (Tailwind builds) are a single line, so dropping whole lines would delete
+    //    them entirely (`scroll-behavior:` alone would trip a `behavior:` check).
     let mut cleaned = String::with_capacity(out.len());
-    for line in out.split_inclusive('\n') {
-        let l = css_unescape(line)
-            .to_ascii_lowercase()
-            .replace([' ', '\t', '\r'], "");
-        let bad = l.contains("expression(")
-            || l.contains("javascript:")
-            || l.contains("vbscript:")
-            || l.contains("behavior:")
-            || l.contains("-moz-binding")
-            || l.contains("</style");
-        if bad {
-            // keep line count stable, drop the content
-            cleaned.push('\n');
-        } else {
-            cleaned.push_str(line);
+    let mut seg_start = 0;
+    for (i, ch) in out.char_indices() {
+        if matches!(ch, ';' | '{' | '}' | '\n') {
+            let seg = &out[seg_start..i];
+            if !css_segment_is_bad(seg) {
+                cleaned.push_str(seg);
+            }
+            cleaned.push(ch); // delimiters stay: braces stay balanced, line count stays stable
+            seg_start = i + ch.len_utf8();
         }
     }
+    let tail = &out[seg_start..];
+    if !css_segment_is_bad(tail) {
+        cleaned.push_str(tail);
+    }
     cleaned
+}
+
+/// True for a statement (text between `;`, braces and newlines) that carries a script vector.
+/// `behavior` only counts as a property name, so `scroll-behavior` is fine.
+fn css_segment_is_bad(seg: &str) -> bool {
+    let l = css_unescape(seg)
+        .to_ascii_lowercase()
+        .replace([' ', '\t', '\r'], "");
+    l.contains("expression(")
+        || l.contains("javascript:")
+        || l.contains("vbscript:")
+        || l.starts_with("behavior:")
+        || l.contains("-moz-binding")
+        || l.contains("</style")
 }
 
 /// Decode CSS escapes (`\65 ` hex or `\c`) so keyword checks cannot be dodged.
@@ -767,5 +781,23 @@ mod tests {
         assert!(!out.contains("javascript"));
         assert!(!out.contains("expression"));
         assert!(!out.to_lowercase().contains("behavior"));
+    }
+
+    #[test]
+    fn css_sanitizer_keeps_minified_sheets() {
+        // One line, with `scroll-behavior` (a legitimate property) next to a hostile declaration.
+        let css = "html{scroll-behavior:smooth}.a{color:red;behavior:url(x);width:1px}.b{background:url(javascript:1)}.c{margin:0}";
+        let out = sanitize_css(css);
+        assert!(out.contains("scroll-behavior:smooth"));
+        assert!(out.contains(".a{color:red;"));
+        assert!(out.contains("width:1px"));
+        assert!(out.contains(".c{margin:0}"));
+        assert!(!out.contains("behavior:url"));
+        assert!(!out.contains("javascript"));
+        assert_eq!(
+            out.matches('{').count(),
+            out.matches('}').count(),
+            "braces stay balanced"
+        );
     }
 }

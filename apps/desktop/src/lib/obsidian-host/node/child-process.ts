@@ -80,7 +80,7 @@ function stdioModes(stdio: unknown): ["pipe" | "ignore", boolean, boolean] {
     if (v === "ignore" || v === "inherit") return "ignore"; // inherit has no meaning here
     throw nodeError(
       "ERR_UNSUPPORTED_STDIO",
-      `child_process: stdio ${name} option ${String(v)} is not supported in Writer`,
+      `child_process: stdio ${name} option ${JSON.stringify(v)} is not supported in Writer`,
     );
   };
   if (arr.length > 3)
@@ -103,7 +103,8 @@ const fromBase64 = (b64: string): Buffer => {
 const toCwd = (cwd: unknown): string | undefined => {
   if (cwd === undefined || cwd === null) return undefined;
   if (cwd instanceof URL) return decodeURIComponent(cwd.pathname);
-  return String(cwd);
+  if (typeof cwd === "string") return cwd;
+  throw nodeError("ERR_INVALID_ARG_TYPE", "child_process: cwd must be a string or URL");
 };
 
 export class ChildProcess extends EventEmitter implements PidEntry {
@@ -453,7 +454,9 @@ export function createChildProcessModule(opts: ChildProcessModuleOptions) {
       if (code === 0 && signal === null && !failure) return settle(null);
       let err = failure;
       if (!err) {
-        err = new Error(`Command failed: ${cmd}\n${render(errChunks)}`) as NodeError;
+        err = new Error(
+          `Command failed: ${cmd}\n${Buffer.concat(errChunks).toString("utf8")}`,
+        ) as NodeError;
         err.code = code as unknown as string; // numeric exit code (null when signalled), like Node
       }
       err.killed = child.killed;

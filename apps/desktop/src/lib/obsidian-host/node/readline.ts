@@ -146,7 +146,7 @@ export class Interface extends EventEmitter {
       this.removeListener("line", onLine);
       this.removeListener("close", onClose);
     };
-    const self = this;
+    const closeInterface = (): void => this.close();
     return {
       async next(): Promise<IteratorResult<string>> {
         for (;;) {
@@ -161,7 +161,7 @@ export class Interface extends EventEmitter {
       },
       async return(): Promise<IteratorResult<string>> {
         cleanup();
-        self.close();
+        closeInterface();
         return { value: undefined, done: true };
       },
       [Symbol.asyncIterator]() {

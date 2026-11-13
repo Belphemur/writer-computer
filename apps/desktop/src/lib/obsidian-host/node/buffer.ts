@@ -23,7 +23,7 @@ export function normalizeEncoding(
   enc: unknown,
 ): "utf8" | "hex" | "base64" | "base64url" | "latin1" | "ascii" | "utf16le" | undefined {
   if (enc === undefined || enc === null || enc === "") return "utf8";
-  switch (String(enc).toLowerCase()) {
+  switch ((typeof enc === "string" ? enc : "").toLowerCase()) {
     case "utf8":
     case "utf-8":
       return "utf8";
@@ -171,6 +171,8 @@ function rangeError(name: string, offset: number, max: number): RangeError {
   return e;
 }
 
+// Node's Buffer is a class with aliases added at runtime; the interface declares those aliases.
+// eslint-disable-next-line typescript/no-unsafe-declaration-merging
 export interface Buffer {
   readUint8: Buffer["readUInt8"];
   readUint16LE: Buffer["readUInt16LE"];

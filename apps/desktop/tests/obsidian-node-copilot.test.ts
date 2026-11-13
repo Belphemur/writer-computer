@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { PluginHost, type ScriptLoader } from "../src/lib/obsidian-host/loader";
 import { makeRequire } from "../src/lib/obsidian-host/modules";
 import { COPILOT_DEVICE_ID_KEY, ensureDeviceId } from "../src/lib/obsidian-host/node/device-id";
@@ -267,12 +267,15 @@ describe("Copilot data seed", () => {
           module.exports = class extends Plugin {
             async onload() {
               (globalThis as Record<string, unknown>).__dataAtLoad = await this.loadData();
+              (globalThis as Record<string, unknown>).__deviceAtLoad = this.app.loadLocalStorage(
+                "obsidian-copilot:device-id:v1",
+              );
             }
           };
         },
       );
     };
-    const make = (ipc: FakeHostIpc, id: string) =>
+    const make = (ipc: FakeHostIpc) =>
       new PluginHost({
         ipc,
         io: createMemoryVaultIo({}),
@@ -283,11 +286,17 @@ describe("Copilot data seed", () => {
       });
 
     it("seeds before onload on first enable, and not on later loads", async () => {
+      const store = new Map<string, string>();
+      vi.stubGlobal("localStorage", {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+        removeItem: (k: string) => void store.delete(k),
+      });
       const ipc = new FakeHostIpc({
         enabled: ["copilot"],
         plugins: [{ id: "copilot", name: "C" }],
       });
-      const host = make(ipc, "copilot");
+      const host = make(ipc);
       await host.boot();
       expect(host.getStatus("copilot")).toEqual({ state: "enabled" });
       const first = JSON.parse(ipc.data.get("copilot")!);
@@ -297,17 +306,22 @@ describe("Copilot data seed", () => {
           .claudeCliPath,
       ).toBe("/Users/test/.local/bin/claude");
       expect((globalThis as Record<string, unknown>).__dataAtLoad).toEqual(first); // visible to onload
+      // Copilot reads its device id through app.loadLocalStorage: the seeded profile key must be it.
+      expect(Object.keys(first.agentMode.deviceProfiles)).toEqual([
+        (globalThis as Record<string, unknown>).__deviceAtLoad,
+      ]);
       ipc.data.set("copilot", '{"mine":true}');
       await host.disable("copilot");
       await host.enable("copilot");
       expect(ipc.data.get("copilot")).toBe('{"mine":true}'); // never overwritten
       await host.shutdown();
       delete (globalThis as Record<string, unknown>).__dataAtLoad;
+      vi.unstubAllGlobals();
     });
 
     it("does not seed other plugins", async () => {
       const ipc = new FakeHostIpc({ enabled: ["zzz"], plugins: [{ id: "zzz", name: "Z" }] });
-      const host = make(ipc, "zzz");
+      const host = make(ipc);
       await host.boot();
       expect(ipc.data.has("zzz")).toBe(false);
       await host.shutdown();

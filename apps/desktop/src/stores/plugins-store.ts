@@ -20,6 +20,7 @@ import type {
 } from "@/lib/obsidian-host";
 import type { LeafPlacement, WorkspaceBridge, WorkspaceLeaf } from "@/lib/obsidian-host/api/views";
 import { setPluginEditorExtensions, findEditorView } from "@/lib/obsidian-host/editor-bridge";
+import { recordPluginError } from "@/lib/obsidian-host/error-log";
 import {
   createWorkspaceBridge,
   toVaultPath,
@@ -268,7 +269,10 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
           }
         } catch (e) {
           console.error("[plugins] boot failed:", e);
-          if (gen === generation) set({ bootError: `Plugins failed to start: ${messageOf(e)}` });
+          if (gen === generation) {
+            recordPluginError("(host)", "boot", e);
+            set({ bootError: `Plugins failed to start: ${messageOf(e)}` });
+          }
         }
       });
     },

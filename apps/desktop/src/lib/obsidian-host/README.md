@@ -62,6 +62,17 @@ Hand-written Node shims so bundled SDKs (the Claude Agent SDK, Copilot Agent Mod
 - **Stubs:** `http.createServer().listen()` emits an async `EPERM` error and never listens; `net` (isIP\* only), `zlib` (all throw), `os.cpus()` is `[]`, `async_hooks.AsyncLocalStorage` has a synchronous context only (no propagation across `await`), `electron.ipcRenderer` (`sendSync` -> `undefined`, `invoke` rejects, others no-ops, `remote` undefined; `showItemInFolder` rejects).
 - **Copilot helpers.** `node/device-id.ts` seeds `obsidian-copilot:device-id:v1` in localStorage only if absent. `node/seed-plugin-data.ts` writes Copilot's first-enable `data.json` (settingsVersion 16, Claude backend, `deviceProfiles[<device id>].claudeCliPath` from `plugin_which`) only for plugin id `copilot` and only if no data exists; the loader calls it before the plugin is constructed.
 
+## Diagnostics and theme (found by the Copilot e2e)
+
+- **`window.__writerPluginErrors`** (`error-log.ts`): ring buffer (100) of `{at, plugin, phase, message}` for plugin load, unload, seed and boot failures. Tests and a developer's console read it; it never leaves the page.
+- **`app.secretStorage`** (`api/secret-storage.ts`): sync `getSecret/setSecret/deleteSecret/listSecrets`, **in memory only** (lost at app quit, never written to disk). Persisting needs an OS-keychain backend in Rust (open). Without the object Copilot raised an unhandled rejection at startup.
+- **Obsidian CSS variables** (`api/theme-compat.ts`): public Obsidian variable names (`--size-4-4`, `--background-primary`, ...) mapped onto Writer's tokens, installed as one `<style data-writer-obsidian-theme>` while a plugin is loaded. Plugin stylesheets size icons and surfaces with them. Values are Writer's own.
+- **Plugin CSS sanitizer** (Rust `plugins::sanitize_css`) works per statement (`;` `{` `}` newline), not per line: a minified single-line stylesheet used to be deleted whole by one `scroll-behavior:`.
+- **`Element.onWindowMigrated(cb)`** exists (returns a disposer, never fires: single window).
+- **Vault stat for hidden entries** (`vault-io-tauri.ts`): kinds of entries the directory listing hides come from `plugin_fs_probe`, not a guess (a guessed "file" for `copilot/skills` broke the vault index).
+- **Device id** is seeded through `app.loadLocalStorage/saveLocalStorage` (vault-scoped, JSON), the same API Copilot reads, so `deviceProfiles[<id>]` matches.
+- **Copilot e2e only**: the e2e-feature Rust build honours `WRITER_E2E_EXTRA_PATH` (prepended to the login PATH `plugin_which` sees). Not compiled into release builds.
+
 ## Tests
 
 `tests/obsidian-host-*.test.ts` and `tests/obsidian-node-*.test.ts` (node surface; `node/testing.ts` has `FakeNodeIpc`). `lifecycle`, `commands`, `vault` run in the node environment against `testing.ts` fakes; `dom` and `compat` use jsdom (`// @vitest-environment jsdom`). Tests import with relative paths (`../src/...`): `tests/` is outside tsconfig `include`, so the `@/` alias does not resolve for the type-aware checker.

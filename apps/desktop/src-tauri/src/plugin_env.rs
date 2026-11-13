@@ -114,14 +114,43 @@ fn app_path() -> String {
 }
 
 /// The user's login-shell PATH (cached). Blocks up to 10 s the first time.
+///
+/// Only when compiled with the `e2e` cargo feature, the directories listed in
+/// `WRITER_E2E_EXTRA_PATH` (a PATH-style list) are prepended, so an end-to-end
+/// test can make `plugin_which("claude")` find a fake CLI without touching the
+/// user's shell rc files. Release builds do not contain this code.
 pub fn login_path() -> String {
-    LOGIN_PATH.get_with(
+    let base = LOGIN_PATH.get_with(
         || {
             let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty())?;
             run_login_shell(&shell, &["-ilc", LOGIN_SCRIPT], LOGIN_TIMEOUT)
         },
         app_path,
-    )
+    );
+    #[cfg(feature = "e2e")]
+    {
+        return prepend_extra_path(
+            &base,
+            std::env::var("WRITER_E2E_EXTRA_PATH").ok().as_deref(),
+        );
+    }
+    #[cfg(not(feature = "e2e"))]
+    base
+}
+
+/// `extra` (absolute entries only) in front of `base`.
+#[cfg_attr(not(feature = "e2e"), allow(dead_code))]
+pub fn prepend_extra_path(base: &str, extra: Option<&str>) -> String {
+    let Some(extra) = extra.filter(|e| !e.is_empty()) else {
+        return base.to_string();
+    };
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(extra)
+        .filter(|d| d.is_absolute())
+        .collect();
+    dirs.extend(std::env::split_paths(base));
+    std::env::join_paths(dirs)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| base.to_string())
 }
 
 /* ------------------------------------------------------------------ which */
@@ -449,6 +478,16 @@ pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, S
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extra_path_is_prepended_and_relative_entries_dropped() {
+        assert_eq!(prepend_extra_path("/a:/b", None), "/a:/b");
+        assert_eq!(prepend_extra_path("/a:/b", Some("")), "/a:/b");
+        assert_eq!(
+            prepend_extra_path("/a:/b", Some("/x:rel:/y")),
+            "/x:/y:/a:/b"
+        );
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]

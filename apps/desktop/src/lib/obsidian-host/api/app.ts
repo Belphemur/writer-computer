@@ -1,6 +1,7 @@
 // Adapted from opensidian (GPL-3.0-or-later).
 // `App`: the object a plugin receives as `this.app`. It owns the vault, metadata cache,
 // workspace and the host services; it is created once per PluginHost.
+import { SecretStorage } from "./secret-storage";
 import { parseFrontmatter, serializeFile } from "@/lib/frontmatter";
 import {
   type CommandRegistry,
@@ -100,6 +101,9 @@ export class App {
     close: (): void => {},
     openTabById: (id: string): void => this.setting.openRequested?.(id),
   };
+
+  /** In-memory only (see secret-storage.ts); the app run is the secrets' lifetime. */
+  secretStorage = new SecretStorage();
 
   /** Undocumented in the d.ts but plugins feature-detect these (Copilot, command palettes). */
   commands = commandsFacade(() => this.services.commands);

@@ -58,6 +58,34 @@ The point is infrastructure validation, not feature coverage. Both specs are
 independent of any restored workspace because the e2e build uses an isolated
 bundle identifier (see below).
 
+## Copilot + fake claude spec
+
+`specs/copilot-fake-claude.spec.js` loads the UNMODIFIED obsidian-copilot 4.0.20 in a trusted
+scratch vault and drives an Agent Mode turn against a fake `claude` CLI. Copilot is AGPL-3.0, so
+it is never committed: `fixtures/copilot-fake-claude/setup.sh` downloads `main.js`,
+`manifest.json` and `styles.css` from the official GitHub release into the gitignored
+`e2e/.cache/copilot-4.0.20/` (first run needs network).
+
+```sh
+# build the e2e app first (see Build flavors), then from apps/desktop/e2e:
+sh fixtures/copilot-fake-claude/run.sh        # NODE22_BIN=<node 22 bin dir> if your node is newer
+```
+
+`run.sh` builds the vault (fake at `<vault>/.bin/claude`, invocation log next to it), seeds ONLY
+`recent_workspaces.json`, `plugins_trust.json` and `plugins_proc_consent.json` in the e2e data
+dir (a native consent dialog cannot be driven), exports `WRITER_E2E_*` variables (including
+`WRITER_E2E_EXTRA_PATH`, an e2e-feature-only PATH prefix for `plugin_which`), runs wdio, then
+checks that no fake claude outlives the app. Without those variables the spec skips itself.
+
+It asserts: Copilot enabled without errors (`window.__writerPluginErrors`, an in-page error
+recorder), the host's `data.json` seed (settingsVersion 16, device profile pointing at the fake),
+Copilot's stylesheet surviving the sanitizer, `copilot:*` palette commands, Agent Chat in the
+right pane on the Claude backend, the load-time probes in the fake's log (`--version`,
+`auth status --json`, the idle stream-json probe), a prompt answered with `FAKE-CLAUDE-REPLY`
+and the session child's argv, that disabling Copilot stops the session process gracefully,
+re-enable plus a live session, and (in `run.sh`) no orphan after the app quits. Not covered:
+real `claude`, real LLM chat mode, permission cards, interrupt, SIGKILL escalation.
+
 ## How it works
 
 1. `pnpm run build:app` produces `Writer.app` with the `e2e` Cargo feature,

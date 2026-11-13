@@ -8,6 +8,27 @@ import type { VaultEntry, VaultIo, VaultStat } from "./vault";
 
 const call = <T>(cmd: string, args: Record<string, unknown>): Promise<T> => invoke<T>(cmd, args);
 
+interface ProbeEntry {
+  exists: boolean;
+  is_file: boolean;
+  is_dir: boolean;
+  size: number | null;
+}
+
+/**
+ * Stat for an entry the directory listing does not show (hidden or non-markdown). The listing is
+ * lossy, so the kind must come from the filesystem: guessing "file" turned folders such as
+ * `copilot/skills` into files and broke every later child insertion.
+ */
+export function statFromProbe(p: ProbeEntry | undefined): VaultStat {
+  return {
+    type: p?.is_dir ? "folder" : "file",
+    ctime: 0,
+    mtime: 0,
+    size: p?.size ?? 0,
+  };
+}
+
 /** `root` is the absolute workspace root; `name` the vault display name. */
 export function createTauriVaultIo(root: string, name: string): VaultIo {
   const base = root.replace(/\/+$/, "");
@@ -39,15 +60,16 @@ export function createTauriVaultIo(root: string, name: string): VaultIo {
       const hit = (await listDir(slash < 0 ? "" : path.slice(0, slash))).find(
         (s) => s.path === path,
       );
-      // Exists but the listing hid it (dotfiles, non-markdown): report a bare stat.
-      return hit
-        ? {
-            type: hit.isDir ? "folder" : "file",
-            ctime: hit.ctime,
-            mtime: hit.mtime,
-            size: hit.size,
-          }
-        : { type: "file", ctime: 0, mtime: 0, size: 0 };
+      if (hit)
+        return {
+          type: hit.isDir ? "folder" : "file",
+          ctime: hit.ctime,
+          mtime: hit.mtime,
+          size: hit.size,
+        };
+      // Exists but the listing hid it (dotfiles, non-markdown, empty folders): ask the filesystem.
+      const [probe] = await call<ProbeEntry[]>("plugin_fs_probe", { paths: [abs(path)] });
+      return statFromProbe(probe);
     },
     async mkdir(path) {
       await call("create_directory", { path: abs(path) });

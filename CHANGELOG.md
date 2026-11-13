@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Community (Obsidian) plugins can run in a vault, off by default: Settings has a **Community plugins** section with a restricted-mode switch (turning it on asks for confirmation), a toggle per installed plugin and each plugin's own options. Enabled plugins add commands to the command palette, ribbon icons above the workspace switcher, a status line at the bottom right of the editor, a right-hand pane for their views (toggle it from the palette) and CodeMirror editor extensions. The command palette now builds its list from a registry, and `moment` is bundled for plugins (loaded only when plugins run).
+- Community (Obsidian) plugins can run in a vault, off by default: Settings has a **Community plugins** section with a restricted-mode switch (turning it on asks for confirmation), a toggle per installed plugin and each plugin's own options. Enabled plugins add commands to the command palette, ribbon icons above the workspace switcher, a status line at the bottom right of the editor, a right-hand pane for their views (toggle it from the palette) and CodeMirror editor extensions. The command palette now builds its list from a registry, and `moment` is bundled for plugins (loaded only when plugins run). Copilot's Agent Chat now loads and runs a turn: plugin stylesheets survive minification, plugins get Obsidian's CSS variables and an in-memory secret store, and plugin processes stop when the plugin is disabled.
 
 ## 2026-10-28
 
