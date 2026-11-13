@@ -349,8 +349,16 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       }),
 
     requestTrust: async () => {
-      if (await confirmAction(TRUST_MESSAGE, "Turn on community plugins?"))
-        await get().setTrusted(true);
+      let confirmed = false;
+      try {
+        confirmed = await confirmAction(TRUST_MESSAGE, "Turn on community plugins?");
+      } catch (e) {
+        // A failed dialog must not look like a dead button.
+        console.error("[plugins] trust confirmation failed:", e);
+        set({ actionError: `Could not show the confirmation: ${messageOf(e)}` });
+        return;
+      }
+      if (confirmed) await get().setTrusted(true);
     },
 
     reconcile: () =>
