@@ -43,27 +43,27 @@ is a rendering follow-up, not a structural problem; the markdown is correct.
 
 ### 2. Enter on nested items
 
-| Scenario                                   | Before                             | Expected                        | Result          |
+| Scenario | Before | Expected | Result |
 | ------------------------------------------ | ---------------------------------- | ------------------------------- | --------------- | ----------- | ----------- |
-| Enter at end, depth 2 and 3                | new line with same indent + marker | same                            | PASS            |
-| Enter mid-body, depth 2                    | split, tail carries the prefix     | same                            | PASS            |
-| Enter at body start, depth 2               | empty item above, text below       | same                            | PASS            |
-| Enter on empty `····-                      | ` (depth 2)                        | line wiped, caret on blank line | outdent to `··- | `           | FAIL, fixed |
-| Enter on empty `··-                        | ` (depth 1)                        | line wiped                      | outdent to `-   | `           | FAIL, fixed |
-| Enter on empty depth-3 task                | line wiped                         | outdent, keep `[ ] `            | FAIL, fixed     |
-| Enter on empty `-                          | ` (top level)                      | line wiped, caret on paragraph  | same            | PASS        |
-| Enter on empty nested item in a loose list | line wiped                         | outdent to `-                   | `               | FAIL, fixed |
+| Enter at end, depth 2 and 3 | new line with same indent + marker | same | PASS |
+| Enter mid-body, depth 2 | split, tail carries the prefix | same | PASS |
+| Enter at body start, depth 2 | empty item above, text below | same | PASS |
+| Enter on empty `····-                      | ` (depth 2) | line wiped, caret on blank line | outdent to `··- | ` | FAIL, fixed |
+| Enter on empty `··-                        | ` (depth 1) | line wiped | outdent to `-   | ` | FAIL, fixed |
+| Enter on empty depth-3 task | line wiped | outdent, keep `[ ] ` | FAIL, fixed |
+| Enter on empty `-                          | ` (top level) | line wiped, caret on paragraph | same | PASS |
+| Enter on empty nested item in a loose list | line wiped | outdent to `-                   | ` | FAIL, fixed |
 
 ### 3. Backspace on nested items
 
-| Scenario                           | Before                     | Expected (per list-prefix-interaction-zones-spec) | Result       |
+| Scenario | Before | Expected (per list-prefix-interaction-zones-spec) | Result |
 | ---------------------------------- | -------------------------- | ------------------------------------------------- | ------------ | ---- |
-| Backspace at body start, depth 2   | `··c` (marker + one level) | same                                              | PASS         |
-| Backspace at marker start, depth 2 | `··- c` (one level)        | same                                              | PASS         |
-| Backspace at body start, depth 1   | `b`                        | same                                              | PASS         |
-| Backspace on empty `····-          | ` (depth 2)                | `··` (whitespace-only line)                       | same by spec | NOTE |
-| Backspace on empty `··-            | ` (depth 1)                | `` (empty line)                                   | same         | PASS |
-| Backspace at marker start, `→- b`  | `- b`                      | same                                              | PASS         |
+| Backspace at body start, depth 2 | `··c` (marker + one level) | same | PASS |
+| Backspace at marker start, depth 2 | `··- c` (one level) | same | PASS |
+| Backspace at body start, depth 1 | `b` | same | PASS |
+| Backspace on empty `····-          | ` (depth 2) | `··` (whitespace-only line) | same by spec | NOTE |
+| Backspace on empty `··-            | ` (depth 1) | `` (empty line) | same | PASS |
+| Backspace at marker start, `→- b` | `- b` | same | PASS |
 
 Note: the depth-2 empty case leaves two invisible spaces on the line, which
 the spec's "remove the marker and one indent level" rule produces literally.

@@ -154,18 +154,16 @@ export function resolveCommands(
   const taken = new Set(builtins.map((c) => c.id));
   const plugins = pluginCommands
     .filter((c) => !taken.has(c.id) && c.isAvailable())
-    .map(
-      (c): PaletteCommand => ({
-        id: c.id,
-        label: c.name,
-        description: "Plugin command",
-        run: () => {
-          ctx.close();
-          // After the palette dialog has released focus, so a command that opens a modal or
-          // focuses the editor is not undone by the dialog's focus restore.
-          setTimeout(() => c.run(), 0);
-        },
-      }),
-    );
+    .map((c): PaletteCommand => ({
+      id: c.id,
+      label: c.name,
+      description: "Plugin command",
+      run: () => {
+        ctx.close();
+        // After the palette dialog has released focus, so a command that opens a modal or
+        // focuses the editor is not undone by the dialog's focus restore.
+        setTimeout(() => c.run(), 0);
+      },
+    }));
   return [...builtins, ...plugins];
 }

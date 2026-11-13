@@ -7,7 +7,7 @@ import { ok, strictEqual } from "node:assert/strict";
 // keyless dev build correctly shows nothing. Build with:
 //
 //   WRITER_POSTHOG_KEY=phc_e2e_fake_key WRITER_POSTHOG_HOST=http://127.0.0.1:9 \
-//     cargo tauri build --features e2e --bundles app --ignore-version-mismatches \
+//     cargo tauri build --features e2e --bundles app \
 //     --config '{"identifier":"com.writer-computer.e2e","bundle":{"createUpdaterArtifacts":false}}'
 //
 // The discard-port host keeps the fake key from reaching a real project: the

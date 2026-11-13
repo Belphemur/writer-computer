@@ -32,7 +32,7 @@ without leaving the document.
   vertical cluster, directly above the `+` / `−` zoom buttons. Fades in
   on hover/focus like the other controls.
 - Fullscreen overlay: a fixed-position `<div>` (`position: fixed; inset:
-0; z-index: 9999`) appended to `document.body`. Esc, the ✕ close
+  0; z-index: 9999`) appended to `document.body`. Esc, the ✕ close
   button, or a click on the backdrop dismisses.
 - Backdrop: `--bg-base` at 92% opacity with a 4px blur, so the document
   underneath stays faintly visible as a contextual anchor.
@@ -43,7 +43,7 @@ without leaving the document.
 ## Implementation Notes
 
 - New module `mermaid-fullscreen.ts` exports `openMermaidFullscreen(source,
-ariaLabel)`. It renders the SVG via `renderMermaid` (cached; an invalid
+  ariaLabel)`. It renders the SVG via `renderMermaid` (cached; an invalid
   diagram opens on the same error the inline frame shows), creates a
   `<div class="cm-mermaid-fullscreen">` with `role="dialog"` and
   `aria-modal="true"`, mounts a fresh canvas host inside it via

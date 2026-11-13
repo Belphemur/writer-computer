@@ -281,16 +281,16 @@ describe("mermaid canvas frame", () => {
     });
     const size = (el: HTMLElement, value: number) =>
       el.classList.contains("cm-mermaid-canvas-viewport") ? value : 0;
-    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
-      function (this: HTMLElement) {
-        return size(this, width);
-      },
-    );
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
-      function (this: HTMLElement) {
-        return size(this, height);
-      },
-    );
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return size(this, width);
+    });
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return size(this, height);
+    });
   }
 
   afterEach(() => {
@@ -674,9 +674,7 @@ describe("shouldStartDragGate", () => {
     const dispatch = shouldStartDragGate(makeState(), {
       isPrimary: true,
       button: 0,
-      target: {
-        /* not an Element */
-      } as EventTarget,
+      target: {/* not an Element */} as EventTarget,
     });
     expect(dispatch).not.toBeNull();
   });

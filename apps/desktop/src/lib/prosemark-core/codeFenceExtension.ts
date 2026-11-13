@@ -75,7 +75,7 @@ const buildCodeBlockDecorations = (
           const offset = offsets.get(node.from) ?? 0;
           const attributes = offset > 0 ? { style: `text-indent:-${offset}px` } : undefined;
 
-          for (let pos = node.from; pos <= node.to; ) {
+          for (let pos = node.from; pos <= node.to;) {
             const line = state.doc.lineAt(pos);
             const isFirstLine = pos === node.from;
             const isLastLine = line.to >= node.to;

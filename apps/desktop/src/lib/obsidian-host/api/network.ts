@@ -198,8 +198,7 @@ const slotWaiters: (() => void)[] = [];
 
 function releaseSlot(): void {
   const next = slotWaiters.shift();
-  if (next)
-    next(); // hand the slot over directly
+  if (next) next(); // hand the slot over directly
   else slotsInUse = Math.max(0, slotsInUse - 1);
 }
 

@@ -27,10 +27,10 @@
     "@lezer/markdown": "catalog:",
     "@lezer/yaml": "catalog:",
     "@tailwindcss/vite": "catalog:",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-clipboard-manager": "catalog:",
     "@tauri-apps/plugin-dialog": "catalog:",
-    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-opener": "^2.7.3",
     "@tauri-apps/plugin-store": "catalog:",
     "cmdk": "catalog:",
     "dompurify": "catalog:",
@@ -38,21 +38,21 @@
     "moment": "catalog:",
     "node-emoji": "catalog:",
     "pele": "catalog:",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tailwindcss": "catalog:",
     "yaml": "catalog:",
     "zustand": "catalog:"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/katex": "catalog:",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^4.6.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "@welldone-software/why-did-you-render": "catalog:",
     "jsdom": "catalog:",
-    "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "typescript": "^7.0.2",
+    "vite": "catalog:"
   }
 }

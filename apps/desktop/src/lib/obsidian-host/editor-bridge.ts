@@ -74,9 +74,10 @@ export function editorBackendFor(view: EditorView): EditorBackend {
     getValue: () => view.state.doc.toString(),
     replaceRange: (from, to, text) => view.dispatch({ changes: { from, to, insert: text } }),
     getSelections: () =>
-      view.state.selection.ranges.map(
-        (r): EditorSelectionRange => ({ anchor: r.anchor, head: r.head }),
-      ),
+      view.state.selection.ranges.map((r): EditorSelectionRange => ({
+        anchor: r.anchor,
+        head: r.head,
+      })),
     setSelections: (ranges) => {
       if (ranges.length === 0) return;
       const len = view.state.doc.length;

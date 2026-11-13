@@ -5,52 +5,50 @@ packages:
   - tools/*
 
 catalog:
-  "@codemirror/autocomplete": ^6.20.0
-  "@codemirror/commands": ^6.10.3
-  "@codemirror/lang-html": ^6.4.11
-  "@codemirror/lang-markdown": ^6.5.0
-  "@codemirror/language": ^6.12.2
+  "@codemirror/autocomplete": ^6.20.4
+  "@codemirror/commands": ^6.11.1
+  "@codemirror/lang-html": ^6.4.12
+  "@codemirror/lang-markdown": ^6.5.2
+  "@codemirror/language": ^6.13.1
   "@codemirror/language-data": ^6.5.2
-  "@codemirror/lint": ^6.9.2
-  "@codemirror/search": ^6.7.0
-  "@codemirror/state": ^6.7.5
-  "@codemirror/view": ^6.43.12
-  "@hugeicons/core-free-icons": ^4.1.1
-  "@hugeicons/react": ^1.1.6
-  "@lezer/common": ^1.4.0
-  "@lezer/highlight": ^1.2.3
-  "@lezer/markdown": ^1.6.1
+  "@codemirror/lint": ^6.9.8
+  "@codemirror/search": ^6.7.2
+  "@codemirror/state": ^6.7.6
+  "@codemirror/view": ^6.43.15
+  "@hugeicons/core-free-icons": ^4.4.0
+  "@hugeicons/react": ^1.1.10
+  "@lezer/common": ^1.5.5
+  "@lezer/highlight": ^1.2.5
+  "@lezer/markdown": ^1.8.1
   "@lezer/yaml": ^1.0.4
-  "@tailwindcss/vite": ^4.2.2
-  "@tanstack/devtools-vite": ^0.7.0
-  "@tauri-apps/plugin-clipboard-manager": ^2.3.2
-  "@tauri-apps/plugin-dialog": ^2.6.0
-  "@tauri-apps/plugin-store": ^2.4.2
-  "@types/katex": ^0.16.7
-  "@types/node": ^24
+  "@tailwindcss/vite": ^4.3.5
+  "@tanstack/devtools-vite": ^0.8.6
+  "@tauri-apps/plugin-clipboard-manager": ^2.5.0
+  "@tauri-apps/plugin-dialog": ^2.8.4
+  "@tauri-apps/plugin-store": ^2.5.1
+  "@types/katex": ^0.16.8
+  "@types/node": ^26.6.6
   "@welldone-software/why-did-you-render": ^10.0.1
   cmdk: ^1.1.1
-  dompurify: ^3.4.7
-  jsdom: ^30.1.2
-  katex: ^0.16.25
-  marked: ^18.1.2
+  dompurify: ^3.4.17
+  jsdom: ^31.0.1
+  katex: ^0.19.1
+  marked: ^18.2.0
   moment: ^2.31.0
   motion: ^12.39.0
   node-emoji: ^2.2.0
-  pele: ^1.6.0
-  posthog-js: ^1.429.2
+  pele: ^1.13.0
+  posthog-js: ^1.448.0
   react-resizable-panels: ^4.7.4
-  tailwindcss: ^4.2.2
-  typescript: ^5
-  vite: npm:@voidzero-dev/vite-plus-core@latest
-  vite-plus: ^0.1.22
-  vitest: npm:@voidzero-dev/vite-plus-test@latest
-  yaml: ^2.8.3
-  zustand: ^5.0.12
+  tailwindcss: ^4.3.5
+  typescript: ^7.0.2
+  vite: npm:@voidzero-dev/vite-plus-core@1.6.0
+  vite-plus: 1.6.0
+  yaml: ^2.9.1
+  zustand: ^5.1.0
 
 catalogMode: prefer
 overrides:
-  "@voidzero-dev/vite-plus-test>vite": 8.0.14
   basic-ftp: 5.3.1
   fast-xml-builder: 1.1.7
   fast-xml-parser: 5.7.0
@@ -59,14 +57,11 @@ overrides:
   picomatch: 4.0.4
   postcss: 8.5.15
   serialize-javascript: 7.0.5
-  vite: "catalog:"
-  vitest: "catalog:"
-  "website>vite": "npm:vite@^8.0.16"
   ws: 8.20.1
+  vite@*: "catalog:"
+  "website>vite": "npm:vite@^8.0.16"
 peerDependencyRules:
   allowAny:
     - vite
-    - vitest
   allowedVersions:
     vite: "*"
-    vitest: "*"

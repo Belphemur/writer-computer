@@ -210,7 +210,7 @@ turns empty space into clipped empty space — no visible change.
 
 - **List-item bullets at the clip boundary.** With cm-content padding
   4rem and softIndent's `padding-inline-start: indentWidth + 6;
-text-indent: -indentWidth;`, a bullet renders at
+  text-indent: -indentWidth;`, a bullet renders at
   `cm-line.outer-left + 6` = `text-col-left + 6`, just inside the clip
   area. The bullet character is fully visible. (If softIndent's
   `text-indent` ever exceeded `indentWidth + 6` and pushed a bullet to

@@ -13,15 +13,15 @@ setup: `cargo install tauri-webdriver --locked`).
 
 ```sh
 cd apps/desktop/src-tauri
-cargo tauri build --features e2e --bundles app --ignore-version-mismatches \
+cargo tauri build --features e2e --bundles app \
   --config '{"identifier":"com.writer-computer.e2e","bundle":{"createUpdaterArtifacts":false}}'
 ```
 
 Gotchas:
 
-- `--ignore-version-mismatches` is required while the npm `@tauri-apps/*`
-  packages lag the Rust crates; without it the CLI hard-errors before
-  building.
+- Keep the npm `@tauri-apps/*` packages on the same minor as the Rust `tauri*`
+  crates; the CLI hard-errors on a mismatch (`--ignore-version-mismatches`
+  bypasses it, but a mismatch causes real bugs such as removed plugin commands).
 - The bundle lands at
   `src-tauri/target/release/bundle/macos/Writer.app/Contents/MacOS/desktop`
   (binary keeps the crate name). Incremental rebuilds are fast; the first

@@ -150,13 +150,13 @@ export function wheelDeltaX(
  *  markers, at a non-code sibling, and at viewport gaps. */
 function blockLineElements(line: Element): Element[] {
   const lines = [line];
-  for (let el = line; !el.classList.contains(CODE_LINE_FIRST_CLASS); ) {
+  for (let el = line; !el.classList.contains(CODE_LINE_FIRST_CLASS);) {
     const prev = el.previousElementSibling;
     if (!prev?.classList.contains(CODE_LINE_CLASS)) break;
     lines.push(prev);
     el = prev;
   }
-  for (let el = line; !el.classList.contains(CODE_LINE_LAST_CLASS); ) {
+  for (let el = line; !el.classList.contains(CODE_LINE_LAST_CLASS);) {
     const next = el.nextElementSibling;
     if (!next?.classList.contains(CODE_LINE_CLASS)) break;
     lines.push(next);

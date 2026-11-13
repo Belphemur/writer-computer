@@ -15,36 +15,36 @@ name = "desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-clipboard-manager = "2"
+tauri = { version = "2.12", features = ["protocol-asset", "macos-private-api"] }
+tauri-plugin-opener = "2.7"
+tauri-plugin-dialog = "2.8"
+tauri-plugin-clipboard-manager = "2.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-notify = { version = "7", features = ["macos_fsevent"] }
-fontdb = "0.23"
+notify = { version = "8", features = ["macos_fsevent"] }
+fontdb = "0.24"
 ignore = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["fs", "sync", "net", "time", "rt", "macros"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 keyring = "4"
 thiserror = "2"
 log = "0.4"
 trash = "5"
-base64 = "0.22"
-tauri-plugin-store = "2.4.2"
-tauri-plugin-updater = "2"
-tauri-plugin-single-instance = "2"
+base64 = "0.23"
+tauri-plugin-store = "2.5"
+tauri-plugin-updater = "2.14"
+tauri-plugin-single-instance = "2.5"
 tauri-plugin-webdriver = { version = "0.2", optional = true }
 # Telemetry transport. Feature set mirrors tauri-plugin-updater's so the
 # dependency graph does not grow — both are already resolved in Cargo.lock.
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 url = "2"
-sha2 = "0.10"
+sha2 = "0.11"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [target.'cfg(unix)'.dependencies]
