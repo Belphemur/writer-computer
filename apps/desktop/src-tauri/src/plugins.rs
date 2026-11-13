@@ -136,8 +136,10 @@ pub fn plugin_file_in(
 }
 
 /// Electron-renderer free variables every plugin bundle may read at module
-/// scope, bound as factory parameters after module,exports,require.
-pub const FREE_VARS: &str = "process,global,Buffer,Error,__filename,__dirname,SharedArrayBuffer";
+/// scope, bound as factory parameters after module,exports,require. `fetch` is the
+/// plugin-scoped (Rust-backed, CORS-free) fetch; the loader supplies each positionally.
+pub const FREE_VARS: &str =
+    "process,global,Buffer,Error,__filename,__dirname,SharedArrayBuffer,fetch";
 
 /// The CJS wrapper: module/exports/require come from the host's define fn. The
 /// plugin source starts the function body so its own "use strict" stays a
@@ -508,7 +510,7 @@ mod tests {
         let t = vault();
         let out = js(serve(Some(t.path()), "/good/main.js", true));
         assert!(out.starts_with(";(function(){var d=window.__writerPluginDefine;"));
-        assert!(out.contains("d(\"good\",function(module,exports,require,process,global,Buffer,Error,__filename,__dirname,SharedArrayBuffer){\"use strict\";module.exports=1;//end\n});"));
+        assert!(out.contains("d(\"good\",function(module,exports,require,process,global,Buffer,Error,__filename,__dirname,SharedArrayBuffer,fetch){\"use strict\";module.exports=1;//end\n});"));
         assert!(out.ends_with("//# sourceURL=writer-plugin://localhost/good/main.js\n"));
     }
 

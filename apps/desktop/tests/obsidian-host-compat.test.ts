@@ -4,6 +4,7 @@ import { createApp, type App } from "../src/lib/obsidian-host/api/app";
 import { createHostServices, Plugin } from "../src/lib/obsidian-host/api/core";
 import { installDomHelpers } from "../src/lib/obsidian-host/api/dom";
 import { Platform, apiVersion, requestUrl } from "../src/lib/obsidian-host/api/functions";
+import { setNetIpc } from "../src/lib/obsidian-host/api/network";
 import { Menu, MenuItem } from "../src/lib/obsidian-host/api/ui";
 import { FileSystemAdapter, TFile, TFolder } from "../src/lib/obsidian-host/api/vault";
 import {
@@ -364,14 +365,26 @@ describe("undocumented members plugins feature-detect", () => {
 });
 
 describe("requestUrl", () => {
-  const respond = (status: number, body: string, headers: Record<string, string> = {}) =>
-    vi.fn(async () => new Response(body, { status, headers }));
+  /** Backs requestUrl with a fake plugin_http_request returning the given response. */
+  const respond = (status: number, body: string, headers: Record<string, string> = {}) => {
+    const mock = vi.fn(async (r: { url: string; method?: string; headers?: unknown }) => ({
+      status,
+      headers: Object.entries(headers),
+      body_base64: btoa(body),
+      url: r.url,
+    }));
+    setNetIpc({
+      request: mock,
+      streamStart: async () => 0,
+      streamCancel: async () => false,
+    });
+    return mock;
+  };
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => setNetIpc(null));
 
   it("resolves with status, lower-cased headers and text/json/arrayBuffer", async () => {
-    const fetchMock = respond(200, '{"ok":true}', { "Content-Type": "application/json" });
-    vi.stubGlobal("fetch", fetchMock);
+    const mock = respond(200, '{"ok":true}', { "Content-Type": "application/json" });
     const res = await requestUrl({
       url: "https://x.test/api",
       method: "POST",
@@ -384,25 +397,25 @@ describe("requestUrl", () => {
     expect(res.text).toBe('{"ok":true}');
     expect(res.json).toEqual({ ok: true });
     expect(res.arrayBuffer.byteLength).toBe(11);
-    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1];
-    expect(init.method).toBe("POST");
-    expect(init.headers).toEqual({ "X-A": "1", "Content-Type": "application/json" });
+    const sent = mock.mock.calls[0][0];
+    expect(sent.method).toBe("POST");
+    expect(sent.headers).toEqual({ "X-A": "1", "Content-Type": "application/json" });
     expect(await requestUrl("https://x.test/api").json).toEqual({ ok: true });
     expect(await requestUrl("https://x.test/api").text).toBe('{"ok":true}');
   });
 
   it("throws on status >= 400 unless throw:false", async () => {
-    vi.stubGlobal("fetch", respond(404, "nope"));
+    respond(404, "nope");
     await expect(requestUrl("https://x.test/missing")).rejects.toMatchObject({ status: 404 });
     const res = await requestUrl({ url: "https://x.test/missing", throw: false });
     expect(res.status).toBe(404);
     expect(res.text).toBe("nope");
-    vi.stubGlobal("fetch", respond(399, "edge"));
+    respond(399, "edge");
     expect((await requestUrl("https://x.test/e")).status).toBe(399);
   });
 
   it("does not leak unhandled rejections from the shortcut properties", async () => {
-    vi.stubGlobal("fetch", respond(500, "err"));
+    respond(500, "err");
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
     await expect(requestUrl("https://x.test/boom")).rejects.toThrow(/500/);

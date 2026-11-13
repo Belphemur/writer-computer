@@ -21,6 +21,7 @@ import { makeRequire } from "./modules";
 import { createObsidianModule, type ObsidianModule } from "./obsidian-module";
 import { installDomHelpers } from "./api/dom";
 import { createProcessShim } from "./node-shims";
+import { installGlobalFetch, pluginScopedFetch } from "./api/network";
 
 export type PluginState = "enabled" | "failed" | "disabled";
 
@@ -54,6 +55,7 @@ export interface PluginHostOptions {
 
 type DefineFactory = (...args: unknown[]) => void;
 
+const PLUGIN_DIR_PREFIX = ".obsidian/plugins/";
 const DEFINE_NAME = "__writerPluginDefine";
 const PLUGIN_ID_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
 const pendingDefines = new Map<string, (factory: DefineFactory) => void>();
@@ -134,6 +136,7 @@ export class PluginHost {
   private seq = 0;
   private snapshot: HostSnapshot;
   private uninstallDom: (() => void) | null = null;
+  private uninstallFetch: (() => void) | null = null;
   private loading = 0;
 
   constructor(options: PluginHostOptions) {
@@ -348,12 +351,15 @@ export class PluginHost {
   private installDom(): void {
     if (typeof window === "undefined") return;
     this.uninstallDom ??= installDomHelpers();
+    this.uninstallFetch ??= installGlobalFetch();
   }
 
   private removeDomWhenIdle(): void {
     if (this.records.size > 0 || this.loading > 0) return;
     this.uninstallDom?.();
     this.uninstallDom = null;
+    this.uninstallFetch?.();
+    this.uninstallFetch = null;
   }
 
   private async readStyles(id: string): Promise<string> {
@@ -379,6 +385,11 @@ export class PluginHost {
             createProcessShim(),
             globalThis,
             (globalThis as { Buffer?: unknown }).Buffer,
+            Error,
+            `${PLUGIN_DIR_PREFIX}${id}/main.js`,
+            `${PLUGIN_DIR_PREFIX}${id}`,
+            (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer,
+            pluginScopedFetch,
           );
           resolve(module.exports);
         } catch (e) {

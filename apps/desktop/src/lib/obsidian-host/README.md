@@ -40,7 +40,8 @@ Compat details: the DOM helpers (`createEl`, `Node.doc/win/instanceOf`, `activeD
 
 Stubbed or partial:
 
-- `requestUrl` is fetch-based (CORS, CSP apply). TODO: Rust-backed https client.
+- **Networking (`api/network.ts`).** `requestUrl`/`request` run over `plugin_http_request` (CORS/CSP-free, binary-safe via base64). A plugin-scoped `fetch` runs over `plugin_http_stream_*` (always streamed, so SSE arrives incrementally; `response.body` is a page `ReadableStream`; AbortSignal calls `plugin_http_stream_cancel`; client-side queue of 16 slots with a 30s wait, then `TypeError`). Errors surface as `TypeError("Failed to fetch: ...")`. It is both the free variable `fetch` in the CJS wrapper and, while at least one plugin is loading/loaded, `globalThis.fetch`/`window.fetch` (idempotent, restored on last teardown; SDKs that capture the global are covered). Non-http(s), `ipc:`/`asset:`/`writer-plugin:`/`blob:`/`data:`, same-origin and `*.localhost` app hosts fall through to the page's fetch. Side effect: while patched, the app's own cross-origin http(s) fetches also go through Rust (trusted vault only). Headers/Request/Response/ReadableStream/etc. are the page's. Never logs bodies or auth headers.
+- **Gaps:** `XMLHttpRequest`, `WebSocket`, `EventSource` are not provided (CSP still blocks them); `credentials`/`mode`/`cache` ignored; request body `ReadableStream`/Blob are buffered; forbidden request headers are dropped by the page's `Request`.
 - `moment` is the real library (static import here; the whole host is a lazy chunk, so it stays out of the entry bundle).
 - `MarkdownRenderer` is an escaped-paragraph placeholder; `setMarkdownRenderer(fn)` plugs in the app's renderer.
 - Icons: registered SVGs render; other names render a neutral glyph (`data-icon`, `lucide-<name>` class). No icon pack is bundled.

@@ -150,75 +150,9 @@ export const Platform = {
 
 // ---------------------------------------------------------------- requestUrl
 
-export interface RequestUrlParam {
-  url: string;
-  method?: string;
-  contentType?: string;
-  body?: string | ArrayBuffer;
-  headers?: Record<string, string>;
-  throw?: boolean;
-}
-
-export interface RequestUrlResponse {
-  status: number;
-  headers: Record<string, string>;
-  arrayBuffer: ArrayBuffer;
-  json: unknown;
-  text: string;
-}
-
-export interface RequestUrlResponsePromise extends Promise<RequestUrlResponse> {
-  readonly arrayBuffer: Promise<ArrayBuffer>;
-  readonly json: Promise<unknown>;
-  readonly text: Promise<string>;
-}
-
-/**
- * TODO: placeholder. Uses the webview's fetch (subject to CORS and the page CSP). To be
- * replaced by a Rust-backed https client so plugins can reach LLM APIs without CORS.
- */
-export function requestUrl(request: RequestUrlParam | string): RequestUrlResponsePromise {
-  const p: RequestUrlParam = typeof request === "string" ? { url: request } : request;
-  const run = async (): Promise<RequestUrlResponse> => {
-    const headers: Record<string, string> = { ...p.headers };
-    if (p.contentType) headers["Content-Type"] = p.contentType;
-    const res = await fetch(p.url, { method: p.method ?? "GET", headers, body: p.body });
-    const buf = await res.arrayBuffer();
-    const text = new TextDecoder().decode(buf);
-    const outHeaders: Record<string, string> = {};
-    res.headers.forEach((v, k) => {
-      outHeaders[k] = v;
-    });
-    if (p.throw !== false && res.status >= 400) {
-      throw Object.assign(new Error(`Request failed, status ${res.status}`), {
-        status: res.status,
-      });
-    }
-    return {
-      status: res.status,
-      headers: outHeaders,
-      arrayBuffer: buf,
-      text,
-      get json(): unknown {
-        return JSON.parse(text);
-      },
-    };
-  };
-  const promise = run() as RequestUrlResponsePromise;
-  // Lazy getters: an eager `.then` chain per shortcut would raise unhandled rejections when the
-  // request itself fails and the caller only awaited the main promise.
-  for (const key of ["arrayBuffer", "json", "text"] as const) {
-    void Object.defineProperty(promise, key, {
-      get: () => promise.then((r) => r[key]),
-      configurable: true,
-    });
-  }
-  return promise;
-}
-
-export async function request(request: RequestUrlParam | string): Promise<string> {
-  return (await requestUrl(request)).text;
-}
+// Implemented over the Rust plugin_http_request command (CORS-free); see ./network.
+export { request, requestUrl } from "./network";
+export type { RequestUrlParam, RequestUrlResponse, RequestUrlResponsePromise } from "./network";
 
 // ---------------------------------------------------------------- moment
 

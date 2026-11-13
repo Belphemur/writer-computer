@@ -53,4 +53,8 @@ Out of scope until the plugin host and Copilot work. To do later, in this order:
 
 ## Open risks
 
-API shim breadth, missing Editor/Workspace facades, https and streaming fetch for LLM calls, Agent Mode (`child_process`), arbitrary JS in the webview (mitigated, not sandboxed). Frontend callers that read files outside the workspace root would now be rejected; none found yet, to be confirmed by running the app.
+API shim breadth, missing Editor/Workspace facades, Agent Mode (`child_process`), arbitrary JS in the webview (mitigated, not sandboxed). Frontend callers that read files outside the workspace root would now be rejected; none found yet, to be confirmed by running the app.
+
+## Status (plugin networking, 2026-11-13)
+
+Done: `requestUrl`/`request` over `plugin_http_request`; plugin-scoped streaming `fetch` over `plugin_http_stream_*`, exposed as a free variable `fetch` in the CJS wrapper and as an installable/idempotent `globalThis.fetch` patch while plugins are loaded; tests in `tests/obsidian-network-*.test.ts`. The loader now also passes the other wrapper free variables (`Error`, `__filename`, `__dirname`, `SharedArrayBuffer`) it previously left undefined. Gaps: `XMLHttpRequest`, `WebSocket`, `EventSource`; not yet verified against a real obsidian-copilot run.
