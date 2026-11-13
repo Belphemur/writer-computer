@@ -1,7 +1,7 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import sidebarEntryKinds from "@shared/sidebar-entry-kinds.json";
-import { hostInvoke } from "@/lib/obsidian-host/seal/seal";
 import type {
   DirEntry,
   FileContent,
@@ -10,11 +10,6 @@ import type {
   WriteResult,
   WorkspaceInfo,
 } from "@/types/fs";
-
-// Every Writer command goes through the seal's `hostInvoke`: once plugins can load, the global
-// `__TAURI_INTERNALS__.invoke` rejects anything that is not an allowlisted `plugin:*` command.
-const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
-  (args === undefined ? hostInvoke(cmd) : hostInvoke(cmd, args)) as Promise<T>;
 
 // Filesystem commands
 export function readDirectory(path: string): Promise<DirEntry[]> {

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 // Mock the tauri API before importing stores
-vi.mock("../src/lib/obsidian-host/seal/seal", () => ({
-  hostInvoke: vi.fn(),
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
 import { useEditorStore } from "../src/stores/editor-store";

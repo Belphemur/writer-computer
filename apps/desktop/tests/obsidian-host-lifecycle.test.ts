@@ -42,7 +42,6 @@ function makeStyles() {
 function setup(opts: {
   scripts: Record<string, Factory | "missing" | "no-define">;
   ipc?: FakeHostIpc;
-  seal?: () => void;
 }) {
   const ipc =
     opts.ipc ??
@@ -58,7 +57,6 @@ function setup(opts: {
     io: createMemoryVaultIo({ "a.md": "# A" }),
     loadScript: loader,
     styles: styles.sink,
-    seal: opts.seal ?? (() => {}),
   });
   return { host, ipc, requested, styles };
 }
@@ -73,18 +71,16 @@ const simplePlugin: Factory = (module, _e, require) => {
 };
 
 describe("PluginHost boot", () => {
-  it("loads nothing and never seals when the vault is not trusted", async () => {
-    const seal = vi.fn();
+  it("loads nothing when the vault is not trusted", async () => {
     const ipc = new FakeHostIpc({ trusted: false, enabled: ["p"], plugins: [{ id: "p" }] });
-    const { host, requested } = setup({ scripts: { p: simplePlugin }, ipc, seal });
+    const { host, requested } = setup({ scripts: { p: simplePlugin }, ipc });
     await host.boot();
     expect(requested).toEqual([]);
-    expect(seal).not.toHaveBeenCalled();
     expect(host.getStatus("p")).toEqual({ state: "disabled" });
     expect(host.getSnapshot().trusted).toBe(false);
   });
 
-  it("seals once, before the first plugin script is requested", async () => {
+  it("loads enabled plugins in order on a trusted boot, with no seal step", async () => {
     const order: string[] = [];
     const ipc = new FakeHostIpc({ enabled: ["a", "b"], plugins: [{ id: "a" }, { id: "b" }] });
     const { host } = setup({
@@ -99,10 +95,9 @@ describe("PluginHost boot", () => {
         },
       },
       ipc,
-      seal: () => void order.push("seal"),
     });
     await host.boot();
-    expect(order).toEqual(["seal", "eval:a", "eval:b"]);
+    expect(order).toEqual(["eval:a", "eval:b"]);
     expect(host.getStatus("a").state).toBe("enabled");
     expect(host.getStatus("b").state).toBe("enabled");
   });
@@ -113,20 +108,6 @@ describe("PluginHost boot", () => {
     await host.boot();
     expect(requested).toHaveLength(1);
     expect(host.getStatus("b")).toEqual({ state: "disabled" });
-  });
-
-  it("fails everything with a clear error when sealing fails, without evaluating plugin code", async () => {
-    const evaluated = vi.fn();
-    const { host } = setup({
-      scripts: { p: (m, e, r) => (evaluated(), simplePlugin(m, e, r)) },
-      seal: () => {
-        throw new Error("no internals");
-      },
-    });
-    await host.boot();
-    expect(evaluated).not.toHaveBeenCalled();
-    expect(host.getStatus("p").state).toBe("failed");
-    expect(host.getStatus("p").error).toMatch(/sealing the Tauri bridge failed.*no internals/);
   });
 });
 
@@ -461,7 +442,6 @@ describe("hand-written CJS plugin through the real loader path", () => {
       io: createMemoryVaultIo(),
       loadScript: wrapperLoader({ hello: source }),
       styles: makeStyles().sink,
-      seal: () => {},
     });
     await host.boot();
     expect(host.getStatus("hello")).toEqual({ state: "enabled" });
@@ -496,7 +476,6 @@ describe("hand-written CJS plugin through the real loader path", () => {
       io: createMemoryVaultIo(),
       loadScript: wrapperLoader({ es5: source }),
       styles: makeStyles().sink,
-      seal: () => {},
     });
     await host.boot();
     expect(host.getStatus("es5")).toEqual({ state: "enabled" });

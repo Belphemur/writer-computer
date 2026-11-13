@@ -1,12 +1,7 @@
 // Backend boundary of the plugin host. The Rust side owns trust, enablement, assets, plugin
 // data and the store; the host only talks to it through this interface so tests can fake it.
 import type { PluginManifest } from "./api/core";
-import { hostInvoke } from "./seal/seal";
-
-// After the seal, `@tauri-apps/api/core`'s invoke is rejected for every non-allowlisted command;
-// the host must go through the seal's captured `hostInvoke`.
-const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
-  hostInvoke(cmd, args) as Promise<T>;
+import { invoke } from "@tauri-apps/api/core";
 
 export interface InstalledPlugin {
   id: string;

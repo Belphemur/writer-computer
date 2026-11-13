@@ -139,7 +139,6 @@ describe("PluginHost owns the DOM augmentations", () => {
       io: createMemoryVaultIo(FILES),
       loadScript,
       styles: { add: () => () => {} },
-      seal: () => {},
     });
   }
 
@@ -306,7 +305,6 @@ describe("undocumented members plugins feature-detect", () => {
           module.exports = class extends req("obsidian").Plugin {};
         }),
       styles: { add: () => () => {} },
-      seal: () => {},
     });
     await host.boot();
     const { plugins } = host.app;

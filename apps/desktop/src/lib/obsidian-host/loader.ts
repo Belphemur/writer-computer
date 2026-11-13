@@ -21,7 +21,6 @@ import { makeRequire } from "./modules";
 import { createObsidianModule, type ObsidianModule } from "./obsidian-module";
 import { installDomHelpers } from "./api/dom";
 import { createProcessShim } from "./node-shims";
-import { sealTauri } from "./seal/seal";
 
 export type PluginState = "enabled" | "failed" | "disabled";
 
@@ -51,8 +50,6 @@ export interface PluginHostOptions {
   bridge?: WorkspaceBridge;
   loadScript?: ScriptLoader;
   styles?: StyleSink;
-  /** Runs once before the first plugin is evaluated. Defaults to the Tauri seal. */
-  seal?: () => void | Promise<void>;
 }
 
 type DefineFactory = (...args: unknown[]) => void;
@@ -124,7 +121,6 @@ export class PluginHost {
   private readonly ipc: HostIpc;
   private readonly loadScript: ScriptLoader;
   private readonly styles: StyleSink;
-  private readonly sealFn: () => void | Promise<void>;
   private readonly obsidian: ObsidianModule = createObsidianModule();
   private readonly records = new Map<string, PluginRecord>();
   private readonly chains = new Map<string, Promise<unknown>>();
@@ -134,7 +130,6 @@ export class PluginHost {
   private statuses: Record<string, PluginStatus> = {};
   private trusted = false;
   private booted = false;
-  private sealing: Promise<void> | null = null;
   private starting: Promise<void> | null = null;
   private seq = 0;
   private snapshot: HostSnapshot;
@@ -145,7 +140,6 @@ export class PluginHost {
     this.ipc = options.ipc ?? tauriHostIpc;
     this.loadScript = options.loadScript ?? domScriptLoader;
     this.styles = options.styles ?? domStyleSink;
-    this.sealFn = options.seal ?? (() => void sealTauri());
     this.services = createHostServices({
       read: async (id) => {
         const raw = await this.ipc.dataRead(id);
@@ -287,16 +281,6 @@ export class PluginHost {
     return this.starting;
   }
 
-  private ensureSealed(): Promise<void> {
-    this.sealing ??= Promise.resolve()
-      .then(() => this.sealFn())
-      .catch((e) => {
-        this.sealing = null;
-        throw new Error(`Cannot load plugins: sealing the Tauri bridge failed (${messageOf(e)})`);
-      });
-    return this.sealing;
-  }
-
   private async loadEnabled(): Promise<void> {
     for (const id of this.manifests.keys()) {
       if (this.enabledIds.has(id)) await this.queue(id, () => this.load(id));
@@ -320,7 +304,6 @@ export class PluginHost {
     }
     this.loading++;
     try {
-      await this.ensureSealed();
       this.installDom();
       const exports = await this.evaluate(id);
       const Ctor = resolvePluginClass(id, exports);

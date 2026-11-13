@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
 // Mock the tauri API before importing stores
-vi.mock("../src/lib/obsidian-host/seal/seal", () => ({
-  hostInvoke: vi.fn(),
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/lib/theme", () => ({
@@ -10,7 +10,7 @@ vi.mock("@/lib/theme", () => ({
   applyCssVarBindings: vi.fn(),
 }));
 
-import { hostInvoke as invoke } from "../src/lib/obsidian-host/seal/seal";
+import { invoke } from "@tauri-apps/api/core";
 import { useEditorStore } from "../src/stores/editor-store";
 import { useSettingsStore } from "../src/stores/settings-store";
 import { useUIStore } from "../src/stores/ui-store";

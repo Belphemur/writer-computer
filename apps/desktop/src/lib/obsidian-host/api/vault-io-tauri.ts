@@ -1,15 +1,12 @@
 // VaultIo on top of the app's existing fs commands (the same ones src/lib/tauri.ts wraps).
-// It calls them through the seal's `hostInvoke`: once the page is sealed, `invoke` from
-// @tauri-apps/api/core (which src/lib/tauri.ts uses) is rejected for non-allowlisted commands.
 //
 // Limits: Rust scopes these commands to the workspace root; `read_directory` hides dotfiles;
 // there is no binary read/write command yet, so readBinary/writeBinary are not provided.
-import { hostInvoke } from "../seal/seal";
+import { invoke } from "@tauri-apps/api/core";
 import type { DirEntry, FileContent } from "@/types/fs";
 import type { VaultEntry, VaultIo, VaultStat } from "./vault";
 
-const call = <T>(cmd: string, args: Record<string, unknown>): Promise<T> =>
-  hostInvoke(cmd, args) as Promise<T>;
+const call = <T>(cmd: string, args: Record<string, unknown>): Promise<T> => invoke<T>(cmd, args);
 
 /** `root` is the absolute workspace root; `name` the vault display name. */
 export function createTauriVaultIo(root: string, name: string): VaultIo {

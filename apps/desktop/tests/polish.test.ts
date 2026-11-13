@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-vi.mock("../src/lib/obsidian-host/seal/seal", () => ({
-  hostInvoke: vi.fn(),
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -55,7 +55,7 @@ describe("keyboard shortcuts - tab navigation", () => {
   });
 
   test("Cmd+W closes current tab", async () => {
-    const { hostInvoke: invoke } = vi.mocked(await import("../src/lib/obsidian-host/seal/seal"));
+    const { invoke } = vi.mocked(await import("@tauri-apps/api/core"));
     invoke.mockResolvedValue({ path: "/a.md", content: "a", modified_at: 1 });
 
     useEditorStore.setState({

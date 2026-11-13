@@ -12,7 +12,7 @@ Run Obsidian community plugins (first target: obsidian-copilot) inside Writer, i
 ## Phase 0 — prerequisites
 
 1. **Path containment (done).** `WorkspaceState::authorize_path` (`state.rs`) resolves symlinks and `..` and allows only the workspace root, a standalone window's one hosted file, or a pending open. `read_file`, `write_file`, `create_file`, `create_directory`, `rename_entry`, `delete_entry` check it and fail with `InvalidPath`. The `_impl` functions stay unscoped because `get_startup_state` reads the standalone file before it is registered. Tests in `state.rs`. Coverage is now complete, see Status below.
-2. **Seal before plugin load.** Capture `invoke` in the host, then neutralize `__TAURI_INTERNALS__` before any plugin script runs (opensidian `loader.js` `seal()`). Needs a spike to confirm the app keeps working afterwards.
+2. **Seal before plugin load (removed).** The plan was to capture `invoke` and neutralize `__TAURI_INTERNALS__` before any plugin script runs (opensidian `loader.js` `seal()`). It cannot work: Tauri defines `window.__TAURI_INTERNALS__` and every property on it (`invoke`, `ipc`, `postMessage`, ...) as non-writable and non-configurable, so any attempt throws "Attempting to change value of a readonly property". Verified by running the real built app in WKWebView. The in-page seal code, its tests and the `hostInvoke` indirection were deleted; all IPC uses plain `invoke` from `@tauri-apps/api/core`. See "Trust model" below.
 3. **CSP.** Add a `writer-plugin:` scheme to `script-src`; `'unsafe-eval'` and `blob:` only for a trusted vault. The asset protocol scope is narrowed (done, see Status).
 
 ## Status (Rust backend, 2026-11-13)
@@ -24,7 +24,24 @@ Done in `apps/desktop/src-tauri`:
 - **Asset scope**: `assetProtocol.scope` is `[]` in `tauri.conf.json`; the workspace root (recursive) is allowed when a workspace opens, a standalone file's folder (flat) plus its `<stem>-assets` folder when a standalone file opens. Tauri cannot remove an allow (`forbid_*` is permanent and wins), so grants last for the session instead of being revoked on close. Manual QA: open a vault with a note embedding `![](img/a.png)` and `![[b.png]]`, confirm both render; open the same note standalone with a sibling `note-assets/x.png`; confirm an image outside the opened folder (absolute path elsewhere on disk) no longer renders.
 - **Authorization coverage**: now also `read_directory`, `read_file_entries` (the old lexical `starts_with` let `root/../x` through), `file_exists` (answers false outside reach), `reveal_in_file_manager`, `save_clipboard_image`, `find_file_by_name`. Standalone windows additionally get read-only probes of sibling entries and `<stem>-assets` (`authorize_probe`). Intentionally unscoped: `open_workspace`, `restore_workspace`, `open_workspace_in_new_window`, `open_file_in_standalone_window` (they pick a new root, normally from a native dialog or recents), `watch_standalone_file` (it defines the standalone file; widening it is its job), `save_session` / `load_session` / `remove_recent_workspace` (app-data keyed by a root string, no file access), `index_workspace` / `fuzzy_search` / `read_recent_files` (use the window's own index). `create_sidebar_entry` and the terminal commands already confine themselves to the root.
 
-Still open: the TS side of all the above, and the seal step (Phase 0.2).
+Seal: removed (Phase 0.2), not open. The TS host boots plugins for a trusted vault directly.
+
+## Trust model (no in-page sandbox)
+
+Trusting a vault means its plugins run with the app's privileges, exactly as in Obsidian itself. Plugin code shares the webview with Writer and can call any Writer IPC command. Restricted mode (default, per vault) means no plugin code is loaded at all. What still holds:
+
+- **Restricted by default.** Nothing from `.obsidian/plugins` is evaluated until the user confirms trust for that vault; the confirmation says plainly that plugins are not sandboxed.
+- **File access is confined by Rust**, not by the page: `authorize_path` limits every file command to the window's workspace root (symlinks and `..` resolved), whoever calls it.
+- **Process spawn needs native consent** on every spawn (dialog drawn by Rust, not spoofable from the page).
+- **Network**: `plugin_http` works only for trusted vaults, http/https only, and refuses cloud-metadata addresses.
+- **Store**: marketplace installs come from a GitHub-only allowlist.
+
+Residual risks, stated honestly: a malicious plugin in a trusted vault can call any Writer IPC command that is not path-confined (settings, workspace switching and other commands listed as intentionally unscoped above), read and change every note in the vault, exfiltrate over `plugin_http` or the webview's own network access, and mislead the user in the UI. Users should only trust vaults and plugins they trust.
+
+Future options, deferred or rejected for now:
+
+- **Isolated plugin webview with its own capability set** (deferred): the only real boundary, since Tauri capabilities are per window and a plugin window would not get Writer's commands. Rejected for now because plugins need synchronous DOM and editor access (`app.workspace`, `registerEditorExtension`, views mounted into Writer's panes), which cannot cross a webview boundary without rewriting the API shim as an RPC layer.
+- **Sandboxed iframe** (rejected for now): same DOM-access problem, and an iframe inside the main webview still reaches `window.parent.__TAURI_INTERNALS__` unless it is cross-origin, which would break the `writer-plugin://` loading and the API shim the same way.
 
 ## Phases 1–4
 

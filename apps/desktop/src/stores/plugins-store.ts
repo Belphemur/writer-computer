@@ -5,8 +5,8 @@
 // and disable changes go through the actions below; components never talk to the host directly.
 //
 // Lifecycle: `attach(root)` creates the host and only boots (loads plugins) when the backend says
-// the vault is trusted, after sealing the Tauri bridge. A failed seal is fail-closed: nothing is
-// booted and `bootError` carries the reason. `attach`/`detach` are serialized and generation-
+// the vault is trusted. Plugins run with the app's privileges (there is no in-page sandbox; see
+// SPECs/obsidian-plugins-spec.md). `attach`/`detach` are serialized and generation-
 // checked so a fast workspace switch can never leave two live hosts.
 import { create } from "zustand";
 import type { Extension } from "@codemirror/state";
@@ -20,7 +20,6 @@ import type {
 } from "@/lib/obsidian-host";
 import type { LeafPlacement, WorkspaceBridge, WorkspaceLeaf } from "@/lib/obsidian-host/api/views";
 import { setPluginEditorExtensions, findEditorView } from "@/lib/obsidian-host/editor-bridge";
-import { sealTauri } from "@/lib/obsidian-host/seal/seal";
 import {
   createWorkspaceBridge,
   toVaultPath,
@@ -39,8 +38,6 @@ const PANE_DEFAULT_WIDTH = 360;
 export interface PluginsDeps {
   /** Builds the host. Default: lazy-imports the shim and uses the Tauri-backed vault IO. */
   createHost?: (root: string, name: string, bridge: WorkspaceBridge) => Promise<PluginHost>;
-  /** Seals the Tauri bridge. Must throw when sealing is impossible. Default: `sealTauri`. */
-  seal?: () => void;
 }
 
 const defaultDeps: Required<PluginsDeps> = {
@@ -48,13 +45,12 @@ const defaultDeps: Required<PluginsDeps> = {
     const { PluginHost } = await import("@/lib/obsidian-host");
     return PluginHost.forWorkspace(root, name, bridge);
   },
-  seal: () => void sealTauri(),
 };
 
 interface PluginsState {
   root: string | null;
   snapshot: HostSnapshot | null;
-  /** Why plugins are not running (seal or boot failure). Null when fine. */
+  /** Why plugins are not running (boot failure). Null when fine. */
   bootError: string | null;
   /** Last failed user action (enable/disable/trust) or rejected editor extension. */
   actionError: string | null;
@@ -85,7 +81,6 @@ interface PluginsState {
 
 interface Session {
   host: PluginHost;
-  seal: () => void;
   unsubscribe: () => void;
 }
 
@@ -227,19 +222,6 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
     set({ ...IDLE });
   }
 
-  /** Seals the bridge. False means sealing failed: the caller must not load any plugin (fail closed). */
-  function sealOrFail(current: Session): boolean {
-    try {
-      current.seal();
-      return true;
-    } catch (e) {
-      const message = `Plugins are disabled: could not seal the Tauri bridge (${messageOf(e)})`;
-      console.error("[plugins]", message);
-      set({ bootError: message });
-      return false;
-    }
-  }
-
   async function runAction(label: string, fn: (current: Session) => Promise<void>): Promise<void> {
     const current = session;
     if (!current) {
@@ -264,7 +246,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       return enqueue(async () => {
         await teardown();
         if (gen !== generation) return;
-        const { createHost, seal } = { ...defaultDeps, ...deps };
+        const { createHost } = { ...defaultDeps, ...deps };
         set({ root });
         let host: PluginHost | null = null;
         try {
@@ -274,13 +256,12 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
             await host.shutdown();
             return;
           }
-          const current: Session = { host, seal, unsubscribe: wire(gen, host) };
+          const current: Session = { host, unsubscribe: wire(gen, host) };
           session = current;
           // Read-only: lists what is installed and whether this vault is trusted.
           await host.refresh();
           set({ snapshot: host.getSnapshot() });
           if (host.getSnapshot().trusted) {
-            if (!sealOrFail(current)) return;
             await host.boot();
             if (gen !== generation) return;
             host.app.workspace.markLayoutReady();
@@ -301,7 +282,6 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       runAction(
         trusted ? "Trusting community plugins" : "Restricting community plugins",
         async (current) => {
-          if (trusted && !sealOrFail(current)) return;
           set({ bootError: null });
           await current.host.setTrust(trusted);
           if (trusted) current.host.app.workspace.markLayoutReady();
@@ -311,7 +291,6 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
     setEnabled: (id, enabled) =>
       runAction(`${enabled ? "Enabling" : "Disabling"} plugin ${id}`, async (current) => {
         if (enabled) {
-          if (!sealOrFail(current)) return;
           await current.host.enable(id);
           current.host.app.workspace.markLayoutReady();
         } else {

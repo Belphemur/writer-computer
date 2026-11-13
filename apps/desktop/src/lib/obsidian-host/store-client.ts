@@ -1,7 +1,6 @@
 // Typed client for the community-plugin store commands. Components and the catalog store only
-// see `PluginStoreClient`, so tests can fake it; the default implementation goes through the
-// seal's `hostInvoke` (never `@tauri-apps/api/core`).
-import { hostInvoke } from "./seal/seal";
+// see `PluginStoreClient`, so tests can fake it; the default implementation uses Tauri's `invoke`.
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { InstalledPlugin } from "./ipc";
 
 export interface StoreEntry {
@@ -112,7 +111,7 @@ export function errorMessage(e: unknown): string {
 type Invoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 
 export function createStoreClient(
-  invoke: Invoke = (cmd, args) => hostInvoke(cmd, args),
+  invoke: Invoke = (cmd, args) => tauriInvoke(cmd, args),
 ): PluginStoreClient {
   const call = async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     try {

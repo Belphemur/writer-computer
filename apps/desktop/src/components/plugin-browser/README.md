@@ -1,6 +1,6 @@
 # plugin-browser
 
-Community-plugin marketplace UI. Props-driven; state lives in `@/stores/plugin-store-catalog`, backend calls in `@/lib/obsidian-host/store-client.ts` (via the seal's `hostInvoke`).
+Community-plugin marketplace UI. Props-driven; state lives in `@/stores/plugin-store-catalog`, backend calls in `@/lib/obsidian-host/store-client.ts`.
 
 ## Props (`PluginBrowser`)
 

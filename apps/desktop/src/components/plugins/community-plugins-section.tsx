@@ -13,9 +13,9 @@ import { BooleanControl } from "@/components/settings-panel/setting-control";
 import type { SettingTabLike } from "@/lib/obsidian-host/api/core";
 
 const TRUST_MESSAGE =
-  "Community plugins are code written by third parties. Once enabled they can read and change " +
-  "every note in this vault and run with the same access as Writer itself. Only turn this on " +
-  "for vaults and plugins you trust.";
+  "Community plugins are code written by third parties. They run with full access to this " +
+  "vault and to Writer's commands and are not sandboxed. Only turn this on for vaults and " +
+  "plugins you trust.";
 
 const ROW = "flex items-start justify-between gap-4 px-4 py-3.5";
 const TITLE = "text-[13px] font-medium text-[var(--text-primary)]";

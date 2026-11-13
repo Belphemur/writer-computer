@@ -2,9 +2,9 @@
 
 ## In Progress
 
-- Obsidian plugin host (Copilot first, Bases later): [`SPECs/obsidian-plugins-spec.md`](SPECs/obsidian-plugins-spec.md) — port opensidian's plugin loader and marketplace. Phase 0 path containment is done (`authorize_path`); next: seal `__TAURI_INTERNALS__` spike, CSP/scheme, then the Rust plugin modules.
+- Obsidian plugin host (Copilot first, Bases later): [`SPECs/obsidian-plugins-spec.md`](SPECs/obsidian-plugins-spec.md) — port opensidian's plugin loader and marketplace. Phase 0 path containment is done (`authorize_path`); the in-page `__TAURI_INTERNALS__` seal was tried and removed (Tauri defines it non-configurable); trusted vault == plugins run with app privileges, see the spec's Trust model.
 
-- Obsidian plugin host UI wiring: seal wired through `hostInvoke` (all app IPC), `plugins-store` (single write path), `WorkspaceBridge` (active file/editor, right pane for ItemViews, ribbon, status strip, plugin settings under Settings > Community plugins), command-palette registry, `registerEditorExtension` through a shared Compartment, watcher events to `vault.notifyExternal`, real `moment`. Next: manual QA with obsidian-copilot, then the marketplace UI.
+- Obsidian plugin host UI wiring: `plugins-store` (single write path), `WorkspaceBridge` (active file/editor, right pane for ItemViews, ribbon, status strip, plugin settings under Settings > Community plugins), command-palette registry, `registerEditorExtension` through a shared Compartment, watcher events to `vault.notifyExternal`, real `moment`. Next: manual QA with obsidian-copilot, then the marketplace UI.
 
 - Reveal-in-sidebar + residual external-watcher misses: [`SPECs/reveal-in-sidebar-and-external-watcher-spec.md`](SPECs/reveal-in-sidebar-and-external-watcher-spec.md) — keep the explicit tab-context-menu "Reveal in sidebar" action working, leave ordinary file opens from expanding the Everything tree, and characterize the remaining external-file-watcher miss cases through a logging + manual-repro pass before patching further.
 

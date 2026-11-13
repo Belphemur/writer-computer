@@ -7,7 +7,6 @@ TypeScript core of Writer's Obsidian-plugin host. Adapted from opensidian (GPL-3
 ```
 PluginHost (loader.ts)            lifecycle, status map, script injection, require
   ├─ HostIpc (ipc.ts)             Rust backend boundary (faked in tests)
-  ├─ seal/seal.ts                 neutralizes __TAURI_INTERNALS__ before the first plugin runs
   ├─ App (api/app.ts)             what a plugin sees as `this.app`
   │    ├─ Vault + MetadataCache   over an injectable VaultIo (api/vault.ts, api/vault-io-tauri.ts)
   │    ├─ Workspace               over an injectable WorkspaceBridge (api/views.ts)
@@ -18,8 +17,8 @@ PluginHost (loader.ts)            lifecycle, status map, script injection, requi
 - **Teardown has one write path.** Everything a plugin registers goes into an `OwnedRegistry` keyed by plugin id (`api/core.ts`); disabling is `plugin.unload()` (runs `register`/`registerEvent`/`registerInterval` cleanups, then `onunload`) followed by `services.sweep(id)` and removing the style tag. Workspace views and open modals are swept through `services.addSweeper`.
 - **Loading.** `main.js` is injected as `<script src="writer-plugin://localhost/<id>/main.js?n=K">`. Rust serves it wrapped as `__writerPluginDefine("<id>", function (module, exports, require, process, global, Buffer) { ... })`. The global is installed non-writable by the loader; only a define for a pending load is honoured.
 - **Status.** `host.getSnapshot()` / `host.subscribe` follow the `useSyncExternalStore` contract: `{trusted, booted, installed, status: {id: {state: "enabled" | "failed" | "disabled", error?}}}`. A failing plugin is torn down fully; its enabled flag stays set (Obsidian parity).
-- **Seal ordering.** Plugins run only after `sealTauri()`. From then on `@tauri-apps/api/core`'s `invoke` is rejected for Writer's own commands; host code must use `hostInvoke` from `seal/seal.ts` (`ipc.ts` and `api/vault-io-tauri.ts` do).
-- **App wiring.** `usePluginHostLifecycle` (mounted in `App`) attaches the store when a workspace window has resolved startup and detaches on workspace change; standalone/compact windows and the welcome screen never boot. `attach` reads backend state first and only seals + boots when the vault is trusted (`plugins_state`). A failed seal is fail-closed: nothing loads and `bootError` is shown under Settings > Community plugins. All app IPC (`src/lib/tauri.ts`) goes through `hostInvoke`; `tel:` was added to the sealed opener's safe schemes because the app opens any explicit-scheme link.
+- **No in-page sandbox.** Tauri defines `__TAURI_INTERNALS__` non-writable and non-configurable, so the page cannot be sealed. A trusted vault's plugins run with the app's privileges (like Obsidian); Rust-side path authorization, native spawn consent and trusted-vault gating are the remaining defences. See the spec's Trust model.
+- **App wiring.** `usePluginHostLifecycle` (mounted in `App`) attaches the store when a workspace window has resolved startup and detaches on workspace change; standalone/compact windows and the welcome screen never boot. `attach` reads backend state first and only boots when the vault is trusted (`plugins_state`); a boot failure is shown as `bootError` under Settings > Community plugins.
 - **Host wiring points.** The host UI owns what is visible: it implements `WorkspaceBridge` (mount `leaf.containerEl`, reveal, active file/editor), renders `services.ribbon`/`statusBar`/`settingTabs` items (each has a ready DOM element), calls `app.workspace.markLayoutReady()`, and forwards file-watcher events to `app.vault.notifyExternal`.
 
 ## IPC contract (Tauri commands)

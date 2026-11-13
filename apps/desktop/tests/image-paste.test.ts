@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 import { formatMarkdownDestination, getParentDir, resolveImagePath } from "../src/lib/paths";
 
-vi.mock("../src/lib/obsidian-host/seal/seal", () => ({
-  hostInvoke: vi.fn(),
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
 describe("resolveImagePath", () => {
@@ -63,7 +63,7 @@ describe("getParentDir", () => {
 
 describe("saveClipboardImage IPC", () => {
   test("calls correct command", async () => {
-    const { hostInvoke: invoke } = await import("../src/lib/obsidian-host/seal/seal");
+    const { invoke } = await import("@tauri-apps/api/core");
     const mockedInvoke = vi.mocked(invoke);
     mockedInvoke.mockResolvedValue({
       relative_path: "note-assets/img.png",
