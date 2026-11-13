@@ -14,6 +14,14 @@ export { createObsidianModule } from "./obsidian-module";
 export type { ObsidianModule } from "./obsidian-module";
 export { makeRequire, UnsupportedModuleError } from "./modules";
 export type { RequireFn } from "./modules";
+export {
+  primeSyncFileContents,
+  registerSyncProbePaths,
+  setNodeIpc,
+  setOpenExternal,
+  tauriNodeIpc,
+} from "./node";
+export type { NodeIpc, NodeOsInfo, ProcEvent, ProcSpawnRequest, FsProbe } from "./node";
 
 export { App, FileManager, createApp } from "./api/app";
 export type { AppDeps } from "./api/app";

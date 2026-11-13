@@ -129,13 +129,15 @@ export function setIcon(parent: HTMLElement, iconId: string): void {
 
 /**
  * `isDesktop`/`isMobile` describe the UI mode (Writer is a desktop-layout app). `isDesktopApp` means
- * "Electron": plugins gate Node/Electron `require`s on it (Copilot: `isDesktopApp && !isMobile`),
- * and Writer has neither, so it is false and such plugins degrade instead of crashing.
+ * "Electron": plugins gate Node/Electron `require`s on it (Copilot: `isDesktopApp && !isMobile`).
+ * It is true because the host always wires the Node surface (`./node/`: `require`, `process`,
+ * `Buffer`, and the globals installed while a plugin is loaded) for every plugin; the flag is
+ * only honest while that wiring is active, so do not set it from code that bypasses `PluginHost`.
  */
 export const Platform = {
   isDesktop: true,
   isMobile: false,
-  isDesktopApp: false,
+  isDesktopApp: true,
   isMobileApp: false,
   isIosApp: false,
   isAndroidApp: false,

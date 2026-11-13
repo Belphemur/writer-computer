@@ -6,6 +6,8 @@
 //   1. load(id) injects <script src="writer-plugin://localhost/<id>/main.js?n=K">. Rust serves
 //      it only for a trusted vault and an enabled id, wrapped as
 //        __writerPluginDefine("<id>", function (module, exports, require, process, global, Buffer) { ... })
+//      (`require`/`process`/`Buffer` are the Node surface in ./node/, also installed as globals while a
+//      plugin is loaded)
 //   2. __writerPluginDefine hands the factory to the load that is PENDING for that id; a define
 //      nobody asked for is ignored.
 //   3. the factory runs with a fresh module/exports and a per-plugin `require`. Any throw (a
@@ -20,7 +22,13 @@ import { tauriHostIpc, pluginScriptUrl, type HostIpc, type PluginsState } from "
 import { makeRequire } from "./modules";
 import { createObsidianModule, type ObsidianModule } from "./obsidian-module";
 import { installDomHelpers } from "./api/dom";
-import { createProcessShim } from "./node-shims";
+import { Buffer as NodeBuffer } from "./node/buffer";
+import type { NodeIpc } from "./node/ipc";
+import { getSharedProcess } from "./node/process";
+import { ensureDeviceId } from "./node/device-id";
+import { installNodeGlobals, preloadNodeRuntime } from "./node/runtime";
+import { seedCopilotDataIfAbsent } from "./node/seed-plugin-data";
+import { getNodeIpc } from "./node/state";
 import { installGlobalFetch, pluginScopedFetch } from "./api/network";
 
 export type PluginState = "enabled" | "failed" | "disabled";
@@ -51,6 +59,10 @@ export interface PluginHostOptions {
   bridge?: WorkspaceBridge;
   loadScript?: ScriptLoader;
   styles?: StyleSink;
+  /** Backend of the Node surface (child processes, os info, fs probes). Default: Tauri. */
+  nodeIpc?: NodeIpc;
+  /** Where `process`/`Buffer`/`require` globals are installed. Default: `globalThis`. */
+  nodeGlobalTarget?: object;
 }
 
 type DefineFactory = (...args: unknown[]) => void;
@@ -137,9 +149,15 @@ export class PluginHost {
   private snapshot: HostSnapshot;
   private uninstallDom: (() => void) | null = null;
   private uninstallFetch: (() => void) | null = null;
+  private uninstallNode: (() => void) | null = null;
+  private nodeReady: Promise<void> | null = null;
+  private readonly io: VaultIo;
+  private readonly options: PluginHostOptions;
   private loading = 0;
 
   constructor(options: PluginHostOptions) {
+    this.options = options;
+    this.io = options.io;
     this.ipc = options.ipc ?? tauriHostIpc;
     this.loadScript = options.loadScript ?? domScriptLoader;
     this.styles = options.styles ?? domStyleSink;
@@ -307,6 +325,10 @@ export class PluginHost {
     }
     this.loading++;
     try {
+      // The Node surface must be seeded (os info, login PATH, sync-fs cache) before any plugin
+      // script evaluates; it never rejects.
+      await this.ensureNodeRuntime();
+      await this.seedPluginData(id);
       this.installDom();
       const exports = await this.evaluate(id);
       const Ctor = resolvePluginClass(id, exports);
@@ -348,7 +370,38 @@ export class PluginHost {
     this.removeDomWhenIdle();
   }
 
+  /** Seeds Copilot's data.json on its first enable (never overwrites); failures are not fatal. */
+  private async seedPluginData(id: string): Promise<void> {
+    if (id !== "copilot") return;
+    try {
+      await seedCopilotDataIfAbsent({
+        pluginId: id,
+        dataExists: async () => ((await this.ipc.dataRead(id)) ?? "").trim() !== "",
+        writeData: (json) => this.ipc.dataWrite(id, json),
+        claudePath: await getNodeIpc()
+          .which("claude")
+          .catch(() => null),
+        deviceId: ensureDeviceId(),
+      });
+    } catch (e) {
+      console.warn(`[plugin] ${id}: settings seed skipped: ${messageOf(e)}`);
+    }
+  }
+
+  private ensureNodeRuntime(): Promise<void> {
+    this.nodeReady ??= preloadNodeRuntime({
+      ipc: this.options.nodeIpc,
+      basePath: this.io.basePath,
+    });
+    return this.nodeReady;
+  }
+
   private installDom(): void {
+    // `process`/`Buffer`/`require` globals: bundled SDKs read the bare globals at module load.
+    this.uninstallNode ??= installNodeGlobals(
+      makeRequire("host", this.obsidian, { io: this.io, global: true }),
+      this.options.nodeGlobalTarget,
+    );
     if (typeof window === "undefined") return;
     this.uninstallDom ??= installDomHelpers();
     this.uninstallFetch ??= installGlobalFetch();
@@ -360,6 +413,8 @@ export class PluginHost {
     this.uninstallDom = null;
     this.uninstallFetch?.();
     this.uninstallFetch = null;
+    this.uninstallNode?.();
+    this.uninstallNode = null;
   }
 
   private async readStyles(id: string): Promise<string> {
@@ -381,14 +436,14 @@ export class PluginHost {
             module.exports,
             module,
             module.exports,
-            makeRequire(id, this.obsidian),
-            createProcessShim(),
+            makeRequire(id, this.obsidian, { io: this.io }),
+            getSharedProcess(),
             globalThis,
-            (globalThis as { Buffer?: unknown }).Buffer,
+            NodeBuffer,
             Error,
             `${PLUGIN_DIR_PREFIX}${id}/main.js`,
             `${PLUGIN_DIR_PREFIX}${id}`,
-            (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer,
+            (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer ?? ArrayBuffer,
             pluginScopedFetch,
           );
           resolve(module.exports);

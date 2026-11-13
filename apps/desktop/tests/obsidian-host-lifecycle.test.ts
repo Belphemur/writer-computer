@@ -311,7 +311,7 @@ describe("failures", () => {
 });
 
 describe("require", () => {
-  it("serves obsidian, the app's CodeMirror and path; refuses fs calls and other builtins", async () => {
+  it("serves obsidian, the app's CodeMirror and path; unknown ids are MODULE_NOT_FOUND", async () => {
     const seen: Record<string, unknown> = {};
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { host } = setup({
@@ -322,7 +322,7 @@ describe("require", () => {
           seen.joined = require("node:path").join("a", "..", "b", "c.md");
           let fsError = "";
           try {
-            require("fs").readFileSync("/etc/passwd");
+            require("fs").readFileSync("/etc/passwd"); // sync fs only knows probed paths
           } catch (e) {
             fsError = (e as Error).message;
           }
@@ -330,7 +330,7 @@ describe("require", () => {
           module.exports = class extends Plugin {};
         },
         cp: (_m, _e, require) => {
-          require("child_process");
+          require("worker_threads");
         },
         cmx: (_m, _e, require) => {
           require("@codemirror/not-a-module");
@@ -342,10 +342,8 @@ describe("require", () => {
     expect(host.getStatus("ok").state).toBe("enabled");
     expect(seen.state).toBe(cmState);
     expect(seen.joined).toBe("b/c.md");
-    expect(seen.fsError).toMatch(/not supported in Writer/);
-    expect(host.getStatus("cp").error).toBe(
-      'cp: require("child_process") is not supported in Writer (no Node.js built-ins are available to plugins)',
-    );
+    expect(seen.fsError).toMatch(/^ENOENT: no such file or directory/);
+    expect(host.getStatus("cp").error).toBe("Cannot find module 'worker_threads'");
     expect(host.getStatus("cmx").error).toMatch(/@codemirror\/not-a-module/);
   });
 });

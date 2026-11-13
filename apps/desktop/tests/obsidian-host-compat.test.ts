@@ -16,6 +16,7 @@ import {
 } from "../src/lib/obsidian-host/api/views";
 import { PluginHost, type ScriptLoader } from "../src/lib/obsidian-host/loader";
 import { createProcessShim } from "../src/lib/obsidian-host/node-shims";
+import { resetNodeRuntimeForTests } from "../src/lib/obsidian-host/node/state";
 import { createObsidianModule } from "../src/lib/obsidian-host/obsidian-module";
 import { createMemoryVaultIo, FakeHostIpc } from "../src/lib/obsidian-host/testing";
 
@@ -429,7 +430,9 @@ describe("Platform, apiVersion and the process shim", () => {
   it("separates UI mode from the Electron app", () => {
     expect(Platform.isDesktop).toBe(true);
     expect(Platform.isMobile).toBe(false);
-    expect(Platform.isDesktopApp).toBe(false); // no Electron/Node: Copilot-style gates degrade
+    // The host always wires the Node surface (require/process/Buffer), so Copilot-style
+    // `isDesktopApp && !isMobile` gates open.
+    expect(Platform.isDesktopApp).toBe(true);
     expect(Platform.isMobileApp).toBe(false);
     expect(typeof Platform.resourcePathPrefix).toBe("string");
   });
@@ -442,6 +445,7 @@ describe("Platform, apiVersion and the process shim", () => {
   });
 
   it("process exposes the fields plugin bundles read", async () => {
+    resetNodeRuntimeForTests();
     const p = createProcessShim() as {
       platform: string;
       env: Record<string, string>;
