@@ -6,10 +6,14 @@
 //! `WorkspaceState::authorize_path`, and maps errors to `AppError`.
 
 use crate::error::AppError;
+use crate::plugin_consent::{ConsentStore, Remembered};
+use crate::plugin_env::{self, OsInfo, PluginEnv, ProbeResult, ProbeScope};
 use crate::plugin_http::{
     self, HttpClient, HttpRequest, HttpResponse, StreamEvent, StreamRegistry,
 };
-use crate::plugin_proc::{self, Consent, ConsentRequest, ProcEvent, ProcManager, SpawnRequest};
+use crate::plugin_proc::{
+    self, Consent, ConsentRequest, Decision, ProcEvent, ProcManager, Sig, SpawnRequest,
+};
 use crate::plugin_store;
 use crate::plugins::{self, Served};
 use crate::state::{AppState, WorkspaceState};
@@ -19,9 +23,10 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const TRUST_FILE: &str = "plugins_trust.json";
+const CONSENT_FILE: &str = "plugins_proc_consent.json";
 
 #[derive(Debug, Serialize)]
 pub struct InstalledPlugin {
@@ -55,6 +60,14 @@ impl Ctx {
             ))
         }
     }
+}
+
+fn consent_store(app: &tauri::AppHandle) -> Result<ConsentStore, AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(ConsentStore::new(dir.join(CONSENT_FILE)))
 }
 
 fn trust_file(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -137,8 +150,12 @@ pub async fn plugins_set_trust(
     let root = ctx.root.clone();
     blocking(move || plugins::set_trusted(&ctx.trust_file, &ctx.root, trusted).map_err(io)).await?;
     if !trusted {
-        // Restricted mode: nothing the vault's plugins started may keep running.
+        // Restricted mode: nothing the vault's plugins started may keep running,
+        // and no "always allow" survives the revoke.
         stop_vault_work(&app, &root);
+        let store = consent_store(&app)?;
+        let root2 = root.clone();
+        blocking(move || store.clear_vault(&root2).map_err(io)).await?;
     }
     Ok(())
 }
@@ -156,6 +173,9 @@ pub fn stop_window_work(app: &tauri::AppHandle, label: &str) {
     }
     if let Some(procs) = app.try_state::<ProcManager>() {
         procs.kill_window(label);
+    }
+    if let Some(env) = app.try_state::<PluginEnv>() {
+        env.forget_window(label);
     }
 }
 
@@ -336,13 +356,19 @@ struct DialogConsent {
     window: Option<tauri::Window>,
 }
 
+const BTN_ONCE: &str = "Run once";
+const BTN_ALWAYS: &str = "Always allow this program in this vault";
+const BTN_DENY: &str = "Deny";
+
 impl Consent for DialogConsent {
-    fn ask(&self, req: &ConsentRequest) -> bool {
+    fn ask(&self, req: &ConsentRequest) -> Decision {
         use std::sync::atomic::Ordering;
-        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        use tauri_plugin_dialog::{
+            DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+        };
         if CONSENT_PENDING.fetch_add(1, Ordering::SeqCst) >= MAX_PENDING_CONSENTS {
             CONSENT_PENDING.fetch_sub(1, Ordering::SeqCst);
-            return false;
+            return Decision::Deny;
         }
         // one dialog at a time: a plugin spawning in a loop queues here
         let _turn = CONSENT_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
@@ -352,21 +378,41 @@ impl Consent for DialogConsent {
             .message(req.message())
             .title("Writer: run program?")
             .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Run once".to_string(),
-                "Deny".to_string(),
+            .buttons(MessageDialogButtons::YesNoCancelCustom(
+                BTN_ONCE.to_string(),
+                BTN_ALWAYS.to_string(),
+                BTN_DENY.to_string(),
             ));
         if let Some(w) = &self.window {
             d = d.parent(w);
         }
-        let answer = d.blocking_show();
+        let answer = d.blocking_show_with_result();
         CONSENT_PENDING.fetch_sub(1, Ordering::SeqCst);
-        answer
+        match answer {
+            MessageDialogResult::Yes => Decision::Once,
+            MessageDialogResult::No => Decision::Always,
+            MessageDialogResult::Custom(s) if s == BTN_ONCE => Decision::Once,
+            MessageDialogResult::Custom(s) if s == BTN_ALWAYS => Decision::Always,
+            _ => Decision::Deny,
+        }
     }
 }
 
-/// Start a program for a plugin. ALWAYS shows a native consent dialog first.
-/// Events arrive on `on_event` (see `ProcEvent`); returns the process id.
+/// Payload of the `plugin-proc:spawned` window event, sent for EVERY spawn
+/// (also remembered programs that skipped the dialog).
+#[derive(Clone, Serialize)]
+struct SpawnedEvent {
+    plugin_id: String,
+    program: String,
+    args: Vec<String>,
+    cwd: String,
+    pid: u32,
+}
+
+/// Start a program for a plugin. Shows a native consent dialog first unless
+/// the user chose "Always allow" for this program, plugin and vault. Events
+/// arrive on `on_event` (see `ProcEvent`); returns the process id. A program
+/// that cannot be found or exec'd is a terminal `error` event, not a rejection.
 #[tauri::command]
 pub async fn plugin_proc_spawn(
     request: SpawnRequest,
@@ -388,12 +434,44 @@ pub async fn plugin_proc_spawn(
             "cwd must be a directory inside the vault".into(),
         ));
     }
-    let prepared = plugin_proc::prepare(&request, cwd).map_err(io)?;
+    let sink: plugin_proc::Emit = Arc::new(move |ev| on_event.send(ev).is_ok());
+    let prepared = match plugin_proc::prepare(&request, cwd) {
+        Ok(p) => p,
+        // nothing to run and nothing to ask about: report it like a failed exec
+        Err(e) if e.starts_with("ENOENT") => {
+            return Ok(app.state::<ProcManager>().fail(&sink, "ENOENT", e));
+        }
+        Err(e) => return Err(io(e)),
+    };
     let consent = DialogConsent {
         app: app.clone(),
         window: webview.window().into(),
     };
-    let emit: plugin_proc::Emit = Arc::new(move |ev| on_event.send(ev).is_ok());
+    let store = consent_store(&app)?;
+    let emit: plugin_proc::Emit = {
+        let app = app.clone();
+        let label = label.clone();
+        let info = SpawnedEvent {
+            plugin_id: request.plugin_id.clone(),
+            program: prepared.program.to_string_lossy().into_owned(),
+            args: prepared.args.clone(),
+            cwd: prepared.cwd.to_string_lossy().into_owned(),
+            pid: 0,
+        };
+        Arc::new(move |ev| {
+            if let ProcEvent::Spawn { pid } = &ev {
+                let _ = app.emit_to(
+                    label.as_str(),
+                    "plugin-proc:spawned",
+                    SpawnedEvent {
+                        pid: *pid,
+                        ..info.clone()
+                    },
+                );
+            }
+            sink(ev)
+        })
+    };
     let root = ctx.root.clone();
     let app2 = app.clone();
     let label2 = label.clone();
@@ -411,7 +489,7 @@ pub async fn plugin_proc_spawn(
         };
         app2.state::<ProcManager>()
             .spawn_with_consent(
-                &consent, &label2, &root, &plugin_id, &prepared, &still_ok, emit,
+                &consent, &store, &label2, &root, &plugin_id, &prepared, &still_ok, emit,
             )
             .map_err(io)
     })
@@ -451,16 +529,101 @@ pub fn plugin_proc_close_stdin(
         .map_err(io)
 }
 
-/// Kill the process and its group; an `exit` event follows.
+/// Signal a process; the terminal event follows once it is gone.
+/// `signal` defaults to SIGTERM (graceful; the TS side escalates to SIGKILL),
+/// `group` to true (`kill(-pgid)`, so grandchildren get it too). No caller
+/// relied on the old SIGKILL default.
 #[tauri::command]
 pub fn plugin_proc_kill(
     proc_id: u64,
+    signal: Option<String>,
+    group: Option<bool>,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
+    trusted_ctx(&webview, &app)?;
+    let sig = Sig::parse(signal.as_deref().unwrap_or("SIGTERM")).map_err(io)?;
     app.state::<ProcManager>()
-        .kill(webview.label(), proc_id)
+        .kill(webview.label(), proc_id, sig, group.unwrap_or(true))
         .map_err(io)
+}
+
+#[tauri::command]
+pub fn plugins_consent_list(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<Remembered>, AppError> {
+    let ctx = trusted_ctx(&webview, &app)?;
+    Ok(consent_store(&app)?.list(&ctx.root))
+}
+
+#[tauri::command]
+pub async fn plugins_consent_revoke(
+    plugin_id: String,
+    program: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    let ctx = trusted_ctx(&webview, &app)?;
+    let store = consent_store(&app)?;
+    blocking(move || store.revoke(&ctx.root, &plugin_id, &program).map_err(io)).await
+}
+
+/* ------------------------------------------------------- plugin environment */
+
+/// Resolve an executable natively (no process, no consent).
+#[tauri::command]
+pub async fn plugin_which(
+    name: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, AppError> {
+    trusted_ctx(&webview, &app)?;
+    let found = blocking(move || plugin_env::which(&name).map_err(AppError::InvalidPath)).await?;
+    Ok(found.map(|p| {
+        app.state::<PluginEnv>().remember(webview.label(), &p);
+        p.to_string_lossy().into_owned()
+    }))
+}
+
+/// PATH of the user's login shell (cached for the app run).
+#[tauri::command]
+pub async fn plugin_resolve_login_path(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<String, AppError> {
+    trusted_ctx(&webview, &app)?;
+    blocking(|| Ok(plugin_env::login_path())).await
+}
+
+#[tauri::command]
+pub async fn plugin_os_info(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<OsInfo, AppError> {
+    trusted_ctx(&webview, &app)?;
+    blocking(|| Ok(plugin_env::os_info())).await
+}
+
+/// Read-only metadata for paths in the vault, `~/.claude` (and
+/// `CLAUDE_CONFIG_DIR`) or a path `plugin_which` returned for this window.
+#[tauri::command]
+pub async fn plugin_fs_probe(
+    paths: Vec<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<ProbeResult>, AppError> {
+    let ctx = trusted_ctx(&webview, &app)?;
+    let which = app.state::<PluginEnv>().seen(webview.label());
+    blocking(move || {
+        let scope = ProbeScope {
+            vault: &ctx.root,
+            claude_dirs: plugin_env::claude_dirs(),
+            which: &which,
+        };
+        plugin_env::probe(&paths, &scope).map_err(AppError::InvalidPath)
+    })
+    .await
 }
 
 /* ------------------------------------------------------------ URI scheme */

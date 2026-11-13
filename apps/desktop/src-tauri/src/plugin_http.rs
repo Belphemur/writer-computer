@@ -650,14 +650,16 @@ mod tests {
 
     #[test]
     fn redirects_are_followed_or_returned() {
+        // `Connection: close`: the helper serves one request per socket, so a
+        // pooled keep-alive connection would race its close (the old flake)
         let (port, rx) = serve(3, |i, _, mut c| {
             let _ = match i {
                 0 => c.write_all(
-                    b"HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\r\n",
+                    b"HTTP/1.1 302 Found\r\nLocation: /next\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
                 ),
-                1 => c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"),
+                1 => c.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nok"),
                 _ => c.write_all(
-                    b"HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\r\n",
+                    b"HTTP/1.1 302 Found\r\nLocation: /next\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
                 ),
             };
         });

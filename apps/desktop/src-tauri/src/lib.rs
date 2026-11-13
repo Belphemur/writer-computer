@@ -7,6 +7,8 @@ mod ignore;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod open_target;
+mod plugin_consent;
+mod plugin_env;
 mod plugin_http;
 mod plugin_proc;
 mod plugin_store;
@@ -518,6 +520,7 @@ pub fn run() {
         .manage(AppState::new())
         .manage(plugin_http::StreamRegistry::default())
         .manage(plugin_proc::ProcManager::default())
+        .manage(plugin_env::PluginEnv::default())
         .setup(|app| {
             // Initialize the main window's per-window state (settings layer,
             // pending-open queue). `get_or_create` lazily builds the
@@ -641,6 +644,12 @@ pub fn run() {
             commands::plugins::plugin_proc_write,
             commands::plugins::plugin_proc_close_stdin,
             commands::plugins::plugin_proc_kill,
+            commands::plugins::plugins_consent_list,
+            commands::plugins::plugins_consent_revoke,
+            commands::plugins::plugin_which,
+            commands::plugins::plugin_resolve_login_path,
+            commands::plugins::plugin_os_info,
+            commands::plugins::plugin_fs_probe,
             #[cfg(target_os = "macos")]
             commands::shell_install::cli_status,
             #[cfg(target_os = "macos")]

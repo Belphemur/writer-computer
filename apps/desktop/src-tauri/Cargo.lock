@@ -863,6 +863,7 @@ dependencies = [
  "ignore",
  "image",
  "libc",
+ "log",
  "notify",
  "objc2",
  "parking_lot",
