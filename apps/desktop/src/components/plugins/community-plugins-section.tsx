@@ -4,18 +4,14 @@ import {
   usePluginsActionError,
   usePluginsBootError,
   usePluginsSnapshot,
+  useOpenPluginBrowser,
+  useRequestPluginsTrust,
   useSetPluginEnabled,
   useSetPluginsTrusted,
 } from "@/hooks/use-plugins";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
-import { confirmAction } from "@/lib/tauri";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
 import type { SettingTabLike } from "@/lib/obsidian-host/api/core";
-
-const TRUST_MESSAGE =
-  "Community plugins are code written by third parties. They run with full access to this " +
-  "vault and to Writer's commands and are not sandboxed. Only turn this on for vaults and " +
-  "plugins you trust.";
 
 const ROW = "flex items-start justify-between gap-4 px-4 py-3.5";
 const TITLE = "text-[13px] font-medium text-[var(--text-primary)]";
@@ -63,14 +59,12 @@ export function CommunityPluginsSection() {
   const settingTabs = usePluginSettingTabs();
   const setTrusted = useSetPluginsTrusted();
   const setEnabled = useSetPluginEnabled();
+  const requestTrust = useRequestPluginsTrust();
+  const openBrowser = useOpenPluginBrowser();
   const [selected, setSelected] = useState<string | null>(null);
 
   // Community plugins belong to a vault: nothing to configure without a workspace.
   if (!root || !snapshot) return null;
-
-  async function requestTrust() {
-    if (await confirmAction(TRUST_MESSAGE, "Turn on community plugins?")) await setTrusted(true);
-  }
 
   const selectedTab = selected ? settingTabs.find((t) => t.owner === selected) : undefined;
 
@@ -99,6 +93,18 @@ export function CommunityPluginsSection() {
             </button>
           )}
         </div>
+        <div className={`${ROW} border-t border-[var(--line-subtler)]`}>
+          <div className="min-w-0 flex-1">
+            <div className={TITLE}>Browse community plugins</div>
+            <div className={SUBTITLE}>
+              Find, install and update plugins from the community catalog. Installing never turns a
+              plugin on.
+            </div>
+          </div>
+          <button type="button" className={BUTTON} onClick={openBrowser}>
+            Browse…
+          </button>
+        </div>
         {(bootError || actionError) && (
           <div
             role="alert"
@@ -109,7 +115,7 @@ export function CommunityPluginsSection() {
         )}
         {snapshot.installed.length === 0 && (
           <div className="border-t border-[var(--line-subtler)] px-4 py-3.5 text-[13px] text-[var(--text-muted)]">
-            No plugins installed in this vault (.obsidian/plugins).
+            No plugins installed in this vault (.obsidian/plugins). Use Browse to find some.
           </div>
         )}
         {snapshot.installed.map((plugin) => {

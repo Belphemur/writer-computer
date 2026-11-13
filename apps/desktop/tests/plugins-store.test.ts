@@ -9,7 +9,7 @@ import { Facet } from "@codemirror/state";
 import { PluginHost, type ScriptLoader } from "../src/lib/obsidian-host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../src/lib/obsidian-host/testing";
 import { getPluginEditorExtensions } from "../src/lib/obsidian-host/editor-bridge";
-import { usePluginsStore, type PluginsDeps } from "../src/stores/plugins-store";
+import { planReconcile, usePluginsStore, type PluginsDeps } from "../src/stores/plugins-store";
 
 type Factory = (module: { exports: any }, exports: any, require: (n: string) => any) => void;
 const g = globalThis as unknown as { __writerPluginDefine: (id: string, factory: unknown) => void };
@@ -214,5 +214,84 @@ describe("plugins store actions", () => {
     await usePluginsStore.getState().notifyExternal("modify", "/elsewhere/a.md");
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith("modify", "notes/a.md");
+  });
+});
+
+describe("planReconcile", () => {
+  const inst = (id: string, version = "1.0.0") => ({ id, manifest: { version } });
+  const loaded = (...e: [string, string][]) => new Map(e);
+
+  it("loads newly enabled installed plugins and unloads disabled or uninstalled ones", () => {
+    expect(
+      planReconcile(loaded(["a", "1.0.0"], ["b", "1.0.0"], ["c", "1.0.0"]), {
+        trusted: true,
+        enabled: ["a", "c", "d"],
+        installed: [inst("a"), inst("b"), inst("d")],
+      }),
+    ).toEqual({ unload: ["b", "c"], load: ["d"] });
+  });
+
+  it("reloads an updated plugin", () => {
+    expect(
+      planReconcile(loaded(["a", "1.0.0"]), {
+        trusted: true,
+        enabled: ["a"],
+        installed: [inst("a", "1.1.0")],
+      }),
+    ).toEqual({ unload: ["a"], load: ["a"] });
+  });
+
+  it("does nothing in restricted mode or when already in sync", () => {
+    expect(
+      planReconcile(loaded(["a", "1.0.0"]), { trusted: false, enabled: [], installed: [] }),
+    ).toEqual({ unload: [], load: [] });
+    expect(
+      planReconcile(loaded(["a", "1.0.0"]), {
+        trusted: true,
+        enabled: ["a"],
+        installed: [inst("a")],
+      }),
+    ).toEqual({ unload: [], load: [] });
+  });
+});
+
+describe("plugins store reconcile", () => {
+  it("tears down a plugin disabled behind the host's back and reloads it when re-enabled", async () => {
+    const t = setup({ trusted: true });
+    const deps = { ...t.deps, readState: () => t.ipc.state() };
+    await usePluginsStore.getState().attach("/ws", deps);
+    expect(usePluginsStore.getState().commands.map((c) => c.id)).toContain("p:hello");
+
+    t.ipc.enabled.delete("p"); // what the marketplace's disable does
+    await usePluginsStore.getState().reconcile();
+    expect(usePluginsStore.getState().snapshot?.status.p).toEqual({ state: "disabled" });
+    expect(usePluginsStore.getState().commands).toEqual([]);
+
+    t.ipc.enabled.add("p");
+    await usePluginsStore.getState().reconcile();
+    expect(usePluginsStore.getState().snapshot?.status.p).toEqual({ state: "enabled" });
+    expect(usePluginsStore.getState().commands.map((c) => c.id)).toContain("p:hello");
+    expect(usePluginsStore.getState().actionError).toBeNull();
+  });
+
+  it("unloads an uninstalled plugin and reloads an updated one", async () => {
+    const t = setup({ trusted: true });
+    const deps = { ...t.deps, readState: () => t.ipc.state() };
+    await usePluginsStore.getState().attach("/ws", deps);
+    expect(t.requested).toEqual(["p"]);
+
+    t.ipc.installed = t.ipc.installed.map((i) => ({
+      ...i,
+      manifest: { ...i.manifest, version: "2.0.0" },
+    }));
+    await usePluginsStore.getState().reconcile();
+    expect(t.requested).toEqual(["p", "p"]);
+    expect(usePluginsStore.getState().snapshot?.status.p).toEqual({ state: "enabled" });
+
+    t.ipc.installed = [];
+    t.ipc.enabled.delete("p");
+    await usePluginsStore.getState().reconcile();
+    expect(usePluginsStore.getState().commands).toEqual([]);
+    expect(usePluginsStore.getState().snapshot?.installed).toEqual([]);
   });
 });

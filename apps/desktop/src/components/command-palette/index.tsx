@@ -29,7 +29,12 @@ import {
 } from "@/hooks/use-tabs";
 import { useTheme } from "@/hooks/use-theme";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
-import { usePluginCommands, usePluginLeaves, useTogglePluginPane } from "@/hooks/use-plugins";
+import {
+  useOpenPluginBrowser,
+  usePluginCommands,
+  usePluginLeaves,
+  useTogglePluginPane,
+} from "@/hooks/use-plugins";
 import { resolveCommands } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
@@ -83,6 +88,7 @@ export function CommandPalette() {
   const pluginCommands = usePluginCommands();
   const pluginLeaves = usePluginLeaves();
   const togglePluginPane = useTogglePluginPane();
+  const openPluginBrowser = useOpenPluginBrowser();
 
   const isCreateIntent = intent === "create-file";
   const trimmedSearch = search.trim();
@@ -155,6 +161,7 @@ export function CommandPalette() {
           resetZoom,
           openSettings: openSettingsTab,
           togglePluginPane,
+          openPluginBrowser,
         },
         pluginCommands,
       );

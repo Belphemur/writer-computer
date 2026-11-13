@@ -29,6 +29,8 @@ import {
 import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { getFileName } from "@/lib/paths";
+import { confirmAction } from "@/lib/tauri";
+import { defaultStoreClient, type StorePluginsState } from "@/lib/obsidian-host/store-client";
 import { useEditorStore } from "@/stores/editor-store";
 
 export const PANE_MIN_WIDTH = 280;
@@ -39,9 +41,48 @@ const PANE_DEFAULT_WIDTH = 360;
 export interface PluginsDeps {
   /** Builds the host. Default: lazy-imports the shim and uses the Tauri-backed vault IO. */
   createHost?: (root: string, name: string, bridge: WorkspaceBridge) => Promise<PluginHost>;
+  /** Reads the backend's trust/enabled/installed state (the marketplace writes it directly). */
+  readState?: () => Promise<StorePluginsState>;
+}
+
+export const TRUST_MESSAGE =
+  "Community plugins are code written by third parties. They run with full access to this " +
+  "vault and to Writer's commands and are not sandboxed. Only turn this on for vaults and " +
+  "plugins you trust.";
+
+export interface ReconcilePlan {
+  unload: string[];
+  load: string[];
+}
+
+/**
+ * What the running host must do to match the backend after the marketplace changed it behind
+ * the host's back (install/update/uninstall/enable/disable). `loaded` maps each plugin that is
+ * currently running to the version that was loaded. Nothing changes while the vault is
+ * untrusted (trust revocation already unloaded everything).
+ */
+export function planReconcile(
+  loaded: ReadonlyMap<string, string>,
+  state: Pick<StorePluginsState, "trusted" | "enabled"> & {
+    installed: readonly { id: string; manifest: { version: string } }[];
+  },
+): ReconcilePlan {
+  if (!state.trusted) return { unload: [], load: [] };
+  const versions = new Map(state.installed.map((p) => [p.id, p.manifest.version]));
+  const enabled = new Set(state.enabled);
+  const wanted = (id: string) => enabled.has(id) && versions.has(id);
+  const unload = [...loaded]
+    .filter(([id, v]) => !wanted(id) || versions.get(id) !== v)
+    .map(([id]) => id);
+  const unloaded = new Set(unload);
+  const load = [...versions.keys()].filter(
+    (id) => wanted(id) && (!loaded.has(id) || unloaded.has(id)),
+  );
+  return { unload, load };
 }
 
 const defaultDeps: Required<PluginsDeps> = {
+  readState: () => defaultStoreClient.state(),
   createHost: async (root, name, bridge) => {
     const { PluginHost } = await import("@/lib/obsidian-host");
     return PluginHost.forWorkspace(root, name, bridge);
@@ -70,6 +111,10 @@ interface PluginsState {
   detach: () => Promise<void>;
   setTrusted: (trusted: boolean) => Promise<void>;
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
+  /** Confirmation dialog, then `setTrusted(true)`. The one trust flow for every surface. */
+  requestTrust: () => Promise<void>;
+  /** Aligns the running host with the backend after marketplace changes (load/unload). */
+  reconcile: () => Promise<void>;
   /** Re-reads the installed list (after a marketplace install/uninstall). */
   refresh: () => Promise<void>;
   notifyExternal: (kind: "create" | "modify" | "delete", absPath: string) => Promise<void>;
@@ -82,6 +127,7 @@ interface PluginsState {
 
 interface Session {
   host: PluginHost;
+  readState: () => Promise<StorePluginsState>;
   unsubscribe: () => void;
 }
 
@@ -247,7 +293,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       return enqueue(async () => {
         await teardown();
         if (gen !== generation) return;
-        const { createHost } = { ...defaultDeps, ...deps };
+        const { createHost, readState } = { ...defaultDeps, ...deps };
         set({ root });
         let host: PluginHost | null = null;
         try {
@@ -257,7 +303,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
             await host.shutdown();
             return;
           }
-          const current: Session = { host, unsubscribe: wire(gen, host) };
+          const current: Session = { host, readState, unsubscribe: wire(gen, host) };
           session = current;
           // Read-only: lists what is installed and whether this vault is trusted.
           await host.refresh();
@@ -300,6 +346,29 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
         } else {
           await current.host.disable(id);
         }
+      }),
+
+    requestTrust: async () => {
+      if (await confirmAction(TRUST_MESSAGE, "Turn on community plugins?"))
+        await get().setTrusted(true);
+    },
+
+    reconcile: () =>
+      runAction("Reloading plugins", async ({ host, readState }) => {
+        const before = host.getSnapshot();
+        const loaded = new Map<string, string>();
+        for (const m of before.installed) {
+          if (before.status[m.id]?.state === "enabled") loaded.set(m.id, m.version);
+        }
+        // A plugin uninstalled meanwhile is absent from `installed` but may still be running.
+        for (const [id, status] of Object.entries(before.status)) {
+          if (status.state === "enabled" && !loaded.has(id)) loaded.set(id, "");
+        }
+        await host.refresh();
+        const plan = planReconcile(loaded, await readState());
+        for (const id of plan.unload) await host.disable(id);
+        for (const id of plan.load) await host.enable(id);
+        if (plan.load.length > 0) host.app.workspace.markLayoutReady();
       }),
 
     refresh: () => runAction("Refreshing plugins", (current) => current.host.refresh()),

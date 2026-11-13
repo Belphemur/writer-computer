@@ -10,10 +10,10 @@ Community-plugin marketplace UI. Props-driven; state lives in `@/stores/plugin-s
 
 ## Mounting
 
-```tsx
-import { PluginBrowser } from "@/components/plugin-browser";
-<PluginBrowser onRequestTrust={openTrustDialog} onPluginsChanged={reloadHost} />;
-```
+Mounted once in `App.tsx` as `PluginBrowserDialog` (`./plugin-browser-dialog.tsx`), a modal with Escape/Close/backdrop dismissal and a focus trap. Open state is `isPluginBrowserOpen` in `@/stores/ui-store`; entry points are Settings > Community plugins > Browse and the palette command "Browse community plugins".
+
+- `onRequestTrust` -> `plugins-store.requestTrust()` (the same confirmation as Settings), then `pluginCatalogStore.getState().refreshState()`.
+- `onPluginsChanged` -> `plugins-store.reconcile()`: the marketplace writes the backend directly, so the running host is refreshed and brought in line (`planReconcile`: unload disabled/uninstalled/updated, load newly enabled/updated) without a restart.
 
 It loads the catalog on mount. To scope a different store (tests, a fake client), wrap it in `PluginCatalogProvider store={createPluginCatalogStore(client)}`.
 

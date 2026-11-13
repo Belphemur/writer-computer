@@ -27,6 +27,7 @@ export interface CommandContext {
   resetZoom: () => void;
   openSettings: () => void;
   togglePluginPane: () => void;
+  openPluginBrowser: () => void;
 }
 
 export interface PaletteCommand {
@@ -114,6 +115,13 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     description: COMMAND,
     when: (c) => c.hasWorkspace && !c.isCompactFileMode && c.hasPluginLeaves,
     run: (c) => c.togglePluginPane(),
+  },
+  {
+    id: "browse-community-plugins",
+    label: "Browse community plugins",
+    description: COMMAND,
+    when: (c) => c.hasWorkspace && !c.isCompactFileMode,
+    run: (c) => c.openPluginBrowser(),
   },
   {
     id: "open-settings",

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { usePluginsStore } from "@/stores/plugins-store";
+import { useUIStore } from "@/stores/ui-store";
 import { useIsStartupResolved, useWorkspaceChromeMode, useWorkspaceRoot } from "./use-workspace";
 
 export { PANE_MAX_WIDTH, PANE_MIN_WIDTH } from "@/stores/plugins-store";
@@ -77,4 +78,19 @@ export function useSetPluginsTrusted() {
 }
 export function useSetPluginEnabled() {
   return usePluginsStore((s) => s.setEnabled);
+}
+export function useRequestPluginsTrust() {
+  return usePluginsStore((s) => s.requestTrust);
+}
+export function useReconcilePlugins() {
+  return usePluginsStore((s) => s.reconcile);
+}
+export function useIsPluginBrowserOpen() {
+  return useUIStore((s) => s.isPluginBrowserOpen);
+}
+export function useOpenPluginBrowser() {
+  return useUIStore((s) => s.openPluginBrowser);
+}
+export function useClosePluginBrowser() {
+  return useUIStore((s) => s.closePluginBrowser);
 }

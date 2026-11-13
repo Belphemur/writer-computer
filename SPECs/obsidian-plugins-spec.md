@@ -53,11 +53,23 @@ Out of scope until the plugin host and Copilot work. To do later, in this order:
 
 ## Open risks
 
-API shim breadth, missing Editor/Workspace facades, Agent Mode (`child_process`), arbitrary JS in the webview (mitigated, not sandboxed). Frontend callers that read files outside the workspace root would now be rejected; none found yet, to be confirmed by running the app.
+`secretStorage` depends on the OS credential store: Linux without a Secret Service (or a locked/denied keychain) degrades to memory-only for the run, reported in `window.__writerPluginErrors`. The real keychain path (macOS Keychain, Windows Credential Manager, Linux Secret Service) is unit-tested only against a fake backend; manual QA on each OS is open. API shim breadth, missing Editor/Workspace facades, Agent Mode (`child_process`), arbitrary JS in the webview (mitigated, not sandboxed). Frontend callers that read files outside the workspace root would now be rejected; none found yet, to be confirmed by running the app.
 
 ## Status (plugin networking, 2026-11-13)
 
 Done: `requestUrl`/`request` over `plugin_http_request`; plugin-scoped streaming `fetch` over `plugin_http_stream_*`, exposed as a free variable `fetch` in the CJS wrapper and as an installable/idempotent `globalThis.fetch` patch while plugins are loaded; tests in `tests/obsidian-network-*.test.ts`. The loader now also passes the other wrapper free variables (`Error`, `__filename`, `__dirname`, `SharedArrayBuffer`) it previously left undefined. Gaps: `XMLHttpRequest`, `WebSocket`, `EventSource`; not yet verified against a real obsidian-copilot run.
+
+## Plugin secrets (`app.secretStorage`, Rust `plugin_secrets.rs`)
+
+Persisted in the OS credential store through the multi-OS `keyring` crate (macOS Keychain, Windows Credential Manager, Linux Secret Service); nothing is written to disk by Writer. Commands (trusted vault only, window-bound, blocking work off the async runtime):
+
+| Command                | Args           | Returns             |
+| ---------------------- | -------------- | ------------------- |
+| `plugin_secrets_load`  | -              | `{ [id]: value }`   |
+| `plugin_secret_set`    | `id`, `secret` | -                   |
+| `plugin_secret_delete` | `id`           | - (missing is fine) |
+
+Design: one credential per secret (`secret:<id>`) plus an index credential (`__index__`, JSON array of ids), because credential stores cannot be enumerated portably and Windows caps a blob at a few KB. Write order keeps the index a superset of what exists (set = secret then index; delete = index then secret); a corrupt index is an error, never treated as empty. The service name is `<app identifier>.plugin-secrets`, so the e2e build (different identifier) never touches the real keychain. Secrets are shared by every plugin and vault of the user, like Obsidian's keychain. Loaded only in trusted vaults. Limits: id 1-256 chars without control characters, 2048 bytes per secret, 256 secrets. Frontend: `api/secret-storage.ts` keeps the sync API over a cache hydrated before any plugin script runs (see the host README).
 
 ## Process and environment contract (Rust, 2026-11-13)
 
@@ -89,8 +101,12 @@ Gaps: Windows is compile-only (no process groups beyond CREATE_NO_WINDOW, signal
 
 ## Status (Copilot e2e, 2026-11-13)
 
-Unmodified obsidian-copilot 4.0.20 loads in the real built Tauri app (trusted vault) and completes a Claude Agent turn against a fake `claude` CLI: `apps/desktop/e2e/specs/copilot-fake-claude.spec.js` (run with `sh e2e/fixtures/copilot-fake-claude/run.sh`, see `e2e/README.md`; 7 tests, repeated green). Host bugs it found and fixed: Copilot's device id was seeded under a key Copilot never read (so the Claude path was ignored and Agent Chat showed "not set up"); `app.secretStorage` missing (startup unhandled rejection; now memory-only); `Element.onWindowMigrated` missing (Agent view `onOpen` failed); the CSS sanitizer deleted Copilot's whole minified stylesheet (per-line check tripped on `scroll-behavior:`); vault stat guessed "file" for folders the listing hides (`notifyExternal` failures); no Obsidian CSS variables (icons unsized). Also added `window.__writerPluginErrors` and an e2e-only `WRITER_E2E_EXTRA_PATH`.
+Unmodified obsidian-copilot 4.0.20 loads in the real built Tauri app (trusted vault) and completes a Claude Agent turn against a fake `claude` CLI: `apps/desktop/e2e/specs/copilot-fake-claude.spec.js` (run with `sh e2e/fixtures/copilot-fake-claude/run.sh`, see `e2e/README.md`; 7 tests, repeated green). Host bugs it found and fixed: Copilot's device id was seeded under a key Copilot never read (so the Claude path was ignored and Agent Chat showed "not set up"); `app.secretStorage` missing (startup unhandled rejection; added, since persisted in the OS keychain); `Element.onWindowMigrated` missing (Agent view `onOpen` failed); the CSS sanitizer deleted Copilot's whole minified stylesheet (per-line check tripped on `scroll-behavior:`); vault stat guessed "file" for folders the listing hides (`notifyExternal` failures); no Obsidian CSS variables (icons unsized). Also added `window.__writerPluginErrors` and an e2e-only `WRITER_E2E_EXTRA_PATH`.
 
 Proves: load/enable/disable/re-enable, seed, palette commands, view in the right pane, load-time probes (`--version`, `auth status --json`, idle stream-json child) and the session child's argv, a streamed turn rendered in the DOM, graceful stop on plugin disable, no orphan after app quit (the quit path killed a live session).
 
-Does NOT prove: the real `claude` CLI (versions, auth, `~/.claude` access), real LLM chat mode or BYOK keys (secretStorage is in-memory), permission cards, Stop/interrupt, SIGKILL escalation, Copilot's Settings panels, consent dialog UX (pre-approved through `plugins_proc_consent.json`), timer throttling with a hidden window, `bypassPermissions` refusal. Known limits seen: Copilot keeps a worked-in chat's process alive after its tab closes (its design); typing into Copilot's Lexical input needs `execCommand` under WebDriver; the plugin's global CSS slightly shifts Writer's sidebar search icon.
+Does NOT prove: the real `claude` CLI (versions, auth, `~/.claude` access), real LLM chat mode or BYOK keys (secretStorage persistence in the real keychain is not covered: the e2e build uses its own keychain service), permission cards, Stop/interrupt, SIGKILL escalation, Copilot's Settings panels, consent dialog UX (pre-approved through `plugins_proc_consent.json`), timer throttling with a hidden window, `bypassPermissions` refusal. Known limits seen: Copilot keeps a worked-in chat's process alive after its tab closes (its design); typing into Copilot's Lexical input needs `execCommand` under WebDriver; the plugin's global CSS slightly shifts Writer's sidebar search icon.
+
+## Status (marketplace UI mounted, 2026-11-13)
+
+`PluginBrowser` is mounted in `PluginBrowserDialog` (`components/plugin-browser/plugin-browser-dialog.tsx`, rendered from `App.tsx`; open state in `ui-store`). Entry points: Settings > Community plugins > Browse, and the palette command "Browse community plugins" (workspace windows only). Trust goes through `plugins-store.requestTrust` (the one confirmation flow, shared with Settings), then `pluginCatalogStore.refreshState()`. Because the marketplace writes the backend directly, `onPluginsChanged` calls `plugins-store.reconcile()`: refresh the host, read backend state, `planReconcile` decides which running plugins to unload (disabled, uninstalled, updated) and which to load (enabled and not running, updated), via `host.disable` / `host.enable`. Unit-tested (`tests/plugins-store.test.ts`, `tests/command-registry.test.ts`); not yet verified in the real app against the live catalog.

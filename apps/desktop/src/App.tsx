@@ -1,5 +1,6 @@
 import { AppLayout } from "./components/app-layout";
 import { CommandPalette } from "./components/command-palette";
+import { PluginBrowserDialog } from "./components/plugin-browser/plugin-browser-dialog";
 import { TelemetryConsentDialog } from "./components/telemetry-consent-dialog";
 import { WindowTitle } from "./components/window-title";
 import { useIsStartupResolved } from "./hooks/use-workspace";
@@ -30,6 +31,7 @@ function App() {
       <WindowTitle />
       <AppLayout />
       <CommandPalette />
+      <PluginBrowserDialog />
       <TelemetryConsentDialog />
     </>
   );
