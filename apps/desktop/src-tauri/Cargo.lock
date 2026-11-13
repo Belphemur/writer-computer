@@ -870,6 +870,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -883,6 +884,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "trash",
+ "url",
  "uuid",
 ]
 

@@ -7,6 +7,8 @@ mod ignore;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod open_target;
+mod plugin_store;
+mod plugins;
 mod state;
 mod telemetry;
 #[cfg(desktop)]
@@ -507,6 +509,9 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_webdriver::init());
 
     builder
+        .register_uri_scheme_protocol(plugins::SCHEME, |ctx, request| {
+            commands::plugins::handle_scheme(ctx.app_handle(), ctx.webview_label(), &request)
+        })
         .manage(AppState::new())
         .setup(|app| {
             // Initialize the main window's per-window state (settings layer,
@@ -614,6 +619,16 @@ pub fn run() {
             telemetry::telemetry_mark_prompted,
             telemetry::telemetry_report_declined,
             commands::startup::get_startup_state,
+            commands::plugins::plugins_state,
+            commands::plugins::plugins_set_trust,
+            commands::plugins::plugins_set_enabled,
+            commands::plugins::plugin_read_asset,
+            commands::plugins::plugin_data_read,
+            commands::plugins::plugin_data_write,
+            commands::plugins::plugin_store_list,
+            commands::plugins::plugin_store_detail,
+            commands::plugins::plugin_store_install,
+            commands::plugins::plugin_store_uninstall,
             #[cfg(target_os = "macos")]
             commands::shell_install::cli_status,
             #[cfg(target_os = "macos")]

@@ -1,6 +1,7 @@
 pub mod fonts;
 pub mod fs;
 pub mod images;
+pub mod plugins;
 pub mod recents;
 pub mod search;
 pub mod settings;
