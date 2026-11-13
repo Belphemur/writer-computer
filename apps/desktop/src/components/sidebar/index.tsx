@@ -1,5 +1,6 @@
 import { FileBrowser } from "./file-browser";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { PluginRibbon } from "@/components/plugins/plugin-strips";
 import { useWorkspaceGeneration } from "@/hooks/use-workspace";
 import { useSidebarSurface } from "./use-sidebar-surface";
 
@@ -41,6 +42,7 @@ function SidebarSurface() {
           />
         </div>
         <div data-sidebar-surface-bottom className="shrink-0 px-3 py-3">
+          <PluginRibbon />
           <WorkspaceSwitcher />
         </div>
       </div>

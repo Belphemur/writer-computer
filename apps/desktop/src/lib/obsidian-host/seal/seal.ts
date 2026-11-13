@@ -88,7 +88,7 @@ const DENIED_MENU_COMMANDS: ReadonlySet<string> = new Set([
   "plugin:menu|set_as_window_menu",
 ]);
 
-const SAFE_URL = /^(https?:|mailto:)/i;
+const SAFE_URL = /^(https?:|mailto:|tel:)/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -104,7 +104,7 @@ function checkArgs(cmd: string, args: unknown, storePaths: readonly string[]): s
   if (cmd === "plugin:opener|open_url") {
     const url = isRecord(args) ? args.url : undefined;
     if (typeof url !== "string" || !SAFE_URL.test(url)) {
-      return "only http(s) and mailto URLs may be opened";
+      return "only http(s), mailto and tel URLs may be opened";
     }
   }
   return null;

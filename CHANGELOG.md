@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Community (Obsidian) plugins can run in a vault, off by default: Settings has a **Community plugins** section with a restricted-mode switch (turning it on asks for confirmation), a toggle per installed plugin and each plugin's own options. Enabled plugins add commands to the command palette, ribbon icons above the workspace switcher, a status line at the bottom right of the editor, a right-hand pane for their views (toggle it from the palette) and CodeMirror editor extensions. The command palette now builds its list from a registry, and `moment` is bundled for plugins (loaded only when plugins run).
+
 ## 2026-10-28
 
 - The docs cover more of the app: [finding your way around a note](https://writer.computer/docs/navigate-a-note/) (the heading outline at the edge of a note, links to headings, find and replace, word counts), [tables, tasks and code](https://writer.computer/docs/tables-tasks-and-code/), [customizing the look](https://writer.computer/docs/customize-the-look/) and [the sidebar](https://writer.computer/docs/sidebar/). The keyboard shortcuts page no longer lists ⌘H, which isn't bound, and says that ⌘O is the same as ⌘P.

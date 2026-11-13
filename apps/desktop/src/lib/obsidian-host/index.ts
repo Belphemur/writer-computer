@@ -54,7 +54,6 @@ export {
   requestUrl,
   setIcon,
   setMarkdownRenderer,
-  setMomentImpl,
   stringifyYaml,
 } from "./api/functions";
 export { MarkdownRenderChild, MarkdownRenderer } from "./api/markdown";

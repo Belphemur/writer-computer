@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+vi.mock("../src/lib/obsidian-host/seal/seal", () => ({
+  hostInvoke: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({

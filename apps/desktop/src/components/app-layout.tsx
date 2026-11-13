@@ -5,6 +5,8 @@ import { EditorTabs } from "./editor-area/editor-tabs";
 import { SidebarToggleButton } from "./sidebar/sidebar-toggle-button";
 import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
+import { PluginViewPane } from "./plugins/plugin-view-pane";
+import { PluginStatusBar } from "./plugins/plugin-strips";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useWorkspaceChromeMode, useWorkspaceRoot } from "@/hooks/use-workspace";
 import { resolveAppView } from "@/lib/app-view";
@@ -171,7 +173,9 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
 
           <div className="relative min-w-0 flex-1 bg-bg">
             {showWelcome ? <WelcomeScreen /> : <EditorArea />}
+            <PluginStatusBar />
           </div>
+          <PluginViewPane />
         </div>
       </div>
     </div>

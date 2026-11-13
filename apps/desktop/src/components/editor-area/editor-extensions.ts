@@ -13,6 +13,10 @@ import {
   prosemarkMarkdownSyntaxExtensions,
 } from "@/lib/prosemark-core/main";
 import * as editorApi from "@/hooks/editor-api";
+import {
+  getPluginEditorExtensions,
+  pluginExtensionCompartment,
+} from "@/lib/obsidian-host/editor-bridge";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { editorBodyContextMenuExtension } from "./editor-body-menu";
 import { editorClipboardExtension } from "./editor-clipboard";
@@ -131,5 +135,7 @@ export function createEditorExtensions(
     storeSyncExtension(getFilePath),
     editorClipboardExtension(getFilePath, isDisposed),
     focusOnRevealExtension(isDisposed),
+    // Extensions community plugins registered; reconfigured on plugin enable/disable.
+    pluginExtensionCompartment.of(getPluginEditorExtensions()),
   ];
 }

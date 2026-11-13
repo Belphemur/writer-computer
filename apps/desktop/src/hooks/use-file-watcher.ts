@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { usePluginsStore } from "@/stores/plugins-store";
 import * as editorApi from "./editor-api";
 import * as tauri from "@/lib/tauri";
 import { cancelSave, isSaveInFlight } from "@/lib/save";
@@ -21,6 +22,14 @@ interface IndexCompletePayload {
 
 const WATCHER_DEBUG = import.meta.env.DEV;
 
+/** Watcher kinds mapped to the plugin vault's. A rename reports the new path: `create` also
+ *  drops a node whose file is gone, so both halves of a rename are covered. */
+function pluginEventKind(kind: FileChangePayload["kind"] | undefined) {
+  if (kind === "deleted") return "delete";
+  if (kind === "modified") return "modify";
+  return "create";
+}
+
 function currentWorkspaceIdentity(): WorkspaceIdentity | null {
   const { root, workspaceEpoch } = useWorkspaceStore.getState();
   return root !== null && workspaceEpoch !== null ? { root, epoch: workspaceEpoch } : null;
@@ -33,6 +42,7 @@ export function useFileWatcher() {
       if (!isWorkspaceEventCurrent(workspace, currentWorkspaceIdentity())) return;
       if (WATCHER_DEBUG) console.debug("[watcher] fs:file-changed", kind, path);
       useWorkspaceStore.getState().bumpSidebarMetadataVersion();
+      void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
       const openFiles = editorApi.getOpenFiles();
       const file = openFiles.get(path);
 
@@ -71,9 +81,10 @@ export function useFileWatcher() {
     });
 
     const unlistenDir = listen<FileChangePayload>("fs:directory-changed", (event) => {
-      const { path, workspace } = event.payload;
+      const { path, kind, workspace } = event.payload;
       if (!isWorkspaceEventCurrent(workspace, currentWorkspaceIdentity())) return;
       if (WATCHER_DEBUG) console.debug("[watcher] fs:directory-changed", path);
+      void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
       const { root, expandedDirs, invalidatePath, refreshDirectory, bumpSidebarMetadataVersion } =
         useWorkspaceStore.getState();
       bumpSidebarMetadataVersion();

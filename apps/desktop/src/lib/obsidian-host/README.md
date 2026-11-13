@@ -1,6 +1,6 @@
 # obsidian-host
 
-TypeScript core of Writer's Obsidian-plugin host. Adapted from opensidian (GPL-3.0-or-later). Spec: `SPECs/obsidian-plugins-spec.md`. Nothing here is wired into React yet.
+TypeScript core of Writer's Obsidian-plugin host. Adapted from opensidian (GPL-3.0-or-later). Spec: `SPECs/obsidian-plugins-spec.md`. The app side lives in `src/stores/plugins-store.ts`, `src/components/plugins/`, `src/hooks/use-plugins.ts` and `workspace-bridge.ts` / `editor-bridge.ts` here.
 
 ## Architecture
 
@@ -19,6 +19,7 @@ PluginHost (loader.ts)            lifecycle, status map, script injection, requi
 - **Loading.** `main.js` is injected as `<script src="writer-plugin://localhost/<id>/main.js?n=K">`. Rust serves it wrapped as `__writerPluginDefine("<id>", function (module, exports, require, process, global, Buffer) { ... })`. The global is installed non-writable by the loader; only a define for a pending load is honoured.
 - **Status.** `host.getSnapshot()` / `host.subscribe` follow the `useSyncExternalStore` contract: `{trusted, booted, installed, status: {id: {state: "enabled" | "failed" | "disabled", error?}}}`. A failing plugin is torn down fully; its enabled flag stays set (Obsidian parity).
 - **Seal ordering.** Plugins run only after `sealTauri()`. From then on `@tauri-apps/api/core`'s `invoke` is rejected for Writer's own commands; host code must use `hostInvoke` from `seal/seal.ts` (`ipc.ts` and `api/vault-io-tauri.ts` do).
+- **App wiring.** `usePluginHostLifecycle` (mounted in `App`) attaches the store when a workspace window has resolved startup and detaches on workspace change; standalone/compact windows and the welcome screen never boot. `attach` reads backend state first and only seals + boots when the vault is trusted (`plugins_state`). A failed seal is fail-closed: nothing loads and `bootError` is shown under Settings > Community plugins. All app IPC (`src/lib/tauri.ts`) goes through `hostInvoke`; `tel:` was added to the sealed opener's safe schemes because the app opens any explicit-scheme link.
 - **Host wiring points.** The host UI owns what is visible: it implements `WorkspaceBridge` (mount `leaf.containerEl`, reveal, active file/editor), renders `services.ribbon`/`statusBar`/`settingTabs` items (each has a ready DOM element), calls `app.workspace.markLayoutReady()`, and forwards file-watcher events to `app.vault.notifyExternal`.
 
 ## IPC contract (Tauri commands)
@@ -41,10 +42,11 @@ Compat details: the DOM helpers (`createEl`, `Node.doc/win/instanceOf`, `activeD
 Stubbed or partial:
 
 - `requestUrl` is fetch-based (CORS, CSP apply). TODO: Rust-backed https client.
-- `moment` is a tiny stub (`format` of YYYY MM DD HH mm ss); the `moment` dependency is missing. `setMomentImpl(realMoment)` swaps it in.
+- `moment` is the real library (static import here; the whole host is a lazy chunk, so it stays out of the entry bundle).
 - `MarkdownRenderer` is an escaped-paragraph placeholder; `setMarkdownRenderer(fn)` plugs in the app's renderer.
 - Icons: registered SVGs render; other names render a neutral glyph (`data-icon`, `lucide-<name>` class). No icon pack is bundled.
-- `registerEditorExtension`, `registerMarkdownPostProcessor`, `registerMarkdownCodeBlockProcessor`, `registerExtensions`, `registerObsidianProtocolHandler`, `registerHoverLinkSource` only record into `services.registrations` (swept on disable); the host does not act on them yet.
+- `registerEditorExtension` is live: the plugins store feeds the recorded extensions into the shared `pluginExtensionCompartment` (`editor-bridge.ts`, added by `createEditorExtensions`), reconfigured on enable/disable; a rejected extension resets the editors and shows an error. `editor.cm` is the active CodeMirror view.
+- `registerMarkdownPostProcessor`, `registerMarkdownCodeBlockProcessor`, `registerExtensions`, `registerObsidianProtocolHandler`, `registerHoverLinkSource` only record into `services.registrations` (swept on disable); the host does not act on them yet. Leaves of every placement open in the one right-hand plugin pane (no left sidebar or main-area leaves); the pane is toggled from the command palette.
 - No binary file IO (`readBinary` rejects), no `fs`, no Node built-ins besides `path`; `process` is a minimal object and `Buffer` is whatever the page provides.
 - Intervals/timers a plugin creates with bare `setInterval` and listeners it adds to `window` itself are not tracked; use `registerInterval`/`registerDomEvent` (Obsidian's contract).
 - Modals carry no owner, so disabling any plugin closes all open plugin modals.

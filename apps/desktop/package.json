@@ -35,6 +35,7 @@
     "cmdk": "catalog:",
     "dompurify": "catalog:",
     "katex": "catalog:",
+    "moment": "catalog:",
     "node-emoji": "catalog:",
     "pele": "catalog:",
     "react": "^19.1.0",

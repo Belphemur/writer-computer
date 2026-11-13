@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from "vite-plus/test";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../src/lib/obsidian-host/seal/seal", () => ({ hostInvoke: vi.fn() }));
 vi.mock("@/lib/theme", () => ({ applyTheme: vi.fn(), applyCssVarBindings: vi.fn() }));
 
-import { invoke } from "@tauri-apps/api/core";
+import { hostInvoke as invoke } from "../src/lib/obsidian-host/seal/seal";
 import { applyCssVarBindings, applyTheme } from "../src/lib/theme";
 import { useSettingsStore } from "../src/stores/settings-store";
 

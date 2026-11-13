@@ -29,10 +29,11 @@ import {
 } from "@/hooks/use-tabs";
 import { useTheme } from "@/hooks/use-theme";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
+import { usePluginCommands, usePluginLeaves, useTogglePluginPane } from "@/hooks/use-plugins";
+import { resolveCommands } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
 import { openStandaloneFile } from "@/hooks/use-open-drop";
-import { settingsKind } from "@/components/editor-area/page-kinds/settings";
 import { getFileName, getFileStem, getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
 import type { RecentFile } from "@/lib/tauri";
@@ -79,6 +80,9 @@ export function CommandPalette() {
   const { toggleTheme } = useTheme();
   const openSettingsTab = useOpenSettingsTab();
   const isCompactFileMode = useIsCompactFileMode();
+  const pluginCommands = usePluginCommands();
+  const pluginLeaves = usePluginLeaves();
+  const togglePluginPane = useTogglePluginPane();
 
   const isCreateIntent = intent === "create-file";
   const trimmedSearch = search.trim();
@@ -124,116 +128,36 @@ export function CommandPalette() {
     close();
   }
 
-  type Command = { id: string; label: string; description: string; run: () => void };
-
-  const commands: Command[] = [
-    root &&
-      !isCompactFileMode && {
-        id: "toggle-sidebar",
-        label: "Toggle Sidebar",
-        description: "Command",
-        run: () => {
-          toggleSidebar();
-          close();
+  // Resolved only while open: plugin availability checks run plugin code.
+  const commands = !isOpen
+    ? []
+    : resolveCommands(
+        {
+          hasWorkspace: root !== null,
+          isCompactFileMode,
+          activeFilePath,
+          hasActiveTab: activeTabId !== null,
+          tabCount: tabs.length,
+          hasPluginLeaves: pluginLeaves.length > 0,
+          close,
+          toggleSidebar,
+          openCreateFile: () => openCommandPalette("create-file"),
+          openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
+          closeActiveTab,
+          closeAllTabs: () => {
+            for (const tab of tabs) closeTab(tab.id);
+          },
+          openWorkspace: handleOpenWorkspace,
+          closeWorkspace,
+          toggleTheme,
+          zoomIn,
+          zoomOut,
+          resetZoom,
+          openSettings: openSettingsTab,
+          togglePluginPane,
         },
-      },
-    (root || (isCompactFileMode && activeFilePath)) && {
-      id: "new-file",
-      label: "Create New File",
-      description: "Command",
-      run: () => openCommandPalette("create-file"),
-    },
-    root &&
-      activeFilePath && {
-        id: "open-in-compact-window",
-        label: "Open File in Compact Window",
-        description: "Command",
-        run: () => {
-          void tauri.openFileInStandaloneWindow(activeFilePath);
-          close();
-        },
-      },
-    activeTabId &&
-      !isCompactFileMode && {
-        id: "close-tab",
-        label: "Close Current Tab",
-        description: "Command",
-        run: () => {
-          closeActiveTab();
-          close();
-        },
-      },
-    tabs.length > 0 &&
-      !isCompactFileMode && {
-        id: "close-all",
-        label: "Close All Tabs",
-        description: "Command",
-        run: () => {
-          for (const tab of tabs) closeTab(tab.id);
-          close();
-        },
-      },
-    {
-      id: "open-workspace",
-      label: "Open Workspace",
-      description: "Command",
-      run: () => void handleOpenWorkspace(),
-    },
-    root && {
-      id: "close-workspace",
-      label: "Close Workspace",
-      description: "Command",
-      run: () => {
-        closeWorkspace();
-        close();
-      },
-    },
-    {
-      id: "toggle-theme",
-      label: "Toggle Dark Mode",
-      description: "Command",
-      run: () => {
-        toggleTheme();
-        close();
-      },
-    },
-    {
-      id: "zoom-in",
-      label: "Zoom In",
-      description: "Command",
-      run: () => {
-        zoomIn();
-        close();
-      },
-    },
-    {
-      id: "zoom-out",
-      label: "Zoom Out",
-      description: "Command",
-      run: () => {
-        zoomOut();
-        close();
-      },
-    },
-    {
-      id: "zoom-reset",
-      label: "Reset Zoom",
-      description: "Command",
-      run: () => {
-        resetZoom();
-        close();
-      },
-    },
-    !isCompactFileMode && {
-      id: "open-settings",
-      label: "Settings",
-      description: settingsKind.description,
-      run: () => {
-        openSettingsTab();
-        close();
-      },
-    },
-  ].filter((c): c is Command => Boolean(c));
+        pluginCommands,
+      );
 
   const visibleFiles: SearchResult[] =
     !isCreateIntent && trimmedSearch && !isCompactFileMode ? results : [];

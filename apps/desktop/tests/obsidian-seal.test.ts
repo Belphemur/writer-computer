@@ -53,7 +53,38 @@ describe("sealTauri", () => {
     await internals.invoke("plugin:menu|popup", {});
     await internals.invoke("plugin:store|load", { path: "preferences.json" });
     await internals.invoke("plugin:opener|open_url", { url: "https://example.com" });
-    expect(invoke).toHaveBeenCalledTimes(4);
+    await internals.invoke("plugin:opener|open_url", { url: "tel:+15551234" });
+    expect(invoke).toHaveBeenCalledTimes(5);
+  });
+
+  test("every plugin command the app itself issues passes the stand-in", async () => {
+    // Keep in sync with src-tauri/capabilities/default.json and the app's tauri-api usage:
+    // show/close window, dialogs (workspace picker, trust confirmation), opener (links),
+    // clipboard, preferences store, events, context menus.
+    const { g, invoke } = fakeGlobal();
+    sealTauri({ target: g });
+    const internals = g.__TAURI_INTERNALS__ as Internals;
+    const used: [string, unknown][] = [
+      ["plugin:window|show", { label: "main" }],
+      ["plugin:window|close", { label: "main" }],
+      ["plugin:dialog|open", {}],
+      ["plugin:dialog|ask", {}],
+      ["plugin:opener|open_path", { path: "/x" }],
+      ["plugin:opener|open_url", { url: "https://example.com" }],
+      ["plugin:clipboard-manager|write_text", {}],
+      ["plugin:clipboard-manager|read_text", {}],
+      ["plugin:store|load", { path: "preferences.json" }],
+      ["plugin:store|get", {}],
+      ["plugin:store|set", {}],
+      ["plugin:store|save", {}],
+      ["plugin:event|listen", {}],
+      ["plugin:event|unlisten", {}],
+      ["plugin:resources|close", {}],
+      ["plugin:menu|new", {}],
+      ["plugin:menu|popup", {}],
+    ];
+    for (const [cmd, args] of used) await internals.invoke(cmd, args);
+    expect(invoke).toHaveBeenCalledTimes(used.length);
   });
 
   test("argument checks and denied plugin commands", async () => {

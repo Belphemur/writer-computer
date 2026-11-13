@@ -11,14 +11,22 @@ interface SettingControlProps {
   isModified: boolean;
 }
 
-function BooleanControl({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function BooleanControl({
+  value,
+  onChange,
+  label = "Toggle setting",
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+}) {
   return (
     <button
       type="button"
       onClick={() => onChange(!value)}
       role="switch"
       aria-checked={value}
-      aria-label="Toggle setting"
+      aria-label={label}
       className="relative h-5 w-9 rounded-full transition-colors duration-200"
       style={{
         backgroundColor: value ? "var(--link-color)" : "var(--border-color)",

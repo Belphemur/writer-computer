@@ -443,7 +443,14 @@ export class Vault extends Events {
       return;
     }
     const s = await this.io.stat(p);
-    if (!s) return;
+    if (!s) {
+      // Gone by the time we looked (rename source, quick delete): drop the stale node.
+      if (existing) {
+        this.removeNode(existing);
+        this.trigger("delete", existing);
+      }
+      return;
+    }
     if (existing instanceof TFile) {
       existing.stat = { ctime: s.ctime, mtime: s.mtime, size: s.size };
       this.trigger("modify", existing);

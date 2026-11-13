@@ -25,6 +25,8 @@ export interface EditorBackend {
   getSelections(): EditorSelectionRange[];
   setSelections(ranges: EditorSelectionRange[]): void;
   focus(): void;
+  /** The CodeMirror 6 view behind the editor, exposed to plugins as `editor.cm`. */
+  cm?: EditorView | null;
 }
 
 export interface WorkspaceBridge {
@@ -75,7 +77,9 @@ export class Editor {
    */
   cm: EditorView | null = null;
 
-  constructor(private backend: EditorBackend) {}
+  constructor(private backend: EditorBackend) {
+    this.cm = backend.cm ?? null;
+  }
 
   getDoc(): this {
     return this;

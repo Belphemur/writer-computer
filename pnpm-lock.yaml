@@ -93,6 +93,9 @@ catalogs:
     marked:
       specifier: ^18.1.2
       version: 18.1.2
+    moment:
+      specifier: ^2.31.0
+      version: 2.31.0
     node-emoji:
       specifier: ^2.2.0
       version: 2.2.0
@@ -215,6 +218,9 @@ importers:
       katex:
         specifier: 'catalog:'
         version: 0.16.47
+      moment:
+        specifier: 'catalog:'
+        version: 2.31.0
       node-emoji:
         specifier: 'catalog:'
         version: 2.2.0
@@ -4050,6 +4056,9 @@ packages:
   modern-tar@0.7.6:
     resolution: {integrity: sha512-sweCIVXzx1aIGTCdzcMlSZt1h8k5Tmk08VNAuRk3IU28XamGiOH5ypi11g6De2CH7PhYqSSnGy2A/EFhbWnVKg==}
     engines: {node: '>=18.0.0'}
+
+  moment@2.31.0:
+    resolution: {integrity: sha512-0acOTfMiWOheYS4eoWb80yYMb/JLvVv9SHbs2PehaDzfUG0Bw855SKyk0IKTnPGa5+U2bmi3W68l1+sGLX/pvw==}
 
   mrmime@2.0.1:
     resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
@@ -8455,6 +8464,8 @@ snapshots:
       yargs-unparser: 2.0.0
 
   modern-tar@0.7.6: {}
+
+  moment@2.31.0: {}
 
   mrmime@2.0.1: {}
 

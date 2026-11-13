@@ -8,6 +8,7 @@ import { createEditorExtensions } from "./editor-extensions";
 import { findHeadingBySlug } from "./link-navigation";
 import { advanceViewportParse } from "./viewport-parse";
 import * as editorApi from "@/hooks/editor-api";
+import { registerEditorView } from "@/lib/obsidian-host/editor-bridge";
 import { useReloadVersion } from "@/hooks/use-tabs";
 import { getFileName } from "@/lib/paths";
 import { consumePendingAnchor } from "@/lib/pending-anchor";
@@ -61,6 +62,7 @@ export function useProsemarkEditor(
   const onViewChangeRef = useRef(onViewChange);
   const prevPathRef = useRef<string | null>(null);
   const prevReloadVersionRef = useRef<number>(0);
+  const unregisterViewRef = useRef<(() => void) | null>(null);
   const historyCompartmentRef = useRef<Compartment | null>(null);
   if (!historyCompartmentRef.current) historyCompartmentRef.current = new Compartment();
 
@@ -84,6 +86,8 @@ export function useProsemarkEditor(
         view.destroy();
       }
       viewRef.current = null;
+      unregisterViewRef.current?.();
+      unregisterViewRef.current = null;
       onViewChangeRef.current?.(null);
       return;
     }
@@ -109,6 +113,7 @@ export function useProsemarkEditor(
     });
 
     viewRef.current = view;
+    unregisterViewRef.current = registerEditorView(view, () => filePathRef.current);
     prevPathRef.current = currentPath;
     prevReloadVersionRef.current = file?.reloadVersion ?? 0;
     onViewChangeRef.current?.(view);

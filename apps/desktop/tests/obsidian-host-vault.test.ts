@@ -338,13 +338,11 @@ describe("functions", () => {
     expect(search("acb")).toBeNull();
   });
 
-  it("moment stub formats numeric tokens and refuses the rest clearly", () => {
-    const m = moment(new Date(2026, 0, 5, 7, 8, 9)) as {
-      format(f: string): string;
-      startOf(): unknown;
-    };
-    expect(m.format("YYYY-MM-DD HH:mm:ss [at] x")).toBe("2026-01-05 07:08:09 at x");
-    expect(() => m.startOf()).toThrow(/"moment" dependency is not installed/);
+  it("moment is the real library", () => {
+    const m = moment(new Date(2026, 0, 5, 7, 8, 9));
+    expect(m.format("YYYY-MM-DD HH:mm:ss [at] x")).toMatch(/^2026-01-05 07:08:09 at \d+$/);
+    expect(m.startOf("day").format("HH:mm")).toBe("00:00");
+    expect(m.add(1, "week").format("MM-DD")).toBe("01-12");
   });
 });
 

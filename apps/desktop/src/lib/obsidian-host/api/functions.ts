@@ -2,6 +2,7 @@
 // Free functions of the `obsidian` module: debounce, normalizePath, YAML, icons, requestUrl,
 // Platform, moment, fuzzy search, link parsing. Implemented by behavior from the public API.
 import DOMPurify from "dompurify";
+import momentLib from "moment";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 /** Must be >= the highest `minAppVersion` of plugins we want to load (Copilot needs 1.11.4). */
@@ -222,56 +223,11 @@ export async function request(request: RequestUrlParam | string): Promise<string
 // ---------------------------------------------------------------- moment
 
 /**
- * `moment` is NOT a dependency. This is a deliberately small lazy stub: `moment()` supports
- * format() for the common numeric tokens, valueOf/toDate/toISOString/isValid. Anything else
- * throws a clear error. Call `setMomentImpl(realMoment)` once the dependency is added.
+ * The real `moment` library, as Obsidian exposes it. It is synchronous for plugins, so it is a
+ * static import here; the whole host is dynamic-imported by the plugins store, which keeps
+ * moment out of the app's entry chunk.
  */
-type MomentFn = (...args: unknown[]) => unknown;
-let momentImpl: MomentFn | null = null;
-
-export function setMomentImpl(impl: MomentFn): void {
-  momentImpl = impl;
-}
-
-const pad = (n: number, w = 2): string => String(n).padStart(w, "0");
-
-function formatDate(d: Date, fmt: string): string {
-  const tokens: Record<string, string> = {
-    YYYY: String(d.getFullYear()),
-    MM: pad(d.getMonth() + 1),
-    DD: pad(d.getDate()),
-    HH: pad(d.getHours()),
-    mm: pad(d.getMinutes()),
-    ss: pad(d.getSeconds()),
-  };
-  return fmt.replace(/\[([^\]]*)\]|YYYY|MM|DD|HH|mm|ss/g, (m, lit: string | undefined) =>
-    lit !== undefined ? lit : tokens[m],
-  );
-}
-
-function stubMoment(input?: unknown): unknown {
-  const d = input === undefined ? new Date() : new Date(input as string | number | Date);
-  const known: Record<string, unknown> = {
-    format: (fmt = "YYYY-MM-DDTHH:mm:ssZ") => formatDate(d, fmt),
-    valueOf: () => d.getTime(),
-    unix: () => Math.floor(d.getTime() / 1000),
-    toDate: () => new Date(d.getTime()),
-    toISOString: () => d.toISOString(),
-    isValid: () => !Number.isNaN(d.getTime()),
-  };
-  return new Proxy(known, {
-    get(target, prop) {
-      if (typeof prop === "symbol" || prop in target) return Reflect.get(target, prop);
-      return () => {
-        throw new Error(
-          `moment().${prop} is not supported: the "moment" dependency is not installed in Writer`,
-        );
-      };
-    },
-  });
-}
-
-export const moment: MomentFn = (...args: unknown[]) => (momentImpl ?? stubMoment)(...args);
+export const moment = momentLib;
 
 // ---------------------------------------------------------------- search
 
