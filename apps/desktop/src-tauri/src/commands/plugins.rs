@@ -357,7 +357,7 @@ struct DialogConsent {
 }
 
 const BTN_ONCE: &str = "Run once";
-const BTN_ALWAYS: &str = "Always allow this program in this vault";
+const BTN_ALWAYS: &str = "Always allow this plugin in this vault";
 const BTN_DENY: &str = "Deny";
 
 impl Consent for DialogConsent {

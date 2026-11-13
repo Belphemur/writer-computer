@@ -8,9 +8,9 @@
 //!    switched vault while it was open);
 //!  - the user is asked through a native dialog (see `Consent`) that shows the
 //!    plugin id, the resolved program, all arguments, the cwd and env var
-//!    names. The answer is "Run once", "Always allow this program in this
-//!    vault" (remembered per vault, plugin and resolved program path in
-//!    `ConsentStore`) or "Deny". A remembered program skips the dialog, but
+//!    names. The answer is "Run once", "Always allow this plugin in this
+//!    vault" (remembered per vault and plugin in `ConsentStore`, any program)
+//!    or "Deny". A remembered plugin skips the dialog, but
 //!    the command layer still tells the window about every spawn;
 //!  - the cwd (default: the vault root) must be inside the workspace root;
 //!  - at most `MAX_PROCS` live processes app-wide;
@@ -145,7 +145,7 @@ impl ConsentRequest {
              Vault: {:?}\n\n\
              Only allow this if you trust the plugin and recognise the command. \
              The program runs with your own permissions. \"Always allow\" \
-             remembers this program (any arguments) for this plugin in this vault.",
+             lets this plugin run programs without asking in this vault.",
             self.plugin_id,
             self.cwd.to_string_lossy(),
             self.vault.to_string_lossy(),
@@ -364,7 +364,7 @@ impl ProcManager {
                     if !still_ok() {
                         return Err("EACCES: trust or vault changed while asking".into());
                     }
-                    if let Err(e) = store.allow(root, plugin_id, &p.program) {
+                    if let Err(e) = store.allow_plugin(root, plugin_id) {
                         log::warn!("plugin consent not remembered: {e}");
                     }
                 }
@@ -973,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn always_is_remembered_per_program_then_revoked() {
+    fn always_is_remembered_per_plugin_then_revoked() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let st = store(&root);
@@ -994,17 +994,21 @@ mod tests {
         // same program, different args: no dialog
         run("sh", &["-c", "echo other args"], "copilot");
         assert_eq!(c.asked.load(Ordering::SeqCst), 1);
-        // another plugin, another program: asked
-        run("sh", &["-c", "true"], "other-plugin");
+        // another program, same plugin: no dialog
         run("true", &[], "copilot");
-        assert_eq!(c.asked.load(Ordering::SeqCst), 3);
-        st.revoke(&root, "copilot", &sh.to_string_lossy()).unwrap();
+        assert_eq!(c.asked.load(Ordering::SeqCst), 1);
+        // another plugin: asked
+        run("sh", &["-c", "true"], "other-plugin");
+        assert_eq!(c.asked.load(Ordering::SeqCst), 2);
+        let _ = sh;
+        st.revoke(&root, "copilot", crate::plugin_consent::ANY_PROGRAM)
+            .unwrap();
         run("sh", &["-c", "true"], "copilot");
-        assert_eq!(c.asked.load(Ordering::SeqCst), 4);
+        assert_eq!(c.asked.load(Ordering::SeqCst), 3);
         // trust revoke path: clear the vault, everything is asked again
         st.clear_vault(&root).unwrap();
         run("true", &[], "copilot");
-        assert_eq!(c.asked.load(Ordering::SeqCst), 5);
+        assert_eq!(c.asked.load(Ordering::SeqCst), 4);
     }
 
     #[test]

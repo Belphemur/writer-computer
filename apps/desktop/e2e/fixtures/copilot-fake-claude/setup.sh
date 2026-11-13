@@ -52,8 +52,8 @@ mkdir -p "$DATA"
 rm -f "$DATA/recent_workspaces.json" "$DATA/plugins_trust.json" "$DATA/plugins_proc_consent.json"
 printf '["%s"]' "$VAULT" > "$DATA/recent_workspaces.json"
 printf '{"%s": true}' "$VAULT" > "$DATA/plugins_trust.json"
-# Format: { vault: { plugin id: [absolute program] } } (src-tauri/src/plugin_consent.rs)
-printf '{"%s": {"copilot": ["%s/.bin/claude"]}}' "$VAULT" "$VAULT" > "$DATA/plugins_proc_consent.json"
+# Format: { vault: { plugin id: ["*" or absolute programs] } } (src-tauri/src/plugin_consent.rs)
+printf '{"%s": {"copilot": ["*"]}}' "$VAULT" > "$DATA/plugins_proc_consent.json"
 
 echo "VAULT=$VAULT"
 echo "EXTRA_PATH=$VAULT/.bin"

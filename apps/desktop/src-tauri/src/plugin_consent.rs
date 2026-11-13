@@ -1,13 +1,19 @@
 //! "Always allow this program in this vault" memory for plugin processes.
 //!
 //! File: `<app_data>/plugins_proc_consent.json`, shape
-//! `{ "<canonical vault path>": { "<plugin id>": ["<absolute program>", ...] } }`.
-//! The key is the RESOLVED program path, never the arguments: the user allows
-//! a program, and every spawn still emits an activity event.
+//! `{ "<canonical vault path>": { "<plugin id>": ["<absolute program>" | "*", ...] } }`.
+//! "Always allow" grants the PLUGIN in this vault (`ANY_PROGRAM`): plugins like
+//! Copilot start several programs (the agent CLI, login shells), and asking per
+//! program made the dialog return. Entries naming one resolved program (older
+//! files) keep working. Arguments are never part of the key, and every spawn
+//! still emits an activity event.
 
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+/// Wildcard entry: every program for this plugin in this vault.
+pub const ANY_PROGRAM: &str = "*";
 
 type Map = BTreeMap<String, BTreeMap<String, Vec<String>>>;
 
@@ -58,7 +64,12 @@ impl ConsentStore {
         self.read()
             .get(&vault_key(root))
             .and_then(|m| m.get(plugin_id))
-            .is_some_and(|v| v.iter().any(|p| *p == program))
+            .is_some_and(|v| v.iter().any(|p| p == ANY_PROGRAM || *p == program))
+    }
+
+    /// Grant the plugin every program in this vault.
+    pub fn allow_plugin(&self, root: &Path, plugin_id: &str) -> Result<(), String> {
+        self.allow(root, plugin_id, Path::new(ANY_PROGRAM))
     }
 
     pub fn allow(&self, root: &Path, plugin_id: &str, program: &Path) -> Result<(), String> {
@@ -150,6 +161,15 @@ mod tests {
         s.revoke(&v1, "copilot", "/bin/sh").unwrap();
         assert!(!s.is_allowed(&v1, "copilot", prog));
         s.allow(&v1, "copilot", prog).unwrap();
+        s.allow_plugin(&v1, "copilot").unwrap();
+        assert!(
+            s.is_allowed(&v1, "copilot", Path::new("/bin/zsh")),
+            "wildcard"
+        );
+        assert!(!s.is_allowed(&v1, "other", Path::new("/bin/zsh")));
+        assert!(!s.is_allowed(&v2, "copilot", Path::new("/bin/zsh")));
+        s.revoke(&v1, "copilot", ANY_PROGRAM).unwrap();
+        assert!(s.is_allowed(&v1, "copilot", prog), "program entry kept");
         s.clear_vault(&v1).unwrap();
         assert!(s.list(&v1).is_empty());
         assert!(
