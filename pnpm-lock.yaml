@@ -219,6 +219,9 @@ importers:
       katex:
         specifier: 'catalog:'
         version: 0.19.1
+      marked:
+        specifier: 'catalog:'
+        version: 18.2.0
       moment:
         specifier: 'catalog:'
         version: 2.31.0

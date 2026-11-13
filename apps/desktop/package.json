@@ -35,6 +35,7 @@
     "cmdk": "catalog:",
     "dompurify": "catalog:",
     "katex": "catalog:",
+    "marked": "catalog:",
     "moment": "catalog:",
     "node-emoji": "catalog:",
     "pele": "catalog:",

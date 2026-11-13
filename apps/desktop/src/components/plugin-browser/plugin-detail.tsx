@@ -12,6 +12,7 @@ import {
   useTrusted,
 } from "./use-plugin-catalog";
 import { formatDate } from "./format";
+import { ReadmeView } from "./readme-view";
 
 const BTN =
   "rounded-lg border border-[var(--line-subtler)] bg-[var(--surface-card)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--surface-hover,var(--surface-card))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent,currentColor)] disabled:cursor-not-allowed disabled:opacity-50";
@@ -42,16 +43,7 @@ function Readme({ detail }: { detail: StoreDetail }) {
       </p>
     );
   }
-  // Escaped by React; no markdown renderer is a dependency, so show it verbatim.
-  return (
-    <pre
-      tabIndex={0}
-      aria-label="README"
-      className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[var(--line-subtler)] p-3 font-mono text-[12px] text-[var(--text-primary)]"
-    >
-      {detail.readme}
-    </pre>
-  );
+  return <ReadmeView markdown={detail.readme} repo={detail.entry.repo} />;
 }
 
 export function PluginDetail({ onPluginsChanged }: { onPluginsChanged?: () => void }) {
@@ -85,9 +77,18 @@ export function PluginDetail({ onPluginsChanged }: { onPluginsChanged?: () => vo
       );
     }
     return (
-      <p role="status" className="p-4 text-[13px] text-[var(--text-muted)]">
-        Loading plugin…
-      </p>
+      <div
+        role="status"
+        aria-busy="true"
+        aria-label="Loading plugin"
+        className="flex animate-pulse flex-col gap-2 p-4"
+      >
+        <span className="text-[12px] text-[var(--text-muted)]">Loading plugin…</span>
+        <span className="h-5 w-1/2 rounded bg-[var(--surface-subtle-strong)]" />
+        <span className="h-3 w-3/4 rounded bg-[var(--surface-subtle)]" />
+        <span className="h-3 w-2/3 rounded bg-[var(--surface-subtle)]" />
+        <span className="mt-2 h-24 rounded bg-[var(--surface-subtle)]" />
+      </div>
     );
   }
 

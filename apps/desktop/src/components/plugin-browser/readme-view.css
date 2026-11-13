@@ -1,0 +1,126 @@
+/* Typography for third-party README HTML. Every rule is scoped under .plugin-readme so nothing
+   leaks to the app; the HTML is sanitized (no style, class or id from the README). */
+.plugin-readme {
+  max-height: 24rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 0.75rem;
+  border: 1px solid var(--line-subtler);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.plugin-readme > :first-child {
+  margin-top: 0;
+}
+.plugin-readme > :last-child {
+  margin-bottom: 0;
+}
+.plugin-readme h1,
+.plugin-readme h2,
+.plugin-readme h3,
+.plugin-readme h4,
+.plugin-readme h5,
+.plugin-readme h6 {
+  margin: 1.2em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.plugin-readme h1 {
+  font-size: 1.5em;
+}
+.plugin-readme h2 {
+  font-size: 1.25em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line-subtler);
+}
+.plugin-readme h3 {
+  font-size: 1.1em;
+}
+.plugin-readme h4,
+.plugin-readme h5,
+.plugin-readme h6 {
+  font-size: 1em;
+}
+.plugin-readme p,
+.plugin-readme ul,
+.plugin-readme ol,
+.plugin-readme pre,
+.plugin-readme table,
+.plugin-readme blockquote,
+.plugin-readme dl,
+.plugin-readme details {
+  margin: 0 0 0.8em;
+}
+.plugin-readme ul,
+.plugin-readme ol {
+  padding-left: 1.5em;
+}
+.plugin-readme ul {
+  list-style: disc;
+}
+.plugin-readme ol {
+  list-style: decimal;
+}
+.plugin-readme li > ul,
+.plugin-readme li > ol {
+  margin: 0.2em 0 0;
+}
+.plugin-readme a {
+  color: var(--link-color, var(--accent));
+  text-decoration: underline;
+  cursor: pointer;
+}
+.plugin-readme code {
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+  background: var(--surface-subtle);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+.plugin-readme pre {
+  overflow: auto;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--surface-subtle);
+}
+.plugin-readme pre code {
+  padding: 0;
+  background: none;
+}
+.plugin-readme blockquote {
+  padding-left: 0.85em;
+  border-left: 3px solid var(--line-subtle);
+  color: var(--text-secondary);
+}
+.plugin-readme hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--line-subtler);
+}
+.plugin-readme img {
+  max-width: 100%;
+  height: auto;
+}
+.plugin-readme table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+}
+.plugin-readme th,
+.plugin-readme td {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line-subtler);
+}
+.plugin-readme th {
+  background: var(--surface-subtle);
+  font-weight: 600;
+}
+.plugin-readme summary {
+  cursor: pointer;
+}
+.plugin-readme .readme-truncated {
+  color: var(--text-muted);
+}

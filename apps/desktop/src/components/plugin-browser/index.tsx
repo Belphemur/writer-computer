@@ -1,4 +1,7 @@
+import { useCallback, type KeyboardEvent } from "react";
+import type { StoreEntry } from "@/lib/obsidian-host/store-client";
 import { PluginDetail } from "./plugin-detail";
+import { nextSelectionId } from "./list-nav";
 import { formatDate } from "./format";
 import {
   useCatalogActions,
@@ -102,6 +105,82 @@ function Toolbar() {
   );
 }
 
+const ROW_ID_PREFIX = "plugin-row-";
+
+function ListSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Loading community plugins"
+      className="flex flex-col"
+    >
+      <span className="px-3 pt-3 text-[12px] text-[var(--text-muted)]">
+        Loading community plugins…
+      </span>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          className="flex animate-pulse flex-col gap-1.5 border-t border-[var(--line-subtler)] px-3 py-3 first:border-t-0"
+        >
+          <span className="h-3 w-2/5 rounded bg-[var(--surface-subtle-strong)]" />
+          <span className="h-2.5 w-1/4 rounded bg-[var(--surface-subtle)]" />
+          <span className="h-2.5 w-4/5 rounded bg-[var(--surface-subtle)]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PluginRow({
+  entry,
+  selected,
+  badge,
+  onSelect,
+}: {
+  entry: StoreEntry;
+  selected: boolean;
+  badge: string | null;
+  onSelect: (id: string) => void;
+}) {
+  // Runs when the row mounts selected (dialog re-open) or becomes selected (keyboard, click).
+  const ref = useCallback(
+    (el: HTMLLIElement | null) => {
+      if (selected) el?.scrollIntoView?.({ block: "nearest" });
+    },
+    [selected],
+  );
+  return (
+    <li
+      ref={ref}
+      id={ROW_ID_PREFIX + entry.id}
+      role="option"
+      aria-selected={selected}
+      data-selected={selected || undefined}
+      className={`flex cursor-pointer flex-col gap-0.5 border-l-2 border-t border-t-[var(--line-subtler)] px-3 py-2 first:border-t-0 ${
+        selected
+          ? "border-l-[var(--accent)] bg-[var(--surface-selected)]"
+          : "border-l-transparent hover:bg-[var(--item-hover-bg)]"
+      }`}
+      onClick={() => onSelect(entry.id)}
+    >
+      <span className="flex items-baseline justify-between gap-2 text-[13px] text-[var(--text-primary)]">
+        <span className="font-medium">
+          {entry.name}
+          {badge && <span className="ml-2 text-[11px] text-[var(--text-muted)]">{badge}</span>}
+        </span>
+        <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
+          {entry.downloads.toLocaleString()} downloads
+          {entry.updated ? ` · ${formatDate(entry.updated)}` : ""}
+        </span>
+      </span>
+      <span className="text-[11px] text-[var(--text-muted)]">{entry.author}</span>
+      <span className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{entry.description}</span>
+    </li>
+  );
+}
+
 function PluginList() {
   const actions = useCatalogActions();
   const status = useListStatus();
@@ -121,47 +200,40 @@ function PluginList() {
       </div>
     );
   }
-  if (status !== "ready" && entries.length === 0) {
-    return (
-      <p role="status" className="p-3 text-[13px] text-[var(--text-muted)]">
-        Loading plugins…
-      </p>
-    );
+  // Loading is the status, never "no rows": an unloaded catalog (idle, or the first load) must not
+  // read as "No plugins match". A re-open keeps the previously loaded rows while it refreshes.
+  if ((status === "idle" || status === "loading") && entries.length === 0) {
+    return <ListSkeleton />;
   }
   if (entries.length === 0) {
     return <p className="p-3 text-[13px] text-[var(--text-muted)]">No plugins match.</p>;
   }
+  const onKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    const ids = entries.map((e) => e.id);
+    const next =
+      event.key === "Enter" ? (selectedId ?? ids[0]) : nextSelectionId(ids, selectedId, event.key);
+    if (!next) return;
+    event.preventDefault();
+    void actions.select(next);
+  };
   return (
-    <ul aria-label="Community plugins" className="flex flex-col">
+    <ul
+      role="listbox"
+      tabIndex={0}
+      aria-label="Community plugins"
+      aria-busy={status === "loading"}
+      aria-activedescendant={selectedId ? ROW_ID_PREFIX + selectedId : undefined}
+      className="flex flex-col focus-visible:outline-2 focus-visible:-outline-offset-2"
+      onKeyDown={onKeyDown}
+    >
       {entries.map((e) => (
-        <li key={e.id} className="border-t border-[var(--line-subtler)] first:border-t-0">
-          <button
-            aria-current={selectedId === e.id}
-            className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 ${
-              selectedId === e.id ? "bg-[var(--surface-hover,transparent)]" : ""
-            }`}
-            onClick={() => void actions.select(e.id)}
-          >
-            <span className="flex items-baseline justify-between gap-2 text-[13px] text-[var(--text-primary)]">
-              <span className="font-medium">
-                {e.name}
-                {e.id in installed && (
-                  <span className="ml-2 text-[11px] text-[var(--text-muted)]">
-                    {enabled.includes(e.id) ? "Enabled" : "Installed"}
-                  </span>
-                )}
-              </span>
-              <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
-                {e.downloads.toLocaleString()} downloads
-                {e.updated ? ` · ${formatDate(e.updated)}` : ""}
-              </span>
-            </span>
-            <span className="text-[11px] text-[var(--text-muted)]">{e.author}</span>
-            <span className="line-clamp-2 text-[12px] text-[var(--text-muted)]">
-              {e.description}
-            </span>
-          </button>
-        </li>
+        <PluginRow
+          key={e.id}
+          entry={e}
+          selected={selectedId === e.id}
+          badge={e.id in installed ? (enabled.includes(e.id) ? "Enabled" : "Installed") : null}
+          onSelect={(id) => void actions.select(id)}
+        />
       ))}
     </ul>
   );
