@@ -19,6 +19,10 @@ Run Obsidian community plugins (first target: obsidian-copilot) inside Writer, i
 
 See the approved plan: Rust backend (`plugins.rs`, `plugin_store.rs`, consent/trust, https `desk_http`), TS host in `src/lib/obsidian-host/`, Copilot compatibility pass, then Bases (`.base` parser, expression evaluator, table view, embeds, migration).
 
+## Deferred: Bases, indexing, SQLite (decided 2026-11-13)
+
+Out of scope until the plugin host and Copilot work. To do later, in this order: (1) read the public Bases docs properly (reference notes already in the research scratchpad, with open questions on sort/layout keys and list functions); (2) design the vault index (properties, tags, backlinks, links) with a SQLite store for frontmatter, which would also back `MetadataCache`; (3) `.base` parsing, expression evaluation and views on top of that index; (4) migration tooling. Until then the in-memory `MetadataCache` in the TS host is enough for plugins.
+
 ## Open risks
 
 API shim breadth, missing Editor/Workspace facades, https and streaming fetch for LLM calls, Agent Mode (`child_process`), arbitrary JS in the webview (mitigated, not sandboxed). Frontend callers that read files outside the workspace root would now be rejected; none found yet, to be confirmed by running the app.
