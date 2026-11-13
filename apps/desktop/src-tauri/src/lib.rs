@@ -11,6 +11,7 @@ mod plugin_consent;
 mod plugin_env;
 mod plugin_http;
 mod plugin_proc;
+mod plugin_secrets;
 mod plugin_store;
 mod plugins;
 mod state;
@@ -343,6 +344,14 @@ fn install_app_menu(
     let menu_items = updater::UpdaterMenuItems { check: check_item };
     app.manage(updater::UpdaterManager::new(menu_items, app_data_dir));
 
+    // Plugin secrets (`app.secretStorage`) live in the OS credential store; the service name
+    // derives from the app identifier so the e2e build never touches the real keychain.
+    app.manage(plugin_secrets::PluginSecrets::new(Box::new(
+        plugin_secrets::KeyringBackend::new(plugin_secrets::PluginSecrets::service_name(
+            &app.config().identifier,
+        )),
+    )));
+
     #[cfg(target_os = "macos")]
     {
         app.manage(CliMenuItem(cli_item));
@@ -633,6 +642,9 @@ pub fn run() {
             commands::plugins::plugin_read_asset,
             commands::plugins::plugin_data_read,
             commands::plugins::plugin_data_write,
+            commands::plugins::plugin_secrets_load,
+            commands::plugins::plugin_secret_set,
+            commands::plugins::plugin_secret_delete,
             commands::plugins::plugin_store_list,
             commands::plugins::plugin_store_detail,
             commands::plugins::plugin_store_install,

@@ -14,12 +14,14 @@ use crate::plugin_http::{
 use crate::plugin_proc::{
     self, Consent, ConsentRequest, Decision, ProcEvent, ProcManager, Sig, SpawnRequest,
 };
+use crate::plugin_secrets::PluginSecrets;
 use crate::plugin_store;
 use crate::plugins::{self, Served};
 use crate::state::{AppState, WorkspaceState};
 use base64::Engine as _;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -249,6 +251,38 @@ pub async fn plugin_data_write(
         plugins::write_data(&ctx.root, &id, &json).map_err(io)
     })
     .await
+}
+
+/// Every plugin secret (`app.secretStorage`) from the OS credential store. The store is
+/// shared by all plugins and vaults of the user; only trusted vaults may read it.
+#[tauri::command]
+pub async fn plugin_secrets_load(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<BTreeMap<String, String>, AppError> {
+    trusted_ctx(&webview, &app)?;
+    blocking(move || app.state::<PluginSecrets>().load_all().map_err(io)).await
+}
+
+#[tauri::command]
+pub async fn plugin_secret_set(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    id: String,
+    secret: String,
+) -> Result<(), AppError> {
+    trusted_ctx(&webview, &app)?;
+    blocking(move || app.state::<PluginSecrets>().set(&id, &secret).map_err(io)).await
+}
+
+#[tauri::command]
+pub async fn plugin_secret_delete(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), AppError> {
+    trusted_ctx(&webview, &app)?;
+    blocking(move || app.state::<PluginSecrets>().delete(&id).map_err(io)).await
 }
 
 /// Store list needs no vault: it only reads the public community list.

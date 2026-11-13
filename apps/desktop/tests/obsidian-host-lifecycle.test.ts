@@ -102,6 +102,24 @@ describe("PluginHost boot", () => {
     expect(host.getStatus("b").state).toBe("enabled");
   });
 
+  it("hydrates secrets before the plugin script evaluates", async () => {
+    const ipc = new FakeHostIpc({ enabled: ["p"], plugins: [{ id: "p" }] });
+    ipc.secrets.set("api-key", "sk-1");
+    let seen: string | null = null;
+    const { host } = setup({
+      scripts: {
+        p: (m, e, r) => {
+          seen = (host as any).app.secretStorage.getSecret("api-key");
+          simplePlugin(m, e, r);
+        },
+      },
+      ipc,
+    });
+    await host.boot();
+    expect(seen).toBe("sk-1");
+    expect(ipc.calls.filter((c) => c === "secretsLoad")).toHaveLength(1);
+  });
+
   it("does not load installed plugins that are not enabled", async () => {
     const ipc = new FakeHostIpc({ enabled: ["a"], plugins: [{ id: "a" }, { id: "b" }] });
     const { host, requested } = setup({ scripts: { a: simplePlugin, b: simplePlugin }, ipc });

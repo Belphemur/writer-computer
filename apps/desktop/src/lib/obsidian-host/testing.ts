@@ -18,6 +18,7 @@ export class FakeHostIpc implements HostIpc {
   installed: InstalledPlugin[];
   styles: Record<string, string>;
   data = new Map<string, string>();
+  secrets = new Map<string, string>();
   calls: string[] = [];
 
   constructor(init: FakeIpcInit = {}) {
@@ -59,6 +60,18 @@ export class FakeHostIpc implements HostIpc {
   async dataWrite(id: string, json: string): Promise<void> {
     this.calls.push(`dataWrite:${id}`);
     this.data.set(id, json);
+  }
+  async secretsLoad(): Promise<Record<string, string>> {
+    this.calls.push("secretsLoad");
+    return Object.fromEntries(this.secrets);
+  }
+  async secretSet(id: string, secret: string): Promise<void> {
+    this.calls.push(`secretSet:${id}`);
+    this.secrets.set(id, secret);
+  }
+  async secretDelete(id: string): Promise<void> {
+    this.calls.push(`secretDelete:${id}`);
+    this.secrets.delete(id);
   }
   async storeList(): Promise<unknown> {
     return [];

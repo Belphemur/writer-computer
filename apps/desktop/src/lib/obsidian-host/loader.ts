@@ -331,6 +331,8 @@ export class PluginHost {
       // The Node surface must be seeded (os info, login PATH, sync-fs cache) before any plugin
       // script evaluates; it never rejects.
       await this.ensureNodeRuntime();
+      // Plugins read secrets synchronously in onload: the cache must be filled first.
+      await this.app.secretStorage.hydrate(this.ipc);
       await this.seedPluginData(id);
       this.installDom();
       const exports = await this.evaluate(id);

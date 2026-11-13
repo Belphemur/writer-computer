@@ -102,7 +102,7 @@ export class App {
     openTabById: (id: string): void => this.setting.openRequested?.(id),
   };
 
-  /** In-memory only (see secret-storage.ts); the app run is the secrets' lifetime. */
+  /** Sync cache over the OS credential store; the loader hydrates it before any plugin runs. */
   secretStorage = new SecretStorage();
 
   /** Undocumented in the d.ts but plugins feature-detect these (Copilot, command palettes). */

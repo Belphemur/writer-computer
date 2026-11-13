@@ -23,6 +23,9 @@ export interface HostIpc {
   readAsset(id: string, kind: PluginAssetKind): Promise<string>;
   dataRead(id: string): Promise<string | null>;
   dataWrite(id: string, json: string): Promise<void>;
+  secretsLoad(): Promise<Record<string, string>>;
+  secretSet(id: string, secret: string): Promise<void>;
+  secretDelete(id: string): Promise<void>;
   storeList(): Promise<unknown>;
   storeDetail(id: string): Promise<unknown>;
   storeInstall(id: string): Promise<unknown>;
@@ -36,6 +39,9 @@ export const tauriHostIpc: HostIpc = {
   readAsset: (id, kind) => invoke("plugin_read_asset", { id, kind }),
   dataRead: (id) => invoke("plugin_data_read", { id }),
   dataWrite: (id, json) => invoke("plugin_data_write", { id, json }),
+  secretsLoad: () => invoke("plugin_secrets_load"),
+  secretSet: (id, secret) => invoke("plugin_secret_set", { id, secret }),
+  secretDelete: (id) => invoke("plugin_secret_delete", { id }),
   storeList: () => invoke("plugin_store_list"),
   storeDetail: (id) => invoke("plugin_store_detail", { id }),
   storeInstall: (id) => invoke("plugin_store_install", { id }),
