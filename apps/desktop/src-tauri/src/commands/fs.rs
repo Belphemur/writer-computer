@@ -326,6 +326,22 @@ pub async fn read_directory(
     blocking(move || read_directory_impl(&path, Some(&state))).await
 }
 
+/// Resolve this window's state and reject any path outside its allowed
+/// roots (workspace root, or the one standalone file). Every command that
+/// takes a raw path from the webview goes through this, so script running in
+/// the webview — including plugin code — cannot reach other files.
+fn authorized_state(
+    app: &tauri::AppHandle,
+    webview: &tauri::Webview,
+    paths: &[&str],
+) -> Result<Arc<WorkspaceState>, AppError> {
+    let state = app.state::<AppState>().get_or_create(webview.label());
+    for path in paths {
+        state.authorize_path(Path::new(path))?;
+    }
+    Ok(state)
+}
+
 pub fn read_file_impl(path: &str) -> Result<FileContent, AppError> {
     let file_path = PathBuf::from(path);
     if !file_path.exists() {
@@ -340,7 +356,12 @@ pub fn read_file_impl(path: &str) -> Result<FileContent, AppError> {
 }
 
 #[tauri::command]
-pub async fn read_file(path: String) -> Result<FileContent, AppError> {
+pub async fn read_file(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<FileContent, AppError> {
+    authorized_state(&app, &webview, &[&path])?;
     blocking(move || read_file_impl(&path)).await
 }
 
@@ -372,7 +393,7 @@ pub async fn write_file(
     // The record is per-window so only this window's watcher suppresses
     // the echo — if another window is watching the same workspace it
     // still sees a genuine file-changed event.
-    let state = app.state::<AppState>().get_or_create(webview.label());
+    let state = authorized_state(&app, &webview, &[&path])?;
     let label = webview.label().to_string();
     crate::watcher::record_write(&state, &PathBuf::from(&path));
 
@@ -491,7 +512,12 @@ pub fn create_file_impl(path: &str) -> Result<FileContent, AppError> {
 }
 
 #[tauri::command]
-pub async fn create_file(path: String) -> Result<FileContent, AppError> {
+pub async fn create_file(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<FileContent, AppError> {
+    authorized_state(&app, &webview, &[&path])?;
     blocking(move || create_file_impl(&path)).await
 }
 
@@ -524,7 +550,12 @@ pub fn create_directory_impl(path: &str) -> Result<DirEntry, AppError> {
 }
 
 #[tauri::command]
-pub async fn create_directory(path: String) -> Result<DirEntry, AppError> {
+pub async fn create_directory(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<DirEntry, AppError> {
+    authorized_state(&app, &webview, &[&path])?;
     blocking(move || create_directory_impl(&path)).await
 }
 
@@ -678,7 +709,13 @@ pub fn rename_entry_impl(old_path: &str, new_path: &str) -> Result<(), AppError>
 }
 
 #[tauri::command]
-pub async fn rename_entry(old_path: String, new_path: String) -> Result<(), AppError> {
+pub async fn rename_entry(
+    old_path: String,
+    new_path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    authorized_state(&app, &webview, &[&old_path, &new_path])?;
     blocking(move || rename_entry_impl(&old_path, &new_path)).await
 }
 
@@ -692,7 +729,12 @@ pub fn delete_entry_impl(path: &str) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-pub async fn delete_entry(path: String) -> Result<(), AppError> {
+pub async fn delete_entry(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    authorized_state(&app, &webview, &[&path])?;
     blocking(move || delete_entry_impl(&path)).await
 }
 

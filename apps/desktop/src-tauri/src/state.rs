@@ -1,4 +1,5 @@
 use crate::config::Settings;
+use crate::error::AppError;
 use crate::ignore::WorkspaceIgnore;
 use crate::open_target::PendingOpenPayload;
 use notify::RecommendedWatcher;
@@ -317,6 +318,55 @@ impl WorkspaceState {
         }
         self.pending_open.lock().iter().any(matches)
     }
+
+    /// Check that `path` is one this window may touch and return its resolved
+    /// form. Allowed: anything under the workspace root, or the single file
+    /// a standalone window hosts (or is about to host). Symlinks and `..`
+    /// are resolved before the comparison so they cannot escape the root.
+    /// Fails explicitly with `InvalidPath` otherwise.
+    pub fn authorize_path(&self, path: &Path) -> Result<PathBuf, AppError> {
+        let resolved = resolve_for_access(path)?;
+        if let Some(root) = self.workspace_root.read().as_deref() {
+            let root = root
+                .canonicalize()
+                .map_err(|e| AppError::Io(e.to_string()))?;
+            if resolved.starts_with(&root) {
+                return Ok(resolved);
+            }
+        }
+        let hosted = self
+            .standalone_file
+            .read()
+            .as_deref()
+            .and_then(|file| file.canonicalize().ok());
+        if hosted.as_deref() == Some(resolved.as_path()) || self.has_pending_file(path) {
+            return Ok(resolved);
+        }
+        Err(AppError::InvalidPath(format!(
+            "{} is outside this window's workspace",
+            path.display()
+        )))
+    }
+}
+
+/// Canonicalize `path`, tolerating a final component that does not exist yet
+/// (new files, rename targets): the parent is canonicalized and the name
+/// re-attached. A missing parent, or a final component of `..`, is rejected.
+fn resolve_for_access(path: &Path) -> Result<PathBuf, AppError> {
+    if let Ok(resolved) = path.canonicalize() {
+        return Ok(resolved);
+    }
+    let name = path
+        .file_name()
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let parent = parent
+        .canonicalize()
+        .map_err(|_| AppError::NotFound(path.display().to_string()))?;
+    Ok(parent.join(name))
 }
 
 /// Process-wide registry of per-window `WorkspaceState`, keyed by Tauri
@@ -458,6 +508,65 @@ pub fn rebuild_dirs_from_index(files: &[IndexedFile], root: &Path) -> HashSet<Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn window_with_root(root: &Path) -> Arc<WorkspaceState> {
+        let app_state = AppState::new();
+        let window = app_state.get_or_create("w");
+        *window.workspace_root.write() = Some(root.canonicalize().unwrap());
+        window
+    }
+
+    #[test]
+    fn authorize_path_allows_files_inside_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.md"), "x").unwrap();
+        let window = window_with_root(dir.path());
+        assert!(window.authorize_path(&dir.path().join("a.md")).is_ok());
+        // Not-yet-existing file (create / rename target) in an existing dir.
+        assert!(window.authorize_path(&dir.path().join("new.md")).is_ok());
+    }
+
+    #[test]
+    fn authorize_path_rejects_outside_dotdot_and_symlink_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.md"), "x").unwrap();
+        let window = window_with_root(dir.path());
+
+        assert!(matches!(
+            window.authorize_path(&outside.path().join("secret.md")),
+            Err(AppError::InvalidPath(_))
+        ));
+        let dotdot = dir
+            .path()
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("secret.md");
+        assert!(window.authorize_path(&dotdot).is_err());
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.path(), dir.path().join("link")).unwrap();
+            assert!(window
+                .authorize_path(&dir.path().join("link").join("secret.md"))
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn authorize_path_without_workspace_allows_only_the_standalone_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let hosted = dir.path().join("hosted.md");
+        let other = dir.path().join("other.md");
+        std::fs::write(&hosted, "x").unwrap();
+        std::fs::write(&other, "x").unwrap();
+        let app_state = AppState::new();
+        let window = app_state.get_or_create("s");
+        assert!(window.authorize_path(&hosted).is_err());
+        *window.standalone_file.write() = Some(hosted.clone());
+        assert!(window.authorize_path(&hosted).is_ok());
+        assert!(window.authorize_path(&other).is_err());
+    }
 
     #[test]
     fn find_by_workspace_matches_startup_open() {
