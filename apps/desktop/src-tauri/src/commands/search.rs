@@ -285,7 +285,13 @@ pub fn find_file_by_name_impl(root: &Path, file_name: &str) -> Option<PathBuf> {
 pub async fn find_file_by_name(
     root: String,
     file_name: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
 ) -> Result<Option<String>, AppError> {
+    // the search root must be inside this window's workspace
+    app.state::<AppState>()
+        .get_or_create(webview.label())
+        .authorize_path(Path::new(&root))?;
     tauri::async_runtime::spawn_blocking(move || {
         Ok(find_file_by_name_impl(Path::new(&root), &file_name)
             .map(|path| path.to_string_lossy().to_string()))

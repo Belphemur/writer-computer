@@ -322,7 +322,7 @@ pub async fn read_directory(
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Vec<DirEntry>, AppError> {
-    let state = app.state::<AppState>().get_or_create(webview.label());
+    let state = authorized_state(&app, &webview, &[&path])?;
     blocking(move || read_directory_impl(&path, Some(&state))).await
 }
 
@@ -454,6 +454,14 @@ pub async fn read_recent_files(
     blocking(move || Ok(read_recent_files_impl(&state, limit, offset))).await
 }
 
+/// Drop every path this window may not touch (symlinks and `..` resolved).
+pub fn retain_authorized(state: &WorkspaceState, paths: Vec<String>) -> Vec<String> {
+    paths
+        .into_iter()
+        .filter(|p| state.authorize_path(Path::new(p)).is_ok())
+        .collect()
+}
+
 pub fn read_file_entries_impl(paths: Vec<String>, root: &Path) -> Vec<DirEntry> {
     paths
         .into_iter()
@@ -479,6 +487,8 @@ pub async fn read_file_entries(
         .read()
         .clone()
         .ok_or(AppError::NoWorkspace)?;
+    // `starts_with` in the impl is lexical (`root/../x` passes): resolve first
+    let paths = retain_authorized(&state, paths);
     blocking(move || Ok(read_file_entries_impl(paths, &root))).await
 }
 
@@ -739,8 +749,14 @@ pub async fn delete_entry(
 }
 
 #[tauri::command]
-pub async fn file_exists(path: String) -> bool {
-    tauri::async_runtime::spawn_blocking(move || PathBuf::from(&path).exists())
+pub async fn file_exists(path: String, webview: tauri::Webview, app: tauri::AppHandle) -> bool {
+    // A path outside this window's reach answers `false` exactly like a
+    // missing one, so existence outside the workspace does not leak.
+    let state = app.state::<AppState>().get_or_create(webview.label());
+    let Ok(resolved) = state.authorize_probe(Path::new(&path)) else {
+        return false;
+    };
+    tauri::async_runtime::spawn_blocking(move || resolved.exists())
         .await
         .unwrap_or(false)
 }
@@ -786,7 +802,12 @@ pub fn reveal_in_file_manager_impl(path: &str) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-pub async fn reveal_in_file_manager(path: String) -> Result<(), AppError> {
+pub async fn reveal_in_file_manager(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    authorized_state(&app, &webview, &[&path])?;
     blocking(move || reveal_in_file_manager_impl(&path)).await
 }
 
@@ -794,6 +815,33 @@ pub async fn reveal_in_file_manager(path: String) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn retain_authorized_drops_dotdot_and_outside_paths() {
+        let ws = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(ws.path().join("in.md"), "x").unwrap();
+        fs::write(outside.path().join("out.md"), "x").unwrap();
+        let state = WorkspaceState::default();
+        *state.workspace_root.write() = Some(ws.path().canonicalize().unwrap());
+        let root = ws.path().canonicalize().unwrap();
+        let sneaky = root
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("out.md");
+        let kept = retain_authorized(
+            &state,
+            vec![
+                root.join("in.md").to_string_lossy().into_owned(),
+                sneaky.to_string_lossy().into_owned(),
+                outside.path().join("out.md").to_string_lossy().into_owned(),
+            ],
+        );
+        assert_eq!(
+            kept,
+            vec![root.join("in.md").to_string_lossy().into_owned()]
+        );
+    }
 
     fn setup_test_dir() -> TempDir {
         let dir = TempDir::new().unwrap();

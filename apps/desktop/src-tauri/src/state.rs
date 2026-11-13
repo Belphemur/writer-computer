@@ -347,6 +347,40 @@ impl WorkspaceState {
             path.display()
         )))
     }
+
+    /// Like [`Self::authorize_path`], plus what a standalone (single-file)
+    /// window needs for read-only existence probes and saving pasted images:
+    /// the hosted file's sibling entries and its `<stem>-assets` folder.
+    /// Workspace windows get exactly `authorize_path`.
+    pub fn authorize_probe(&self, path: &Path) -> Result<PathBuf, AppError> {
+        let err = self.authorize_path(path).err();
+        let Some(err) = err else {
+            return self.authorize_path(path);
+        };
+        if self.workspace_root.read().is_some() {
+            return Err(err);
+        }
+        let hosted = self
+            .standalone_file
+            .read()
+            .as_deref()
+            .and_then(|f| f.canonicalize().ok());
+        let (Some(hosted), Ok(resolved)) = (hosted, resolve_for_access(path)) else {
+            return Err(err);
+        };
+        let dir = hosted.parent().map(Path::to_path_buf);
+        let assets = hosted
+            .file_stem()
+            .zip(dir.as_ref())
+            .map(|(stem, dir)| dir.join(format!("{}-assets", stem.to_string_lossy())));
+        let sibling = resolved.parent() == dir.as_deref();
+        let in_assets = assets.as_ref().is_some_and(|a| resolved.starts_with(a));
+        if sibling || in_assets {
+            Ok(resolved)
+        } else {
+            Err(err)
+        }
+    }
 }
 
 /// Canonicalize `path`, tolerating a final component that does not exist yet
@@ -566,6 +600,49 @@ mod tests {
         *window.standalone_file.write() = Some(hosted.clone());
         assert!(window.authorize_path(&hosted).is_ok());
         assert!(window.authorize_path(&other).is_err());
+    }
+
+    #[test]
+    fn authorize_probe_extends_standalone_to_siblings_and_assets_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let hosted = dir.path().join("hosted.md");
+        std::fs::write(&hosted, "x").unwrap();
+        std::fs::write(dir.path().join("sibling.md"), "x").unwrap();
+        std::fs::create_dir_all(dir.path().join("sub/deeper")).unwrap();
+        std::fs::create_dir(dir.path().join("hosted-assets")).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let app_state = AppState::new();
+        let window = app_state.get_or_create("s");
+        assert!(window.authorize_probe(&hosted).is_err(), "not hosted yet");
+        *window.standalone_file.write() = Some(hosted.clone());
+        assert!(window.authorize_probe(&hosted).is_ok());
+        assert!(window
+            .authorize_probe(&dir.path().join("sibling.md"))
+            .is_ok());
+        assert!(window
+            .authorize_probe(&dir.path().join("hosted-assets/new.png"))
+            .is_ok());
+        assert!(window
+            .authorize_probe(&dir.path().join("sub/deeper"))
+            .is_err());
+        assert!(window
+            .authorize_probe(&outside.path().join("x.md"))
+            .is_err());
+        let dotdot = dir.path().join("hosted-assets/../../escape.md");
+        assert!(window.authorize_probe(&dotdot).is_err());
+    }
+
+    #[test]
+    fn authorize_probe_is_strict_in_a_workspace_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("a.md"), "x").unwrap();
+        let window = window_with_root(dir.path());
+        *window.standalone_file.write() = Some(outside.path().join("a.md"));
+        assert!(window
+            .authorize_probe(&outside.path().join("b.md"))
+            .is_err());
+        assert!(window.authorize_probe(&dir.path().join("n.md")).is_ok());
     }
 
     #[test]

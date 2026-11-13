@@ -7,6 +7,8 @@ mod ignore;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod open_target;
+mod plugin_http;
+mod plugin_proc;
 mod plugin_store;
 mod plugins;
 mod state;
@@ -87,6 +89,7 @@ fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
         WindowEvent::Destroyed => {
             // Remove the state; the `WorkspaceState`'s `RecommendedWatcher`
             // drops on the last `Arc` release, unregistering FSEvents/inotify.
+            commands::plugins::stop_window_work(&handle, &label);
             handle.state::<AppState>().remove(&label);
         }
         _ => {}
@@ -513,6 +516,8 @@ pub fn run() {
             commands::plugins::handle_scheme(ctx.app_handle(), ctx.webview_label(), &request)
         })
         .manage(AppState::new())
+        .manage(plugin_http::StreamRegistry::default())
+        .manage(plugin_proc::ProcManager::default())
         .setup(|app| {
             // Initialize the main window's per-window state (settings layer,
             // pending-open queue). `get_or_create` lazily builds the
@@ -629,6 +634,13 @@ pub fn run() {
             commands::plugins::plugin_store_detail,
             commands::plugins::plugin_store_install,
             commands::plugins::plugin_store_uninstall,
+            commands::plugins::plugin_http_request,
+            commands::plugins::plugin_http_stream_start,
+            commands::plugins::plugin_http_stream_cancel,
+            commands::plugins::plugin_proc_spawn,
+            commands::plugins::plugin_proc_write,
+            commands::plugins::plugin_proc_close_stdin,
+            commands::plugins::plugin_proc_kill,
             #[cfg(target_os = "macos")]
             commands::shell_install::cli_status,
             #[cfg(target_os = "macos")]
@@ -639,6 +651,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {
+            if matches!(_event, tauri::RunEvent::Exit) {
+                _app.state::<plugin_proc::ProcManager>().kill_all();
+            }
             // Dock click with every window hidden or closed: bring the main
             // window back. It is only ever hidden (never destroyed) by the
             // close-requested handler, so it still holds its workspace.

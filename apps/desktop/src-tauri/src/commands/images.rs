@@ -1,7 +1,9 @@
 use crate::error::AppError;
+use crate::state::AppState;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ImageSaveResult {
@@ -14,7 +16,14 @@ pub fn save_clipboard_image(
     markdown_file_path: String,
     image_data: Vec<u8>,
     format: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
 ) -> Result<ImageSaveResult, AppError> {
+    // The markdown file decides where `<stem>-assets/` is created: it must be
+    // inside this window's workspace (or be the standalone file it hosts).
+    app.state::<AppState>()
+        .get_or_create(webview.label())
+        .authorize_path(std::path::Path::new(&markdown_file_path))?;
     save_clipboard_image_impl(&markdown_file_path, &image_data, &format)
 }
 

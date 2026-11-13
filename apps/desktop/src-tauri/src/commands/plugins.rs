@@ -6,12 +6,19 @@
 //! `WorkspaceState::authorize_path`, and maps errors to `AppError`.
 
 use crate::error::AppError;
+use crate::plugin_http::{
+    self, HttpClient, HttpRequest, HttpResponse, StreamEvent, StreamRegistry,
+};
+use crate::plugin_proc::{self, Consent, ConsentRequest, ProcEvent, ProcManager, SpawnRequest};
 use crate::plugin_store;
 use crate::plugins::{self, Served};
 use crate::state::{AppState, WorkspaceState};
+use base64::Engine as _;
 use serde::Serialize;
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tauri::ipc::Channel;
 use tauri::Manager;
 
 const TRUST_FILE: &str = "plugins_trust.json";
@@ -127,7 +134,29 @@ pub async fn plugins_set_trust(
     trusted: bool,
 ) -> Result<(), AppError> {
     let ctx = window_ctx(&webview, &app)?;
-    blocking(move || plugins::set_trusted(&ctx.trust_file, &ctx.root, trusted).map_err(io)).await
+    let root = ctx.root.clone();
+    blocking(move || plugins::set_trusted(&ctx.trust_file, &ctx.root, trusted).map_err(io)).await?;
+    if !trusted {
+        // Restricted mode: nothing the vault's plugins started may keep running.
+        stop_vault_work(&app, &root);
+    }
+    Ok(())
+}
+
+/// Cancel every plugin stream and kill every plugin process of one vault.
+pub fn stop_vault_work(app: &tauri::AppHandle, root: &Path) {
+    app.state::<StreamRegistry>().cancel_root(root);
+    app.state::<ProcManager>().kill_root(root);
+}
+
+/// A window closed or left its vault: stop what its plugins started.
+pub fn stop_window_work(app: &tauri::AppHandle, label: &str) {
+    if let Some(streams) = app.try_state::<StreamRegistry>() {
+        streams.cancel_window(label);
+    }
+    if let Some(procs) = app.try_state::<ProcManager>() {
+        procs.kill_window(label);
+    }
 }
 
 #[tauri::command]
@@ -245,6 +274,195 @@ pub async fn plugin_store_uninstall(
     blocking(move || plugin_store::uninstall(&ctx.root, &id).map_err(io)).await
 }
 
+/* --------------------------------------------------------- plugin HTTP */
+
+/// A trusted vault's context, or the restricted-mode refusal.
+fn trusted_ctx(webview: &tauri::Webview, app: &tauri::AppHandle) -> Result<Ctx, AppError> {
+    let ctx = window_ctx(webview, app)?;
+    ctx.require_trusted()?;
+    Ok(ctx)
+}
+
+/// One buffered HTTP(S) request for the calling window's plugins.
+#[tauri::command]
+pub async fn plugin_http_request(
+    request: HttpRequest,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<HttpResponse, AppError> {
+    trusted_ctx(&webview, &app)?;
+    let client = HttpClient::shared().map_err(io)?;
+    plugin_http::request(&client, &request).await.map_err(io)
+}
+
+/// Start a streaming request; events arrive on `channel` (see `StreamEvent`).
+/// Returns the stream id for `plugin_http_stream_cancel`.
+#[tauri::command]
+pub async fn plugin_http_stream_start(
+    request: HttpRequest,
+    channel: Channel<StreamEvent>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<u64, AppError> {
+    let ctx = trusted_ctx(&webview, &app)?;
+    let client = HttpClient::shared().map_err(io)?;
+    let emit: plugin_http::Emit = Arc::new(move |ev| channel.send(ev).is_ok());
+    app.state::<StreamRegistry>()
+        .start(client, webview.label(), ctx.root, &request, emit)
+        .map_err(io)
+}
+
+#[tauri::command]
+pub fn plugin_http_stream_cancel(
+    stream_id: u64,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> bool {
+    app.state::<StreamRegistry>()
+        .cancel(webview.label(), stream_id)
+}
+
+/* ------------------------------------------------------- plugin processes */
+
+/// Questions waiting on the one open dialog; more than this are refused.
+const MAX_PENDING_CONSENTS: usize = 4;
+static CONSENT_QUEUE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static CONSENT_PENDING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// The native consent dialog: outside the webview, so page script cannot
+/// answer for the user. Deny is the cancel button; closing the dialog denies.
+struct DialogConsent {
+    app: tauri::AppHandle,
+    window: Option<tauri::Window>,
+}
+
+impl Consent for DialogConsent {
+    fn ask(&self, req: &ConsentRequest) -> bool {
+        use std::sync::atomic::Ordering;
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        if CONSENT_PENDING.fetch_add(1, Ordering::SeqCst) >= MAX_PENDING_CONSENTS {
+            CONSENT_PENDING.fetch_sub(1, Ordering::SeqCst);
+            return false;
+        }
+        // one dialog at a time: a plugin spawning in a loop queues here
+        let _turn = CONSENT_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        let mut d = self
+            .app
+            .dialog()
+            .message(req.message())
+            .title("Writer: run program?")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Run once".to_string(),
+                "Deny".to_string(),
+            ));
+        if let Some(w) = &self.window {
+            d = d.parent(w);
+        }
+        let answer = d.blocking_show();
+        CONSENT_PENDING.fetch_sub(1, Ordering::SeqCst);
+        answer
+    }
+}
+
+/// Start a program for a plugin. ALWAYS shows a native consent dialog first.
+/// Events arrive on `on_event` (see `ProcEvent`); returns the process id.
+#[tauri::command]
+pub async fn plugin_proc_spawn(
+    request: SpawnRequest,
+    on_event: Channel<ProcEvent>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<u64, AppError> {
+    let ctx = trusted_ctx(&webview, &app)?;
+    let label = webview.label().to_string();
+    let state = app.state::<AppState>().get_or_create(&label);
+    // cwd: default the vault root; must resolve inside it
+    let cwd = match &request.cwd {
+        Some(c) => PathBuf::from(c),
+        None => ctx.root.clone(),
+    };
+    let cwd = state.authorize_path(&cwd)?;
+    if !cwd.starts_with(&ctx.root) || !cwd.is_dir() {
+        return Err(AppError::InvalidPath(
+            "cwd must be a directory inside the vault".into(),
+        ));
+    }
+    let prepared = plugin_proc::prepare(&request, cwd).map_err(io)?;
+    let consent = DialogConsent {
+        app: app.clone(),
+        window: webview.window().into(),
+    };
+    let emit: plugin_proc::Emit = Arc::new(move |ev| on_event.send(ev).is_ok());
+    let root = ctx.root.clone();
+    let app2 = app.clone();
+    let label2 = label.clone();
+    let plugin_id = request.plugin_id.clone();
+    blocking(move || {
+        // trust and vault are re-read after the dialog returns
+        let still_ok = || {
+            let Some(st) = app2.state::<AppState>().get(&label2) else {
+                return false;
+            };
+            match ctx_for(&st, &app2) {
+                Ok(c) => c.root == root && c.trusted(),
+                Err(_) => false,
+            }
+        };
+        app2.state::<ProcManager>()
+            .spawn_with_consent(
+                &consent, &label2, &root, &plugin_id, &prepared, &still_ok, emit,
+            )
+            .map_err(io)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn plugin_proc_write(
+    proc_id: u64,
+    data_base64: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    trusted_ctx(&webview, &app)?;
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|_| AppError::Io("data_base64 is not valid base64".into()))?;
+    let label = webview.label().to_string();
+    // a full pipe blocks: keep it off the async pool
+    blocking(move || {
+        app.state::<ProcManager>()
+            .write(&label, proc_id, &data)
+            .map_err(io)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn plugin_proc_close_stdin(
+    proc_id: u64,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    trusted_ctx(&webview, &app)?;
+    app.state::<ProcManager>()
+        .close_stdin(webview.label(), proc_id)
+        .map_err(io)
+}
+
+/// Kill the process and its group; an `exit` event follows.
+#[tauri::command]
+pub fn plugin_proc_kill(
+    proc_id: u64,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    app.state::<ProcManager>()
+        .kill(webview.label(), proc_id)
+        .map_err(io)
+}
+
 /* ------------------------------------------------------------ URI scheme */
 
 fn respond(status: u16, ctype: &str, body: Vec<u8>) -> tauri::http::Response<Vec<u8>> {
@@ -278,5 +496,28 @@ pub fn handle_scheme(
         Served::Js(b) => respond(200, "text/javascript; charset=utf-8", b),
         Served::Refused(why) => refuse(why),
         Served::Missing => respond(404, "text/plain; charset=utf-8", b"not found".to_vec()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restricted_vault_is_refused_until_trusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vault");
+        std::fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let ctx = Ctx {
+            root: root.clone(),
+            trust_file: dir.path().join("trust.json"),
+        };
+        // every plugin HTTP / process command goes through require_trusted
+        assert!(ctx.require_trusted().is_err());
+        plugins::set_trusted(&ctx.trust_file, &root, true).unwrap();
+        assert!(ctx.require_trusted().is_ok());
+        plugins::set_trusted(&ctx.trust_file, &root, false).unwrap();
+        assert!(ctx.require_trusted().is_err());
     }
 }

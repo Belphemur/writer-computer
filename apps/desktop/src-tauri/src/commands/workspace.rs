@@ -364,6 +364,7 @@ pub fn close_workspace(
 ) -> Result<(), AppError> {
     let state = app.state::<AppState>().get_or_create(webview.label());
     let expected_root = PathBuf::from(&root);
+    crate::commands::plugins::stop_window_work(&app, webview.label());
     let runtime = state
         .clear_workspace_if_current(&expected_root)
         .map_err(|()| {
@@ -426,6 +427,29 @@ pub(crate) fn canonicalize_workspace_root(path: &str) -> Result<PathBuf, AppErro
         .map_err(|e| AppError::Io(e.to_string()))
 }
 
+/// Grow the asset-protocol scope (`tauri.conf.json` starts it empty). The
+/// scope is process-wide and tauri has no way to remove an allow (`forbid_*`
+/// is permanent and wins over a later allow, which would break reopening the
+/// same folder), so access is granted for the rest of the session to folders
+/// the user has opened, never to the whole disk.
+fn allow_asset_dir(app: &tauri::AppHandle, dir: &Path, recursive: bool) {
+    if let Err(e) = app.asset_protocol_scope().allow_directory(dir, recursive) {
+        eprintln!("asset scope: could not allow {}: {e}", dir.display());
+    }
+}
+
+/// A standalone window shows images relative to its one file: the folder
+/// itself (flat) and the `<stem>-assets` folder pasted images are saved to.
+fn allow_standalone_assets(app: &tauri::AppHandle, file: &Path) {
+    let Some(parent) = file.parent() else { return };
+    allow_asset_dir(app, parent, false);
+    if let Some(stem) = file.file_stem() {
+        let assets = parent.join(format!("{}-assets", stem.to_string_lossy()));
+        // a glob pattern: fine even before the folder exists (first paste)
+        allow_asset_dir(app, &assets, true);
+    }
+}
+
 fn prepare_workspace_state(
     app: &tauri::AppHandle,
     label: &str,
@@ -441,6 +465,9 @@ fn prepare_workspace_state(
 
     let state = app.state::<AppState>().get_or_create(label);
 
+    // Plugin streams/processes belong to the vault being left.
+    crate::commands::plugins::stop_window_work(app, label);
+    allow_asset_dir(app, &root, true);
     let (new_epoch, new_cancel, old_runtime) = state.transition_to_workspace(root.clone());
     drop_workspace_runtime_off_thread(old_runtime);
 
@@ -795,6 +822,8 @@ pub(crate) fn watch_standalone_file_impl(
         .map_err(|e| AppError::Io(e.to_string()))?;
 
     let state = app.state::<AppState>().get_or_create(label);
+    crate::commands::plugins::stop_window_work(app, label);
+    allow_standalone_assets(app, &file);
     let epoch = state.workspace_epoch.fetch_add(1, Ordering::SeqCst) + 1;
     *state.standalone_file.write() = Some(file.clone());
 
