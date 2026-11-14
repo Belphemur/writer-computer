@@ -1,7 +1,9 @@
 // Small modules: `net`, `zlib`, `electron`, `url`, `module`.
-import { nodeError } from "./errors";
+import { recordPluginError } from "../error-log";
+import { messageOf, nodeError } from "./errors";
 import { Server } from "./http";
 import { pathModule } from "./path";
+import { getNodeIpc } from "./state";
 
 // ---------------------------------------------------------------- net
 
@@ -64,10 +66,8 @@ for (const n of [
 
 export type OpenExternal = (url: string) => Promise<void>;
 
-const defaultOpenExternal: OpenExternal = async (url) => {
-  const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(url);
-};
+// Rust (`plugin_open_url`) owns the scheme check and the trusted-vault gate.
+const defaultOpenExternal: OpenExternal = (url) => getNodeIpc().openUrl(url);
 let openExternalImpl: OpenExternal = defaultOpenExternal;
 /** Test seam / host override for `electron.shell.openExternal`. `null` restores the default. */
 export function setOpenExternal(fn: OpenExternal | null): void {
@@ -126,8 +126,23 @@ export const electronModule = {
         );
       await openExternalImpl(String(url));
     },
-    async showItemInFolder(): Promise<never> {
-      throw nodeError("ENOSYS", "electron.shell.showItemInFolder() is not supported in Writer");
+    /** Electron resolves with "" on success and an error message otherwise. */
+    async openPath(path: string): Promise<string> {
+      try {
+        await getNodeIpc().openPath(String(path), false);
+        return "";
+      } catch (e) {
+        return messageOf(e);
+      }
+    },
+    /** Electron's returns void and never throws; failures are recorded, not swallowed. */
+    showItemInFolder(path: string): void {
+      getNodeIpc()
+        .openPath(String(path), true)
+        .catch((e: unknown) => {
+          console.error("[plugin] showItemInFolder failed:", e);
+          recordPluginError("host", "show-item-in-folder", e);
+        });
     },
   },
 };

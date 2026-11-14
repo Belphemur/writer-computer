@@ -64,7 +64,36 @@ export const OBSIDIAN_THEME_CSS = `:root {
   --toggle-thumb-color: #fff;
   --table-header-weight: 600; --table-header-background: transparent;
   --table-border-width: 1px; --table-border-color: var(--border-color);
-}`;
+}
+
+/* Modal frame (api/ui.ts Modal). The host owns the layout: without it \`.modal-container\` is a
+   static block appended after the app and a plugin's Configure / Install dialogs open off-screen. */
+.modal-container {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-container > .modal-bg {
+  position: absolute; inset: 0; background: rgb(0 0 0 / 50%);
+}
+.modal-container > .modal {
+  position: relative; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  width: 540px; min-width: 300px; max-width: calc(100vw - 2rem); max-height: calc(100vh - 2rem);
+  padding: var(--size-4-4); overflow: auto;
+  background: var(--background-primary); color: var(--text-normal);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-xl); box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+  font-size: var(--font-ui-medium);
+}
+.modal-container .modal-close-button {
+  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: var(--text-muted);
+}
+.modal-container .modal-close-button::before { content: "\\00d7"; font-size: 20px; line-height: 1; }
+.modal-container .modal-title { font-size: var(--font-ui-larger); font-weight: var(--font-semibold); }
+.modal-container .modal-title:empty { display: none; }
+.modal-container .modal-content { min-height: 0; flex: 1 1 auto; }
+`;
 
 /** Adds the variable sheet once; returns the remover. */
 export function installObsidianTheme(doc: Document = document): () => void {

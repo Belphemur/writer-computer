@@ -24,4 +24,13 @@ describe("Obsidian theme variables", () => {
   it("defines the size scale plugins rely on", () => {
     expect(OBSIDIAN_THEME_CSS).toContain("--size-4-4: 16px");
   });
+
+  it("lays modals out as a fixed, centred overlay (a plugin's Configure dialog must be visible)", () => {
+    const block = /\.modal-container \{([^}]*)\}/.exec(OBSIDIAN_THEME_CSS)?.[1] ?? "";
+    expect(block).toContain("position: fixed");
+    expect(block).toContain("inset: 0");
+    expect(block).toMatch(/z-index: \d+/);
+    expect(OBSIDIAN_THEME_CSS).toContain(".modal-container > .modal-bg");
+    expect(OBSIDIAN_THEME_CSS).toContain(".modal-container > .modal {");
+  });
 });

@@ -639,8 +639,9 @@ pub async fn plugin_os_info(
     blocking(|| Ok(plugin_env::os_info())).await
 }
 
-/// Read-only metadata for paths in the vault, `~/.claude` (and
-/// `CLAUDE_CONFIG_DIR`) or a path `plugin_which` returned for this window.
+/// Read-only metadata for paths in the vault, agent homes (`~/.claude`,
+/// `CLAUDE_CONFIG_DIR`, `~/.codex`, ...), files directly inside PATH / well-known
+/// bin dirs, or a path `plugin_which` returned for this window.
 #[tauri::command]
 pub async fn plugin_fs_probe(
     paths: Vec<String>,
@@ -653,11 +654,69 @@ pub async fn plugin_fs_probe(
         let scope = ProbeScope {
             vault: &ctx.root,
             claude_dirs: plugin_env::claude_dirs(),
+            bin_dirs: plugin_env::bin_dirs(),
+            listable: plugin_env::listable_dirs(),
             which: &which,
         };
         plugin_env::probe(&paths, &scope).map_err(AppError::InvalidPath)
     })
     .await
+}
+
+/// `electron.shell.openExternal`: http, https and mailto only (`plugin_env::openable_url`).
+#[tauri::command]
+pub async fn plugin_open_url(
+    url: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    use tauri_plugin_opener::OpenerExt;
+    trusted_ctx(&webview, &app)?;
+    let url = plugin_env::openable_url(&url)
+        .map_err(AppError::InvalidPath)?
+        .to_string();
+    if plugin_env::e2e_open_log(&format!("url\t{url}")) {
+        return Ok(());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| io(e.to_string()))
+}
+
+/// `electron.shell.openPath` (`reveal: false`) / `showItemInFolder` (`reveal: true`): hand an
+/// existing vault or agent-config entry to the system, never anything launchable
+/// (`plugin_env::openable_target`). Replaces the old "open this file manually" notice.
+#[tauri::command]
+pub async fn plugin_open_path(
+    path: String,
+    reveal: bool,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    use tauri_plugin_opener::OpenerExt;
+    let ctx = trusted_ctx(&webview, &app)?;
+    let target = blocking(move || {
+        plugin_env::openable_target(&path, &ctx.root, &plugin_env::claude_dirs())
+            .map_err(AppError::InvalidPath)
+    })
+    .await?;
+    if plugin_env::e2e_open_log(&format!(
+        "path\t{}\t{}",
+        if reveal { "reveal" } else { "open" },
+        target.display()
+    )) {
+        return Ok(());
+    }
+    let opener = app.opener();
+    if reveal {
+        opener
+            .reveal_item_in_dir(&target)
+            .map_err(|e| io(e.to_string()))
+    } else {
+        opener
+            .open_path(target.to_string_lossy(), None::<&str>)
+            .map_err(|e| io(e.to_string()))
+    }
 }
 
 /* ------------------------------------------------------------ URI scheme */

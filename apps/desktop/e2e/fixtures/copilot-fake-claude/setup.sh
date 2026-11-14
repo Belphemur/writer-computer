@@ -36,6 +36,7 @@ for f in main.js manifest.json styles.css; do cp "$CACHE/$f" "$VAULT/.obsidian/p
 rm -f "$VAULT/.obsidian/plugins/copilot/data.json"
 printf '["copilot"]' > "$VAULT/.obsidian/community-plugins.json"
 printf '# Alpha\n\nHello from the alpha note.\n' > "$VAULT/alpha.md"
+printf '# Beta\n\nHello from the beta note.\n' > "$VAULT/beta.md"
 
 # The fake is a sh wrapper with the ABSOLUTE node path baked in, so it does not
 # depend on the PATH the app hands to the child.
@@ -46,6 +47,23 @@ cat > "$VAULT/.bin/claude" <<WRAP
 exec "$NODE" "\$(dirname "\$0")/fake-claude.js" "\$@"
 WRAP
 chmod +x "$VAULT/.bin/claude"
+
+# Fake codex-acp / opencode (Copilot Agent Mode's other agents) for specs/copilot-agents-config.spec.js.
+# They live OUTSIDE the vault (like a real install): "$VAULT-agents". agents/path is put on the
+# login PATH by run.sh for that spec only; agents/typed is NOT on PATH (the "type a custom path"
+# flow). Each folder also has a provenance.json: Copilot's Codex check reads it next to the adapter.
+AGENTS="$VAULT-agents"
+rm -rf "$AGENTS"
+ARCH=$(uname -m); [ "$ARCH" = x86_64 ] && ARCH=x64
+for d in path typed; do
+  mkdir -p "$AGENTS/$d/bin"
+  for n in codex-acp opencode; do
+    cp "$HERE/fake-agent.sh" "$AGENTS/$d/bin/$n"
+    chmod +x "$AGENTS/$d/bin/$n"
+  done
+  printf '{"acpVersion":"2.1.0","packagingRevision":1,"target":"darwin-%s"}' "$ARCH" > "$AGENTS/$d/bin/provenance.json"
+done
+rm -f "$AGENTS/agents-invocations.log"
 
 # Seed ONLY these three files in the e2e app's data dir.
 mkdir -p "$DATA"
@@ -58,3 +76,5 @@ printf '{"%s": {"copilot": ["*"]}}' "$VAULT" > "$DATA/plugins_proc_consent.json"
 echo "VAULT=$VAULT"
 echo "EXTRA_PATH=$VAULT/.bin"
 echo "LOG=$VAULT/.bin/claude-invocations.log"
+echo "AGENTS=$AGENTS"
+echo "OPEN_LOG=$VAULT/.bin/open-requests.log"

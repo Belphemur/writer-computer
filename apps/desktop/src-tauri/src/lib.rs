@@ -662,6 +662,8 @@ pub fn run() {
             commands::plugins::plugin_resolve_login_path,
             commands::plugins::plugin_os_info,
             commands::plugins::plugin_fs_probe,
+            commands::plugins::plugin_open_path,
+            commands::plugins::plugin_open_url,
             #[cfg(target_os = "macos")]
             commands::shell_install::cli_status,
             #[cfg(target_os = "macos")]

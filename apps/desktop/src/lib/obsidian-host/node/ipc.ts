@@ -38,6 +38,12 @@ export interface FsProbe {
   is_file: boolean;
   is_dir: boolean;
   size: number | null;
+  /** Entry names; only for node-tool version roots (nvm / fnm), see Rust `ProbeResult`. */
+  entries?: string[];
+  /** Canonical path (symlinks resolved) of an existing entry. */
+  real?: string;
+  /** Content of a package-metadata companion file (provenance.json / package.json) of a `which` program. */
+  text?: string;
 }
 
 export interface NodeIpc {
@@ -50,6 +56,10 @@ export interface NodeIpc {
   resolveLoginPath(): Promise<string>;
   osInfo(): Promise<NodeOsInfo>;
   fsProbe(paths: string[]): Promise<FsProbe[]>;
+  /** `shell.openExternal`: Rust validates the scheme (http, https, mailto). */
+  openUrl(url: string): Promise<void>;
+  /** `shell.openPath` / `showItemInFolder`: Rust confines to the vault and agent config folders. */
+  openPath(path: string, reveal: boolean): Promise<void>;
 }
 
 export const tauriNodeIpc: NodeIpc = {
@@ -65,4 +75,6 @@ export const tauriNodeIpc: NodeIpc = {
   resolveLoginPath: () => invoke("plugin_resolve_login_path"),
   osInfo: () => invoke("plugin_os_info"),
   fsProbe: (paths) => invoke("plugin_fs_probe", { paths }),
+  openUrl: (url) => invoke("plugin_open_url", { url }),
+  openPath: (path, reveal) => invoke("plugin_open_path", { path, reveal }),
 };

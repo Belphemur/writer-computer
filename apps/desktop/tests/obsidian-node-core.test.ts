@@ -534,7 +534,6 @@ describe("http / https / electron", () => {
       /not allowed/,
     );
     await expect(electronModule.shell.openExternal("not a url")).rejects.toThrow(/Invalid URL/);
-    await expect(electronModule.shell.showItemInFolder()).rejects.toThrow(/not supported/);
     setOpenExternal(null);
   });
 });

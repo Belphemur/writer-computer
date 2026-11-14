@@ -37,6 +37,10 @@ export class FakeNodeIpc implements NodeIpc {
   whichMap: Record<string, string | null> = { claude: "/Users/test/.local/bin/claude" };
   probes: Record<string, Partial<FsProbe>> = {};
   probeCalls: string[][] = [];
+  openedUrls: string[] = [];
+  openedPaths: { path: string; reveal: boolean }[] = [];
+  /** Reject openUrl / openPath with this text. */
+  openRejection: string | null = null;
   failWith: Partial<Record<"osInfo" | "resolveLoginPath" | "which" | "fsProbe", string>> = {};
   /** Reject procSpawn with this text (e.g. "EACCES: consent denied"). */
   spawnRejection: string | null = null;
@@ -101,6 +105,14 @@ export class FakeNodeIpc implements NodeIpc {
     if (this.failWith.osInfo) throw this.failWith.osInfo;
     return this.osinfo;
   }
+  async openUrl(url: string): Promise<void> {
+    if (this.openRejection) throw this.openRejection;
+    this.openedUrls.push(url);
+  }
+  async openPath(path: string, reveal: boolean): Promise<void> {
+    if (this.openRejection) throw this.openRejection;
+    this.openedPaths.push({ path, reveal });
+  }
   async fsProbe(paths: string[]): Promise<FsProbe[]> {
     if (this.failWith.fsProbe) throw this.failWith.fsProbe;
     this.probeCalls.push(paths);
@@ -112,6 +124,9 @@ export class FakeNodeIpc implements NodeIpc {
         is_file: hit?.is_file ?? false,
         is_dir: hit?.is_dir ?? false,
         size: hit?.size ?? null,
+        ...(hit?.entries ? { entries: hit.entries } : {}),
+        ...(hit?.real ? { real: hit.real } : {}),
+        ...(hit?.text !== undefined ? { text: hit.text } : {}),
       };
     });
   }

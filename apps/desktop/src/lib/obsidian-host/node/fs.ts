@@ -4,7 +4,8 @@
 // stat/lstat, access, mkdir, rm, rmdir, unlink, rename, readdir, realpath, copyFile). Files are
 // UTF-8 text (no binary IO yet); `read_directory` hides dotfiles. stat/access/realpath outside the
 // vault go through `plugin_fs_probe` (allow-listed paths only, else EACCES); reads/writes outside
-// the vault are EACCES. mkdtemp/open/streams/symlink/chmod... are not supported.
+// the vault are EACCES, except the home-directory mounts of `home-mounts.ts` (served from inside
+// the vault). mkdtemp/open/streams/symlink/chmod... are not supported.
 //
 // Sync: WKWebView cannot block on IPC, so existsSync/statSync/lstatSync/accessSync/realpathSync/
 // readdirSync/readFileSync answer ONLY from a read-only cache filled asynchronously by
@@ -17,7 +18,8 @@ import { Buffer } from "./buffer";
 import { errnoError, messageOf, nodeError, type NodeError } from "./errors";
 import type { FsProbe } from "./ipc";
 import { posix } from "./path";
-import { getBasePath, getNodeIpc, syncContentCache, syncProbeCache } from "./state";
+import { mountedAbsPath, mountedVaultPath } from "./home-mounts";
+import { getBasePath, getNodeIpc, getOsInfo, syncContentCache, syncProbeCache } from "./state";
 
 type PathLike = string | URL | Uint8Array;
 
@@ -95,8 +97,32 @@ const cacheKey = (abs: string): string => (abs.length > 1 ? abs.replace(/\/+$/, 
  */
 export async function registerSyncProbePaths(paths: readonly string[]): Promise<void> {
   const list = [...new Set(paths.filter((p) => typeof p === "string" && p !== "").map(toAbs))];
-  if (list.length === 0) return;
-  for (const r of await getNodeIpc().fsProbe(list)) syncProbeCache.set(cacheKey(toAbs(r.path)), r);
+  // Rust refuses more than 256 paths per call (PROBE_MAX_PATHS).
+  for (let i = 0; i < list.length; i += 200)
+    for (const r of await getNodeIpc().fsProbe(list.slice(i, i + 200))) storeProbe(r);
+}
+
+function storeProbe(r: FsProbe): void {
+  const key = cacheKey(toAbs(r.path));
+  syncProbeCache.set(key, r);
+  if (r.text !== undefined) syncContentCache.set(key, r.text);
+}
+
+/**
+ * Agent CLIs are validated synchronously: the plugin `realpathSync`s the program and reads the
+ * package metadata next to it (`provenance.json` of a native bundle, `package.json` of an npm
+ * package, one directory up). Rust returns the canonical path and those files' content for
+ * programs `plugin_which` vouched for; this stores them in the sync cache.
+ */
+export async function primeCompanions(p: FsProbe): Promise<void> {
+  if (!p.exists || !p.is_file || !p.real) return;
+  const dir = posix.dirname(p.real);
+  await registerSyncProbePaths([
+    p.real,
+    posix.join(dir, "provenance.json"),
+    posix.join(dir, "package.json"),
+    posix.join(posix.dirname(dir), "package.json"),
+  ]);
 }
 
 /** Host hook: makes `readFileSync(path)` return `text` (the file's content snapshot). */
@@ -146,6 +172,24 @@ const unsupported = (name: string): never => {
   throw errnoError("ENOSYS", name, undefined, `${name}() is not supported in Writer`);
 };
 
+/**
+ * A path a user typed or picked for an agent CLI (a "Save path" button stats it) can be anywhere.
+ * `plugin_fs_probe` only answers inside its allow-list, so an executable at an absolute path is
+ * confirmed with `plugin_which(path)`: the capability a plugin already has (no process, no
+ * consent) and the one that makes the Rust side remember the path for this window, after which
+ * the probe sees it. Anything else (not executable, not a file) stays missing.
+ */
+async function probeTypedExecutable(abs: string): Promise<FsProbe | undefined> {
+  const ipc = getNodeIpc();
+  try {
+    if ((await ipc.which(abs)) === null) return undefined;
+    const again = (await ipc.fsProbe([abs]))[0];
+    return again?.exists ? again : undefined;
+  } catch {
+    return undefined; // EINVAL (a `..` path) or a backend failure: the path stays missing
+  }
+}
+
 export function createFsModule(options: FsModuleOptions = {}) {
   const io = options.io;
   const base = (): string => cacheKey(io?.basePath ?? getBasePath());
@@ -154,8 +198,13 @@ export function createFsModule(options: FsModuleOptions = {}) {
   const rel = (abs: string): string | null => {
     const b = base();
     if (abs === b) return "";
-    return abs.startsWith(`${b}/`) ? abs.slice(b.length + 1) : null;
+    if (abs.startsWith(`${b}/`)) return abs.slice(b.length + 1);
+    // A plugin's home-directory data (see home-mounts.ts) lives inside the vault's plugin folder.
+    return mountedVaultPath(getOsInfo().homedir, abs);
   };
+  /** The absolute path a plugin sees for a vault-relative path (home mounts keep their virtual path). */
+  const absOf = (relPath: string): string =>
+    mountedAbsPath(getOsInfo().homedir, relPath) ?? `${base()}/${relPath}`;
   const needIo = (): VaultIo => {
     if (!io) throw errnoError("EACCES", "open", undefined, "no vault is available to this fs");
     return io;
@@ -188,8 +237,21 @@ export function createFsModule(options: FsModuleOptions = {}) {
     const r = rel(abs);
     if (r !== null) {
       const st = await wrapIo(syscall, abs, () => needIo().stat(r));
-      if (!st) throw errnoError("ENOENT", syscall, toPathString(path));
-      return new Stats(st.type === "folder" ? "dir" : "file", st.size, st.mtime, st.ctime);
+      if (!st) {
+        syncProbeCache.delete(cacheKey(abs));
+        throw errnoError("ENOENT", syscall, toPathString(path));
+      }
+      // The sync API (`existsSync`...) answers from this cache: a path the async side has seen
+      // must not read as missing (Copilot checks a just-saved agent binary with `existsSync`).
+      const dir = st.type === "folder";
+      syncProbeCache.set(cacheKey(abs), {
+        path: abs,
+        exists: true,
+        is_file: !dir,
+        is_dir: dir,
+        size: dir ? null : st.size,
+      });
+      return new Stats(dir ? "dir" : "file", st.size, st.mtime, st.ctime);
     }
     let probe: FsProbe | undefined;
     try {
@@ -197,7 +259,11 @@ export function createFsModule(options: FsModuleOptions = {}) {
     } catch (e) {
       throw errnoError("EACCES", syscall, toPathString(path), messageOf(e));
     }
-    if (probe) syncProbeCache.set(cacheKey(abs), probe);
+    if (!probe?.exists) probe = (await probeTypedExecutable(abs)) ?? probe;
+    if (probe) {
+      storeProbe({ ...probe, path: abs });
+      await primeCompanions(probe).catch(() => undefined); // best effort: only sync readers need it
+    }
     if (!probe?.exists) throw errnoError("ENOENT", syscall, toPathString(path));
     return statsOfProbe(probe);
   }
@@ -250,6 +316,7 @@ export function createFsModule(options: FsModuleOptions = {}) {
       throw errnoError("EEXIST", "mkdir", toPathString(path));
     }
     let first: string | undefined;
+    const targetMounted = mountedVaultPath(getOsInfo().homedir, abs) !== null;
     if (recursive) {
       const parts = r.split("/").filter(Boolean);
       let acc = "";
@@ -257,7 +324,10 @@ export function createFsModule(options: FsModuleOptions = {}) {
         acc = acc ? `${acc}/${part}` : part;
         if (!(await wrapIo("mkdir", abs, () => needIo().stat(acc)))) {
           await wrapIo("mkdir", abs, () => needIo().mkdir(acc));
-          first ??= `${base()}/${acc}`;
+          // Under a home mount, report the first directory inside the mount (the backing folders
+          // above it are an implementation detail, not something the plugin created).
+          const shown = mountedAbsPath(getOsInfo().homedir, acc);
+          if (shown !== null || !targetMounted) first ??= absOf(acc);
         }
       }
       return first;
@@ -266,9 +336,27 @@ export function createFsModule(options: FsModuleOptions = {}) {
     return undefined;
   }
 
+  /**
+   * Removing something outside the vault is EACCES only when it EXISTS. A path that is not there
+   * is ENOENT (`rm({force:true})` then succeeds): Copilot's "use my own binary" cleanup removes
+   * its managed-download folders under `~/.obsidian-copilot` unconditionally, and a refusal for a
+   * folder that does not exist made saving a custom Codex/OpenCode path fail.
+   */
+  async function inVaultOrMissing(
+    path: PathLike,
+    syscall: string,
+  ): Promise<{ abs: string; rel: string }> {
+    if (rel(toAbs(path)) === null) await statAny(path, syscall); // ENOENT when absent
+    return inVault(path, syscall);
+  }
+
   async function rm(path: PathLike, opts?: unknown): Promise<void> {
-    const { rel: r } = inVault(path, "rm");
     const o = (opts ?? {}) as { recursive?: boolean; force?: boolean };
+    const { rel: r } = await inVaultOrMissing(path, "rm").catch((e: NodeError) => {
+      if (e.code === "ENOENT" && o.force) return { rel: null, abs: "" };
+      throw e;
+    });
+    if (r === null) return;
     const st = await statAny(path, "rm").catch((e: NodeError) => {
       if (e.code === "ENOENT" && o.force) return null;
       throw e;
@@ -286,7 +374,7 @@ export function createFsModule(options: FsModuleOptions = {}) {
   }
 
   async function removeKind(path: PathLike, syscall: "unlink" | "rmdir"): Promise<void> {
-    const { rel: r } = inVault(path, syscall);
+    const { rel: r } = await inVaultOrMissing(path, syscall);
     const st = await statAny(path, syscall);
     if (syscall === "unlink" && st.isDirectory())
       throw errnoError("EISDIR", syscall, toPathString(path));
@@ -318,7 +406,7 @@ export function createFsModule(options: FsModuleOptions = {}) {
 
   async function realpath(path: PathLike): Promise<string> {
     await statAny(path, "realpath");
-    return toAbs(path);
+    return syncProbeCache.get(cacheKey(toAbs(path)))?.real ?? toAbs(path);
   }
 
   async function access(path: PathLike, _mode?: number): Promise<void> {
@@ -398,6 +486,10 @@ export function createFsModule(options: FsModuleOptions = {}) {
   const missing = (syscall: string, p: PathLike): never => {
     throw errnoError("ENOENT", syscall, toPathString(p));
   };
+  const realOf = (p: PathLike): string => {
+    const hit = probed(p);
+    return hit ? (hit.real ?? toAbs(p)) : missing("realpath", p);
+  };
   function statSync(p: PathLike, opts?: { throwIfNoEntry?: boolean }): Stats | undefined {
     const hit = probed(p);
     if (hit) return statsOfProbe(hit);
@@ -417,16 +509,15 @@ export function createFsModule(options: FsModuleOptions = {}) {
     accessSync: (p: PathLike): void => {
       if (!probed(p)) missing("access", p);
     },
-    realpathSync: Object.assign(
-      (p: PathLike): string => (probed(p) ? toAbs(p) : missing("realpath", p)),
-      { native: (p: PathLike): string => (probed(p) ? toAbs(p) : missing("realpath", p)) },
-    ),
+    realpathSync: Object.assign((p: PathLike): string => realOf(p), {
+      native: (p: PathLike): string => realOf(p),
+    }),
     readdirSync: (p: PathLike, opts?: unknown): unknown[] => {
       const hit = probed(p);
       if (!hit) return missing("scandir", p);
       if (!hit.is_dir) throw errnoError("ENOTDIR", "scandir", toPathString(p));
       void opts;
-      return []; // listings are not cached
+      return hit.entries ? [...hit.entries] : []; // only version roots are listed, see ipc.ts
     },
     readFileSync: (p: PathLike, opts?: unknown): string | Buffer => {
       const abs = toAbs(p);

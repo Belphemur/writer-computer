@@ -382,19 +382,81 @@ pub struct ProbeResult {
     pub is_file: bool,
     pub is_dir: bool,
     pub size: Option<u64>,
+    /// Entry names, only for the few "version root" directories of `ProbeScope::listable`
+    /// (nvm / fnm node installs): agent CLIs installed with npm live under those, and the
+    /// plugin's synchronous detection enumerates them. `None` for every other path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entries: Option<Vec<String>>,
+    /// Canonical path (symlinks resolved) of an existing entry. Sync `realpathSync` needs it: an
+    /// npm-installed `bin/codex-acp` is a symlink into its package, whose layout the plugin checks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub real: Option<String>,
+    /// UTF-8 content (at most `COMPANION_MAX_BYTES`) of a "companion" metadata file, see
+    /// `COMPANION_FILES`. `None` for everything else.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
+
+/// Package metadata a plugin reads (synchronously) to validate an agent CLI it was pointed at:
+/// `provenance.json` next to a native bundle, `package.json` of an npm package.
+pub const COMPANION_FILES: &[&str] = &["provenance.json", "package.json"];
+pub const COMPANION_MAX_BYTES: u64 = 64 * 1024;
 
 pub struct ProbeScope<'a> {
     /// Canonical workspace root.
     pub vault: &'a Path,
-    /// `~/.claude` and `CLAUDE_CONFIG_DIR`.
+    /// Agent config/install homes (`~/.claude`, `CLAUDE_CONFIG_DIR`, `~/.codex`, ...): anything
+    /// below them can be stat-ed.
     pub claude_dirs: Vec<PathBuf>,
+    /// Directories agent CLIs are installed in (login PATH, well-known and node-tool bin dirs):
+    /// a path whose PARENT is one of them can be stat-ed. See `search_dirs`.
+    pub bin_dirs: Vec<PathBuf>,
+    /// Directories whose entry names may be returned (see `ProbeResult::entries`).
+    pub listable: Vec<PathBuf>,
     /// Paths `plugin_which` returned for this window.
     pub which: &'a HashSet<PathBuf>,
 }
 
+/// Agent config and install homes under `$HOME` that detection stats (metadata only).
+pub const AGENT_HOME_DIRS: &[&str] = &[
+    ".claude",
+    ".codex",
+    ".codex-acp",
+    ".opencode",
+    ".obsidian-copilot",
+    ".config/opencode",
+    ".local/share/opencode",
+];
+
+/// The node-tool "version roots" whose entry names `probe` may return.
+pub fn listable_dirs() -> Vec<PathBuf> {
+    let Some(h) = home_dir() else {
+        return Vec::new();
+    };
+    let mut v = vec![
+        h.join(".nvm/versions/node"),
+        h.join(".local/share/fnm/node-versions"),
+        h.join("Library/Application Support/fnm/node-versions"),
+    ];
+    for (var, suffix) in [("NVM_DIR", "versions/node"), ("FNM_DIR", "node-versions")] {
+        if let Some(d) = std::env::var_os(var).map(PathBuf::from) {
+            if d.is_absolute() {
+                v.push(d.join(suffix));
+            }
+        }
+    }
+    v
+}
+
+/// Directories agent CLIs are looked for in (see `ProbeScope::bin_dirs`).
+pub fn bin_dirs() -> Vec<PathBuf> {
+    search_dirs(&login_path(), &app_path(), home_dir().as_deref())
+}
+
 pub fn claude_dirs() -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = home_dir().map(|h| h.join(".claude")).into_iter().collect();
+    let mut v: Vec<PathBuf> = home_dir()
+        .map(|h| AGENT_HOME_DIRS.iter().map(|d| h.join(d)).collect())
+        .unwrap_or_default();
     if let Some(c) = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from) {
         if c.is_absolute() {
             v.push(c);
@@ -414,6 +476,27 @@ fn stat(path: &Path) -> Option<std::fs::Metadata> {
     std::fs::metadata(path).ok()
 }
 
+/// Is `p` a companion file (`COMPANION_FILES`) of a program `plugin_which` returned: next to its
+/// canonical file, or one directory up (the npm package root of `<root>/dist/index.js`)?
+fn is_companion_of_which(p: &Path, scope: &ProbeScope) -> bool {
+    let named = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| COMPANION_FILES.contains(&n));
+    if !named {
+        return false;
+    }
+    let Some(dir) = p.parent() else {
+        return false;
+    };
+    scope.which.iter().any(|w| {
+        w.canonicalize().ok().is_some_and(|c| {
+            let d = c.parent();
+            d == Some(dir) || d.and_then(Path::parent) == Some(dir)
+        })
+    })
+}
+
 fn allowed_metadata(p: &Path, scope: &ProbeScope) -> Option<std::fs::Metadata> {
     if scope.which.contains(p) {
         return stat(p);
@@ -421,13 +504,28 @@ fn allowed_metadata(p: &Path, scope: &ProbeScope) -> Option<std::fs::Metadata> {
     if !lexically_clean(p) {
         return None;
     }
+    // the canonical file of a program `plugin_which` returned (a symlink target) and its companions
+    if scope
+        .which
+        .iter()
+        .any(|w| w.canonicalize().ok().as_deref() == Some(p))
+        || is_companion_of_which(p, scope)
+    {
+        return stat(p);
+    }
     // vault: canonical containment, so a symlink out of the vault is refused
     if let Ok(canon) = p.canonicalize() {
         if canon.starts_with(scope.vault) {
             return stat(&canon);
         }
     }
-    // ~/.claude: lexical containment (users symlink skills/ etc. elsewhere)
+    // a file directly inside a directory agent CLIs are installed in (PATH, well-known dirs)
+    if p.parent()
+        .is_some_and(|d| scope.bin_dirs.iter().any(|b| b == d))
+    {
+        return stat(p);
+    }
+    // ~/.claude & co: lexical containment (users symlink skills/ etc. elsewhere)
     // or canonical containment of a canonical config dir
     for d in &scope.claude_dirs {
         if p.starts_with(d) {
@@ -440,6 +538,28 @@ fn allowed_metadata(p: &Path, scope: &ProbeScope) -> Option<std::fs::Metadata> {
         }
     }
     None
+}
+
+/// Content of a small companion file of a `which` program (see `is_companion_of_which`).
+fn companion_text(p: &Path, m: &std::fs::Metadata, scope: &ProbeScope) -> Option<String> {
+    if !m.is_file() || m.len() > COMPANION_MAX_BYTES || !is_companion_of_which(p, scope) {
+        return None;
+    }
+    std::fs::read_to_string(p).ok()
+}
+
+/// Entry names of a `listable` directory (exact path match, lexical), sorted.
+fn listed_entries(p: &Path, scope: &ProbeScope) -> Option<Vec<String>> {
+    if !scope.listable.iter().any(|d| d == p) {
+        return None;
+    }
+    let mut names: Vec<String> = std::fs::read_dir(p)
+        .ok()?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    Some(names)
 }
 
 /// Metadata only, never content. Anything out of scope looks like a miss.
@@ -462,6 +582,16 @@ pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, S
                     is_file: m.is_file(),
                     is_dir: m.is_dir(),
                     size: m.is_file().then_some(m.len()),
+                    entries: if m.is_dir() {
+                        listed_entries(Path::new(s), scope)
+                    } else {
+                        None
+                    },
+                    real: Path::new(s)
+                        .canonicalize()
+                        .ok()
+                        .map(|c| c.to_string_lossy().into_owned()),
+                    text: companion_text(Path::new(s), &m, scope),
                 },
                 None => ProbeResult {
                     path: s.clone(),
@@ -469,10 +599,132 @@ pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, S
                     is_file: false,
                     is_dir: false,
                     size: None,
+                    entries: None,
+                    real: None,
+                    text: None,
                 },
             }
         })
         .collect())
+}
+
+/* ------------------------------------------------------------ open / reveal */
+
+/// Schemes `shell.openExternal` may hand to the system (same list as the TS shim).
+pub fn openable_url(url: &str) -> Result<&str, String> {
+    let u = url.trim();
+    let lower = u.to_ascii_lowercase();
+    let ok = ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|p| lower.starts_with(p));
+    if !ok || u.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err("EPERM: only http, https and mailto links can be opened".into());
+    }
+    Ok(u)
+}
+
+/// End-to-end tests only (the `e2e` cargo feature): when `WRITER_E2E_OPEN_LOG` names a file,
+/// open/reveal requests are appended to it as `url\t<url>` / `path\t<open|reveal>\t<path>`
+/// instead of reaching the system, so a test can observe them without a browser or Finder.
+/// Release builds do not contain this code.
+#[cfg(feature = "e2e")]
+pub fn e2e_open_log(line: &str) -> bool {
+    use std::io::Write;
+    let Some(file) = std::env::var_os("WRITER_E2E_OPEN_LOG") else {
+        return false;
+    };
+    let ok = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .and_then(|mut f| writeln!(f, "{line}"))
+        .is_ok();
+    ok
+}
+#[cfg(not(feature = "e2e"))]
+pub fn e2e_open_log(_line: &str) -> bool {
+    false
+}
+
+/// File kinds the system would LAUNCH rather than show (apps, scripts, installers).
+const LAUNCHABLE_EXTENSIONS: &[&str] = &[
+    "app",
+    "command",
+    "tool",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "terminal",
+    "workflow",
+    "action",
+    "scpt",
+    "scptd",
+    "applescript",
+    "pkg",
+    "mpkg",
+    "dmg",
+    "jar",
+    "bat",
+    "cmd",
+    "exe",
+    "msi",
+    "ps1",
+    "vbs",
+    "lnk",
+    "desktop",
+    "webloc",
+    "url",
+    "inetloc",
+    "fileloc",
+    "py",
+    "rb",
+    "pl",
+    "js",
+    "mjs",
+];
+
+/// Resolve the path a plugin asked the system to open or reveal (`shell.openPath`,
+/// `shell.showItemInFolder`). Only existing entries INSIDE the vault or an agent home
+/// (`~/.claude`, `~/.codex`, ...), canonically, and never something the system would run: a
+/// launchable extension, an `.app` bundle, or a file with an executable bit.
+pub fn openable_target(
+    path: &str,
+    vault: &Path,
+    agent_homes: &[PathBuf],
+) -> Result<PathBuf, String> {
+    let p = Path::new(path);
+    if path.contains('\0') || !lexically_clean(p) {
+        return Err("EINVAL: an absolute path without `..` is required".into());
+    }
+    let canon = p
+        .canonicalize()
+        .map_err(|_| "ENOENT: no such file or directory".to_string())?;
+    let inside = canon.starts_with(vault)
+        || agent_homes
+            .iter()
+            .filter_map(|d| d.canonicalize().ok())
+            .any(|d| canon.starts_with(d));
+    if !inside {
+        return Err("EACCES: only the vault and agent config folders can be opened".into());
+    }
+    let ext = canon
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if LAUNCHABLE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!("EPERM: .{ext} items are never opened by a plugin"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(m) = canon.metadata() {
+            if m.is_file() && m.permissions().mode() & 0o111 != 0 {
+                return Err("EPERM: executable files are never opened by a plugin".into());
+            }
+        }
+    }
+    Ok(canon)
 }
 
 #[cfg(all(test, unix))]
@@ -640,6 +892,8 @@ mod tests {
         let scope = ProbeScope {
             vault: &vault,
             claude_dirs: vec![claude.clone()],
+            bin_dirs: vec![],
+            listable: vec![],
             which: &which,
         };
         let s = |p: &Path| p.to_string_lossy().into_owned();
@@ -673,6 +927,180 @@ mod tests {
                 .unwrap()
                 .len(),
             PROBE_MAX_PATHS
+        );
+    }
+
+    #[test]
+    fn probe_covers_bin_dirs_agent_homes_and_listable_roots_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let vault = base.join("vault");
+        let bin = base.join("bin");
+        let nested = bin.join("sub");
+        let codex = base.join("home/.codex");
+        let nvm = base.join("home/.nvm/versions/node");
+        let other = base.join("other");
+        for d in [&vault, &nested, &codex, &nvm.join("v20.1.0/bin"), &other] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(bin.join("codex"), "x").unwrap();
+        std::fs::write(nested.join("deep"), "x").unwrap();
+        std::fs::write(codex.join("auth.json"), "{}").unwrap();
+        std::fs::write(other.join("codex"), "x").unwrap();
+        let which = HashSet::new();
+        let scope = ProbeScope {
+            vault: &vault,
+            claude_dirs: vec![codex.clone()],
+            bin_dirs: vec![bin.clone()],
+            listable: vec![nvm.clone()],
+            which: &which,
+        };
+        let s = |p: &Path| p.to_string_lossy().into_owned();
+        let r = probe(
+            &[
+                s(&bin.join("codex")),
+                s(&bin.join("missing")),
+                s(&nested.join("deep")),
+                s(&codex.join("auth.json")),
+                s(&other.join("codex")),
+                s(&nvm),
+                s(&nvm.join("v20.1.0")),
+                s(&bin),
+            ],
+            &scope,
+        )
+        .unwrap();
+        let ex: Vec<bool> = r.iter().map(|x| x.exists).collect();
+        // bin dir file yes, missing no, one level deeper NO, agent home yes, other dir no,
+        // the nvm root is not reachable by the other rules (only listable), so no.
+        assert_eq!(ex, [true, false, false, true, false, false, false, false]);
+        // a listable root that is also reachable lists its entries; unlisted dirs do not
+        let scope2 = ProbeScope {
+            vault: &vault,
+            claude_dirs: vec![base.join("home/.nvm")],
+            bin_dirs: vec![bin.clone()],
+            listable: vec![nvm.clone()],
+            which: &which,
+        };
+        let r = probe(&[s(&nvm), s(&nvm.join("v20.1.0")), s(&bin)], &scope2).unwrap();
+        assert_eq!(r[0].entries.as_deref(), Some(&["v20.1.0".to_string()][..]));
+        assert_eq!(r[1].entries, None);
+        assert!(
+            !r[2].exists,
+            "a bin dir itself is not stat-able, only its files"
+        );
+    }
+
+    #[test]
+    fn open_url_allows_web_and_mail_only() {
+        assert!(openable_url("https://example.com/a?b=1").is_ok());
+        assert!(openable_url(" HTTP://example.com").is_ok());
+        assert!(openable_url("mailto:a@b.c").is_ok());
+        for bad in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ssh://h",
+            "x-apple.systempreferences:",
+            "https://a b",
+            "https://a\nb",
+            "",
+        ] {
+            assert!(openable_url(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn open_target_is_confined_and_never_launches() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let vault = base.join("vault");
+        let home = base.join("home/.claude");
+        let outside = base.join("outside");
+        for d in [&vault.join("notes"), &home, &outside, &vault.join("X.app")] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(vault.join("AGENTS.md"), "x").unwrap();
+        std::fs::write(vault.join("run.sh"), "x").unwrap();
+        std::fs::write(vault.join("bin"), "x").unwrap();
+        std::fs::set_permissions(vault.join("bin"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        std::fs::write(outside.join("a.md"), "x").unwrap();
+        std::os::unix::fs::symlink(&outside, vault.join("escape")).unwrap();
+        let homes = vec![home.clone()];
+        let ok = |p: PathBuf| openable_target(&p.to_string_lossy(), &vault, &homes);
+        assert!(ok(vault.join("AGENTS.md")).is_ok());
+        assert!(ok(vault.join("notes")).is_ok());
+        assert!(ok(home.clone()).is_ok());
+        for bad in [
+            vault.join("run.sh"),
+            vault.join("bin"),
+            vault.join("X.app"),
+            vault.join("missing.md"),
+            outside.join("a.md"),
+            vault.join("escape/a.md"),
+            vault.join("../outside/a.md"),
+        ] {
+            assert!(ok(bad.clone()).is_err(), "{bad:?}");
+        }
+        assert!(openable_target("relative.md", &vault, &homes).is_err());
+    }
+
+    #[test]
+    fn probe_reveals_real_path_and_companion_metadata_of_which_programs_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let vault = base.join("vault");
+        let pkg = base.join("lib/node_modules/@acme/codex-acp");
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::create_dir_all(pkg.join("dist")).unwrap();
+        std::fs::create_dir_all(base.join("bin")).unwrap();
+        std::fs::create_dir_all(base.join("elsewhere")).unwrap();
+        std::fs::write(pkg.join("dist/index.js"), "x").unwrap();
+        std::fs::write(pkg.join("package.json"), "{\"name\":\"@acme/codex-acp\"}").unwrap();
+        std::fs::write(base.join("elsewhere/package.json"), "{\"secret\":1}").unwrap();
+        std::fs::write(base.join("elsewhere/other.json"), "{}").unwrap();
+        std::fs::write(pkg.join("dist/other.json"), "{}").unwrap();
+        std::os::unix::fs::symlink(pkg.join("dist/index.js"), base.join("bin/codex-acp")).unwrap();
+        let link = base.join("bin/codex-acp");
+        let which: HashSet<PathBuf> = [link.clone()].into();
+        let scope = ProbeScope {
+            vault: &vault,
+            claude_dirs: vec![],
+            bin_dirs: vec![],
+            listable: vec![],
+            which: &which,
+        };
+        let s = |p: &Path| p.to_string_lossy().into_owned();
+        let r = probe(
+            &[
+                s(&link),
+                s(&pkg.join("dist/index.js")),
+                s(&pkg.join("package.json")),
+                s(&pkg.join("dist/other.json")),
+                s(&base.join("elsewhere/package.json")),
+            ],
+            &scope,
+        )
+        .unwrap();
+        assert!(r[0].exists);
+        assert_eq!(
+            r[0].real.as_deref(),
+            Some(pkg.join("dist/index.js").to_str().unwrap())
+        );
+        assert!(
+            r[0].text.is_none(),
+            "a program's own content is never returned"
+        );
+        assert!(r[1].exists, "the canonical target of a which program");
+        assert!(r[2].exists && r[2].text.as_deref().unwrap().contains("codex-acp"));
+        assert!(
+            !r[3].exists,
+            "only named companions, not any file next to it"
+        );
+        assert!(
+            !r[4].exists && r[4].text.is_none(),
+            "unrelated package.json stays hidden"
         );
     }
 }

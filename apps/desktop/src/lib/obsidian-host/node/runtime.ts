@@ -7,10 +7,18 @@
 import { Buffer } from "./buffer";
 import { messageOf } from "./errors";
 import type { NodeIpc, NodeOsInfo } from "./ipc";
+import { AGENT_CLI_NAMES, agentBinDirs, agentCandidates, versionRoots } from "./agent-clis";
 import { registerSyncProbePaths } from "./fs";
 import { posix } from "./path";
 import { applyOsInfo, getSharedProcess } from "./process";
-import { DEFAULT_OS_INFO, getNodeIpc, setBasePath, setNodeIpc, setOsInfo } from "./state";
+import {
+  DEFAULT_OS_INFO,
+  getNodeIpc,
+  setBasePath,
+  setNodeIpc,
+  setOsInfo,
+  syncProbeCache,
+} from "./state";
 
 export interface PreloadOptions {
   /** Injected backend (tests); omitted = keep the current one (Tauri by default). */
@@ -51,23 +59,38 @@ export async function preloadNodeRuntime(options: PreloadOptions): Promise<void>
   setOsInfo({ ...info, env });
   applyOsInfo(getSharedProcess());
 
-  let claude: string | null = null;
-  try {
-    claude = await ipc.which("claude");
-  } catch (e) {
-    warn("plugin_which", e);
+  const found: string[] = [];
+  let whichFailure: unknown;
+  for (const name of AGENT_CLI_NAMES) {
+    try {
+      const p = await ipc.which(name);
+      if (p) found.push(p);
+    } catch (e) {
+      whichFailure ??= e;
+    }
   }
+  if (whichFailure !== undefined) warn("plugin_which", whichFailure);
   const home = info.homedir;
+  const dirs = agentBinDirs(home, env.PATH ?? "");
   const paths = [
     options.basePath,
     posix.join(home, ".claude"),
     posix.join(home, ".claude", "settings.json"),
-    posix.join(home, ".claude", "local", "claude"),
-    ...(claude ? [claude] : []),
+    posix.join(home, ".codex"),
+    posix.join(home, ".obsidian-copilot"),
+    ...agentCandidates(dirs),
+    ...found,
     ...(options.extraProbePaths ?? []),
   ];
   try {
-    await registerSyncProbePaths(paths);
+    await registerSyncProbePaths([...paths, ...versionRoots(home).map((r) => r.root)]);
+    // npm-installed agents live in <root>/<version>/bin; the resolvers enumerate the roots with
+    // readdirSync (answered from the listing the probe returned) and then stat these.
+    const nodeBins = versionRoots(home).flatMap(({ root, bin }) =>
+      (syncProbeCache.get(root)?.entries ?? []).map((v) => posix.join(root, v, ...bin)),
+    );
+    if (nodeBins.length > 0)
+      await registerSyncProbePaths([...nodeBins, ...agentCandidates(nodeBins)]);
   } catch (e) {
     warn("plugin_fs_probe", e);
   }

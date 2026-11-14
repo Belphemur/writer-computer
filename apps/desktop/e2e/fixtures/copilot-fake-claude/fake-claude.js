@@ -55,7 +55,7 @@ function main() {
     if (argv[1] === "status")
       return console.log(
         JSON.stringify(
-          env.FAKE_CLAUDE_SIGNED_OUT
+          env.FAKE_CLAUDE_SIGNED_OUT || fs.existsSync(path.join(__dirname, "signed-out"))
             ? { loggedIn: false }
             : {
                 loggedIn: true,
@@ -65,7 +65,9 @@ function main() {
               },
         ),
       );
-    return console.log("Open https://example.com/oauth?fake=1 to continue");
+    // `auth login` waits for the browser round trip like the real CLI (killed on Cancel / app quit).
+    console.log("Open https://example.com/oauth?fake=1 to continue");
+    return void setTimeout(() => {}, 10_000);
   }
   if (mode !== "stream") return console.log("fake claude: unsupported invocation");
 

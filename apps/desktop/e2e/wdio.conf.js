@@ -9,10 +9,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // `productName` in tauri.conf.json names the .app bundle ("Writer.app") but
 // the binary inside MacOS/ keeps the Cargo crate name ("desktop") — Tauri
 // does not rename it.
-const APP_BINARY = resolve(
-  __dirname,
-  "../src-tauri/target/release/bundle/macos/Writer.app/Contents/MacOS/desktop",
-);
+// `WRITER_E2E_APP` points at a copy of the built Writer.app (parallel work can rebuild the
+// bundle path underneath a running spec).
+const APP_BINARY = process.env.WRITER_E2E_APP
+  ? resolve(process.env.WRITER_E2E_APP, "Contents/MacOS/desktop")
+  : resolve(
+      __dirname,
+      "../src-tauri/target/release/bundle/macos/Writer.app/Contents/MacOS/desktop",
+    );
 
 /** @type {import('node:child_process').ChildProcess | undefined} */
 let proxy;

@@ -6,9 +6,11 @@ import {
 } from "../src/lib/obsidian-host/node/fs";
 import { Buffer } from "../src/lib/obsidian-host/node/buffer";
 import {
+  DEFAULT_OS_INFO,
   resetNodeRuntimeForTests,
   setBasePath,
   setNodeIpc,
+  setOsInfo,
 } from "../src/lib/obsidian-host/node/state";
 import { FakeNodeIpc } from "../src/lib/obsidian-host/node/testing";
 import { createMemoryVaultIo } from "../src/lib/obsidian-host/testing";
@@ -156,9 +158,37 @@ describe("fs async: vault-confined", () => {
       expect(e.code, path).toBe("EACCES");
     }
     expect((await rejOf(p.writeFile("/tmp/x", "y"))).code).toBe("EACCES");
-    expect((await rejOf(p.rm("/tmp/x"))).code).toBe("EACCES");
+    // outside the vault: a path that is not there is ENOENT (rm force succeeds), one that exists
+    // is refused
+    expect((await rejOf(p.rm("/tmp/x"))).code).toBe("ENOENT");
+    await expect(p.rm("/tmp/x", { force: true, recursive: true })).resolves.toBeUndefined();
+    ipc.probes["/tmp/x"] = { exists: true, is_file: true, size: 1 };
+    expect((await rejOf(p.rm("/tmp/x", { force: true }))).code).toBe("EACCES");
+    expect((await rejOf(p.unlink("/tmp/x"))).code).toBe("EACCES");
     expect((await rejOf(p.rename("/vault/a.md", "/tmp/a.md"))).code).toBe("EACCES");
     expect((await rejOf(p.readdir("/"))).code).toBe("EACCES");
+  });
+
+  it("serves a plugin's home-directory data (~/.obsidian-copilot) from inside the vault", async () => {
+    setOsInfo({ ...DEFAULT_OS_INFO, homedir: "/Users/test" });
+    const { p, io } = setup();
+    const dir = "/Users/test/.obsidian-copilot/vaults/ab12cd34";
+    const file = `${dir}/agent-chat-index.json`;
+    expect((await rejOf(p.readFile(file))).code).toBe("ENOENT");
+    expect(await p.mkdir(dir, { recursive: true })).toBe("/Users/test/.obsidian-copilot");
+    await p.writeFile(file, '{"version":1}');
+    // Persisted in the vault's plugin folder, not the real home directory.
+    expect(
+      io.files.get(
+        ".obsidian/plugins/copilot/home/.obsidian-copilot/vaults/ab12cd34/agent-chat-index.json",
+      ),
+    ).toBe('{"version":1}');
+    expect(await p.readFile(file, "utf8")).toBe('{"version":1}');
+    expect((await p.stat(file)).isFile()).toBe(true);
+    expect((await p.stat(dir)).isDirectory()).toBe(true);
+    // Other home paths stay confined.
+    expect((await rejOf(p.writeFile("/Users/test/.ssh/x", "y"))).code).toBe("EACCES");
+    expect((await rejOf(p.writeFile("/Users/test/.obsidian-copilotx/x", "y"))).code).toBe("EACCES");
   });
 
   it("writeFile/appendFile accept strings, Buffers and Uint8Arrays", async () => {
