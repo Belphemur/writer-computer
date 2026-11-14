@@ -66,13 +66,16 @@ export {
 } from "./api/functions";
 export { MarkdownRenderChild, MarkdownRenderer } from "./api/markdown";
 export {
+  AbstractInputSuggest,
   ButtonComponent,
   DropdownComponent,
+  EditorSuggest,
   FuzzySuggestModal,
   Menu,
   MenuItem,
   Modal,
   PluginSettingTab,
+  PopoverSuggest,
   Setting,
   SliderComponent,
   SuggestModal,

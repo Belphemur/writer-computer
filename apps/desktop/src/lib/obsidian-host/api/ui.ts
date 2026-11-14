@@ -7,6 +7,8 @@ import { createEl } from "./dom";
 import { prepareFuzzySearch, renderMatches, setIcon, type SearchResult } from "./functions";
 import type { App } from "./app";
 import type { Plugin } from "./core";
+import { pointRect, type Rect } from "@/lib/popup-position";
+import { anchorOfElement, getPopupLayer, trackPopup, type TrackedPopup } from "../popup-layer";
 
 // ---------------------------------------------------------------- Modal
 
@@ -671,6 +673,7 @@ export class Menu {
   private items: MenuItem[] = [];
   private hideCbs: (() => unknown)[] = [];
   private open = false;
+  private tracked: TrackedPopup | null = null;
   private onDocClick = (evt: MouseEvent): void => {
     if (!this.dom.contains(evt.target as Node)) this.hide();
   };
@@ -702,10 +705,14 @@ export class Menu {
   }
 
   showAtPosition(position: { x: number; y: number }): this {
+    // Mounted in the host popup layer and kept inside the window: flips above the pointer near the
+    // bottom edge, shifts left near the right edge, scrolls internally when taller than the window.
     this.dom.style.position = "fixed";
     this.dom.style.left = `${position.x}px`;
     this.dom.style.top = `${position.y}px`;
-    document.body.appendChild(this.dom);
+    getPopupLayer().appendChild(this.dom);
+    this.tracked?.dispose();
+    this.tracked = trackPopup(this.dom, () => pointRect(position.x, position.y), { gap: 0 });
     this.open = true;
     // Defer so the click that opened the menu does not immediately close it.
     setTimeout(() => {
@@ -720,6 +727,8 @@ export class Menu {
     if (!this.open) return this;
     this.open = false;
     document.removeEventListener("mousedown", this.onDocClick, true);
+    this.tracked?.dispose();
+    this.tracked = null;
     this.dom.remove();
     for (const cb of this.hideCbs) cb();
     return this;
@@ -729,5 +738,205 @@ export class Menu {
   }
   static forEvent(evt: MouseEvent): Menu {
     return new Menu().showAtMouseEvent(evt);
+  }
+}
+
+// ---------------------------------------------------------------- Suggest popups
+
+/** Obsidian's `PopoverSuggest`: a suggestion list in the host popup layer. Subclasses decide the
+ *  anchor; placement (flip, clamp, max-height) is the host's. */
+export abstract class PopoverSuggest<T> {
+  /** Items shown, selection index. */
+  protected suggestions: T[] = [];
+  protected selectedIndex = 0;
+  suggestEl: HTMLElement;
+  containerEl: HTMLElement;
+  isOpen = false;
+  private tracked: TrackedPopup | null = null;
+  private onOutside = (evt: MouseEvent): void => {
+    if (!this.containerEl.contains(evt.target as Node) && !this.isAnchor(evt.target)) this.close();
+  };
+
+  constructor(
+    public app: App,
+    public scope: Scope = new Scope(),
+  ) {
+    this.containerEl = createEl("div", { cls: "suggestion-container" });
+    this.suggestEl = createEl("div", { cls: "suggestion", parent: this.containerEl });
+    this.scope.register([], "ArrowDown", (evt) => {
+      evt.preventDefault();
+      this.moveSelection(1);
+    });
+    this.scope.register([], "ArrowUp", (evt) => {
+      evt.preventDefault();
+      this.moveSelection(-1);
+    });
+    this.scope.register([], "Enter", (evt) => {
+      evt.preventDefault();
+      this.chooseSelected(evt);
+    });
+    this.scope.register([], "Escape", () => this.close());
+  }
+
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+  /** Where the list hangs off, in viewport coordinates. */
+  protected abstract anchorRect(): Rect;
+  protected isAnchor(_target: EventTarget | null): boolean {
+    return false;
+  }
+
+  /** Shows the list (idempotent) and (re)places it. */
+  open(): void {
+    if (!this.isOpen) {
+      this.isOpen = true;
+      getPopupLayer().appendChild(this.containerEl);
+      this.app.keymap.pushScope(this.scope);
+      document.addEventListener("mousedown", this.onOutside, true);
+      this.tracked = trackPopup(this.containerEl, () => this.anchorRect());
+    } else {
+      this.tracked?.update();
+    }
+  }
+
+  close(): void {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    document.removeEventListener("mousedown", this.onOutside, true);
+    this.app.keymap.popScope(this.scope);
+    this.tracked?.dispose();
+    this.tracked = null;
+    this.containerEl.remove();
+  }
+
+  /** Replaces the list contents; the host re-places the popup (its size changed). */
+  protected setSuggestionItems(items: T[]): void {
+    this.suggestions = items;
+    this.selectedIndex = 0;
+    this.suggestEl.replaceChildren();
+    items.forEach((value, i) => {
+      const el = createEl("div", { cls: "suggestion-item", parent: this.suggestEl });
+      el.classList.toggle("is-selected", i === 0);
+      this.renderSuggestion(value, el);
+      el.addEventListener("click", (evt) => this.selectSuggestion(value, evt));
+      el.addEventListener("mousemove", () => this.highlight(i));
+    });
+    this.tracked?.update();
+  }
+
+  private highlight(i: number): void {
+    this.selectedIndex = i;
+    Array.from(this.suggestEl.children).forEach((c, idx) =>
+      c.classList.toggle("is-selected", idx === i),
+    );
+    this.suggestEl.children[i]?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  private moveSelection(delta: number): void {
+    if (this.suggestions.length === 0) return;
+    this.highlight(
+      (this.selectedIndex + delta + this.suggestions.length) % this.suggestions.length,
+    );
+  }
+
+  private chooseSelected(evt: KeyboardEvent): void {
+    const value = this.suggestions[this.selectedIndex];
+    if (value !== undefined) this.selectSuggestion(value, evt);
+  }
+}
+
+/** Obsidian's `AbstractInputSuggest`: a dropdown under a text input. */
+export abstract class AbstractInputSuggest<T> extends PopoverSuggest<T> {
+  limit = 100;
+  private selectCb: ((value: T, evt: MouseEvent | KeyboardEvent) => unknown) | null = null;
+  private querySeq = 0;
+
+  constructor(
+    app: App,
+    public textInputEl: HTMLInputElement | HTMLDivElement,
+  ) {
+    super(app);
+    textInputEl.addEventListener("input", () => void this.refresh());
+    textInputEl.addEventListener("focus", () => void this.refresh());
+  }
+
+  abstract getSuggestions(query: string): T[] | Promise<T[]>;
+
+  setValue(value: string): void {
+    if (this.textInputEl instanceof HTMLInputElement) this.textInputEl.value = value;
+    else this.textInputEl.textContent = value;
+  }
+  getValue(): string {
+    return this.textInputEl instanceof HTMLInputElement
+      ? this.textInputEl.value
+      : (this.textInputEl.textContent ?? "");
+  }
+  onSelect(cb: (value: T, evt: MouseEvent | KeyboardEvent) => unknown): this {
+    this.selectCb = cb;
+    return this;
+  }
+  selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void {
+    void this.selectCb?.(value, evt);
+    this.close();
+  }
+  protected anchorRect(): Rect {
+    return anchorOfElement(this.textInputEl)();
+  }
+  protected override isAnchor(target: EventTarget | null): boolean {
+    return target instanceof Node && this.textInputEl.contains(target);
+  }
+
+  private async refresh(): Promise<void> {
+    const seq = ++this.querySeq;
+    const found = await this.getSuggestions(this.getValue());
+    if (seq !== this.querySeq) return;
+    const items = found.slice(0, this.limit);
+    if (items.length === 0) {
+      this.close();
+      return;
+    }
+    this.setSuggestionItems(items);
+    this.open();
+  }
+}
+
+export interface EditorSuggestTriggerInfo {
+  start: { line: number; ch: number };
+  end: { line: number; ch: number };
+  query: string;
+}
+
+/** Obsidian's `EditorSuggest`: an inline autocomplete anchored to the caret. The host owns
+ *  placement: `showAt` takes the caret rectangle and the list flips above it near the bottom of the
+ *  window (the chat input at the bottom of the side pane is the common case). Trigger wiring from
+ *  the editor is not connected yet (see README). */
+export abstract class EditorSuggest<T> extends PopoverSuggest<T> {
+  limit = 100;
+  context: unknown = null;
+  private caret: Rect = pointRect(0, 0);
+
+  abstract onTrigger(
+    cursor: unknown,
+    editor: unknown,
+    file: unknown,
+  ): EditorSuggestTriggerInfo | null;
+  abstract getSuggestions(context: unknown): T[] | Promise<T[]>;
+
+  protected anchorRect(): Rect {
+    return this.caret;
+  }
+  /** Shows `items` under (or above) the caret rectangle. */
+  showAt(caret: Rect, items: T[]): void {
+    this.caret = caret;
+    this.setSuggestionItems(items.slice(0, this.limit));
+    this.open();
+  }
+  setSuggestions(items: T[]): void {
+    this.setSuggestionItems(items.slice(0, this.limit));
+  }
+  /** Moves the anchor while open (the caret advanced). */
+  updateCaret(caret: Rect): void {
+    this.caret = caret;
+    if (this.isOpen) this.open();
   }
 }
