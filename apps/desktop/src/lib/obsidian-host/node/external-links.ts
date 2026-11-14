@@ -26,6 +26,15 @@ const open = (url: string): void => {
   });
 };
 
+/** Opens `raw` in the system browser when it is an http(s) or mailto URL; false (and nothing
+ *  happens) for anything else. Same implementation as the document click handler below. */
+export function openExternalUrl(raw: string, base: string = document.baseURI): boolean {
+  const url = externalUrl(raw, base);
+  if (!url) return false;
+  open(url);
+  return true;
+}
+
 /** Installs the `window.open` override and a document click handler; returns the remover. */
 export function installExternalLinks(win: Window & typeof globalThis = window): () => void {
   const doc = win.document;

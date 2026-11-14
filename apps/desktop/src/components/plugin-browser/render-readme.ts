@@ -1,73 +1,14 @@
-import DOMPurify from "dompurify";
 import { Marked } from "marked";
+import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 
 /** READMEs above this many characters are cut before parsing. */
 export const README_MAX_CHARS = 500_000;
 
 export const README_TRUNCATED_NOTE = '<p class="readme-truncated"><em>README truncated.</em></p>';
 
-/** The only elements a README may produce. No script, style, iframe, object, embed, form, input,
- *  svg, math, link, meta or base. */
-export const ALLOWED_TAGS = [
-  "a",
-  "abbr",
-  "b",
-  "blockquote",
-  "br",
-  "code",
-  "dd",
-  "del",
-  "details",
-  "div",
-  "dl",
-  "dt",
-  "em",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "hr",
-  "i",
-  "img",
-  "kbd",
-  "li",
-  "ol",
-  "p",
-  "pre",
-  "s",
-  "span",
-  "strong",
-  "sub",
-  "summary",
-  "sup",
-  "table",
-  "tbody",
-  "td",
-  "tfoot",
-  "th",
-  "thead",
-  "tr",
-  "ul",
-];
-
-/** No `style`, no `on*`, no `id`/`class`/`name` (page-level DOM clobbering). */
-export const ALLOWED_ATTR = [
-  "href",
-  "src",
-  "alt",
-  "title",
-  "align",
-  "width",
-  "height",
-  "colspan",
-  "rowspan",
-  "open",
-  "start",
-  "rel",
-  "target",
-];
+/** The README allowlist is the shared strict one, unchanged. */
+export const ALLOWED_TAGS = SAFE_TAGS;
+export const ALLOWED_ATTR = SAFE_ATTR;
 
 // DOMPurify's default URI allowlist narrowed to http(s), mailto and tel (relative URLs pass and
 // are resolved or dropped below). `javascript:`, `data:`, `vbscript:`, `blob:`, `file:` fail.
@@ -142,18 +83,10 @@ export function renderReadme(markdown: string, opts: { repo?: string } = {}): st
     }
   };
 
-  DOMPurify.addHook("afterSanitizeAttributes", hook);
-  try {
-    const clean = DOMPurify.sanitize(html, {
-      ALLOWED_TAGS,
-      ALLOWED_ATTR,
-      ALLOWED_URI_REGEXP: URI_REGEXP,
-      ALLOW_DATA_ATTR: false,
-      ALLOW_ARIA_ATTR: false,
-      ALLOW_UNKNOWN_PROTOCOLS: false,
-    });
-    return truncated ? clean + README_TRUNCATED_NOTE : clean;
-  } finally {
-    DOMPurify.removeHook("afterSanitizeAttributes", hook);
-  }
+  const clean = sanitizeHtml(
+    html,
+    { tags: ALLOWED_TAGS, attrs: ALLOWED_ATTR, uriRegexp: URI_REGEXP },
+    hook,
+  );
+  return truncated ? clean + README_TRUNCATED_NOTE : clean;
 }

@@ -1,6 +1,7 @@
 // Adapted from opensidian (GPL-3.0-or-later).
 // MarkdownRenderer / MarkdownRenderChild. Rendering itself is delegated to the host
-// (`setMarkdownRenderer` in functions.ts); the default is an escaped-paragraph placeholder.
+// (`setMarkdownRenderer` in functions.ts; the real one is api/markdown-render.ts, installed by
+// the PluginHost); the default is an escaped-paragraph placeholder.
 import { Component } from "./core";
 import { renderMarkdownInto } from "./functions";
 import type { App } from "./app";
@@ -14,20 +15,20 @@ export class MarkdownRenderChild extends Component {
 export const MarkdownRenderer = {
   /** Renders `markdown` into `el`. `component` owns any listeners the renderer attaches. */
   async render(
-    _app: App,
+    app: App,
     markdown: string,
     el: HTMLElement,
-    _sourcePath: string,
-    _component: Component,
+    sourcePath: string,
+    component: Component,
   ): Promise<void> {
-    renderMarkdownInto(markdown, el);
+    await renderMarkdownInto(markdown, el, { app, sourcePath, component });
   },
   async renderMarkdown(
     markdown: string,
     el: HTMLElement,
-    _sourcePath: string,
-    _component: Component,
+    sourcePath: string,
+    component: Component,
   ): Promise<void> {
-    renderMarkdownInto(markdown, el);
+    await renderMarkdownInto(markdown, el, { sourcePath, component });
   },
 };

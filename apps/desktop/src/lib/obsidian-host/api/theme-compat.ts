@@ -93,6 +93,37 @@ export const OBSIDIAN_THEME_CSS = `:root {
 .modal-container .modal-title { font-size: var(--font-ui-larger); font-weight: var(--font-semibold); }
 .modal-container .modal-title:empty { display: none; }
 .modal-container .modal-content { min-height: 0; flex: 1 1 auto; }
+
+/* Rendered markdown (api/markdown-render.ts). Scoped under .markdown-rendered so plugin UI
+   outside it is untouched; Writer tokens only. */
+.markdown-rendered { overflow-wrap: anywhere; line-height: var(--line-height-normal); }
+.markdown-rendered > :first-child { margin-top: 0; }
+.markdown-rendered > :last-child { margin-bottom: 0; }
+.markdown-rendered a.internal-link, .markdown-rendered a.external-link { color: var(--text-accent); cursor: var(--cursor-link); text-decoration: none; }
+.markdown-rendered a.internal-link:hover, .markdown-rendered a.external-link:hover { text-decoration: underline; }
+.markdown-rendered a.internal-link.is-unresolved { opacity: 0.6; text-decoration: underline dotted; }
+.markdown-rendered a.tag { color: var(--text-accent); background: var(--background-modifier-hover); border-radius: var(--radius-m); padding: 0 var(--size-4-2); text-decoration: none; }
+.markdown-rendered mark { background: color-mix(in srgb, rgb(var(--color-yellow-rgb)) 35%, transparent); color: inherit; border-radius: 2px; }
+.markdown-rendered code { background: var(--code-background); border-radius: var(--radius-s); padding: 0.1em 0.35em; font-size: 0.9em; }
+.markdown-rendered pre { background: var(--code-background); border-radius: var(--radius-m); padding: var(--size-4-3); overflow-x: auto; }
+.markdown-rendered pre code { background: none; padding: 0; }
+.markdown-rendered table { border-collapse: collapse; }
+.markdown-rendered th, .markdown-rendered td { border: var(--table-border-width) solid var(--table-border-color); padding: var(--size-2-2) var(--size-4-2); }
+.markdown-rendered th { font-weight: var(--table-header-weight); }
+.markdown-rendered blockquote { margin-left: 0; padding-left: var(--size-4-3); border-left: 3px solid var(--background-modifier-border); color: var(--text-muted); }
+.markdown-rendered img { max-width: 100%; }
+.markdown-rendered .math { font-family: var(--font-monospace, monospace); }
+.markdown-rendered .math-block { display: block; text-align: center; margin: var(--size-4-2) 0; }
+.markdown-rendered .callout { margin: var(--size-4-3) 0; padding: var(--size-4-3); border-radius: var(--radius-m); background: color-mix(in srgb, rgb(var(--color-blue-rgb)) 10%, transparent); border-left: 3px solid var(--color-blue); }
+.markdown-rendered .callout[data-callout="warning"], .markdown-rendered .callout[data-callout="caution"], .markdown-rendered .callout[data-callout="attention"] { background: color-mix(in srgb, rgb(var(--callout-warning)) 10%, transparent); border-left-color: rgb(var(--callout-warning)); }
+.markdown-rendered .callout[data-callout="danger"], .markdown-rendered .callout[data-callout="error"], .markdown-rendered .callout[data-callout="failure"], .markdown-rendered .callout[data-callout="bug"] { background: color-mix(in srgb, rgb(var(--color-red-rgb)) 10%, transparent); border-left-color: var(--color-red); }
+.markdown-rendered .callout[data-callout="success"], .markdown-rendered .callout[data-callout="check"], .markdown-rendered .callout[data-callout="done"], .markdown-rendered .callout[data-callout="tip"] { background: color-mix(in srgb, rgb(var(--color-green-rgb)) 10%, transparent); border-left-color: var(--color-green); }
+.markdown-rendered .callout-title { font-weight: var(--font-semibold); margin-bottom: var(--size-2-2); }
+.markdown-rendered .callout-content > :first-child { margin-top: 0; }
+.markdown-rendered .callout-content > :last-child { margin-bottom: 0; }
+.markdown-rendered .markdown-embed { border-left: 2px solid var(--background-modifier-border); padding-left: var(--size-4-3); margin: var(--size-4-2) 0; }
+.markdown-rendered .internal-embed.is-unresolved { color: var(--text-faint); }
+.markdown-rendered input.task-list-item-checkbox { margin-right: var(--size-2-3); }
 `;
 
 /** Adds the variable sheet once; returns the remover. */

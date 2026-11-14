@@ -3,6 +3,8 @@
 // Platform, moment, fuzzy search, link parsing. Implemented by behavior from the public API.
 import DOMPurify from "dompurify";
 import momentLib from "moment";
+import type { App } from "./app";
+import type { Component } from "./core";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 /** Must be >= the highest `minAppVersion` of plugins we want to load (Copilot needs 1.11.4). */
@@ -279,23 +281,46 @@ export function sanitizeHTMLToDom(html: string): DocumentFragment {
 
 // ---------------------------------------------------------------- markdown rendering
 
-export type MarkdownRenderFn = (markdown: string, el: HTMLElement) => void;
+export interface MarkdownRenderContext {
+  /** Absent for the deprecated `renderMarkdown`, which has no app argument. */
+  app?: App;
+  sourcePath: string;
+  /** Owns the listeners the renderer attaches; unloading it removes them. */
+  component: Component;
+}
+
+export type MarkdownRenderFn = (
+  markdown: string,
+  el: HTMLElement,
+  ctx: MarkdownRenderContext,
+) => void | Promise<void>;
 
 const escapeHtml = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** Placeholder renderer: paragraphs of escaped text. Replace with setMarkdownRenderer(). */
-let renderMarkdownImpl: MarkdownRenderFn = (markdown, el) => {
+/** Fallback when no host is installed: paragraphs of escaped text. */
+const placeholderRenderer: MarkdownRenderFn = (markdown, el) => {
   el.innerHTML = markdown
     .split(/\n{2,}/)
     .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
     .join("");
 };
 
-export function setMarkdownRenderer(fn: MarkdownRenderFn): void {
+let renderMarkdownImpl: MarkdownRenderFn = placeholderRenderer;
+
+/** Installs the renderer behind MarkdownRenderer.render; returns the remover (restores the
+ *  placeholder when `fn` is still the active one). */
+export function setMarkdownRenderer(fn: MarkdownRenderFn): () => void {
   renderMarkdownImpl = fn;
+  return () => {
+    if (renderMarkdownImpl === fn) renderMarkdownImpl = placeholderRenderer;
+  };
 }
 
-export function renderMarkdownInto(markdown: string, el: HTMLElement): void {
-  renderMarkdownImpl(markdown, el);
+export async function renderMarkdownInto(
+  markdown: string,
+  el: HTMLElement,
+  ctx: MarkdownRenderContext,
+): Promise<void> {
+  await renderMarkdownImpl(markdown, el, ctx);
 }

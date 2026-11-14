@@ -29,6 +29,8 @@ import { ensureDeviceId } from "./node/device-id";
 import { configuredAgentPaths, primeConfiguredAgentPaths } from "./node/agent-clis";
 import { installExternalLinks } from "./node/external-links";
 import { installNodeGlobals, preloadNodeRuntime } from "./node/runtime";
+import { setMarkdownRenderer } from "./api/functions";
+import { createMarkdownRenderer } from "./api/markdown-render";
 import { installObsidianTheme } from "./api/theme-compat";
 import { installPopupGuard } from "./popup-guard";
 import { recordPluginError } from "./error-log";
@@ -158,6 +160,7 @@ export class PluginHost {
   private uninstallPopupGuard: (() => void) | null = null;
   private uninstallNode: (() => void) | null = null;
   private uninstallExternalLinks: (() => void) | null = null;
+  private uninstallMarkdown: (() => void) | null = null;
   private nodeReady: Promise<void> | null = null;
   private readonly io: VaultIo;
   private readonly options: PluginHostOptions;
@@ -441,6 +444,7 @@ export class PluginHost {
     this.uninstallFetch ??= installGlobalFetch();
     this.uninstallPopupGuard ??= installPopupGuard();
     this.uninstallExternalLinks ??= installExternalLinks();
+    this.uninstallMarkdown ??= setMarkdownRenderer(createMarkdownRenderer({ app: this.app }));
   }
 
   private removeDomWhenIdle(): void {
@@ -455,6 +459,8 @@ export class PluginHost {
     this.uninstallPopupGuard = null;
     this.uninstallExternalLinks?.();
     this.uninstallExternalLinks = null;
+    this.uninstallMarkdown?.();
+    this.uninstallMarkdown = null;
     this.uninstallNode?.();
     this.uninstallNode = null;
   }
