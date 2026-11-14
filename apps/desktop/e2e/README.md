@@ -86,6 +86,16 @@ and the session child's argv, that disabling Copilot stops the session process g
 re-enable plus a live session, and (in `run.sh`) no orphan after the app quits. Not covered:
 real `claude`, real LLM chat mode, permission cards, interrupt, SIGKILL escalation.
 
+`specs/copilot-history-and-tabs.spec.js` (same fixture, `SPEC=copilot-history-and-tabs.spec.js`) restarts the app inside the spec (`browser.reloadSession()`) and asserts: Copilot's chat index is persisted and Recent chats list the chat after a restart (A), the chat opens as an editor tab when Copilot's open area is "Editor" (B), "Open chat note" opens the note in the main editor (C), and Copilot's active-note badge follows sidebar navigation (D). `setup.sh` also creates `beta.md` for it.
+
+`specs/copilot-settings-tab.spec.js` reuses the same fixture (`SPEC=copilot-settings-tab.spec.js sh
+fixtures/copilot-fake-claude/run.sh`): Settings > Community plugins > Options opens a "Copilot options"
+tab that renders Copilot's real settings (tab labels, a non-cramped container), a second click focuses
+it, closing it removes the plugin UI, and disabling Copilot leaves "Plugin not loaded". Screenshots go
+to `WRITER_E2E_SHOTS` (default `e2e/.cache/shots`).
+
+`specs/copilot-agents-config.spec.js` (`SPEC=copilot-agents-config.spec.js sh fixtures/copilot-fake-claude/run.sh`) is the agent-configuration check: Claude detected at the fake, every agent's **Configure** button opens a dialog that is actually on screen (position, bounds, hit test), Auto-detect / Apply (typed path) / Copy / Sign in for Claude, Auto-detect and a typed off-PATH path for the fake `codex-acp` (its `provenance.json` is read synchronously) and `opencode` (`--version` in `agents-invocations.log`), and `See plans` / `Open Copilot folder` reaching the system. `setup.sh` creates the fakes under `<vault>-agents/{path,typed}/bin (outside the vault, like a real install)` (`fake-agent.sh`; `path/bin` is on the login PATH only for this spec) and `run.sh` exports `WRITER_E2E_OPEN_LOG`: the e2e Rust build appends every `shell.openExternal` / `openPath` / `showItemInFolder` request there instead of opening a browser or Finder (release builds do not contain that code). A `signed-out` marker file next to the fake claude makes `claude auth status` report signed out. Copilot has no Browse/file-picker button, so there is no `WRITER_E2E_PICK_PATH`. The real `claude` on the machine is only touched by Auto-detect (the spec then re-saves the fake). Not covered: real logins, "Managed by Copilot" downloads (unsupported by design).
+
 ## How it works
 
 1. `pnpm run build:app` produces `Writer.app` with the `e2e` Cargo feature,

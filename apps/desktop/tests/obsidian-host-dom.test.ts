@@ -51,6 +51,17 @@ describe("DOM helpers", () => {
     expect(called).toBe(0);
   });
 
+  it("setCssProps/setCssStyles set and clear inline styles (Copilot's textarea needs them)", () => {
+    const el = document.createElement("div");
+    el.setCssProps({ "--copilot-autosize-height": "40px", "background-color": "red" });
+    expect(el.style.getPropertyValue("--copilot-autosize-height")).toBe("40px");
+    expect(el.style.backgroundColor).toBe("red");
+    el.setCssProps({ "--copilot-autosize-height": "" });
+    expect(el.style.getPropertyValue("--copilot-autosize-height")).toBe("");
+    el.setCssStyles({ width: "10px" });
+    expect(el.style.width).toBe("10px");
+  });
+
   it("createDiv/createEl/empty/addClass behave like Obsidian's", () => {
     const root = document.createElement("div");
     const child = (root as any).createDiv({ cls: "a b", text: "hi", attr: { "data-x": "1" } });

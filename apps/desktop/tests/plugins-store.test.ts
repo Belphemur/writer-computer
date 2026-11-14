@@ -5,7 +5,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("../src/hooks/workspace-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/hooks/workspace-api")>()),
+  getWorkspaceRoot: () => "/ws",
+}));
+
 import { Facet } from "@codemirror/state";
+import { useEditorStore } from "../src/stores/editor-store";
+import { MarkdownView } from "../src/lib/obsidian-host/api/views";
 import { PluginHost, type ScriptLoader } from "../src/lib/obsidian-host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../src/lib/obsidian-host/testing";
 import { getPluginEditorExtensions } from "../src/lib/obsidian-host/editor-bridge";
@@ -196,6 +203,75 @@ describe("plugins store actions", () => {
     leaf.detach();
     expect(usePluginsStore.getState().leaves).toEqual([]);
     expect(usePluginsStore.getState().isPaneOpen).toBe(false);
+  });
+
+  it("shows a main-area leaf as a real editor tab, not in the side pane", async () => {
+    const t = setup({ trusted: true });
+    await usePluginsStore.getState().attach("/ws", t.deps);
+    const { workspace } = t.hosts[0].app;
+    const leaf = workspace.getLeaf(true);
+    expect(useEditorStore.getState().tabs.some((x) => x.location.kind === "plugin-view")).toBe(
+      false,
+    );
+    await leaf.setViewState({ type: "test-view", active: true });
+    const s = usePluginsStore.getState();
+    expect(s.leaves).toEqual([]);
+    expect(s.isPaneOpen).toBe(false);
+    expect(s.mainLeaves).toEqual([leaf]);
+    const editor = useEditorStore.getState();
+    const tab = editor.tabs.find((x) => x.location.kind === "plugin-view");
+    expect(tab?.location).toEqual({ kind: "plugin-view", leafId: leaf.id, title: "Test" });
+    expect(editor.activeTabId).toBe(tab?.id);
+    expect(workspace.activeLeaf).toBe(leaf);
+
+    // Closing the tab detaches the leaf (the view's onClose runs).
+    const onClose = vi.spyOn(leaf.view, "onClose");
+    editor.closeTab(tab!.id);
+    await leaf.settled();
+    expect(leaf.detached).toBe(true);
+    expect(onClose).toHaveBeenCalled();
+    expect(usePluginsStore.getState().mainLeaves).toEqual([]);
+  });
+
+  it("detaching a main-area leaf closes its tab", async () => {
+    const t = setup({ trusted: true });
+    await usePluginsStore.getState().attach("/ws", t.deps);
+    const leaf = t.hosts[0].app.workspace.getLeaf("tab");
+    await leaf.setViewState({ type: "test-view" });
+    expect(useEditorStore.getState().tabs.some((x) => x.location.kind === "plugin-view")).toBe(
+      true,
+    );
+    leaf.detach();
+    expect(useEditorStore.getState().tabs.some((x) => x.location.kind === "plugin-view")).toBe(
+      false,
+    );
+  });
+
+  it("emits active-note events from Writer's own navigation (single subscription)", async () => {
+    const t = setup({ trusted: true });
+    await usePluginsStore.getState().attach("/ws", t.deps);
+    const { workspace } = t.hosts[0].app;
+    const seen: string[] = [];
+    workspace.on("file-open", (f) => seen.push(`open:${f?.path ?? null}`));
+    workspace.on("active-leaf-change", (l) =>
+      seen.push(
+        l?.view instanceof MarkdownView
+          ? `leaf:${l.view.file?.path}`
+          : `leaf:${l ? "other" : "null"}`,
+      ),
+    );
+    useEditorStore.setState({
+      tabs: [{ id: "t1", location: { kind: "file", path: "/ws/a.md" }, back: [], forward: [] }],
+      activeTabId: "t1",
+      activeFilePath: "/ws/a.md",
+    });
+    await vi.waitFor(() => expect(workspace.getActiveFile()?.path).toBe("a.md"));
+    await vi.waitFor(() => expect(seen).toContain("leaf:a.md"));
+    expect(seen.filter((x) => x === "open:a.md")).toHaveLength(1);
+    useEditorStore.setState({ tabs: [], activeTabId: null, activeFilePath: null });
+    await vi.waitFor(() => expect(seen).toContain("open:null"));
+    expect(workspace.getActiveFile()).toBeNull();
+    expect(seen.at(-1)).toBe("leaf:null");
   });
 
   it("clamps the pane width", () => {

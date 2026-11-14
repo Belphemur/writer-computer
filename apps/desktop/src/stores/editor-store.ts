@@ -124,6 +124,20 @@ export function createSettingsTab(id = createTabId()): Tab {
   return { id, location: { kind: "settings" }, back: [], forward: [] };
 }
 
+export function createPluginSettingsTab(
+  target: { pluginId: string; pluginName: string; tabId?: string },
+  id = createTabId(),
+): Tab {
+  return { id, location: { kind: "plugin-settings", ...target }, back: [], forward: [] };
+}
+
+export function createPluginViewTab(
+  target: { leafId: string; title: string },
+  id = createTabId(),
+): Tab {
+  return { id, location: { kind: "plugin-view", ...target }, back: [], forward: [] };
+}
+
 const EMPTY_STATS: DocumentStats = { words: 0, characters: 0, paragraphs: 0 };
 
 function createLoadingFile(path: string): OpenFile {
@@ -652,6 +666,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
     if (activeTab.location.kind === "launcher") {
       await state.replaceTabWithFile(activeTab.id, path);
+      return;
+    }
+    // A plugin view holds a live leaf (e.g. a chat); navigating over it would destroy it.
+    if (activeTab.location.kind === "plugin-view") {
+      await state.openFileInNewTab(path);
       return;
     }
     if (activeTab.location.kind === "file" && activeTab.location.path === path) return;

@@ -428,6 +428,16 @@ export class Vault extends Events {
   }
 
   /**
+   * Makes sure a file that exists on disk is in the index (a note Writer just created may be
+   * reported by the watcher after the UI already navigated to it). Fires `create` when it adds.
+   */
+  async ensureIndexed(path: string): Promise<void> {
+    const p = normalizePath(path);
+    if (this.index.has(p)) return;
+    await this.notifyExternal("create", p);
+  }
+
+  /**
    * Feed changes the host observed (file watcher) into the model. Writes made through this
    * Vault trigger their own events and must not be reported again.
    */

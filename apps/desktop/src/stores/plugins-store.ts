@@ -81,6 +81,26 @@ export function planReconcile(
   return { unload, load };
 }
 
+/**
+ * Resolves what a plugin passed to `app.setting.openTabById(id)`: a setting-tab id as registered
+ * (`<pluginId>:<tabId>`), a plugin id (its first tab), or a bare tab id. Null when nothing matches.
+ */
+export function resolveSettingTarget(
+  entries: readonly SettingTabEntry[],
+  id: string,
+): SettingTabEntry | null {
+  return (
+    entries.find((e) => `${e.owner}:${e.tab.id}` === id) ??
+    entries.find((e) => e.owner === id) ??
+    entries.find((e) => e.tab.id === id) ??
+    null
+  );
+}
+
+/** `app.setting.open()` with no id waits this long for a following `openTabById` (Copilot calls
+ *  `open()` then `openTabById("copilot")` a frame later) before settling for the Settings page. */
+export const SETTING_OPEN_GRACE_MS = 150;
+
 const defaultDeps: Required<PluginsDeps> = {
   readState: () => defaultStoreClient.state(),
   createHost: async (root, name, bridge) => {
@@ -100,7 +120,10 @@ interface PluginsState {
   ribbon: readonly RibbonItem[];
   statusItems: readonly StatusBarItem[];
   settingTabs: readonly SettingTabEntry[];
+  /** Side-pane leaves (placement left/right). */
   leaves: readonly WorkspaceLeaf[];
+  /** Main-area leaves; each one that shows a view is an editor tab (page kind `plugin-view`). */
+  mainLeaves: readonly WorkspaceLeaf[];
   activeLeaf: WorkspaceLeaf | null;
   /** Bumped when a leaf's title or icon changes, so the pane header re-renders. */
   leafRevision: number;
@@ -143,6 +166,7 @@ const IDLE = {
   statusItems: [],
   settingTabs: [],
   leaves: [],
+  mainLeaves: [],
   activeLeaf: null,
   leafRevision: 0,
   isPaneOpen: false,
@@ -152,9 +176,19 @@ const appWorkspace: AppWorkspace = {
   getRoot: getWorkspaceRoot,
   getActiveFilePath: editorApi.getActiveFilePath,
   getEditorView: findEditorView,
+  // `navigateToFile` never replaces a plugin view's tab (it opens a new tab instead).
   openFile: (path, { newLeaf }) =>
     newLeaf ? editorApi.openFileInNewTab(path) : editorApi.navigateToFile(path),
 };
+
+/** An empty leaf (nothing opened in it yet) has no tab. */
+const hasView = (leaf: WorkspaceLeaf): boolean => {
+  const type = leaf.view.getViewType();
+  return type !== "empty" && type !== "markdown";
+};
+
+const leafTitle = (leaf: WorkspaceLeaf): string =>
+  leaf.view.getDisplayText() || leaf.view.getViewType() || "Plugin view";
 
 let session: Session | null = null;
 let generation = 0;
@@ -174,32 +208,67 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       if (gen === generation) fn();
     };
 
+  // Ids of main-area leaves that currently have an editor tab (to notice tabs the user closed).
+  const tabbed = new Set<string>();
+
   function paneFor(gen: number) {
     const current = (fn: () => void) => ifCurrent(gen, fn)();
+    /** Shows a main-area leaf as an editor tab once it has a view; re-titles an existing tab. */
+    const syncMainTab = (leaf: WorkspaceLeaf, focus: boolean) => {
+      if (!hasView(leaf) || !get().mainLeaves.includes(leaf)) return;
+      const title = leafTitle(leaf);
+      if (tabbed.has(leaf.id)) {
+        editorApi.updatePluginViewTab(leaf.id, title);
+        if (focus) editorApi.openPluginViewTab({ leafId: leaf.id, title });
+        return;
+      }
+      tabbed.add(leaf.id);
+      editorApi.openPluginViewTab({ leafId: leaf.id, title });
+    };
     return {
-      mountLeaf(leaf: WorkspaceLeaf, _placement: LeafPlacement) {
+      mountLeaf(leaf: WorkspaceLeaf, placement: LeafPlacement) {
         current(() =>
-          set((s) =>
-            s.leaves.includes(leaf)
+          set((s) => {
+            if (placement === "main")
+              return s.mainLeaves.includes(leaf) ? s : { mainLeaves: [...s.mainLeaves, leaf] };
+            return s.leaves.includes(leaf)
               ? s
-              : { leaves: [...s.leaves, leaf], activeLeaf: s.activeLeaf ?? leaf },
-          ),
+              : { leaves: [...s.leaves, leaf], activeLeaf: s.activeLeaf ?? leaf };
+          }),
         );
       },
       revealLeaf(leaf: WorkspaceLeaf) {
-        current(() =>
+        current(() => {
+          if (leaf.placement === "main") {
+            // The editor leaf is already the active document tab; empty leaves have nothing yet.
+            syncMainTab(leaf, true);
+            return;
+          }
           set((s) => ({
             leaves: s.leaves.includes(leaf) ? s.leaves : [...s.leaves, leaf],
             activeLeaf: leaf,
             isPaneOpen: true,
-          })),
-        );
+          }));
+        });
       },
-      leafChanged(_leaf: WorkspaceLeaf) {
-        current(() => set((s) => ({ leafRevision: s.leafRevision + 1 })));
+      leafChanged(leaf: WorkspaceLeaf) {
+        current(() => {
+          set((s) => ({ leafRevision: s.leafRevision + 1 }));
+          if (leaf.placement === "main") syncMainTab(leaf, false);
+        });
       },
       detachLeaf(leaf: WorkspaceLeaf) {
-        current(() =>
+        current(() => {
+          if (leaf.placement === "main") {
+            tabbed.delete(leaf.id);
+            editorApi.closePluginViewTab(leaf.id);
+            set((s) =>
+              s.mainLeaves.includes(leaf)
+                ? { mainLeaves: s.mainLeaves.filter((l) => l !== leaf) }
+                : s,
+            );
+            return;
+          }
           set((s) => {
             if (!s.leaves.includes(leaf)) return s;
             const leaves = s.leaves.filter((l) => l !== leaf);
@@ -210,8 +279,12 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
               activeLeaf,
               isPaneOpen: leaves.length === 0 ? false : s.isPaneOpen,
             };
-          }),
-        );
+          });
+        });
+      },
+      activePluginLeaf(): WorkspaceLeaf | null {
+        const id = editorApi.getPluginViewTabLeafIds().active;
+        return id === null ? null : (get().mainLeaves.find((l) => l.id === id) ?? null);
       },
     };
   }
@@ -221,6 +294,35 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
     const { services } = host;
     const sync = (fn: () => void) => ifCurrent(gen, fn);
     let appliedExtensions: Extension[] = [];
+    let pendingOpen: ReturnType<typeof setTimeout> | null = null;
+    const cancelPendingOpen = () => {
+      if (pendingOpen !== null) clearTimeout(pendingOpen);
+      pendingOpen = null;
+    };
+    host.app.setting.openRequested = (id) => {
+      cancelPendingOpen();
+      if (gen !== generation) return;
+      if (id === null) {
+        pendingOpen = setTimeout(() => {
+          pendingOpen = null;
+          if (gen === generation) editorApi.openSettings();
+        }, SETTING_OPEN_GRACE_MS);
+        return;
+      }
+      const entry = resolveSettingTarget(services.settingTabs.list(), id);
+      if (!entry) {
+        recordPluginError("(host)", "setting.openTabById", new Error(`no setting tab "${id}"`));
+        editorApi.openSettings();
+        return;
+      }
+      const pluginName =
+        host.getSnapshot().installed.find((p) => p.id === entry.owner)?.name ?? entry.owner;
+      editorApi.openPluginSettings({
+        pluginId: entry.owner,
+        pluginName,
+        tabId: entry.tab.id,
+      });
+    };
     const unsubs = [
       host.subscribe(sync(() => set({ snapshot: host.getSnapshot() }))),
       services.commands.subscribe(sync(() => set({ commands: services.commands.list() }))),
@@ -244,13 +346,31 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
             set({ actionError: `A plugin editor extension was rejected: ${failure.message}` });
         }),
       ),
+      // The ONE place Writer's navigation becomes plugin events (file-open, active-leaf-change,
+      // layout-change); the workspace dedupes, so every kind of navigation just flows through here.
       useEditorStore.subscribe((state, prev) => {
-        if (gen !== generation || state.activeFilePath === prev.activeFilePath) return;
-        host.app.workspace.trigger("file-open", host.app.workspace.getActiveFile());
+        if (gen !== generation) return;
+        if (state.tabs !== prev.tabs) {
+          // A tab the user closed (or navigation replaced) takes its plugin leaf with it.
+          const open = new Set(editorApi.getPluginViewTabLeafIds().open);
+          for (const leaf of get().mainLeaves)
+            if (tabbed.has(leaf.id) && !open.has(leaf.id)) {
+              tabbed.delete(leaf.id);
+              leaf.detach();
+            }
+        }
+        if (state.activeFilePath === prev.activeFilePath && state.activeTabId === prev.activeTabId)
+          return;
+        host.app.workspace.syncActiveDocument().catch((e) => {
+          console.error("[plugins] active document sync failed:", e);
+          recordPluginError("(host)", "active-document", e);
+        });
       }),
     ];
     return () => {
       for (const u of unsubs) u();
+      cancelPendingOpen();
+      host.app.setting.openRequested = null;
     };
   }
 
@@ -266,6 +386,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       current.unsubscribe();
     }
     setPluginEditorExtensions([]);
+    tabbed.clear();
     set({ ...IDLE });
   }
 

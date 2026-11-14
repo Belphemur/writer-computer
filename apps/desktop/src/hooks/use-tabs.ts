@@ -1,4 +1,5 @@
 import { createSettingsTab, useEditorStore } from "@/stores/editor-store";
+import { openPluginSettings } from "./editor-api";
 import type { DocumentStats } from "@/lib/document-stats";
 
 export type { OpenFile, Tab, Location, FileLocation, SessionTab } from "@/stores/editor-store";
@@ -102,4 +103,8 @@ function useOpenOrFocus() {
 export function useOpenSettingsTab() {
   const openOrFocus = useOpenOrFocus();
   return () => openOrFocus((tab) => tab.location.kind === "settings", createSettingsTab);
+}
+
+export function useOpenPluginSettings() {
+  return openPluginSettings;
 }

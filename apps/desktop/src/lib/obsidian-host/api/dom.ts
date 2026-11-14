@@ -52,6 +52,10 @@ declare global {
     toggleClass(classes: string | string[], on: boolean): void;
     hasClass(cls: string): boolean;
     setAttr(key: string, value: string | number | boolean | null): void;
+    /** Sets CSS custom properties / properties by name (`--x`, `background-color`); "" clears. */
+    setCssProps(props: Record<string, string>): void;
+    /** Assigns inline style properties by their camelCase CSSStyleDeclaration names. */
+    setCssStyles(styles: Partial<CSSStyleDeclaration>): void;
     getAttr(key: string): string | null;
     /** Pop-out window migration hook. Writer has one window, so the callback never fires. */
     onWindowMigrated(callback: (win: Window) => void): () => void;
@@ -229,6 +233,15 @@ export function installDomHelpers(win: Window & typeof globalThis = window): () 
         (this as unknown as { setAttr(k: string, v: unknown): void }).setAttr(k, v);
     },
   );
+  define(E, "setCssProps", function (this: HTMLElement, props: Record<string, string>) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v === "" || v == null) this.style.removeProperty(k);
+      else this.style.setProperty(k, v);
+    }
+  });
+  define(E, "setCssStyles", function (this: HTMLElement, styles: Partial<CSSStyleDeclaration>) {
+    Object.assign(this.style, styles);
+  });
   define(E, "getAttr", function (this: Element, k: string) {
     return this.getAttribute(k);
   });

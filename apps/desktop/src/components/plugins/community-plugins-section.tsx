@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import {
   usePluginSettingTabs,
   usePluginsActionError,
@@ -11,45 +10,13 @@ import {
 } from "@/hooks/use-plugins";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
-import type { SettingTabLike } from "@/lib/obsidian-host/api/core";
+import { useOpenPluginSettings } from "@/hooks/use-tabs";
 
 const ROW = "flex items-start justify-between gap-4 px-4 py-3.5";
 const TITLE = "text-[13px] font-medium text-[var(--text-primary)]";
 const SUBTITLE = "mt-0.5 text-[13px] text-[var(--text-muted)]";
 const BUTTON =
   "shrink-0 rounded-lg border border-[var(--line-subtle)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle-strong)]";
-
-/** Hosts a plugin's PluginSettingTab: display() on mount, hide() on unmount. */
-function PluginSettingsTab({ tab }: { tab: SettingTabLike }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    host.replaceChildren(tab.containerEl);
-    try {
-      tab.display();
-      setError(null);
-    } catch (e) {
-      console.error(`[plugin] settings tab ${tab.id} display threw:`, e);
-      setError(e instanceof Error ? e.message : String(e));
-    }
-    return () => {
-      try {
-        tab.hide();
-      } catch (e) {
-        console.error(`[plugin] settings tab ${tab.id} hide threw:`, e);
-      }
-      if (tab.containerEl.parentElement === host) tab.containerEl.remove();
-    };
-  }, [tab]);
-  return (
-    <div className="border-t border-[var(--line-subtler)] px-4 py-3.5">
-      {error && <div className="mb-2 text-[13px] text-red-500">{error}</div>}
-      <div ref={hostRef} className="text-[13px] text-[var(--text-primary)]" />
-    </div>
-  );
-}
 
 export function CommunityPluginsSection() {
   const root = useWorkspaceRoot();
@@ -61,12 +28,10 @@ export function CommunityPluginsSection() {
   const setEnabled = useSetPluginEnabled();
   const requestTrust = useRequestPluginsTrust();
   const openBrowser = useOpenPluginBrowser();
-  const [selected, setSelected] = useState<string | null>(null);
+  const openPluginSettings = useOpenPluginSettings();
 
   // Community plugins belong to a vault: nothing to configure without a workspace.
   if (!root || !snapshot) return null;
-
-  const selectedTab = selected ? settingTabs.find((t) => t.owner === selected) : undefined;
 
   return (
     <section className="mb-10" data-community-plugins>
@@ -120,7 +85,7 @@ export function CommunityPluginsSection() {
         )}
         {snapshot.installed.map((plugin) => {
           const status = snapshot.status[plugin.id] ?? { state: "disabled" as const };
-          const hasTab = settingTabs.some((t) => t.owner === plugin.id);
+          const firstTab = settingTabs.find((t) => t.owner === plugin.id);
           return (
             <div key={plugin.id} className="border-t border-[var(--line-subtler)]">
               <div className={ROW}>
@@ -134,11 +99,17 @@ export function CommunityPluginsSection() {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {hasTab && (
+                  {firstTab && (
                     <button
                       type="button"
                       className={BUTTON}
-                      onClick={() => setSelected(selected === plugin.id ? null : plugin.id)}
+                      onClick={() =>
+                        openPluginSettings({
+                          pluginId: plugin.id,
+                          pluginName: plugin.name,
+                          tabId: firstTab.tab.id,
+                        })
+                      }
                     >
                       Options
                     </button>
@@ -150,9 +121,6 @@ export function CommunityPluginsSection() {
                   />
                 </div>
               </div>
-              {selectedTab && selectedTab.owner === plugin.id && (
-                <PluginSettingsTab tab={selectedTab.tab} />
-              )}
             </div>
           );
         })}

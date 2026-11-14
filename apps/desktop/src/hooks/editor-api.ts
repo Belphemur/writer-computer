@@ -1,4 +1,9 @@
-import { useEditorStore } from "@/stores/editor-store";
+import {
+  createPluginSettingsTab,
+  createPluginViewTab,
+  createSettingsTab,
+  useEditorStore,
+} from "@/stores/editor-store";
 export type { OpenFile, Tab, SessionTab } from "@/stores/editor-store";
 
 export function getOpenFile(path: string) {
@@ -67,4 +72,74 @@ export function removePathsWithPrefix(prefix: string) {
 
 export function rewritePathPrefix(oldPrefix: string, newPrefix: string) {
   useEditorStore.getState().rewritePathPrefix(oldPrefix, newPrefix);
+}
+
+/** Opens (or focuses, if already open) the Settings page. */
+export function openSettings() {
+  useEditorStore
+    .getState()
+    .openOrFocus((tab) => tab.location.kind === "settings", createSettingsTab);
+}
+
+/** Opens (or focuses) a community plugin's options tab. One tab per plugin setting tab. */
+export function openPluginSettings(target: {
+  pluginId: string;
+  pluginName: string;
+  tabId?: string;
+}) {
+  useEditorStore.getState().openOrFocus(
+    (tab) =>
+      tab.location.kind === "plugin-settings" &&
+      tab.location.pluginId === target.pluginId &&
+      tab.location.tabId === target.tabId,
+    () => createPluginSettingsTab(target),
+  );
+}
+
+/** Opens (or focuses) the editor tab that shows a plugin leaf's view (an Obsidian main-area leaf). */
+export function openPluginViewTab(target: { leafId: string; title: string }) {
+  useEditorStore.getState().openOrFocus(
+    (tab) => tab.location.kind === "plugin-view" && tab.location.leafId === target.leafId,
+    () => createPluginViewTab(target),
+  );
+}
+
+/** Re-titles the plugin view tab of `leafId` (the view's display text changed). */
+export function updatePluginViewTab(leafId: string, title: string) {
+  useEditorStore.setState((state) => {
+    let changed = false;
+    const tabs = state.tabs.map((tab) => {
+      if (
+        tab.location.kind !== "plugin-view" ||
+        tab.location.leafId !== leafId ||
+        tab.location.title === title
+      )
+        return tab;
+      changed = true;
+      return { ...tab, location: { ...tab.location, title } };
+    });
+    return changed ? { tabs } : state;
+  });
+}
+
+/** Closes the plugin view tab of `leafId`, if open. */
+export function closePluginViewTab(leafId: string) {
+  const state = useEditorStore.getState();
+  const tab = state.tabs.find(
+    (t) => t.location.kind === "plugin-view" && t.location.leafId === leafId,
+  );
+  if (tab) state.closeTab(tab.id);
+}
+
+/** The leaf ids that currently have an editor tab, and the id behind the active tab (or null). */
+export function getPluginViewTabLeafIds(): { open: string[]; active: string | null } {
+  const { tabs, activeTabId } = useEditorStore.getState();
+  const open: string[] = [];
+  let active: string | null = null;
+  for (const tab of tabs) {
+    if (tab.location.kind !== "plugin-view") continue;
+    open.push(tab.location.leafId);
+    if (tab.id === activeTabId) active = tab.location.leafId;
+  }
+  return { open, active };
 }

@@ -13,6 +13,9 @@ import type { EditorView } from "@codemirror/view";
 
 export type LeafPlacement = "left" | "right" | "main";
 
+/** Obsidian's `PaneType | boolean` argument of `getLeaf` / `openLinkText`. */
+export type NewLeafTarget = boolean | "tab" | "split" | "window";
+
 export interface EditorSelectionRange {
   anchor: number;
   head: number;
@@ -41,6 +44,8 @@ export interface WorkspaceBridge {
   /** Vault-relative path of the active document, if any. */
   getActiveFilePath(): string | null;
   getActiveEditor(): EditorBackend | null;
+  /** The plugin leaf whose tab is the active one in the main area, or null (a document or no tab). */
+  getActivePluginLeaf(): WorkspaceLeaf | null;
   openFile(path: string, opts: { newLeaf: boolean }): Promise<void>;
 }
 
@@ -52,6 +57,7 @@ export const detachedBridge: WorkspaceBridge = {
   detachLeaf() {},
   getActiveFilePath: () => null,
   getActiveEditor: () => null,
+  getActivePluginLeaf: () => null,
   openFile: () => Promise.reject(new Error("openFile: no workspace bridge is attached")),
 };
 
@@ -71,15 +77,19 @@ export interface EditorSelection {
 }
 
 export class Editor {
+  constructor(private backend: EditorBackend) {}
+
   /**
    * The CodeMirror 6 view behind this editor. Obsidian exposes it undocumented as `editor.cm`;
-   * the host sets it when it binds an editor, plugins read it (guarding for null).
+   * read live from the backend so an editor kept by a plugin never goes stale.
    */
-  cm: EditorView | null = null;
-
-  constructor(private backend: EditorBackend) {
-    this.cm = backend.cm ?? null;
+  get cm(): EditorView | null {
+    return this.cmOverride !== undefined ? this.cmOverride : (this.backend.cm ?? null);
   }
+  set cm(view: EditorView | null) {
+    this.cmOverride = view;
+  }
+  private cmOverride: EditorView | null | undefined;
 
   getDoc(): this {
     return this;
@@ -298,6 +308,9 @@ export class MarkdownView extends TextFileView {
   getViewType(): string {
     return "markdown";
   }
+  getState(): Record<string, unknown> {
+    return this.file ? { file: this.file.path, mode: "source" } : {};
+  }
   getMode(): "source" | "preview" {
     return "source";
   }
@@ -347,6 +360,13 @@ export class WorkspaceLeaf extends Component {
   containerEl = createEl("div", { cls: "workspace-leaf" });
   view: View;
   detached = false;
+  /** Obsidian parity: the host never defers loading a view. */
+  isDeferred = false;
+  /**
+   * True for a leaf created by `getLeaf(true | "tab" | ...)` that has not shown anything yet: the
+   * first document opened through it becomes a new editor tab instead of replacing the current one.
+   */
+  pendingNewTab = false;
   private opening: Promise<void> = Promise.resolve();
 
   constructor(
@@ -372,6 +392,15 @@ export class WorkspaceLeaf extends Component {
 
   private async openView(viewState: ViewState, eState?: unknown): Promise<void> {
     if (this.detached) throw new Error("Cannot open a view in a detached leaf");
+    if (viewState.type === "markdown") {
+      // The main editor is the host's, not a registered view: `setViewState({type: "markdown"})`
+      // (Obsidian's way of turning a leaf into a note) opens the note in that editor.
+      const file = viewState.state?.file;
+      if (typeof file !== "string" || !file)
+        throw new Error('setViewState({type: "markdown"}) needs state.file');
+      await this.app.workspace.openFileInLeaf(this, file);
+      return;
+    }
     const entry = this.app.workspace.viewCreator(viewState.type);
     if (!entry) throw new Error(`Unknown view type "${viewState.type}"`);
     const next = entry.creator(this) as View;
@@ -412,15 +441,37 @@ export class WorkspaceLeaf extends Component {
     return view;
   }
 
+  /**
+   * Opens a note in Writer's main editor. The editor-area leaf (`getLeaf()` without a new-tab
+   * request) reuses the current tab; any other leaf opens a new tab. The note's scroll/line
+   * (`openState.eState`) is not applied.
+   */
   async openFile(file: TFile, _openState?: unknown): Promise<void> {
-    await this.app.workspace.bridge.openFile(file.path, { newLeaf: false });
+    await this.app.workspace.openFileInLeaf(this, file.path);
   }
+
+  /** The workspace split this leaf lives in (Obsidian's `leaf.getRoot()`). */
+  getRoot(): SplitLike {
+    const ws = this.app.workspace;
+    return this.placement === "left"
+      ? ws.leftSplit
+      : this.placement === "right"
+        ? ws.rightSplit
+        : ws.rootSplit;
+  }
+
+  /** Obsidian parity: leaves are never deferred here. */
+  async loadIfDeferred(): Promise<void> {}
 
   getDisplayText(): string {
     return this.view.getDisplayText();
   }
   getIcon(): string {
     return this.view.getIcon();
+  }
+  /** Re-reads the view's title and icon (Obsidian's `leaf.updateHeader()`). */
+  updateHeader(): void {
+    this.app.workspace.bridge.leafChanged(this);
   }
   setPinned(_pinned: boolean): void {}
   setGroup(_group: string): void {}
@@ -472,11 +523,15 @@ export class Workspace extends Events {
   activeLeaf: WorkspaceLeaf | null = null;
   leftSplit = makeSplit();
   rightSplit = makeSplit();
+  /** The main editor area. */
+  rootSplit = makeSplit();
   private registry = new Map<string, { owner: string; creator: ViewCreator }>();
   private leaves = new Set<WorkspaceLeaf>();
   private readyCallbacks: (() => unknown)[] = [];
+  /** The one leaf standing for the host's markdown editor; its view follows the active note. */
   private markdownLeaf: WorkspaceLeaf | null = null;
-  private markdownView: { key: string; view: MarkdownView } | null = null;
+  private syncSeq = 0;
+  private emitted: { path: string | null; leaf: WorkspaceLeaf | null } | null = null;
 
   constructor(
     public app: App,
@@ -520,8 +575,9 @@ export class Workspace extends Events {
 
   // -- leaves
 
-  private newLeaf(placement: LeafPlacement): WorkspaceLeaf {
+  private newLeaf(placement: LeafPlacement, pendingNewTab = false): WorkspaceLeaf {
     const leaf = new WorkspaceLeaf(this.app, placement);
+    leaf.pendingNewTab = pendingNewTab;
     leaf.load();
     this.leaves.add(leaf);
     this.bridge.mountLeaf(leaf, placement);
@@ -537,15 +593,17 @@ export class Workspace extends Events {
     this.trigger("layout-change");
   }
 
-  getLeaf(
-    newLeaf?: boolean | "tab" | "split" | "window",
-    _direction?: "vertical" | "horizontal",
-  ): WorkspaceLeaf {
+  /**
+   * `getLeaf()` / `getLeaf(false)` is the leaf of the note being edited (reused by `openFile`);
+   * `true`, `"tab"`, `"split"` and `"window"` return a fresh leaf in the main area that becomes a
+   * new editor tab (Writer has no splits or extra windows, so split/window are tabs too).
+   */
+  getLeaf(newLeaf?: NewLeafTarget, _direction?: "vertical" | "horizontal"): WorkspaceLeaf {
     if (!newLeaf) {
-      const existing = this.getMostRecentLeaf();
-      if (existing) return existing;
+      const md = this.markdownLeafForActive();
+      if (md) return md;
     }
-    return this.newLeaf("main");
+    return this.newLeaf("main", true);
   }
   getLeftLeaf(_shouldSplit?: boolean): WorkspaceLeaf {
     return this.newLeaf("left");
@@ -555,18 +613,38 @@ export class Workspace extends Events {
   }
   getMostRecentLeaf(): WorkspaceLeaf | null {
     if (this.activeLeaf?.placement === "main") return this.activeLeaf;
+    const md = this.markdownLeafForActive();
+    if (md) return md;
     let last: WorkspaceLeaf | null = null;
     for (const l of this.leaves) if (l.placement === "main") last = l;
     return last;
   }
   getLeavesOfType(type: string): WorkspaceLeaf[] {
-    return [...this.leaves].filter((l) => l.view.getViewType() === type);
+    return this.allLeaves().filter((l) => l.view.getViewType() === type);
   }
   detachLeavesOfType(type: string): void {
-    for (const l of this.getLeavesOfType(type)) l.detach();
+    for (const l of this.getLeavesOfType(type)) if (l !== this.markdownLeaf) l.detach();
   }
   iterateAllLeaves(cb: (leaf: WorkspaceLeaf) => unknown): void {
-    for (const l of Array.from(this.leaves)) cb(l);
+    for (const l of this.allLeaves()) cb(l);
+  }
+
+  /** Registered leaves plus the editor leaf while a note is open. */
+  private allLeaves(): WorkspaceLeaf[] {
+    const md = this.markdownLeafForActive();
+    return md ? [...this.leaves, md] : Array.from(this.leaves);
+  }
+
+  /**
+   * Opens `path` in Writer's main editor on behalf of `leaf`: the editor leaf reuses the current
+   * tab, any other leaf opens a new tab. A leaf that showed nothing is dropped afterwards (the
+   * note lives in the editor, not in the empty leaf).
+   */
+  async openFileInLeaf(leaf: WorkspaceLeaf, path: string): Promise<void> {
+    const reuse = leaf === this.markdownLeaf && !leaf.pendingNewTab;
+    await this.bridge.openFile(path, { newLeaf: !reuse });
+    leaf.pendingNewTab = false;
+    if (leaf !== this.markdownLeaf && leaf.view instanceof EmptyView) leaf.detach();
   }
 
   async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
@@ -577,6 +655,7 @@ export class Workspace extends Events {
   setActiveLeaf(leaf: WorkspaceLeaf, _params?: { focus?: boolean }): void {
     if (this.activeLeaf === leaf) return;
     this.activeLeaf = leaf;
+    this.emitted = { path: this.emitted?.path ?? null, leaf };
     this.trigger("active-leaf-change", leaf);
   }
 
@@ -587,26 +666,73 @@ export class Workspace extends Events {
     return path ? this.app.vault.getFileByPath(path) : null;
   }
 
-  private currentMarkdownView(): MarkdownView | null {
-    const backend = this.bridge.getActiveEditor();
-    const file = this.getActiveFile();
-    if (!backend || !file) return null;
+  /** An editor that always talks to whichever CodeMirror view is active right now. */
+  private liveEditorBackend(): EditorBackend {
+    const live = () => this.bridge.getActiveEditor() ?? NO_EDITOR;
+    return {
+      getValue: () => live().getValue(),
+      replaceRange: (from, to, text) => live().replaceRange(from, to, text),
+      getSelections: () => live().getSelections(),
+      setSelections: (r) => live().setSelections(r),
+      focus: () => live().focus(),
+      get cm() {
+        return live().cm ?? null;
+      },
+    };
+  }
+
+  /** The editor leaf, with its view showing `file`. Null when no note is active. */
+  private markdownLeafFor(file: TFile | null): WorkspaceLeaf | null {
+    if (!file) return null;
     this.markdownLeaf ??= new WorkspaceLeaf(this.app, "main");
-    const key = file.path;
-    if (this.markdownView && this.markdownView.key === key && this.markdownView.view.editor) {
-      // Rebuild when the backend changed (tab switch keeps the same path rarely).
-      const view = this.markdownView.view;
-      view.editor = new Editor(backend);
-      return view;
+    const leaf = this.markdownLeaf;
+    const view = leaf.view;
+    if (!(view instanceof MarkdownView) || view.file !== file) {
+      const next = new MarkdownView(leaf, this.liveEditorBackend(), file);
+      leaf.view = next;
+      leaf.containerEl.replaceChildren(next.containerEl);
     }
-    const view = new MarkdownView(this.markdownLeaf, backend, file);
-    this.markdownView = { key, view };
-    return view;
+    return leaf;
+  }
+
+  private markdownLeafForActive(): WorkspaceLeaf | null {
+    return this.markdownLeafFor(this.getActiveFile());
+  }
+
+  private currentMarkdownView(): MarkdownView | null {
+    if (!this.bridge.getActiveEditor()) return null;
+    const leaf = this.markdownLeafForActive();
+    return leaf && leaf.view instanceof MarkdownView ? leaf.view : null;
+  }
+
+  /**
+   * Called by the host whenever Writer's active document or tab may have changed (the one place
+   * that turns navigation into plugin events). Emits at most once per real change:
+   * `file-open(file | null)` when the active note changes, `active-leaf-change(leaf | null)` and
+   * `layout-change` when the active note or the active plugin tab changes. Safe to call often.
+   */
+  async syncActiveDocument(): Promise<void> {
+    const seq = ++this.syncSeq;
+    const path = this.bridge.getActiveFilePath();
+    // A note created through Writer may not be in the vault index yet (watcher events are async).
+    if (path) await this.app.vault.ensureIndexed(path);
+    if (seq !== this.syncSeq) return;
+    const file = path ? this.app.vault.getFileByPath(path) : null;
+    const pluginLeaf = this.bridge.getActivePluginLeaf();
+    const leaf = pluginLeaf ?? this.markdownLeafFor(file);
+    const prev = this.emitted;
+    this.emitted = { path: file?.path ?? null, leaf };
+    if (prev && prev.path === this.emitted.path && prev.leaf === leaf) return;
+    this.activeLeaf = leaf;
+    if (!prev || prev.path !== this.emitted.path) this.trigger("file-open", file);
+    this.trigger("active-leaf-change", leaf);
+    this.trigger("layout-change");
   }
 
   getActiveViewOfType<T extends View>(type: abstract new (...args: any[]) => T): T | null {
     const leafView = this.activeLeaf?.view;
-    if (leafView && leafView instanceof type) return leafView as T;
+    if (leafView && leafView instanceof type && !(leafView instanceof EmptyView))
+      return leafView as T;
     const md = this.currentMarkdownView();
     return md && md instanceof type ? (md as unknown as T) : null;
   }
@@ -622,7 +748,17 @@ export class Workspace extends Events {
     return md ? { editor: md.editor, file: md.file } : null;
   }
 
-  async openLinkText(linktext: string, sourcePath: string, newLeaf?: boolean): Promise<void> {
+  /**
+   * Opens the note a link points at in the main editor: a new tab when `newLeaf` is truthy
+   * (`true`, `"tab"`, `"split"`, `"window"`), the current tab otherwise. A link to a missing note
+   * rejects (Obsidian would create it); a `#heading` suffix is ignored.
+   */
+  async openLinkText(
+    linktext: string,
+    sourcePath: string,
+    newLeaf?: NewLeafTarget,
+    _openState?: unknown,
+  ): Promise<void> {
     const hash = linktext.indexOf("#");
     const path = hash < 0 ? linktext : linktext.slice(0, hash);
     const file = this.app.metadataCache.getFirstLinkpathDest(path, sourcePath);
@@ -655,6 +791,10 @@ export class Workspace extends Events {
     const cbs = this.readyCallbacks.splice(0);
     for (const cb of cbs) this.runReady(cb);
     this.trigger("layout-ready");
+    // Announce the note that is open right now (later changes come from the host's navigation hook).
+    this.syncActiveDocument().catch((e) =>
+      console.error("[plugin] initial active-document sync failed:", e),
+    );
   }
 
   private runReady(cb: () => unknown): void {

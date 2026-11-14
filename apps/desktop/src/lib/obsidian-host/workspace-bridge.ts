@@ -1,6 +1,7 @@
 // WorkspaceBridge implementation: connects the shim's Workspace to the app.
 //
-// Pure adapter. Everything stateful (which leaves exist, whether the pane is open) lives in the
+// Pure adapter. Leaves placed "left"/"right" show in the plugin side pane; "main" leaves are
+// editor-area tabs (page kind `plugin-view`). Everything stateful (which leaves exist, whether the pane is open) lives in the
 // plugins store and reaches this module through `PluginPane`; everything about the app's editor
 // and tabs arrives through `AppWorkspace`. Both are injected so the bridge is testable in node.
 // Types only from the shim: this module must stay cheap to import (the shim itself is lazy).
@@ -14,6 +15,8 @@ export interface PluginPane {
   revealLeaf(leaf: WorkspaceLeaf): void;
   leafChanged(leaf: WorkspaceLeaf): void;
   detachLeaf(leaf: WorkspaceLeaf): void;
+  /** The leaf whose editor tab is the active tab, or null. */
+  activePluginLeaf(): WorkspaceLeaf | null;
 }
 
 /** What the bridge needs to know about the open workspace and its editors. */
@@ -43,6 +46,7 @@ export function createWorkspaceBridge(app: AppWorkspace, pane: PluginPane): Work
     revealLeaf: (leaf) => pane.revealLeaf(leaf),
     leafChanged: (leaf) => pane.leafChanged(leaf),
     detachLeaf: (leaf) => pane.detachLeaf(leaf),
+    getActivePluginLeaf: () => pane.activePluginLeaf(),
     getActiveFilePath() {
       const root = app.getRoot();
       const active = app.getActiveFilePath();

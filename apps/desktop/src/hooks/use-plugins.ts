@@ -52,6 +52,10 @@ export function usePluginLeaves() {
 export function useActivePluginLeaf() {
   return usePluginsStore((s) => s.activeLeaf);
 }
+/** Leaves placed in the main editor area (each is shown as an editor tab). */
+export function usePluginMainLeaves() {
+  return usePluginsStore((s) => s.mainLeaves);
+}
 export function usePluginLeafRevision() {
   return usePluginsStore((s) => s.leafRevision);
 }

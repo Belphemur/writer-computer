@@ -25,6 +25,7 @@ function makePane() {
     revealLeaf: vi.fn(),
     leafChanged: vi.fn(),
     detachLeaf: vi.fn(),
+    activePluginLeaf: vi.fn(() => null),
   };
   const pane: PluginPane = { ...fns };
   return { fns, pane };

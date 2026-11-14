@@ -12,6 +12,7 @@ import {
   type PluginManifest,
   type RegisteredCommand,
 } from "./core";
+import { electronModule } from "../node/misc";
 import { parseYaml, stringifyYaml } from "./functions";
 import type { Modal } from "./ui";
 import { MetadataCache, Vault, type TAbstractFile, type TFile, type VaultIo } from "./vault";
@@ -105,6 +106,26 @@ export class App {
   /** Sync cache over the OS credential store; the loader hydrates it before any plugin runs. */
   secretStorage = new SecretStorage();
 
+  /**
+   * Undocumented `internalPlugins`: Copilot's "Open Copilot folder" asks the File Explorer to
+   * reveal a folder. Writer has no such plugin, so the folder is revealed in the system file
+   * manager (the same `shell.showItemInFolder` a plugin gets from `require("electron")`).
+   */
+  internalPlugins = {
+    getPluginById: (id: string) =>
+      id === "file-explorer"
+        ? {
+            enabled: true,
+            instance: {
+              revealInFolder: (item: { path: string }): void =>
+                electronModule.shell.showItemInFolder(`${this.basePath}/${item.path}`),
+            },
+          }
+        : undefined,
+  };
+
+  private readonly basePath: string;
+
   /** Undocumented in the d.ts but plugins feature-detect these (Copilot, command palettes). */
   commands = commandsFacade(() => this.services.commands);
 
@@ -112,6 +133,7 @@ export class App {
     public services: HostServices,
     deps: AppDeps,
   ) {
+    this.basePath = deps.io.basePath.replace(/\/+$/, "");
     this.vault = new Vault(deps.io);
     this.metadataCache = new MetadataCache(this.vault);
     this.workspace = new Workspace(this, deps.bridge ?? detachedBridge);

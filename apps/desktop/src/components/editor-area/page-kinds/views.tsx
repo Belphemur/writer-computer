@@ -1,10 +1,14 @@
 import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
+import { PluginSettingsPage } from "@/components/plugins/plugin-settings-page";
+import { PluginViewTab } from "@/components/plugins/plugin-view-tab";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { Location } from "./index";
 import type { FileLocation } from "./file";
 import type { LauncherLocation } from "./launcher";
+import type { PluginSettingsLocation } from "./plugin-settings";
+import type { PluginViewLocation } from "./plugin-view";
 import type { SettingsLocation } from "./settings";
 import type { PageKindView } from "./types";
 
@@ -38,6 +42,12 @@ const views = {
   settings: {
     Component: SettingsPanel,
   } satisfies PageKindView<SettingsLocation>,
+  "plugin-settings": {
+    Component: PluginSettingsPage,
+  } satisfies PageKindView<PluginSettingsLocation>,
+  "plugin-view": {
+    Component: PluginViewTab,
+  } satisfies PageKindView<PluginViewLocation>,
 } as const;
 
 /** Resolve a location to its registered view. Throws on an unknown kind —

@@ -26,8 +26,11 @@ import { Buffer as NodeBuffer } from "./node/buffer";
 import type { NodeIpc } from "./node/ipc";
 import { getSharedProcess } from "./node/process";
 import { ensureDeviceId } from "./node/device-id";
+import { configuredAgentPaths, primeConfiguredAgentPaths } from "./node/agent-clis";
+import { installExternalLinks } from "./node/external-links";
 import { installNodeGlobals, preloadNodeRuntime } from "./node/runtime";
 import { installObsidianTheme } from "./api/theme-compat";
+import { installPopupGuard } from "./popup-guard";
 import { recordPluginError } from "./error-log";
 import { seedCopilotDataIfAbsent } from "./node/seed-plugin-data";
 import { getNodeIpc } from "./node/state";
@@ -152,7 +155,9 @@ export class PluginHost {
   private uninstallDom: (() => void) | null = null;
   private uninstallTheme: (() => void) | null = null;
   private uninstallFetch: (() => void) | null = null;
+  private uninstallPopupGuard: (() => void) | null = null;
   private uninstallNode: (() => void) | null = null;
+  private uninstallExternalLinks: (() => void) | null = null;
   private nodeReady: Promise<void> | null = null;
   private readonly io: VaultIo;
   private readonly options: PluginHostOptions;
@@ -334,6 +339,7 @@ export class PluginHost {
       // Plugins read secrets synchronously in onload: the cache must be filled first.
       await this.app.secretStorage.hydrate(this.ipc);
       await this.seedPluginData(id);
+      await this.primeAgentPaths(id);
       this.installDom();
       const exports = await this.evaluate(id);
       const Ctor = resolvePluginClass(id, exports);
@@ -404,6 +410,17 @@ export class PluginHost {
     }
   }
 
+  /** Agent CLI paths a user configured earlier stay visible to the sync fs cache after a restart. */
+  private async primeAgentPaths(id: string): Promise<void> {
+    if (id !== "copilot") return;
+    try {
+      await primeConfiguredAgentPaths(configuredAgentPaths(await this.ipc.dataRead(id)));
+    } catch (e) {
+      console.warn(`[plugin] ${id}: configured agent paths not primed: ${messageOf(e)}`);
+      recordPluginError(id, "prime-agent-paths", e);
+    }
+  }
+
   private ensureNodeRuntime(): Promise<void> {
     this.nodeReady ??= preloadNodeRuntime({
       ipc: this.options.nodeIpc,
@@ -422,6 +439,8 @@ export class PluginHost {
     this.uninstallDom ??= installDomHelpers();
     this.uninstallTheme ??= installObsidianTheme();
     this.uninstallFetch ??= installGlobalFetch();
+    this.uninstallPopupGuard ??= installPopupGuard();
+    this.uninstallExternalLinks ??= installExternalLinks();
   }
 
   private removeDomWhenIdle(): void {
@@ -432,6 +451,10 @@ export class PluginHost {
     this.uninstallTheme = null;
     this.uninstallFetch?.();
     this.uninstallFetch = null;
+    this.uninstallPopupGuard?.();
+    this.uninstallPopupGuard = null;
+    this.uninstallExternalLinks?.();
+    this.uninstallExternalLinks = null;
     this.uninstallNode?.();
     this.uninstallNode = null;
   }

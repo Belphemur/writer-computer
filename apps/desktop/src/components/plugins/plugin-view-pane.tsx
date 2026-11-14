@@ -13,7 +13,7 @@ import {
 } from "@/hooks/use-plugins";
 
 /** Mounts a plugin-owned element for as long as it is the active one. */
-function MountedElement({ element }: { element: HTMLElement }) {
+export function MountedElement({ element }: { element: HTMLElement }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = hostRef.current;
