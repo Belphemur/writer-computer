@@ -239,9 +239,12 @@ pub static COMMANDS: &[CommandSpec] = &[
     cmd!(
         "search",
         "Search",
-        "List files whose text or name matches a query",
+        "List files whose text or name matches a query, best match first",
         &[
-            req("query", "text, or /regex/"),
+            req(
+                "query",
+                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+            ),
             p("path", "limit to this folder"),
             p("limit", "maximum number of files"),
             p("format", "text | json")
@@ -257,9 +260,12 @@ pub static COMMANDS: &[CommandSpec] = &[
     cmd!(
         "search:context",
         "Search",
-        "Matching lines as path:line: text",
+        "Matching lines as path:line: text, best file first",
         &[
-            req("query", "text, or /regex/"),
+            req(
+                "query",
+                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+            ),
             p("path", "limit to this folder"),
             p("limit", "maximum number of lines"),
             p("format", "text | json")

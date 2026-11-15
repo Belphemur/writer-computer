@@ -14,22 +14,30 @@
 pub mod bases_source;
 mod build;
 pub(crate) mod frontmatter;
+pub mod fts;
 pub(crate) mod markdown;
+pub mod names;
 mod note;
 pub mod patch;
 pub mod paths;
 mod query;
 pub(crate) mod resolve;
 mod schema;
+mod search;
+mod search_query;
 mod yaml;
 
+#[cfg(test)]
+mod search_tests;
 #[cfg(test)]
 mod tests;
 
 pub use build::ScanStats;
+pub use fts::{fts_size_bytes, FtsMaintenance, FTS_MAX_BODY_BYTES};
 pub use paths::{cli_app_data_dir, index_db_path, INDEX_DIR_ENV, RELEASE_IDENTIFIER};
 pub use query::*;
 pub use schema::{PARSER_VERSION, SCHEMA_VERSION};
+pub use search::{SearchHit, SearchOptions, SearchPage, Snippet};
 
 use parking_lot::Mutex;
 use resolve::PathIndex;
@@ -95,6 +103,9 @@ pub(crate) struct Shared {
     epoch: AtomicU64,
     status: Mutex<StatusInner>,
     on_change: Option<ChangeCallback>,
+    /// Perf A/B in tests: build without the full-text rows.
+    #[cfg(test)]
+    pub(crate) fts_disabled: AtomicBool,
 }
 
 impl Shared {
@@ -108,6 +119,7 @@ type Reply<T> = Option<SyncSender<Result<T, IndexError>>>;
 enum Job {
     Scan(Reply<ScanStats>),
     Paths(Vec<PathBuf>, Reply<Vec<String>>),
+    Fts(FtsMaintenance, Reply<()>),
     Shutdown,
 }
 
@@ -193,6 +205,8 @@ impl Index {
                 ..Default::default()
             }),
             on_change: params.on_change,
+            #[cfg(test)]
+            fts_disabled: AtomicBool::new(false),
         });
         let conn = opened.conn;
         let paths = build::load_path_index(&conn)?;
@@ -416,6 +430,12 @@ fn worker_main(
                 shared.epoch.fetch_add(1, Ordering::SeqCst);
                 if let Some(r) = reply {
                     let _ = r.send(outcome);
+                }
+            }
+            Job::Fts(op, reply) => {
+                let result = search::run_fts_job(&conn, op);
+                if let Some(r) = reply {
+                    let _ = r.send(result);
                 }
             }
             Job::Paths(abs, reply) => {

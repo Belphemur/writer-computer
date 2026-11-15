@@ -18,6 +18,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     close: fn(),
     toggleSidebar: fn(),
     openCreateFile: fn(),
+    openSearchNotes: fn(),
     openFileInCompactWindow: fn(),
     closeActiveTab: fn(),
     closeAllTabs: fn(),
@@ -46,6 +47,7 @@ describe("palette built-in commands", () => {
     expect(ids(list)).toEqual([
       "toggle-sidebar",
       "new-file",
+      "search-notes",
       "open-in-compact-window",
       "close-tab",
       "close-all",

@@ -131,6 +131,8 @@ export interface BaseView {
   /** The view's own filters (ANDed with the base-level ones); `null` when absent. */
   filters: BaseFilter | null;
   groupBy: BaseGroupBy | null;
+  /** Manual group order: entries first in this order, the rest sorted. `null` when absent. */
+  groupOrder?: unknown[] | null;
   sort: BaseSortKey[];
   order: string[] | null;
   limit: number | null;
@@ -249,4 +251,21 @@ export interface BaseEvalArgs {
   nowOffsetMinutes?: number;
   /** `.base` source whose `formulas` the expression may reference. */
   text?: string;
+}
+
+/** One entry of the engine's function registry (`base_functions`, Rust `FunctionInfo`). */
+export interface BaseFunctionInfo {
+  name: string;
+  /** `global` for `date(...)`, `method` for `x.slice(...)`. */
+  kind: "global" | "method";
+  /** `["global"]`, `["any"]`, or the receiver type names (`string`, `list`, ...). */
+  receivers: string[];
+  /** For example `string.slice(start, end?): string`. */
+  signature: string;
+  doc: string;
+  /** Return type name (`any` when the signature names none). */
+  returns: string;
+  minArgs: number;
+  /** `null` for a variadic function. */
+  maxArgs: number | null;
 }

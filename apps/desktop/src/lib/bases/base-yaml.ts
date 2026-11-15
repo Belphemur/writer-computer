@@ -155,6 +155,86 @@ export function setGroupBy(text: string, viewIndex: number, groupBy: BaseGroupBy
   );
 }
 
+/** An entry of `groupOrder`: a scalar (string, number, boolean, `null`) in files seen so far. */
+export type GroupOrderEntry = unknown;
+
+function sameEntry(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+function entryValue(item: unknown): unknown {
+  if (isScalar(item)) return item.value;
+  if (item !== null && typeof item === "object" && "toJSON" in item)
+    return (item as { toJSON(): unknown }).toJSON();
+  return item;
+}
+
+/**
+ * Edit the view's `groupOrder` list in place: `edit` receives the current entries (plain values)
+ * and the list node, and mutates the node so untouched entries keep their comments and style.
+ * An emptied list removes the key (empty and absent both mean "automatic order").
+ */
+function editGroupOrder(
+  text: string,
+  viewIndex: number,
+  edit: (entries: unknown[], seq: YAMLSeq, doc: Doc) => void,
+): string {
+  return mutate(text, (doc) => {
+    const view = viewMap(doc, viewIndex);
+    const node = view.get("groupOrder", true);
+    const existing = isSeq(node);
+    let seq: YAMLSeq;
+    if (isSeq(node)) seq = node;
+    else if (node === undefined || (isScalar(node) && node.value === null)) {
+      seq = doc.createNode([]) as YAMLSeq;
+    } else throw new BaseYamlError("`groupOrder` must be a list");
+    edit(seq.items.map(entryValue), seq, doc);
+    if (seq.items.length === 0) view.delete("groupOrder");
+    else if (!existing) view.set("groupOrder", seq);
+  });
+}
+
+/** Append `entry` to the manual group order (no-op when it is already listed). */
+export function groupOrderAdd(text: string, viewIndex: number, entry: GroupOrderEntry): string {
+  return editGroupOrder(text, viewIndex, (entries, seq, doc) => {
+    if (entries.some((e) => sameEntry(e, entry))) return;
+    seq.add(doc.createNode(entry));
+  });
+}
+
+/** Remove `entry` from the manual group order (no-op when it is not listed). */
+export function groupOrderRemove(text: string, viewIndex: number, entry: GroupOrderEntry): string {
+  return editGroupOrder(text, viewIndex, (entries, seq) => {
+    const i = entries.findIndex((e) => sameEntry(e, entry));
+    if (i >= 0) seq.items.splice(i, 1);
+  });
+}
+
+/**
+ * Move `entry` by `delta` places (negative is earlier), clamped to the ends. Identity-based, not
+ * index-based, so a stale menu cannot move a different entry than the one it showed.
+ */
+export function groupOrderMove(
+  text: string,
+  viewIndex: number,
+  entry: GroupOrderEntry,
+  delta: number,
+): string {
+  return editGroupOrder(text, viewIndex, (entries, seq) => {
+    const from = entries.findIndex((e) => sameEntry(e, entry));
+    if (from < 0) return;
+    const to = Math.max(0, Math.min(entries.length - 1, from + delta));
+    if (to === from) return;
+    const [item] = seq.items.splice(from, 1);
+    seq.items.splice(to, 0, item!);
+  });
+}
+
+/** Back to the automatic order: removes `groupOrder`. */
+export function groupOrderReset(text: string, viewIndex: number): string {
+  return setViewValue(text, viewIndex, "groupOrder", undefined);
+}
+
 export function setLimit(text: string, viewIndex: number, limit: number | null): string {
   if (limit !== null && (!Number.isInteger(limit) || limit < 1))
     throw new BaseYamlError("The limit must be a whole number of at least 1");
@@ -194,6 +274,31 @@ export function setColumnSize(
     const width = Math.round(px);
     if (isMap(sizes)) sizes.set(matchingKey(sizes, columnId), width);
     else view.set("columnSize", doc.createNode({ [columnId]: width }));
+  });
+}
+
+/**
+ * Define the formula `name` (`formulas.<name>`), appended after the existing ones. A formula name
+ * is a bare identifier (it is written `formula.<name>`) and must not exist yet; the expression is
+ * stored as given, trimmed. Whether the expression is valid is the engine's to say: an invalid
+ * one shows as an error cell in its column.
+ */
+export function addFormula(text: string, name: string, expression: string): string {
+  const id = name.trim();
+  const expr = expression.trim();
+  if (!/^[\p{L}_$][\p{L}\p{N}_$]*$/u.test(id))
+    throw new BaseYamlError(
+      "A formula name is letters, digits, _ and $ only, and cannot start with a digit",
+    );
+  if (expr === "") throw new BaseYamlError("A formula needs an expression");
+  return mutate(text, (doc) => {
+    const formulas = root(doc).get("formulas", true);
+    if (isMap(formulas)) {
+      if (formulas.has(id)) throw new BaseYamlError(`A formula named "${id}" already exists`);
+      formulas.set(id, expr);
+    } else if (formulas === undefined || (isScalar(formulas) && formulas.value === null)) {
+      root(doc).set("formulas", doc.createNode({ [id]: expr }));
+    } else throw new BaseYamlError("`formulas` must be a mapping");
   });
 }
 

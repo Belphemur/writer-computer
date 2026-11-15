@@ -25,16 +25,19 @@ vi.mock("../src/lib/bases/ipc", () => ({
   baseEval: vi.fn(),
   indexProperties: vi.fn(),
   baseWriteText: vi.fn(),
+  baseFunctions: vi.fn(),
 }));
 
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { BaseView } from "../src/components/base-view";
 import * as ipc from "../src/lib/bases/ipc";
+import { resetFunctionRegistry } from "../src/lib/bases/function-registry";
 import * as tauri from "../src/lib/tauri";
 import type { BaseQueryResult } from "../src/lib/bases/types";
 import { useEditorStore } from "../src/stores/editor-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
+import { FUNCTIONS } from "./helpers/bases-functions";
 import {
   BASE_PATH,
   baseDocument,
@@ -265,6 +268,8 @@ const written = () => m.baseWriteText.mock.calls.map((c) => c[1]);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetFunctionRegistry();
+  vi.mocked(ipc.baseFunctions).mockResolvedValue(FUNCTIONS);
   vi.spyOn(console, "error").mockImplementation(() => {});
   stubLayout();
   text = BASE_TEXT;

@@ -3,6 +3,7 @@ import type { BaseDocument, BaseQueryResult } from "@/lib/bases/types";
 import { extraPropertiesOf, getBaseView, type BaseViewProps } from "@/lib/bases/view-registry";
 import "./builtin-views";
 import { BaseEditsContext, type BaseEdits } from "./edits-context";
+import { GroupCollapseProvider } from "./use-group-collapse";
 import { DomViewHost } from "./plugin-view-host";
 import { UnsupportedView } from "./unsupported-view";
 import { viewIndexOf, type BaseQueryState } from "./use-base-query";
@@ -124,7 +125,7 @@ export function BaseViewBody({
     [document, result],
   );
   return (
-    <>
+    <GroupCollapseProvider>
       {state.documentError && result?.error?.kind !== "document" ? (
         <ErrorBanner title={`${title} could not be read`}>{state.documentError}</ErrorBanner>
       ) : null}
@@ -178,6 +179,6 @@ export function BaseViewBody({
           </button>
         </div>
       ) : null}
-    </>
+    </GroupCollapseProvider>
   );
 }

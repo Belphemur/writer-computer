@@ -4,18 +4,18 @@ Pure Rust engine for `.base` files: YAML model, the expression language, and the
 
 ## Module map
 
-| File                              | Role                                                                                                                                                                    |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `value.rs`                        | `Value` (null, boolean, number, string, date, duration, list, object, link, file, regexp, html, image, icon, error), equality, ordering, truthiness, display, JSON form |
-| `datetime.rs`                     | Calendar math on `std` only: parse, Moment-style `format`, `relative`, duration parse/format, month arithmetic with clamping                                            |
-| `lexer.rs`, `parser.rs`, `ast.rs` | Tokenizer, recursive-descent parser (position-carrying `ParseError`, depth and height capped, never panics), `Expr`, `PropertyId`                                       |
-| `context.rs`                      | `Clock` (`FixedClock`, `SystemClock`) and `RowContext`, the per-file data seam                                                                                          |
-| `interp.rs`                       | `Interp` (one per row): operators, member/index access, namespaces `note`/`file`/`formula`/`this`, formula memo and cycle detection, lambda `Scope`                     |
-| `functions.rs`                    | `FUNCTIONS`: the one registry of every documented global function and method, by receiver type                                                                          |
-| `document.rs`                     | `.base` YAML to `Document` (filters, formulas, properties, summaries, views), unknown keys kept in `extra`, `to_yaml` round trip                                        |
-| `query.rs`                        | `run_view`: filter, sort, group, limit, cells, summaries into `BaseQueryResult`; `RowSource`, `PushdownHint`                                                            |
-| `choices.rs`                      | The U-CHOICES table and the constants behind it                                                                                                                         |
-| `testkit.rs`, `tests.rs`          | In-memory synthetic vault and the engine tests (cfg(test))                                                                                                              |
+| File                              | Role                                                                                                                                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `value.rs`                        | `Value` (null, boolean, number, string, date, duration, list, object, link, file, regexp, html, image, icon, error), equality, ordering, truthiness, display, JSON form                                                   |
+| `datetime.rs`                     | Calendar math on `std` only: parse, Moment-style `format`, `relative`, duration parse/format, month arithmetic with clamping                                                                                              |
+| `lexer.rs`, `parser.rs`, `ast.rs` | Tokenizer, recursive-descent parser (position-carrying `ParseError`, depth and height capped, never panics), `Expr`, `PropertyId`                                                                                         |
+| `context.rs`                      | `Clock` (`FixedClock`, `SystemClock`) and `RowContext`, the per-file data seam                                                                                                                                            |
+| `interp.rs`                       | `Interp` (one per row): operators, member/index access, namespaces `note`/`file`/`formula`/`this`, formula memo and cycle detection, lambda `Scope`                                                                       |
+| `functions.rs`                    | `FUNCTIONS`: the one registry of every documented global function and method, by receiver type, with its signature and one-line doc; `function_infos()` is what the `base_functions` command serves to the formula editor |
+| `document.rs`                     | `.base` YAML to `Document` (filters, formulas, properties, summaries, views), unknown keys kept in `extra`, `to_yaml` round trip                                                                                          |
+| `query.rs`                        | `run_view`: filter, sort, group, limit, cells, summaries into `BaseQueryResult`; `RowSource`, `PushdownHint`                                                                                                              |
+| `choices.rs`                      | The U-CHOICES table and the constants behind it                                                                                                                                                                           |
+| `testkit.rs`, `tests.rs`          | In-memory synthetic vault and the engine tests (cfg(test))                                                                                                                                                                |
 
 ## How the CLI and the app consume it
 

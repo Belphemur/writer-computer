@@ -419,7 +419,7 @@ fn search_formats_regex_case_and_limit() {
     assert_eq!(t.ok(&["search", "query=beta", "total"]), "4\n");
     assert_eq!(
         t.ok(&["search", "query=beta", "limit=1"]),
-        "Archive/Old.md\n"
+        "Projects/Beta.md\n" // ranked: the file name matches
     );
     assert_eq!(t.ok(&["search", "query=alpha", "path=Archive"]), "");
     assert_eq!(
@@ -441,6 +441,60 @@ fn search_formats_regex_case_and_limit() {
             .lines()
             .count(),
         1
+    );
+}
+
+#[test]
+fn search_uses_the_full_text_index_with_its_query_language() {
+    let t = T::new();
+    // Ranked, whole words (no substring), prefix with `*`, phrases, exclusion, OR.
+    assert_eq!(t.ok(&["search", "query=needl"]), "");
+    assert_eq!(t.ok(&["search", "query=needl*"]), "Projects/Beta.md\n");
+    assert_eq!(
+        t.ok(&["search", "query=\"\"beta body\"\""]),
+        "Projects/Beta.md\n"
+    );
+    assert_eq!(t.ok(&["search", "query=\"\"body beta\"\""]), "");
+    assert_eq!(
+        t.ok(&[
+            "search",
+            "query=beta -needle",
+            "format=json",
+            "path=Projects"
+        ]),
+        "[\n  \"Projects/Alpha.md\"\n]\n"
+    );
+    assert_eq!(t.ok(&["search", "query=needle OR partial", "total"]), "2\n");
+    assert_eq!(t.ok(&["search", "query=tag:project plan", "total"]), "1\n");
+    // Odd input is data, never an index error.
+    assert_eq!(t.ok(&["search", "query=NEAR(", "total"]), "0\n");
+    assert_eq!(t.ok(&["search", "query=!!!", "total"]), "0\n");
+    // Frontmatter values are searchable.
+    assert_eq!(t.ok(&["search", "query=active"]), "Projects/Alpha.md\n");
+    // search:context goldens: text, json, case, limit, path.
+    assert_eq!(
+        t.ok(&["search:context", "query=beta", "path=Projects"]),
+        "Projects/Beta.md:5: # Beta\nProjects/Beta.md:6: beta body with the word Needle\nProjects/Alpha.md:14: Links to [[Beta]]. #work\n"
+    );
+    assert_eq!(
+        t.ok(&["search:context", "query=needle", "format=json"]),
+        "[\n  {\n    \"line\": 6,\n    \"path\": \"Projects/Beta.md\",\n    \"text\": \"beta body with the word Needle\"\n  }\n]\n"
+    );
+    assert_eq!(t.ok(&["search:context", "query=needle", "case"]), "");
+    assert_eq!(
+        t.ok(&["search:context", "query=Needle", "case"]),
+        "Projects/Beta.md:6: beta body with the word Needle\n"
+    );
+    assert_eq!(
+        t.ok(&["search:context", "query=beta", "limit=2"])
+            .lines()
+            .count(),
+        2
+    );
+    // Regex mode is still the explicit /.../ form.
+    assert_eq!(
+        t.ok(&["search:context", "query=/^# B/"]),
+        "Projects/Beta.md:5: # Beta\n"
     );
 }
 

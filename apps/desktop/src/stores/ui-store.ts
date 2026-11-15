@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type CommandPaletteIntent = "search" | "create-file";
+export type CommandPaletteIntent = "search" | "create-file" | "search-notes";
 
 interface UIState {
   isCommandPaletteOpen: boolean;

@@ -629,6 +629,56 @@ fn registry_surface_matches_the_docs() {
     }
 }
 
+#[test]
+fn every_function_has_signature_doc_and_return_type() {
+    let infos = super::functions::function_infos();
+    assert_eq!(infos.len(), FUNCTIONS.len());
+    for i in &infos {
+        assert!(
+            !i.signature.trim().is_empty(),
+            "{} has no signature",
+            i.name
+        );
+        assert!(!i.doc.trim().is_empty(), "{} has no doc", i.name);
+        assert!(
+            !i.returns.trim().is_empty(),
+            "{} has no return type",
+            i.name
+        );
+        assert!(!i.receivers.is_empty(), "{} has no receiver", i.name);
+        assert!(
+            i.signature.contains(&format!("{}(", i.name)),
+            "{}: signature {:?} does not name the function",
+            i.name,
+            i.signature
+        );
+        assert!(
+            !i.signature.contains("(U"),
+            "{}: note belongs in doc",
+            i.name
+        );
+        assert!(i.doc.ends_with('.'), "{}: doc is a sentence", i.name);
+        if let Some(max) = i.max_args {
+            assert!(i.min_args <= max, "{}", i.name);
+        }
+    }
+    let by = |n: &str, r: &str| {
+        infos
+            .iter()
+            .find(|i| i.name == n && i.receivers.contains(&r))
+            .unwrap_or_else(|| panic!("{n} on {r}"))
+    };
+    assert_eq!(by("date", "global").returns, "date");
+    assert_eq!(by("if", "global").returns, "any");
+    assert_eq!(
+        by("slice", "string").signature,
+        "string.slice(start, end?): string"
+    );
+    assert_eq!(by("max", "global").max_args, None);
+    assert_eq!(by("isEmpty", "list").kind, "method");
+    assert_eq!(by("sum", "list").signature, "list.sum(): number");
+}
+
 // ---------------------------------------------------------------------------
 // files, links, tags, this (U11, U14, U15, U18)
 // ---------------------------------------------------------------------------

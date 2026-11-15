@@ -13,3 +13,17 @@ export function consumePendingAnchor(path: string): string | undefined {
   if (anchor !== undefined) pending.delete(path);
   return anchor;
 }
+
+// A 1-based line to reveal after a file opens (content search). Same lifecycle as the heading
+// anchors above: set before navigation, consumed exactly once by the editor that shows the file.
+const pendingLines = new Map<string, number>();
+
+export function setPendingLine(path: string, line: number): void {
+  pendingLines.set(path, line);
+}
+
+export function consumePendingLine(path: string): number | undefined {
+  const line = pendingLines.get(path);
+  if (line !== undefined) pendingLines.delete(path);
+  return line;
+}

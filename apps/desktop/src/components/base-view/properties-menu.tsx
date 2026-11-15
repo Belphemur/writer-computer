@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { setDisplayName, setOrder } from "@/lib/bases/base-yaml";
+import { addFormula, setDisplayName, setOrder } from "@/lib/bases/base-yaml";
 import { canonicalPropertyKey } from "@/lib/bases/cells";
+import { ExpressionInput } from "./expression-input";
 import type { MenuContext } from "./menu-context";
 import { PropertySelect, useVaultProperties } from "./property-select";
 import { FIELD, SMALL_BUTTON, ToolbarMenu } from "./toolbar-menu";
@@ -30,6 +31,59 @@ function NameField({
       }}
       className={`${FIELD} flex-1`}
     />
+  );
+}
+
+/** Name and expression of a new formula; Add writes `formulas.<name>` and shows it as a column. */
+function AddFormula({
+  ctx,
+  vault,
+  ids,
+}: {
+  ctx: MenuContext;
+  vault: ReturnType<typeof useVaultProperties>["properties"];
+  ids: readonly string[];
+}) {
+  const [name, setName] = useState("");
+  const [expression, setExpression] = useState("");
+  const add = async () => {
+    const id = name.trim();
+    // One edit: define the formula and append its column. An invalid name or a duplicate is
+    // refused by `addFormula`; the write path raises that as the error notice and nothing is written.
+    const ok = await ctx.apply((t) =>
+      setOrder(addFormula(t, id, expression), ctx.viewIndex, [...ids, `formula.${id}`]),
+    );
+    if (ok) {
+      setName("");
+      setExpression("");
+    }
+  };
+  return (
+    <fieldset
+      data-add-formula
+      className="flex flex-col gap-1.5 rounded-md border border-border p-2"
+    >
+      <legend className="px-1 text-[11px] text-text-muted">Add formula</legend>
+      <input
+        aria-label="Formula name"
+        placeholder="name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className={FIELD}
+      />
+      <ExpressionInput
+        multiline
+        label="Formula expression"
+        placeholder='expression, for example if(due, due.relative(), "")'
+        value={expression}
+        vault={vault}
+        formulas={ctx.document.formulas}
+        onChange={setExpression}
+      />
+      <button type="button" className={`${SMALL_BUTTON} self-start`} onClick={() => void add()}>
+        Add formula
+      </button>
+    </fieldset>
   );
 }
 
@@ -104,6 +158,7 @@ function PropertiesBody({ ctx }: { ctx: MenuContext }) {
         vault={vault}
         onChange={(id) => id && writeOrder([...ids, id])}
       />
+      <AddFormula ctx={ctx} vault={vault} ids={ids} />
     </div>
   );
 }

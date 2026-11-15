@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useMemo } from "react";
 import {
   GROUP_HEADER_HEIGHT,
   LIST_LINE_HEIGHT,
@@ -14,6 +14,7 @@ import type { Cell, Column } from "@/lib/bases/types";
 import type { BaseViewProps, ViewActions } from "@/lib/bases/view-registry";
 import { CellView } from "./cell-view";
 import { GroupHeader } from "./group-header";
+import { useGroupCollapse } from "./use-group-collapse";
 import { WindowedList } from "./windowed-list";
 
 const NOOP = () => {};
@@ -116,7 +117,7 @@ function Row({
 /** The registered `list` view: one line per file, properties inline or indented, with groups. */
 export function ListView({ result, shown, view, actions, label }: BaseViewProps) {
   const options = useMemo(() => listOptions(view), [view]);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { collapsed, toggle } = useGroupCollapse(view?.name ?? "");
   const columns = useMemo(
     () => result.columns.slice(0, Math.max(1, shown)),
     [result.columns, shown],
@@ -136,17 +137,6 @@ export function ListView({ result, shown, view, actions, label }: BaseViewProps)
       return { error: e instanceof Error ? e.message : String(e) };
     }
   }, [result, columns.length, options, collapsed]);
-
-  const toggle = useCallback(
-    (key: string) =>
-      setCollapsed((s) => {
-        const next = new Set(s);
-        if (next.has(key)) next.delete(key);
-        else next.add(key);
-        return next;
-      }),
-    [],
-  );
 
   if ("error" in layout)
     return (

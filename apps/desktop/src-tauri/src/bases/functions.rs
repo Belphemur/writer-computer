@@ -41,19 +41,24 @@ pub struct FnDef {
     pub min: usize,
     pub max: usize,
     pub imp: Imp,
+    /// Signature as shown to users: `string.slice(start, end?): string`. The
+    /// return type is whatever follows the last `): ` (`any` when absent).
+    pub sig: &'static str,
+    /// One-line description.
     pub doc: &'static str,
 }
 
 const VAR: usize = usize::MAX;
 
 macro_rules! f {
-    ($name:expr, $recv:expr, $min:expr, $max:expr, $imp:expr, $doc:expr) => {
+    ($name:expr, $recv:expr, $min:expr, $max:expr, $imp:expr, $sig:expr, $doc:expr) => {
         FnDef {
             name: $name,
             recv: $recv,
             min: $min,
             max: $max,
             imp: $imp,
+            sig: $sig,
             doc: $doc,
         }
     };
@@ -87,16 +92,26 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(g_escape_html),
-        "escapeHTML(html): string"
+        "escapeHTML(html): string",
+        "Escapes HTML special characters so the text is shown literally."
     ),
-    f!("date", Global, 1, 1, Eager(g_date), "date(string): date"),
+    f!(
+        "date",
+        Global,
+        1,
+        1,
+        Eager(g_date),
+        "date(string): date",
+        "Parses an ISO date or date-time string into a date."
+    ),
     f!(
         "duration",
         Global,
         1,
         1,
         Eager(g_duration),
-        "duration(string): duration"
+        "duration(string): duration",
+        "Parses a duration such as \"1d 2h\" or \"3 weeks\"."
     ),
     f!(
         "file",
@@ -104,16 +119,26 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(g_file),
-        "file(path | file | link): file"
+        "file(path | file | link): file",
+        "Returns the file for a vault path, file or link."
     ),
-    f!("html", Global, 1, 1, Eager(g_html), "html(string): html"),
+    f!(
+        "html",
+        Global,
+        1,
+        1,
+        Eager(g_html),
+        "html(string): html",
+        "Marks a string as HTML to be rendered by the view."
+    ),
     f!(
         "if",
         Global,
         2,
         3,
         Lazy(g_if),
-        "if(condition, trueResult, falseResult?)"
+        "if(condition, trueResult, falseResult?)",
+        "Returns trueResult when the condition is truthy, else falseResult (null when omitted)."
     ),
     f!(
         "image",
@@ -121,25 +146,44 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(g_image),
-        "image(path | file | url): image"
+        "image(path | file | url): image",
+        "Creates an image value from a vault path, file or URL."
     ),
-    f!("icon", Global, 1, 1, Eager(g_icon), "icon(name): icon"),
+    f!(
+        "icon",
+        Global,
+        1,
+        1,
+        Eager(g_icon),
+        "icon(name): icon",
+        "Creates an icon value from an icon name."
+    ),
     f!(
         "link",
         Global,
         1,
         2,
         Eager(g_link),
-        "link(path | file, display?): link"
+        "link(path | file, display?): link",
+        "Creates a link to a path or file with an optional display text."
     ),
-    f!("list", Global, 1, 1, Eager(g_list), "list(element): list"),
+    f!(
+        "list",
+        Global,
+        1,
+        1,
+        Eager(g_list),
+        "list(element): list",
+        "Wraps a value in a list unless it already is one."
+    ),
     f!(
         "max",
         Global,
         1,
         VAR,
         Eager(g_max),
-        "max(...numbers): number"
+        "max(...numbers): number",
+        "Returns the largest of the given numbers."
     ),
     f!(
         "min",
@@ -147,19 +191,45 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         VAR,
         Eager(g_min),
-        "min(...numbers): number"
+        "min(...numbers): number",
+        "Returns the smallest of the given numbers."
     ),
-    f!("now", Global, 0, 0, Eager(g_now), "now(): date"),
+    f!(
+        "now",
+        Global,
+        0,
+        0,
+        Eager(g_now),
+        "now(): date",
+        "The current date and time."
+    ),
     f!(
         "number",
         Global,
         1,
         1,
         Eager(g_number),
-        "number(value): number"
+        "number(value): number",
+        "Converts a value to a number; an error when it cannot be."
     ),
-    f!("random", Global, 0, 0, Eager(g_random), "random(): number"),
-    f!("today", Global, 0, 0, Eager(g_today), "today(): date"),
+    f!(
+        "random",
+        Global,
+        0,
+        0,
+        Eager(g_random),
+        "random(): number",
+        "A pseudo-random number from 0 up to but excluding 1."
+    ),
+    f!(
+        "today",
+        Global,
+        0,
+        0,
+        Eager(g_today),
+        "today(): date",
+        "The current date at midnight."
+    ),
     // ----- any -------------------------------------------------------------
     f!(
         "isTruthy",
@@ -167,7 +237,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(a_is_truthy),
-        "any.isTruthy(): boolean"
+        "any.isTruthy(): boolean",
+        "Whether the value is truthy."
     ),
     f!(
         "isType",
@@ -175,7 +246,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(a_is_type),
-        "any.isType(type): boolean"
+        "any.isType(type): boolean",
+        "Whether the value has the given type name, such as \"string\" or \"list\"."
     ),
     f!(
         "toString",
@@ -183,7 +255,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(a_to_string),
-        "any.toString(): string"
+        "any.toString(): string",
+        "The value as display text."
     ),
     f!(
         "isEmpty",
@@ -191,7 +264,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(a_is_empty),
-        "isEmpty(): boolean"
+        "isEmpty(): boolean",
+        "Whether the value is null, an empty string, list or object, or zero-length."
     ),
     // ----- string ----------------------------------------------------------
     f!(
@@ -200,7 +274,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(s_contains),
-        "string.contains(value): boolean"
+        "string.contains(value): boolean",
+        "Whether the string contains the given text."
     ),
     f!(
         "containsAll",
@@ -208,7 +283,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         VAR,
         Eager(s_contains_all),
-        "string.containsAll(...values): boolean"
+        "string.containsAll(...values): boolean",
+        "Whether the string contains every given text."
     ),
     f!(
         "containsAny",
@@ -216,7 +292,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         VAR,
         Eager(s_contains_any),
-        "string.containsAny(...values): boolean"
+        "string.containsAny(...values): boolean",
+        "Whether the string contains at least one given text."
     ),
     f!(
         "endsWith",
@@ -224,7 +301,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(s_ends_with),
-        "string.endsWith(query): boolean"
+        "string.endsWith(query): boolean",
+        "Whether the string ends with the given text."
     ),
     f!(
         "lower",
@@ -232,7 +310,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(s_lower),
-        "string.lower(): string"
+        "string.lower(): string",
+        "The string in lower case."
     ),
     f!(
         "replace",
@@ -240,7 +319,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         2,
         2,
         Eager(s_replace),
-        "string.replace(pattern, replacement): string"
+        "string.replace(pattern, replacement): string",
+        "Replaces matches of a string or regular expression with the replacement."
     ),
     f!(
         "repeat",
@@ -248,7 +328,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(s_repeat),
-        "string.repeat(count): string"
+        "string.repeat(count): string",
+        "The string repeated count times."
     ),
     f!(
         "reverse",
@@ -256,7 +337,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(s_reverse),
-        "string.reverse(): string"
+        "string.reverse(): string",
+        "The characters of the string in reverse order."
     ),
     f!(
         "slice",
@@ -264,7 +346,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         2,
         Eager(s_slice),
-        "string.slice(start, end?): string"
+        "string.slice(start, end?): string",
+        "The part of the string from start up to end (end of string when omitted)."
     ),
     f!(
         "split",
@@ -272,7 +355,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         2,
         Eager(s_split),
-        "string.split(separator, n?): list"
+        "string.split(separator, n?): list",
+        "Splits the string at each separator, keeping at most n pieces."
     ),
     f!(
         "startsWith",
@@ -280,7 +364,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(s_starts_with),
-        "string.startsWith(query): boolean"
+        "string.startsWith(query): boolean",
+        "Whether the string starts with the given text."
     ),
     f!(
         "title",
@@ -288,7 +373,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(s_title),
-        "string.title(): string"
+        "string.title(): string",
+        "The string with the first letter of each word in upper case."
     ),
     f!(
         "trim",
@@ -296,17 +382,27 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(s_trim),
-        "string.trim(): string"
+        "string.trim(): string",
+        "The string without leading and trailing whitespace."
     ),
     // ----- number ----------------------------------------------------------
-    f!("abs", On(NUM), 0, 0, Eager(n_abs), "number.abs(): number"),
+    f!(
+        "abs",
+        On(NUM),
+        0,
+        0,
+        Eager(n_abs),
+        "number.abs(): number",
+        "The absolute value."
+    ),
     f!(
         "ceil",
         On(NUM),
         0,
         0,
         Eager(n_ceil),
-        "number.ceil(): number"
+        "number.ceil(): number",
+        "The smallest integer greater than or equal to the number."
     ),
     f!(
         "floor",
@@ -314,7 +410,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(n_floor),
-        "number.floor(): number"
+        "number.floor(): number",
+        "The largest integer less than or equal to the number."
     ),
     f!(
         "round",
@@ -322,7 +419,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         1,
         Eager(n_round),
-        "number.round(digits?): number"
+        "number.round(digits?): number",
+        "Rounds to the given number of digits (0 when omitted)."
     ),
     f!(
         "toFixed",
@@ -330,26 +428,45 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(n_to_fixed),
-        "number.toFixed(precision): string"
+        "number.toFixed(precision): string",
+        "The number as text with a fixed number of decimals."
     ),
     // ----- date ------------------------------------------------------------
-    f!("date", On(DATE), 0, 0, Eager(d_date), "date.date(): date"),
+    f!(
+        "date",
+        On(DATE),
+        0,
+        0,
+        Eager(d_date),
+        "date.date(): date",
+        "The date with the time removed."
+    ),
     f!(
         "format",
         On(DATE),
         1,
         1,
         Eager(d_format),
-        "date.format(format): string"
+        "date.format(format): string",
+        "Formats the date with a Moment-style pattern such as \"YYYY-MM-DD\"."
     ),
-    f!("time", On(DATE), 0, 0, Eager(d_time), "date.time(): string"),
+    f!(
+        "time",
+        On(DATE),
+        0,
+        0,
+        Eager(d_time),
+        "date.time(): string",
+        "The time part of the date as text."
+    ),
     f!(
         "relative",
         On(DATE),
         0,
         0,
         Eager(d_relative),
-        "date.relative(): string"
+        "date.relative(): string",
+        "A human readable distance from now, such as \"3 days ago\"."
     ),
     // ----- list ------------------------------------------------------------
     f!(
@@ -358,7 +475,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(l_contains),
-        "list.contains(value): boolean"
+        "list.contains(value): boolean",
+        "Whether the list contains the value."
     ),
     f!(
         "containsAll",
@@ -366,7 +484,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         VAR,
         Eager(l_contains_all),
-        "list.containsAll(...values): boolean"
+        "list.containsAll(...values): boolean",
+        "Whether the list contains every given value."
     ),
     f!(
         "containsAny",
@@ -374,7 +493,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         VAR,
         Eager(l_contains_any),
-        "list.containsAny(...values): boolean"
+        "list.containsAny(...values): boolean",
+        "Whether the list contains at least one given value."
     ),
     f!(
         "filter",
@@ -382,16 +502,26 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Lazy(l_filter),
-        "list.filter(expression): list"
+        "list.filter(expression): list",
+        "Keeps the items for which the expression over value and index is truthy."
     ),
-    f!("flat", On(LIST), 0, 0, Eager(l_flat), "list.flat(): list"),
+    f!(
+        "flat",
+        On(LIST),
+        0,
+        0,
+        Eager(l_flat),
+        "list.flat(): list",
+        "Flattens one level of nested lists."
+    ),
     f!(
         "join",
         On(LIST),
         1,
         1,
         Eager(l_join),
-        "list.join(separator): string"
+        "list.join(separator): string",
+        "Joins the items into text with the separator."
     ),
     f!(
         "map",
@@ -399,7 +529,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Lazy(l_map),
-        "list.map(expression): list"
+        "list.map(expression): list",
+        "Replaces each item by the expression evaluated over value and index."
     ),
     f!(
         "reduce",
@@ -407,7 +538,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         2,
         2,
         Lazy(l_reduce),
-        "list.reduce(expression, initial): any"
+        "list.reduce(expression, initial): any",
+        "Folds the list into one value; the expression sees acc, value and index."
     ),
     f!(
         "reverse",
@@ -415,7 +547,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_reverse),
-        "list.reverse(): list"
+        "list.reverse(): list",
+        "The list in reverse order."
     ),
     f!(
         "slice",
@@ -423,16 +556,26 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         2,
         Eager(l_slice),
-        "list.slice(start, end?): list"
+        "list.slice(start, end?): list",
+        "The items from start up to end (end of list when omitted)."
     ),
-    f!("sort", On(LIST), 0, 0, Eager(l_sort), "list.sort(): list"),
+    f!(
+        "sort",
+        On(LIST),
+        0,
+        0,
+        Eager(l_sort),
+        "list.sort(): list",
+        "The list sorted in ascending order."
+    ),
     f!(
         "unique",
         On(LIST),
         0,
         0,
         Eager(l_unique),
-        "list.unique(): list"
+        "list.unique(): list",
+        "The list without duplicate items."
     ),
     // U13: not on the functions page, but used by the docs' summary example
     f!(
@@ -441,7 +584,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_sum),
-        "list.sum(): number (U13)"
+        "list.sum(): number",
+        "The sum of the numbers in the list."
     ),
     f!(
         "mean",
@@ -449,7 +593,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_mean),
-        "list.mean(): number (U13)"
+        "list.mean(): number",
+        "The mean of the numbers in the list."
     ),
     f!(
         "median",
@@ -457,7 +602,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_median),
-        "list.median(): number (U13)"
+        "list.median(): number",
+        "The median of the numbers in the list."
     ),
     f!(
         "min",
@@ -465,7 +611,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_min),
-        "list.min(): number (U13)"
+        "list.min(): number",
+        "The smallest number in the list."
     ),
     f!(
         "max",
@@ -473,7 +620,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_max),
-        "list.max(): number (U13)"
+        "list.max(): number",
+        "The largest number in the list."
     ),
     f!(
         "stddev",
@@ -481,7 +629,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(l_stddev),
-        "list.stddev(): number (U13)"
+        "list.stddev(): number",
+        "The population standard deviation of the numbers in the list."
     ),
     // ----- link / file / object / regexp -------------------------------------
     f!(
@@ -490,7 +639,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         0,
         Eager(k_as_file),
-        "link.asFile(): file"
+        "link.asFile(): file",
+        "The file the link points to, or null when it does not resolve."
     ),
     f!(
         "linksTo",
@@ -498,7 +648,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(k_links_to),
-        "link.linksTo(file): boolean"
+        "link.linksTo(file): boolean",
+        "Whether the link points to the given file."
     ),
     f!(
         "asLink",
@@ -506,7 +657,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         0,
         1,
         Eager(fl_as_link),
-        "file.asLink(display?): link"
+        "file.asLink(display?): link",
+        "A link to the file with an optional display text."
     ),
     f!(
         "hasLink",
@@ -514,7 +666,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(fl_has_link),
-        "file.hasLink(file | string): boolean"
+        "file.hasLink(file | string): boolean",
+        "Whether the file links to the given file or link text."
     ),
     f!(
         "hasProperty",
@@ -522,7 +675,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(fl_has_property),
-        "file.hasProperty(name): boolean"
+        "file.hasProperty(name): boolean",
+        "Whether the note has the frontmatter property."
     ),
     f!(
         "hasTag",
@@ -530,7 +684,8 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         VAR,
         Eager(fl_has_tag),
-        "file.hasTag(...tags): boolean"
+        "file.hasTag(...tags): boolean",
+        "Whether the file has any of the given tags (nested tags match)."
     ),
     f!(
         "inFolder",
@@ -538,16 +693,26 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(fl_in_folder),
-        "file.inFolder(folder): boolean"
+        "file.inFolder(folder): boolean",
+        "Whether the file is in the folder or one of its subfolders."
     ),
-    f!("keys", On(OBJ), 0, 0, Eager(o_keys), "object.keys(): list"),
+    f!(
+        "keys",
+        On(OBJ),
+        0,
+        0,
+        Eager(o_keys),
+        "object.keys(): list",
+        "The keys of the object."
+    ),
     f!(
         "values",
         On(OBJ),
         0,
         0,
         Eager(o_values),
-        "object.values(): list"
+        "object.values(): list",
+        "The values of the object."
     ),
     f!(
         "matches",
@@ -555,9 +720,66 @@ pub static FUNCTIONS: &[FnDef] = &[
         1,
         1,
         Eager(r_matches),
-        "regexp.matches(string): boolean"
+        "regexp.matches(string): boolean",
+        "Whether the regular expression matches the string."
     ),
 ];
+
+// ---------------------------------------------------------------------------
+// Metadata for editors (the `base_functions` command)
+// ---------------------------------------------------------------------------
+
+/// One registry entry as shown by the formula editor's completion. Derived
+/// from [`FUNCTIONS`] so the editor can never list a function the engine lacks.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FunctionInfo {
+    pub name: String,
+    /// `global` (`date(...)`) or `method` (`x.slice(...)`).
+    pub kind: &'static str,
+    /// `["global"]`, `["any"]`, or the receiver type names a method exists on.
+    pub receivers: Vec<&'static str>,
+    pub signature: String,
+    pub doc: String,
+    pub returns: String,
+    pub min_args: usize,
+    /// `null` when the function is variadic.
+    pub max_args: Option<usize>,
+}
+
+impl FnDef {
+    /// The text after the last `): ` of the signature; `any` when the
+    /// signature names no return type.
+    pub fn returns(&self) -> &'static str {
+        match self.sig.rfind("): ") {
+            Some(i) => self.sig[i + 3..].trim(),
+            None => "any",
+        }
+    }
+}
+
+pub fn function_infos() -> Vec<FunctionInfo> {
+    FUNCTIONS
+        .iter()
+        .map(|d| {
+            let (kind, receivers) = match &d.recv {
+                Global => ("global", vec!["global"]),
+                Any => ("method", vec!["any"]),
+                On(tys) => ("method", tys.iter().map(|t| t.name()).collect()),
+            };
+            FunctionInfo {
+                name: d.name.to_string(),
+                kind,
+                receivers,
+                signature: d.sig.to_string(),
+                doc: d.doc.to_string(),
+                returns: d.returns().to_string(),
+                min_args: d.min,
+                max_args: (d.max != VAR).then_some(d.max),
+            }
+        })
+        .collect()
+}
 
 // ---------------------------------------------------------------------------
 // Dispatch

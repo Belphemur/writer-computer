@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useStickyGroups } from "./use-sticky-groups";
 
-interface Props<T> {
+interface Props<T extends { kind: string }> {
   items: readonly T[];
   /** Pixel height of an item; heights are computed, never measured, so windowing is exact. */
   heightOf: (item: T, index: number) => number;
@@ -14,8 +15,12 @@ interface Props<T> {
   marker: string;
 }
 
-/** A vertically windowed list of fixed-height items: only the visible window is in the DOM. */
-export function WindowedList<T>({
+/**
+ * A vertically windowed list of fixed-height items: only the visible window is in the DOM. Items
+ * of `kind: "group"` are group headers; the active one is pinned at the top of the scroller
+ * (`use-sticky-groups.ts`).
+ */
+export function WindowedList<T extends { kind: string }>({
   items,
   heightOf,
   keyOf,
@@ -26,8 +31,10 @@ export function WindowedList<T>({
 }: Props<T>) {
   const [el, setEl] = useState<HTMLDivElement | null>(null);
   const ref = useCallback((node: HTMLDivElement | null) => setEl(node), []);
+  const { rangeExtractor, activeRef } = useStickyGroups(items);
   const virtualizer = useVirtualizer({
     count: items.length,
+    rangeExtractor,
     getScrollElement: () => el,
     estimateSize: (i) => heightOf(items[i]!, i),
     getItemKey: (i) => keyOf(items[i]!, i),
@@ -44,6 +51,11 @@ export function WindowedList<T>({
     return () => observer.disconnect();
   }, [el, onWidth]);
 
+  const virtualItems = virtualizer.getVirtualItems();
+  const pinned = virtualItems.some((vi) => vi.index === activeRef.current)
+    ? activeRef.current
+    : null;
+
   return (
     <div
       ref={ref}
@@ -53,18 +65,24 @@ export function WindowedList<T>({
       className="relative min-h-0 flex-1 overflow-auto"
     >
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-        {virtualizer.getVirtualItems().map((vi) => (
+        {virtualItems.map((vi) => (
           <div
             key={vi.key}
             role="listitem"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: vi.size,
-              transform: `translateY(${vi.start}px)`,
-            }}
+            data-sticky-group={vi.index === pinned ? "" : undefined}
+            style={
+              vi.index === pinned
+                ? { position: "sticky", top: 0, zIndex: 2, height: vi.size, width: "100%" }
+                : {
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: vi.size,
+                    transform: `translateY(${vi.start}px)`,
+                  }
+            }
+            className={vi.index === pinned ? "bg-surface-primary" : undefined}
           >
             {render(items[vi.index]!, vi.index)}
           </div>

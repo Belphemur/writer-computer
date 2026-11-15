@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  addFormula,
   addView,
   BaseYamlError,
   deleteView,
   duplicateView,
+  groupOrderAdd,
+  groupOrderMove,
+  groupOrderRemove,
+  groupOrderReset,
   moveView,
   renameView,
   setColumnSize,
@@ -212,5 +217,149 @@ describe("base-yaml: byte-level guarantees", () => {
     );
     expect(noOrder).toContain("order:\n      - file.name\n      - cover");
     expect(withExtraColumns(SRC, null, ["x"], [])).toBe(SRC);
+  });
+});
+
+describe("base-yaml: groupOrder", () => {
+  const GROUPED = `# board
+views:
+  - type: table # main
+    name: Table
+    groupBy:
+      property: status
+      direction: ASC
+    groupOrder:
+      - Planned # first
+      - Done
+      - null
+    pluginKey: { a: 1, b: [x, y] }
+  - type: cards
+    name: Gallery
+`;
+
+  it("appends an entry to the list, touching only that line", () => {
+    const out = groupOrderAdd(GROUPED, 0, "Blocked");
+    expect(out).toBe(GROUPED.replace("      - null\n", "      - null\n      - Blocked\n"));
+  });
+
+  it("creates the list when the view has none, after the existing keys", () => {
+    const out = groupOrderAdd(GROUPED, 1, "Open");
+    expect(out).toBe(
+      GROUPED.replace("    name: Gallery\n", "    name: Gallery\n    groupOrder:\n      - Open\n"),
+    );
+  });
+
+  it("writes numbers, booleans and null as their YAML scalars", () => {
+    const base = "views:\n  - type: table\n    name: T\n";
+    const out = [3, true, null].reduce<string>((t, e) => groupOrderAdd(t, 0, e), base);
+    expect(out).toBe(
+      "views:\n  - type: table\n    name: T\n    groupOrder:\n      - 3\n      - true\n      - null\n",
+    );
+    // a text that would read back as another type stays quoted
+    expect(groupOrderAdd(base, 0, "3")).toContain('- "3"');
+    expect(groupOrderAdd(base, 0, "")).toContain('- ""');
+  });
+
+  it("does not duplicate an entry, comparing by value and type", () => {
+    expect(groupOrderAdd(GROUPED, 0, "Done")).toBe(GROUPED);
+    expect(groupOrderAdd(GROUPED, 0, null)).toBe(GROUPED);
+    expect(groupOrderAdd(GROUPED, 0, "null")).not.toBe(GROUPED);
+  });
+
+  it("removes an entry and keeps the others' comments", () => {
+    expect(groupOrderRemove(GROUPED, 0, "Done")).toBe(GROUPED.replace("      - Done\n", ""));
+    expect(groupOrderRemove(GROUPED, 0, "Planned")).toBe(
+      GROUPED.replace("      - Planned # first\n", ""),
+    );
+    expect(groupOrderRemove(GROUPED, 0, "absent")).toBe(GROUPED);
+  });
+
+  it("removing the last entry removes the key (automatic order)", () => {
+    const one = GROUPED.replace("      - Done\n      - null\n", "").replace(
+      "      - Planned # first\n",
+      "      - Planned\n",
+    );
+    const out = groupOrderRemove(one, 0, "Planned");
+    expect(out).toBe(one.replace("    groupOrder:\n      - Planned\n", ""));
+  });
+
+  it("moves an entry by identity, clamped, comments traveling with it", () => {
+    const down = groupOrderMove(GROUPED, 0, "Planned", 1);
+    expect(down).toBe(
+      GROUPED.replace(
+        "      - Planned # first\n      - Done\n",
+        "      - Done\n      - Planned # first\n",
+      ),
+    );
+    const up = groupOrderMove(GROUPED, 0, null, -1);
+    expect(up).toBe(
+      GROUPED.replace("      - Done\n      - null\n", "      - null\n      - Done\n"),
+    );
+    expect(groupOrderMove(GROUPED, 0, "Planned", -1)).toBe(GROUPED);
+    expect(groupOrderMove(GROUPED, 0, null, 1)).toBe(GROUPED);
+    expect(groupOrderMove(GROUPED, 0, "Planned", 99)).toBe(
+      GROUPED.replace(
+        "      - Planned # first\n      - Done\n      - null\n",
+        "      - Done\n      - null\n      - Planned # first\n",
+      ),
+    );
+    expect(groupOrderMove(GROUPED, 0, "absent", 1)).toBe(GROUPED);
+  });
+
+  it("resets to automatic by removing the key", () => {
+    expect(groupOrderReset(GROUPED, 0)).toBe(
+      GROUPED.replace("    groupOrder:\n      - Planned # first\n      - Done\n      - null\n", ""),
+    );
+    expect(groupOrderReset(GROUPED, 1)).toBe(GROUPED);
+  });
+
+  it("handles a flow list and an empty key", () => {
+    const flow = "views:\n  - type: table\n    name: T\n    groupOrder: [A, B]\n";
+    expect(groupOrderAdd(flow, 0, "C")).toBe(
+      "views:\n  - type: table\n    name: T\n    groupOrder: [ A, B, C ]\n",
+    );
+    const empty = "views:\n  - type: table\n    name: T\n    groupOrder:\n";
+    expect(groupOrderAdd(empty, 0, "A")).toBe(
+      "views:\n  - type: table\n    name: T\n    groupOrder:\n      - A\n",
+    );
+  });
+
+  it("refuses a non-list groupOrder and a missing view", () => {
+    const bad = "views:\n  - type: table\n    name: T\n    groupOrder: Planned\n";
+    expect(() => groupOrderAdd(bad, 0, "A")).toThrow(BaseYamlError);
+    expect(() => groupOrderAdd(bad, 4, "A")).toThrow(BaseYamlError);
+  });
+});
+
+describe("base-yaml: addFormula", () => {
+  it("appends to the formulas map, touching only the new line", () => {
+    const out = addFormula(SRC, "title", "file.name.lower()");
+    expect(out).toBe(
+      SRC.replace(
+        "  age: 'if(due, (today() - date(due)).days, \"\")'\n",
+        "  age: 'if(due, (today() - date(due)).days, \"\")'\n  title: file.name.lower()\n",
+      ),
+    );
+  });
+
+  it("creates the formulas map when absent", () => {
+    const out = addFormula("views:\n  - type: table\n    name: T\n", "n", "1");
+    expect(out).toBe('views:\n  - type: table\n    name: T\nformulas:\n  n: "1"\n');
+  });
+
+  it("quotes expressions that need it", () => {
+    const out = addFormula("views: []\n", "x", 'a: "b" # c');
+    expect(out).toContain("x:");
+    // parses back to the same string
+    expect(out).toMatch(/x: ['"].*['"]/);
+  });
+
+  it("refuses bad names, duplicates and empty expressions", () => {
+    expect(() => addFormula(SRC, "age", "1")).toThrow(/already exists/);
+    expect(() => addFormula(SRC, "my name", "1")).toThrow(/letters, digits/);
+    expect(() => addFormula(SRC, "1a", "1")).toThrow(/letters, digits/);
+    expect(() => addFormula(SRC, "", "1")).toThrow(/letters, digits/);
+    expect(() => addFormula(SRC, "ok", "  ")).toThrow(/needs an expression/);
+    expect(() => addFormula("formulas: nope\n", "ok", "1")).toThrow(/mapping/);
   });
 });

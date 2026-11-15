@@ -56,6 +56,13 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // Cmd+Shift+F — search in notes (full-text, note contents)
+      if (mod && e.shiftKey && !e.altKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        if (root && !isCompactFileMode) openCommandPalette("search-notes");
+        return;
+      }
+
       // Cmd+W — close current tab. Once the launcher is the only tab left
       // there is nothing to close (closing it would just recreate it), so
       // close the window instead; Rust turns that into a hide for the main

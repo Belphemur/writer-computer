@@ -1,10 +1,11 @@
 use crate::config::Settings;
 use crate::error::AppError;
 use crate::ignore::WorkspaceIgnore;
+use crate::index::names::NameCache;
 use crate::open_target::PendingOpenPayload;
 use notify::RecommendedWatcher;
 use parking_lot::{Mutex, RwLock};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -18,13 +19,11 @@ use std::time::Instant;
 /// without clobbering each other.
 pub struct WorkspaceState {
     pub workspace_root: RwLock<Option<PathBuf>>,
-    pub file_index: RwLock<Vec<IndexedFile>>,
-    pub file_index_revision: AtomicU64,
-    pub recent_files_cache: RwLock<Option<Vec<IndexedFile>>>,
-    pub dirs_with_markdown: RwLock<HashSet<PathBuf>>,
-    /// Set to `true` after the first full index completes.
-    /// When `false`, `dir_contains_markdown` falls back to recursive check.
-    pub index_ready: AtomicBool,
+    /// Mirror of the SQLite index's listed rows (notes and `.base` files):
+    /// quick open, recents and the sidebar's "folder holds notes" check all
+    /// read it. The `files` table stays the source of truth; see
+    /// `index/names.rs`.
+    pub names: NameCache,
     pub watcher_handle: RwLock<Option<RecommendedWatcher>>,
     /// Tracks recently written paths to avoid echo from file watcher.
     /// Maps path -> time of write. Entries older than 2s are stale.
@@ -68,19 +67,8 @@ pub struct WorkspaceState {
     pub standalone_file: RwLock<Option<PathBuf>>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct IndexedFile {
-    pub path: PathBuf,
-    pub relative_path: String,
-    pub name: String,
-    pub modified_at: u64,
-}
-
 pub type WorkspaceRuntimeDrop = (
     Option<RecommendedWatcher>,
-    Vec<IndexedFile>,
-    Option<Vec<IndexedFile>>,
-    HashSet<PathBuf>,
     HashMap<PathBuf, Instant>,
     Option<Arc<WorkspaceIgnore>>,
 );
@@ -89,11 +77,7 @@ impl Default for WorkspaceState {
     fn default() -> Self {
         Self {
             workspace_root: RwLock::new(None),
-            file_index: RwLock::new(Vec::new()),
-            file_index_revision: AtomicU64::new(0),
-            recent_files_cache: RwLock::new(None),
-            dirs_with_markdown: RwLock::new(HashSet::new()),
-            index_ready: AtomicBool::new(false),
+            names: NameCache::default(),
             watcher_handle: RwLock::new(None),
             recent_writes: RwLock::new(HashMap::new()),
             workspace_ignore: RwLock::new(None),
@@ -112,24 +96,13 @@ impl WorkspaceState {
     fn reset_workspace_runtime(&self) -> WorkspaceRuntimeDrop {
         self.cancel_index.read().store(true, Ordering::SeqCst);
         *self.standalone_file.write() = None;
-        let file_index = std::mem::take(&mut *self.file_index.write());
-        self.file_index_revision.fetch_add(1, Ordering::SeqCst);
-        let recent_cache = self.recent_files_cache.write().take();
-        let dirs = std::mem::take(&mut *self.dirs_with_markdown.write());
-        self.index_ready.store(false, Ordering::SeqCst);
+        self.names.reset();
         let recent_writes = std::mem::take(&mut *self.recent_writes.write());
         let ignore = self.workspace_ignore.write().take();
         if let Some(settings) = self.settings.write().as_mut() {
             settings.clear_workspace();
         }
-        (
-            self.watcher_handle.write().take(),
-            file_index,
-            recent_cache,
-            dirs,
-            recent_writes,
-            ignore,
-        )
+        (self.watcher_handle.write().take(), recent_writes, ignore)
     }
 
     /// Transition to a workspace under the same root write guard used by
@@ -252,44 +225,10 @@ impl WorkspaceState {
         self.pending_open.lock().pop_front()
     }
 
-    pub fn invalidate_recent_files_cache(&self) {
-        *self.recent_files_cache.write() = None;
-    }
-
-    pub fn recent_files_slice(&self, offset: usize, limit: usize) -> Vec<IndexedFile> {
-        if self.recent_files_cache.read().is_none() {
-            let mut files = self.file_index.read().clone();
-            files.sort_by(|a, b| {
-                b.modified_at
-                    .cmp(&a.modified_at)
-                    .then_with(|| a.relative_path.cmp(&b.relative_path))
-            });
-            *self.recent_files_cache.write() = Some(files);
-        }
-
-        self.recent_files_cache
-            .read()
-            .as_ref()
-            .map(|files| files.iter().skip(offset).take(limit).cloned().collect())
-            .unwrap_or_default()
-    }
-
+    /// Bring a just-saved file's mtime forward in the name mirror so recents
+    /// order is right before the watcher feed re-reads the row.
     pub fn update_index_modified_at(&self, path: &Path, modified_at: u64) {
-        let mut changed = false;
-        {
-            let mut index = self.file_index.write();
-            if let Some(file) = index.iter_mut().find(|file| file.path == path) {
-                if file.modified_at != modified_at {
-                    file.modified_at = modified_at;
-                    changed = true;
-                    self.file_index_revision.fetch_add(1, Ordering::SeqCst);
-                }
-            }
-        }
-
-        if changed {
-            self.invalidate_recent_files_cache();
-        }
+        self.names.touch(path, modified_at);
     }
 
     pub fn has_pending_workspace(&self, path: &Path) -> bool {
@@ -513,30 +452,6 @@ impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Registers all ancestor directories of a file path into the set.
-/// Short-circuits when hitting a directory already in the set (its ancestors are too).
-pub fn register_ancestors(dirs: &mut HashSet<PathBuf>, file_path: &Path, root: &Path) {
-    let mut dir = file_path.parent();
-    while let Some(d) = dir {
-        if !dirs.insert(d.to_path_buf()) {
-            break;
-        }
-        if d == root {
-            break;
-        }
-        dir = d.parent();
-    }
-}
-
-/// Rebuild dirs_with_markdown from the full file index.
-pub fn rebuild_dirs_from_index(files: &[IndexedFile], root: &Path) -> HashSet<PathBuf> {
-    let mut dirs = HashSet::with_capacity(files.len());
-    for file in files {
-        register_ancestors(&mut dirs, &file.path, root);
-    }
-    dirs
 }
 
 #[cfg(test)]
@@ -831,8 +746,12 @@ mod tests {
         let second_root = second.path().canonicalize().unwrap();
         let state = WorkspaceState::default();
         let (first_epoch, _, _) = state.transition_to_workspace(first_root.clone());
-        state.dirs_with_markdown.write().insert(first_root.clone());
-        state.index_ready.store(true, Ordering::SeqCst);
+        let generation = state.names.reset();
+        state.names.bind(
+            generation,
+            first_root.clone(),
+            first_root.join("index.sqlite3"),
+        );
         state
             .recent_writes
             .write()
@@ -840,8 +759,7 @@ mod tests {
 
         state.clear_workspace_if_current(&first_root).unwrap();
         assert!(state.workspace_snapshot().is_none());
-        assert!(state.dirs_with_markdown.read().is_empty());
-        assert!(!state.index_ready.load(Ordering::SeqCst));
+        assert!(!state.names.is_bound());
         assert!(state.recent_writes.read().is_empty());
         assert!(state.workspace_ignore.read().is_none());
         assert!(state

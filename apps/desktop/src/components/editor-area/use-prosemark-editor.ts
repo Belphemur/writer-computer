@@ -12,6 +12,7 @@ import { registerEditorView } from "@/lib/obsidian-host/editor-bridge";
 import { useReloadVersion } from "@/hooks/use-tabs";
 import { getFileName } from "@/lib/paths";
 import { consumePendingAnchor } from "@/lib/pending-anchor";
+import { applyPendingLine } from "./reveal-line";
 import { logTimeline, mark } from "@/lib/startup-metrics";
 import { showEditorNotice } from "./editor-notice-store";
 
@@ -127,7 +128,10 @@ export function useProsemarkEditor(
 
     const scrollContainer = resolveScrollContainer(el, getScrollContainerRef.current);
     if (scrollContainer) {
-      restoreScrollPosition(scrollContainer, file?.scrollPos ?? 0, () => disposedRef.current);
+      // A content-search hit asked for a line; otherwise restore where the user left off.
+      if (!applyPendingLine(view, currentPath, scrollContainer)) {
+        restoreScrollPosition(scrollContainer, file?.scrollPos ?? 0, () => disposedRef.current);
+      }
 
       const handleScroll = () => {
         editorApi.updateScrollPos(filePathRef.current, scrollContainer.scrollTop);
@@ -187,7 +191,9 @@ export function useProsemarkEditor(
       );
       if (scrollContainer) {
         const pendingAnchor = consumePendingAnchor(filePath);
-        if (pendingAnchor !== undefined) {
+        if (applyPendingLine(view, filePath, scrollContainer)) {
+          // Line revealed (content search): it wins over a heading anchor and the saved scroll.
+        } else if (pendingAnchor !== undefined) {
           const heading = findHeadingBySlug(content, pendingAnchor);
           if (heading) {
             requestAnimationFrame(() => {

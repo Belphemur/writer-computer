@@ -41,8 +41,3 @@ export interface ContentSearchResult {
   line_content: string;
   match_ranges: [number, number][];
 }
-
-export interface IndexStats {
-  file_count: number;
-  duration_ms: number;
-}

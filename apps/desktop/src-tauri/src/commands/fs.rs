@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -228,8 +227,10 @@ fn directory_is_sidebar_visible(
     state: Option<&WorkspaceState>,
 ) -> Result<bool, AppError> {
     if let Some(state) = state {
-        let index_ready = state.index_ready.load(Ordering::Relaxed);
-        if index_ready && state.dirs_with_markdown.read().contains(path) {
+        // `Some` once the name mirror holds a finished index.
+        let has_listed = state.names.dir_has_listed(path);
+        let index_ready = has_listed.is_some();
+        if has_listed == Some(true) {
             return Ok(true);
         }
         // Snapshot the `Arc<WorkspaceIgnore>` under a brief read lock and
@@ -451,12 +452,15 @@ pub fn read_recent_files_impl(
     state: &WorkspaceState,
     limit: usize,
     offset: usize,
-) -> Vec<DirEntry> {
-    state
-        .recent_files_slice(offset, limit)
+) -> Result<Vec<DirEntry>, AppError> {
+    let paths = state
+        .names
+        .recent(offset, limit)
+        .map_err(crate::commands::index::app_err)?;
+    Ok(paths
         .into_iter()
-        .filter_map(|file| markdown_file_entry(&file.path))
-        .collect()
+        .filter_map(|path| markdown_file_entry(&path))
+        .collect())
 }
 
 #[tauri::command]
@@ -466,14 +470,14 @@ pub async fn read_recent_files(
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Vec<DirEntry>, AppError> {
-    let state = app.state::<AppState>().get_or_create(webview.label());
-    if state.workspace_root.read().is_none() {
-        return Err(AppError::NoWorkspace);
-    }
-
     let limit = limit.unwrap_or(8).clamp(1, 100) as usize;
     let offset = offset.unwrap_or(0) as usize;
-    blocking(move || Ok(read_recent_files_impl(&state, limit, offset))).await
+    blocking(move || {
+        // Opens the window's index (and binds the name mirror) if needed.
+        let (state, _) = crate::commands::index::window_index(&app, &webview)?;
+        read_recent_files_impl(&state, limit, offset)
+    })
+    .await
 }
 
 /// Drop every path this window may not touch (symlinks and `..` resolved).
@@ -945,18 +949,51 @@ mod tests {
         }
     }
 
+    /// A `WorkspaceState` whose name mirror holds `rows` (vault-relative path,
+    /// mtime ms) as a finished index would.
+    fn state_with_names(root: &Path, rows: &[(&str, i64)]) -> WorkspaceState {
+        let data = TempDir::new().unwrap();
+        let vault_files: Vec<_> = rows.iter().map(|(p, _)| *p).collect();
+        for p in &vault_files {
+            let abs = root.join(p);
+            fs::create_dir_all(abs.parent().unwrap()).unwrap();
+            if !abs.exists() {
+                fs::write(&abs, "# x").unwrap();
+            }
+        }
+        let index = crate::index::Index::open(crate::index::OpenParams {
+            root: root.to_path_buf(),
+            app_data_dir: data.path().to_path_buf(),
+            cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            on_change: None,
+        })
+        .unwrap();
+        index.refresh_blocking().unwrap();
+        let state = WorkspaceState::default();
+        let generation = state.names.reset();
+        state.names.bind(
+            generation,
+            index.root().to_path_buf(),
+            index.db_path().to_path_buf(),
+        );
+        state.names.sync().unwrap();
+        // The index (and its data dir) must outlive the mirror's reads only
+        // until the rows are loaded; the mirror is in memory from here on.
+        for (path, mtime_ms) in rows {
+            let abs = index.root().join(path);
+            state.names.touch(&abs, (*mtime_ms / 1000) as u64);
+        }
+        index.close();
+        state
+    }
+
     #[test]
     fn test_read_directory_uses_index_when_ready() {
         let dir = setup_test_dir();
         fs::create_dir_all(dir.path().join("drafts").join("nested")).unwrap();
-        let state = WorkspaceState::default();
-
-        // Build index
-        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (indexed, dirs) = crate::commands::search::index_workspace_impl(dir.path(), cancel);
-        *state.file_index.write() = indexed;
-        *state.dirs_with_markdown.write() = dirs;
-        state.index_ready.store(true, Ordering::Relaxed);
+        let root = dir.path().canonicalize().unwrap();
+        let state = state_with_names(&root, &[]);
+        assert!(state.names.is_ready());
 
         let result = read_directory_impl(&dir.path().to_string_lossy(), Some(&state)).unwrap();
 
@@ -979,30 +1016,16 @@ mod tests {
         ));
     }
 
-    fn indexed_file(root: &Path, name: &str, modified_at: u64) -> crate::state::IndexedFile {
-        let path = root.join(name);
-        crate::state::IndexedFile {
-            path,
-            relative_path: name.to_string(),
-            name: name.to_string(),
-            modified_at,
-        }
-    }
-
     #[test]
     fn test_read_recent_files_sorts_by_index_mtime_and_pages() {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join("old.md"), "# Old").unwrap();
-        fs::write(dir.path().join("new.md"), "# New").unwrap();
-        fs::write(dir.path().join("middle.md"), "# Middle").unwrap();
-        let state = WorkspaceState::default();
-        *state.file_index.write() = vec![
-            indexed_file(dir.path(), "old.md", 1),
-            indexed_file(dir.path(), "new.md", 3),
-            indexed_file(dir.path(), "middle.md", 2),
-        ];
+        let root = dir.path().canonicalize().unwrap();
+        let state = state_with_names(
+            &root,
+            &[("old.md", 1000), ("new.md", 3000), ("middle.md", 2000)],
+        );
 
-        let first_page = read_recent_files_impl(&state, 2, 0);
+        let first_page = read_recent_files_impl(&state, 2, 0).unwrap();
         assert_eq!(
             first_page
                 .iter()
@@ -1011,7 +1034,7 @@ mod tests {
             vec!["new.md", "middle.md"]
         );
 
-        let second_page = read_recent_files_impl(&state, 2, 2);
+        let second_page = read_recent_files_impl(&state, 2, 2).unwrap();
         assert_eq!(
             second_page
                 .iter()
@@ -1022,23 +1045,17 @@ mod tests {
     }
 
     #[test]
-    fn test_read_recent_files_cache_invalidates_on_mtime_update() {
+    fn test_read_recent_files_reorders_when_a_file_is_saved() {
         let dir = TempDir::new().unwrap();
-        let old_path = dir.path().join("old.md");
-        fs::write(&old_path, "# Old").unwrap();
-        fs::write(dir.path().join("new.md"), "# New").unwrap();
-        let state = WorkspaceState::default();
-        *state.file_index.write() = vec![
-            indexed_file(dir.path(), "old.md", 1),
-            indexed_file(dir.path(), "new.md", 2),
-        ];
+        let root = dir.path().canonicalize().unwrap();
+        let state = state_with_names(&root, &[("old.md", 1000), ("new.md", 2000)]);
 
-        let before = read_recent_files_impl(&state, 1, 0);
+        let before = read_recent_files_impl(&state, 1, 0).unwrap();
         assert_eq!(before[0].name, "new.md");
 
-        state.update_index_modified_at(&old_path, 5);
+        state.update_index_modified_at(&root.join("old.md"), 5);
 
-        let after = read_recent_files_impl(&state, 1, 0);
+        let after = read_recent_files_impl(&state, 1, 0).unwrap();
         assert_eq!(after[0].name, "old.md");
     }
 
@@ -1364,9 +1381,8 @@ mod tests {
     fn test_workspace_state_default() {
         let state = WorkspaceState::default();
         assert!(state.workspace_root.read().is_none());
-        assert!(state.file_index.read().is_empty());
-        assert!(state.dirs_with_markdown.read().is_empty());
-        assert!(!state.index_ready.load(Ordering::Relaxed));
+        assert!(!state.names.is_bound());
+        assert!(!state.names.is_ready());
         assert!(state.watcher_handle.read().is_none());
     }
 }

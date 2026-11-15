@@ -32,6 +32,8 @@ pub struct ScanStats {
     pub deleted: usize,
     /// Markdown files actually parsed during this scan.
     pub reparsed: usize,
+    /// Notes whose body exceeded the full-text cap and was left out of it.
+    pub fts_body_skipped: usize,
     pub errors: Vec<String>,
     pub duration_ms: u64,
 }
@@ -262,6 +264,7 @@ pub(crate) fn write_records(
             Content::ReadError(msg) => {
                 let id = insert_file(conn, rec, None, Some(msg), None, None, None)?;
                 delete_children(conn, id)?;
+                super::fts::delete_doc(conn, id)?;
                 id
             }
             Content::Parsed(note, hash) => {
@@ -278,6 +281,7 @@ pub(crate) fn write_records(
                     delete_children(conn, id)?;
                 }
                 write_children(conn, id, &rec.path, note, resolver)?;
+                super::fts::write_doc(conn, id, &rec.basename, &note.fts, rec.existed)?;
                 id
             }
         };
@@ -532,12 +536,25 @@ pub(crate) fn scan(
                 stats.unchanged += 1;
                 seen.insert(p);
             }
-            Item::Record(rec) => {
+            #[allow(unused_mut)]
+            Item::Record(mut rec) => {
+                #[cfg(test)]
+                if shared
+                    .fts_disabled
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    if let Content::Parsed(note, _) = &mut rec.content {
+                        note.fts.skip = true;
+                    }
+                }
                 stats.seen += 1;
                 seen.insert(rec.path.clone());
                 match &rec.content {
-                    Content::Parsed(..) => {
+                    Content::Parsed(note, _) => {
                         stats.reparsed += 1;
+                        if note.fts.body_skipped {
+                            stats.fts_body_skipped += 1;
+                        }
                         if rec.existed {
                             stats.changed += 1
                         } else {
@@ -582,12 +599,7 @@ pub(crate) fn scan(
     let gone: Vec<&String> = existing.keys().filter(|p| !seen.contains(*p)).collect();
     stats.deleted = gone.len();
     let tx = conn.transaction()?;
-    {
-        let mut st = tx.prepare_cached("DELETE FROM files WHERE path = ?1")?;
-        for p in &gone {
-            st.execute([p])?;
-        }
-    }
+    super::fts::delete_files(&tx, &gone)?;
     tx.commit()?;
     changed.extend(gone.into_iter().cloned());
 
@@ -707,12 +719,7 @@ pub(crate) fn index_paths(
         paths.insert(r.path.clone());
     }
     let tx = conn.transaction()?;
-    {
-        let mut st = tx.prepare_cached("DELETE FROM files WHERE path = ?1")?;
-        for p in &removed {
-            st.execute([p])?;
-        }
-    }
+    super::fts::delete_files(&tx, &removed)?;
     write_records(&tx, &records, Some(paths))?;
     if set_changed {
         resolve_links(&tx, paths, None)?;

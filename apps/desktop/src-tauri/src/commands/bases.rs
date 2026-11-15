@@ -7,6 +7,7 @@
 use super::index::{app_err, blocking, window_index};
 use crate::bases::context::SystemClock;
 use crate::bases::document::Document;
+use crate::bases::functions::{function_infos, FunctionInfo};
 use crate::bases::query::BaseQueryResult;
 use crate::error::AppError;
 use crate::index::bases_source::{eval_expression, run_base_view};
@@ -132,6 +133,13 @@ pub struct BaseParsed {
 #[tauri::command]
 pub async fn base_parse_text(text: String) -> Result<BaseParsed, AppError> {
     Ok(parse_text(&text))
+}
+
+/// The engine's function registry (name, receiver types, signature, doc, return
+/// type) for the formula editor's completion. Pure; the frontend caches it.
+#[tauri::command]
+pub async fn base_functions() -> Result<Vec<FunctionInfo>, AppError> {
+    Ok(function_infos())
 }
 
 fn parse_text(text: &str) -> BaseParsed {
@@ -373,6 +381,29 @@ pub(crate) fn properties_json(text: &str) -> Json {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn base_functions_wire_shape() {
+        let v = serde_json::to_value(function_infos()).unwrap();
+        let slice = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "slice" && f["receivers"] == json!(["string"]))
+            .expect("string.slice");
+        assert_eq!(slice["kind"], "method");
+        assert_eq!(slice["signature"], "string.slice(start, end?): string");
+        assert_eq!(slice["returns"], "string");
+        assert_eq!(slice["minArgs"], 1);
+        assert_eq!(slice["maxArgs"], 2);
+        let max = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "max" && f["kind"] == "global")
+            .unwrap();
+        assert_eq!(max["maxArgs"], Json::Null);
+    }
 
     #[test]
     fn properties_json_shape() {

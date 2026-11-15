@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import {
@@ -21,6 +21,7 @@ import type { Cell, Column } from "@/lib/bases/types";
 import type { BaseViewProps, ViewActions } from "@/lib/bases/view-registry";
 import { CellView } from "./cell-view";
 import { GroupHeader } from "./group-header";
+import { useGroupCollapse } from "./use-group-collapse";
 import { WindowedList } from "./windowed-list";
 
 const NOOP = () => {};
@@ -173,7 +174,7 @@ const Card = memo(function Card({
 export function CardsView({ result, shown, view, actions, label }: BaseViewProps) {
   const options = useMemo(() => cardOptions(view), [view]);
   const [width, setWidth] = useState(800);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { collapsed, toggle } = useGroupCollapse(view?.name ?? "");
   const columns = useMemo(
     () => result.columns.slice(0, Math.max(1, shown)),
     [result.columns, shown],
@@ -194,17 +195,6 @@ export function CardsView({ result, shown, view, actions, label }: BaseViewProps
       return { error: e instanceof Error ? e.message : String(e) };
     }
   }, [result, perRow, collapsed]);
-
-  const toggle = useCallback(
-    (key: string) =>
-      setCollapsed((s) => {
-        const next = new Set(s);
-        if (next.has(key)) next.delete(key);
-        else next.add(key);
-        return next;
-      }),
-    [],
-  );
 
   if ("error" in layout)
     return (

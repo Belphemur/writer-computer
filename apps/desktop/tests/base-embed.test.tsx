@@ -10,6 +10,16 @@ import { EditorView } from "@codemirror/view";
 import { GFM } from "@lezer/markdown";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+// jsdom has no layout: CodeMirror measures text through Range rects, which jsdom lacks. Without
+// these, a measure pass that lands after a test ends raises an unhandled error and fails the run.
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+}
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () =>
+    ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect;
+}
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (p: string) => `asset://localhost${p}`,

@@ -2,14 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import sidebarEntryKinds from "@shared/sidebar-entry-kinds.json";
-import type {
-  DirEntry,
-  FileContent,
-  IndexStats,
-  SearchResult,
-  WriteResult,
-  WorkspaceInfo,
-} from "@/types/fs";
+import type { DirEntry, FileContent, SearchResult, WriteResult, WorkspaceInfo } from "@/types/fs";
 
 // Filesystem commands
 export function readDirectory(path: string): Promise<DirEntry[]> {
@@ -203,10 +196,6 @@ export function loadSession(workspaceRoot: string): Promise<SessionData | null> 
 }
 
 // Search commands
-export function indexWorkspace(): Promise<IndexStats> {
-  return invoke("index_workspace");
-}
-
 export function fuzzySearch(query: string, limit?: number): Promise<SearchResult[]> {
   return invoke("fuzzy_search", { query, limit });
 }

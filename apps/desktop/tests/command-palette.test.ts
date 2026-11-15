@@ -19,13 +19,6 @@ describe("fuzzySearch IPC", () => {
     await fuzzySearch("test", 20);
     expect(mockedInvoke).toHaveBeenCalledWith("fuzzy_search", { query: "test", limit: 20 });
   });
-
-  test("indexWorkspace calls correct command", async () => {
-    mockedInvoke.mockResolvedValue({ file_count: 5, duration_ms: 10 });
-    const { indexWorkspace } = await import("../src/lib/tauri");
-    await indexWorkspace();
-    expect(mockedInvoke).toHaveBeenCalledWith("index_workspace");
-  });
 });
 
 describe("useFuzzySearch hook", () => {

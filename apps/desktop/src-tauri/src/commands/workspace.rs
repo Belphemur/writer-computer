@@ -1,5 +1,4 @@
 use crate::commands::fs::{read_directory_impl, read_file_impl, DirEntry, FileContent};
-use crate::commands::search::index_workspace_impl;
 use crate::commands::settings::get_global_string_setting;
 use crate::error::AppError;
 use crate::ignore::WorkspaceIgnore;
@@ -561,26 +560,37 @@ fn run_workspace_bootstrap(
         },
     );
 
-    // Walk the tree. The `cancel` flag lets a concurrent workspace switch
-    // stop this walk at the next directory boundary.
-    let (indexed, dirs) = index_workspace_impl(&root, Arc::clone(&cancel));
-    if cancel.load(Ordering::Relaxed) {
+    // Open the vault index and wait for its scan. This is the only walk: the
+    // SQLite `files` table feeds quick open, recents and the sidebar through
+    // `state.names`. A concurrent workspace switch flips `cancel`, which stops
+    // the scan at the next directory boundary.
+    let index = match crate::commands::index::ensure_index_with(&handle, &label, &state, false) {
+        Ok(index) => index,
+        Err(e) => {
+            log::error!("vault index open failed for window {label}: {e}");
+            return;
+        }
+    };
+    if let Err(e) = index.refresh_blocking() {
+        if cancel.load(Ordering::Relaxed) || matches!(e, crate::index::IndexError::Cancelled) {
+            return;
+        }
+        // The index status carries the error (`fuzzy_search` surfaces it);
+        // the frontend keeps showing "indexing" rather than a wrong list.
+        log::error!("vault index scan failed for window {label}: {e}");
         return;
     }
-    let file_count = indexed.len();
-
-    let displaced = state.with_workspace_snapshot(&root, epoch, || {
-        let old_index = std::mem::replace(&mut *state.file_index.write(), indexed);
-        let old_cache = state.recent_files_cache.write().take();
-        let old_dirs = std::mem::replace(&mut *state.dirs_with_markdown.write(), dirs);
-        state.file_index_revision.fetch_add(1, Ordering::SeqCst);
-        state.index_ready.store(true, Ordering::Relaxed);
-        (old_index, old_cache, old_dirs)
-    });
-    let Some(displaced) = displaced else {
+    if !epoch_is_current(&state, epoch) {
         return;
+    }
+    // Load the name mirror now so the sidebar's folder checks are O(1) at once.
+    let file_count = match state.names.sync() {
+        Ok(_) => state.names.len(),
+        Err(e) => {
+            log::error!("file-name mirror load failed for window {label}: {e}");
+            return;
+        }
     };
-    drop(displaced);
     let _ = handle.emit_to(
         label,
         "index:complete",

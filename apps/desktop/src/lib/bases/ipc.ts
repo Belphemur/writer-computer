@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   BaseEvalArgs,
+  BaseFunctionInfo,
   BaseFileEntry,
   BaseQueryArgs,
   BaseQueryResult,
@@ -73,4 +74,9 @@ export function indexProperties(): Promise<VaultProperty[]> {
  */
 export function baseWriteText(path: string, content: string): Promise<unknown> {
   return invoke("write_file", { path, content });
+}
+
+/** The engine's function registry, for the expression editor's completion. */
+export function baseFunctions(): Promise<BaseFunctionInfo[]> {
+  return invoke("base_functions");
 }

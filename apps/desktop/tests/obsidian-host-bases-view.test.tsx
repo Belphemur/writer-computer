@@ -21,10 +21,13 @@ vi.mock("../src/lib/bases/ipc", () => ({
   baseEval: vi.fn(),
   indexProperties: vi.fn(),
   baseWriteText: vi.fn(),
+  baseFunctions: vi.fn(),
 }));
 
 import { BaseView } from "../src/components/base-view";
 import * as ipc from "../src/lib/bases/ipc";
+import { resetFunctionRegistry } from "../src/lib/bases/function-registry";
+import { FUNCTIONS } from "./helpers/bases-functions";
 import { getBaseView, type BaseViewProps } from "../src/lib/bases/view-registry";
 import { PluginHost, type ScriptLoader } from "../src/lib/obsidian-host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../src/lib/obsidian-host/testing";
@@ -176,6 +179,8 @@ let host: PluginHost;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  resetFunctionRegistry();
+  vi.mocked(ipc.baseFunctions).mockResolvedValue(FUNCTIONS);
   vi.spyOn(console, "error").mockImplementation(() => {});
   probe = { instances: [], updates: [], unloaded: 0, registered: [], extra: {} };
   host = setup();

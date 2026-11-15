@@ -35,6 +35,7 @@ import {
   usePluginLeaves,
   useTogglePluginPane,
 } from "@/hooks/use-plugins";
+import { ContentSearchPalette } from "./content-search-palette";
 import { resolveCommands } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
@@ -66,7 +67,13 @@ function HighlightedPath({ path, indices }: { path: string; indices: number[] })
   );
 }
 
+/** Two palette modes share one open state: "Search in notes" has its own dialog. */
 export function CommandPalette() {
+  const intent = useCommandPaletteIntent();
+  return intent === "search-notes" ? <ContentSearchPalette /> : <FilePalette />;
+}
+
+function FilePalette() {
   const isOpen = useIsCommandPaletteOpen();
   const close = useCloseCommandPalette();
   const openCommandPalette = useOpenCommandPalette();
@@ -95,7 +102,7 @@ export function CommandPalette() {
   const fileQuery = isCreateIntent ? "" : search;
   // Standalone compact windows have no workspace index — search filters the
   // global recents list client-side instead of hitting fuzzy_search.
-  const results = useFuzzySearch(isCompactFileMode ? "" : fileQuery);
+  const { results, error: searchError } = useFuzzySearch(isCompactFileMode ? "" : fileQuery);
   const { files: globalRecents } = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
   // In standalone mode new files are created next to the active file.
   const createBaseDir = root ?? (activeFilePath ? getParentDir(activeFilePath) : null);
@@ -148,6 +155,7 @@ export function CommandPalette() {
           close,
           toggleSidebar,
           openCreateFile: () => openCommandPalette("create-file"),
+          openSearchNotes: () => openCommandPalette("search-notes"),
           openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
           closeActiveTab,
           closeAllTabs: () => {
@@ -231,9 +239,11 @@ export function CommandPalette() {
               visibleRecents.length === 0 &&
               visibleCommands.length === 0 && (
                 <CommandEmpty>
-                  {isIndexing && trimmedSearch && !isCompactFileMode
-                    ? "Indexing workspace..."
-                    : "No results found."}
+                  {searchError && trimmedSearch && !isCompactFileMode
+                    ? `File search unavailable: ${searchError}`
+                    : isIndexing && trimmedSearch && !isCompactFileMode
+                      ? "Indexing workspace..."
+                      : "No results found."}
                 </CommandEmpty>
               )}
 

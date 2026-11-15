@@ -8,13 +8,14 @@ Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Op
 
 These work anywhere in the window, whether or not you are typing in a note.
 
-<!-- Handled by the global `useKeyboardShortcuts` hook. -->
+<!-- Handled by the global `useKeyboardShortcuts` hook. Cmd+Shift+F opens the palette in its `search-notes` mode (SPECs/search-spec.md): Enter opens the match in the current tab, Cmd+Enter in a new tab. It is free of conflicts: the editor's find is Cmd+F and nothing else binds Shift+F. -->
 
 | Shortcut        | Action                                                                 |
 | --------------- | ---------------------------------------------------------------------- |
 | Cmd+P           | Command palette: search notes by name, and run commands                |
 | Cmd+O           | Same as Cmd+P                                                          |
 | Cmd+Shift+P     | Command palette, also when no workspace is open                        |
+| Cmd+Shift+F     | Search in notes: full-text search of note contents                     |
 | Cmd+N           | Create new note                                                        |
 | Cmd+T           | New tab                                                                |
 | Cmd+W           | Close current tab; hides the window when only an empty new tab is left |
@@ -36,7 +37,7 @@ the editor font size, which it never changes.
 <!-- The zoom is the global `editor.zoom` setting, multiplied on top of `editor.font-size`. -->
 
 In the compact window a single note opens in, which has no sidebar or tabs,
-Cmd+\\, Cmd+T, Ctrl+Tab, Ctrl+Shift+Tab, and Cmd+1 ... Cmd+9 do nothing. Cmd+P, Cmd+O, Cmd+N, zoom, and history navigation still
+Cmd+Shift+F, Cmd+\\, Cmd+T, Ctrl+Tab, Ctrl+Shift+Tab, and Cmd+1 ... Cmd+9 do nothing. Cmd+P, Cmd+O, Cmd+N, zoom, and history navigation still
 work.
 
 ## App menu

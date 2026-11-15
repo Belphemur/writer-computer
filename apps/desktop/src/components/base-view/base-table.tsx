@@ -4,6 +4,7 @@ import {
   ariaSort,
   buildGridLayout,
   columnWidths,
+  GROUP_HEADER_HEIGHT,
   itemHeight,
   rowHeightPx,
   sortIndicators,
@@ -17,6 +18,8 @@ import type { ViewConfig } from "@/lib/bases/view-registry";
 import { CellEditor } from "./cell-editor";
 import { CellView, type CellActions } from "./cell-view";
 import type { CellRange, useBaseEdits } from "./use-base-edits";
+import { useGroupCollapse } from "./use-group-collapse";
+import { useStickyGroups } from "./use-sticky-groups";
 
 export const HEADER_HEIGHT = 32;
 const OVERSCAN = 8;
@@ -179,7 +182,7 @@ const GridCell = memo(function GridCell(p: GridCellProps) {
 export function BaseTable({ result, view, edits, actions, config, label }: Props) {
   const gridId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { collapsed, toggle: toggleGroup } = useGroupCollapse(view?.name ?? "");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
 
@@ -213,14 +216,17 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
 
   const items = grid?.items ?? [];
   const showFooter = !result.groups && result.summaries.some((s) => s !== null);
+  const { rangeExtractor, activeRef } = useStickyGroups(items);
   const virtualizer = useVirtualizer({
     count: items.length,
+    rangeExtractor,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => itemHeight(items[i]!, rowHeight),
     getItemKey: (i) => itemKey(items[i]!),
     overscan: OVERSCAN,
     scrollMargin: HEADER_HEIGHT,
-    scrollPaddingStart: HEADER_HEIGHT,
+    // Keyboard reveal must not park a row under the sticky column header or the pinned group header.
+    scrollPaddingStart: HEADER_HEIGHT + (result.groups ? GROUP_HEADER_HEIGHT : 0),
   });
 
   // ---- selection ----------------------------------------------------------
@@ -486,6 +492,11 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
     );
   }
 
+  // `getVirtualItems` runs the range extractor, which sets the active group header.
+  const virtualItems = virtualizer.getVirtualItems();
+  const pinned = virtualItems.some((vi) => vi.index === activeRef.current)
+    ? activeRef.current
+    : null;
   const rowCount = items.length + 1 + (showFooter ? 1 : 0);
   const activeId = focus ? cellId(focus.row, focus.col) : undefined;
   const focusedReason = focus ? edits.readOnlyReason(focus.row, focus.col) : null;
@@ -603,20 +614,35 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
           </div>
         ) : (
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {virtualizer.getVirtualItems().map((vi) => {
+            {virtualItems.map((vi) => {
               const item = items[vi.index]!;
               const top = vi.start - HEADER_HEIGHT;
+              const isPinned = vi.index === pinned;
               const common = {
                 role: "row" as const,
                 "aria-rowindex": vi.index + 2,
-                style: {
-                  position: "absolute" as const,
-                  top: 0,
-                  left: 0,
-                  width: totalWidth,
-                  height: vi.size,
-                  transform: `translateY(${top}px)`,
-                },
+                style: isPinned
+                  ? {
+                      // The pinned group header sits in flow and sticks under the column header.
+                      position: "sticky" as const,
+                      top: HEADER_HEIGHT,
+                      zIndex: 5,
+                      width: totalWidth,
+                      height: vi.size,
+                      // --surface-subtle is translucent: paint it over an opaque base so rows
+                      // scrolling underneath do not show through.
+                      backgroundColor: "var(--surface-primary)",
+                      backgroundImage:
+                        "linear-gradient(var(--surface-subtle), var(--surface-subtle))",
+                    }
+                  : {
+                      position: "absolute" as const,
+                      top: 0,
+                      left: 0,
+                      width: totalWidth,
+                      height: vi.size,
+                      transform: `translateY(${top}px)`,
+                    },
               };
               if (item.kind === "group") {
                 return (
@@ -624,7 +650,8 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
                     key={vi.key}
                     {...common}
                     data-group-header
-                    className="flex bg-[var(--surface-subtle)]"
+                    data-sticky-group={isPinned ? "" : undefined}
+                    className={`flex ${isPinned ? "border-b border-border" : ""} bg-[var(--surface-subtle)]`}
                   >
                     <div
                       role="gridcell"
@@ -636,14 +663,7 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
                         type="button"
                         aria-label={`${item.collapsed ? "Expand" : "Collapse"} group ${item.label}`}
                         aria-expanded={!item.collapsed}
-                        onClick={() =>
-                          setCollapsed((s) => {
-                            const next = new Set(s);
-                            if (next.has(item.key)) next.delete(item.key);
-                            else next.add(item.key);
-                            return next;
-                          })
-                        }
+                        onClick={() => toggleGroup(item.key)}
                         className="flex cursor-pointer items-center gap-2 bg-transparent px-2 text-[13px] font-medium text-text-primary"
                       >
                         <span aria-hidden="true" className="w-3 text-text-muted">

@@ -16,6 +16,7 @@ import {
 } from "@/lib/bases/filter-builder";
 import { baseQueryText } from "@/lib/bases/ipc";
 import type { BaseFilter } from "@/lib/bases/types";
+import { ExpressionInput } from "./expression-input";
 import type { MenuContext } from "./menu-context";
 import { PropertySelect, useVaultProperties } from "./property-select";
 import { FIELD, SMALL_BUTTON, ToolbarMenu } from "./toolbar-menu";
@@ -209,12 +210,13 @@ function FilterBody({ ctx, close }: { ctx: MenuContext; close: () => void }) {
             <div className="flex items-start gap-1.5">
               <div className="min-w-0 flex-1">
                 {asRaw ? (
-                  <textarea
-                    aria-label="Filter expression"
-                    rows={2}
+                  <ExpressionInput
+                    multiline
+                    label="Filter expression"
                     value={item}
-                    onChange={(e) => replace(i, e.target.value)}
-                    className={`${FIELD} w-full font-mono`}
+                    vault={vault}
+                    formulas={ctx.document.formulas}
+                    onChange={(expression) => replace(i, expression)}
                   />
                 ) : (
                   <RowEditor

@@ -1,0 +1,270 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("../src/components/editor-area/reveal-line", () => ({ openFileAtLine: vi.fn() }));
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { ContentSearchPalette } from "../src/components/command-palette/content-search-palette";
+import { CONTENT_SEARCH_DEBOUNCE_MS } from "../src/components/command-palette/use-content-search";
+import { openFileAtLine } from "../src/components/editor-area/reveal-line";
+import {
+  isIndexBuildingError,
+  splitByRanges,
+  type ContentSearchHit,
+  type ContentSearchPage,
+} from "../src/lib/content-search";
+import { useUIStore } from "../src/stores/ui-store";
+import { useWorkspaceStore } from "../src/stores/workspace-store";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const mockedInvoke = vi.mocked(invoke);
+const mockedListen = vi.mocked(listen);
+const mockedOpen = vi.mocked(openFileAtLine);
+
+function hit(path: string, line: number, text: string, ranges: [number, number][]) {
+  const base = path.split("/").pop()!.replace(/\.md$/, "");
+  return {
+    path,
+    title: base,
+    folder: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
+    score: 1,
+    snippets: [{ line, text, ranges }],
+    stale: false,
+  } satisfies ContentSearchHit;
+}
+
+function page(...hits: ContentSearchHit[]): ContentSearchPage {
+  return { total: hits.length, hits, truncated: false };
+}
+
+describe("splitByRanges", () => {
+  it("splits plain and matched text and never produces markup", () => {
+    expect(splitByRanges("a <b>x</b> c", [[2, 5]])).toEqual([
+      { text: "a ", match: false },
+      { text: "<b>", match: true },
+      { text: "x</b> c", match: false },
+    ]);
+  });
+
+  it("clamps, sorts and merges bad ranges instead of throwing", () => {
+    const parts = splitByRanges("abcdef", [
+      [4, 99],
+      [1, 3],
+      [2, 5],
+      [-4, 0],
+      [3, 3],
+    ]);
+    expect(parts.map((p) => p.text).join("")).toBe("abcdef");
+    expect(parts.filter((p) => p.match).map((p) => p.text)).toEqual(["bc", "de", "f"]);
+  });
+
+  it("uses UTF-16 offsets, as the backend reports them", () => {
+    expect(splitByRanges("😀😀 smile", [[5, 10]]).find((p) => p.match)?.text).toBe("smile");
+  });
+
+  it("recognises the backend's building error", () => {
+    expect(isIndexBuildingError("IO error: the vault index is still being built; try again")).toBe(
+      true,
+    );
+    expect(isIndexBuildingError(new Error("boom"))).toBe(false);
+  });
+});
+
+describe("ContentSearchPalette", () => {
+  let host: HTMLDivElement;
+  let root: Root;
+  let changed: ((e: { payload: { full: boolean; paths: string[] } }) => void) | null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    changed = null;
+    mockedListen.mockImplementation(((_name: string, cb: typeof changed) => {
+      changed = cb;
+      return Promise.resolve(() => {});
+    }) as never);
+    mockedInvoke.mockReset();
+    mockedOpen.mockResolvedValue(undefined);
+    // cmdk and Radix expect these browser APIs, which jsdom lacks.
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    Element.prototype.scrollIntoView = () => {};
+    useWorkspaceStore.setState({ root: "/ws" });
+    useUIStore.setState({
+      isCommandPaletteOpen: true,
+      commandPaletteIntent: "search-notes",
+      commandPaletteSearch: "",
+    });
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+    document.body.innerHTML = "";
+    vi.useRealTimers();
+  });
+
+  async function mount() {
+    await act(async () => {
+      root.render(<ContentSearchPalette />);
+    });
+  }
+
+  async function type(text: string) {
+    const input = document.querySelector("input")!;
+    await act(async () => {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!;
+      // eslint-disable-next-line typescript/unbound-method -- called with the input as `this`
+      Reflect.apply(descriptor.set!, input, [text]);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async function settle(ms = CONTENT_SEARCH_DEBOUNCE_MS) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  async function key(k: string, opts: KeyboardEventInit = {}) {
+    const input = document.querySelector("input")!;
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, ...opts }));
+    });
+  }
+
+  const text = () => document.body.textContent ?? "";
+
+  it("asks for at least two characters and does not search before that", async () => {
+    await mount();
+    expect(text()).toContain("Type at least 2 characters");
+    await type("a");
+    await settle(500);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("debounces typing into one request for the latest query", async () => {
+    mockedInvoke.mockResolvedValue(page(hit("Notes/Harbour.md", 3, "the harbour", [[4, 11]])));
+    await mount();
+    await type("ha");
+    await settle(50);
+    await type("har");
+    await settle(50);
+    await type("harb");
+    expect(mockedInvoke).not.toHaveBeenCalled();
+    await settle();
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "index_search",
+      expect.objectContaining({
+        request: expect.objectContaining({ query: "harb", asYouType: true }),
+      }),
+    );
+    expect(text()).toContain("Harbour");
+    expect(text()).toContain("1 note");
+  });
+
+  it("renders matches as marked React nodes and never injects HTML", async () => {
+    const evil = "<img src=x onerror=alert(1)> harbour";
+    mockedInvoke.mockResolvedValue(page(hit("Notes/Evil.md", 2, evil, [[29, 36]])));
+    await mount();
+    await type("harbour");
+    await settle();
+    expect(document.querySelector("img")).toBeNull();
+    expect(text()).toContain("<img src=x onerror=alert(1)>");
+    expect(document.querySelector("mark")?.textContent).toBe("harbour");
+  });
+
+  it("ignores a slow answer for an older query", async () => {
+    let resolveFirst!: (p: ContentSearchPage) => void;
+    mockedInvoke
+      .mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)))
+      .mockResolvedValueOnce(page(hit("New.md", 1, "fresh result", [[0, 5]])));
+    await mount();
+    await type("old query");
+    await settle();
+    await type("new query");
+    await settle();
+    expect(text()).toContain("New");
+    await act(async () => {
+      resolveFirst(page(hit("Old.md", 1, "stale result", [[0, 5]])));
+    });
+    expect(text()).toContain("New");
+    expect(text()).not.toContain("stale result");
+  });
+
+  it("shows loading, empty, error and building states explicitly", async () => {
+    let resolve!: (p: ContentSearchPage) => void;
+    mockedInvoke.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+    await mount();
+    await type("zzz");
+    await settle();
+    expect(text()).toContain("Searching…");
+    await act(async () => resolve(page()));
+    expect(text()).toContain("No matches");
+
+    mockedInvoke.mockRejectedValueOnce("IO error: disk exploded");
+    await type("zzzz");
+    await settle();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("disk exploded");
+
+    mockedInvoke.mockRejectedValueOnce("IO error: the vault index is still being built; try again");
+    await type("zzzzz");
+    await settle();
+    expect(text()).toContain("Index is being built…");
+  });
+
+  it("retries a search that hit a cold index when the full index change arrives", async () => {
+    mockedInvoke
+      .mockRejectedValueOnce("IO error: the vault index is still being built; try again")
+      .mockResolvedValueOnce(page(hit("Ready.md", 1, "now it works", [[0, 3]])));
+    await mount();
+    await type("works");
+    await settle();
+    expect(text()).toContain("Index is being built…");
+    await act(async () => {
+      changed?.({ payload: { full: false, paths: ["a.md"] } });
+    });
+    await settle();
+    expect(mockedInvoke).toHaveBeenCalledTimes(1); // partial batches do not retry
+    await act(async () => {
+      changed?.({ payload: { full: true, paths: [] } });
+    });
+    await settle();
+    expect(mockedInvoke).toHaveBeenCalledTimes(2);
+    expect(text()).toContain("Ready");
+  });
+
+  it("opens the selected hit at its line: Enter in this tab, Cmd+Enter in a new tab", async () => {
+    mockedInvoke.mockResolvedValue(
+      page(
+        hit("A/First.md", 4, "first harbour", [[6, 13]]),
+        hit("B/Second.md", 9, "second harbour", [[7, 14]]),
+      ),
+    );
+    await mount();
+    await type("harbour");
+    await settle();
+    await key("Enter");
+    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/A/First.md", 4, { newTab: false });
+
+    useUIStore.setState({ isCommandPaletteOpen: true, commandPaletteSearch: "harbour" });
+    await settle();
+    await key("ArrowDown");
+    await key("Enter", { metaKey: true });
+    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/B/Second.md", 9, { newTab: true });
+    expect(useUIStore.getState().isCommandPaletteOpen).toBe(false);
+  });
+});

@@ -9,7 +9,7 @@ use super::format::{cell_text, json_pretty, list_lines, pretty_object, render, T
 use super::registry::CommandSpec;
 use super::{CliError, Ctx};
 use crate::index::patch::{self, ValueType};
-use crate::index::{FileFilter, MetaSelector, TaskFilter};
+use crate::index::{FileFilter, MetaSelector, SearchHit, SearchOptions, TaskFilter};
 use crate::vault_ops;
 use serde_json::{json, Value as Json};
 use std::collections::BTreeMap;
@@ -33,52 +33,41 @@ fn parse_limit(args: &Args) -> Result<Option<usize>, CliError> {
 // search
 // ---------------------------------------------------------------------------
 
-/// Plain substring, or `/regex/` (regex-lite; no lookaround), like Obsidian's
-/// basic search. Case-insensitive unless the `case` flag is given.
+/// `query=/regex/` is the explicit regular-expression mode (regex-lite, no
+/// lookaround, a scan over the note text); every other query runs on the
+/// full-text index (`Index::search`, see SPECs/search-spec.md). Case-insensitive
+/// unless the `case` flag is given.
 struct Matcher {
-    re: Option<regex_lite::Regex>,
-    needle: String,
-    case: bool,
+    re: regex_lite::Regex,
 }
 
 impl Matcher {
-    fn new(query: &str, case: bool) -> Result<Matcher, CliError> {
-        if query.is_empty() {
-            return Err(CliError::Usage("query= must not be empty".into()));
-        }
+    /// `Ok(None)` when `query` is not written as `/regex/`.
+    fn regex(query: &str, case: bool) -> Result<Option<Matcher>, CliError> {
         if query.len() > 2 && query.starts_with('/') && query.ends_with('/') {
-            let inner = &query[1..query.len() - 1];
-            let re = regex_lite::RegexBuilder::new(inner)
+            let re = regex_lite::RegexBuilder::new(&query[1..query.len() - 1])
                 .case_insensitive(!case)
                 .build()
                 .map_err(|e| CliError::fail(format!("invalid regular expression: {e}")))?;
-            return Ok(Matcher {
-                re: Some(re),
-                needle: String::new(),
-                case,
-            });
+            return Ok(Some(Matcher { re }));
         }
-        Ok(Matcher {
-            re: None,
-            needle: if case {
-                query.to_string()
-            } else {
-                query.to_lowercase()
-            },
-            case,
-        })
+        Ok(None)
     }
 
     fn is_match(&self, s: &str) -> bool {
-        match &self.re {
-            Some(re) => re.is_match(s),
-            None if self.case => s.contains(&self.needle),
-            None => s.to_lowercase().contains(&self.needle),
-        }
+        self.re.is_match(s)
     }
 }
 
-fn search_files(ctx: &Ctx, args: &Args) -> Result<Vec<crate::index::FileRow>, CliError> {
+fn require_query(args: &Args) -> Result<&str, CliError> {
+    let q = args.require("query")?;
+    if q.is_empty() {
+        return Err(CliError::Usage("query= must not be empty".into()));
+    }
+    Ok(q)
+}
+
+fn regex_files(ctx: &Ctx, args: &Args) -> Result<Vec<crate::index::FileRow>, CliError> {
     Ok(ctx
         .index()?
         .query_files(&FileFilter {
@@ -89,25 +78,72 @@ fn search_files(ctx: &Ctx, args: &Args) -> Result<Vec<crate::index::FileRow>, Cl
         .rows)
 }
 
+/// Hits per index page while the CLI collects an unbounded result.
+const SEARCH_PAGE: u32 = 200;
+
+/// Ranked full-text hits for `query`, paged internally until `want` items
+/// (counted by `count`) are collected or the matches run out.
+fn fts_collect(
+    ctx: &Ctx,
+    args: &Args,
+    query: &str,
+    max_snippets: u32,
+    count: impl Fn(&SearchHit) -> usize,
+    want: Option<usize>,
+) -> Result<Vec<SearchHit>, CliError> {
+    let index = ctx.index()?;
+    let mut opts = SearchOptions {
+        folder: args.get("path").map(str::to_string),
+        case_sensitive: args.flag("case"),
+        limit: Some(SEARCH_PAGE),
+        snippet_len: Some(0),
+        max_snippets: Some(max_snippets),
+        ..SearchOptions::default()
+    };
+    let mut out: Vec<SearchHit> = Vec::new();
+    let mut counted = 0usize;
+    loop {
+        let page = index.search(query, &opts)?;
+        let n = page.hits.len();
+        for h in page.hits {
+            counted += count(&h);
+            out.push(h);
+        }
+        if want.is_some_and(|w| counted >= w) || (n as u32) < SEARCH_PAGE {
+            return Ok(out);
+        }
+        opts.offset += SEARCH_PAGE;
+    }
+}
+
 pub fn search(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
     let format = args.format(spec)?;
-    let m = Matcher::new(args.require("query")?, args.flag("case"))?;
+    let query = require_query(args)?;
     let limit = parse_limit(args)?;
-    let root = ctx.root()?.to_path_buf();
     let mut hits: Vec<String> = Vec::new();
-    for row in search_files(ctx, args)? {
-        if limit.is_some_and(|l| hits.len() >= l) {
-            break;
-        }
-        let mut hit = m.is_match(&row.name);
-        if !hit {
-            match vault_ops::read_text(&root.join(&row.path)) {
-                Ok(text) => hit = text.lines().any(|l| m.is_match(l)),
-                Err(e) => ctx.warn(format!("skipped {}: {e}", row.path)),
+    if let Some(m) = Matcher::regex(query, args.flag("case"))? {
+        let root = ctx.root()?.to_path_buf();
+        for row in regex_files(ctx, args)? {
+            if limit.is_some_and(|l| hits.len() >= l) {
+                break;
+            }
+            let mut hit = m.is_match(&row.name);
+            if !hit {
+                match vault_ops::read_text(&root.join(&row.path)) {
+                    Ok(text) => hit = text.lines().any(|l| m.is_match(l)),
+                    Err(e) => ctx.warn(format!("skipped {}: {e}", row.path)),
+                }
+            }
+            if hit {
+                hits.push(row.path);
             }
         }
-        if hit {
-            hits.push(row.path);
+    } else {
+        // Snippets are only needed to verify `case`.
+        let found = fts_collect(ctx, args, query, 0, |_| 1, limit)?;
+        hits = found.into_iter().map(|h| h.path).collect();
+        if let Some(l) = limit {
+            hits.truncate(l);
         }
     }
     if args.flag("total") {
@@ -122,25 +158,43 @@ pub fn search(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
 
 pub fn search_context(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
     let format = args.format(spec)?;
-    let m = Matcher::new(args.require("query")?, args.flag("case"))?;
+    let query = require_query(args)?;
     let limit = parse_limit(args)?;
-    let root = ctx.root()?.to_path_buf();
     let mut hits: Vec<(String, usize, String)> = Vec::new();
-    'files: for row in search_files(ctx, args)? {
-        let text = match vault_ops::read_text(&root.join(&row.path)) {
-            Ok(t) => t,
-            Err(e) => {
-                ctx.warn(format!("skipped {}: {e}", row.path));
-                continue;
-            }
-        };
-        for (i, line) in text.lines().enumerate() {
-            if m.is_match(line) {
-                if limit.is_some_and(|l| hits.len() >= l) {
-                    break 'files;
+    if let Some(m) = Matcher::regex(query, args.flag("case"))? {
+        let root = ctx.root()?.to_path_buf();
+        'files: for row in regex_files(ctx, args)? {
+            let text = match vault_ops::read_text(&root.join(&row.path)) {
+                Ok(t) => t,
+                Err(e) => {
+                    ctx.warn(format!("skipped {}: {e}", row.path));
+                    continue;
                 }
-                hits.push((row.path.clone(), i + 1, line.trim_end().to_string()));
+            };
+            for (i, line) in text.lines().enumerate() {
+                if m.is_match(line) {
+                    if limit.is_some_and(|l| hits.len() >= l) {
+                        break 'files;
+                    }
+                    hits.push((row.path.clone(), i + 1, line.trim_end().to_string()));
+                }
             }
+        }
+    } else {
+        let found = fts_collect(ctx, args, query, u32::MAX, |h| h.snippets.len(), limit)?;
+        for h in found {
+            if h.stale {
+                ctx.warn(format!(
+                    "{} changed while searching; lines are current",
+                    h.path
+                ));
+            }
+            for s in h.snippets {
+                hits.push((h.path.clone(), s.line as usize, s.text));
+            }
+        }
+        if let Some(l) = limit {
+            hits.truncate(l);
         }
     }
     Ok(if format == "json" {

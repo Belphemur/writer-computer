@@ -4,12 +4,12 @@
 
 use crate::error::AppError;
 use crate::index::{
-    ChangeBatch, FileFilter, FilePage, Index, IndexError, IndexStatus, MetaSelector,
-    MetadataResult, OpenParams,
+    ChangeBatch, FileFilter, FilePage, Index, IndexError, IndexState, IndexStatus, MetaSelector,
+    MetadataResult, OpenParams, SearchOptions, SearchPage,
 };
 use crate::state::{AppState, WorkspaceState};
 use parking_lot::Mutex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -60,6 +60,17 @@ fn ensure_index(
     label: &str,
     state: &Arc<WorkspaceState>,
 ) -> Result<Arc<Index>, AppError> {
+    ensure_index_with(app, label, state, true)
+}
+
+/// [`ensure_index`], optionally without queueing the warm scan (the workspace
+/// bootstrap runs its own scan and waits for it).
+pub(crate) fn ensure_index_with(
+    app: &tauri::AppHandle,
+    label: &str,
+    state: &Arc<WorkspaceState>,
+    scan: bool,
+) -> Result<Arc<Index>, AppError> {
     let (root, epoch) = state.workspace_snapshot().ok_or(AppError::NoWorkspace)?;
     let registry = app.state::<IndexRegistry>();
     let mut entries = registry.entries.lock();
@@ -79,14 +90,20 @@ fn ensure_index(
     let handle = app.clone();
     let event_label = label.to_string();
     let event_root = root.clone();
+    // The name mirror (quick open, recents) follows the same feed as the UI.
+    let names_generation = state.names.reset();
     let on_change = Arc::new(move |batch: ChangeBatch| {
         // Drop batches from a workspace the window has since left.
-        let current = handle
-            .state::<AppState>()
-            .get(&event_label)
-            .and_then(|s| s.workspace_snapshot());
+        let window = handle.state::<AppState>().get(&event_label);
+        let current = window.as_ref().and_then(|s| s.workspace_snapshot());
         if current.as_ref() != Some(&(event_root.clone(), epoch)) {
             return;
+        }
+        if let Some(window) = &window {
+            if let Err(e) = window.names.apply(names_generation, &batch) {
+                log::error!("file-name mirror update failed for window {event_label}: {e}");
+                window.names.mark_stale(names_generation);
+            }
         }
         let payload = IndexChangedEvent {
             root: event_root.to_string_lossy().into_owned(),
@@ -105,7 +122,14 @@ fn ensure_index(
         })
         .map_err(app_err)?,
     );
-    index.start_scan().map_err(app_err)?;
+    state.names.bind(
+        names_generation,
+        index.root().to_path_buf(),
+        index.db_path().to_path_buf(),
+    );
+    if scan {
+        index.start_scan().map_err(app_err)?;
+    }
     entries.insert(
         label.to_string(),
         Entry {
@@ -261,6 +285,41 @@ pub async fn index_get_metadata(
             ),
         };
         index.get_metadata(&selector).map_err(app_err)
+    })
+    .await
+}
+
+/// Full-text search request: the query string plus [`SearchOptions`]
+/// (`folder`, `tags`, `limit`, `offset`, `snippetLen`, `maxSnippets`,
+/// `asYouType`, `caseSensitive`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchRequest {
+    pub query: String,
+    #[serde(flatten)]
+    pub options: SearchOptions,
+}
+
+/// Content search runs over the index: while the cold build is still running
+/// it would silently miss notes, so it fails with the same "still being built"
+/// message the Bases commands use (the UI retries on `index://changed`).
+pub(crate) const INDEX_BUILDING_MESSAGE: &str =
+    "the vault index is still being built; try again when it is ready";
+
+#[tauri::command]
+pub async fn index_search(
+    request: SearchRequest,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<SearchPage, AppError> {
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        if index.status().map_err(app_err)?.state == IndexState::Building {
+            return Err(AppError::Io(INDEX_BUILDING_MESSAGE.into()));
+        }
+        index
+            .search(&request.query, &request.options)
+            .map_err(app_err)
     })
     .await
 }

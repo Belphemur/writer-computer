@@ -148,3 +148,30 @@ export function groupedResult(): BaseQueryResult {
     groups,
   };
 }
+
+/** `groupCount` groups of `perGroup` rows each (group g is "g{g}", rows "Notes/g{g}-{i}.md"). */
+export function manyGroupsResult(
+  groupCount: number,
+  perGroup: number,
+  type = "table",
+): BaseQueryResult {
+  const columns = [column("file.name", "Name"), column("n", "N")];
+  const rows: Row[] = [];
+  const groups: Group[] = [];
+  for (let g = 0; g < groupCount; g++) {
+    groups.push({ key: str(`g${g}`), start: rows.length, len: perGroup, summaries: [null, null] });
+    for (let i = 0; i < perGroup; i++)
+      rows.push({ path: `Notes/g${g}-${i}.md`, cells: [str(`g${g}-${i}`), num(i)] });
+  }
+  return {
+    view: { name: "Table", type, index: 0 },
+    availableViews: ["Table"],
+    columns,
+    rows,
+    groups,
+    summaries: [null, null],
+    totalMatched: rows.length,
+    error: null,
+    warnings: [],
+  };
+}

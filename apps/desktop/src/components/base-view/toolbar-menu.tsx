@@ -22,7 +22,10 @@ export function ToolbarMenu({ label, badge, title, align = "right", children }: 
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // A completion list is portaled out of the panel but belongs to it.
+      if ((target as Element).closest?.("[data-completion-popup]")) return;
+      if (!rootRef.current?.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);

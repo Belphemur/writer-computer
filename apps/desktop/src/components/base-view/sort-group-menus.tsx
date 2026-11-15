@@ -1,6 +1,7 @@
 import { setGroupBy, setSort } from "@/lib/bases/base-yaml";
 import type { BaseSortKey, SortDirection } from "@/lib/bases/types";
 import type { MenuContext } from "./menu-context";
+import { GroupOrderSection } from "./group-order-section";
 import { PropertySelect, useVaultProperties } from "./property-select";
 import { FIELD, SMALL_BUTTON, ToolbarMenu } from "./toolbar-menu";
 
@@ -120,11 +121,12 @@ function GroupBody({ ctx }: { ctx: MenuContext }) {
           }
         />
       ) : null}
+      {group ? <GroupOrderSection ctx={ctx} /> : null}
     </div>
   );
 }
 
-/** Group menu: one `groupBy` property and direction. */
+/** Group menu: one `groupBy` property and direction, and the group order. */
 export function GroupMenu({ ctx }: { ctx: MenuContext }) {
   return (
     <ToolbarMenu label="Group" badge={ctx.view.groupBy ? 1 : null}>

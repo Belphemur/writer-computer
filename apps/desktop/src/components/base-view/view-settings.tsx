@@ -2,6 +2,7 @@ import { useState } from "react";
 import { optionValue, type ValueOption, type ViewOption } from "@/lib/bases/view-options";
 import type { BaseView } from "@/lib/bases/types";
 import type { ViewConfig } from "@/lib/bases/view-registry";
+import { ExpressionInput } from "./expression-input";
 import type { MenuContext } from "./menu-context";
 import { PropertySelect, useVaultProperties } from "./property-select";
 import { FIELD, ToolbarMenu } from "./toolbar-menu";
@@ -66,6 +67,17 @@ function OptionControl({
           onChange={(id) => set(id === "" ? undefined : id)}
         />
       );
+    case "formula":
+      return (
+        <FormulaControl
+          label={label}
+          value={typeof stored === "string" ? stored : ""}
+          placeholder={option.default !== undefined ? String(option.default) : option.placeholder}
+          formulas={ctx.document.formulas}
+          vault={vault}
+          onCommit={(text) => set(text === "" ? undefined : text)}
+        />
+      );
     case "multitext":
       return (
         <TextControl
@@ -92,6 +104,40 @@ function OptionControl({
         />
       );
   }
+}
+
+/** A formula-typed option: an expression field with completion, committed on blur or Enter. */
+function FormulaControl({
+  label,
+  value,
+  placeholder,
+  formulas,
+  vault,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  formulas: Record<string, string>;
+  vault: ReturnType<typeof useVaultProperties>["properties"];
+  onCommit: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const commit = () => draft !== value && onCommit(draft);
+  return (
+    <span className="w-48">
+      <ExpressionInput
+        label={label}
+        value={draft}
+        placeholder={placeholder}
+        vault={vault}
+        formulas={formulas}
+        onChange={setDraft}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+    </span>
+  );
 }
 
 function SliderControl({

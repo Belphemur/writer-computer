@@ -1,11 +1,11 @@
-//! Schema v1, open-or-rebuild.
+//! Schema v2 (v1 + the `notes_fts` full-text table), open-or-rebuild.
 
 use super::IndexError;
 use rusqlite::{Connection, OpenFlags};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
-pub const SCHEMA_VERSION: &str = "1";
+pub const SCHEMA_VERSION: &str = "2";
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
 pub const PARSER_VERSION: &str = "1";
@@ -135,6 +135,7 @@ fn create_fresh(db_path: &Path, root: &str) -> Result<Connection, IndexError> {
     let conn = Connection::open(db_path)?;
     apply_pragmas(&conn)?;
     conn.execute_batch(SCHEMA)?;
+    conn.execute_batch(super::fts::FTS_DDL)?;
     set_meta(&conn, "schema_version", SCHEMA_VERSION)?;
     set_meta(&conn, "parser_version", PARSER_VERSION)?;
     set_meta(&conn, "workspace_root", root)?;

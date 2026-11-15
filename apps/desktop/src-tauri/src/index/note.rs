@@ -1,6 +1,7 @@
 //! Pure markdown note parsing: content in, rows out. No I/O.
 
 use super::frontmatter::{self, ItemRow, PropRow};
+use super::fts::{space_cjk, FtsDoc, FTS_MAX_BODY_BYTES};
 use super::markdown::{self, Heading, ParsedLink, TaskItem};
 use sha2::{Digest, Sha256};
 
@@ -29,6 +30,8 @@ pub struct ParsedNote {
     pub headings: Vec<Heading>,
     pub words: u32,
     pub chars: u32,
+    /// Text columns for the full-text index.
+    pub fts: FtsDoc,
 }
 
 /// Stable 63-bit content hash (first 8 bytes of SHA-256).
@@ -84,7 +87,37 @@ pub fn parse_note(content: &str) -> ParsedNote {
     note.headings = scan.headings;
     note.words = scan.words;
     note.chars = scan.chars;
+    note.fts = fts_doc(&note, body);
     note
+}
+
+/// Full-text columns: the body without frontmatter (frontmatter *values* go
+/// to `props` instead, so keys and YAML punctuation never rank), headings,
+/// tags and property text.
+// `..default()` fills the test-only `skip` field; without it the update has no effect.
+#[allow(clippy::needless_update)]
+fn fts_doc(note: &ParsedNote, body: &str) -> FtsDoc {
+    let join =
+        |parts: &mut dyn Iterator<Item = &str>| space_cjk(&parts.collect::<Vec<_>>().join("\n"));
+    let skipped = body.len() > FTS_MAX_BODY_BYTES;
+    FtsDoc {
+        headings: join(&mut note.headings.iter().map(|h| h.text.as_str())),
+        tags: join(&mut note.tags.iter().map(|t| t.tag.as_str())),
+        props: join(
+            &mut note
+                .props
+                .iter()
+                .filter_map(|p| p.v_text.as_deref())
+                .chain(note.items.iter().filter_map(|i| i.v_text.as_deref())),
+        ),
+        body: if skipped {
+            String::new()
+        } else {
+            space_cjk(body)
+        },
+        body_skipped: skipped,
+        ..FtsDoc::default()
+    }
 }
 
 #[cfg(test)]

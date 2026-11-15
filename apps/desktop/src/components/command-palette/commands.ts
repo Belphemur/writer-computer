@@ -16,6 +16,7 @@ export interface CommandContext {
   close: () => void;
   toggleSidebar: () => void;
   openCreateFile: () => void;
+  openSearchNotes: () => void;
   openFileInCompactWindow: (path: string) => void;
   closeActiveTab: () => void;
   closeAllTabs: () => void;
@@ -64,6 +65,14 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     when: (c) => c.hasWorkspace || (c.isCompactFileMode && c.activeFilePath !== null),
     keepOpen: true,
     run: (c) => c.openCreateFile(),
+  },
+  {
+    id: "search-notes",
+    label: "Search in Notes",
+    description: COMMAND,
+    when: (c) => c.hasWorkspace && !c.isCompactFileMode,
+    keepOpen: true,
+    run: (c) => c.openSearchNotes(),
   },
   {
     id: "open-in-compact-window",
