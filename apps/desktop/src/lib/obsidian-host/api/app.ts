@@ -13,6 +13,7 @@ import {
   type RegisteredCommand,
 } from "./core";
 import { electronModule } from "../node/misc";
+import { registerPluginBasesView } from "./bases-view";
 import { parseYaml, stringifyYaml } from "./functions";
 import type { Modal } from "./ui";
 import { MetadataCache, Vault, type TAbstractFile, type TFile, type VaultIo } from "./vault";
@@ -154,6 +155,11 @@ export class App {
     void this.metadataCache
       .indexAll()
       .catch((e) => console.error("[plugin] metadata indexing failed:", e));
+  }
+
+  /** `Plugin.registerBasesView`: the host side (see `bases-view.ts`). */
+  registerBasesView(pluginId: string, viewId: string, registration: unknown): boolean {
+    return registerPluginBasesView(this, pluginId, viewId, registration);
   }
 
   isDarkMode(): boolean {

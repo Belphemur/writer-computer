@@ -118,9 +118,18 @@ export interface BaseGroupBy {
   direction: SortDirection;
 }
 
+/** A filter tree as in the `.base` file: an expression string or an and/or/not group. */
+export type BaseFilter =
+  | string
+  | { and: BaseFilter[] }
+  | { or: BaseFilter[] }
+  | { not: BaseFilter[] };
+
 export interface BaseView {
   type: string;
   name: string;
+  /** The view's own filters (ANDed with the base-level ones); `null` when absent. */
+  filters: BaseFilter | null;
   groupBy: BaseGroupBy | null;
   sort: BaseSortKey[];
   order: string[] | null;
@@ -139,6 +148,8 @@ export interface BasePropertyConfig {
 
 export interface BaseDocument {
   name: string | null;
+  /** Base-level filters; `null` when absent. */
+  filters: BaseFilter | null;
   formulas: Record<string, string>;
   properties: Record<string, BasePropertyConfig>;
   summaries: Record<string, string>;
@@ -216,4 +227,20 @@ export interface IndexChangedEvent {
   /** Vault-relative paths written or removed. Empty with `full` set. */
   paths: string[];
   full: boolean;
+}
+
+/** One vault property from the index (`index_properties`). */
+export interface VaultProperty {
+  key: string;
+  count: number;
+  types: Record<string, number>;
+}
+
+export interface BaseEvalArgs {
+  expression: string;
+  /** The `this` file (and current row). */
+  thisPath: string;
+  nowOffsetMinutes?: number;
+  /** `.base` source whose `formulas` the expression may reference. */
+  text?: string;
 }

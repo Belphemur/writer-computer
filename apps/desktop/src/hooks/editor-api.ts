@@ -67,6 +67,11 @@ export function openFileInNewTab(path: string) {
   return useEditorStore.getState().openFileInNewTab(path);
 }
 
+/** Open a path as plain text in a new tab even when its kind has its own view (`.base` "Edit YAML"). */
+export function openFileAsTextInNewTab(path: string) {
+  return useEditorStore.getState().openFileAsTextInNewTab(path);
+}
+
 export function removePathReferences(path: string) {
   useEditorStore.getState().removePathReferences(path);
 }

@@ -115,6 +115,34 @@ describe("opening a base in the editor store", () => {
     expect(readFileCalls()).toEqual([]);
   });
 
+  it("opens a .base as text on request (Edit YAML), loading it once and focusing the tab after", async () => {
+    await useEditorStore.getState().openFile("/v/tasks.base");
+    await useEditorStore.getState().openFileAsTextInNewTab("/v/tasks.base");
+    let { tabs, openFiles, activeTabId } = useEditorStore.getState();
+    expect(tabs.map((t) => t.location.kind)).toEqual(["base", "file"]);
+    expect(activeTabId).toBe(tabs[1]!.id);
+    expect(openFiles.get("/v/tasks.base")!.content).toBe("# /v/tasks.base");
+    expect(readFileCalls()).toEqual([{ path: "/v/tasks.base" }]);
+    // A second request focuses the existing text tab instead of opening another.
+    useEditorStore.getState().setActiveTab(tabs[0]!.id);
+    await useEditorStore.getState().openFileAsTextInNewTab("/v/tasks.base");
+    ({ tabs, activeTabId } = useEditorStore.getState());
+    expect(tabs).toHaveLength(2);
+    expect(activeTabId).toBe(tabs[1]!.id);
+  });
+
+  it("restores a text tab of a .base from the session by reading it as text", async () => {
+    await useEditorStore.getState().restoreSession(
+      [
+        { location: { kind: "base", path: "/v/tasks.base" }, back: [], forward: [] },
+        { location: { kind: "file", path: "/v/tasks.base" }, back: [], forward: [] },
+      ],
+      1,
+    );
+    expect([...useEditorStore.getState().openFiles.keys()]).toEqual(["/v/tasks.base"]);
+    expect(readFileCalls()).toEqual([{ path: "/v/tasks.base" }]);
+  });
+
   it("navigates in place between a note and a base, with history, loading only the note", async () => {
     await useEditorStore.getState().openFile("/v/a.md");
     expect(readFileCalls()).toEqual([{ path: "/v/a.md" }]);

@@ -13,6 +13,9 @@ vi.mock("../src/lib/bases/ipc", () => ({
   notePropertySet: vi.fn(),
   notePropertyRemove: vi.fn(),
   onIndexChanged: vi.fn(),
+  baseEval: vi.fn(),
+  indexProperties: vi.fn(),
+  baseWriteText: vi.fn(),
 }));
 
 import { BaseView } from "../src/components/base-view";

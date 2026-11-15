@@ -1,12 +1,9 @@
 import { itemText } from "@/lib/bases/cells";
 import type { Cell, CellValue } from "@/lib/bases/types";
+import type { ViewActions } from "@/lib/bases/view-registry";
 
-export interface CellActions {
-  /** Open a vault file (vault-relative path) in a new main tab. */
-  openFile: (relativePath: string) => void;
-  /** Open the note a wikilink value points to. */
-  openLink: (link: { target: string; resolved: string | null }) => void;
-}
+/** What opening a link or file cell does; the one shape every view takes (`ViewActions`). */
+export type CellActions = ViewActions;
 
 const ERROR_TEXT = "text-[var(--danger,#e5484d)]";
 const LINK_CLASS =

@@ -49,6 +49,7 @@ export function baseView(partial: Partial<BaseView> = {}): BaseView {
   return {
     type: "table",
     name: "Table",
+    filters: null,
     groupBy: null,
     sort: [],
     order: null,
@@ -63,6 +64,7 @@ export function baseView(partial: Partial<BaseView> = {}): BaseView {
 export function baseDocument(partial: Partial<BaseDocument> = {}): BaseDocument {
   return {
     name: null,
+    filters: null,
     formulas: {},
     properties: {},
     summaries: {},

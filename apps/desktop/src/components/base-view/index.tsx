@@ -1,15 +1,36 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { viewNames, viewOfResult } from "@/lib/bases/grid";
-import type { BaseQueryResult } from "@/lib/bases/types";
+import type { BaseDocument, BaseQueryResult } from "@/lib/bases/types";
+import {
+  extraPropertiesOf,
+  getBaseView,
+  listBaseViews,
+  subscribeBaseViews,
+  type BaseViewProps,
+} from "@/lib/bases/view-registry";
 import * as editorApi from "@/hooks/editor-api";
 import { getFileName } from "@/lib/paths";
 import type { BaseLocation } from "@/components/editor-area/page-kinds/base";
-import { BaseTable } from "./base-table";
 import { BaseToolbar } from "./base-toolbar";
+import "./builtin-views";
+import { ConfigMenus } from "./config-menus";
+import { BaseEditsContext } from "./edits-context";
+import type { MenuContext } from "./menu-context";
+import { DomViewHost } from "./plugin-view-host";
+import { UnsupportedView } from "./unsupported-view";
+import { useBaseConfig } from "./use-base-config";
 import { useBaseEdits } from "./use-base-edits";
-import { useBaseQuery } from "./use-base-query";
+import { useBaseQuery, viewIndexOf } from "./use-base-query";
 import { useCellActions } from "./use-cell-actions";
 import { usePendingBaseView } from "./use-pending-view";
+
+/** Property ids the selected view's type needs beyond its `order` (image property, plugin options). */
+function extrasFor(document: BaseDocument | null, viewName: string | undefined): string[] {
+  const index = viewIndexOf(document, viewName);
+  const view = index === null ? undefined : document?.views[index];
+  const entry = view ? getBaseView(view.type) : undefined;
+  return view && entry ? extraPropertiesOf(entry, view) : [];
+}
 
 const DANGER = "text-[var(--danger,#e5484d)]";
 
@@ -96,14 +117,18 @@ export function BaseView({
   isActive: boolean;
   tabId: string;
 }) {
-  const { state, refresh } = useBaseQuery({
+  const { state, refresh, reload } = useBaseQuery({
     path: location.path,
     view: location.view,
     isActive,
+    extras: extrasFor,
   });
   const edits = useBaseEdits({ result: state.result, refresh });
   const actions = useCellActions(edits.notify);
+  const configApi = useBaseConfig({ path: location.path, reload, notify: edits.notify });
   usePendingBaseView(location.path, tabId);
+  // Re-render when a view type is (un)registered, e.g. a plugin is disabled.
+  useSyncExternalStore(subscribeBaseViews, listBaseViews, listBaseViews);
 
   const { document, result } = state;
   const names = useMemo(
@@ -112,8 +137,51 @@ export function BaseView({
     [result, document],
   );
   const view = viewOfResult(document, result);
-  const selected = location.view ?? result?.view.name ?? names[0];
   const title = getFileName(location.path);
+  const viewIndex = result?.view.index ?? null;
+  const viewType = result?.view.type || view?.type || "table";
+  const entry = getBaseView(viewType);
+  const viewConfig = useMemo(
+    () => configApi.viewConfig(viewIndex, view),
+    [configApi, viewIndex, view],
+  );
+  const menuContext: MenuContext | null =
+    document && view && viewIndex !== null
+      ? {
+          path: location.path,
+          tabId,
+          document,
+          view,
+          viewIndex,
+          result,
+          shown: result ? Math.min(state.shown, result.columns.length) : 0,
+          apply: configApi.apply,
+          notify: edits.notify,
+        }
+      : null;
+  const editYaml = () =>
+    editorApi
+      .openFileAsTextInNewTab(location.path)
+      .catch((e) =>
+        edits.notify(
+          "error",
+          `Could not open ${location.path}: ${e instanceof Error ? e.message : String(e)}`,
+        ),
+      );
+  const viewProps: BaseViewProps | null = result
+    ? {
+        path: location.path,
+        result,
+        shown: Math.min(state.shown, result.columns.length),
+        view,
+        viewIndex,
+        document,
+        label: title,
+        actions,
+        config: viewConfig,
+      }
+    : null;
+  const selected = location.view ?? result?.view.name ?? names[0];
   const warnings = useMemo(
     () => [...(document?.warnings ?? []), ...(result?.warnings ?? [])],
     [document, result],
@@ -133,6 +201,8 @@ export function BaseView({
         onSelect={(name) => editorApi.setBaseTabView(tabId, name)}
         counts={result ? { shown: result.rows.length, matched: result.totalMatched } : null}
         querying={state.querying}
+        onEditYaml={editYaml}
+        menus={menuContext ? <ConfigMenus ctx={menuContext} config={viewConfig} /> : null}
       />
       {state.documentError && result?.error?.kind !== "document" ? (
         <ErrorBanner title={`${title} could not be read`}>{state.documentError}</ErrorBanner>
@@ -155,8 +225,16 @@ export function BaseView({
       ) : null}
       {result?.error ? <ViewErrorBanner error={result.error} /> : null}
       <Warnings warnings={warnings} />
-      {result ? (
-        <BaseTable result={result} view={view} edits={edits} actions={actions} label={title} />
+      {viewProps ? (
+        <BaseEditsContext.Provider value={edits}>
+          {!entry ? (
+            <UnsupportedView type={viewType} onEditYaml={editYaml} />
+          ) : entry.Component ? (
+            <entry.Component {...viewProps} />
+          ) : (
+            <DomViewHost entry={entry} props={viewProps} />
+          )}
+        </BaseEditsContext.Provider>
       ) : state.error || state.documentError ? null : (
         <Skeleton />
       )}

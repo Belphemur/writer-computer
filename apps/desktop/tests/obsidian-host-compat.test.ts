@@ -359,9 +359,13 @@ describe("undocumented members plugins feature-detect", () => {
     expect(editor.cm).toBe(fake);
   });
 
-  it("registerBasesView reports not registered", () => {
+  it("registerBasesView registers a valid view once and rejects a malformed one", () => {
     const plugin = new Plugin(makeApp(), { id: "demo", name: "Demo", version: "1.0.0" });
-    expect(plugin.registerBasesView("my-view", { name: "x" })).toBe(false);
+    const registration = { name: "x", icon: "star", factory: () => ({}) };
+    expect(plugin.registerBasesView("compat-view", registration)).toBe(true);
+    expect(plugin.registerBasesView("compat-view", registration)).toBe(false);
+    expect(() => plugin.registerBasesView("other-view", { name: "x" })).toThrow(TypeError);
+    plugin.app.services.sweep("demo");
   });
 });
 

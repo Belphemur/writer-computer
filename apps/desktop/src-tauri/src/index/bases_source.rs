@@ -19,8 +19,10 @@ use super::{Index, IndexError};
 use crate::bases::context::{Clock, FileMeta, RowContext};
 use crate::bases::datetime;
 use crate::bases::document::Document;
+use crate::bases::interp::{FormulaSet, Interp};
 use crate::bases::query::{
-    run_view, BaseQueryResult, CompareOp, Comparison, PushdownHint, QueryOptions, RowSource,
+    run_view, BaseQueryResult, Cell as QueryCell, CompareOp, Comparison, PushdownHint,
+    QueryOptions, RowSource,
 };
 use crate::bases::value::{LinkValue, Value};
 use rusqlite::{params_from_iter, types::Value as SqlValue};
@@ -527,6 +529,34 @@ pub fn run_base_view(
     }
 }
 
+/// Evaluate one expression with `this_path` as both the current row and `this`
+/// (no row exists for a plugin's `getEvaluatedFormula`). `formulas` makes
+/// `formula.x` resolvable. Evaluation failures are error cells, not `Err`;
+/// `Err` is a missing `this` file or a failed index lookup.
+pub fn eval_expression(
+    index: &Arc<Index>,
+    expression: &str,
+    formulas: &[(String, String)],
+    this_path: &str,
+    clock: &dyn Clock,
+) -> Res<QueryCell> {
+    let source = IndexSource::new(
+        Arc::clone(index),
+        clock.utc_offset_minutes(),
+        Some(this_path.to_string()),
+    )?;
+    let this = source.this_row().ok_or_else(|| {
+        IndexError::Invalid(format!("`this` file is not in the index: {this_path}"))
+    })?;
+    let set = FormulaSet::compile(formulas);
+    let interp = Interp::new(clock, &set, Rc::clone(&this), Some(this));
+    let value = interp.eval_source(expression);
+    match source.take_error() {
+        Some(e) => Err(IndexError::Internal(e)),
+        None => Ok(QueryCell::new(value)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -740,6 +770,27 @@ mod tests {
         let after = v.index.cached_backlinks().unwrap();
         assert!(!Arc::ptr_eq(&first, &after));
         assert!(after["Home.md"].contains(&"Newcomer.md".to_string()));
+    }
+
+    #[test]
+    fn eval_expression_uses_this_and_formulas() {
+        let v = vault();
+        let formulas = vec![("twice".to_string(), "priority * 2".to_string())];
+        let c = eval_expression(
+            &v.index,
+            "this.status + \"!\"",
+            &[],
+            "Projects/Plan.md",
+            &clock(),
+        )
+        .unwrap();
+        assert_eq!(c.display, "active!");
+        let c =
+            eval_expression(&v.index, "1 + 2", &formulas, "Projects/Plan.md", &clock()).unwrap();
+        assert_eq!(c.display, "3");
+        let bad = eval_expression(&v.index, "nope(1)", &[], "Projects/Plan.md", &clock()).unwrap();
+        assert!(matches!(bad.value, Value::Error(_)));
+        assert!(eval_expression(&v.index, "1", &[], "Missing.md", &clock()).is_err());
     }
 
     #[test]

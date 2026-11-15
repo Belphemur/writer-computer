@@ -9,7 +9,7 @@ use crate::bases::context::SystemClock;
 use crate::bases::document::Document;
 use crate::bases::query::BaseQueryResult;
 use crate::error::AppError;
-use crate::index::bases_source::run_base_view;
+use crate::index::bases_source::{eval_expression, run_base_view};
 use crate::index::patch::{self, ValueType};
 use crate::index::{FileFilter, Index, IndexState};
 use crate::vault_ops::{self, Confined, VaultOpError};
@@ -191,6 +191,42 @@ pub async fn base_query_text(
             thisPath.as_deref(),
             nowOffsetMinutes,
         )
+    })
+    .await
+}
+
+/// Evaluate one expression with `thisPath` as the current row and `this`
+/// (plugin `getEvaluatedFormula`). `text` is the `.base` source whose
+/// `formulas` the expression may reference. Returns the tagged value (`Cell`
+/// shape); an evaluation failure is a value of type `error`.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn base_eval(
+    expression: String,
+    thisPath: String,
+    nowOffsetMinutes: Option<i32>,
+    text: Option<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<crate::bases::query::Cell, AppError> {
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        ensure_ready(&index)?;
+        let this = vault_ops::confine(index.root(), &thisPath)
+            .map_err(op_err)?
+            .rel;
+        let formulas = match text {
+            Some(t) => {
+                Document::parse(&t)
+                    .map_err(|e| AppError::Io(e.to_string()))?
+                    .formulas
+            }
+            None => Vec::new(),
+        };
+        let clock = SystemClock {
+            offset_minutes: nowOffsetMinutes.unwrap_or(0),
+        };
+        eval_expression(&index, &expression, &formulas, &this, &clock).map_err(app_err)
     })
     .await
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getWorkspaceEventIdentity, getWorkspaceRoot } from "@/hooks/workspace-api";
 import { indexChangeEffect, type IndexChangeEffect } from "@/lib/bases/events";
-import { baseQuery, baseRead, onIndexChanged } from "@/lib/bases/ipc";
+import { extraColumnsToAdd, withExtraColumns } from "@/lib/bases/base-yaml";
+import { baseQuery, baseQueryText, baseRead, onIndexChanged } from "@/lib/bases/ipc";
 import { toRelativePath } from "@/lib/bases/paths";
 import type { BaseDocument, BaseQueryResult, IndexChangedEvent } from "@/lib/bases/types";
 import { isWorkspaceEventCurrent } from "@/lib/workspace-events";
@@ -16,6 +17,10 @@ export interface BaseQueryState {
   documentError: string | null;
   /** The raw text of a `.base` that does not parse, shown with the error. */
   rawText: string | null;
+  /** The raw text of the `.base` as last read (parsed or not); `null` until read. */
+  text: string | null;
+  /** Leading columns of `result` that are the view's own (the rest were added for its needs). */
+  shown: number;
   /** The latest query result; kept while a refresh runs so the table does not flash. */
   result: BaseQueryResult | null;
   /** Why the latest query call failed (not the view's own error state, which is in `result`). */
@@ -30,6 +35,8 @@ const INITIAL: BaseQueryState = {
   document: null,
   documentError: null,
   rawText: null,
+  text: null,
+  shown: 0,
   result: null,
   error: null,
   querying: false,
@@ -68,6 +75,22 @@ interface Params {
   /** Selected view name; the first view when `undefined`. */
   view: string | undefined;
   isActive: boolean;
+  /**
+   * Property ids the selected view needs values for beyond its `order` (an image property, a
+   * plugin's property options). Pure; called with the latest document at query time.
+   */
+  extras: (document: BaseDocument | null, view: string | undefined) => string[];
+}
+
+/** Index of the selected view in the document (`null` for a base without views). */
+export function viewIndexOf(
+  document: BaseDocument | null,
+  view: string | undefined,
+): number | null {
+  if (!document || document.views.length === 0) return null;
+  if (view === undefined) return 0;
+  const i = document.views.findIndex((v) => v.name === view);
+  return i < 0 ? null : i;
 }
 
 /**
@@ -76,23 +99,34 @@ interface Params {
  * `index://changed` batches that matter requery after a short debounce; an inactive (kept-alive)
  * tab only marks itself stale and refreshes when it becomes active again.
  */
-export function useBaseQuery({ path, view, isActive }: Params) {
+export function useBaseQuery({ path, view, isActive, extras }: Params) {
   const [state, setState] = useState<BaseQueryState>(INITIAL);
   const queryCounter = useRef(0);
   const documentCounter = useRef(0);
   const waiters = useRef<(() => void)[]>([]);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stale = useRef<IndexChangeEffect>("none");
-  const latest = useRef({ path, view, isActive, result: null as BaseQueryResult | null });
+  const latest = useRef({
+    path,
+    view,
+    isActive,
+    extras,
+    result: null as BaseQueryResult | null,
+    document: null as BaseDocument | null,
+    text: null as string | null,
+  });
 
   useEffect(() => {
     latest.current.path = path;
     latest.current.view = view;
     latest.current.isActive = isActive;
+    latest.current.extras = extras;
   });
   useEffect(() => {
     latest.current.result = state.result;
-  }, [state.result]);
+    latest.current.document = state.document;
+    latest.current.text = state.text;
+  }, [state.result, state.document, state.text]);
 
   const settle = useCallback(() => {
     const pending = waiters.current;
@@ -105,14 +139,29 @@ export function useBaseQuery({ path, view, isActive }: Params) {
     const id = ++queryCounter.current;
     setState((s) => (s.querying ? s : { ...s, querying: true }));
     try {
-      const result = await baseQuery({
-        path: queryPath,
+      const common = {
         ...(queryView !== undefined ? { view: queryView } : {}),
         thisPath: queryPath,
         nowOffsetMinutes: -new Date().getTimezoneOffset(),
-      });
+      };
+      // A view that needs values it does not show queries the file's text with those properties
+      // appended to its `order` (in memory only; the file is never touched).
+      const { document, text } = latest.current;
+      const wanted = text !== null ? latest.current.extras(document, queryView) : [];
+      const index = viewIndexOf(document, queryView);
+      const fallback = ["file.name"];
+      const current = index !== null ? (document?.views[index]?.order ?? fallback) : fallback;
+      const add = wanted.length > 0 && index !== null ? extraColumnsToAdd(current, wanted) : [];
+      const result =
+        add.length > 0
+          ? await baseQueryText({
+              ...common,
+              text: withExtraColumns(text!, index, add, fallback),
+            })
+          : await baseQuery({ path: queryPath, ...common });
       if (id !== queryCounter.current) return;
-      setState((s) => ({ ...s, result, error: null, querying: false }));
+      const shown = result.columns.length - (result.error ? 0 : add.length);
+      setState((s) => ({ ...s, result, shown, error: null, querying: false }));
       settle();
     } catch (e) {
       if (id !== queryCounter.current) return;
@@ -132,15 +181,27 @@ export function useBaseQuery({ path, view, isActive }: Params) {
           document: null,
           documentError: read.error ?? "The .base file could not be parsed",
           rawText: read.text,
+          text: read.text,
         }));
       } else {
-        setState((s) => ({ ...s, document: read.document, documentError: null, rawText: null }));
+        // Publish the document and text to the query's latest-ref first: a view that needs extra
+        // columns requeries with them as soon as its document is known.
+        latest.current.document = read.document;
+        latest.current.text = read.text;
+        setState((s) => ({
+          ...s,
+          document: read.document,
+          text: read.text,
+          documentError: null,
+          rawText: null,
+        }));
+        if (latest.current.extras(read.document, latest.current.view).length > 0) void runQuery();
       }
     } catch (e) {
       if (id !== documentCounter.current) return;
       setState((s) => ({ ...s, documentError: errorMessage(e) }));
     }
-  }, []);
+  }, [runQuery]);
 
   const flush = useCallback(() => {
     const effect = stale.current;
@@ -213,5 +274,11 @@ export function useBaseQuery({ path, view, isActive }: Params) {
     return done;
   }, [runQuery]);
 
-  return { state, refresh };
+  /** Re-read the document and requery. Resolves when the new query has landed (or failed). */
+  const reload = useCallback(async (): Promise<void> => {
+    await loadDocument();
+    await refresh();
+  }, [loadDocument, refresh]);
+
+  return { state, refresh, reload };
 }

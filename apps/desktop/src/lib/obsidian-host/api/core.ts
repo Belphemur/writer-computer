@@ -7,6 +7,7 @@
 import { createEl } from "./dom";
 import { setIcon } from "./functions";
 import type { App } from "./app";
+import { unregisterBaseViewsOwnedBy } from "@/lib/bases/view-registry";
 
 // ---------------------------------------------------------------- Events
 
@@ -541,6 +542,7 @@ export function createHostServices(data: PluginDataStore): HostServices {
       statusBar.removeOwner(owner);
       settingTabs.removeOwner(owner);
       registrations.removeOwner(owner);
+      unregisterBaseViewsOwnedBy(owner);
       for (const fn of sweepers) {
         try {
           fn(owner);
@@ -675,9 +677,13 @@ export class Plugin extends Component {
   registerCliHandler(command: string, ...rest: unknown[]): void {
     this.record("cliHandler", command, rest);
   }
-  /** Bases views are not supported; Obsidian documents `false` as the "not registered" result. */
-  registerBasesView(_viewId: string, _registration: unknown): boolean {
-    return false;
+  /**
+   * Registers a Bases view type (`{name, icon, factory, options}`) in the host's one view
+   * registry. Returns `false` when the type id is already taken; a malformed registration throws.
+   * Removed with the plugin (swept on disable).
+   */
+  registerBasesView(viewId: string, registration: unknown): boolean {
+    return this.app.registerBasesView(this.manifest.id, viewId, registration);
   }
 
   private dataQueue: Promise<void> = Promise.resolve();

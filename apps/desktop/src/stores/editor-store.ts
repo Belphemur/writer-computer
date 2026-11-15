@@ -60,6 +60,8 @@ interface EditorState {
   openFile: (path: string) => Promise<void>;
   openCompactFile: (path: string, prefetched?: FileContent | null) => Promise<void>;
   openFileInNewTab: (path: string) => Promise<void>;
+  /** Open a path as plain text in a new tab even when its kind has its own view (`.base`). */
+  openFileAsTextInNewTab: (path: string) => Promise<void>;
   openNewTab: () => void;
   ensureLauncherTab: () => void;
   openOrFocus: (match: (tab: Tab) => boolean, factory: () => Tab) => void;
@@ -149,8 +151,9 @@ const EMPTY_STATS: DocumentStats = { words: 0, characters: 0, paragraphs: 0 };
 function withLoadingEntry(
   files: Map<string, OpenFile>,
   path: string,
+  asText = false,
 ): Map<string, OpenFile> | undefined {
-  if (files.has(path) || !opensAsDocument(path)) return undefined;
+  if (files.has(path) || !(asText || opensAsDocument(path))) return undefined;
   return new Map(files).set(path, createLoadingFile(path));
 }
 
@@ -300,8 +303,17 @@ function applyRewriteToTab(tab: Tab, rewrite: (loc: Location) => Location | null
   return { ...tab, location: newLocation, back, forward };
 }
 
+/** Is `path` a document: opened as text by default, or held by a `file` location of some tab
+ *  (a `.base` opened with "Edit YAML" is a text document in that tab). */
+function needsDocument(path: string, tabs: readonly Tab[]): boolean {
+  if (opensAsDocument(path)) return true;
+  return tabs.some((tab) =>
+    [tab.location, ...tab.back, ...tab.forward].some((l) => l.kind === "file" && l.path === path),
+  );
+}
+
 async function ensureFileLoaded(path: string, set: EditorStateSetter, get: () => EditorState) {
-  if (!opensAsDocument(path)) return;
+  if (!needsDocument(path, get().tabs)) return;
   const existing = get().openFiles.get(path);
   if (existing && !existing.isLoading) return;
 
@@ -488,6 +500,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     });
 
+    try {
+      await ensureFileLoaded(path, set as EditorStateSetter, get);
+    } catch {
+      get().closeTab(nextTab.id);
+      throw new Error(`Failed to open ${path}`);
+    }
+  },
+
+  openFileAsTextInNewTab: async (path: string) => {
+    const existing = get().tabs.find(
+      (tab) => tab.location.kind === "file" && tab.location.path === path,
+    );
+    if (existing) {
+      get().setActiveTab(existing.id);
+      return;
+    }
+    const nextTab: Tab = {
+      id: createTabId(),
+      location: { kind: "file", path },
+      back: [],
+      forward: [],
+    };
+    set((state) => {
+      const openFiles = withLoadingEntry(state.openFiles, path, true);
+      return {
+        tabs: [...state.tabs, nextTab],
+        activeTabId: nextTab.id,
+        activeFilePath: path,
+        ...(openFiles ? { openFiles } : {}),
+      };
+    });
     try {
       await ensureFileLoaded(path, set as EditorStateSetter, get);
     } catch {
@@ -1073,7 +1116,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const files = new Map(state.openFiles);
       for (const path of uniquePaths) {
-        if (!files.has(path) && opensAsDocument(path)) files.set(path, createLoadingFile(path));
+        if (!files.has(path) && needsDocument(path, restoredTabs))
+          files.set(path, createLoadingFile(path));
       }
       if (seededActive && activePath) {
         files.set(activePath, seededActive);

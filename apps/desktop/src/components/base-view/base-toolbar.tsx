@@ -9,6 +9,10 @@ interface Props {
   /** Rows shown and rows that matched before `limit`; `null` while there is no result. */
   counts: { shown: number; matched: number } | null;
   querying: boolean;
+  /** The config menus (view, results, sort, ...), shown before the count. */
+  menus?: React.ReactNode;
+  /** Open the `.base` in the plain text editor. */
+  onEditYaml: () => void;
 }
 
 export function resultsLabel(counts: { shown: number; matched: number }): string {
@@ -19,7 +23,15 @@ export function resultsLabel(counts: { shown: number; matched: number }): string
 }
 
 /** View tabs on the left, the result count and a refresh indicator on the right. */
-export function BaseToolbar({ viewNames, selected, onSelect, counts, querying }: Props) {
+export function BaseToolbar({
+  viewNames,
+  selected,
+  onSelect,
+  counts,
+  querying,
+  menus,
+  onEditYaml,
+}: Props) {
   const tabsRef = useRef<HTMLDivElement>(null);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -70,6 +82,16 @@ export function BaseToolbar({ viewNames, selected, onSelect, counts, querying }:
           );
         })}
       </div>
+      {menus}
+      <button
+        type="button"
+        data-edit-yaml
+        title="Open the .base file as text"
+        onClick={onEditYaml}
+        className="shrink-0 cursor-pointer rounded-md bg-transparent px-2 py-1 text-[12px] text-text-muted hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
+      >
+        Edit YAML
+      </button>
       <div className="flex shrink-0 items-center gap-2 text-[12px] text-text-muted">
         {querying ? (
           <span data-base-refreshing role="status" aria-label="Refreshing">

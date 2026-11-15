@@ -215,6 +215,20 @@ pub async fn index_status(
     .await
 }
 
+/// Every frontmatter property name in the vault with its note count and value
+/// types (`[{key, count, types}]`), for the Bases property pickers.
+#[tauri::command]
+pub async fn index_properties(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::index::PropertyCount>, AppError> {
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        index.properties().map_err(app_err)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn index_query_files(
     filter: FileFilter,

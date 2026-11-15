@@ -4,15 +4,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  BaseEvalArgs,
   BaseFileEntry,
   BaseQueryArgs,
   BaseQueryResult,
+  Cell,
   BaseQueryTextArgs,
   BaseReadResult,
   IndexChangedEvent,
   NoteProperties,
   NotePropertyRemoveArgs,
   NotePropertySetArgs,
+  VaultProperty,
 } from "./types";
 
 export function baseList(): Promise<BaseFileEntry[]> {
@@ -46,4 +49,22 @@ export function notePropertyRemove(args: NotePropertyRemoveArgs): Promise<void> 
 /** Subscribe to the vault index's change batches. Resolves to the unsubscribe function. */
 export function onIndexChanged(handler: (event: IndexChangedEvent) => void): Promise<UnlistenFn> {
   return listen<IndexChangedEvent>("index://changed", (event) => handler(event.payload));
+}
+
+/** Evaluate one expression with `thisPath` as the current row and `this`. */
+export function baseEval(args: BaseEvalArgs): Promise<Cell> {
+  return invoke("base_eval", { ...args });
+}
+
+/** Every frontmatter property of the vault, for the property pickers. */
+export function indexProperties(): Promise<VaultProperty[]> {
+  return invoke("index_properties");
+}
+
+/**
+ * Write the raw text of a `.base` (the app's one file write path: atomic, recorded as the app's
+ * own write so the watcher does not report it back as an external change).
+ */
+export function baseWriteText(path: string, content: string): Promise<unknown> {
+  return invoke("write_file", { path, content });
 }

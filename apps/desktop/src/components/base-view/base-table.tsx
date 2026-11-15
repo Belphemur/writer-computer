@@ -12,6 +12,8 @@ import {
 } from "@/lib/bases/grid";
 import type { EditKind } from "@/lib/bases/cells";
 import type { BaseQueryResult, BaseView, Cell, Column } from "@/lib/bases/types";
+import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from "@/lib/bases/grid";
+import type { ViewConfig } from "@/lib/bases/view-registry";
 import { CellEditor } from "./cell-editor";
 import { CellView, type CellActions } from "./cell-view";
 import type { CellRange, useBaseEdits } from "./use-base-edits";
@@ -49,7 +51,14 @@ interface Props {
   view: BaseView | undefined;
   edits: Edits;
   actions: CellActions;
+  config: ViewConfig;
   label: string;
+}
+
+/** Widths dragged by the user, valid until the view they were dragged on changes (a reload). */
+interface WidthOverrides {
+  view: BaseView | undefined;
+  widths: ReadonlyMap<string, number>;
 }
 
 function itemKey(item: GridItem): string {
@@ -163,11 +172,11 @@ const GridCell = memo(function GridCell(p: GridCellProps) {
 });
 
 /**
- * The virtualized, editable grid of one query result. Display-only header (sort and group markers
- * come from the view), keyboard navigation with the focus kept on the grid element and
+ * The virtualized, editable grid of one query result. Header clicks and column drags go to
+ * `config` (they persist into the `.base`); sort and group markers come from the view. Keyboard navigation with the focus kept on the grid element and
  * `aria-activedescendant` pointing at the current cell (cells come and go with the window).
  */
-export function BaseTable({ result, view, edits, actions, label }: Props) {
+export function BaseTable({ result, view, edits, actions, config, label }: Props) {
   const gridId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -176,7 +185,12 @@ export function BaseTable({ result, view, edits, actions, label }: Props) {
 
   const { probeRow, beginEdit: beginCellEdit, toggleCheckbox, notify } = edits;
   const { columns, rows } = result;
-  const widths = useMemo(() => columnWidths(columns, view), [columns, view]);
+  const [dragged, setDragged] = useState<WidthOverrides>({ view, widths: new Map() });
+  const baseWidths = useMemo(() => columnWidths(columns, view), [columns, view]);
+  const widths = useMemo(() => {
+    if (dragged.view !== view) return baseWidths;
+    return baseWidths.map((w, i) => dragged.widths.get(columns[i]!.key) ?? w);
+  }, [baseWidths, dragged, view, columns]);
   const totalWidth = useMemo(() => widths.reduce((a, b) => a + b, 0), [widths]);
   const rowHeight = rowHeightPx(view);
   const markers = useMemo(() => sortIndicators(view), [view]);
@@ -514,9 +528,17 @@ export function BaseTable({ result, view, edits, actions, label }: Props) {
                     : `${column.displayName} (${column.key})`
                 }
                 style={{ width: widths[c] }}
-                className="flex shrink-0 items-center gap-1 overflow-hidden border-r border-[var(--line-subtler)] px-2 text-[12px] font-medium text-text-secondary"
+                className="relative flex shrink-0 items-center gap-1 overflow-hidden border-r border-[var(--line-subtler)] px-2 text-[12px] font-medium text-text-secondary"
               >
-                <span className="truncate">{column.displayName}</span>
+                <button
+                  type="button"
+                  data-sort-toggle
+                  aria-label={`Sort by ${column.displayName}`}
+                  onClick={(e) => config.cycleSort(column.id, e.shiftKey)}
+                  className="min-w-0 flex-1 cursor-pointer truncate bg-transparent p-0 text-left text-[12px] font-medium text-text-secondary hover:text-text-primary"
+                >
+                  {column.displayName}
+                </button>
                 {indicator ? (
                   <span aria-hidden="true" data-sort-indicator className="text-text-muted">
                     {indicator.direction === "ASC" ? "↑" : "↓"}
@@ -528,6 +550,41 @@ export function BaseTable({ result, view, edits, actions, label }: Props) {
                     grouped
                   </span>
                 ) : null}
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={`Resize ${column.displayName}`}
+                  data-resize-handle
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    const startX = e.clientX;
+                    const startWidth = widths[c]!;
+                    const target = e.currentTarget;
+                    target.setPointerCapture?.(e.pointerId);
+                    let width = startWidth;
+                    const move = (ev: PointerEvent) => {
+                      width = Math.min(
+                        MAX_COLUMN_WIDTH,
+                        Math.max(MIN_COLUMN_WIDTH, Math.round(startWidth + ev.clientX - startX)),
+                      );
+                      setDragged((d) => ({
+                        view,
+                        widths: new Map(d.view === view ? d.widths : []).set(column.key, width),
+                      }));
+                    };
+                    const up = () => {
+                      target.removeEventListener("pointermove", move);
+                      target.removeEventListener("pointerup", up);
+                      target.removeEventListener("pointercancel", up);
+                      if (width !== startWidth) config.setColumnWidth(column.id, width);
+                    };
+                    target.addEventListener("pointermove", move);
+                    target.addEventListener("pointerup", up);
+                    target.addEventListener("pointercancel", up);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-[var(--focus-border)]"
+                />
               </div>
             );
           })}
