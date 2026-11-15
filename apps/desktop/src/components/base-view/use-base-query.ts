@@ -2,13 +2,37 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getWorkspaceEventIdentity, getWorkspaceRoot } from "@/hooks/workspace-api";
 import { indexChangeEffect, type IndexChangeEffect } from "@/lib/bases/events";
 import { extraColumnsToAdd, withExtraColumns } from "@/lib/bases/base-yaml";
-import { baseQuery, baseQueryText, baseRead, onIndexChanged } from "@/lib/bases/ipc";
+import { baseParseText, baseQuery, baseQueryText, baseRead, onIndexChanged } from "@/lib/bases/ipc";
 import { toRelativePath } from "@/lib/bases/paths";
-import type { BaseDocument, BaseQueryResult, IndexChangedEvent } from "@/lib/bases/types";
+import type {
+  BaseDocument,
+  BaseQueryResult,
+  BaseReadResult,
+  IndexChangedEvent,
+} from "@/lib/bases/types";
 import { isWorkspaceEventCurrent } from "@/lib/workspace-events";
 
 /** Quiet period after the last relevant index change before the view requeries. */
 export const REQUERY_DEBOUNCE_MS = 200;
+
+/**
+ * Where the base comes from: a `.base` file (the tab and `![[x.base]]` embeds) or YAML text that
+ * is not a file (a fenced `base` block, evaluated with `base_query_text`).
+ */
+export type BaseSource = { kind: "file"; path: string } | { kind: "text"; text: string };
+
+/** Quiet period after the last edit of inline YAML before it is parsed and queried again. */
+export const TEXT_DEBOUNCE_MS = 250;
+
+const sourceKeyOf = (source: BaseSource): string =>
+  source.kind === "file" ? `file:${source.path}` : "text";
+
+/** The document read of a source (`base_read` for a file, `base_parse_text` for inline YAML). */
+async function readSource(source: BaseSource): Promise<BaseReadResult> {
+  if (source.kind === "file") return baseRead(source.path);
+  const parsed = await baseParseText(source.text);
+  return { text: source.text, document: parsed.document, error: parsed.error };
+}
 
 export interface BaseQueryState {
   /** The parsed `.base` (views, display names, column sizes); `null` until read. */
@@ -70,8 +94,12 @@ function rowPathsOf(result: BaseQueryResult | null): ReadonlySet<string> {
 }
 
 interface Params {
-  /** Absolute path of the `.base`. */
-  path: string;
+  source: BaseSource;
+  /**
+   * The `this` file (absolute path). Defaults to the `.base` itself for a file source; an
+   * embed passes the embedding note (spec 2.2), and a text source has no default.
+   */
+  thisPath?: string;
   /** Selected view name; the first view when `undefined`. */
   view: string | undefined;
   isActive: boolean;
@@ -94,12 +122,13 @@ export function viewIndexOf(
 }
 
 /**
- * Loads a `.base` document and its query result and keeps them current. Every request carries a
+ * Loads a base document and its query result and keeps them current. Every request carries a
  * counter and only the latest one may land (a slow stale response never overwrites a newer one).
  * `index://changed` batches that matter requery after a short debounce; an inactive (kept-alive)
  * tab only marks itself stale and refreshes when it becomes active again.
  */
-export function useBaseQuery({ path, view, isActive, extras }: Params) {
+export function useBaseQuery({ source, thisPath, view, isActive, extras }: Params) {
+  const sourceKey = sourceKeyOf(source);
   const [state, setState] = useState<BaseQueryState>(INITIAL);
   const queryCounter = useRef(0);
   const documentCounter = useRef(0);
@@ -107,7 +136,8 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stale = useRef<IndexChangeEffect>("none");
   const latest = useRef({
-    path,
+    source,
+    thisPath,
     view,
     isActive,
     extras,
@@ -117,7 +147,8 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
   });
 
   useEffect(() => {
-    latest.current.path = path;
+    latest.current.source = source;
+    latest.current.thisPath = thisPath;
     latest.current.view = view;
     latest.current.isActive = isActive;
     latest.current.extras = extras;
@@ -135,18 +166,20 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
   }, []);
 
   const runQuery = useCallback(async () => {
-    const { path: queryPath, view: queryView } = latest.current;
+    const { source: querySource, thisPath: queryThis, view: queryView } = latest.current;
     const id = ++queryCounter.current;
     setState((s) => (s.querying ? s : { ...s, querying: true }));
     try {
+      const thisFile = queryThis ?? (querySource.kind === "file" ? querySource.path : undefined);
       const common = {
         ...(queryView !== undefined ? { view: queryView } : {}),
-        thisPath: queryPath,
+        ...(thisFile !== undefined ? { thisPath: thisFile } : {}),
         nowOffsetMinutes: -new Date().getTimezoneOffset(),
       };
       // A view that needs values it does not show queries the file's text with those properties
       // appended to its `order` (in memory only; the file is never touched).
-      const { document, text } = latest.current;
+      const { document } = latest.current;
+      const text = querySource.kind === "text" ? querySource.text : latest.current.text;
       const wanted = text !== null ? latest.current.extras(document, queryView) : [];
       const index = viewIndexOf(document, queryView);
       const fallback = ["file.name"];
@@ -158,7 +191,9 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
               ...common,
               text: withExtraColumns(text!, index, add, fallback),
             })
-          : await baseQuery({ path: queryPath, ...common });
+          : querySource.kind === "file"
+            ? await baseQuery({ path: querySource.path, ...common })
+            : await baseQueryText({ ...common, text: querySource.text });
       if (id !== queryCounter.current) return;
       const shown = result.columns.length - (result.error ? 0 : add.length);
       setState((s) => ({ ...s, result, shown, error: null, querying: false }));
@@ -173,7 +208,7 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
   const loadDocument = useCallback(async () => {
     const id = ++documentCounter.current;
     try {
-      const read = await baseRead(latest.current.path);
+      const read = await readSource(latest.current.source);
       if (id !== documentCounter.current) return;
       if (read.document === null || read.error !== null) {
         setState((s) => ({
@@ -211,18 +246,34 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
     void runQuery();
   }, [loadDocument, runQuery]);
 
-  // New file: reset and load everything. New view: requery only.
-  const loadedPath = useRef<string | null>(null);
+  // New source: reset and load everything. New view: requery only.
+  const loadedSource = useRef<string | null>(null);
+  const loadedText = useRef<string | null>(null);
   useEffect(() => {
-    if (loadedPath.current !== path) {
-      loadedPath.current = path;
+    if (loadedSource.current !== sourceKey) {
+      loadedSource.current = sourceKey;
+      loadedText.current =
+        latest.current.source.kind === "text" ? latest.current.source.text : null;
       queryCounter.current++;
       documentCounter.current++;
       setState((s) => ({ ...INITIAL, liveError: s.liveError }));
       void loadDocument();
     }
     void runQuery();
-  }, [path, view, loadDocument, runQuery]);
+  }, [sourceKey, view, loadDocument, runQuery]);
+
+  // Inline YAML edited in place: parse and query again after a quiet period (the source block is
+  // being typed; one request per keystroke would flood the backend).
+  const inlineText = source.kind === "text" ? source.text : null;
+  useEffect(() => {
+    if (inlineText === null || loadedText.current === inlineText) return;
+    const timer = setTimeout(() => {
+      loadedText.current = inlineText;
+      void loadDocument();
+      void runQuery();
+    }, TEXT_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [inlineText, loadDocument, runQuery]);
 
   // Live updates: register once, read current state at event time.
   useEffect(() => {
@@ -233,7 +284,9 @@ export function useBaseQuery({ path, view, isActive, extras }: Params) {
       if (!root || !isWorkspaceEventCurrent(event, getWorkspaceEventIdentity())) return;
       const effect = indexChangeEffect(
         event,
-        toRelativePath(root, latest.current.path),
+        latest.current.source.kind === "file"
+          ? toRelativePath(root, latest.current.source.path)
+          : null,
         rowPathsOf(latest.current.result),
       );
       if (effect === "none") return;

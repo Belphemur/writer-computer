@@ -10,6 +10,7 @@ import type {
   BaseQueryResult,
   Cell,
   BaseQueryTextArgs,
+  BaseParsedResult,
   BaseReadResult,
   IndexChangedEvent,
   NoteProperties,
@@ -24,6 +25,11 @@ export function baseList(): Promise<BaseFileEntry[]> {
 
 export function baseRead(path: string): Promise<BaseReadResult> {
   return invoke("base_read", { path });
+}
+
+/** Parse `.base` text that is not a file (an embedded ```base block). Never rejects for bad YAML. */
+export function baseParseText(text: string): Promise<BaseParsedResult> {
+  return invoke("base_parse_text", { text });
 }
 
 export function baseQuery(args: BaseQueryArgs): Promise<BaseQueryResult> {

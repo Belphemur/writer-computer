@@ -99,6 +99,9 @@ const DRAG_END_USER_EVENT = "select.pointer.drag-end";
  * gate and the matching `pointerup` would dispatch a spurious drag-end
  * selection transaction into the outer editor.
  */
+// Widgets that own every pointer interaction inside them (docs/editor.md).
+const SELF_HANDLING_WIDGETS = [".cm-mermaid-widget", ".cm-base-embed"];
+
 function shouldStartDragGate(
   state: EditorState,
   event: { isPrimary: boolean; button: number; target: EventTarget | null },
@@ -108,8 +111,8 @@ function shouldStartDragGate(
   // testable in a node environment (jsdom isn't pulled in for the unit suite).
   // Production targets always satisfy the duck check.
   const target = event.target as { closest?: (sel: string) => Element | null } | null;
-  if (target && typeof target.closest === "function" && target.closest(".cm-mermaid-widget")) {
-    return null;
+  if (target && typeof target.closest === "function") {
+    for (const widget of SELF_HANDLING_WIDGETS) if (target.closest(widget)) return null;
   }
   if (state.field(dragFrozenSelectionField, false) !== null) return null;
   return { effects: startDragEffect.of(state.selection.ranges) };

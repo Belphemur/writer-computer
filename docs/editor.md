@@ -220,10 +220,15 @@ A `view.dispatch` with a new selection does not scroll unless the transaction sa
 
 A `transactionFilter` returning `[tr, { selection }]` adds a spec whose positions are read in the **start** document unless the spec has `sequential: true`. A clamped selection computed from `tr.newSelection` is in the new document, so without the flag CodeMirror maps it through the changes a second time and throws a `RangeError` as soon as the doc grew (the heading-hash selection guard, since removed, dropped every heading-shortcut transaction this way).
 
+## Block widgets that host a React root
+
+`base-embed-decorations.ts` mounts `createRoot` per widget. Rules it learned: unmount from `destroy` in a `queueMicrotask` (CodeMirror can destroy a view inside a React commit, where a synchronous `root.unmount()` is refused); keep identity to what is rendered so unrelated typing never remounts, and use `updateDOM` (returning true) so a changed source re-renders the same root; give a block widget `side: 1` when it should sit below its source line (the default is above it); use padding, not margin, on the widget root (CodeMirror measures its box, not its margins); remember the settled height per widget and call `view.requestMeasure()` from a `ResizeObserver`. A wiki embed is not a syntax node, so find it as a top-level `Paragraph` whose single line matches, which also excludes frontmatter, code and comments for free.
+
 ## File map
 
 - `mermaid-decorations.ts` — canonical replace-only block widget with in-widget editing. Reference for live position lookup (`findEnclosingFencedCode`) and writing the fence back from a nested editor.
 - `mermaid-renderer.ts` — `renderMermaid`, the one call into Pele: render options, DOMPurify, LRU cache, error messages. `mermaid-canvas.css` holds the `--pele-*` theme mapping.
+- `base-embed-decorations.ts` — conditional replace <-> widget block widget hosting a React root (`EmbeddedBase`); `fenced-code.ts` is the shared fence parser.
 - `fold/image.ts` — canonical conditional replace ↔ widget, plus the measured-height cache for async-loading content.
 - `table-decorations.ts` — canonical conditional replace ↔ source-line styling; uses `selectAllDecorationsOnSelectExtension` for click-to-select.
 - `prosemark-core/codeFenceScroll.ts` — `codeBlockScrollField` / `setCodeBlockScroll` / `codeBlockAt`, the one place a code block's horizontal offset is stored and driven (wheel, caret reveal, resize clamp, drawn scrollbar thumb).

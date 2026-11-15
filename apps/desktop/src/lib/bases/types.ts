@@ -166,6 +166,12 @@ export interface BaseReadResult {
   error: string | null;
 }
 
+/** `base_parse_text`: `document` is `null` when the text does not parse; `error` then says why. */
+export interface BaseParsedResult {
+  document: BaseDocument | null;
+  error: string | null;
+}
+
 export interface BaseFileEntry {
   /** Vault-relative path. */
   path: string;

@@ -120,6 +120,25 @@ pub async fn base_read(
     .await
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BaseParsed {
+    /// The parsed `Document`, `null` when the text does not parse.
+    pub document: Json,
+    pub error: Option<String>,
+}
+
+/// Parse `.base` text that is not a file (an embedded ```base block) into the same document
+/// shape `base_read` returns. Pure: no index, no path, no I/O.
+#[tauri::command]
+pub async fn base_parse_text(text: String) -> Result<BaseParsed, AppError> {
+    Ok(parse_text(&text))
+}
+
+fn parse_text(text: &str) -> BaseParsed {
+    let (document, error) = parse_document(text);
+    BaseParsed { document, error }
+}
+
 /// Shared by `base_query` and `base_query_text`.
 fn run_query(
     index: &Arc<Index>,
@@ -375,6 +394,15 @@ mod tests {
         assert!(doc["warnings"].is_array());
         let (doc, err) = parse_document("views: [oops\n");
         assert!(doc.is_null() && err.is_some());
+    }
+
+    #[test]
+    fn embedded_block_text_parses_like_a_file() {
+        let parsed = parse_text("views:\n  - type: cards\n    name: C\n");
+        assert!(parsed.error.is_none());
+        assert_eq!(parsed.document["views"][0]["type"], "cards");
+        let bad = parse_text("views: [oops\n");
+        assert!(bad.document.is_null() && bad.error.is_some());
     }
 
     #[test]

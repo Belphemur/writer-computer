@@ -65,6 +65,12 @@ interface Params {
   /** The table's current query result. */
   result: BaseQueryResult | null;
   refresh: () => Promise<void>;
+  /**
+   * Why every cell is read-only (an embedded base, spec 7.13); `null` for the editable tab. It is
+   * the first read-only reason, and every edit entry point asks `readOnlyReason`, so nothing
+   * else needs to know.
+   */
+  readOnly?: string | null;
 }
 
 /** Plan for one cell write before it is queued. */
@@ -84,7 +90,7 @@ interface Plan {
  * cell back and raises an error notice. After the queue drains the table requeries, and an
  * optimistic cell is dropped once a query that started after its write has landed.
  */
-export function useBaseEdits({ result, refresh }: Params) {
+export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
   const [overrides, setOverrides] = useState<ReadonlyMap<string, Cell>>(new Map());
   const [notice, setNotice] = useState<Notice | null>(null);
   // Frontmatter errors found for the current result's rows; a new result clears them.
@@ -141,6 +147,7 @@ export function useBaseEdits({ result, refresh }: Params) {
   /** Why this cell cannot be edited right now, or `null`. */
   const readOnlyReason = useCallback(
     (rowIndex: number, colIndex: number): string | null => {
+      if (readOnly) return readOnly;
       if (!result) return "No data";
       const row = result.rows[rowIndex];
       const column = result.columns[colIndex];
@@ -158,12 +165,13 @@ export function useBaseEdits({ result, refresh }: Params) {
         return READ_ONLY_REASONS.unsaved;
       return null;
     },
-    [result, frontmatterErrorOf],
+    [result, frontmatterErrorOf, readOnly],
   );
 
   /** Look up the note's frontmatter once per result so a read-only reason can show before an edit. */
   const probeRow = useCallback(
     (rowIndex: number) => {
+      if (readOnly) return;
       const current = latestResult.current;
       const row = current?.rows[rowIndex];
       if (!current || !row) return;
@@ -183,7 +191,7 @@ export function useBaseEdits({ result, refresh }: Params) {
         (e) => notify("error", `Could not read properties of ${row.path}: ${errorMessage(e)}`),
       );
     },
-    [absoluteOf, notify, rememberFrontmatterError],
+    [absoluteOf, notify, readOnly, rememberFrontmatterError],
   );
 
   // ---- the one write path ------------------------------------------------

@@ -640,6 +640,7 @@ pub fn run() {
             commands::bases::base_query,
             commands::bases::base_query_text,
             commands::bases::base_eval,
+            commands::bases::base_parse_text,
             commands::bases::note_property_set,
             commands::bases::note_property_remove,
             commands::bases::note_properties,

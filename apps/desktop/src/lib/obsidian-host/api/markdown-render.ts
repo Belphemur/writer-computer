@@ -297,6 +297,16 @@ async function resolveEmbeds(root: HTMLElement, pass: Pass): Promise<void> {
         img.setAttribute("alt", file.name);
       }
       replacement = img;
+    } else if (file.extension === "base") {
+      // A base is data, not text: a static render would need a live query (and ```base blocks in
+      // untrusted markdown would run vault queries). Offer the link; the click handler opens it
+      // in a new main tab like any internal link.
+      const link = doc.createElement("a");
+      link.className = "internal-link";
+      link.setAttribute("data-href", raw);
+      link.setAttribute("href", raw);
+      link.textContent = `Open base: ${file.name}${fragment ? ` (${fragment})` : ""}`;
+      replacement = link;
     } else if (file.extension !== "md") replacement = unresolvedEmbed(doc, raw);
     else if (pass.depth >= MAX_EMBED_DEPTH || pass.chain.includes(file.path))
       replacement = unresolvedEmbed(doc, raw);

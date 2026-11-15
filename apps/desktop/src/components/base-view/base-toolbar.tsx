@@ -11,8 +11,12 @@ interface Props {
   querying: boolean;
   /** The config menus (view, results, sort, ...), shown before the count. */
   menus?: React.ReactNode;
-  /** Open the `.base` in the plain text editor. */
-  onEditYaml: () => void;
+  /** Open the `.base` in the plain text editor; no button when omitted (embeds). */
+  onEditYaml?: () => void;
+  /** Extra controls after the menus (the embed's open and edit buttons). */
+  trailing?: React.ReactNode;
+  /** Smaller bar for note embeds. */
+  compact?: boolean;
 }
 
 export function resultsLabel(counts: { shown: number; matched: number }): string {
@@ -31,6 +35,8 @@ export function BaseToolbar({
   querying,
   menus,
   onEditYaml,
+  trailing,
+  compact = false,
 }: Props) {
   const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +58,7 @@ export function BaseToolbar({
     <div
       data-base-toolbar
       className="flex min-w-0 items-center gap-3 border-b border-[var(--line-subtler)] px-3"
-      style={{ height: 36 }}
+      style={{ height: compact ? 30 : 36 }}
     >
       <div
         ref={tabsRef}
@@ -83,15 +89,18 @@ export function BaseToolbar({
         })}
       </div>
       {menus}
-      <button
-        type="button"
-        data-edit-yaml
-        title="Open the .base file as text"
-        onClick={onEditYaml}
-        className="shrink-0 cursor-pointer rounded-md bg-transparent px-2 py-1 text-[12px] text-text-muted hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
-      >
-        Edit YAML
-      </button>
+      {onEditYaml ? (
+        <button
+          type="button"
+          data-edit-yaml
+          title="Open the .base file as text"
+          onClick={onEditYaml}
+          className="shrink-0 cursor-pointer rounded-md bg-transparent px-2 py-1 text-[12px] text-text-muted hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
+        >
+          Edit YAML
+        </button>
+      ) : null}
+      {trailing}
       <div className="flex shrink-0 items-center gap-2 text-[12px] text-text-muted">
         {querying ? (
           <span data-base-refreshing role="status" aria-label="Refreshing">

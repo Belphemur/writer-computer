@@ -165,6 +165,18 @@ describe("markdown render: syntax", () => {
     expect(el.querySelectorAll(".is-unresolved")).toHaveLength(1);
   });
 
+  it("a base embed becomes an open-base link that opens a new tab", async () => {
+    const r = await makeRig({ "tasks.base": "views: []", "Note.md": "x" });
+    const el = await r.render("![[tasks.base#Board]]", undefined, "Note.md");
+    const link = el.querySelector<HTMLAnchorElement>("a.internal-link")!;
+    expect(link.textContent).toBe("Open base: tasks.base (Board)");
+    expect(el.querySelector(".is-unresolved")).toBeNull();
+    click(link);
+    await new Promise((r2) => setTimeout(r2, 0));
+    expect(r.tabs.map((t) => t.path)).toEqual(["tasks.base"]);
+    expect(r.tabs[0]!.newLeaf).toBe(true);
+  });
+
   it("note and heading embeds render inline", async () => {
     const r = await makeRig({
       "A.md": "---\nx: 1\n---\nintro\n# One\nfirst [[B]]\n## Sub\nsub text\n# Two\nsecond",
