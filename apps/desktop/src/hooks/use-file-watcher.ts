@@ -7,6 +7,7 @@ import * as editorApi from "./editor-api";
 import * as tauri from "@/lib/tauri";
 import { cancelSave, isSaveInFlight } from "@/lib/save";
 import { isWorkspaceEventCurrent, type WorkspaceIdentity } from "@/lib/workspace-events";
+import { getWorkspaceEventIdentity } from "./workspace-api";
 import type { WriteResult } from "@/types/fs";
 
 interface FileChangePayload {
@@ -30,16 +31,11 @@ function pluginEventKind(kind: FileChangePayload["kind"] | undefined) {
   return "create";
 }
 
-function currentWorkspaceIdentity(): WorkspaceIdentity | null {
-  const { root, workspaceEpoch } = useWorkspaceStore.getState();
-  return root !== null && workspaceEpoch !== null ? { root, epoch: workspaceEpoch } : null;
-}
-
 export function useFileWatcher() {
   useEffect(() => {
     const unlistenFile = listen<FileChangePayload>("fs:file-changed", (event) => {
       const { path, kind, workspace } = event.payload;
-      if (!isWorkspaceEventCurrent(workspace, currentWorkspaceIdentity())) return;
+      if (!isWorkspaceEventCurrent(workspace, getWorkspaceEventIdentity())) return;
       if (WATCHER_DEBUG) console.debug("[watcher] fs:file-changed", kind, path);
       useWorkspaceStore.getState().bumpSidebarMetadataVersion();
       void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
@@ -60,7 +56,7 @@ export function useFileWatcher() {
     });
 
     const unlistenIndexComplete = listen<IndexCompletePayload>("index:complete", (event) => {
-      if (isWorkspaceEventCurrent(event.payload.workspace, currentWorkspaceIdentity())) {
+      if (isWorkspaceEventCurrent(event.payload.workspace, getWorkspaceEventIdentity())) {
         useWorkspaceStore.setState((state) => ({
           fileCount: event.payload.fileCount,
           isIndexing: false,
@@ -76,13 +72,13 @@ export function useFileWatcher() {
     });
 
     const unlistenSettings = listen<WorkspaceIdentity>("settings:changed", (event) => {
-      if (!isWorkspaceEventCurrent(event.payload, currentWorkspaceIdentity())) return;
+      if (!isWorkspaceEventCurrent(event.payload, getWorkspaceEventIdentity())) return;
       void useSettingsStore.getState().loadSettings();
     });
 
     const unlistenDir = listen<FileChangePayload>("fs:directory-changed", (event) => {
       const { path, kind, workspace } = event.payload;
-      if (!isWorkspaceEventCurrent(workspace, currentWorkspaceIdentity())) return;
+      if (!isWorkspaceEventCurrent(workspace, getWorkspaceEventIdentity())) return;
       if (WATCHER_DEBUG) console.debug("[watcher] fs:directory-changed", path);
       void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
       const { root, expandedDirs, invalidatePath, refreshDirectory, bumpSidebarMetadataVersion } =

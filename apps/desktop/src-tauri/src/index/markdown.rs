@@ -98,7 +98,7 @@ pub fn with_ancestors(tag: &str) -> Vec<String> {
     out
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     if !s.contains('%') {
         return s.to_string();
     }
@@ -303,7 +303,7 @@ fn parse_destination(text: &str, from: usize) -> Option<(String, usize)> {
 
 /// Replace inline code spans (same-line backtick runs) with spaces, keeping
 /// byte offsets stable.
-fn mask_code_spans(line: &str) -> String {
+pub(crate) fn mask_code_spans(line: &str) -> String {
     if !line.contains('`') {
         return line.to_string();
     }
@@ -418,7 +418,7 @@ fn scan_tags(line: &str, links: &[ParsedLink], out: &mut Vec<String>) {
     }
 }
 
-fn fence_open(line: &str) -> Option<(char, usize)> {
+pub(crate) fn fence_open(line: &str) -> Option<(char, usize)> {
     let t = line.trim_start();
     let ch = t.chars().next()?;
     if ch != '`' && ch != '~' {
@@ -435,13 +435,13 @@ fn fence_open(line: &str) -> Option<(char, usize)> {
     Some((ch, run))
 }
 
-fn fence_closes(line: &str, ch: char, len: usize) -> bool {
+pub(crate) fn fence_closes(line: &str, ch: char, len: usize) -> bool {
     let t = line.trim();
     let run = t.chars().take_while(|c| *c == ch).count();
     run >= len && t[run * ch.len_utf8()..].trim().is_empty()
 }
 
-fn heading(line: &str, line_no: u32) -> Option<Heading> {
+pub(crate) fn heading(line: &str, line_no: u32) -> Option<Heading> {
     let indent = line.len() - line.trim_start_matches(' ').len();
     if indent > 3 {
         return None;
@@ -467,7 +467,7 @@ fn heading(line: &str, line_no: u32) -> Option<Heading> {
     })
 }
 
-fn task(line: &str, line_no: u32) -> Option<TaskItem> {
+pub(crate) fn task(line: &str, line_no: u32) -> Option<TaskItem> {
     let mut t = line.trim_start();
     while let Some(rest) = t.strip_prefix('>') {
         t = rest.trim_start();

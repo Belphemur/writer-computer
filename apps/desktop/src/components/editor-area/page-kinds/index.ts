@@ -1,3 +1,4 @@
+import { baseKind, type BaseLocation } from "./base";
 import { fileKind, type FileLocation } from "./file";
 import { launcherKind, type LauncherLocation } from "./launcher";
 import { pluginSettingsKind, type PluginSettingsLocation } from "./plugin-settings";
@@ -12,10 +13,18 @@ import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
  * that's declared here is usable everywhere and a kind that's missing is a
  * type error at every call site.
  */
-const kinds = [fileKind, launcherKind, settingsKind, pluginSettingsKind, pluginViewKind] as const;
+const kinds = [
+  fileKind,
+  baseKind,
+  launcherKind,
+  settingsKind,
+  pluginSettingsKind,
+  pluginViewKind,
+] as const;
 
 export type Location =
   | FileLocation
+  | BaseLocation
   | LauncherLocation
   | SettingsLocation
   | PluginSettingsLocation
@@ -37,6 +46,22 @@ export function pageKind<L extends Location>(location: L): PageKind<L["kind"], L
  *  than "give me the page kind." Same registry either way. */
 export const locationBehavior = pageKind;
 
+/** The location that opens a workspace file path: the first kind that claims it via `forPath`
+ *  (a `.base` opens as a table), else the text editor. The single place that routes a path. */
+export function locationForPath(path: string): FileLocation | BaseLocation {
+  for (const k of kinds) {
+    const location = (k.forPath as (path: string) => FileLocation | BaseLocation | null)(path);
+    if (location) return location;
+  }
+  return { kind: "file", path };
+}
+
+/** Is `path` read into the editor store as a text document (vs. rendered by its own kind)? */
+export function opensAsDocument(path: string): boolean {
+  const location = locationForPath(path);
+  return pageKind(location).loadsDocument;
+}
+
 export function serializeLocation(location: Location): SerializedLocation | null {
   const payload = pageKind(location).serialize(location);
   if (payload === null) return null;
@@ -55,6 +80,7 @@ export function deserializeLocation(data: SerializedLocation | null | undefined)
 
 export type { PageKind, SerializedLocation, AnyPageKind } from "./types";
 export type { FileLocation } from "./file";
+export type { BaseLocation } from "./base";
 export type { LauncherLocation } from "./launcher";
 export type { SettingsLocation } from "./settings";
 export type { PluginSettingsLocation } from "./plugin-settings";

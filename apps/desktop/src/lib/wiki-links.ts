@@ -1,7 +1,15 @@
+import { isBasePath } from "./bases/paths";
 import { getFileStem, getParentDir, normalizePath } from "./paths";
 import type { SearchResult } from "@/types/fs";
 
-export type WikiLinkTarget = { kind: "internal"; path: string } | { kind: "unresolved" };
+export type WikiLinkTarget =
+  | {
+      kind: "internal";
+      path: string;
+      /** The `#fragment` of a link to a `.base` file: the view name to select. */
+      fragment?: string;
+    }
+  | { kind: "unresolved" };
 export interface ParsedWikiLink {
   raw: string;
   target: string;
@@ -88,6 +96,7 @@ export async function resolveWikiLink(
   fuzzySearch: (query: string, limit?: number) => Promise<SearchResult[]>,
   fileExists: (path: string) => Promise<boolean>,
   currentFilePath?: string | null,
+  findFileByName?: (fileName: string) => Promise<string | null>,
 ): Promise<WikiLinkTarget> {
   const link = parseWikiLink(raw);
   const target = link.path;
@@ -95,6 +104,20 @@ export async function resolveWikiLink(
     return { kind: "internal", path: currentFilePath };
   }
   if (!target) return { kind: "unresolved" };
+
+  // `[[x.base]]` and `[[x.base#View]]` name a file with its extension (a base is not a note, so
+  // the stem lookup over markdown files cannot find it); the fragment selects the view.
+  if (isBasePath(target)) {
+    const fragment = link.fragment ? { fragment: link.fragment } : {};
+    if (target.includes("/")) {
+      const path = normalizePath(`${workspaceRoot.replace(/\/$/, "")}/${target}`);
+      return (await fileExists(path))
+        ? { kind: "internal", path, ...fragment }
+        : { kind: "unresolved" };
+    }
+    const found = findFileByName ? await findFileByName(target) : null;
+    return found ? { kind: "internal", path: found, ...fragment } : { kind: "unresolved" };
+  }
 
   if (target.includes("/")) {
     const basePath = normalizePath(`${workspaceRoot.replace(/\/$/, "")}/${target}`);

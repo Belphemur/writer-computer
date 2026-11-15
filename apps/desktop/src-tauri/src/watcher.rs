@@ -510,10 +510,7 @@ pub fn start_watcher(
                         continue;
                     }
 
-                    if !is_dir
-                        && path.extension().and_then(|e| e.to_str()) == Some("md")
-                        && path.exists()
-                    {
+                    if !is_dir && crate::commands::fs::is_listed_file(path) && path.exists() {
                         let modified_at = crate::commands::fs::modified_time(path);
                         publish_prepared_index_for_snapshot(
                             &state,
@@ -602,7 +599,7 @@ pub fn start_watcher(
                     // FSEvents coalesces Create+Remove for the same path
                     // within one watch window, and Modify(Name) doesn't tell
                     // us which side of the rename this path is.
-                    let is_md = path.extension().and_then(|e| e.to_str()) == Some("md");
+                    let is_md = crate::commands::fs::is_listed_file(path);
                     let path_exists = path.exists();
                     if is_md {
                         if path_exists {

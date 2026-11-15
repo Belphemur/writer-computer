@@ -27,6 +27,7 @@
     "@lezer/markdown": "catalog:",
     "@lezer/yaml": "catalog:",
     "@tailwindcss/vite": "catalog:",
+    "@tanstack/react-virtual": "catalog:",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-clipboard-manager": "catalog:",
     "@tauri-apps/plugin-dialog": "catalog:",

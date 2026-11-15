@@ -38,14 +38,14 @@ struct IndexChangedEvent {
     full: bool,
 }
 
-fn app_err(e: IndexError) -> AppError {
+pub(crate) fn app_err(e: IndexError) -> AppError {
     match e {
         IndexError::Invalid(m) => AppError::InvalidPath(m),
         other => AppError::Io(other.to_string()),
     }
 }
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, AppError> + Send + 'static,
 ) -> Result<T, AppError> {
     tauri::async_runtime::spawn_blocking(f)
@@ -193,7 +193,7 @@ fn to_vault_relative(
         .ok_or_else(|| AppError::InvalidPath(format!("{path} is not valid UTF-8")))
 }
 
-fn window_index(
+pub(crate) fn window_index(
     app: &tauri::AppHandle,
     webview: &tauri::Webview,
 ) -> Result<(Arc<WorkspaceState>, Arc<Index>), AppError> {

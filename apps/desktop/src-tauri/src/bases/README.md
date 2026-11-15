@@ -79,3 +79,7 @@ rounds half away from zero; the default column title is the property id
 without a `note.` prefix; `Range` of dates is a duration; `Unique` counts
 distinct non-empty values; `Sum` of no numbers is 0 and the other number
 summaries of no numbers are null; `Stddev` is the population deviation.
+
+## Index-backed row source
+
+`RowSource`/`RowContext` over the vault index live in `src/index/bases_source.rs` (`IndexSource`, `run_base_view`); the Tauri commands are in `src/commands/bases.rs` and the CLI front end in `src/cli/cmd_bases.rs`. See "Backend contracts" in `SPECs/obsidian-bases-spec.md`.

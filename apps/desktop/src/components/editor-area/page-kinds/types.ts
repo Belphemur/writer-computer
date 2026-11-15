@@ -49,6 +49,14 @@ export interface PageKindInput<K extends string, L extends { kind: K }> {
   /** Session payload (excluding the `kind` tag). Default: `{}`. Return `null`
    *  to skip persistence (transient kinds like launcher). */
   serialize?: (location: L) => object | null;
+  /** Claim a workspace file path: return the location that opens it, or `null`
+   *  to leave it to another kind (the `file` kind is the fallback). This is the
+   *  one place that decides what a path opens as. Default: claims nothing. */
+  forPath?: (path: string) => L | null;
+  /** Is this kind's `paths` backed by a text document loaded into the editor
+   *  store (`openFiles`)? Default: `true`. Kinds that render a path another way
+   *  (a `.base` table) set `false`, so the store never reads it as text. */
+  loadsDocument?: boolean;
 }
 
 /** A registered page kind — what you actually dispatch through at runtime
@@ -69,6 +77,8 @@ export interface PageKind<K extends string = string, L extends { kind: K } = { k
   rewritePath: (location: L, from: string, to: string) => L | null;
   removePath: (location: L, path: string) => L | null;
   serialize: (location: L) => object | null;
+  forPath: (path: string) => L | null;
+  loadsDocument: boolean;
 }
 
 /** Widest `PageKind` type — used by the registry map where the specific kind
@@ -80,7 +90,7 @@ export type AnyPageKind = PageKind<string, { kind: string }>;
  *  (`pageKindViews` in `./views`), never by the data/serialization layer. */
 export interface PageKindView<L extends { kind: string } = { kind: string }> {
   /** React renderer for the tab body. */
-  Component: ComponentType<{ location: L; isActive: boolean }>;
+  Component: ComponentType<{ location: L; isActive: boolean; tabId: string }>;
   /** Optional chrome rendered below the active tab body. */
   renderFooter?: (location: L) => ReactNode;
 }
@@ -102,6 +112,8 @@ export function definePageKind<K extends string, L extends { kind: K }>(
     rewritePath: (l) => l,
     removePath: (l) => l,
     serialize: () => ({}),
+    forPath: () => null,
+    loadsDocument: true,
     ...input,
   };
 }

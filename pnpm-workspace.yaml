@@ -23,6 +23,7 @@ catalog:
   "@lezer/yaml": ^1.0.4
   "@tailwindcss/vite": ^4.3.5
   "@tanstack/devtools-vite": ^0.8.6
+  "@tanstack/react-virtual": ^3.14.26
   "@tauri-apps/plugin-clipboard-manager": ^2.5.0
   "@tauri-apps/plugin-dialog": ^2.8.4
   "@tauri-apps/plugin-store": ^2.5.1

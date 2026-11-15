@@ -18,7 +18,7 @@
 use super::markdown::LinkKind;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PathIndex {
     paths: HashSet<String>,
     lower_to_path: HashMap<String, String>,

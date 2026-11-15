@@ -1,4 +1,5 @@
 pub mod bases;
+pub mod cli;
 mod commands;
 mod config;
 #[cfg(target_os = "macos")]
@@ -20,6 +21,7 @@ mod state;
 mod telemetry;
 #[cfg(desktop)]
 mod updater;
+pub mod vault_ops;
 mod watcher;
 pub mod writer_cli;
 
@@ -632,6 +634,13 @@ pub fn run() {
             commands::index::index_status,
             commands::index::index_query_files,
             commands::index::index_get_metadata,
+            commands::bases::base_list,
+            commands::bases::base_read,
+            commands::bases::base_query,
+            commands::bases::base_query_text,
+            commands::bases::note_property_set,
+            commands::bases::note_property_remove,
+            commands::bases::note_properties,
             commands::search::fuzzy_search,
             commands::search::find_file_by_name,
             commands::images::save_clipboard_image,

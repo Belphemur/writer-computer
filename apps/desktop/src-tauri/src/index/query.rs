@@ -717,9 +717,7 @@ impl Index {
         if text.trim().is_empty() {
             return Ok(None);
         }
-        self.read(|c| {
-            let idx = super::build::load_path_index(c)?;
-            Ok(idx.resolve(from, text, super::markdown::LinkKind::Wikilink))
-        })
+        let idx = self.cached_paths()?;
+        Ok(idx.resolve(from, text, super::markdown::LinkKind::Wikilink))
     }
 }

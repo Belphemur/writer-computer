@@ -156,7 +156,24 @@ pub fn open_or_rebuild(db_path: &Path, root: &str) -> Result<Opened, IndexError>
         .truncate(false)
         .write(true)
         .open(PathBuf::from(lock_path))?;
-    lock.lock()?;
+    // Another Writer process (app or CLI) holds the lock only while opening;
+    // waiting longer than this means something is wrong: fail explicitly.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        match lock.try_lock() {
+            Ok(()) => break,
+            Err(std::fs::TryLockError::WouldBlock) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(IndexError::Invalid(format!(
+                        "the index database {} is locked by another Writer process; try again",
+                        db_path.display()
+                    )));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
+        }
+    }
     let result = open_locked(db_path, root);
     let _ = lock.unlock();
     result

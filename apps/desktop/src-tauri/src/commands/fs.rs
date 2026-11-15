@@ -134,6 +134,20 @@ pub(crate) fn created_time(path: &std::path::Path) -> u64 {
         .unwrap_or(0)
 }
 
+/// Files the sidebar, quick open and the file index surface: Markdown notes
+/// and `.base` files (Obsidian Bases). `DirEntry::is_markdown` is the
+/// "listed file" flag for both; a `.base` has no title.
+pub(crate) fn is_listed_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("md") | Some("base")
+    )
+}
+
+fn is_base_file(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("base")
+}
+
 /// Recursively checks if a directory contains at least one visible .md file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DirectoryContent {
@@ -171,7 +185,7 @@ fn classify_directory_content(
             continue;
         };
         if file_type.is_file() {
-            if entry_path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if is_listed_file(&entry_path) {
                 return Ok(DirectoryContent::Markdown);
             }
             content = DirectoryContent::Other;
@@ -290,10 +304,13 @@ pub fn read_directory_impl(
                     title: None,
                 });
             }
-        } else if file_type.is_file() {
-            let is_markdown = entry_path.extension().and_then(|e| e.to_str()) == Some("md");
-            if is_markdown {
-                let title = extract_title(&entry_path);
+        } else if file_type.is_file() && is_listed_file(&entry_path) {
+            {
+                let title = if is_base_file(&entry_path) {
+                    None
+                } else {
+                    extract_title(&entry_path)
+                };
                 files.push(DirEntry {
                     name,
                     path: entry_path.to_string_lossy().to_string(),
@@ -406,9 +423,10 @@ pub async fn write_file(
 
 pub(crate) fn markdown_file_entry(path: &Path) -> Option<DirEntry> {
     if !path.is_file()
-        || !path
+        || !(path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+            || is_base_file(path))
     {
         return None;
     }
@@ -421,7 +439,11 @@ pub(crate) fn markdown_file_entry(path: &Path) -> Option<DirEntry> {
         is_markdown: true,
         modified_at: modified_time(path),
         created_at: created_time(path),
-        title: extract_title(path),
+        title: if is_base_file(path) {
+            None
+        } else {
+            extract_title(path)
+        },
     })
 }
 
@@ -875,6 +897,33 @@ mod tests {
         assert!(!result[2].is_dir);
         assert_eq!(result[2].name, "world.md");
         assert_eq!(result[2].title.as_deref(), Some("World"));
+    }
+
+    #[test]
+    fn test_read_directory_lists_base_files_but_not_other_types_or_hidden_dirs() {
+        let dir = setup_test_dir();
+        fs::write(
+            dir.path().join("tasks.base"),
+            "views:\n  - type: table\n    name: T\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("only-base")).unwrap();
+        fs::write(
+            dir.path().join("only-base").join("x.base"),
+            "# not a title\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join(".obsidian")).unwrap();
+        fs::write(dir.path().join(".obsidian").join("y.base"), "").unwrap();
+        let result = read_directory_impl(dir.path().to_str().unwrap(), None).unwrap();
+        let names: Vec<&str> = result.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"tasks.base"));
+        assert!(names.contains(&"only-base"));
+        assert!(!names.contains(&".obsidian"));
+        let base = result.iter().find(|e| e.name == "tasks.base").unwrap();
+        assert!(base.is_markdown && base.title.is_none());
+        assert!(!names.contains(&"data.json"));
+        assert!(markdown_file_entry(&dir.path().join("tasks.base")).is_some());
     }
 
     #[test]

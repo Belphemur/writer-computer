@@ -2220,3 +2220,15 @@ fn property_clock_is_injected_not_ambient() {
     // random() is deterministic per clock
     assert_eq!(e1.disp("random()"), Env::new().disp("random()"));
 }
+
+#[test]
+fn column_width_comes_from_column_size_by_canonical_key() {
+    let r = run(
+        "views:\n  - type: table\n    name: T\n    order: [file.name, note.status, priority]\n    columnSize:\n      file.name: 420\n      status: 120.5\n",
+        None,
+    );
+    let w: Vec<Option<f64>> = r.columns.iter().map(|c| c.width).collect();
+    assert_eq!(w, vec![Some(420.0), Some(120.5), None]);
+    let j = serde_json::to_value(&r.columns[0]).unwrap();
+    assert_eq!(j["width"], 420.0);
+}

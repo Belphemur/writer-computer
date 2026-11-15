@@ -7,7 +7,6 @@ use super::datetime::{self, DurationValue};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use serde_json::{json, Value as Json};
 use std::cmp::Ordering;
-use std::rc::Rc;
 
 /// Kinds of error a value can carry (U4, U20).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -95,7 +94,7 @@ pub struct FileValue {
 pub struct RegexpValue {
     pub source: String,
     pub flags: String,
-    pub re: Rc<regex_lite::Regex>,
+    pub re: std::sync::Arc<regex_lite::Regex>,
 }
 
 impl RegexpValue {
@@ -126,7 +125,7 @@ impl RegexpValue {
         Ok(RegexpValue {
             source: source.to_string(),
             flags: flags.to_string(),
-            re: Rc::new(re),
+            re: std::sync::Arc::new(re),
         })
     }
     pub fn is_global(&self) -> bool {

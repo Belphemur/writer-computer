@@ -141,6 +141,8 @@ pub struct Column {
     pub display_name: String,
     /// Summary configured for this column.
     pub summary: Option<String>,
+    /// Pixel width from the view's `columnSize`, matched on the canonical key.
+    pub width: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -168,6 +170,8 @@ pub enum QueryErrorKind {
     FilterSyntax,
     FilterEval,
     Source,
+    /// The `.base` text itself does not parse.
+    Document,
 }
 
 /// The explicit error state of a view (spec 7.5): shown instead of rows.
@@ -186,6 +190,8 @@ pub struct QueryError {
 #[serde(rename_all = "camelCase")]
 pub struct BaseQueryResult {
     pub view: ViewInfo,
+    /// Names of every view of the base, in file order (view switcher).
+    pub available_views: Vec<String>,
     pub columns: Vec<Column>,
     /// Flat rows in final order (group order when grouped, limit applied).
     pub rows: Vec<Row>,
@@ -196,6 +202,32 @@ pub struct BaseQueryResult {
     pub total_matched: usize,
     pub error: Option<QueryError>,
     pub warnings: Vec<String>,
+}
+
+impl BaseQueryResult {
+    /// The explicit error state for a `.base` text that does not parse.
+    pub fn document_error(message: String) -> BaseQueryResult {
+        BaseQueryResult {
+            view: ViewInfo {
+                name: String::new(),
+                view_type: String::new(),
+                index: None,
+            },
+            available_views: Vec::new(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            groups: None,
+            summaries: Vec::new(),
+            total_matched: 0,
+            error: Some(QueryError {
+                kind: QueryErrorKind::Document,
+                message,
+                expression: None,
+                path: None,
+            }),
+            warnings: Vec::new(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +492,7 @@ pub fn run_view(
                     view_type: String::new(),
                     index: None,
                 },
+                available_views: doc.views.iter().map(|v| v.name.clone()).collect(),
                 columns: Vec::new(),
                 rows: Vec::new(),
                 groups: None,
@@ -500,12 +533,22 @@ fn columns_of(doc: &Document, view: &View) -> Vec<(Column, PropertyId)> {
                 .iter()
                 .find(|(k, _)| PropertyId::parse(k).key() == key)
                 .map(|(_, s)| s.clone());
+            let width = view
+                .column_size
+                .iter()
+                .find(|(k, _)| PropertyId::parse(k).key() == key)
+                .and_then(|(_, n)| match n {
+                    Node::Int(i) => Some(*i as f64),
+                    Node::Real(f) => Some(*f),
+                    _ => None,
+                });
             (
                 Column {
                     id,
                     key,
                     display_name,
                     summary,
+                    width,
                 },
                 pid,
             )
@@ -528,6 +571,7 @@ fn execute(
             view_type: view.view_type.clone(),
             index,
         },
+        available_views: doc.views.iter().map(|v| v.name.clone()).collect(),
         columns: cols.iter().map(|(c, _)| c.clone()).collect(),
         rows: Vec::new(),
         groups: None,

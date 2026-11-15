@@ -23,7 +23,9 @@ Rust source structure:
 - `watcher.rs` — file system watcher with debounce and self-write detection
 - `index/` — vault SQLite index (properties, tags, links, headings, tasks); Tauri-free so the `writer` CLI shares it; Tauri wrappers in `commands/index.rs`
 - `bases/` — pure Obsidian Bases engine (`.base` model, expression language, query executor); no `tauri` types, see `bases/README.md`
-- `commands/` — Tauri IPC handlers: `fs.rs`, `workspace.rs`, `search.rs`, `images.rs`
+- `cli/` — Obsidian-parity `writer` commands (key=value grammar, command registry, formatters, vault resolution, link rewrite for move/rename); the launcher stays in `writer_cli.rs`; spec: `SPECs/writer-cli-spec.md`
+- `vault_ops.rs` — Tauri-free path confinement and the one write path for property edits (frontmatter patcher in `index/patch.rs`), shared by `commands/bases.rs` and `cli/`
+- `commands/` — Tauri IPC handlers: `fs.rs`, `workspace.rs`, `search.rs`, `images.rs`, `bases.rs` (`base_list/read/query/query_text`, `note_property*`)
 
 ## Docs Index
 

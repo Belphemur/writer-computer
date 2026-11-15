@@ -1,10 +1,12 @@
 import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
+import { BaseView } from "@/components/base-view";
 import { PluginSettingsPage } from "@/components/plugins/plugin-settings-page";
 import { PluginViewTab } from "@/components/plugins/plugin-view-tab";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { Location } from "./index";
+import type { BaseLocation } from "./base";
 import type { FileLocation } from "./file";
 import type { LauncherLocation } from "./launcher";
 import type { PluginSettingsLocation } from "./plugin-settings";
@@ -36,6 +38,9 @@ const views = {
     Component: FileTabBody,
     renderFooter: (l) => <DocumentFooter filePath={l.path} />,
   } satisfies PageKindView<FileLocation>,
+  base: {
+    Component: BaseView,
+  } satisfies PageKindView<BaseLocation>,
   launcher: {
     Component: NewTabPage,
   } satisfies PageKindView<LauncherLocation>,

@@ -16,8 +16,10 @@ const EXIT_RUNTIME: u8 = 3;
 
 pub const USAGE: &str = "\
 Usage: writer [PATH]
+       writer [vault=<name|id|path>] <command> [param=value ...] [flag ...]
 
-Open a folder or markdown file in the Writer desktop app.
+Open a folder or markdown file in the Writer desktop app, or run a vault
+command (files, read, search, base:query, ...; see `writer help`).
 
 Arguments:
   PATH              Directory or .md/.markdown file to open. If omitted,
@@ -190,6 +192,18 @@ fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
 
 /// Entry point for both the binary and integration tests.
 pub fn run<L: Launcher>(argv: Vec<OsString>, cwd: &Path, launcher: &L) -> ExitCode {
+    // Obsidian-parity commands (`vault=...` or a known command name) are
+    // handled by `cli/`; everything else is the launcher below.
+    let text_args: Option<Vec<String>> = argv
+        .iter()
+        .skip(1)
+        .map(|a| a.to_str().map(str::to_string))
+        .collect();
+    if let Some(args) = &text_args {
+        if crate::cli::is_parity_invocation(args) {
+            return ExitCode::from(crate::cli::run_main(args, cwd));
+        }
+    }
     match parse_args(&argv) {
         Ok(ParsedArgs::Help) => {
             println!("{USAGE}");

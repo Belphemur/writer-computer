@@ -54,6 +54,11 @@ export function navigateToFile(path: string) {
   return useEditorStore.getState().navigateToFile(path);
 }
 
+/** Persist the selected view of a base tab in its location (restored with the session). */
+export function setBaseTabView(tabId: string, view: string | undefined) {
+  useEditorStore.getState().setBaseTabView(tabId, view);
+}
+
 export function renameOpenFile(oldPath: string, newPath: string) {
   useEditorStore.getState().renameOpenFile(oldPath, newPath);
 }

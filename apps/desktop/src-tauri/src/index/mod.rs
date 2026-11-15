@@ -11,13 +11,15 @@
 //! read-only WAL connections and never wait for the writer. The index is a
 //! cache: deleting the database file is always safe.
 
+pub mod bases_source;
 mod build;
-mod frontmatter;
-mod markdown;
+pub(crate) mod frontmatter;
+pub(crate) mod markdown;
 mod note;
+pub mod patch;
 pub mod paths;
 mod query;
-mod resolve;
+pub(crate) mod resolve;
 mod schema;
 mod yaml;
 
@@ -89,6 +91,8 @@ pub(crate) struct Shared {
     external_cancel: Arc<AtomicBool>,
     stop: AtomicBool,
     pub scanned: AtomicU64,
+    /// Bumped after every writer job; keys the derived caches.
+    epoch: AtomicU64,
     status: Mutex<StatusInner>,
     on_change: Option<ChangeCallback>,
 }
@@ -140,11 +144,23 @@ impl ReadPool {
     }
 }
 
+/// Derived data rebuilt lazily when the index epoch moves.
+#[derive(Default)]
+struct EpochCache {
+    epoch: u64,
+    paths: Option<Arc<PathIndex>>,
+    backlinks: Option<Arc<BacklinkMap>>,
+}
+
+/// Target path -> sorted, distinct source paths (self-links excluded).
+pub type BacklinkMap = std::collections::HashMap<String, Vec<String>>;
+
 pub struct Index {
     shared: Arc<Shared>,
     jobs: Sender<Job>,
     worker: Mutex<Option<JoinHandle<()>>>,
     readers: ReadPool,
+    cache: Mutex<EpochCache>,
 }
 
 impl Index {
@@ -171,6 +187,7 @@ impl Index {
             external_cancel: params.cancel,
             stop: AtomicBool::new(false),
             scanned: AtomicU64::new(0),
+            epoch: AtomicU64::new(0),
             status: Mutex::new(StatusInner {
                 rebuilt_reason: opened.rebuilt_reason,
                 ..Default::default()
@@ -204,6 +221,7 @@ impl Index {
                 db_path,
                 idle: Mutex::new(Vec::new()),
             },
+            cache: Mutex::new(EpochCache::default()),
         })
     }
 
@@ -224,6 +242,71 @@ impl Index {
         })?;
         index.refresh_blocking()?;
         Ok(index)
+    }
+
+    /// Counter that changes whenever the indexed data may have changed.
+    pub fn epoch(&self) -> u64 {
+        self.shared.epoch.load(Ordering::SeqCst)
+    }
+
+    /// Path index (link resolution), cached per epoch.
+    pub(crate) fn cached_paths(&self) -> Result<Arc<PathIndex>, IndexError> {
+        let epoch = self.epoch();
+        {
+            let c = self.cache.lock();
+            if c.epoch == epoch {
+                if let Some(p) = &c.paths {
+                    return Ok(Arc::clone(p));
+                }
+            }
+        }
+        let built = Arc::new(self.read(build::load_path_index)?);
+        let mut c = self.cache.lock();
+        if c.epoch != epoch {
+            *c = EpochCache {
+                epoch,
+                ..EpochCache::default()
+            };
+        }
+        c.paths = Some(Arc::clone(&built));
+        Ok(built)
+    }
+
+    /// Reverse link map, cached per epoch (it is the slow part of
+    /// `file.backlinks`).
+    pub fn cached_backlinks(&self) -> Result<Arc<BacklinkMap>, IndexError> {
+        let epoch = self.epoch();
+        {
+            let c = self.cache.lock();
+            if c.epoch == epoch {
+                if let Some(b) = &c.backlinks {
+                    return Ok(Arc::clone(b));
+                }
+            }
+        }
+        let built = Arc::new(self.read(|c| {
+            let mut st = c.prepare(
+                "SELECT DISTINCT l.target_path, f.path FROM links l JOIN files f ON f.id = l.src_id \
+                 WHERE l.target_path IS NOT NULL AND l.target_path != f.path ORDER BY l.target_path, f.path",
+            )?;
+            let mut map = BacklinkMap::new();
+            let mut rows = st.query([])?;
+            while let Some(r) = rows.next()? {
+                map.entry(r.get::<_, String>(0)?)
+                    .or_default()
+                    .push(r.get::<_, String>(1)?);
+            }
+            Ok(map)
+        })?);
+        let mut c = self.cache.lock();
+        if c.epoch != epoch {
+            *c = EpochCache {
+                epoch,
+                ..EpochCache::default()
+            };
+        }
+        c.backlinks = Some(Arc::clone(&built));
+        Ok(built)
     }
 
     pub fn root(&self) -> &Path {
@@ -330,6 +413,7 @@ fn worker_main(
                         Err(e)
                     }
                 };
+                shared.epoch.fetch_add(1, Ordering::SeqCst);
                 if let Some(r) = reply {
                     let _ = r.send(outcome);
                 }
@@ -353,6 +437,7 @@ fn worker_main(
                         Err(e)
                     }
                 };
+                shared.epoch.fetch_add(1, Ordering::SeqCst);
                 if let Some(r) = reply {
                     let _ = r.send(outcome);
                 }

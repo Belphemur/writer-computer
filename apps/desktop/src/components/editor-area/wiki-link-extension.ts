@@ -18,6 +18,7 @@ import {
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as tauri from "@/lib/tauri";
 import { getFileStem } from "@/lib/paths";
+import { setPendingAnchor } from "@/lib/pending-anchor";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import * as editorApi from "@/hooks/editor-api";
 import {
@@ -355,10 +356,12 @@ function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boole
           tauri.fuzzySearch,
           tauri.fileExists,
           getFilePath(),
+          (fileName) => tauri.findFileByName(workspaceRoot, fileName),
         )
           .then((result) => {
             if (isDisposed()) return;
             if (result.kind === "internal") {
+              if (result.fragment) setPendingAnchor(result.path, result.fragment);
               void editorApi.navigateToFile(result.path);
             }
           })

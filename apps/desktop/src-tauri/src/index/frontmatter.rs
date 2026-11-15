@@ -61,6 +61,45 @@ pub fn split(content: &str) -> Split<'_> {
     none
 }
 
+/// Byte layout of a frontmatter block, for surgical edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FmSpan {
+    /// Offset of the opening fence line (after a BOM).
+    pub open_start: usize,
+    /// First byte of the frontmatter content (after the opening fence line).
+    pub fm_start: usize,
+    /// First byte of the closing fence line (= end of the content).
+    pub fm_end: usize,
+}
+
+/// Locate the frontmatter block with the same rules as [`split`].
+pub fn fm_span(content: &str) -> Option<FmSpan> {
+    let bom = if content.starts_with('\u{feff}') {
+        3
+    } else {
+        0
+    };
+    let text = &content[bom..];
+    let first_end = text.find('\n').unwrap_or(text.len());
+    if !is_fence(&text[..first_end], false) {
+        return None;
+    }
+    let mut offset = first_end + 1;
+    while offset < text.len() {
+        let rest = &text[offset..];
+        let end = rest.find('\n').unwrap_or(rest.len());
+        if is_fence(&rest[..end], true) {
+            return Some(FmSpan {
+                open_start: bom,
+                fm_start: bom + first_end + 1,
+                fm_end: bom + offset,
+            });
+        }
+        offset += end + 1;
+    }
+    None
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PropRow {
     pub key: String,

@@ -191,7 +191,7 @@ pub fn index_workspace_impl(
                     return ignore::WalkState::Continue;
                 }
                 if entry.file_type().is_some_and(|ft| ft.is_file())
-                    && entry.path().extension().and_then(|e| e.to_str()) == Some("md")
+                    && crate::commands::fs::is_listed_file(entry.path())
                 {
                     let rel = entry
                         .path()
@@ -344,6 +344,16 @@ mod tests {
         assert!(dirs.contains(&root.join("docs")));
         // .git should not be in the set
         assert!(!dirs.contains(&root.join(".git")));
+    }
+
+    #[test]
+    fn test_index_includes_base_files_but_not_other_types() {
+        let dir = setup_workspace();
+        std::fs::write(dir.path().join("tasks.base"), "views: []\n").unwrap();
+        std::fs::write(dir.path().join("data.json"), "{}").unwrap();
+        let (index, _) = index_workspace_test(dir.path());
+        assert!(index.iter().any(|f| f.name == "tasks.base"));
+        assert!(!index.iter().any(|f| f.name == "data.json"));
     }
 
     #[test]

@@ -11,9 +11,10 @@ import { getDocumentStats, type DocumentStats } from "@/lib/document-stats";
 import { cancelSave, scheduleSave, registerSaveStore } from "@/lib/save";
 import {
   locationBehavior,
+  locationForPath,
+  opensAsDocument,
   serializeLocation,
   deserializeLocation,
-  type FileLocation,
   type Location,
   type SerializedLocation,
 } from "@/components/editor-area/page-kinds";
@@ -84,6 +85,7 @@ interface EditorState {
   updateFrontmatter: (path: string, frontmatter: string | null) => void;
   markSaved: (path: string, diskContent: string, hasNewerChanges?: boolean) => void;
   setSaveError: (path: string, error: string | null) => void;
+  setBaseTabView: (tabId: string, view: string | undefined) => void;
   reloadFromDisk: (path: string, rawContent: string) => void;
   updateScrollPos: (path: string, pos: number) => void;
   updateCursorPos: (path: string, pos: number) => void;
@@ -116,8 +118,10 @@ export function createLauncherTab(id = createTabId()): Tab {
   return { id, location: { kind: "launcher" }, back: [], forward: [] };
 }
 
+/** A tab for a workspace file: the location kind is decided by the page-kind registry
+ *  (`locationForPath`), so a `.base` opens as a table and everything else as a document. */
 export function createFileTab(path: string, id = createTabId()): Tab {
-  return { id, location: { kind: "file", path }, back: [], forward: [] };
+  return { id, location: locationForPath(path), back: [], forward: [] };
 }
 
 export function createSettingsTab(id = createTabId()): Tab {
@@ -139,6 +143,16 @@ export function createPluginViewTab(
 }
 
 const EMPTY_STATS: DocumentStats = { words: 0, characters: 0, paragraphs: 0 };
+
+/** A copy of `files` with a loading entry for `path`, or `undefined` when none is needed:
+ *  already present, or the path is not a text document (a `.base` is rendered by its own kind). */
+function withLoadingEntry(
+  files: Map<string, OpenFile>,
+  path: string,
+): Map<string, OpenFile> | undefined {
+  if (files.has(path) || !opensAsDocument(path)) return undefined;
+  return new Map(files).set(path, createLoadingFile(path));
+}
 
 function createLoadingFile(path: string): OpenFile {
   return {
@@ -287,6 +301,7 @@ function applyRewriteToTab(tab: Tab, rewrite: (loc: Location) => Location | null
 }
 
 async function ensureFileLoaded(path: string, set: EditorStateSetter, get: () => EditorState) {
+  if (!opensAsDocument(path)) return;
   const existing = get().openFiles.get(path);
   if (existing && !existing.isLoading) return;
 
@@ -362,8 +377,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return;
     }
 
-    // Reuse the active file tab by navigating in-place.
-    if (activeTab?.location.kind === "file") {
+    // Reuse the active file (or base) tab by navigating in-place.
+    if (activeTab && locationPrimaryPath(activeTab.location) !== null) {
       await state.navigateToFile(path);
       return;
     }
@@ -464,9 +479,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const nextTab = createFileTab(path);
 
     set((state) => {
-      const openFiles = state.openFiles.has(path)
-        ? undefined
-        : new Map(state.openFiles).set(path, createLoadingFile(path));
+      const openFiles = withLoadingEntry(state.openFiles, path);
       return {
         tabs: [...state.tabs, nextTab],
         activeTabId: nextTab.id,
@@ -552,9 +565,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (state.tabs[index]?.location.kind !== "launcher") return state;
       const tabs = [...state.tabs];
       tabs[index] = nextTab;
-      const openFiles = state.openFiles.has(path)
-        ? undefined
-        : new Map(state.openFiles).set(path, createLoadingFile(path));
+      const openFiles = withLoadingEntry(state.openFiles, path);
       return {
         tabs,
         activeFilePath: state.activeTabId === tabId ? path : state.activeFilePath,
@@ -576,7 +587,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
         const currentTab = state.tabs[index];
         const currentLocation = currentTab?.location;
-        if (!currentLocation || currentLocation.kind !== "file" || currentLocation.path !== path) {
+        if (!currentLocation || locationPrimaryPath(currentLocation) !== path) {
           const files = maybePruneFiles(state, state.tabs, [path]);
           return files ? { openFiles: files } : state;
         }
@@ -597,14 +608,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   closeFile: (path: string) => {
     const { activeTabId, tabs } = get();
     const activeTab = activeTabId ? tabs.find((tab) => tab.id === activeTabId) : null;
-    if (activeTab?.location.kind === "file" && activeTab.location.path === path) {
+    if (activeTab && locationPrimaryPath(activeTab.location) === path) {
       get().closeTab(activeTab.id);
       return;
     }
 
-    const targetTab = tabs.find(
-      (tab) => tab.location.kind === "file" && tab.location.path === path,
-    );
+    const targetTab = tabs.find((tab) => locationPrimaryPath(tab.location) === path);
     if (targetTab) get().closeTab(targetTab.id);
   },
 
@@ -644,9 +653,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setActiveFile: (path: string) => {
-    const tab = get().tabs.find(
-      (candidate) => candidate.location.kind === "file" && candidate.location.path === path,
-    );
+    const tab = get().tabs.find((candidate) => locationPrimaryPath(candidate.location) === path);
     if (!tab) return;
     set({ activeTabId: tab.id, activeFilePath: path });
   },
@@ -673,10 +680,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       await state.openFileInNewTab(path);
       return;
     }
-    if (activeTab.location.kind === "file" && activeTab.location.path === path) return;
+    if (locationPrimaryPath(activeTab.location) === path) return;
 
     const previousTab = cloneTab(activeTab);
-    const nextLocation: FileLocation = { kind: "file", path };
+    const nextLocation = locationForPath(path);
     const nextTab: Tab = {
       ...cloneTab(activeTab),
       location: nextLocation,
@@ -691,9 +698,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (index === -1) return currentState;
       const tabs = [...currentState.tabs];
       tabs[index] = nextTab;
-      const openFiles = currentState.openFiles.has(path)
-        ? undefined
-        : new Map(currentState.openFiles).set(path, createLoadingFile(path));
+      const openFiles = withLoadingEntry(currentState.openFiles, path);
       return {
         tabs,
         activeFilePath:
@@ -836,13 +841,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     set((state) => {
       const file = state.openFiles.get(oldPath);
-      if (!file) return state;
+      // A tab can reference a path with no loaded document (a `.base`): still re-point it.
+      if (!file && !state.tabs.some((tab) => tabPaths(tab).includes(oldPath))) return state;
 
-      shouldScheduleSave = file.isDirty;
+      shouldScheduleSave = file?.isDirty ?? false;
 
       const files = new Map(state.openFiles);
-      files.delete(oldPath);
-      files.set(newPath, { ...file, path: newPath });
+      if (file) {
+        files.delete(oldPath);
+        files.set(newPath, { ...file, path: newPath });
+      }
 
       const rewrite = (loc: Location) => rewriteLocation(loc, oldPath, newPath);
       const tabs = state.tabs.map((tab) => applyRewriteToTab(tab, rewrite) ?? tab);
@@ -1065,7 +1073,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const files = new Map(state.openFiles);
       for (const path of uniquePaths) {
-        if (!files.has(path)) files.set(path, createLoadingFile(path));
+        if (!files.has(path) && opensAsDocument(path)) files.set(path, createLoadingFile(path));
       }
       if (seededActive && activePath) {
         files.set(activePath, seededActive);
@@ -1196,6 +1204,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const files = new Map(state.openFiles);
       files.set(path, { ...file, saveError: error });
       return { openFiles: files };
+    });
+  },
+
+  setBaseTabView: (tabId: string, view: string | undefined) => {
+    set((state) => {
+      const index = getTabIndex(state.tabs, tabId);
+      const tab = state.tabs[index];
+      if (!tab || tab.location.kind !== "base" || tab.location.view === view) return state;
+      const location: Location = { kind: "base", path: tab.location.path };
+      if (view !== undefined) location.view = view;
+      const tabs = [...state.tabs];
+      tabs[index] = { ...tab, location };
+      return { tabs };
     });
   },
 
