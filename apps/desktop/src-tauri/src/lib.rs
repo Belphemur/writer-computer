@@ -1,9 +1,11 @@
+pub mod bases;
 mod commands;
 mod config;
 #[cfg(target_os = "macos")]
 mod dock_menu;
 mod error;
 mod ignore;
+pub mod index;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod open_target;
@@ -93,6 +95,7 @@ fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
             // Remove the state; the `WorkspaceState`'s `RecommendedWatcher`
             // drops on the last `Arc` release, unregistering FSEvents/inotify.
             commands::plugins::stop_window_work(&handle, &label);
+            commands::index::stop_window(&handle, &label);
             handle.state::<AppState>().remove(&label);
         }
         _ => {}
@@ -530,6 +533,7 @@ pub fn run() {
         .manage(plugin_http::StreamRegistry::default())
         .manage(plugin_proc::ProcManager::default())
         .manage(plugin_env::PluginEnv::default())
+        .manage(commands::index::IndexRegistry::default())
         .setup(|app| {
             // Initialize the main window's per-window state (settings layer,
             // pending-open queue). `get_or_create` lazily builds the
@@ -625,6 +629,9 @@ pub fn run() {
             commands::recents::remove_recent_file,
             commands::recents::get_recent_files_global,
             commands::search::index_workspace,
+            commands::index::index_status,
+            commands::index::index_query_files,
+            commands::index::index_get_metadata,
             commands::search::fuzzy_search,
             commands::search::find_file_by_name,
             commands::images::save_clipboard_image,

@@ -21,6 +21,8 @@ Rust source structure:
 - `state.rs` — global app state (workspace root, file index, watcher handle)
 - `error.rs` — error types serialized over IPC
 - `watcher.rs` — file system watcher with debounce and self-write detection
+- `index/` — vault SQLite index (properties, tags, links, headings, tasks); Tauri-free so the `writer` CLI shares it; Tauri wrappers in `commands/index.rs`
+- `bases/` — pure Obsidian Bases engine (`.base` model, expression language, query executor); no `tauri` types, see `bases/README.md`
 - `commands/` — Tauri IPC handlers: `fs.rs`, `workspace.rs`, `search.rs`, `images.rs`
 
 ## Docs Index

@@ -1,5 +1,7 @@
 # Writer CLI Spec
 
+> Amended: the new [Obsidian CLI parity](#obsidian-cli-parity) section supersedes the "no JSON output", "markdown only", "under ten top-level commands" and plain `--flag` non-goals for the commands it lists. The original `writer spec ...`, `frontmatter` and `list/read/search` commands keep working unchanged.
+
 ## Summary
 
 Add a standalone-first, markdown-only `writer` CLI focused on spec authoring and validation.
@@ -802,3 +804,57 @@ These are intentionally out of scope for this spec, but are natural next steps i
 - `writer spec format` for canonical markdown formatting
 - `writer spec bundle` for flattening linked markdown into a single `.md` artifact
 - a later decision on HTTP API and MCP support once the core CLI surface proves useful
+
+## Obsidian CLI parity
+
+Status: planned. The vault index (Phase 0 of [obsidian-bases-spec.md](./obsidian-bases-spec.md), `apps/desktop/src-tauri/src/index/`) is implemented and exposes `Index::open_for_cli(root, app_data_dir)`; the commands below are built on it and on the Rust Bases engine (`base_query`, same spec).
+
+### What this supersedes
+
+For the commands in this section only (the legacy commands are untouched):
+
+- "No JSON output" and "markdown only": the commands accept `format=` values (`json`, `csv`, `tsv`, `md`, `yaml`, `text`, `tree`, `paths`) exactly where Obsidian lists them. Defaults follow Obsidian's.
+- "Under ten top-level commands": the surface is the list below.
+- Plain `--flag` syntax: parity commands use Obsidian's syntax, `writer [vault=<name|id|path>] <command> [param=value ...] [flag ...]`. Legacy commands keep clap-style `--flags`. The dispatcher decides by command name: a name in the parity list (or containing `:`) takes the Obsidian grammar.
+- "No non-markdown output": `read` and friends print the raw file; `format=md` prints a markdown table.
+
+Clean-room: syntax and semantics come only from the public docs, https://obsidian.md/help/cli. No Obsidian application code is read.
+
+### Syntax (exactly like the public docs)
+
+- `writer <command> [param=value ...] [flag ...]`. Parameters are `name=value` (quote values with spaces). Flags are bare words (`overwrite`, `total`, `verbose`, `inline`, `case`, `done`, `todo`, `permanent`, `counts`, `open`).
+- `vault=<name|id|path>` must be the first argument. Default vault: the vault containing the working directory, else the most recently opened vault in Writer's recents. Writer has no vault ids; `id` is the SHA-256 prefix used by the index file name, `name` is the folder name (ambiguous names fail explicitly).
+- `file=<name>` resolves like a wikilink (no folder, no extension), through `Index::resolve_link` (rules in the Bases spec 4.1.3 and `index/resolve.rs`). `path=<path>` is the exact vault-relative path. Without either, commands that need a file fail with a usage error (Writer has no active file when run headless; the `active` flag and `daily*` are app-control and out of scope).
+- `--copy` copies the command output to the clipboard in addition to printing it (macOS `pbcopy`, Linux `wl-copy`/`xclip`, Windows `clip`); a missing clipboard tool is an error, not silently ignored.
+- Multiline `content=` accepts `\n` and `\t` escapes.
+- Output: stdout only for results; errors on stderr; exit codes as in the legacy table (`0`, `1` validation/not found, `2` usage, `3` runtime).
+- The app does not need to run. The CLI opens the same SQLite index file as the app (derived from the release identifier `com.writer-computer`, override with `WRITER_INDEX_DIR`), refreshes it with the warm diff (mtime, size, hash), then queries. Writes (`create`, `append`, `prepend`, `move`, `rename`, `delete`, `property:set/remove`, `task toggle`) go straight to the files, never through the index, never to `.obsidian`.
+
+### Commands to implement
+
+| Group      | Command                                                                     | Parameters / flags (as in Obsidian's docs)                                                                                                                                |
+| ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vault      | `vault`, `vaults`                                                           | `info=name\|path\|files\|folders\|size`; `total`, `verbose`                                                                                                               |
+| Files      | `file`, `files`, `folder`, `folders`                                        | `file`/`path`; `folder`, `ext`, `total`; `folder path= info=files\|folders\|size`                                                                                         |
+| Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `delete`           | `create name= path= content= template=` + `overwrite`; `append/prepend content= heading=` + `inline`; `move to=`; `rename name=`; `delete` + `permanent`                  |
+| Search     | `search`, `search:context`                                                  | `query= path= limit= format=text\|json total` + `case`                                                                                                                    |
+| Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases` | `properties name= sort=count format=yaml\|json\|tsv total counts`; `property:set name= value= type=text\|list\|number\|checkbox\|date\|datetime`; `aliases total verbose` |
+| Tags       | `tags`, `tag`                                                               | `tags sort=count format=json\|tsv\|csv total counts`; `tag name= total verbose`                                                                                           |
+| Tasks      | `tasks`, `task`                                                             | `tasks status= format=json\|tsv\|csv` + `total done todo verbose`; `task ref= line= status=` + `toggle done todo`                                                         |
+| Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                   | `backlinks format=json\|tsv\|csv (default tsv)` + `counts total`; `unresolved format=...` + `total counts verbose`                                                        |
+| Structure  | `outline`, `wordcount`                                                      | `outline format=tree\|md\|json (default tree)`; `wordcount` + `words characters`                                                                                          |
+| Bases      | `bases`, `base:views`, `base:create`, `base:query`                          | `base:create file= path= view= name= content=`; `base:query file= path= view= format=json\|csv\|tsv\|md\|paths (default json)`                                            |
+| Meta       | `help`, `version`                                                           | `help [command]`, `version`                                                                                                                                               |
+
+Data sources: `files/folders/file/folder/vault*` are `query_files`, `list_folders`, `vault_summary`; `properties`, `property:read`, `aliases`, `tags`, `tag`, `tasks`, `links`, `backlinks`, `unresolved`, `orphans`, `deadends`, `outline` (headings), `wordcount` (words, chars) read the index tables; `search` scans file content (a plain substring/regex pass, not an index table); `base:*` run the Rust Bases engine over the index.
+
+### Out of scope (explicit)
+
+App-control and application-state commands from the public list: `open`, `vault:open`, `search:open`, `daily*`, `templates`/`template:*`, `bookmark*`, `diff`, `history*`, `sync*`, plugin/theme/publish/workspace/web/developer commands, and the `active` and `daily` flags. They need a running Obsidian-style app or features Writer does not have. Reconsider only on explicit request.
+
+### Implementation notes
+
+- The parity grammar lives in one module (`writer_cli.rs` stays the launcher; a new `cli/` module owns argv parsing for parity commands with a registry of command specs: name, parameters, flags, formats, handler). Adding a command is one registry entry plus its handler (consolidation rule).
+- Formatting (`json/csv/tsv/md/yaml/text/tree/paths`) is one shared formatter set over a table/tree value; commands return structured values, never strings.
+- `property:set` and `task toggle` edit the file text surgically (frontmatter line patch, single checkbox character) so unrelated bytes, comments and key order are preserved; unparsable frontmatter is an explicit error.
+- Tests: CLI integration tests against the fixture-vault builder used by the index tests, with `WRITER_INDEX_DIR` pointing at a temp dir; no real user vault is ever used.

@@ -2,7 +2,8 @@ use crate::ignore::{is_gitignore_path, WorkspaceIgnore};
 use crate::state::{self, AppState, WorkspaceState};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -462,6 +463,9 @@ pub fn start_watcher(
             }
 
             let mut rebuild_ignore = false;
+            // Paths the vault index must re-read. Collected before the
+            // self-write check: Writer's own saves still change the index.
+            let mut index_paths: HashSet<PathBuf> = HashSet::new();
 
             for event in pending.drain(..) {
                 for path in &event.paths {
@@ -496,6 +500,10 @@ pub fn start_watcher(
                     if is_workspace_ignored(&state, path, is_dir) {
                         wlog!("filter[workspace_ignore]: {}", path.display());
                         continue;
+                    }
+
+                    if index_feed_wanted(&event.kind, is_dir) {
+                        index_paths.insert(path.clone());
                     }
 
                     if is_self_write(&state, path) {
@@ -672,6 +680,15 @@ pub fn start_watcher(
                 }
             }
 
+            crate::commands::index::feed(
+                &handle,
+                &label,
+                &watched_root,
+                captured_epoch,
+                index_paths.into_iter().collect(),
+                rebuild_ignore,
+            );
+
             if rebuild_ignore {
                 spawn_ignore_rebuild(
                     handle.clone(),
@@ -686,6 +703,22 @@ pub fn start_watcher(
     });
 
     Ok(watcher)
+}
+
+/// Should this event reach the vault index? Every create/modify/remove of a
+/// non-ignored path, but directories only on membership changes (a modified
+/// directory entry fires for every child write and would re-walk the tree).
+fn index_feed_wanted(kind: &EventKind, is_dir: bool) -> bool {
+    if event_kind_str(kind).is_none() {
+        return false;
+    }
+    !is_dir
+        || matches!(
+            kind,
+            EventKind::Create(_)
+                | EventKind::Remove(_)
+                | EventKind::Modify(notify::event::ModifyKind::Name(_))
+        )
 }
 
 /// Start a lightweight watcher for a single standalone file (compact mode,
