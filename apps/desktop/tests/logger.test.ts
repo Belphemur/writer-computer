@@ -222,6 +222,24 @@ describe("global handler wiring", () => {
     expect(JSON.stringify(h.all())).not.toContain("payload");
   });
 
+  it("does not throw when Tauri's invoke is read-only (WebKit aborts startup otherwise)", () => {
+    off();
+    const frozen = Object.freeze({ invoke: invokeImpl as never });
+    const ro = {
+      addEventListener: (t: string, fn: unknown) => void handlers.set(t, fn as never),
+      removeEventListener: (t: string) => void handlers.delete(t),
+      __TAURI_INTERNALS__: frozen,
+    };
+    const local = harness();
+    let stop: () => void = () => {};
+    expect(() => {
+      stop = installGlobalLogging(ro as never, local.logger, con);
+    }).not.toThrow();
+    expect(ro.__TAURI_INTERNALS__.invoke).toBe(invokeImpl);
+    expect(() => stop()).not.toThrow();
+    off = installGlobalLogging(target, h.logger, con);
+  });
+
   it("does not log its own log_event failures", async () => {
     invokeImpl.mockRejectedValueOnce(new Error("sink down"));
     await expect(target.__TAURI_INTERNALS__!.invoke!("log_event", {})).rejects.toThrow();

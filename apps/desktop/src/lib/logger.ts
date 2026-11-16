@@ -275,17 +275,31 @@ export function installGlobalLogging(
   target.addEventListener("pagehide", flushOnHide);
   target.addEventListener("beforeunload", flushOnHide);
 
+  // Tauri's `invoke` on the internals object can be read-only (WebKit throws on assignment and
+  // aborts startup), so wrap it only when it is writable and never let the wrapper break boot.
+  // Rejections nobody handles still reach the `unhandledrejection` handler above.
   const internals = target.__TAURI_INTERNALS__;
   const origInvoke = internals?.invoke;
+  let wrappedInvoke = false;
   if (internals && origInvoke) {
-    internals.invoke = (cmd, args, options) => {
-      const p = origInvoke.call(internals, cmd, args, options);
-      if (cmd === "log_event") return p;
-      return p.catch((err: unknown) => {
-        log.warn("ipc", `command ${cmd} failed: ${describeError(err).message}`, { phase: cmd });
-        throw err;
-      });
-    };
+    try {
+      const desc = Object.getOwnPropertyDescriptor(internals, "invoke");
+      if (!desc || desc.writable || desc.set) {
+        internals.invoke = (cmd, args, options) => {
+          const p = origInvoke.call(internals, cmd, args, options);
+          if (cmd === "log_event") return p;
+          return p.catch((err: unknown) => {
+            log.warn("ipc", `command ${cmd} failed: ${describeError(err).message}`, {
+              phase: cmd,
+            });
+            throw err;
+          });
+        };
+        wrappedInvoke = true;
+      }
+    } catch {
+      wrappedInvoke = false;
+    }
   }
 
   uninstall = () => {
@@ -295,7 +309,13 @@ export function installGlobalLogging(
     target.removeEventListener("unhandledrejection", onRejection);
     target.removeEventListener("pagehide", flushOnHide);
     target.removeEventListener("beforeunload", flushOnHide);
-    if (internals && origInvoke) internals.invoke = origInvoke;
+    if (internals && origInvoke && wrappedInvoke) {
+      try {
+        internals.invoke = origInvoke;
+      } catch {
+        // read-only: nothing was wrapped
+      }
+    }
     uninstall = null;
   };
   return uninstall;
