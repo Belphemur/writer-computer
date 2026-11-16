@@ -23,11 +23,17 @@ import { createNodeRegistry, type NodeRegistry } from "./node/registry";
 
 export type RequireFn = (name: string) => unknown;
 
+/** Obsidian's build of `@codemirror/language` exports `tokenClassNodeProp` (node -> its cm-* class
+ *  names). Plugins call `node.type.prop(tokenClassNodeProp)`, which throws on `undefined`. We
+ *  export an empty prop: nodes have no class names, so those plugins skip them instead of
+ *  crashing their CodeMirror view plugin. */
+const cmLanguageCompat = { ...cmLanguage, tokenClassNodeProp: new lezerCommon.NodeProp<string>() };
+
 const APP_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   "@codemirror/autocomplete": cmAutocomplete,
   "@codemirror/commands": cmCommands,
   "@codemirror/lang-markdown": cmLangMarkdown,
-  "@codemirror/language": cmLanguage,
+  "@codemirror/language": cmLanguageCompat,
   "@codemirror/lint": cmLint,
   "@codemirror/search": cmSearch,
   "@codemirror/state": cmState,
