@@ -433,7 +433,7 @@ pub(crate) fn canonicalize_workspace_root(path: &str) -> Result<PathBuf, AppErro
 /// the user has opened, never to the whole disk.
 fn allow_asset_dir(app: &tauri::AppHandle, dir: &Path, recursive: bool) {
     if let Err(e) = app.asset_protocol_scope().allow_directory(dir, recursive) {
-        eprintln!("asset scope: could not allow {}: {e}", dir.display());
+        log::warn!("asset scope: could not allow {}: {e}", dir.display());
     }
 }
 
@@ -455,6 +455,7 @@ fn prepare_workspace_state(
     path: &str,
 ) -> Result<WorkspaceInfo, AppError> {
     let root = canonicalize_workspace_root(path)?;
+    crate::logging::register_vault_root(&root);
     let canonical_path = root.to_string_lossy().to_string();
 
     let name = root
@@ -535,7 +536,7 @@ fn run_workspace_bootstrap(
             }
         }
         Err(e) => {
-            eprintln!("Failed to start file watcher: {}", e);
+            log::error!("Failed to start file watcher: {}", e);
         }
     }
 

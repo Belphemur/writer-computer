@@ -6,6 +6,7 @@
 //
 // Enabled in dev builds, or in any build by `localStorage["writer.plugins.debug"] = "1"` /
 // `globalThis.__WRITER_PLUGIN_DEBUG__ = true`. Off (no Proxy at all) otherwise.
+import { logAndEcho } from "@/lib/logger";
 import type { App } from "./api/app";
 
 export type MissingApiSink = (pluginId: string, path: string) => void;
@@ -28,9 +29,12 @@ const PROBES = new Set([
 const WRAPPED = ["workspace", "vault", "metadataCache", "fileManager", "adapter"] as const;
 
 const defaultSink: MissingApiSink = (pluginId, path) =>
-  console.warn(
+  logAndEcho(
+    "warn",
+    "plugin",
     `[plugin-api] "${pluginId}" used unimplemented ${path} (reads as undefined). ` +
       "Add it to the host or report it.",
+    { plugin: pluginId, phase: "missing-api" },
   );
 
 export function isMissingApiLogEnabled(): boolean {

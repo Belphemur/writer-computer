@@ -51,6 +51,20 @@ yaml-rust2 = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 # Bases regexp literals (`/abc/i`); was dev-only.
 regex-lite = "0.1"
+# Local diagnostic logs (ADR 2026-11-16): one subscriber, JSON lines, daily files, 3-file cap,
+# non-blocking writer. `log` records (already used across the crate) are bridged in by the
+# `tracing-log` feature. Exact pins on purpose; tracing/tracing-core were already resolved
+# through tauri, so the added graph is tracing-subscriber + tracing-appender (+ their few deps).
+tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = [
+  "std",
+  "fmt",
+  "registry",
+  "json",
+  "tracing-log",
+] }
+tracing-appender = "=0.2.5"
+tracing-log = { version = "=0.2.0", default-features = false, features = ["log-tracer", "std"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

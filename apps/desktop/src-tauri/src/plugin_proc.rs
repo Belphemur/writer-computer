@@ -47,6 +47,8 @@ pub const ENV_MAX_BYTES: usize = 16 * 1024;
 /// program + args + cwd, bytes
 pub const RUN_MAX_BYTES: usize = 64 * 1024;
 pub const MAX_WRITE_BYTES: usize = 8 * 1024 * 1024;
+/// Bytes of a process's stderr kept for the log (the head; the rest still reaches the plugin).
+const STDERR_LOG_BYTES: usize = 2048;
 const READ_CHUNK: usize = 32 * 1024;
 /// After the child exits, how long to wait for its pipes to hit EOF. Only a
 /// grandchild that inherited the pipe and outlives the child can reach it.
@@ -373,13 +375,20 @@ impl ProcManager {
         if !still_ok() {
             return Err("EACCES: trust or vault changed while asking".into());
         }
-        self.spawn(label, root, p, emit)
+        self.spawn(label, root, plugin_id, p, emit)
     }
 
     /// Spawn WITHOUT asking: callers must have obtained consent. Private to
     /// the module family on purpose. An exec failure is NOT an `Err`: it is
     /// delivered as the terminal `error` event of the returned id.
-    fn spawn(&self, label: &str, root: &Path, p: &Prepared, emit: Emit) -> Result<u64, String> {
+    fn spawn(
+        &self,
+        label: &str,
+        root: &Path,
+        plugin_id: &str,
+        p: &Prepared,
+        emit: Emit,
+    ) -> Result<u64, String> {
         let mut procs = self.procs.lock();
         if procs.len() >= MAX_PROCS {
             return Err(format!("EBUSY: {MAX_PROCS} processes are already running"));
@@ -413,6 +422,10 @@ impl ProcManager {
             Ok(c) => c,
             Err(e) => {
                 drop(procs);
+                log::warn!(
+                    "plugin {plugin_id}: could not start {}: {e}",
+                    p.program.display()
+                );
                 emit(error_event(&e));
                 return Ok(id);
             }
@@ -434,15 +447,44 @@ impl ProcManager {
         drop(procs);
         emit(ProcEvent::Spawn { pid });
 
+        let program_name = p
+            .program
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let pump = |stream: Option<Box<dyn Read + Send>>, stderr: bool| {
             let emit = Arc::clone(&emit);
+            let plugin_id = plugin_id.to_string();
+            let program_name = program_name.clone();
             std::thread::spawn(move || {
                 let Some(mut s) = stream else { return };
                 let mut buf = vec![0u8; READ_CHUNK];
+                // Only the head of stderr goes to the log (warn, bounded); the plugin still
+                // receives every byte.
+                let mut kept: Vec<u8> = Vec::new();
+                let flush_log = |kept: &[u8]| {
+                    if stderr && !kept.is_empty() {
+                        log::warn!(
+                            target: "plugin_proc",
+                            "plugin {plugin_id}: {program_name} stderr: {}",
+                            crate::logging::truncated(
+                                String::from_utf8_lossy(kept).trim(),
+                                STDERR_LOG_BYTES
+                            )
+                        );
+                    }
+                };
                 loop {
                     match s.read(&mut buf) {
-                        Ok(0) | Err(_) => return,
+                        Ok(0) | Err(_) => {
+                            flush_log(&kept);
+                            return;
+                        }
                         Ok(n) => {
+                            if stderr && kept.len() < STDERR_LOG_BYTES {
+                                let room = STDERR_LOG_BYTES - kept.len();
+                                kept.extend_from_slice(&buf[..n.min(room)]);
+                            }
                             let data_base64 =
                                 base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
                             let ev = if stderr {
@@ -451,6 +493,7 @@ impl ProcManager {
                                 ProcEvent::Stdout { data_base64 }
                             };
                             if !emit(ev) {
+                                flush_log(&kept);
                                 return;
                             }
                         }
@@ -462,6 +505,8 @@ impl ProcManager {
         let t_err = pump(err.map(|s| Box::new(s) as Box<dyn Read + Send>), true);
 
         let registry = Arc::clone(&self.procs);
+        let plugin_id_exit = plugin_id.to_string();
+        let program_exit = program_name.clone();
         std::thread::spawn(move || {
             let status = loop {
                 match child.lock().try_wait() {
@@ -481,6 +526,15 @@ impl ProcManager {
                 let _ = join_with_timeout(t, left);
             }
             registry.lock().remove(&id);
+            if let Ok(s) = &status {
+                if !s.success() {
+                    log::info!(
+                        target: "plugin_proc",
+                        "plugin {plugin_id_exit}: {program_exit} exited with {}",
+                        s.code().map_or_else(|| "a signal".to_string(), |c| format!("code {c}"))
+                    );
+                }
+            }
             match status {
                 Ok(s) => emit(ProcEvent::Exit {
                     code: s.code(),

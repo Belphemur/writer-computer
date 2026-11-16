@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import * as editorApi from "@/hooks/editor-api";
+import { describeError, logger } from "@/lib/logger";
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[ErrorBoundary]", error, info.componentStack);
+    logger.error("react", describeError(error).message, {
+      stack: `${error.stack ?? ""}\ncomponent stack:${info.componentStack ?? ""}`,
+    });
   }
 
   handleRetry = () => {

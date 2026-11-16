@@ -4,6 +4,7 @@
 // plugin's own styles.css applies.
 import { Scope, type SettingTabLike } from "./core";
 import { createEl } from "./dom";
+import { recordPluginError } from "../error-log";
 import { isValidSecretId } from "./secret-storage";
 import { prepareFuzzySearch, renderMatches, setIcon, type SearchResult } from "./functions";
 import type { App } from "./app";
@@ -62,11 +63,13 @@ export class Modal {
     this.app.keymap.pushScope(this.scope);
     this.containerEl.addEventListener("keydown", this.onKeydown);
     try {
-      void Promise.resolve(this.onOpen()).catch((e) =>
-        console.error("[plugin] modal onOpen rejected:", e),
-      );
+      void Promise.resolve(this.onOpen()).catch((e) => {
+        console.error("[plugin] modal onOpen rejected:", e);
+        recordPluginError("(modal)", "modal-open", e);
+      });
     } catch (e) {
       console.error("[plugin] modal onOpen threw:", e);
+      recordPluginError("(modal)", "modal-open", e);
     }
   }
 

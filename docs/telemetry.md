@@ -108,6 +108,18 @@ there would silently merge two installs into one "user". Delete `telemetry.json`
 to get a new identifier and to see the first-run prompt again; until you answer
 it, nothing is sent, whatever the setting says.
 
+## Local logs are not telemetry
+
+Writer also writes error and warning logs to files on your own computer
+(`~/Library/Logs/com.writer-computer/` on macOS), three days at most, so a
+problem can be diagnosed afterwards. They are **never uploaded**, are separate
+from everything above, and are written whether or not you opted in to telemetry
+(`WRITER_TELEMETRY_DISABLED` does not affect them; `WRITER_LOG=off` does). Paths
+are shortened (`~`, `<vault>`) and secrets, URL query strings and note contents
+are not written. Settings > Logs shows the folder and can copy the latest
+errors for a bug report that you choose to send. Details:
+[SPECs/local-logging-spec.md](../SPECs/local-logging-spec.md).
+
 ## Where it goes
 
 PostHog Cloud (US region, `https://us.i.posthog.com`), via a single

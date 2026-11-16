@@ -60,7 +60,7 @@ fn load_recent_files(app: &tauri::AppHandle) -> Vec<RecentEntry> {
     let data = match std::fs::read_to_string(&path) {
         Ok(data) => data,
         Err(error) => {
-            eprintln!("[recents] failed to read recent files list: {error}");
+            log::error!("failed to read recent files list: {error}");
             return Vec::new();
         }
     };
@@ -75,7 +75,7 @@ fn load_recent_files(app: &tauri::AppHandle) -> Vec<RecentEntry> {
             .map(|path| RecentEntry { path, opened_at: 0 })
             .collect();
     }
-    eprintln!("[recents] recent files list is corrupt; starting over");
+    log::warn!("recent files list is corrupt; starting over");
     Vec::new()
 }
 

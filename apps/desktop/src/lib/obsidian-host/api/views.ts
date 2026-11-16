@@ -5,6 +5,7 @@
 import { Component, Events, type EditorContext, type EventRef } from "./core";
 import { createEl } from "./dom";
 import { setIcon } from "./functions";
+import { recordPluginError } from "../error-log";
 import { TFile } from "./vault";
 import type { App } from "./app";
 import type { EditorView } from "@codemirror/view";
@@ -433,6 +434,7 @@ export class WorkspaceLeaf extends Component {
       await v.onClose();
     } catch (e) {
       console.error("[plugin] view onClose threw:", e);
+      recordPluginError("(view)", "view-close", e);
     }
     v.unload();
   }

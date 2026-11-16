@@ -537,6 +537,11 @@ export class Vault extends Events {
       return;
     }
     if (existing instanceof TFile) {
+      // Obsidian reports a disk change only when the file changed. Echoes of this host's own
+      // writes and renames (created/modified events for a file the model already knows with the
+      // same mtime and size) must not become extra `modify` events: plugins that write in
+      // response to `modify` would loop.
+      if (existing.stat.mtime === s.mtime && existing.stat.size === s.size) return;
       existing.stat = { ctime: s.ctime, mtime: s.mtime, size: s.size };
       this.trigger("modify", existing);
       return;

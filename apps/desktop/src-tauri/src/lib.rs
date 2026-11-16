@@ -7,6 +7,7 @@ mod dock_menu;
 mod error;
 mod ignore;
 pub mod index;
+pub mod logging;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod managed_skills;
@@ -492,7 +493,7 @@ fn handle_single_instance(app: &tauri::AppHandle, argv: Vec<String>) {
                 (None, None) => Ok(()),
             };
             if let Err(err) = result {
-                eprintln!("failed to open new window from single-instance argv: {err:?}");
+                log::error!("failed to open new window from single-instance argv: {err:?}");
             }
         }
         None => {
@@ -513,6 +514,7 @@ fn handle_single_instance(app: &tauri::AppHandle, argv: Vec<String>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logging::init_app();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             handle_single_instance(app, argv);
@@ -543,6 +545,12 @@ pub fn run() {
             // `WorkspaceState` for the `"main"` label.
             let main_state = app.state::<AppState>().get_or_create(MAIN_WINDOW_LABEL);
             init_window_settings(app.handle(), &main_state)?;
+
+            // The log level setting is global, so it is readable right after the settings
+            // layer exists; `WRITER_LOG` still wins.
+            if let Some(settings) = main_state.settings.read().as_ref() {
+                logging::apply_level_setting(logging::level_setting(settings).as_deref());
+            }
 
             // Telemetry reads its enabled/email values out of the settings
             // layer above, so it must come after `init_window_settings` and
@@ -602,6 +610,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::logs::log_event,
+            commands::logs::log_info,
+            commands::logs::open_log_folder,
+            commands::logs::recent_log_errors,
             commands::fs::read_directory,
             commands::fs::read_recent_files,
             commands::fs::read_file_entries,
@@ -701,6 +713,7 @@ pub fn run() {
         .run(|_app, _event| {
             if matches!(_event, tauri::RunEvent::Exit) {
                 _app.state::<plugin_proc::ProcManager>().kill_all();
+                logging::shutdown();
             }
             // Dock click with every window hidden or closed: bring the main
             // window back. It is only ever hidden (never destroyed) by the

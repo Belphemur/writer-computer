@@ -31,6 +31,8 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     openSettings: fn(),
     togglePluginPane: fn(),
     openPluginBrowser: fn(),
+    openLogFolder: fn(),
+    copyRecentErrors: fn(),
     ...over,
   };
 }
@@ -58,6 +60,8 @@ describe("palette built-in commands", () => {
       "zoom-out",
       "zoom-reset",
       "browse-community-plugins",
+      "open-log-folder",
+      "copy-recent-errors",
       "open-settings",
     ]);
   });
@@ -74,7 +78,18 @@ describe("palette built-in commands", () => {
       "zoom-in",
       "zoom-out",
       "zoom-reset",
+      "open-log-folder",
+      "copy-recent-errors",
     ]);
+  });
+
+  it("offers the log commands in every window and runs them", () => {
+    const c = ctx({ hasWorkspace: false, isCompactFileMode: true });
+    const list = resolveCommands(c, []);
+    list.find((x) => x.id === "open-log-folder")!.run();
+    list.find((x) => x.id === "copy-recent-errors")!.run();
+    expect(c.openLogFolder).toHaveBeenCalledTimes(1);
+    expect(c.copyRecentErrors).toHaveBeenCalledTimes(1);
   });
 
   it("shows the plugin pane toggle only when a plugin opened a leaf", () => {

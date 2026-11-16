@@ -46,6 +46,7 @@ describe("settings section registry", () => {
       "Files & vault",
       "Privacy",
       "Secrets",
+      "Logs",
       "Manage plugins",
     ]);
   });

@@ -57,6 +57,25 @@ export function findFileByName(root: string, fileName: string): Promise<string |
   return invoke("find_file_by_name", { root, fileName });
 }
 
+// Local log files (the frontend writes through `@/lib/logger`, never `log_event` directly)
+export interface LogInfo {
+  dir: string;
+  /** `WRITER_LOG` is set and wins over the Logs setting. */
+  envOverride: boolean;
+}
+
+export function getLogInfo(): Promise<LogInfo> {
+  return invoke("log_info");
+}
+
+export function openLogFolder(): Promise<void> {
+  return invoke("open_log_folder");
+}
+
+export function recentLogErrors(limit = 200): Promise<string[]> {
+  return invoke("recent_log_errors", { limit });
+}
+
 export function revealInFileManager(path: string): Promise<void> {
   return invoke("reveal_in_file_manager", { path });
 }

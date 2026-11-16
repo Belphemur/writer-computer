@@ -52,6 +52,7 @@ fn with_global_settings_mut<T>(
     let result = f(settings)?;
     let (enabled, email) = crate::telemetry::settings_snapshot(settings);
     crate::telemetry::apply_settings(enabled, email);
+    crate::logging::apply_level_setting(crate::logging::level_setting(settings).as_deref());
     Ok(result)
 }
 

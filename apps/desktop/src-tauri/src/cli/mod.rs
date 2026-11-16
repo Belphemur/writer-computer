@@ -354,6 +354,20 @@ pub fn run_main(argv: &[String], cwd: &Path) -> u8 {
     use std::io::Write;
     let env = Env::system();
     let out = execute(argv, cwd, &env);
+    if out.code != 0 {
+        // The command name only: the arguments can carry note text.
+        let command = argv
+            .iter()
+            .find(|a| !a.contains('='))
+            .map_or("", |s| s.as_str());
+        tracing::error!(
+            target: "cli",
+            command,
+            exit_code = out.code,
+            "writer {command} failed: {}",
+            crate::logging::truncated(out.stderr.trim(), 500)
+        );
+    }
     let _ = std::io::stdout().write_all(out.stdout.as_bytes());
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().write_all(out.stderr.as_bytes());

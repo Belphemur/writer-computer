@@ -9,7 +9,8 @@ export type SectionBlock =
   | { type: "category"; category: string }
   | { type: "themes" }
   | { type: "community-plugins" }
-  | { type: "secrets" };
+  | { type: "secrets" }
+  | { type: "logs" };
 
 export const SETTINGS_GROUPS = ["General", "Community plugins"] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -55,6 +56,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "Secrets",
     group: "General",
     blocks: [{ type: "secrets" }],
+  },
+  {
+    id: "logs",
+    label: "Logs",
+    group: "General",
+    blocks: [category("Logs"), { type: "logs" }],
   },
   {
     id: "community-plugins",

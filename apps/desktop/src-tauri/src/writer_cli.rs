@@ -257,12 +257,14 @@ fn canonical_target(payload: &PendingOpenPayload) -> PathBuf {
 }
 
 fn fail_usage(err: ParseError) {
+    tracing::error!(target: "cli", "usage error: {err}");
     eprintln!("writer: {err}");
     eprintln!();
     eprint!("{USAGE}");
 }
 
 fn fail_runtime(err: &dyn std::fmt::Display) {
+    tracing::error!(target: "cli", "{err}");
     eprintln!("writer: {err}");
 }
 

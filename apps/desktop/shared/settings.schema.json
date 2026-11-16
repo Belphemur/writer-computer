@@ -408,6 +408,16 @@
       "default": ""
     },
     {
+      "key": "diagnostics.log-level",
+      "label": "Log level",
+      "description": "How much Writer writes to its local log files. Warn records errors and warnings only; info and debug add detail for bug reports and grow the files faster. The WRITER_LOG environment variable overrides this. Logs stay on this computer.",
+      "category": "Logs",
+      "type": "enum",
+      "options": ["error", "warn", "info", "debug"],
+      "scope": "global",
+      "default": "warn"
+    },
+    {
       "key": "plugins.auto-check-updates",
       "label": "Check for plugin updates automatically",
       "description": "Look for newer versions of your installed community plugins shortly after Writer starts and every few hours while it is open. Updates are never installed on their own.",

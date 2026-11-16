@@ -69,13 +69,13 @@ pub async fn get_startup_state(
                     Err(err) => {
                         // File vanished between the open event and startup —
                         // fall through to the welcome screen.
-                        eprintln!("failed to read standalone startup file {file}: {err:?}");
+                        log::error!("failed to read standalone startup file {file}: {err:?}");
                         None
                     }
                 };
                 if standalone_file.is_some() {
                     if let Err(err) = watch_standalone_file_impl(&app, &label, file) {
-                        eprintln!("failed to start standalone file watcher: {err:?}");
+                        log::error!("failed to start standalone file watcher: {err:?}");
                     }
                 }
                 return Ok(StartupState {
@@ -110,7 +110,7 @@ pub async fn get_startup_state(
             Err(err) => {
                 // Don't let a failed restore abort startup — settings still
                 // need to hydrate and the welcome screen should render.
-                eprintln!("failed to prefetch restore bundle for {path}: {err:?}");
+                log::error!("failed to prefetch restore bundle for {path}: {err:?}");
                 None
             }
         }

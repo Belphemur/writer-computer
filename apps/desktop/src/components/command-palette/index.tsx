@@ -28,6 +28,8 @@ import {
   useOpenTabs,
 } from "@/hooks/use-tabs";
 import { useTheme } from "@/hooks/use-theme";
+import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
+import * as logActions from "@/lib/log-actions";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
 import {
   useOpenPluginBrowser,
@@ -170,6 +172,17 @@ function FilePalette() {
           openSettings: openSettingsTab,
           togglePluginPane,
           openPluginBrowser,
+          openLogFolder: () => {
+            logActions
+              .openLogFolder()
+              .catch((e) => showEditorNotice(`Could not open the log folder: ${String(e)}`));
+          },
+          copyRecentErrors: () => {
+            logActions
+              .copyRecentErrors()
+              .then((n) => showEditorNotice(logActions.copyResultMessage(n)))
+              .catch((e) => showEditorNotice(`Could not copy the logs: ${String(e)}`));
+          },
         },
         pluginCommands,
       );

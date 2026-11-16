@@ -6,6 +6,7 @@
 // keyed by the plugin id, so disabling a plugin is `services.sweep(id)` and nothing else.
 import { createEl } from "./dom";
 import { setIcon } from "./functions";
+import { recordPluginError } from "../error-log";
 import type { App } from "./app";
 import { unregisterBaseViewsOwnedBy } from "@/lib/bases/view-registry";
 
@@ -50,6 +51,7 @@ export class Events {
       ref.fn.apply(ref.ctx, args);
     } catch (e) {
       console.error(`[plugin] event handler "${ref.name}" threw:`, e);
+      recordPluginError("(plugin)", `event:${ref.name}`, e);
     }
   }
 }
@@ -149,13 +151,69 @@ export class Component {
 // ---------------------------------------------------------------- Notice
 
 const NOTICE_CONTAINER_CLASS = "notice-container";
+/** Notices on screen at once; past this the oldest is dropped (Obsidian has no cap, a runaway
+ *  plugin must not bury the window). */
+export const MAX_VISIBLE_NOTICES = 5;
+/** The same message shown more than `NOTICE_STORM_REPEATS` times within `NOTICE_STORM_WINDOW_MS`
+ *  is reported as a storm (once per further repeat). */
+export const NOTICE_STORM_REPEATS = 3;
+export const NOTICE_STORM_WINDOW_MS = 10_000;
 const liveNotices = new Set<Notice>();
+const noticeTimes = new Map<string, number[]>();
+
+function noticeText(message: string | DocumentFragment): string {
+  return typeof message === "string" ? message : (message.textContent ?? "").trim();
+}
+
+function noticeOwner(): string {
+  const m = /writer-plugin:\/\/localhost\/([^/\s:)?#]+)\/main\.js/.exec(new Error().stack ?? "");
+  return m ? m[1] : "(unknown)";
+}
+
+function noticeTraceOn(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("writer.hostNoticeTrace") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The single place every notice passes through: add a logger call here. Console output reaches
+ * the local log files through the console wrapper. Plugin id and text are logged on a storm, or
+ * for every notice with `localStorage["writer.hostNoticeTrace"] = "1"`.
+ */
+function recordNotice(owner: string, text: string): void {
+  const now = Date.now();
+  const key = `${owner}\u0000${text}`;
+  const times = (noticeTimes.get(key) ?? []).filter((t) => now - t < NOTICE_STORM_WINDOW_MS);
+  times.push(now);
+  noticeTimes.set(key, times);
+  if (noticeTimes.size > 200) {
+    for (const [k, v] of noticeTimes)
+      if (now - v[v.length - 1] >= NOTICE_STORM_WINDOW_MS) noticeTimes.delete(k);
+  }
+  if (times.length > NOTICE_STORM_REPEATS) {
+    console.warn(
+      `[plugin] notice storm: ${owner} showed "${text}" ${times.length} times in ${NOTICE_STORM_WINDOW_MS / 1000}s`,
+    );
+  } else if (noticeTraceOn()) {
+    console.info(`[plugin] notice from ${owner}: "${text}"`);
+  }
+}
+
+/** Test hook: forgets repeat counters and removes every notice. */
+export function resetNotices(): void {
+  Notice.hideAll();
+  noticeTimes.clear();
+}
 
 export class Notice {
   noticeEl: HTMLElement;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(message: string | DocumentFragment, duration = 5000) {
+    recordNotice(noticeOwner(), noticeText(message));
     let container = document.body.querySelector<HTMLElement>(`.${NOTICE_CONTAINER_CLASS}`);
     if (!container)
       container = createEl("div", { cls: NOTICE_CONTAINER_CLASS, parent: document.body });
@@ -163,6 +221,10 @@ export class Notice {
     this.setMessage(message);
     liveNotices.add(this);
     if (duration > 0) this.timer = setTimeout(() => this.hide(), duration);
+    while (liveNotices.size > MAX_VISIBLE_NOTICES) {
+      const oldest = liveNotices.values().next().value as Notice;
+      oldest.hide();
+    }
   }
 
   setMessage(message: string | DocumentFragment): this {
@@ -403,6 +465,7 @@ export class CommandRegistry extends OwnedRegistry<RegisteredCommand> {
         return fn();
       } catch (e) {
         console.error(`[plugin] command ${id} ${label}:`, e);
+        recordPluginError(owner, `command:${label}`, e);
         return fallback;
       }
     };
@@ -603,6 +666,7 @@ export class Plugin extends Component {
         void callback(evt);
       } catch (e) {
         console.error(`[plugin] ${this.manifest.id} ribbon callback:`, e);
+        recordPluginError(this.manifest.id, "ribbon", e);
       }
     });
     this.services.ribbon.add(`${this.manifest.id}:${icon}:${title}`, {

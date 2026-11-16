@@ -41,13 +41,13 @@ pub(crate) fn install(app: &tauri::AppHandle) {
 
 unsafe fn register_delegate_methods() -> bool {
     let Some(delegate) = (unsafe { app_delegate() }) else {
-        eprintln!("failed to install Dock menu: application delegate unavailable");
+        log::error!("failed to install Dock menu: application delegate unavailable");
         return false;
     };
 
     let delegate_class: *mut AnyClass = unsafe { msg_send![delegate, class] };
     if delegate_class.is_null() {
-        eprintln!("failed to install Dock menu: delegate class unavailable");
+        log::error!("failed to install Dock menu: delegate class unavailable");
         return false;
     }
 
@@ -73,7 +73,7 @@ unsafe fn register_delegate_methods() -> bool {
         .as_bool()
     };
     if !action_method_added {
-        eprintln!("failed to install Dock menu: action selector could not be added");
+        log::error!("failed to install Dock menu: action selector could not be added");
         return false;
     }
 
@@ -87,7 +87,7 @@ unsafe fn register_delegate_methods() -> bool {
         .as_bool()
     };
     if !dock_method_added {
-        eprintln!("failed to install Dock menu: applicationDockMenu selector could not be added");
+        log::error!("failed to install Dock menu: applicationDockMenu selector could not be added");
         return false;
     }
 
@@ -173,7 +173,7 @@ unsafe extern "C-unwind" fn open_recent_workspace(
     };
 
     if let Err(err) = crate::open_new_workspace_window(app, path, None) {
-        eprintln!("failed to open workspace from Dock menu: {err:?}");
+        log::error!("failed to open workspace from Dock menu: {err:?}");
     }
 }
 

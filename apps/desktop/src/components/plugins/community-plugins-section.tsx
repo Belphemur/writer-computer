@@ -162,7 +162,9 @@ export function CommunityPluginsSection() {
                     </div>
                   )}
                   {status.state === "failed" && (
-                    <div className="mt-0.5 text-[13px] text-red-500">Failed: {status.error}</div>
+                    <div className="mt-0.5 text-[13px] text-red-500">
+                      Failed: {status.error} (details: Settings, Logs)
+                    </div>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">

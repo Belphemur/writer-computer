@@ -29,6 +29,8 @@ export interface CommandContext {
   openSettings: () => void;
   togglePluginPane: () => void;
   openPluginBrowser: () => void;
+  openLogFolder: () => void;
+  copyRecentErrors: () => void;
 }
 
 export interface PaletteCommand {
@@ -131,6 +133,18 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     description: COMMAND,
     when: (c) => c.hasWorkspace && !c.isCompactFileMode,
     run: (c) => c.openPluginBrowser(),
+  },
+  {
+    id: "open-log-folder",
+    label: "Open log folder",
+    description: COMMAND,
+    run: (c) => c.openLogFolder(),
+  },
+  {
+    id: "copy-recent-errors",
+    label: "Copy recent errors",
+    description: COMMAND,
+    run: (c) => c.copyRecentErrors(),
   },
   {
     id: "open-settings",

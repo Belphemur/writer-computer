@@ -250,7 +250,7 @@ pub fn list(fetch: Fetch, refresh: bool) -> Result<Vec<Value>, String> {
     let l = fetch(LIST_URL, MAX_LIST, "plugin list")?;
     // download counts are a nicety: the list works without them
     let st = fetch(STATS_URL, MAX_LIST, "download stats")
-        .map_err(|e| eprintln!("[plugin-store] {e}"))
+        .map_err(|e| log::warn!("plugin store: {e}"))
         .ok();
     let rows = merge_list(&l, st.as_deref())?;
     *LIST.lock().unwrap_or_else(|e| e.into_inner()) = Some(Cached {

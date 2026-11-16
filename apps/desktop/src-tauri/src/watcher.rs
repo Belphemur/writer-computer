@@ -5,28 +5,18 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 const SELF_WRITE_TTL: Duration = Duration::from_secs(2);
 const DEBOUNCE_MS: u64 = 300;
 
-/// Runtime-gated diagnostic logging. Set `WRITER_WATCHER_LOG=1` before
-/// launching to dump every event, filter decision, and emit to stderr —
-/// the SPEC's investigation plan for residual "external change missed"
-/// reports. No-op (single atomic-bool read) when the env var is unset, so
-/// it's safe to leave the call sites in release builds.
-fn watcher_log_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var_os("WRITER_WATCHER_LOG").is_some())
-}
-
+/// Watcher diagnostics: `debug` level, so they reach the log file only with `WRITER_LOG=debug`
+/// (or the Logs setting) — the investigation path for "external change missed" reports.
 macro_rules! wlog {
     ($($arg:tt)*) => {
-        if watcher_log_enabled() {
-            eprintln!("[watcher] {}", format!($($arg)*));
-        }
+        log::debug!(target: "watcher", $($arg)*);
     };
 }
 

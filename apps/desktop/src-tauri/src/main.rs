@@ -12,7 +12,11 @@ fn main() -> ExitCode {
     if is_cli_invocation() {
         let argv: Vec<_> = std::env::args_os().collect();
         let cwd = std::env::current_dir().unwrap_or_else(|_| Path::new(".").into());
-        return desktop_lib::writer_cli::run(argv, &cwd, &desktop_lib::writer_cli::SystemLauncher);
+        desktop_lib::logging::init_cli();
+        let code =
+            desktop_lib::writer_cli::run(argv, &cwd, &desktop_lib::writer_cli::SystemLauncher);
+        desktop_lib::logging::shutdown();
+        return code;
     }
     desktop_lib::run();
     ExitCode::SUCCESS

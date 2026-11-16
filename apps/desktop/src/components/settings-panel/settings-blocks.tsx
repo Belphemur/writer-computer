@@ -4,6 +4,7 @@ import { SETTINGS_SCHEMA, type SettingDef } from "@/lib/settings-schema";
 import { CommunityPluginsSection } from "@/components/plugins/community-plugins-section";
 import type { SectionBlock, SettingsSection } from "./settings-sections";
 import { SettingControl } from "./setting-control";
+import { LogsSection } from "./logs-section";
 import { SecretsSection } from "./secrets-section";
 import { ThemesSection } from "./themes-section";
 
@@ -53,6 +54,7 @@ const BLOCK_RENDERERS: {
   themes: () => <ThemesSection />,
   "community-plugins": () => <CommunityPluginsSection />,
   secrets: () => <SecretsSection />,
+  logs: () => <LogsSection />,
 };
 
 export function SectionBlocks({ section }: { section: SettingsSection }) {

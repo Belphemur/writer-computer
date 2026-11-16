@@ -35,7 +35,7 @@ import { setMarkdownRenderer } from "./api/functions";
 import { createMarkdownRenderer } from "./api/markdown-render";
 import { installObsidianTheme } from "./api/theme-compat";
 import { installPopupGuard } from "./popup-guard";
-import { recordPluginError } from "./error-log";
+import { recordPluginError, setPluginVersion } from "./error-log";
 import {
   isMissingApiLogEnabled,
   wrapAppForDiagnostics,
@@ -361,6 +361,7 @@ export class PluginHost {
       this.setStatus(id, { state: "failed", error: "not installed" });
       return;
     }
+    setPluginVersion(id, manifest.version);
     this.loading++;
     try {
       // The Node surface must be seeded (os info, login PATH, sync-fs cache) before any plugin

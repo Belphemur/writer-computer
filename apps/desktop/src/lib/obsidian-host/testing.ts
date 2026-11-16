@@ -157,7 +157,10 @@ export function createMemoryVaultIo(files: Record<string, string> = {}): VaultIo
         fileMap.delete(from);
         ensureParents(to);
         fileMap.set(to, v);
-        touch(to);
+        // A real rename keeps the file's mtime.
+        const m = mtimes.get(from);
+        if (m !== undefined) mtimes.set(to, m);
+        mtimes.delete(from);
       } else if (folders.has(from)) {
         folders.delete(from);
         folders.add(to);

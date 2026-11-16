@@ -103,10 +103,10 @@ fn load_or_create_identity(app_data_dir: &Path) -> Identity {
     match std::fs::read_to_string(&path) {
         Ok(contents) => match serde_json::from_str::<Identity>(&contents) {
             Ok(identity) => return identity,
-            Err(error) => eprintln!("telemetry: identity file unreadable, replacing it: {error}"),
+            Err(error) => log::warn!("telemetry: identity file unreadable, replacing it: {error}"),
         },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => eprintln!("telemetry: identity file unreadable, replacing it: {error}"),
+        Err(error) => log::warn!("telemetry: identity file unreadable, replacing it: {error}"),
     }
     let identity = Identity::new();
     write_identity(app_data_dir, &identity);
@@ -117,13 +117,13 @@ fn load_or_create_identity(app_data_dir: &Path) -> Identity {
 /// half-written file that the next launch would replace with a new ID.
 fn write_identity(app_data_dir: &Path, identity: &Identity) {
     if let Err(error) = std::fs::create_dir_all(app_data_dir) {
-        eprintln!("telemetry: failed to create app data dir: {error}");
+        log::warn!("telemetry: failed to create app data dir: {error}");
         return;
     }
     let json = match serde_json::to_string_pretty(identity) {
         Ok(json) => json,
         Err(error) => {
-            eprintln!("telemetry: failed to serialize identity: {error}");
+            log::warn!("telemetry: failed to serialize identity: {error}");
             return;
         }
     };
@@ -132,7 +132,7 @@ fn write_identity(app_data_dir: &Path, identity: &Identity) {
     let written =
         std::fs::write(&temp_path, json).and_then(|()| std::fs::rename(&temp_path, &path));
     if let Err(error) = written {
-        eprintln!("telemetry: failed to write identity: {error}");
+        log::warn!("telemetry: failed to write identity: {error}");
         let _ = std::fs::remove_file(&temp_path);
     }
 }
@@ -206,7 +206,7 @@ pub fn init(app: &tauri::AppHandle, enabled: bool, email: Option<String>) {
     }
 
     let Ok(app_data_dir) = app.path().app_data_dir() else {
-        eprintln!("telemetry: no app data dir; telemetry disabled for this session");
+        log::warn!("telemetry: no app data dir; telemetry disabled for this session");
         return;
     };
 
@@ -469,7 +469,7 @@ async fn run_dispatcher(mut receiver: UnboundedReceiver<QueuedEvent>) {
     {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("telemetry: failed to build http client: {error}");
+            log::warn!("telemetry: failed to build http client: {error}");
             return;
         }
     };
@@ -493,7 +493,7 @@ async fn run_dispatcher(mut receiver: UnboundedReceiver<QueuedEvent>) {
         // is a failure too — a bad key comes back as 401, not as an error.
         let response = client.post(&endpoint).json(&payload).send().await;
         if let Err(error) = response.and_then(|response| response.error_for_status()) {
-            eprintln!("telemetry: capture failed: {error}");
+            log::warn!("telemetry: capture failed: {error}");
         }
     }
 }
