@@ -5,6 +5,7 @@ import { EditorTabs } from "./editor-area/editor-tabs";
 import { SidebarToggleButton } from "./sidebar/sidebar-toggle-button";
 import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
+import { useActivePluginLeaf, useIsPluginPaneOpen, usePluginPaneWidth } from "@/hooks/use-plugins";
 import { PluginViewPane } from "./plugins/plugin-view-pane";
 import { PluginStatusBar } from "./plugins/plugin-strips";
 import { useSidebar } from "@/hooks/use-sidebar";
@@ -27,6 +28,10 @@ export function AppLayout() {
 }
 
 function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
+  const pluginPaneOpen = useIsPluginPaneOpen();
+  const pluginPaneLeaf = useActivePluginLeaf();
+  const pluginPaneWidth = usePluginPaneWidth();
+  const pluginPaneInset = pluginPaneOpen && pluginPaneLeaf ? pluginPaneWidth : 0;
   const { isSidebarCollapsed, sidebarWidth, setSidebarWidth } = useSidebar();
   const viewportWidth = typeof window === "undefined" ? 1200 : window.innerWidth;
   const maxSidebarWidth = Math.max(280, Math.min(420, Math.floor(viewportWidth * 0.35)));
@@ -123,6 +128,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
         style={{
           height: "var(--chrome-drag-height)",
           left: isSidebarCollapsed ? 0 : draftSidebarWidth,
+          right: pluginPaneInset,
         }}
       />
       <div
@@ -139,7 +145,8 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
           className="pointer-events-none absolute top-0 z-40"
           style={{
             left: tabChromeLeft,
-            right: 12,
+            // The plugin pane is a full-height column: the tab strip ends at its left edge.
+            right: pluginPaneInset + 12,
             transition: isSidebarDragging ? "none" : "left 140ms ease-out",
           }}
         >
