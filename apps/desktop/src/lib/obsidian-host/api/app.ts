@@ -34,6 +34,29 @@ export class FileManager {
   trashFile(file: TAbstractFile): Promise<void> {
     return this.app.vault.trash(file, false);
   }
+  /** `[[link]]` (or `![[embed]]` for non-notes) text for `file`, as `fileToLinktext` shortens it. */
+  generateMarkdownLink(file: TFile, sourcePath: string, subpath = "", alias?: string): string {
+    const base = this.app.metadataCache.fileToLinktext(file, sourcePath, true);
+    const target = `${base}${subpath}`;
+    const embed = file.extension !== "md" ? "!" : "";
+    return `${embed}[[${target}${alias ? `|${alias}` : ""}]]`;
+  }
+  /** A free `<attachments folder>/<name>.<ext>` path (the folder is the file's own, Writer has no attachment setting). */
+  async getAvailablePathForAttachment(filename: string, sourcePath: string): Promise<string> {
+    const dot = filename.lastIndexOf(".");
+    const stem = dot > 0 ? filename.slice(0, dot) : filename;
+    const ext = dot > 0 ? filename.slice(dot) : "";
+    const slash = sourcePath.lastIndexOf("/");
+    const dir = slash > 0 ? `${sourcePath.slice(0, slash)}/` : "";
+    for (let i = 0; ; i++) {
+      const candidate = `${dir}${stem}${i === 0 ? "" : ` ${i}`}${ext}`;
+      if (!this.app.vault.getAbstractFileByPath(candidate)) return candidate;
+    }
+  }
+  /** Confirmation is the caller's UI in Writer; this always reports "go ahead". */
+  async promptForDeletion(_file: TAbstractFile): Promise<boolean> {
+    return true;
+  }
   getNewFileParent(_sourcePath: string): ReturnType<Vault["getRoot"]> {
     return this.app.vault.getRoot();
   }
@@ -123,6 +146,7 @@ export class App {
             },
           }
         : undefined,
+    getEnabledPluginById: (_id: string) => null,
   };
 
   private readonly basePath: string;

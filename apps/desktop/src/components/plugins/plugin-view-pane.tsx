@@ -23,7 +23,15 @@ export function MountedElement({ element }: { element: HTMLElement }) {
       if (element.parentElement === host) element.remove();
     };
   }, [element]);
-  return <div ref={hostRef} className="h-full min-h-0 overflow-auto" />;
+  // A definite-height flex column: the leaf inside fills it (see `.workspace-leaf` in
+  // theme-compat) and plugins scroll their own content, so bottom-pinned UI (chat inputs) works.
+  return (
+    <div
+      ref={hostRef}
+      data-plugin-leaf-host
+      className="flex h-full min-h-0 flex-col overflow-hidden"
+    />
+  );
 }
 
 /**
@@ -84,8 +92,17 @@ export function PluginViewPane() {
         onPointerDown={handleResizeStart}
         className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize bg-[var(--line-subtle)] opacity-60 hover:opacity-100 data-[dragging]:opacity-100"
       />
-      <div className="flex shrink-0 items-center gap-1 border-b border-[var(--line-subtler)] px-3 pt-10 pb-2 text-[13px]">
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+      {/*
+        The window chrome overlays the top of this pane: the drag region (z-30, 72px) and the
+        editor tab bar (z-40, 56px) span the full width. The header therefore sits above them
+        (z-50) but ignores pointer events itself, so only the controls are clickable and the
+        rest of the strip still drags the window.
+      */}
+      <div
+        data-plugin-pane-header
+        className="pointer-events-none relative z-50 flex shrink-0 items-center gap-1 border-b border-[var(--line-subtler)] px-3 pt-10 pb-2 text-[13px]"
+      >
+        <div className="pointer-events-auto flex min-w-0 flex-1 gap-1 overflow-x-auto">
           {leaves.map((leaf) => (
             <button
               key={leaf.id}
@@ -102,7 +119,7 @@ export function PluginViewPane() {
           type="button"
           onClick={close}
           aria-label="Close plugin pane"
-          className="rounded-md px-2 py-1 text-text-muted hover:text-text-primary"
+          className="pointer-events-auto rounded-md px-2 py-1 text-text-muted hover:text-text-primary"
         >
           ×
         </button>

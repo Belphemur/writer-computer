@@ -12,7 +12,7 @@ pub struct ImageSaveResult {
 }
 
 #[tauri::command]
-pub fn save_clipboard_image(
+pub async fn save_clipboard_image(
     markdown_file_path: String,
     image_data: Vec<u8>,
     format: String,
@@ -24,7 +24,8 @@ pub fn save_clipboard_image(
     app.state::<AppState>()
         .get_or_create(webview.label())
         .authorize_path(std::path::Path::new(&markdown_file_path))?;
-    save_clipboard_image_impl(&markdown_file_path, &image_data, &format)
+    super::blocking(move || save_clipboard_image_impl(&markdown_file_path, &image_data, &format))
+        .await
 }
 
 pub fn save_clipboard_image_impl(

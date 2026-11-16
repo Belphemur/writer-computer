@@ -2,8 +2,9 @@
 //! `files` table) through the per-window [`crate::index::names::NameCache`];
 //! there is no separate file walker. See `index/names.rs`.
 
+use crate::commands::blocking;
 use crate::commands::index::app_err;
-use crate::commands::index::{blocking, window_index};
+use crate::commands::index::window_index;
 use crate::error::AppError;
 use crate::index::names::NameFilter;
 use serde::Serialize;

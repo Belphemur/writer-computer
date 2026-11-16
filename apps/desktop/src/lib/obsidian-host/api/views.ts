@@ -47,6 +47,8 @@ export interface WorkspaceBridge {
   /** The plugin leaf whose tab is the active one in the main area, or null (a document or no tab). */
   getActivePluginLeaf(): WorkspaceLeaf | null;
   openFile(path: string, opts: { newLeaf: boolean }): Promise<void>;
+  /** `Workspace.updateOptions()`: re-apply the registered editor extensions to every editor. */
+  reapplyEditorOptions(): void;
 }
 
 /** Bridge that keeps leaves in detached DOM. Used until the host is wired and in tests. */
@@ -59,6 +61,7 @@ export const detachedBridge: WorkspaceBridge = {
   getActiveEditor: () => null,
   getActivePluginLeaf: () => null,
   openFile: () => Promise.reject(new Error("openFile: no workspace bridge is attached")),
+  reapplyEditorOptions() {},
 };
 
 // ---------------------------------------------------------------- Editor
@@ -375,6 +378,7 @@ export class WorkspaceLeaf extends Component {
   ) {
     super();
     this.view = new EmptyView(this);
+    this.view.containerEl.setAttribute("data-type", "empty");
     this.containerEl.appendChild(this.view.containerEl);
   }
 
@@ -404,6 +408,8 @@ export class WorkspaceLeaf extends Component {
     const entry = this.app.workspace.viewCreator(viewState.type);
     if (!entry) throw new Error(`Unknown view type "${viewState.type}"`);
     const next = entry.creator(this) as View;
+    // Plugin stylesheets key on the view type (`.workspace-leaf-content[data-type="..."]`).
+    next.containerEl.setAttribute("data-type", next.getViewType());
     await this.closeView();
     this.view = next;
     this.containerEl.replaceChildren(next.containerEl);
@@ -525,6 +531,8 @@ export class Workspace extends Events {
   rightSplit = makeSplit();
   /** The main editor area. */
   rootSplit = makeSplit();
+  leftRibbon = { hiddenItems: {} as Record<string, boolean>, items: [] as unknown[] };
+  rightRibbon = { hiddenItems: {} as Record<string, boolean>, items: [] as unknown[] };
   private registry = new Map<string, { owner: string; creator: ViewCreator }>();
   private leaves = new Set<WorkspaceLeaf>();
   private readyCallbacks: (() => unknown)[] = [];
@@ -611,6 +619,58 @@ export class Workspace extends Events {
   getRightLeaf(_shouldSplit?: boolean): WorkspaceLeaf {
     return this.newLeaf("right");
   }
+  /** A leaf for a new view: Writer has no pinning, so any fresh main-area leaf is "unpinned". */
+  getUnpinnedLeaf(): WorkspaceLeaf {
+    return this.getLeaf(true);
+  }
+  getLeafById(id: string): WorkspaceLeaf | null {
+    return this.allLeaves().find((l) => l.id === id) ?? null;
+  }
+  getGroupLeaves(_group: string): WorkspaceLeaf[] {
+    return [];
+  }
+  iterateRootLeaves(cb: (leaf: WorkspaceLeaf) => unknown): void {
+    for (const l of this.allLeaves()) if (l.placement === "main") cb(l);
+  }
+  /** Writer has no persisted layout tree: an empty layout, and saving it is a no-op. */
+  getLayout(): Record<string, unknown> {
+    return {};
+  }
+  requestSaveLayout(): void {}
+  async changeLayout(_workspace: unknown): Promise<void> {}
+  splitActiveLeaf(_direction?: "vertical" | "horizontal"): WorkspaceLeaf {
+    return this.getLeaf("split");
+  }
+  createLeafBySplit(_leaf: WorkspaceLeaf, _direction?: "vertical" | "horizontal"): WorkspaceLeaf {
+    return this.getLeaf("split");
+  }
+  createLeafInParent(_parent: unknown, _index?: number): WorkspaceLeaf {
+    return this.getLeaf("tab");
+  }
+  duplicateLeaf(leaf: WorkspaceLeaf): Promise<WorkspaceLeaf> {
+    return Promise.resolve(leaf);
+  }
+  openPopoutLeaf(): WorkspaceLeaf {
+    return this.getLeaf("window");
+  }
+  moveLeafToPopout(leaf: WorkspaceLeaf): WorkspaceLeaf {
+    return leaf;
+  }
+  /** The side-dock leaf for `type`: the existing one, or a new right-pane leaf showing it. */
+  async ensureSideLeaf(
+    type: string,
+    _side: "left" | "right",
+    options?: { active?: boolean; reveal?: boolean; split?: boolean; state?: unknown },
+  ): Promise<WorkspaceLeaf> {
+    let leaf = this.getLeavesOfType(type)[0];
+    if (!leaf) {
+      leaf = this.getRightLeaf(false);
+      await leaf.setViewState({ type, active: options?.active, state: options?.state } as never);
+    }
+    if (options?.reveal !== false) await this.revealLeaf(leaf);
+    return leaf;
+  }
+  handleLinkContextMenu(_menu: unknown, _linktext: string, _sourcePath: string): void {}
   getMostRecentLeaf(): WorkspaceLeaf | null {
     if (this.activeLeaf?.placement === "main") return this.activeLeaf;
     const md = this.markdownLeafForActive();
@@ -771,6 +831,15 @@ export class Workspace extends Events {
   }
 
   // -- layout
+
+  /**
+   * Public `Workspace.updateOptions()` ("update the internal settings of the editors"; Dataview
+   * calls it after changing its editor-affecting settings). Writer has no per-editor option
+   * model beyond the plugin extension compartment, so this re-applies it to every editor.
+   */
+  updateOptions(): void {
+    this.bridge.reapplyEditorOptions();
+  }
 
   onLayoutReady(callback: () => unknown): void {
     if (this.layoutReady) {

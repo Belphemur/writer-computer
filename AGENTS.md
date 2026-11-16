@@ -79,6 +79,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - Prefer the smallest change that is correct, robust, and easy to reason about.
 - Avoid fragile logic, hidden coupling, edge-case traps, and assumptions about incidental execution order.
 - Keep async flows and shared state race-safe. Use explicit sequencing, cancellation, idempotency, or clear ownership where needed.
+- Tauri runs a plain `fn` command on the main thread (the webview event loop). Any command that touches disk, SQLite, a keychain, a process or a lock held across IO must be `async` and do its work through `commands::blocking(...)` (one helper, `commands/mod.rs`); `commands::tests::sync_commands_are_allowlisted` fails on a new non-async command. The plugin host's per-call timing: `localStorage["writer.hostIpcTrace"] = "1"`.
 - Do not introduce unnecessary performance regressions. Avoid extra renders, allocations, subscriptions, scans, blocking work, or I/O unless clearly justified.
 - Fail explicitly. Surface invalid states and unexpected errors clearly instead of silently swallowing them or masking them with fallback behavior.
 - Preserve testability. Keep side effects at the boundaries, make dependencies explicit, and structure logic so it can be exercised in isolation when practical.

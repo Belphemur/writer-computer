@@ -344,3 +344,38 @@ describe("markdown render: re-render", () => {
     void rig;
   });
 });
+
+describe("markdown render: paragraphs and line breaks", () => {
+  const dom = (md: string): HTMLElement => {
+    const d = document.createElement("div");
+    d.innerHTML = markdownToSafeHtml(md);
+    return d;
+  };
+
+  it("splits blank-line separated paragraphs and keeps block order", () => {
+    const d = dom(
+      "# H\npara one\n\npara two\nsecond line\n\n- a\n- b\n\n```\ncode\n```\nafter code\n\n> quote [[Note]]\n\nhard  \nbreak and back\\\nslash",
+    );
+    expect([...d.children].map((c) => c.tagName)).toEqual([
+      "H1",
+      "P",
+      "P",
+      "UL",
+      "PRE",
+      "P",
+      "BLOCKQUOTE",
+      "P",
+    ]);
+    // A single newline is a visible break (Obsidian default), not a space.
+    expect(d.children[2].innerHTML).toBe("para two<br>second line");
+    expect(d.children[7].querySelectorAll("br")).toHaveLength(2);
+    expect(d.querySelector("blockquote a.internal-link")?.getAttribute("data-href")).toBe("Note");
+  });
+
+  it("styles .markdown-rendered paragraphs, lists and headings against the preflight reset", async () => {
+    const { OBSIDIAN_THEME_CSS } = await import("../src/lib/obsidian-host/api/theme-compat");
+    expect(OBSIDIAN_THEME_CSS).toMatch(/\.markdown-rendered p \{ margin: 0 0 var\(--p-spacing\)/);
+    expect(OBSIDIAN_THEME_CSS).toMatch(/\.markdown-rendered ul \{ list-style: disc/);
+    expect(OBSIDIAN_THEME_CSS).toMatch(/\.markdown-rendered \{[^}]*white-space: normal/);
+  });
+});

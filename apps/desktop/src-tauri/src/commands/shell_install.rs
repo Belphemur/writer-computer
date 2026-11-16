@@ -224,12 +224,28 @@ fn build_status(source: Option<PathBuf>) -> CliInstallStatus {
 }
 
 #[tauri::command]
-pub fn cli_status(_app: AppHandle) -> CliInstallStatus {
+pub async fn cli_status(_app: AppHandle) -> CliInstallStatus {
+    // Stats the install target and the app binary: disk, so off the main thread.
+    tauri::async_runtime::spawn_blocking(cli_status_blocking)
+        .await
+        .expect("cli_status task panicked")
+}
+
+/// For callers already on a blocking thread (the app menu).
+pub(crate) fn cli_status_blocking() -> CliInstallStatus {
     build_status(source_binary())
 }
 
 #[tauri::command]
-pub fn install_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
+pub async fn install_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
+    // The elevation fallback shows the system admin prompt and waits for it: never on the main
+    // thread, which is the event loop that has to keep painting that prompt's parent window.
+    tauri::async_runtime::spawn_blocking(install_cli_blocking)
+        .await
+        .map_err(|e| InstallError::Io(io::Error::other(e.to_string())))?
+}
+
+pub(crate) fn install_cli_blocking() -> Result<CliInstallStatus, InstallError> {
     let source = source_binary().ok_or(InstallError::SourceUnknown)?;
     let target = PathBuf::from(INSTALL_TARGET);
 
@@ -241,7 +257,13 @@ pub fn install_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
 }
 
 #[tauri::command]
-pub fn uninstall_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
+pub async fn uninstall_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
+    tauri::async_runtime::spawn_blocking(uninstall_cli_blocking)
+        .await
+        .map_err(|e| InstallError::Io(io::Error::other(e.to_string())))?
+}
+
+pub(crate) fn uninstall_cli_blocking() -> Result<CliInstallStatus, InstallError> {
     let source = source_binary();
     let target = PathBuf::from(INSTALL_TARGET);
 

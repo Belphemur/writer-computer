@@ -401,7 +401,7 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
 
 #[cfg(target_os = "macos")]
 fn refresh_cli_menu(app: &tauri::AppHandle) {
-    let installed = commands::shell_install::cli_status(app.clone()).installed;
+    let installed = commands::shell_install::cli_status_blocking().installed;
     let label = if installed {
         CLI_MENU_UNINSTALL_LABEL
     } else {
@@ -414,7 +414,7 @@ fn refresh_cli_menu(app: &tauri::AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn run_cli_toggle(app: tauri::AppHandle) {
-    if commands::shell_install::cli_status(app.clone()).installed {
+    if commands::shell_install::cli_status_blocking().installed {
         run_cli_uninstall(app);
     } else {
         run_cli_install(app);
@@ -424,8 +424,8 @@ fn run_cli_toggle(app: tauri::AppHandle) {
 #[cfg(target_os = "macos")]
 fn run_cli_install(app: tauri::AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-    tauri::async_runtime::spawn_blocking(move || {
-        match commands::shell_install::install_cli(app.clone()) {
+    tauri::async_runtime::spawn_blocking(
+        move || match commands::shell_install::install_cli_blocking() {
             Ok(status) => {
                 refresh_cli_menu(&app);
                 app.dialog()
@@ -444,15 +444,15 @@ fn run_cli_install(app: tauri::AppHandle) {
                     .title("Writer CLI")
                     .show(|_| {});
             }
-        }
-    });
+        },
+    );
 }
 
 #[cfg(target_os = "macos")]
 fn run_cli_uninstall(app: tauri::AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
     tauri::async_runtime::spawn_blocking(move || {
-        match commands::shell_install::uninstall_cli(app.clone()) {
+        match commands::shell_install::uninstall_cli_blocking() {
             Ok(status) => {
                 refresh_cli_menu(&app);
                 app.dialog()

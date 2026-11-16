@@ -179,8 +179,41 @@ body,
   background: transparent;
 }
 
-/* Prevent text selection everywhere except editor and form inputs */
-*:not(.cm-editor):not(.cm-content):not(.cm-line):not(textarea):not(input) {
+/* Prevent text selection everywhere except editor, form inputs and plugin-hosted content
+   (the plugin pane / editor-tab leaves, plugin modals and rendered markdown). The plugin subtree
+   is excluded from the rule above instead of out-ranked, so no specificity or !important race. */
+*:not(.cm-editor):not(.cm-content):not(.cm-line):not(textarea):not(input):not(
+    :is(
+      [data-plugin-leaf-host],
+      [data-plugin-leaf-host] *,
+      .modal-container,
+      .modal-container *,
+      .is-selectable,
+      .is-selectable *,
+      .markdown-rendered,
+      .markdown-rendered *
+    )
+  ) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+[data-plugin-leaf-host],
+[data-plugin-leaf-host] *,
+.modal-container,
+.modal-container *,
+.is-selectable,
+.is-selectable *,
+.markdown-rendered,
+.markdown-rendered * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Controls inside plugin content stay non-selectable like the app's own chrome. */
+[data-plugin-leaf-host]
+  :is(button, [role="button"], .clickable-icon, .view-header, .view-actions, svg),
+.modal-container :is(button, [role="button"], .clickable-icon, .modal-close-button) {
   -webkit-user-select: none;
   user-select: none;
 }

@@ -36,13 +36,7 @@ pub struct WriteResult {
     pub modified_at: u64,
 }
 
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, AppError> + Send + 'static,
-) -> Result<T, AppError> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))?
-}
+use super::blocking;
 
 /// Extract a document title from a markdown file by reading its first few KB.
 /// Priority: YAML frontmatter `title:` field, then leading `# ` heading.
@@ -257,6 +251,16 @@ pub fn read_directory_impl(
     path: &str,
     state: Option<&WorkspaceState>,
 ) -> Result<Vec<DirEntry>, AppError> {
+    read_directory_with(path, state, true)
+}
+
+/// `titles: false` skips `extract_title`, which opens every markdown file of the folder. The
+/// plugin vault walks and lists folders without ever showing a title.
+pub fn read_directory_with(
+    path: &str,
+    state: Option<&WorkspaceState>,
+    titles: bool,
+) -> Result<Vec<DirEntry>, AppError> {
     let dir_path = PathBuf::from(path);
     if !dir_path.exists() {
         return Err(AppError::NotFound(path.to_string()));
@@ -307,7 +311,7 @@ pub fn read_directory_impl(
             }
         } else if file_type.is_file() && is_listed_file(&entry_path) {
             {
-                let title = if is_base_file(&entry_path) {
+                let title = if !titles || is_base_file(&entry_path) {
                     None
                 } else {
                     extract_title(&entry_path)
@@ -337,11 +341,12 @@ pub fn read_directory_impl(
 #[tauri::command]
 pub async fn read_directory(
     path: String,
+    titles: Option<bool>,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Vec<DirEntry>, AppError> {
     let state = authorized_state(&app, &webview, &[&path])?;
-    blocking(move || read_directory_impl(&path, Some(&state))).await
+    blocking(move || read_directory_with(&path, Some(&state), titles.unwrap_or(true))).await
 }
 
 /// Resolve this window's state and reject any path outside its allowed
@@ -841,6 +846,40 @@ pub async fn reveal_in_file_manager(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn read_directory_without_titles_skips_the_file_opens() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.md"), "---\ntitle: Real\n---\nbody").unwrap();
+        let with = read_directory_with(dir.path().to_str().unwrap(), None, true).unwrap();
+        let without = read_directory_with(dir.path().to_str().unwrap(), None, false).unwrap();
+        assert_eq!(with[0].title.as_deref(), Some("Real"));
+        assert_eq!(without[0].title, None);
+        assert_eq!(without[0].name, "a.md");
+    }
+
+    /// Synthetic perf probe: `cargo test --lib read_directory_titles_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn read_directory_titles_cost() {
+        let dir = TempDir::new().unwrap();
+        for i in 0..2000 {
+            fs::write(
+                dir.path().join(format!("note-{i}.md")),
+                format!("---\ntitle: Note {i}\n---\n{}", "body ".repeat(200)),
+            )
+            .unwrap();
+        }
+        let p = dir.path().to_str().unwrap();
+        for titles in [true, false] {
+            let t = std::time::Instant::now();
+            let n = read_directory_with(p, None, titles).unwrap().len();
+            println!(
+                "read_directory titles={titles}: {n} entries in {:?}",
+                t.elapsed()
+            );
+        }
+    }
 
     #[test]
     fn retain_authorized_drops_dotdot_and_outside_paths() {

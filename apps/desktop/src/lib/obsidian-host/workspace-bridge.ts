@@ -7,7 +7,7 @@
 // Types only from the shim: this module must stay cheap to import (the shim itself is lazy).
 import type { EditorView } from "@codemirror/view";
 import type { LeafPlacement, WorkspaceBridge, WorkspaceLeaf } from "./api/views";
-import { editorBackendFor } from "./editor-bridge";
+import { editorBackendFor, reapplyPluginEditorExtensions } from "./editor-bridge";
 
 /** Where leaves are shown. Implemented by the plugins store. */
 export interface PluginPane {
@@ -47,6 +47,7 @@ export function createWorkspaceBridge(app: AppWorkspace, pane: PluginPane): Work
     leafChanged: (leaf) => pane.leafChanged(leaf),
     detachLeaf: (leaf) => pane.detachLeaf(leaf),
     getActivePluginLeaf: () => pane.activePluginLeaf(),
+    reapplyEditorOptions: reapplyPluginEditorExtensions,
     getActiveFilePath() {
       const root = app.getRoot();
       const active = app.getActiveFilePath();

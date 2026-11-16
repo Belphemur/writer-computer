@@ -737,15 +737,20 @@ fn active_session_path(session: Option<&SessionData>) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn get_recent_workspaces(app: tauri::AppHandle) -> Vec<String> {
-    load_recent_workspaces(&app).unwrap_or_default()
+pub async fn get_recent_workspaces(app: tauri::AppHandle) -> Vec<String> {
+    super::blocking(move || Ok(load_recent_workspaces(&app).unwrap_or_default()))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-pub fn remove_recent_workspace(path: String, app: tauri::AppHandle) -> Result<(), AppError> {
-    let mut recents = load_recent_workspaces(&app).unwrap_or_default();
-    recents.retain(|p| p != &path);
-    save_recent_workspaces_list(&app, &recents)
+pub async fn remove_recent_workspace(path: String, app: tauri::AppHandle) -> Result<(), AppError> {
+    super::blocking(move || {
+        let mut recents = load_recent_workspaces(&app).unwrap_or_default();
+        recents.retain(|p| p != &path);
+        save_recent_workspaces_list(&app, &recents)
+    })
+    .await
 }
 
 fn recent_workspaces_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -926,26 +931,29 @@ fn save_all_sessions(
 }
 
 #[tauri::command]
-pub fn save_session(
+pub async fn save_session(
     workspace_root: String,
     tabs: Vec<SessionTab>,
     active_index: Option<usize>,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
-    let key = workspace_root.trim_end_matches('/').to_string();
-    // Hold the cross-window file lock for the full read-modify-write so two
-    // windows saving sessions simultaneously don't drop each other's updates.
-    let state = app.state::<AppState>();
-    let _guard = state.sessions_file_lock.lock();
-    let mut sessions = load_all_sessions(&app);
+    super::blocking(move || {
+        let key = workspace_root.trim_end_matches('/').to_string();
+        // Hold the cross-window file lock for the full read-modify-write so two
+        // windows saving sessions simultaneously don't drop each other's updates.
+        let state = app.state::<AppState>();
+        let _guard = state.sessions_file_lock.lock();
+        let mut sessions = load_all_sessions(&app);
 
-    if tabs.is_empty() && active_index.is_none() {
-        sessions.remove(&key);
-    } else {
-        sessions.insert(key, SessionData { tabs, active_index });
-    }
+        if tabs.is_empty() && active_index.is_none() {
+            sessions.remove(&key);
+        } else {
+            sessions.insert(key, SessionData { tabs, active_index });
+        }
 
-    save_all_sessions(&app, &sessions)
+        save_all_sessions(&app, &sessions)
+    })
+    .await
 }
 
 pub(crate) fn load_session_impl(
@@ -958,11 +966,11 @@ pub(crate) fn load_session_impl(
 }
 
 #[tauri::command]
-pub fn load_session(
+pub async fn load_session(
     workspace_root: String,
     app: tauri::AppHandle,
 ) -> Result<Option<SessionData>, AppError> {
-    load_session_impl(&app, &workspace_root)
+    super::blocking(move || load_session_impl(&app, &workspace_root)).await
 }
 
 #[cfg(test)]

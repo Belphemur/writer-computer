@@ -382,6 +382,10 @@ pub struct ProbeResult {
     pub is_file: bool,
     pub is_dir: bool,
     pub size: Option<u64>,
+    /// Modification / creation time in unix milliseconds (`None` when the platform has none).
+    /// The vault's `stat` is built on this, so one probe answers it without a directory listing.
+    pub modified_ms: Option<u64>,
+    pub created_ms: Option<u64>,
     /// Entry names, only for the few "version root" directories of `ProbeScope::listable`
     /// (nvm / fnm node installs): agent CLIs installed with npm live under those, and the
     /// plugin's synchronous detection enumerates them. `None` for every other path.
@@ -562,6 +566,12 @@ fn listed_entries(p: &Path, scope: &ProbeScope) -> Option<Vec<String>> {
     Some(names)
 }
 
+fn unix_ms(t: std::time::SystemTime) -> Option<u64> {
+    t.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+}
+
 /// Metadata only, never content. Anything out of scope looks like a miss.
 pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, String> {
     if paths.len() > PROBE_MAX_PATHS {
@@ -582,6 +592,8 @@ pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, S
                     is_file: m.is_file(),
                     is_dir: m.is_dir(),
                     size: m.is_file().then_some(m.len()),
+                    modified_ms: m.modified().ok().and_then(unix_ms),
+                    created_ms: m.created().ok().and_then(unix_ms),
                     entries: if m.is_dir() {
                         listed_entries(Path::new(s), scope)
                     } else {
@@ -599,6 +611,8 @@ pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, S
                     is_file: false,
                     is_dir: false,
                     size: None,
+                    modified_ms: None,
+                    created_ms: None,
                     entries: None,
                     real: None,
                     text: None,

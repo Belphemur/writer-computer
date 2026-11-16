@@ -4,7 +4,8 @@
 //! confinement against the window's root, self-write marking and the sidebar
 //! echo. Errors serialize as strings (`AppError`).
 
-use super::index::{app_err, blocking, window_index};
+use super::blocking;
+use super::index::{app_err, window_index};
 use crate::bases::context::SystemClock;
 use crate::bases::document::Document;
 use crate::bases::functions::{function_infos, FunctionInfo};

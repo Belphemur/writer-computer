@@ -105,13 +105,7 @@ fn io(e: String) -> AppError {
     AppError::Io(e)
 }
 
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, AppError> + Send + 'static,
-) -> Result<T, AppError> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))?
-}
+use super::blocking;
 
 #[tauri::command]
 pub async fn plugins_state(
@@ -619,12 +613,13 @@ pub fn plugin_proc_kill(
 }
 
 #[tauri::command]
-pub fn plugins_consent_list(
+pub async fn plugins_consent_list(
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Vec<Remembered>, AppError> {
     let ctx = trusted_ctx(&webview, &app)?;
-    Ok(consent_store(&app)?.list(&ctx.root))
+    let store = consent_store(&app)?;
+    blocking(move || Ok(store.list(&ctx.root))).await
 }
 
 #[tauri::command]

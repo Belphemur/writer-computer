@@ -113,8 +113,12 @@ fn is_markdown_file(path: &Path) -> bool {
 /// nonexistent paths are ignored rather than erroring — callers fire this
 /// on every file activation and shouldn't have to pre-validate.
 #[tauri::command]
-pub fn record_recent_file(path: String, app: tauri::AppHandle) -> Result<(), AppError> {
-    let file = PathBuf::from(&path);
+pub async fn record_recent_file(path: String, app: tauri::AppHandle) -> Result<(), AppError> {
+    super::blocking(move || record_recent_file_blocking(&path, &app)).await
+}
+
+fn record_recent_file_blocking(path: &str, app: &tauri::AppHandle) -> Result<(), AppError> {
+    let file = PathBuf::from(path);
     if !is_markdown_file(&file) {
         return Ok(());
     }
@@ -126,24 +130,27 @@ pub fn record_recent_file(path: String, app: tauri::AppHandle) -> Result<(), App
 
     let state = app.state::<AppState>();
     let _guard = state.recent_files_lock.lock();
-    let mut recents = load_recent_files(&app);
+    let mut recents = load_recent_files(app);
     push_recent(&mut recents, canonical, now_secs());
-    save_recent_files(&app, &recents)
+    save_recent_files(app, &recents)
 }
 
 /// Drop a single path from the global recents list (the per-row delete in
 /// the compact picker). No-op if the path isn't present.
 #[tauri::command]
-pub fn remove_recent_file(path: String, app: tauri::AppHandle) -> Result<(), AppError> {
-    let state = app.state::<AppState>();
-    let _guard = state.recent_files_lock.lock();
-    let mut recents = load_recent_files(&app);
-    let before = recents.len();
-    recents.retain(|entry| entry.path != path);
-    if recents.len() == before {
-        return Ok(());
-    }
-    save_recent_files(&app, &recents)
+pub async fn remove_recent_file(path: String, app: tauri::AppHandle) -> Result<(), AppError> {
+    super::blocking(move || {
+        let state = app.state::<AppState>();
+        let _guard = state.recent_files_lock.lock();
+        let mut recents = load_recent_files(&app);
+        let before = recents.len();
+        recents.retain(|entry| entry.path != path);
+        if recents.len() == before {
+            return Ok(());
+        }
+        save_recent_files(&app, &recents)
+    })
+    .await
 }
 
 /// Return the global recents as display-ready entries, most recent first.

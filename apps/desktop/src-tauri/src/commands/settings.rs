@@ -126,7 +126,10 @@ fn json_to_config_value(v: &Value) -> Option<ConfigValue> {
 }
 
 #[tauri::command]
-pub fn get_settings(webview: tauri::Webview, app: tauri::AppHandle) -> Result<Value, AppError> {
+pub async fn get_settings(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Value, AppError> {
     with_settings(&app, webview.label(), |settings| {
         let merged = settings.merged();
         let mut obj = serde_json::Map::new();
@@ -138,7 +141,7 @@ pub fn get_settings(webview: tauri::Webview, app: tauri::AppHandle) -> Result<Va
 }
 
 #[tauri::command]
-pub fn get_setting(
+pub async fn get_setting(
     key: String,
     webview: tauri::Webview,
     app: tauri::AppHandle,
@@ -152,33 +155,45 @@ pub fn get_setting(
 }
 
 #[tauri::command]
-pub fn set_setting(
+pub async fn set_setting(
     key: String,
     value: Value,
     scope: String,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Value, AppError> {
-    let config_value =
-        json_to_config_value(&value).ok_or_else(|| AppError::Io("Invalid value type".into()))?;
+    // Persisting writes the config file while holding the settings locks.
+    let label = webview.label().to_string();
+    super::blocking(move || set_setting_blocking(&key, &value, &scope, &label, &app)).await
+}
 
-    let state = app.state::<AppState>().get_or_create(webview.label());
+fn set_setting_blocking(
+    key: &str,
+    value: &Value,
+    scope: &str,
+    label: &str,
+    app: &tauri::AppHandle,
+) -> Result<Value, AppError> {
+    let config_value =
+        json_to_config_value(value).ok_or_else(|| AppError::Io("Invalid value type".into()))?;
+
+    let state = app.state::<AppState>().get_or_create(label);
     let persist = |settings: &mut Settings| {
-        let result = match scope.as_str() {
-            "workspace" => settings.set_workspace(&key, config_value),
-            _ => settings.set_global(&key, config_value),
+        let result = match scope {
+            "workspace" => settings.set_workspace(key, config_value),
+            _ => settings.set_global(key, config_value),
         };
         result.map_err(|e| AppError::Io(e.to_string()))?;
-        let value = match scope.as_str() {
-            "workspace" => settings.get(&key),
-            _ => settings.get_global_or_default(&key),
+        let value = match scope {
+            "workspace" => settings.get(key),
+            _ => settings.get_global_or_default(key),
         };
         value
             .cloned()
             .ok_or_else(|| AppError::Io(format!("Missing setting after write: {key}")))
     };
     let persisted = if scope == "workspace" {
-        with_settings_mut(&app, webview.label(), persist)??
+        with_settings_mut(app, label, persist)??
     } else {
         with_global_settings_mut(app.state::<AppState>().inner(), &state, persist)?
     };
@@ -186,22 +201,32 @@ pub fn set_setting(
 }
 
 #[tauri::command]
-pub fn reset_setting(
+pub async fn reset_setting(
     key: String,
     scope: String,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
-    let state = app.state::<AppState>().get_or_create(webview.label());
+    let label = webview.label().to_string();
+    super::blocking(move || reset_setting_blocking(&key, &scope, &label, &app)).await
+}
+
+fn reset_setting_blocking(
+    key: &str,
+    scope: &str,
+    label: &str,
+    app: &tauri::AppHandle,
+) -> Result<(), AppError> {
+    let state = app.state::<AppState>().get_or_create(label);
     let reset = |settings: &mut Settings| {
-        let result = match scope.as_str() {
-            "workspace" => settings.reset_workspace(&key),
-            _ => settings.reset_global(&key),
+        let result = match scope {
+            "workspace" => settings.reset_workspace(key),
+            _ => settings.reset_global(key),
         };
         result.map_err(|e| AppError::Io(e.to_string()))
     };
     if scope == "workspace" {
-        with_settings_mut(&app, webview.label(), reset)?
+        with_settings_mut(app, label, reset)?
     } else {
         with_global_settings_mut(app.state::<AppState>().inner(), &state, reset)
     }

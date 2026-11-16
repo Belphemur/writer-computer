@@ -14,7 +14,7 @@ import {
 } from "@/lib/prosemark-core/main";
 import * as editorApi from "@/hooks/editor-api";
 import {
-  getPluginEditorExtensions,
+  getPluginCompartmentValue,
   pluginExtensionCompartment,
 } from "@/lib/obsidian-host/editor-bridge";
 import { baseEmbedDecorations } from "./base-embed-decorations";
@@ -138,6 +138,6 @@ export function createEditorExtensions(
     editorClipboardExtension(getFilePath, isDisposed),
     focusOnRevealExtension(isDisposed),
     // Extensions community plugins registered; reconfigured on plugin enable/disable.
-    pluginExtensionCompartment.of(getPluginEditorExtensions()),
+    pluginExtensionCompartment.of(getPluginCompartmentValue()),
   ];
 }

@@ -199,6 +199,12 @@ export class Vault extends Events {
   configDir = ".obsidian";
   private index = new Map<string, TAbstractFile>();
   private root: TFolder;
+  /** Derived views of `index`, rebuilt lazily after any mutation (see `touch`). */
+  private derived: {
+    files: TFile[];
+    markdown: TFile[];
+    byName: Map<string, TFile[]>;
+  } | null = null;
 
   constructor(public io: VaultIo) {
     super();
@@ -217,6 +223,7 @@ export class Vault extends Events {
   /** Builds the file index (hidden entries such as `.obsidian` are not part of the vault). */
   async load(): Promise<void> {
     this.index.clear();
+    this.touch();
     this.root = new TFolder(this, "/");
     this.index.set("/", this.root);
     await this.walk("");
@@ -270,12 +277,14 @@ export class Vault extends Events {
     node.parent = parent ?? this.root;
     node.parent.children.push(node);
     this.index.set(e.path, node);
+    this.touch();
     return node;
   }
 
   private removeNode(node: TAbstractFile): void {
     if (node instanceof TFolder) for (const c of Array.from(node.children)) this.removeNode(c);
     this.index.delete(node.path);
+    this.touch();
     if (node.parent) node.parent.children = node.parent.children.filter((c) => c !== node);
   }
 
@@ -299,11 +308,37 @@ export class Vault extends Events {
       (f): f is TFolder => f instanceof TFolder && (includeRoot || !f.isRoot()),
     );
   }
+  /** Any change to `index` invalidates the derived file lists and the name lookup. */
+  private touch(): void {
+    this.derived = null;
+  }
+  private views(): NonNullable<Vault["derived"]> {
+    if (this.derived) return this.derived;
+    const files: TFile[] = [];
+    const markdown: TFile[] = [];
+    const byName = new Map<string, TFile[]>();
+    for (const f of this.index.values()) {
+      if (!(f instanceof TFile)) continue;
+      files.push(f);
+      if (f.extension.toLowerCase() === "md") markdown.push(f);
+      const key = f.name.toLowerCase();
+      const bucket = byName.get(key);
+      if (bucket) bucket.push(f);
+      else byName.set(key, [f]);
+    }
+    return (this.derived = { files, markdown, byName });
+  }
+  // The lists are memoised (a plugin may call these per row or per keystroke); callers get a
+  // copy because Obsidian hands out fresh arrays that plugins sort and splice in place.
   getFiles(): TFile[] {
-    return this.getAllLoadedFiles().filter((f): f is TFile => f instanceof TFile);
+    return this.views().files.slice();
   }
   getMarkdownFiles(): TFile[] {
-    return this.getFiles().filter((f) => f.extension.toLowerCase() === "md");
+    return this.views().markdown.slice();
+  }
+  /** Files whose lower-cased name (with extension) is `lowerName`: O(1) link resolution. */
+  getFilesByLowerName(lowerName: string): readonly TFile[] {
+    return this.views().byName.get(lowerName) ?? [];
   }
 
   read(file: TFile): Promise<string> {
@@ -340,6 +375,45 @@ export class Vault extends Events {
     }) as TFile;
     this.trigger("create", node);
     return node;
+  }
+
+  /** Public `createBinary`: like `create`, with an ArrayBuffer body. */
+  async createBinary(path: string, data: ArrayBuffer): Promise<TFile> {
+    const p = normalizePath(path);
+    if (this.index.has(p)) throw new Error("File already exists.");
+    await this.adapter.writeBinary(p, data);
+    await this.ensureFolderNodes(p.slice(0, Math.max(0, p.lastIndexOf("/"))));
+    const s = await this.io.stat(p);
+    const node = this.addNode({
+      name: p.slice(p.lastIndexOf("/") + 1),
+      path: p,
+      isDir: false,
+      mtime: s?.mtime ?? Date.now(),
+      ctime: s?.ctime ?? Date.now(),
+      size: s?.size ?? data.byteLength,
+    }) as TFile;
+    this.trigger("create", node);
+    return node;
+  }
+
+  async modifyBinary(file: TFile, data: ArrayBuffer): Promise<void> {
+    await this.adapter.writeBinary(file.path, data);
+    await this.refreshStat(file);
+    this.trigger("modify", file);
+  }
+
+  async appendBinary(file: TFile, data: ArrayBuffer): Promise<void> {
+    const prev = new Uint8Array(await this.adapter.readBinary(file.path));
+    const next = new Uint8Array(prev.length + data.byteLength);
+    next.set(prev);
+    next.set(new Uint8Array(data), prev.length);
+    await this.modifyBinary(file, next.buffer);
+  }
+
+  /** Calls `cb` for `root` and every descendant (depth first). */
+  static recurseChildren(root: TAbstractFile, cb: (file: TAbstractFile) => unknown): void {
+    cb(root);
+    if (root instanceof TFolder) for (const c of [...root.children]) Vault.recurseChildren(c, cb);
   }
 
   private async ensureFolderNodes(dir: string): Promise<void> {
@@ -414,6 +488,7 @@ export class Vault extends Events {
     node.parent = parent;
     parent.children.push(node);
     this.index.set(newPath, node);
+    this.touch();
     if (node instanceof TFolder) {
       for (const c of Array.from(node.children)) this.reindex(c, `${newPath}/${c.name}`);
     }
@@ -622,6 +697,10 @@ export function getAllTags(cache: CachedMetadata): string[] | null {
   return set.size > 0 ? [...set] : null;
 }
 
+/** Parallel note reads while the metadata cache warms up, and how often it yields the thread. */
+const INDEX_CONCURRENCY = 16;
+const INDEX_YIELD_EVERY = 64;
+
 export class MetadataCache extends Events {
   resolvedLinks: Record<string, Record<string, number>> = {};
   unresolvedLinks: Record<string, Record<string, number>> = {};
@@ -639,7 +718,7 @@ export class MetadataCache extends Events {
     const v = this.vault;
     this.refs.push(
       v.on("create", (f: unknown) => void this.reindexOne(f)),
-      v.on("modify", (f: unknown) => void this.reindexOne(f)),
+      v.on("modify", (f: unknown) => void this.reindexOne(f, "modify")),
       v.on("delete", (f: TAbstractFile) => {
         if (!(f instanceof TFile)) return;
         this.drop(f.path);
@@ -666,11 +745,14 @@ export class MetadataCache extends Events {
     delete this.unresolvedLinks[path];
   }
 
-  private async reindexOne(f: unknown): Promise<void> {
+  private async reindexOne(f: unknown, kind: "create" | "modify" = "create"): Promise<void> {
     if (this.vault.replayingInitial) return; // indexAll() covers pre-existing files
     if (!(f instanceof TFile) || f.extension.toLowerCase() !== "md") return;
     await this.indexFile(f);
-    this.resolveAll();
+    // A modified note changes only its own links: which note a link points at depends on the
+    // set of files, not on file contents. Only a create can resolve other notes' dangling links.
+    if (kind === "modify" && this.cache.has(f.path)) this.resolveOne(f.path);
+    else this.resolveAll();
   }
 
   /** Parses one file and fires `changed`. Does not resolve links (see resolveAll). */
@@ -688,26 +770,51 @@ export class MetadataCache extends Events {
 
   /** Indexes every markdown file, then resolves links and fires `resolved`. */
   async indexAll(): Promise<void> {
-    await Promise.all(this.vault.getMarkdownFiles().map((f) => this.indexFile(f)));
+    // Bounded: an unbounded Promise.all queued one IPC read per note at once (thousands in a big
+    // vault) and parsed them back to back, starving the UI thread while the index warmed up.
+    const queue = this.vault.getMarkdownFiles();
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < queue.length) {
+        const file = queue[next++];
+        try {
+          await this.indexFile(file);
+        } catch (e) {
+          // A file deleted mid-scan must not abort indexing of the rest.
+          if (this.vault.getFileByPath(file.path)) console.error("[plugin] index failed:", e);
+        }
+        // Hand the thread back regularly so input and paint keep flowing.
+        if (next % INDEX_YIELD_EVERY === 0) await new Promise<void>((r) => setTimeout(r, 0));
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(INDEX_CONCURRENCY, queue.length) }, worker));
     this.resolveAll();
+  }
+
+  private resolveEntry(path: string, meta: CachedMetadata): void {
+    const resolved: Record<string, number> = {};
+    const unresolved: Record<string, number> = {};
+    for (const l of [...(meta.links ?? []), ...(meta.embeds ?? [])]) {
+      const target = this.getFirstLinkpathDest(parseLinkPath(l.link), path);
+      const bucket = target ? resolved : unresolved;
+      const key = target ? target.path : parseLinkPath(l.link);
+      if (!key) continue; // [[#heading]] links to the note itself
+      bucket[key] = (bucket[key] ?? 0) + 1;
+    }
+    this.resolvedLinks[path] = resolved;
+    this.unresolvedLinks[path] = unresolved;
+  }
+
+  private resolveOne(path: string): void {
+    const meta = this.cache.get(path);
+    if (meta) this.resolveEntry(path, meta);
+    this.trigger("resolved");
   }
 
   private resolveAll(): void {
     this.resolvedLinks = {};
     this.unresolvedLinks = {};
-    for (const [path, meta] of this.cache) {
-      const resolved: Record<string, number> = {};
-      const unresolved: Record<string, number> = {};
-      for (const l of [...(meta.links ?? []), ...(meta.embeds ?? [])]) {
-        const target = this.getFirstLinkpathDest(parseLinkPath(l.link), path);
-        const bucket = target ? resolved : unresolved;
-        const key = target ? target.path : parseLinkPath(l.link);
-        if (!key) continue; // [[#heading]] links to the note itself
-        bucket[key] = (bucket[key] ?? 0) + 1;
-      }
-      this.resolvedLinks[path] = resolved;
-      this.unresolvedLinks[path] = unresolved;
-    }
+    for (const [path, meta] of this.cache) this.resolveEntry(path, meta);
     this.trigger("resolved");
   }
 
@@ -753,12 +860,15 @@ export class MetadataCache extends Events {
     if (exact) return exact;
     const name = (want.endsWith(".md") ? want : `${want}.md`).toLowerCase();
     const wantsPath = name.includes("/");
-    const candidates = this.vault.getFiles().filter((f) => {
-      const p = f.path.toLowerCase();
-      return wantsPath
-        ? p === name || p.endsWith(`/${name}`)
-        : f.name.toLowerCase() === name || f.name.toLowerCase() === want.toLowerCase();
-    });
+    // Name lookup instead of a scan of every file: this runs once per link of every note.
+    const lastSlash = name.lastIndexOf("/");
+    const byName = this.vault.getFilesByLowerName(lastSlash < 0 ? name : name.slice(lastSlash + 1));
+    const candidates = wantsPath
+      ? byName.filter((f) => {
+          const p = f.path.toLowerCase();
+          return p === name || p.endsWith(`/${name}`);
+        })
+      : [...new Set([...byName, ...this.vault.getFilesByLowerName(want.toLowerCase())])];
     if (candidates.length === 0) return null;
     const dir = sourcePath.includes("/") ? sourcePath.slice(0, sourcePath.lastIndexOf("/")) : "";
     candidates.sort((a, b) => {
@@ -771,7 +881,9 @@ export class MetadataCache extends Events {
 
   fileToLinktext(file: TFile, _sourcePath: string, omitMdExtension = true): string {
     const base = omitMdExtension && file.extension === "md" ? file.path.slice(0, -3) : file.path;
-    const sameName = this.vault.getFiles().filter((f) => f.name === file.name);
+    const sameName = this.vault
+      .getFilesByLowerName(file.name.toLowerCase())
+      .filter((f) => f.name === file.name);
     return sameName.length > 1
       ? base
       : omitMdExtension && file.extension === "md"

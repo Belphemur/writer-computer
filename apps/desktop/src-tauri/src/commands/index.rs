@@ -45,13 +45,7 @@ pub(crate) fn app_err(e: IndexError) -> AppError {
     }
 }
 
-pub(crate) async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, AppError> + Send + 'static,
-) -> Result<T, AppError> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))?
-}
+use super::blocking;
 
 /// Return this window's index, opening it (and queueing a warm scan) when the
 /// window has none for the current workspace and epoch.

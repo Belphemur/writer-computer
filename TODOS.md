@@ -110,6 +110,7 @@
 
 ## Up Next
 
+- Native assistant (Writer Projects, context ledger): research done in [`SPECs/native-assistant-research.md`](SPECs/native-assistant-research.md); needs the user's answers to its open questions before a real spec.
 - WebdriverIO 10 (`@wdio/*`, `webdriverio`) is held at 9.27: 10 requires Node >=22.23.4 / >=24.22.1 / >=26.12.1 (this machine has 26.8.2) and the e2e suite cannot be re-verified without running it. Upgrade the Node toolchain, bump `apps/desktop/e2e/package.json`, run the e2e suite.
 - `openPath` in `link-navigation.ts` (links to files outside the workspace) calls `plugin:opener|open_path`, which has no permission in `capabilities/default.json`, so those links fail with an ACL error. A fix needs a scoped `opener:allow-open-path`; decide the scope first (plugins share the page's IPC, so a `**` scope would let a trusted vault's plugin launch any file).
 - Backspace on an empty nested item at depth 2 or deeper leaves a whitespace-only line (`····- ` → `··`), per the literal "marker plus one indent level" rule in [`SPECs/list-prefix-interaction-zones-spec.md`](SPECs/list-prefix-interaction-zones-spec.md). Consider outdenting to the parent's indent instead, matching Enter on an empty nested item.

@@ -45,6 +45,7 @@ async function makeRig(files: Record<string, string>): Promise<Rig> {
     getActiveFilePath: () => rig.state.active,
     getActiveEditor: () => (rig.state.active ? stubEditor() : null),
     getActivePluginLeaf: () => rig.state.pluginLeaf,
+    reapplyEditorOptions: () => {},
     openFile: async (path, opts) => void rig.opened.push({ path, ...opts }),
   };
   rig.app = createApp({

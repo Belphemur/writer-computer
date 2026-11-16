@@ -66,6 +66,15 @@ export const OBSIDIAN_THEME_CSS = `:root {
   --table-border-width: 1px; --table-border-color: var(--border-color);
 }
 
+/* View structure: .workspace-leaf > .workspace-leaf-content[data-type] > .view-header + .view-content.
+   The pane gives the leaf a definite height; every level is a flex column with min-height: 0 so a
+   plugin's own flex layout (header / scroller / input pinned at the bottom) and \`height: 100%\`
+   children resolve. :where() keeps specificity at zero so plugin stylesheets win. */
+:where(.workspace-leaf) { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+:where(.workspace-leaf-content) { display: flex; flex-direction: column; flex: 1 1 auto; height: 100%; min-height: 0; min-width: 0; }
+:where(.workspace-leaf-content > .view-header) { flex: 0 0 auto; }
+:where(.workspace-leaf-content > .view-content) { flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: auto; }
+
 /* Modal frame (api/ui.ts Modal). The host owns the layout: without it \`.modal-container\` is a
    static block appended after the app and a plugin's Configure / Install dialogs open off-screen. */
 .modal-container {
@@ -96,7 +105,24 @@ export const OBSIDIAN_THEME_CSS = `:root {
 
 /* Rendered markdown (api/markdown-render.ts). Scoped under .markdown-rendered so plugin UI
    outside it is untouched; Writer tokens only. */
-.markdown-rendered { overflow-wrap: anywhere; line-height: var(--line-height-normal); }
+.markdown-rendered { overflow-wrap: anywhere; line-height: var(--line-height-normal); white-space: normal; }
+/* Tailwind preflight (App.css) zeroes margins and list styles on bare elements; restore the
+   reading-view rhythm, keyed to the Obsidian variable --p-spacing. */
+.markdown-rendered p { margin: 0 0 var(--p-spacing); }
+.markdown-rendered ul, .markdown-rendered ol { margin: 0 0 var(--p-spacing); padding-inline-start: 1.6em; }
+.markdown-rendered ul { list-style: disc; }
+.markdown-rendered ol { list-style: decimal; }
+.markdown-rendered ul ul, .markdown-rendered ol ol, .markdown-rendered ul ol, .markdown-rendered ol ul { margin-bottom: 0; }
+.markdown-rendered li { margin: 0; }
+.markdown-rendered li > p { margin-bottom: var(--size-4-1); }
+.markdown-rendered ul:has(> li.task-list-item), .markdown-rendered ul.contains-task-list { list-style: none; padding-inline-start: 0; }
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, .markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 { margin: 1.2em 0 0.5em; font-weight: var(--font-semibold); line-height: var(--line-height-tight); }
+.markdown-rendered h1 { font-size: 1.6em; } .markdown-rendered h2 { font-size: 1.4em; } .markdown-rendered h3 { font-size: 1.2em; }
+.markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 { font-size: 1em; }
+.markdown-rendered hr { border: 0; border-top: var(--border-width) solid var(--background-modifier-border); margin: var(--size-4-4) 0; }
+.markdown-rendered pre, .markdown-rendered blockquote, .markdown-rendered table { margin: 0 0 var(--p-spacing); }
+.markdown-rendered pre { white-space: pre; }
+.markdown-rendered strong { font-weight: var(--font-bold); } .markdown-rendered em { font-style: italic; }
 .markdown-rendered > :first-child { margin-top: 0; }
 .markdown-rendered > :last-child { margin-bottom: 0; }
 .markdown-rendered a.internal-link, .markdown-rendered a.external-link { color: var(--text-accent); cursor: var(--cursor-link); text-decoration: none; }

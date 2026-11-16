@@ -10,6 +10,7 @@ import type { NodeIpc, NodeOsInfo } from "./ipc";
 import { AGENT_CLI_NAMES, agentBinDirs, agentCandidates, versionRoots } from "./agent-clis";
 import { registerSyncProbePaths } from "./fs";
 import { posix } from "./path";
+import { installV8StackApi } from "./v8-stack";
 import { applyOsInfo, getSharedProcess } from "./process";
 import {
   DEFAULT_OS_INFO,
@@ -35,6 +36,7 @@ const hasTauri = (): boolean => "__TAURI_INTERNALS__" in globalThis;
 export async function preloadNodeRuntime(options: PreloadOptions): Promise<void> {
   if (options.ipc) setNodeIpc(options.ipc);
   setBasePath(options.basePath);
+  installV8StackApi();
   const ipc = getNodeIpc();
   const loud = options.ipc !== undefined || hasTauri();
   const warn = (what: string, e: unknown): void => {

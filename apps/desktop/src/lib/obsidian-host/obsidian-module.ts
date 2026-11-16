@@ -2,7 +2,16 @@
 // Assembles the object `require("obsidian")` returns. Classes are wrapped so that ES5-style
 // TypeScript output (`_super.apply(this, arguments)`) can subclass them: an ES class throws when
 // called without `new`, so each exported class is a plain function sharing the class prototype.
-import { App } from "./api/app";
+import { App, FileManager } from "./api/app";
+import * as compat from "./api/compat-exports";
+import { SecretStorage } from "./api/secret-storage";
+import {
+  editorEditorField,
+  editorInfoField,
+  editorLivePreviewField,
+  editorViewField,
+  livePreviewState,
+} from "./editor-bridge";
 import { Component, Events, Keymap, Notice, Plugin, Scope } from "./api/core";
 import {
   addIcon,
@@ -120,6 +129,41 @@ function es5<C extends abstract new (...args: any[]) => unknown>(Cls: C): C {
 
 const CLASSES = {
   App,
+  FileManager,
+  SecretStorage,
+  AbstractTextComponent: compat.AbstractTextComponent,
+  ConfirmationButton: compat.ConfirmationButton,
+  ConfirmationModal: compat.ConfirmationModal,
+  SettingGroup: compat.SettingGroup,
+  SettingPage: compat.SettingPage,
+  HoverPopover: compat.HoverPopover,
+  MenuSeparator: compat.MenuSeparator,
+  MomentFormatComponent: compat.MomentFormatComponent,
+  ProgressBarComponent: compat.ProgressBarComponent,
+  DisplayValueComponent: compat.DisplayValueComponent,
+  RenderContext: compat.RenderContext,
+  MarkdownPreviewRenderer: compat.MarkdownPreviewRenderer,
+  MarkdownPreviewView: compat.MarkdownPreviewView,
+  MarkdownEditView: compat.MarkdownEditView,
+  CapacitorAdapter: compat.CapacitorAdapter,
+  TExternalFile: compat.TExternalFile,
+  NotNullValue: compat.NotNullValue,
+  TagValue: compat.TagValue,
+  RelativeDateValue: compat.RelativeDateValue,
+  BasesQueryResult: compat.BasesQueryResult,
+  Tasks: compat.Tasks,
+  WorkspaceItem: compat.WorkspaceItem,
+  WorkspaceParent: compat.WorkspaceParent,
+  WorkspaceSplit: compat.WorkspaceSplit,
+  WorkspaceTabs: compat.WorkspaceTabs,
+  WorkspaceContainer: compat.WorkspaceContainer,
+  WorkspaceRoot: compat.WorkspaceRoot,
+  WorkspaceWindow: compat.WorkspaceWindow,
+  WorkspaceFloating: compat.WorkspaceFloating,
+  WorkspaceSidedock: compat.WorkspaceSidedock,
+  WorkspaceMobileDrawer: compat.WorkspaceMobileDrawer,
+  WorkspaceRibbon: compat.WorkspaceRibbon,
+
   BasesEntry,
   BasesEntryGroup,
   BasesView,
@@ -226,5 +270,36 @@ export function createObsidianModule(): ObsidianModule {
     request,
     sanitizeHTMLToDom,
     moment,
+    getLanguage: compat.getLanguage,
+    setTooltip: compat.setTooltip,
+    displayTooltip: compat.displayTooltip,
+    arrayBufferToBase64: compat.arrayBufferToBase64,
+    base64ToArrayBuffer: compat.base64ToArrayBuffer,
+    arrayBufferToHex: compat.arrayBufferToHex,
+    hexToArrayBuffer: compat.hexToArrayBuffer,
+    getBlobArrayBuffer: compat.getBlobArrayBuffer,
+    getFrontMatterInfo: compat.getFrontMatterInfo,
+    parseFrontMatterStringArray: compat.parseFrontMatterStringArray,
+    parsePropertyId: compat.parsePropertyId,
+    stripHeading: compat.stripHeading,
+    stripHeadingForLink: compat.stripHeadingForLink,
+    iterateRefs: compat.iterateRefs,
+    iterateCacheRefs: compat.iterateCacheRefs,
+    resolveSubpath: compat.resolveSubpath,
+    htmlToMarkdown: compat.htmlToMarkdown,
+    loadMathJax: compat.loadMathJax,
+    loadMermaid: compat.loadMermaid,
+    loadPdfJs: compat.loadPdfJs,
+    loadPrism: compat.loadPrism,
+    renderMath: compat.renderMath,
+    finishRenderMath: compat.finishRenderMath,
+    renderResults: compat.renderResults,
+    sortSearchResults: compat.sortSearchResults,
+    PopoverState: compat.PopoverState,
+    editorInfoField,
+    editorLivePreviewField,
+    editorEditorField,
+    editorViewField,
+    livePreviewState,
   });
 }

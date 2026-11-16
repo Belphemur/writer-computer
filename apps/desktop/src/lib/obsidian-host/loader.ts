@@ -14,10 +14,12 @@
 //      refused require, a top-level bug, onload) fails THAT plugin: status "failed", the app
 //      keeps running, everything it registered is swept.
 import { createApp, type App } from "./api/app";
+import { Editor, type WorkspaceBridge } from "./api/views";
+import { editorBackendFor, setEditorInfoResolver } from "./editor-bridge";
+import { toVaultPath } from "./workspace-bridge";
 import { createHostServices, Plugin, type HostServices, type PluginManifest } from "./api/core";
 import { createTauriVaultIo } from "./api/vault-io-tauri";
 import type { VaultIo } from "./api/vault";
-import type { WorkspaceBridge } from "./api/views";
 import { tauriHostIpc, pluginScriptUrl, type HostIpc, type PluginsState } from "./ipc";
 import { makeRequire } from "./modules";
 import { createObsidianModule, type ObsidianModule } from "./obsidian-module";
@@ -34,6 +36,11 @@ import { createMarkdownRenderer } from "./api/markdown-render";
 import { installObsidianTheme } from "./api/theme-compat";
 import { installPopupGuard } from "./popup-guard";
 import { recordPluginError } from "./error-log";
+import {
+  isMissingApiLogEnabled,
+  wrapAppForDiagnostics,
+  type MissingApiSink,
+} from "./missing-api-log";
 import { seedCopilotDataIfAbsent } from "./node/seed-plugin-data";
 import { getNodeIpc } from "./node/state";
 import { installGlobalFetch, pluginScopedFetch } from "./api/network";
@@ -70,6 +77,8 @@ export interface PluginHostOptions {
   nodeIpc?: NodeIpc;
   /** Where `process`/`Buffer`/`require` globals are installed. Default: `globalThis`. */
   nodeGlobalTarget?: object;
+  /** Receives each unimplemented `app.*` member a plugin touches (debug log on). Default: console.warn. */
+  onMissingApi?: MissingApiSink;
 }
 
 type DefineFactory = (...args: unknown[]) => void;
@@ -186,7 +195,24 @@ export class PluginHost {
     });
     this.app = createApp({ io: options.io, services: this.services, bridge: options.bridge });
     this.snapshot = this.buildSnapshot();
+    const base = options.io.basePath;
+    setEditorInfoResolver((view, absPath) => {
+      const path = toVaultPath(base, absPath);
+      return {
+        app: this.app,
+        file: path ? this.app.vault.getFileByPath(path) : null,
+        editor: new Editor(editorBackendFor(view)),
+      };
+    });
     installDefineGlobal();
+  }
+
+  private readonly missingApiSeen = new Set<string>();
+  /** The `app` a plugin receives: the shared one, or a diagnostic proxy when the debug log is on. */
+  private appFor(pluginId: string): App {
+    return isMissingApiLogEnabled()
+      ? wrapAppForDiagnostics(this.app, pluginId, this.options.onMissingApi, this.missingApiSeen)
+      : this.app;
   }
 
   /** Convenience for the real app: Tauri-backed vault IO for the workspace at `root`. */
@@ -303,6 +329,7 @@ export class PluginHost {
       [...this.records.keys()].map((id) => this.queue(id, () => this.teardown(id))),
     );
     this.app.metadataCache.dispose();
+    setEditorInfoResolver(null);
   }
 
   private ensureStarted(): Promise<void> {
@@ -347,7 +374,7 @@ export class PluginHost {
       const exports = await this.evaluate(id);
       const Ctor = resolvePluginClass(id, exports);
       const css = await this.readStyles(id);
-      const plugin = new Ctor(this.app, { ...manifest, dir: `.obsidian/plugins/${id}` });
+      const plugin = new Ctor(this.appFor(id), { ...manifest, dir: `.obsidian/plugins/${id}` });
       // Recorded before onload so a throwing onload is torn down like any other failure.
       const record: PluginRecord = { plugin, removeStyle: css ? this.styles.add(id, css) : null };
       this.records.set(id, record);

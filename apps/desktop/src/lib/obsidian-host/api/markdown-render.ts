@@ -36,6 +36,9 @@ function splitWiki(inner: string): { target: string; alias: string | null } {
 
 const marked = new Marked({
   gfm: true,
+  // Obsidian's default ("Strict line breaks" off): a single newline inside a paragraph is a
+  // visible line break in reading view. Chat output (Copilot) relies on it.
+  breaks: true,
   renderer: {
     checkbox: ({ checked }: { checked: boolean }) =>
       `<input type="checkbox" class="task-list-item-checkbox" disabled${checked ? " checked" : ""}> `,
