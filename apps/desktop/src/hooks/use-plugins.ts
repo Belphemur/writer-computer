@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { usePluginsStore } from "@/stores/plugins-store";
 import { useUIStore } from "@/stores/ui-store";
+import { useUpdatesStore } from "@/stores/plugin-updates-store";
 import { useIsStartupResolved, useWorkspaceChromeMode, useWorkspaceRoot } from "./use-workspace";
 
 export { PANE_MAX_WIDTH, PANE_MIN_WIDTH } from "@/stores/plugins-store";
@@ -21,7 +22,16 @@ export function usePluginHostLifecycle() {
   useEffect(() => {
     if (!enabled || root === null) return;
     void attach(root);
-    return () => void detach();
+    // Update state is bound to the same vault; the scheduler checks shortly after start and
+    // then every few hours (throttled by the persisted timestamp, silent on failure).
+    const updates = useUpdatesStore.getState();
+    void updates.attachRoot(root);
+    const stopChecks = updates.startScheduler();
+    return () => {
+      stopChecks();
+      void updates.attachRoot(null);
+      void detach();
+    };
   }, [enabled, root, attach, detach]);
 }
 
@@ -97,4 +107,8 @@ export function useOpenPluginBrowser() {
 }
 export function useClosePluginBrowser() {
   return useUIStore((s) => s.closePluginBrowser);
+}
+
+export function usePluginUpdateCount() {
+  return useUpdatesStore((s) => Object.keys(s.available).length);
 }

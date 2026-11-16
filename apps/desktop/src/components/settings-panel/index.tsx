@@ -1,69 +1,50 @@
-import { useMemo } from "react";
-import { useAllSettings, useResetSetting, useSetSetting } from "@/hooks/use-settings";
-import { SETTINGS_SCHEMA, type SettingDef } from "@/lib/settings-schema";
-import { SettingControl } from "./setting-control";
-import { ThemesSection } from "./themes-section";
-import { CommunityPluginsSection } from "@/components/plugins/community-plugins-section";
+import { useEffect, useMemo } from "react";
 import { EditorScrollContainer } from "@/components/editor-area/editor-scroll-container";
-
-/** Section that renders above the Themes block. The schema-driven section
- *  list is rendered in two passes — these come first, the Themes section
- *  comes next, and everything else is rendered after. */
-const SECTIONS_BEFORE_THEMES = ["Appearance", "Typography"] as const;
+import {
+  useOpenPluginBrowser,
+  usePluginSettingTabs,
+  usePluginUpdateCount,
+  usePluginsSnapshot,
+} from "@/hooks/use-plugins";
+import { useWorkspaceRoot } from "@/hooks/use-workspace";
+import { useUIStore } from "@/stores/ui-store";
+import { PluginSectionContent } from "./plugin-section";
+import { SectionBlocks } from "./settings-blocks";
+import { SETTINGS_PANEL_ID, SettingsNav, settingsTabId } from "./settings-nav";
+import { buildSettingsNav, resolveNavItem, type PluginTabInfo } from "./settings-sections";
 
 export function SettingsPanel({ isActive }: { isActive: boolean }) {
-  const settings = useAllSettings();
-  const setSetting = useSetSetting();
-  const resetSetting = useResetSetting();
+  const root = useWorkspaceRoot();
+  const snapshot = usePluginsSnapshot();
+  const settingTabs = usePluginSettingTabs();
+  const openBrowser = useOpenPluginBrowser();
+  const updateCount = usePluginUpdateCount();
+  const selectedId = useUIStore((s) => s.settingsSection);
+  const selectSection = useUIStore((s) => s.selectSettingsSection);
+  const hydrateSection = useUIStore((s) => s.hydrateSettingsSection);
 
-  const categories = useMemo(() => {
-    const map = new Map<string, SettingDef[]>();
-    for (const def of SETTINGS_SCHEMA) {
-      // Theme settings are owned by ThemesSection; keep them out of the generic renderer.
-      if (def.category === "Theme") continue;
-      const existing = map.get(def.category) ?? [];
-      existing.push(def);
-      map.set(def.category, existing);
-    }
-    return map;
-  }, []);
+  useEffect(() => {
+    void hydrateSection();
+  }, [hydrateSection]);
 
-  function isModified(def: SettingDef): boolean {
-    return JSON.stringify(settings[def.key]) !== JSON.stringify(def.default);
-  }
+  const groups = useMemo(() => {
+    const pluginTabs: PluginTabInfo[] = settingTabs.map((entry) => ({
+      owner: entry.owner,
+      tabId: entry.tab.id,
+      label:
+        entry.tab.name ||
+        snapshot?.installed.find((p) => p.id === entry.owner)?.name ||
+        entry.owner,
+    }));
+    return buildSettingsNav({ hasWorkspace: !!root, pluginTabs, updateCount });
+  }, [root, settingTabs, snapshot, updateCount]);
 
-  function renderSection(category: string, defs: SettingDef[]) {
-    return (
-      <section key={category} className="mb-10">
-        <h2 className="mb-3 text-[13px] font-medium text-[var(--text-muted)]">{category}</h2>
-        <div className="-mx-4 overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]">
-          {defs.map((def, i) => (
-            <div
-              key={def.key}
-              className={i === 0 ? undefined : "border-t border-[var(--line-subtler)]"}
-            >
-              <SettingControl
-                def={def}
-                value={settings[def.key]}
-                onChange={(value) => setSetting(def.key, value)}
-                onReset={() => void resetSetting(def.key)}
-                isModified={isModified(def)}
-              />
-            </div>
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  const beforeThemes: [string, SettingDef[]][] = [];
-  for (const cat of SECTIONS_BEFORE_THEMES) {
-    const defs = categories.get(cat);
-    if (defs) beforeThemes.push([cat, defs]);
-  }
-
-  const beforeThemesSet = new Set<string>(SECTIONS_BEFORE_THEMES);
-  const afterThemes = Array.from(categories.entries()).filter(([cat]) => !beforeThemesSet.has(cat));
+  const current = resolveNavItem(groups, selectedId);
+  const pluginEntry = current?.plugin
+    ? settingTabs.find(
+        (e) => e.owner === current.plugin?.owner && e.tab.id === current.plugin.tabId,
+      )
+    : undefined;
 
   return (
     <div
@@ -73,19 +54,33 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
       }
       aria-hidden={!isActive}
     >
-      <EditorScrollContainer>
-        <div className="mx-auto max-w-2xl px-8 pt-32 pb-24 md:pt-[9rem]">
-          <h1 className="mb-10 text-2xl font-semibold text-[var(--text-primary)]">Preferences</h1>
-
-          {beforeThemes.map(([cat, defs]) => renderSection(cat, defs))}
-
-          <ThemesSection />
-
-          {afterThemes.map(([cat, defs]) => renderSection(cat, defs))}
-
-          <CommunityPluginsSection />
+      <div className="flex h-full flex-col md:flex-row">
+        <SettingsNav
+          groups={groups}
+          selectedId={current?.id ?? ""}
+          onSelect={selectSection}
+          footer={root ? { label: "Browse plugins…", onClick: openBrowser } : undefined}
+        />
+        <div className="min-h-0 min-w-0 flex-1">
+          <EditorScrollContainer>
+            <div
+              id={SETTINGS_PANEL_ID}
+              role="tabpanel"
+              aria-labelledby={current ? settingsTabId(current.id) : undefined}
+              tabIndex={-1}
+              className="mx-auto max-w-2xl px-8 pt-8 pb-24 outline-none md:pt-[9rem]"
+            >
+              {current && (
+                <h1 className="mb-10 text-2xl font-semibold text-[var(--text-primary)]">
+                  {current.label}
+                </h1>
+              )}
+              {current?.section && <SectionBlocks section={current.section} />}
+              {pluginEntry && <PluginSectionContent key={current?.id} entry={pluginEntry} />}
+            </div>
+          </EditorScrollContainer>
         </div>
-      </EditorScrollContainer>
+      </div>
     </div>
   );
 }

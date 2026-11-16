@@ -18,6 +18,7 @@ mod cmd_bases;
 mod cmd_files;
 mod cmd_notes;
 mod cmd_query;
+mod cmd_skills;
 pub mod format;
 pub mod linkfix;
 pub mod registry;

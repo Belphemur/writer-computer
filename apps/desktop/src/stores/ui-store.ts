@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import { DEFAULT_SETTINGS_SECTION } from "@/components/settings-panel/settings-sections";
+import { getPreference, setPreference } from "@/lib/preferences";
+
+export const SETTINGS_SECTION_PREFERENCE = "settings.section";
 
 export type CommandPaletteIntent = "search" | "create-file" | "search-notes";
 
@@ -7,7 +11,11 @@ interface UIState {
   commandPaletteIntent: CommandPaletteIntent;
   commandPaletteSearch: string;
   isPluginBrowserOpen: boolean;
+  /** Selected Settings section id (see settings-sections.ts); remembered across restarts. */
+  settingsSection: string;
 
+  selectSettingsSection: (id: string) => void;
+  hydrateSettingsSection: () => Promise<void>;
   openPluginBrowser: () => void;
   closePluginBrowser: () => void;
   openCommandPalette: (intent?: CommandPaletteIntent) => void;
@@ -15,12 +23,24 @@ interface UIState {
   setCommandPaletteSearch: (search: string) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   isCommandPaletteOpen: false,
   commandPaletteIntent: "search",
   commandPaletteSearch: "",
   isPluginBrowserOpen: false,
+  settingsSection: DEFAULT_SETTINGS_SECTION,
 
+  selectSettingsSection: (id) => {
+    if (get().settingsSection === id) return;
+    set({ settingsSection: id });
+    void setPreference(SETTINGS_SECTION_PREFERENCE, id);
+  },
+  hydrateSettingsSection: async () => {
+    const stored = await getPreference<unknown>(SETTINGS_SECTION_PREFERENCE, null);
+    // A selection made while the read was in flight wins over the stored one.
+    if (typeof stored === "string" && stored && get().settingsSection === DEFAULT_SETTINGS_SECTION)
+      set({ settingsSection: stored });
+  },
   openPluginBrowser: () => set({ isPluginBrowserOpen: true }),
   closePluginBrowser: () => set({ isPluginBrowserOpen: false }),
   openCommandPalette: (intent = "search") =>

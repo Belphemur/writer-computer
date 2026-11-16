@@ -344,6 +344,15 @@
       "default": 10
     },
     {
+      "key": "workspace.managed-agent-skills",
+      "label": "Install Agent Skills",
+      "description": "Keep Writer's agent skills (writer-cli, writer-search, writer-bases) in .agents/skills and .claude/skills of every workspace you open, so Claude Code and other agents know how to use the writer command. Writer overwrites those skill files when it updates them and never touches skills it did not write. Commit them with your notes if you want to share them.",
+      "category": "Workspace",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "workspace.default-terminal",
       "label": "Default Terminal",
       "description": "Terminal application name on macOS, or executable name/full path on Windows and Linux. Leave blank for Writer's platform default; arguments are not supported.",
@@ -397,6 +406,15 @@
       "normalize": "trim",
       "scope": "global",
       "default": ""
+    },
+    {
+      "key": "plugins.auto-check-updates",
+      "label": "Check for plugin updates automatically",
+      "description": "Look for newer versions of your installed community plugins shortly after Writer starts and every few hours while it is open. Updates are never installed on their own.",
+      "category": "Community plugins",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
     }
   ]
 }

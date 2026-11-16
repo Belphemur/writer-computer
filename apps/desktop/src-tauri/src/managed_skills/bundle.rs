@@ -1,0 +1,60 @@
+//! The bundled skill sources. The files live under `src-tauri/skills/<name>/`
+//! as reviewable Markdown and are compiled into the binary with `include_str!`
+//! (no new dependency). Adding a skill or a reference file is one entry here;
+//! `tests::bundle_matches_skills_directory` fails when this table and the
+//! directory disagree.
+
+/// Bump when any bundled file changes (`tests::bundle_fingerprint_is_current`
+/// tells you the new fingerprint). The version orders installs: a vault whose
+/// installed version is newer than this binary's is left alone.
+pub const BUNDLE_VERSION: u32 = 1;
+
+/// SHA-256 over every bundled file (see `mod.rs::bundle_fingerprint`). It exists
+/// only to make a forgotten `BUNDLE_VERSION` bump a failing test.
+#[cfg(test)]
+pub const BUNDLE_FINGERPRINT: &str =
+    "90bb6d225b10e62ee967324e1fb319bb07896c9e981d4df64433d067c34e9782";
+
+pub struct BundledFile {
+    /// Path inside the skill directory, forward slashes.
+    pub rel: &'static str,
+    pub content: &'static str,
+}
+
+pub struct BundledSkill {
+    /// Directory name and the `name:` of its `SKILL.md`.
+    pub name: &'static str,
+    /// `SKILL.md` first, then references.
+    pub files: &'static [BundledFile],
+}
+
+macro_rules! file {
+    ($skill:literal, $rel:literal) => {
+        BundledFile {
+            rel: $rel,
+            content: include_str!(concat!("../../skills/", $skill, "/", $rel)),
+        }
+    };
+}
+
+pub static SKILLS: &[BundledSkill] = &[
+    BundledSkill {
+        name: "writer-cli",
+        files: &[
+            file!("writer-cli", "SKILL.md"),
+            file!("writer-cli", "references/commands.md"),
+        ],
+    },
+    BundledSkill {
+        name: "writer-search",
+        files: &[file!("writer-search", "SKILL.md")],
+    },
+    BundledSkill {
+        name: "writer-bases",
+        files: &[
+            file!("writer-bases", "SKILL.md"),
+            file!("writer-bases", "references/expressions.md"),
+            file!("writer-bases", "references/recipes.md"),
+        ],
+    },
+];

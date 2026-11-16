@@ -1,9 +1,5 @@
-import {
-  createPluginSettingsTab,
-  createPluginViewTab,
-  createSettingsTab,
-  useEditorStore,
-} from "@/stores/editor-store";
+import { useUIStore } from "@/stores/ui-store";
+import { createPluginViewTab, createSettingsTab, useEditorStore } from "@/stores/editor-store";
 export type { OpenFile, Tab, SessionTab } from "@/stores/editor-store";
 
 export function getOpenFile(path: string) {
@@ -84,26 +80,13 @@ export function rewritePathPrefix(oldPrefix: string, newPrefix: string) {
   useEditorStore.getState().rewritePathPrefix(oldPrefix, newPrefix);
 }
 
-/** Opens (or focuses, if already open) the Settings page. */
-export function openSettings() {
+/** Opens (or focuses, if already open) the Settings page, optionally at a section id (see
+ *  `settings-sections.ts`; a plugin's options are `pluginSectionId(owner, tabId)`). */
+export function openSettings(sectionId?: string) {
+  if (sectionId) useUIStore.getState().selectSettingsSection(sectionId);
   useEditorStore
     .getState()
     .openOrFocus((tab) => tab.location.kind === "settings", createSettingsTab);
-}
-
-/** Opens (or focuses) a community plugin's options tab. One tab per plugin setting tab. */
-export function openPluginSettings(target: {
-  pluginId: string;
-  pluginName: string;
-  tabId?: string;
-}) {
-  useEditorStore.getState().openOrFocus(
-    (tab) =>
-      tab.location.kind === "plugin-settings" &&
-      tab.location.pluginId === target.pluginId &&
-      tab.location.tabId === target.tabId,
-    () => createPluginSettingsTab(target),
-  );
 }
 
 /** Opens (or focuses) the editor tab that shows a plugin leaf's view (an Obsidian main-area leaf). */

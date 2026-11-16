@@ -1,7 +1,6 @@
 import { baseKind, type BaseLocation } from "./base";
 import { fileKind, type FileLocation } from "./file";
 import { launcherKind, type LauncherLocation } from "./launcher";
-import { pluginSettingsKind, type PluginSettingsLocation } from "./plugin-settings";
 import { pluginViewKind, type PluginViewLocation } from "./plugin-view";
 import { settingsKind, type SettingsLocation } from "./settings";
 import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
@@ -13,21 +12,13 @@ import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
  * that's declared here is usable everywhere and a kind that's missing is a
  * type error at every call site.
  */
-const kinds = [
-  fileKind,
-  baseKind,
-  launcherKind,
-  settingsKind,
-  pluginSettingsKind,
-  pluginViewKind,
-] as const;
+const kinds = [fileKind, baseKind, launcherKind, settingsKind, pluginViewKind] as const;
 
 export type Location =
   | FileLocation
   | BaseLocation
   | LauncherLocation
   | SettingsLocation
-  | PluginSettingsLocation
   | PluginViewLocation;
 
 const byKind: Map<string, AnyPageKind> = new Map(
@@ -83,5 +74,4 @@ export type { FileLocation } from "./file";
 export type { BaseLocation } from "./base";
 export type { LauncherLocation } from "./launcher";
 export type { SettingsLocation } from "./settings";
-export type { PluginSettingsLocation } from "./plugin-settings";
 export type { PluginViewLocation } from "./plugin-view";

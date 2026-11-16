@@ -285,6 +285,42 @@ pub async fn plugin_secret_delete(
     blocking(move || app.state::<PluginSecrets>().delete(&id).map_err(io)).await
 }
 
+/// Names of the stored secrets, never their values (Settings > Secrets). Needs no vault: the
+/// store is shared by all vaults and the section works with none open.
+#[tauri::command]
+pub async fn secrets_list_ids(app: tauri::AppHandle) -> Result<Vec<String>, AppError> {
+    blocking(move || app.state::<PluginSecrets>().list_ids().map_err(io)).await
+}
+
+/// Sets or replaces a secret from Settings > Secrets. The name follows Obsidian's rule
+/// (lowercase letters, digits and dashes; mirrored by `isValidSecretId` in the frontend).
+#[tauri::command]
+pub async fn secrets_set(
+    app: tauri::AppHandle,
+    id: String,
+    secret: String,
+) -> Result<(), AppError> {
+    if !is_valid_secret_name(&id) {
+        return Err(io(
+            "EINVAL: a secret name uses lowercase letters, digits and dashes".to_string(),
+        ));
+    }
+    blocking(move || app.state::<PluginSecrets>().set(&id, &secret).map_err(io)).await
+}
+
+#[tauri::command]
+pub async fn secrets_delete(app: tauri::AppHandle, id: String) -> Result<(), AppError> {
+    blocking(move || app.state::<PluginSecrets>().delete(&id).map_err(io)).await
+}
+
+fn is_valid_secret_name(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 256
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// Store list needs no vault: it only reads the public community list.
 #[tauri::command]
 pub async fn plugin_store_list(refresh: Option<bool>) -> Result<Vec<Value>, AppError> {
@@ -757,6 +793,16 @@ pub fn handle_scheme(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn secret_names_follow_the_obsidian_rule() {
+        assert!(super::is_valid_secret_name("openai-key-2"));
+        assert!(!super::is_valid_secret_name(""));
+        assert!(!super::is_valid_secret_name("Upper"));
+        assert!(!super::is_valid_secret_name("has space"));
+        assert!(!super::is_valid_secret_name("under_score"));
+        assert!(!super::is_valid_secret_name(&"a".repeat(257)));
+    }
+
     use super::*;
 
     #[test]

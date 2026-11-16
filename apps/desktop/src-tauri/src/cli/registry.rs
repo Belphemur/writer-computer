@@ -4,7 +4,7 @@
 
 use super::args::Args;
 use super::CliError;
-use super::{cmd_bases, cmd_files, cmd_notes, cmd_query, Ctx};
+use super::{cmd_bases, cmd_files, cmd_notes, cmd_query, cmd_skills, Ctx};
 
 pub type Handler = fn(&Ctx, &Args, &CommandSpec) -> Result<String, CliError>;
 
@@ -550,6 +550,17 @@ pub static COMMANDS: &[CommandSpec] = &[
         &["json", "csv", "tsv", "md", "paths"],
         Some("json"),
         cmd_bases::base_query
+    ),
+    // Skills
+    cmd!(
+        "skills:sync",
+        "Skills",
+        "Install or update the Writer-managed agent skills in this vault",
+        NO_PARAMS,
+        &[("check", "report what would change, write nothing")],
+        NO_FORMATS,
+        None,
+        cmd_skills::skills_sync
     ),
     // Meta
     cmd!(

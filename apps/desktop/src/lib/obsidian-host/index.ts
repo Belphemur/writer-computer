@@ -69,6 +69,7 @@ export {
   AbstractInputSuggest,
   ButtonComponent,
   DropdownComponent,
+  SecretComponent,
   EditorSuggest,
   FuzzySuggestModal,
   Menu,

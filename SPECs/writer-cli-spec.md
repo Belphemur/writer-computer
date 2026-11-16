@@ -4,6 +4,8 @@
 
 ## Summary
 
+Agent skills that teach Claude Code and other agents this CLI are installed into every vault by Writer: see [`managed-vault-skills-spec.md`](managed-vault-skills-spec.md) (`writer skills:sync`). They are tested against `cli/registry.rs`, so a command or parameter change here must be reflected in `src-tauri/skills/`.
+
 Add a standalone-first, markdown-only `writer` CLI focused on spec authoring and validation.
 
 The CLI should be useful even when the desktop app is not running. It should help users create structured spec documents, inspect markdown workspaces, edit frontmatter safely, and validate spec quality from the terminal and CI.

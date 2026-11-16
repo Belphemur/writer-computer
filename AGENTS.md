@@ -24,6 +24,7 @@ Rust source structure:
 - `index/` — vault SQLite index (properties, tags, links, headings, tasks; `names.rs` serves file-name search, recents and folder checks from its `files` table); Tauri-free so the `writer` CLI shares it; Tauri wrappers in `commands/index.rs`
 - `bases/` — pure Obsidian Bases engine (`.base` model, expression language, query executor); no `tauri` types, see `bases/README.md`
 - `cli/` — Obsidian-parity `writer` commands (key=value grammar, command registry, formatters, vault resolution, link rewrite for move/rename); the launcher stays in `writer_cli.rs`; spec: `SPECs/writer-cli-spec.md`
+- `managed_skills/` — Writer-managed agent skills (`writer-cli`, `writer-search`, `writer-bases`, sources in `src-tauri/skills/`, compiled in with `include_str!`) installed into every workspace's `.agents/skills/` and `.claude/skills/` on open and startup, versioned by marker and overwritten when stale; Tauri-free, glue in `commands/skills.rs`, CLI `writer skills:sync`, setting `workspace.managed-agent-skills`; changing a skill means bumping `BUNDLE_VERSION` (a test says so); spec: `SPECs/managed-vault-skills-spec.md`
 - `vault_ops.rs` — Tauri-free path confinement and the one write path for property edits (frontmatter patcher in `index/patch.rs`), shared by `commands/bases.rs` and `cli/`
 - `commands/` — Tauri IPC handlers: `fs.rs`, `workspace.rs`, `search.rs` (`fuzzy_search`, `find_file_by_name`, both read the index), `images.rs`, `bases.rs` (`base_list/read/query/query_text/parse_text/eval/functions`, `note_property*`), `index.rs` (`index_status/query_files/get_metadata/properties/search`)
 
@@ -56,6 +57,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 
 **Cross-cutting**
 
+- [docs/decisions/README.md](./docs/decisions/README.md) — architecture decision records (ADRs): why the stack, plugin trust model, vault index, Bases engine and CLI are the way they are, ordered by date with status and links to specs
 - [TODOS.md](./TODOS.md) — task backlog and work-in-progress tracking
 - [CHANGELOG.md](./CHANGELOG.md) — user-visible changes log
 - [SPECs/](./SPECs/) — human-written feature and bug specs
@@ -66,6 +68,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - Move tasks between sections (Up Next → In Progress → Done) as you work.
 - For non-trivial work, create a spec in [`SPECs/`](./SPECs/) and link it from the task.
 - Update [`CHANGELOG.md`](./CHANGELOG.md) when completing work.
+- Write an ADR in [`docs/decisions/`](./docs/decisions/README.md) for a decision that changes how the system is built or operated, is hard to reverse, affects later contributors, and had real alternatives (new dependency, new architectural pattern, trust or storage model). Use the `adr-skill` (`.agents/skills/adr-skill/`): the filename is `YYYY-MM-DD-<slug>.md` with the decision date (never a sequence number), the `date` front matter matches it, and the index (`docs/decisions/README.md`) is updated in the same change. Link the ADR from the spec or `TODOS.md` item that motivated it, and check consistency with `node .agents/skills/adr-skill/scripts/check_adr.js --dir docs/decisions`. Consult the ADRs before changing an area they govern; supersede an accepted ADR with a new one instead of editing it.
 - Load only docs relevant to the current task and scope.
 - If a behavior or rule changes in practice, update the owning doc in the same task.
 - In autonomous/loop mode, complete exactly one task at a time and commit immediately. Do not batch unless the user explicitly asks.

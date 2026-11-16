@@ -126,6 +126,20 @@ impl PluginSecrets {
         Ok(out)
     }
 
+    /// Ids of the secrets that exist, sorted. Values are read only to drop index entries whose
+    /// credential is gone, and never leave this function: the Settings UI lists names only.
+    pub fn list_ids(&self) -> Result<Vec<String>, String> {
+        let _g = self.lock.lock();
+        let mut out = Vec::new();
+        for id in self.read_index()? {
+            if self.backend.get(&account(&id))?.is_some() {
+                out.push(id);
+            }
+        }
+        out.sort();
+        Ok(out)
+    }
+
     pub fn set(&self, id: &str, value: &str) -> Result<(), String> {
         check_id(id)?;
         if value.len() > MAX_SECRET_BYTES {
@@ -204,6 +218,26 @@ mod tests {
             s.load_all().unwrap().keys().collect::<Vec<_>>(),
             ["anthropic"]
         );
+    }
+
+    #[test]
+    fn list_ids_returns_sorted_names_only_for_secrets_that_exist() {
+        let (s, f) = secrets();
+        assert!(s.list_ids().unwrap().is_empty());
+        s.set("zeta", "v").unwrap();
+        s.set("alpha", "v").unwrap();
+        s.set("gone", "v").unwrap();
+        f.delete(&account("gone")).unwrap();
+        assert_eq!(s.list_ids().unwrap(), ["alpha", "zeta"]);
+        s.delete("alpha").unwrap();
+        assert_eq!(s.list_ids().unwrap(), ["zeta"]);
+    }
+
+    #[test]
+    fn list_ids_fails_on_a_corrupt_index() {
+        let (s, f) = secrets();
+        f.set(INDEX_ACCOUNT, "{not json").unwrap();
+        assert!(s.list_ids().is_err());
     }
 
     #[test]

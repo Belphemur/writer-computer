@@ -10,7 +10,9 @@ import {
 } from "@/hooks/use-plugins";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
-import { useOpenPluginSettings } from "@/hooks/use-tabs";
+import { useOpenSettingsTab } from "@/hooks/use-tabs";
+import { useUpdatesStore } from "@/stores/plugin-updates-store";
+import { pluginSectionId } from "@/components/settings-panel/settings-sections";
 
 const ROW = "flex items-start justify-between gap-4 px-4 py-3.5";
 const TITLE = "text-[13px] font-medium text-[var(--text-primary)]";
@@ -28,15 +30,17 @@ export function CommunityPluginsSection() {
   const setEnabled = useSetPluginEnabled();
   const requestTrust = useRequestPluginsTrust();
   const openBrowser = useOpenPluginBrowser();
-  const openPluginSettings = useOpenPluginSettings();
+  const openSettings = useOpenSettingsTab();
+  const updates = useUpdatesStore();
+  const updateIds = Object.keys(updates.available);
+  const busyUpdating = updates.status !== "idle";
 
   // Community plugins belong to a vault: nothing to configure without a workspace.
   if (!root || !snapshot) return null;
 
   return (
     <section className="mb-10" data-community-plugins>
-      <h2 className="mb-3 text-[13px] font-medium text-[var(--text-muted)]">Community plugins</h2>
-      <div className="-mx-4 overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]">
+      <div className="overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]">
         <div className={ROW}>
           <div className="min-w-0 flex-1">
             <div className={TITLE}>
@@ -70,6 +74,46 @@ export function CommunityPluginsSection() {
             Browse…
           </button>
         </div>
+        <div className={`${ROW} border-t border-[var(--line-subtler)]`}>
+          <div className="min-w-0 flex-1">
+            <div className={TITLE}>Plugin updates</div>
+            <div className={SUBTITLE} data-update-status>
+              {updates.status === "checking"
+                ? "Checking for updates…"
+                : updates.status === "updating"
+                  ? "Updating plugins…"
+                  : updateIds.length > 0
+                    ? `${updateIds.length} update${updateIds.length === 1 ? "" : "s"} available. Updating never turns a plugin on.`
+                    : updates.lastCheckedAt
+                      ? `Up to date. Last checked ${new Date(updates.lastCheckedAt).toLocaleString()}.`
+                      : "Not checked yet."}
+            </div>
+            {updates.checkError && (
+              <div role="alert" className="mt-0.5 text-[13px] text-red-500">
+                Could not check for updates: {updates.checkError}
+              </div>
+            )}
+          </div>
+          {updateIds.length > 0 ? (
+            <button
+              type="button"
+              className={BUTTON}
+              disabled={busyUpdating}
+              onClick={() => void updates.update()}
+            >
+              Update all ({updateIds.length})
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={BUTTON}
+              disabled={busyUpdating}
+              onClick={() => void updates.check({ manual: true })}
+            >
+              Check for updates
+            </button>
+          )}
+        </div>
         {(bootError || actionError) && (
           <div
             role="alert"
@@ -94,22 +138,49 @@ export function CommunityPluginsSection() {
                     {plugin.name} <span className="text-[var(--text-muted)]">{plugin.version}</span>
                   </div>
                   {plugin.description && <div className={SUBTITLE}>{plugin.description}</div>}
+                  {updates.available[plugin.id] && (
+                    <div
+                      data-update-available={plugin.id}
+                      className="mt-0.5 text-[13px] text-[var(--link-color)]"
+                    >
+                      Update available: v{updates.available[plugin.id].installed} {"\u2192"} v
+                      {updates.available[plugin.id].latest}
+                    </div>
+                  )}
+                  {updates.progress[plugin.id] && (
+                    <div
+                      data-update-progress={plugin.id}
+                      className="mt-0.5 text-[13px] text-[var(--text-muted)]"
+                    >
+                      {updates.progress[plugin.id].state === "failed"
+                        ? `Update failed: ${(updates.progress[plugin.id] as { error: string }).error}`
+                        : updates.progress[plugin.id].state === "done"
+                          ? "Updated"
+                          : updates.progress[plugin.id].state === "updating"
+                            ? "Updating…"
+                            : "Waiting…"}
+                    </div>
+                  )}
                   {status.state === "failed" && (
                     <div className="mt-0.5 text-[13px] text-red-500">Failed: {status.error}</div>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {updates.available[plugin.id] && (
+                    <button
+                      type="button"
+                      className={BUTTON}
+                      disabled={busyUpdating}
+                      onClick={() => void updates.update([plugin.id])}
+                    >
+                      Update
+                    </button>
+                  )}
                   {firstTab && (
                     <button
                       type="button"
                       className={BUTTON}
-                      onClick={() =>
-                        openPluginSettings({
-                          pluginId: plugin.id,
-                          pluginName: plugin.name,
-                          tabId: firstTab.tab.id,
-                        })
-                      }
+                      onClick={() => openSettings(pluginSectionId(plugin.id, firstTab.tab.id))}
                     >
                       Options
                     </button>

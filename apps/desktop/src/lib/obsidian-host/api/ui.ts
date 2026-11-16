@@ -4,6 +4,7 @@
 // plugin's own styles.css applies.
 import { Scope, type SettingTabLike } from "./core";
 import { createEl } from "./dom";
+import { isValidSecretId } from "./secret-storage";
 import { prepareFuzzySearch, renderMatches, setIcon, type SearchResult } from "./functions";
 import type { App } from "./app";
 import type { Plugin } from "./core";
@@ -360,6 +361,107 @@ export class DropdownComponent extends ValueComponent<string> {
   onChange(cb: (value: string) => unknown): this {
     this.selectEl.addEventListener("change", () => void cb(this.selectEl.value));
     return this;
+  }
+}
+
+const SECRET_NONE = "";
+const SECRET_CREATE = "\u0000create";
+
+/**
+ * Obsidian's secret picker: the plugin stores only the chosen secret NAME (in its data.json) and
+ * reads the value with `app.secretStorage.getSecret(name)`. Lists the names in the one shared
+ * store (`listSecrets`, the same store as Settings > Secrets) and offers "Create new secret"
+ * (name + password input), which writes through `setSecret`. The value is never shown or returned.
+ */
+export class SecretComponent extends ValueComponent<string> {
+  selectEl: HTMLSelectElement;
+  private formEl: HTMLElement | null = null;
+  private value = "";
+  private changeCb: ((value: string) => unknown) | null = null;
+  private readonly containerEl: HTMLElement;
+  constructor(
+    public app: App,
+    containerEl: HTMLElement,
+  ) {
+    super();
+    this.containerEl = containerEl;
+    this.selectEl = createEl("select", { cls: "dropdown", parent: containerEl });
+    this.selectEl.addEventListener("change", () => {
+      if (this.selectEl.value === SECRET_CREATE) this.openForm();
+      else this.choose(this.selectEl.value);
+    });
+    this.renderOptions();
+  }
+  setDisabled(disabled: boolean): this {
+    super.setDisabled(disabled);
+    this.selectEl.disabled = disabled;
+    return this;
+  }
+  getValue(): string {
+    return this.value;
+  }
+  setValue(value: string): this {
+    this.value = value;
+    this.renderOptions();
+    return this;
+  }
+  onChange(cb: (value: string) => unknown): this {
+    this.changeCb = cb;
+    return this;
+  }
+  private renderOptions(): void {
+    const names = this.app.secretStorage.listSecrets().sort();
+    if (this.value && !names.includes(this.value)) names.unshift(this.value);
+    this.selectEl.replaceChildren();
+    createEl("option", { text: "Select secret…", value: SECRET_NONE, parent: this.selectEl });
+    for (const name of names)
+      createEl("option", { text: name, value: name, parent: this.selectEl });
+    createEl("option", { text: "Create new secret…", value: SECRET_CREATE, parent: this.selectEl });
+    this.selectEl.value = this.value;
+  }
+  private choose(name: string): void {
+    this.value = name;
+    void this.changeCb?.(name);
+  }
+  private closeForm(): void {
+    this.formEl?.remove();
+    this.formEl = null;
+    this.selectEl.value = this.value;
+  }
+  private openForm(): void {
+    this.formEl?.remove();
+    const form = createEl("div", { cls: "secret-component-form" });
+    this.containerEl.appendChild(form);
+    this.formEl = form;
+    const name = createEl("input", {
+      parent: form,
+      attr: { type: "text", placeholder: "Secret name (a-z, 0-9, -)" },
+    });
+    const secret = createEl("input", {
+      parent: form,
+      attr: { type: "password", placeholder: "Secret value", autocomplete: "off" },
+    });
+    const error = createEl("div", { cls: "setting-item-description", parent: form });
+    const save = createEl("button", { text: "Save", cls: "mod-cta", parent: form });
+    const cancel = createEl("button", { text: "Cancel", parent: form });
+    save.addEventListener("click", () => {
+      if (!isValidSecretId(name.value)) {
+        error.textContent = "Use lowercase letters, digits and dashes.";
+        return;
+      }
+      if (!secret.value) {
+        error.textContent = "Enter a value.";
+        return;
+      }
+      this.app.secretStorage.setSecret(name.value, secret.value);
+      secret.value = "";
+      this.value = name.value;
+      this.closeForm();
+      this.renderOptions();
+      void this.changeCb?.(this.value);
+    });
+    cancel.addEventListener("click", () => this.closeForm());
+    name.focus();
   }
 }
 

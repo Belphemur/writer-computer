@@ -1,5 +1,5 @@
-import { createSettingsTab, useEditorStore } from "@/stores/editor-store";
-import { openPluginSettings } from "./editor-api";
+import { useEditorStore } from "@/stores/editor-store";
+import { openSettings } from "./editor-api";
 import type { DocumentStats } from "@/lib/document-stats";
 
 export type { OpenFile, Tab, Location, FileLocation, SessionTab } from "@/stores/editor-store";
@@ -96,15 +96,7 @@ export function useReloadVersion(path: string | null) {
   return useEditorStore((s) => (path ? (s.openFiles.get(path)?.reloadVersion ?? 0) : 0));
 }
 
-function useOpenOrFocus() {
-  return useEditorStore((s) => s.openOrFocus);
-}
-
+/** Opens (or focuses) the Settings tab, optionally at a section id. */
 export function useOpenSettingsTab() {
-  const openOrFocus = useOpenOrFocus();
-  return () => openOrFocus((tab) => tab.location.kind === "settings", createSettingsTab);
-}
-
-export function useOpenPluginSettings() {
-  return openPluginSettings;
+  return openSettings;
 }

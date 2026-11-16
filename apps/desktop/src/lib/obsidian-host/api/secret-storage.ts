@@ -9,6 +9,11 @@
 // on the console, and the in-memory value stays so the plugin keeps working for the app run.
 import { recordPluginError } from "../error-log";
 
+/** Obsidian's rule for secret ids: lowercase letters, digits and dashes. The Rust command
+ *  `secrets_set` (Settings > Secrets) enforces the same rule. */
+export const SECRET_ID_RE = /^[a-z0-9-]+$/;
+export const isValidSecretId = (id: string): boolean => SECRET_ID_RE.test(id);
+
 export interface SecretBackend {
   secretsLoad(): Promise<Record<string, string>>;
   secretSet(id: string, secret: string): Promise<void>;
@@ -37,6 +42,16 @@ export class SecretStorage {
     this.secrets.delete(id);
     this.touched.add(id);
     this.enqueue(`delete:${id}`, (b) => b.secretDelete(id));
+  }
+
+  /**
+   * Mirrors a change the Settings > Secrets page already persisted (`value` null = deleted) into
+   * the cache so a running plugin sees it, without a second backend write.
+   */
+  applyExternal(id: string, value: string | null): void {
+    if (value === null) this.secrets.delete(id);
+    else this.secrets.set(id, value);
+    this.touched.add(id);
   }
 
   listSecrets(): string[] {

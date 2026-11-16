@@ -32,6 +32,7 @@ import { getFileName } from "@/lib/paths";
 import { confirmAction } from "@/lib/tauri";
 import { defaultStoreClient, type StorePluginsState } from "@/lib/obsidian-host/store-client";
 import { useEditorStore } from "@/stores/editor-store";
+import { pluginSectionId } from "@/components/settings-panel/settings-sections";
 
 export const PANE_MIN_WIDTH = 280;
 export const PANE_MAX_WIDTH = 640;
@@ -146,6 +147,8 @@ interface PluginsState {
   closePane: () => void;
   setPaneWidth: (width: number) => void;
   selectLeaf: (leaf: WorkspaceLeaf) => void;
+  /** Mirrors a Settings > Secrets change into the running host (null = deleted). */
+  syncSecret: (id: string, value: string | null) => void;
 }
 
 interface Session {
@@ -315,13 +318,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
         editorApi.openSettings();
         return;
       }
-      const pluginName =
-        host.getSnapshot().installed.find((p) => p.id === entry.owner)?.name ?? entry.owner;
-      editorApi.openPluginSettings({
-        pluginId: entry.owner,
-        pluginName,
-        tabId: entry.tab.id,
-      });
+      editorApi.openSettings(pluginSectionId(entry.owner, entry.tab.id));
     };
     const unsubs = [
       host.subscribe(sync(() => set({ snapshot: host.getSnapshot() }))),
@@ -408,6 +405,8 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
   return {
     ...IDLE,
     paneWidth: PANE_DEFAULT_WIDTH,
+
+    syncSecret: (id, value) => session?.host.app.secretStorage.applyExternal(id, value),
 
     attach: (root, deps) => {
       const gen = ++generation;

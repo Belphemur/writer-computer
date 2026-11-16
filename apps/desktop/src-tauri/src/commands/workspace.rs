@@ -488,6 +488,10 @@ fn prepare_workspace_state(
         run_workspace_bootstrap(handle, label_for_bg, root_for_bg, new_epoch, new_cancel);
     });
 
+    // Writer-managed agent skills (`.agents/skills`, `.claude/skills`): their
+    // own background thread, never blocks or fails the open.
+    crate::commands::skills::spawn_workspace_sync(&app, label, root.clone());
+
     Ok(WorkspaceInfo {
         root: canonical_path,
         name,

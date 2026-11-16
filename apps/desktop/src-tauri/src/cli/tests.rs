@@ -900,3 +900,42 @@ fn apply_insert_pure_cases() {
         "```\n# H\n```\n# H\nz\nn\n"
     );
 }
+
+#[test]
+fn skills_sync_installs_checks_and_reports_conflicts() {
+    let t = T::new();
+    let out = t.ok(&["skills:sync", "check"]);
+    assert!(
+        out.contains(".agents/skills/writer-cli\tinstalled"),
+        "{out}"
+    );
+    assert!(!t.exists(".agents"), "check must not write");
+    let out = t.ok(&["skills:sync"]);
+    assert!(
+        out.contains(".claude/skills/writer-bases\tinstalled"),
+        "{out}"
+    );
+    assert!(t.exists(".claude/skills/writer-search/SKILL.md"));
+    assert!(t
+        .read(".agents/skills/writer-cli/SKILL.md")
+        .contains("writer-managed: true"));
+    assert!(t
+        .ok(&["skills:sync"])
+        .lines()
+        .all(|l| l.contains("\tup-to-date")));
+    // A user's own skill of the same name is kept and reported on stderr.
+    fs::remove_dir_all(t.vault.path().join(".claude/skills/writer-search")).unwrap();
+    t.write(".claude/skills/writer-search/SKILL.md", "mine\n");
+    let o = t.run(&["skills:sync"]);
+    assert_eq!(o.code, EXIT_OK);
+    assert!(o.stdout.contains("skipped-user-owned"), "{}", o.stdout);
+    assert!(
+        o.stderr.contains(".claude/skills/writer-search"),
+        "{}",
+        o.stderr
+    );
+    assert_eq!(t.read(".claude/skills/writer-search/SKILL.md"), "mine\n");
+    assert_eq!(t.code(&["skills:sync", "bogus=1"]).0, EXIT_USAGE);
+    assert!(t.exists(".obsidian/app.json"));
+    assert_eq!(t.read(".obsidian/app.json"), "{}");
+}

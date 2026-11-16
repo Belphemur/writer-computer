@@ -130,13 +130,6 @@ export function createSettingsTab(id = createTabId()): Tab {
   return { id, location: { kind: "settings" }, back: [], forward: [] };
 }
 
-export function createPluginSettingsTab(
-  target: { pluginId: string; pluginName: string; tabId?: string },
-  id = createTabId(),
-): Tab {
-  return { id, location: { kind: "plugin-settings", ...target }, back: [], forward: [] };
-}
-
 export function createPluginViewTab(
   target: { leafId: string; title: string },
   id = createTabId(),

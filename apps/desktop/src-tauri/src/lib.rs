@@ -9,6 +9,7 @@ mod ignore;
 pub mod index;
 #[cfg(target_os = "macos")]
 mod macos;
+pub mod managed_skills;
 pub mod open_target;
 mod plugin_consent;
 mod plugin_env;
@@ -652,6 +653,7 @@ pub fn run() {
             commands::settings::get_setting,
             commands::settings::set_setting,
             commands::settings::reset_setting,
+            commands::skills::sync_managed_skills,
             telemetry::telemetry_should_prompt,
             telemetry::telemetry_mark_prompted,
             telemetry::telemetry_report_declined,
@@ -665,6 +667,9 @@ pub fn run() {
             commands::plugins::plugin_secrets_load,
             commands::plugins::plugin_secret_set,
             commands::plugins::plugin_secret_delete,
+            commands::plugins::secrets_list_ids,
+            commands::plugins::secrets_set,
+            commands::plugins::secrets_delete,
             commands::plugins::plugin_store_list,
             commands::plugins::plugin_store_detail,
             commands::plugins::plugin_store_install,

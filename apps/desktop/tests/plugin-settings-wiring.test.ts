@@ -5,11 +5,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-import {
-  deserializeLocation,
-  pageKind,
-  serializeLocation,
-} from "../src/components/editor-area/page-kinds";
 import { mountSettingTab } from "../src/components/plugins/mount-setting-tab";
 import { PluginHost, type ScriptLoader } from "../src/lib/obsidian-host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../src/lib/obsidian-host/testing";
@@ -21,37 +16,10 @@ import {
   type PluginsDeps,
 } from "../src/stores/plugins-store";
 import { useEditorStore } from "../src/stores/editor-store";
+import { useUIStore } from "../src/stores/ui-store";
+import { pluginSectionId } from "../src/components/settings-panel/settings-sections";
 
 const errorLog = () => ((window as any).__writerPluginErrors ?? []) as { phase: string }[];
-
-describe("plugin-settings page kind", () => {
-  const location = {
-    kind: "plugin-settings" as const,
-    pluginId: "copilot",
-    pluginName: "Copilot",
-    tabId: "copilot",
-  };
-
-  it("titles the tab after the plugin and carries no file paths", () => {
-    const k = pageKind(location);
-    expect(k.title(location)).toBe("Copilot options");
-    expect(k.paths(location)).toEqual([]);
-    expect(k.primaryPath(location)).toBeNull();
-    expect(k.title({ ...location, pluginName: "" })).toBe("copilot options");
-  });
-
-  it("round-trips through the session payload and rejects a payload without a plugin id", () => {
-    const data = serializeLocation(location);
-    expect(data).toEqual(location);
-    expect(deserializeLocation(data)).toEqual(location);
-    expect(deserializeLocation({ kind: "plugin-settings" })).toBeNull();
-    expect(deserializeLocation({ kind: "plugin-settings", pluginId: "x" })).toEqual({
-      kind: "plugin-settings",
-      pluginId: "x",
-      pluginName: "x",
-    });
-  });
-});
 
 describe("resolveSettingTarget", () => {
   const entry = (owner: string, id: string) => ({
@@ -181,13 +149,12 @@ describe("app.setting wiring", () => {
     await usePluginsStore.getState().detach();
   });
 
-  it("openTabById opens (or focuses) one options tab for a plugin id or `<plugin>:<tab>` id", async () => {
+  it("openTabById opens (or focuses) the one Settings tab at the plugin's section", async () => {
     const host = await boot();
     host.app.setting.openTabById("p");
     host.app.setting.openTabById("p:p");
-    expect(kinds()).toEqual([
-      { kind: "plugin-settings", pluginId: "p", pluginName: "Plug", tabId: "p" },
-    ]);
+    expect(kinds()).toEqual([{ kind: "settings" }]);
+    expect(useUIStore.getState().settingsSection).toBe(pluginSectionId("p", "p"));
   });
 
   it("open() falls back to Settings after a grace period; openTabById within it wins", async () => {
@@ -196,10 +163,11 @@ describe("app.setting wiring", () => {
     host.app.setting.open();
     host.app.setting.openTabById("p");
     vi.advanceTimersByTime(SETTING_OPEN_GRACE_MS + 10);
-    expect(kinds().map((l) => l.kind)).toEqual(["plugin-settings"]);
+    expect(kinds().map((l) => l.kind)).toEqual(["settings"]);
+    expect(useUIStore.getState().settingsSection).toBe(pluginSectionId("p", "p"));
     host.app.setting.open();
     vi.advanceTimersByTime(SETTING_OPEN_GRACE_MS + 10);
-    expect(kinds().map((l) => l.kind)).toEqual(["plugin-settings", "settings"]);
+    expect(kinds().map((l) => l.kind)).toEqual(["settings"]);
   });
 
   it("an unknown id records an error and opens Settings", async () => {

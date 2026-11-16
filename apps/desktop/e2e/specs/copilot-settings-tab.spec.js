@@ -1,7 +1,8 @@
-// End-to-end: a community plugin's options open in their OWN editor tab. Uses the same fixture as
+// End-to-end: a community plugin's options are a section of the Settings sidebar (UNVERIFIED after
+// the settings-sidebar refactor: not run in a real window yet). Uses the same fixture as
 // copilot-fake-claude.spec.js (UNMODIFIED Copilot 4.0.20, trusted scratch vault):
 //   SPEC=copilot-settings-tab.spec.js sh fixtures/copilot-fake-claude/run.sh
-import { deepStrictEqual, ok, strictEqual } from "node:assert/strict";
+import { deepStrictEqual, ok } from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,8 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VAULT = process.env.WRITER_E2E_COPILOT_VAULT;
 const SHOTS = process.env.WRITER_E2E_SHOTS || join(HERE, "../.cache/shots");
-const PAGE = '[data-plugin-settings-page="copilot"]';
+const PAGE = '[data-settings-panel] [role="tabpanel"]';
+const NAV_COPILOT = '[data-settings-nav] [role="tab"]';
 // Copilot's own SettingsMainV2 tab labels (src/settings/v2/SettingsMainV2.tsx @ 4.0.20).
 const COPILOT_TABS = ["Basic", "BYOK", "Commands", "Skills", "Connectors", "Advanced"];
 
@@ -34,11 +36,19 @@ async function runCommand(id) {
   await item.click();
 }
 
-const tabTitles = () =>
-  browser.execute(() =>
-    Array.from(document.querySelectorAll("[role=button] > span"))
-      .map((e) => e.textContent.trim())
-      .filter((t) => t.endsWith("options")),
+const navLabels = () =>
+  browser.execute(
+    (sel) => Array.from(document.querySelectorAll(sel)).map((e) => e.textContent.trim()),
+    NAV_COPILOT,
+  );
+const clickNav = (label) =>
+  browser.execute(
+    (sel, l) =>
+      Array.from(document.querySelectorAll(sel))
+        .find((e) => e.textContent.trim().startsWith(l))
+        ?.click(),
+    NAV_COPILOT,
+    label,
   );
 
 describe("Plugin options open in their own tab (Copilot 4.0.20)", function () {
@@ -64,23 +74,15 @@ describe("Plugin options open in their own tab (Copilot 4.0.20)", function () {
     });
   });
 
-  it("Options opens a 'Copilot options' tab that renders real Copilot settings", async function () {
+  it("the Copilot sidebar entry renders real Copilot settings in the content pane", async function () {
     await runCommand("open-settings");
-    const section = await $("[data-community-plugins]");
-    await section.waitForExist({ timeout: 10_000 });
-    const options = await section.$("button=Options");
-    await options.waitForExist({ timeout: 40_000 });
-    await options.click();
-
+    await $("[data-settings-nav]").waitForExist({ timeout: 10_000 });
+    await browser.waitUntil(async () => (await navLabels()).includes("Copilot"), {
+      timeout: 40_000,
+      timeoutMsg: `no Copilot entry in the sidebar: ${await navLabels()}`,
+    });
+    await clickNav("Copilot");
     const page = await $(PAGE);
-    await page.waitForExist({ timeout: 10_000 });
-    // No inline accordion any more: the settings page holds no plugin UI.
-    strictEqual(
-      await browser.execute(
-        () => document.querySelector("[data-community-plugins] .vertical-tab-content") !== null,
-      ),
-      false,
-    );
     await browser.waitUntil(
       async () => {
         const text = await page.getText();
@@ -94,50 +96,29 @@ describe("Plugin options open in their own tab (Copilot 4.0.20)", function () {
       return { connected: el.isConnected, w: r.width, h: r.height };
     }, PAGE);
     ok(size.connected && size.w > 300 && size.h > 200, `cramped/empty: ${JSON.stringify(size)}`);
-    deepStrictEqual(await tabTitles(), ["Copilot options"]);
     await shot("opened");
   });
 
-  it("clicking Options again focuses the same tab; closing it tears the plugin UI down", async function () {
-    await runCommand("open-settings");
-    const options = await $("[data-community-plugins]").$("button=Options");
-    await options.click();
-    await $(PAGE).waitForExist();
-    deepStrictEqual(await tabTitles(), ["Copilot options"]);
-
-    // Close the options tab (its close button sits in the tab row).
-    const closed = await browser.execute(() => {
-      const tab = Array.from(document.querySelectorAll("[role=button]")).find(
-        (e) => e.querySelector(":scope > span")?.textContent.trim() === "Copilot options",
-      );
-      const btn = tab?.querySelector("button");
-      btn?.click();
-      return !!btn;
-    });
-    ok(closed, "no close button on the options tab");
-    await browser.waitUntil(async () => !(await $(PAGE).isExisting()), { timeout: 5_000 });
-    deepStrictEqual(await tabTitles(), []);
+  it("Options in Manage plugins selects the Copilot section; leaving it tears the plugin UI down", async function () {
+    await clickNav("Manage plugins");
+    await (await $("[data-community-plugins]").$("button=Options")).click();
+    await browser.waitUntil(
+      async () => await $(`${PAGE} [data-plugin-settings-host="copilot"]`).isExisting(),
+      { timeout: 10_000 },
+    );
+    await clickNav("Editor");
+    await browser.waitUntil(
+      async () => !(await $(`${PAGE} [data-plugin-settings-host="copilot"]`).isExisting()),
+      { timeout: 5_000 },
+    );
   });
 
-  it("disabling Copilot leaves a 'Plugin not loaded' state in an open options tab", async function () {
-    await runCommand("open-settings");
-    await (await $("[data-community-plugins]").$("button=Options")).click();
-    await $(PAGE).waitForExist();
-    // The toggle lives on the Settings page: focus it, switch Copilot off, come back.
-    await runCommand("open-settings");
+  it("disabling Copilot removes its sidebar entry", async function () {
+    await clickNav("Manage plugins");
     await (await $('[aria-label="Enable Copilot"]')).click();
-    await browser.execute(() =>
-      Array.from(document.querySelectorAll("[role=button]"))
-        .find((e) => e.querySelector(":scope > span")?.textContent.trim() === "Copilot options")
-        ?.click(),
-    );
-    const notLoaded = await $(`${PAGE} [data-plugin-not-loaded]`);
-    await notLoaded.waitForExist({ timeout: 20_000 });
-    ok((await notLoaded.getText()).includes("Plugin not loaded"));
-    strictEqual(
-      await browser.execute((sel) => document.querySelector(`${sel} .vertical-tab-content`), PAGE),
-      null,
-    );
+    await browser.waitUntil(async () => !(await navLabels()).includes("Copilot"), {
+      timeout: 20_000,
+    });
     await shot("disabled");
   });
 
