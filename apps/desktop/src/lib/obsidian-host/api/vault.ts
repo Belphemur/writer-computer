@@ -5,7 +5,8 @@
 import { parse as yamlParse } from "yaml";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { parseWikiLink } from "@/lib/wiki-links";
-import { Events, type EventRef } from "./core";
+import { Events, callerPluginId, type EventRef } from "./core";
+import { logger } from "@/lib/logger";
 import { normalizePath, parseFrontMatterTags } from "./functions";
 
 // ---------------------------------------------------------------- IO boundary
@@ -39,7 +40,8 @@ export interface VaultIo {
   stat(path: string): Promise<VaultStat | null>;
   mkdir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
-  remove(path: string): Promise<void>;
+  /** `permanent` skips the system trash (which plays Finder's trash sound for every move). */
+  remove(path: string, opts?: { permanent?: boolean }): Promise<void>;
   readBinary?(path: string): Promise<ArrayBuffer>;
   writeBinary?(path: string, data: ArrayBuffer): Promise<void>;
 }
@@ -146,17 +148,21 @@ export class DataAdapter {
     await this.io.mkdir(this.p(path));
   }
   async remove(path: string): Promise<void> {
-    await this.io.remove(this.p(path));
+    traceRemove("adapter.remove", path, true);
+    await this.io.remove(this.p(path), { permanent: true });
   }
   async rmdir(path: string, _recursive: boolean): Promise<void> {
-    await this.io.remove(this.p(path));
+    traceRemove("adapter.rmdir", path, true);
+    await this.io.remove(this.p(path), { permanent: true });
   }
   async trashSystem(path: string): Promise<boolean> {
-    await this.remove(path);
+    traceRemove("adapter.trashSystem", path, false);
+    await this.io.remove(this.p(path));
     return true;
   }
   async trashLocal(path: string): Promise<void> {
-    await this.remove(path);
+    traceRemove("adapter.trashLocal", path, true);
+    await this.io.remove(this.p(path), { permanent: true });
   }
   async rename(from: string, to: string): Promise<void> {
     await this.ensureParent(this.p(to));
@@ -457,13 +463,17 @@ export class Vault extends Events {
   }
 
   async delete(file: TAbstractFile, _force?: boolean): Promise<void> {
-    await this.io.remove(file.path);
+    traceRemove("vault.delete", file.path, true);
+    await this.io.remove(file.path, { permanent: true });
     this.removeNode(file);
     this.trigger("delete", file);
   }
 
   async trash(file: TAbstractFile, _system: boolean): Promise<void> {
-    await this.delete(file);
+    traceRemove("vault.trash", file.path, false);
+    await this.io.remove(file.path);
+    this.removeNode(file);
+    this.trigger("delete", file);
   }
 
   async rename(file: TAbstractFile, newPath: string): Promise<void> {
@@ -904,4 +914,12 @@ export class MetadataCache extends Events {
 function parseLinkPath(link: string): string {
   const i = link.indexOf("#");
   return i < 0 ? link : link.slice(0, i);
+}
+
+/** Every plugin-driven delete is logged with the plugin id (info level), so a plugin that churns
+ *  files, or fills the system trash, can be found in the log files. */
+function traceRemove(api: string, path: string, permanent: boolean): void {
+  logger.log("info", "plugin", `${api} ${path}${permanent ? " (permanent)" : " (system trash)"}`, {
+    plugin: callerPluginId(),
+  });
 }

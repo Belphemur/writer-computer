@@ -172,7 +172,7 @@ export function createMemoryVaultIo(files: Record<string, string> = {}): VaultIo
         }
       } else throw new Error(`ENOENT: ${from}`);
     },
-    async remove(path) {
+    async remove(path, _opts) {
       fileMap.delete(path);
       folders.delete(path);
       for (const k of Array.from(fileMap.keys())) if (k.startsWith(`${path}/`)) fileMap.delete(k);

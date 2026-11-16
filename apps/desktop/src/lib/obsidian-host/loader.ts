@@ -13,6 +13,7 @@
 //   3. the factory runs with a fresh module/exports and a per-plugin `require`. Any throw (a
 //      refused require, a top-level bug, onload) fails THAT plugin: status "failed", the app
 //      keeps running, everything it registered is swept.
+import { logger } from "@/lib/logger";
 import { createApp, type App } from "./api/app";
 import { Editor, type WorkspaceBridge } from "./api/views";
 import { editorBackendFor, setEditorInfoResolver } from "./editor-bridge";
@@ -378,6 +379,9 @@ export class PluginHost {
 
   private async load(id: string): Promise<void> {
     if (this.records.has(id)) return;
+    // Warn level on purpose: a plugin that keeps reloading shows up (with a repeat count) in the
+    // default log, which is the only diagnostics channel in a release build.
+    logger.warn("plugin", `loading ${id}`, { plugin: id, phase: "lifecycle" });
     const manifest = this.manifests.get(id);
     if (!manifest) {
       this.setStatus(id, { state: "failed", error: "not installed" });
@@ -418,6 +422,7 @@ export class PluginHost {
 
   /** Idempotent: removes everything the plugin put into the app. */
   private async teardown(id: string): Promise<void> {
+    logger.warn("plugin", `unloading ${id}`, { plugin: id, phase: "lifecycle" });
     const record = this.records.get(id);
     this.records.delete(id);
     delete this.app.plugins.plugins[id];

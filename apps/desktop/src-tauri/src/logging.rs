@@ -7,7 +7,7 @@
 //!   appender starts and on every rotation).
 //! - Directory: the identifier-based OS log dir, the same one Tauri's `app_log_dir` resolves to
 //!   (`~/Library/Logs/<identifier>` on macOS).
-//! - Levels: `error` and `warn` by default. The `diagnostics.log-level` setting raises it; the
+//! - Levels: `info` and above by default (everything is logged; files rotate, 3 days max). The `diagnostics.log-level` setting raises it; the
 //!   env var `WRITER_LOG` (`error|warn|info|debug|trace|off`) wins over the setting.
 //! - Writing never blocks the caller: events are formatted on the calling thread and handed to
 //!   a worker thread through a bounded channel (lossy when the disk stalls, never blocking).
@@ -35,7 +35,7 @@ pub const MAX_LOG_FILES: usize = 3;
 /// Env override for the level; wins over the setting.
 pub const ENV_VAR: &str = "WRITER_LOG";
 pub const LEVEL_SETTING_KEY: &str = "diagnostics.log-level";
-const DEFAULT_LEVEL: LevelFilter = LevelFilter::WARN;
+const DEFAULT_LEVEL: LevelFilter = LevelFilter::INFO;
 /// A line longer than this has its strings truncated (see [`sanitize_line`]).
 const MAX_LINE_BYTES: usize = 16 * 1024;
 /// Buffered lines before the queue starts dropping instead of blocking.
@@ -685,7 +685,7 @@ mod tests {
 
     #[test]
     fn level_resolution_order() {
-        assert_eq!(resolve_level(None, None), LevelFilter::WARN);
+        assert_eq!(resolve_level(None, None), LevelFilter::INFO);
         assert_eq!(resolve_level(None, Some("debug")), LevelFilter::DEBUG);
         assert_eq!(
             resolve_level(Some("error"), Some("debug")),

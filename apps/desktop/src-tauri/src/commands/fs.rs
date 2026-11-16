@@ -761,9 +761,23 @@ pub async fn rename_entry(
 }
 
 pub fn delete_entry_impl(path: &str) -> Result<(), AppError> {
+    delete_entry_with(path, false)
+}
+
+/// `permanent` deletes for good. Plugins that churn temp files use it: the system trash goes
+/// through Finder, which plays its trash sound for every move.
+pub fn delete_entry_with(path: &str, permanent: bool) -> Result<(), AppError> {
     let entry_path = PathBuf::from(path);
     if !entry_path.exists() {
         return Err(AppError::NotFound(path.to_string()));
+    }
+    if permanent {
+        if entry_path.is_dir() {
+            fs::remove_dir_all(&entry_path)?;
+        } else {
+            fs::remove_file(&entry_path)?;
+        }
+        return Ok(());
     }
     trash::delete(&entry_path).map_err(|e| AppError::Io(e.to_string()))?;
     Ok(())
@@ -772,11 +786,12 @@ pub fn delete_entry_impl(path: &str) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn delete_entry(
     path: String,
+    permanent: Option<bool>,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
     authorized_state(&app, &webview, &[&path])?;
-    blocking(move || delete_entry_impl(&path)).await
+    blocking(move || delete_entry_with(&path, permanent.unwrap_or(false))).await
 }
 
 #[tauri::command]

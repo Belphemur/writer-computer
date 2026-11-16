@@ -44,7 +44,7 @@ describe("Settings > Logs", () => {
     const section = SETTINGS_SECTIONS.find((s) => s.id === "logs")!;
     expect(section.blocks).toContainEqual({ type: "logs" });
     const def = SETTINGS_SCHEMA.find((d) => d.key === "diagnostics.log-level")!;
-    expect(def.default).toBe("warn");
+    expect(def.default).toBe("info");
     expect(def.category).toBe("Logs");
   });
 

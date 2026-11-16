@@ -38,7 +38,7 @@ Targets: `frontend` (all webview events), `app`, `panic`, `cli`, `plugin_proc` (
 
 ## Levels
 
-`error` and `warn` always. Setting `diagnostics.log-level` (`error|warn|info|debug`, default `warn`) applies at runtime; `WRITER_LOG=<level|off>` overrides it. Debug adds the file watcher's diagnostics (`target: "watcher"`) that used to need `WRITER_WATCHER_LOG`.
+`error`, `warn` and `info` by default. Setting `diagnostics.log-level` (`error|warn|info|debug`, default `info`) applies at runtime; `WRITER_LOG=<level|off>` overrides it. Debug adds the file watcher's diagnostics (`target: "watcher"`) that used to need `WRITER_WATCHER_LOG`.
 
 ## Sources
 

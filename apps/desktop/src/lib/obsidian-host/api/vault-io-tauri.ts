@@ -73,8 +73,8 @@ export function createTauriVaultIo(root: string, name: string): VaultIo {
     async rename(from, to) {
       await call("rename_entry", { oldPath: abs(from), newPath: abs(to) });
     },
-    async remove(path) {
-      await call("delete_entry", { path: abs(path) });
+    async remove(path, opts) {
+      await call("delete_entry", { path: abs(path), permanent: opts?.permanent === true });
     },
   };
 }

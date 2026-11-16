@@ -419,12 +419,12 @@
     {
       "key": "diagnostics.log-level",
       "label": "Log level",
-      "description": "How much Writer writes to its local log files. Warn records errors and warnings only; info and debug add detail for bug reports and grow the files faster. The WRITER_LOG environment variable overrides this. Logs stay on this computer.",
+      "description": "How much Writer writes to its local log files. Info (default) records everything notable, including plugin loads and file deletes; debug adds more detail and grows the files faster; warn and error record less. The WRITER_LOG environment variable overrides this. Logs stay on this computer.",
       "category": "Logs",
       "type": "enum",
       "options": ["error", "warn", "info", "debug"],
       "scope": "global",
-      "default": "warn"
+      "default": "info"
     },
     {
       "key": "plugins.auto-check-updates",
