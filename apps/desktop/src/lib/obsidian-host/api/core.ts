@@ -165,7 +165,8 @@ function noticeText(message: string | DocumentFragment): string {
   return typeof message === "string" ? message : (message.textContent ?? "").trim();
 }
 
-function noticeOwner(): string {
+/** Plugin id of the calling plugin script (from the `writer-plugin://localhost/<id>/main.js` stack frame). */
+export function callerPluginId(): string {
   const m = /writer-plugin:\/\/localhost\/([^/\s:)?#]+)\/main\.js/.exec(new Error().stack ?? "");
   return m ? m[1] : "(unknown)";
 }
@@ -213,7 +214,7 @@ export class Notice {
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(message: string | DocumentFragment, duration = 5000) {
-    recordNotice(noticeOwner(), noticeText(message));
+    recordNotice(callerPluginId(), noticeText(message));
     let container = document.body.querySelector<HTMLElement>(`.${NOTICE_CONTAINER_CLASS}`);
     if (!container)
       container = createEl("div", { cls: NOTICE_CONTAINER_CLASS, parent: document.body });
