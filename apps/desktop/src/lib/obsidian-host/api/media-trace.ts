@@ -43,7 +43,11 @@ function recordMedia(kind: string, isSound: boolean, detail = ""): void {
     lastStart.set(owner, now);
     if (prev !== undefined && now - prev < SAME_SOUND_MS) return;
   }
-  if (traceOn()) console.info(`[plugin] media ${kind} from ${owner}${detail ? ` ${detail}` : ""}`);
+  // Sounds are rare, so they always reach the log files (console.warn is forwarded there); the
+  // chattier non-sound calls need the opt-in flag. The release app has no dev console to set it in.
+  if (isSound) console.warn(`[plugin] sound: ${kind} from ${owner}${detail ? ` ${detail}` : ""}`);
+  else if (traceOn())
+    console.info(`[plugin] media ${kind} from ${owner}${detail ? ` ${detail}` : ""}`);
   if (!isSound) return;
   const times = (soundTimes.get(owner) ?? []).filter((t) => now - t < SOUND_STORM_WINDOW_MS);
   times.push(now);

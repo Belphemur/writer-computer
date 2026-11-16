@@ -1,0 +1,198 @@
+/* Callouts: the editor's decorated quote lines (.cm-callout-line) and the plugin markdown
+   renderer's DOM (.markdown-rendered .callout). Both carry `.callout[data-callout]`, so snippet and
+   theme CSS written for that structure works in either place:
+
+     .callout[data-callout="my-type"] { --callout-color: #7a5; --callout-icon: lucide-flame; }
+
+   `--callout-color` is any CSS colour. Mid-lightness colours read on the app's light and dark
+   themes; the tint is a mix over the page, so it follows the theme. See SPECs/callouts-spec.md. */
+
+:root {
+  --wc-callout-note: oklch(66% 0.15 255);
+  --wc-callout-abstract: oklch(70% 0.11 195);
+  --wc-callout-info: oklch(66% 0.14 235);
+  --wc-callout-todo: oklch(64% 0.16 270);
+  --wc-callout-tip: oklch(72% 0.12 180);
+  --wc-callout-success: oklch(68% 0.16 150);
+  --wc-callout-question: oklch(76% 0.14 85);
+  --wc-callout-warning: oklch(72% 0.16 55);
+  --wc-callout-failure: oklch(64% 0.19 25);
+  --wc-callout-danger: oklch(62% 0.21 18);
+  --wc-callout-bug: oklch(64% 0.2 5);
+  --wc-callout-example: oklch(66% 0.17 300);
+  --wc-callout-quote: color-mix(in srgb, var(--fg-base) 55%, transparent);
+}
+
+/* Type colours. Unknown types fall back to the note colour (the base rule comes first, equal
+   specificity, so each type rule below wins; a snippet's `.callout[data-callout="x"]` is more
+   specific and wins over both). Aliases are listed because `data-callout` holds the typed name.
+   tests/callouts-syntax.test.ts checks that every built-in type and alias appears here. */
+[data-callout] {
+  --callout-color: var(--wc-callout-note);
+}
+[data-callout="note"] {
+  --callout-color: var(--wc-callout-note);
+}
+[data-callout="abstract"],
+[data-callout="summary"],
+[data-callout="tldr"] {
+  --callout-color: var(--wc-callout-abstract);
+}
+[data-callout="info"] {
+  --callout-color: var(--wc-callout-info);
+}
+[data-callout="todo"] {
+  --callout-color: var(--wc-callout-todo);
+}
+[data-callout="tip"],
+[data-callout="hint"],
+[data-callout="important"] {
+  --callout-color: var(--wc-callout-tip);
+}
+[data-callout="success"],
+[data-callout="check"],
+[data-callout="done"] {
+  --callout-color: var(--wc-callout-success);
+}
+[data-callout="question"],
+[data-callout="help"],
+[data-callout="faq"] {
+  --callout-color: var(--wc-callout-question);
+}
+[data-callout="warning"],
+[data-callout="caution"],
+[data-callout="attention"] {
+  --callout-color: var(--wc-callout-warning);
+}
+[data-callout="failure"],
+[data-callout="fail"],
+[data-callout="missing"] {
+  --callout-color: var(--wc-callout-failure);
+}
+[data-callout="danger"],
+[data-callout="error"] {
+  --callout-color: var(--wc-callout-danger);
+}
+[data-callout="bug"] {
+  --callout-color: var(--wc-callout-bug);
+}
+[data-callout="example"] {
+  --callout-color: var(--wc-callout-example);
+}
+[data-callout="quote"],
+[data-callout="cite"] {
+  --callout-color: var(--wc-callout-quote);
+}
+
+/* The tint. Two declarations on purpose: the first takes a CSS colour, the second the legacy
+   `r, g, b` triple; whichever does not parse for the value in use drops out. */
+.cm-callout-line,
+.markdown-rendered .callout {
+  background-color: color-mix(in srgb, var(--callout-color) 12%, transparent);
+  background-image: linear-gradient(
+    rgba(var(--callout-color), 0.12),
+    rgba(var(--callout-color), 0.12)
+  );
+}
+
+.callout-icon {
+  display: inline-flex;
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  color: var(--callout-color);
+}
+.callout-icon > svg {
+  width: 100%;
+  height: 100%;
+}
+.callout-title-inner {
+  font-weight: 600;
+}
+.callout-fold {
+  display: inline-flex;
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  color: var(--text-muted, inherit);
+  cursor: pointer;
+}
+.callout-fold > svg {
+  width: 100%;
+  height: 100%;
+  transition: transform 120ms ease;
+}
+.callout-fold.is-collapsed > svg {
+  transform: rotate(-90deg);
+}
+
+/* ---- Editor ---------------------------------------------------------------------------- */
+
+/* The existing quote bar (a ::before on .cm-blockquote-line) is replaced by the callout's own. */
+.cm-editor .cm-callout-line.cm-blockquote-line::before {
+  display: none;
+}
+.cm-editor .cm-callout-line {
+  box-shadow: inset 0.3em 0 0 var(--callout-color);
+  padding-inline-end: 1em;
+}
+.cm-editor .cm-callout-first {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+.cm-editor .cm-callout-last {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.cm-editor .cm-callout-header .callout-icon {
+  vertical-align: -0.2em;
+  margin-inline-end: 0.5em;
+}
+.cm-editor .cm-callout-header .callout-fold {
+  vertical-align: -0.2em;
+  margin-inline-start: 0.5em;
+}
+/* Editing a callout shows its markdown source; keep the title bold-weight steady. */
+.cm-editor .cm-callout-header {
+  font-weight: 600;
+}
+
+/* ---- Plugin-rendered markdown ---------------------------------------------------------- */
+
+.markdown-rendered .callout {
+  margin: 1em 0;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: inset 0.3em 0 0 var(--callout-color);
+}
+.markdown-rendered .callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.5em 0.9em 0.5em 1.2em;
+}
+.markdown-rendered .callout-title-inner {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.markdown-rendered .callout-title-inner > p {
+  margin: 0;
+}
+.markdown-rendered .callout-content {
+  padding: 0 0.9em 0.6em 1.2em;
+}
+.markdown-rendered .callout-content > :first-child {
+  margin-top: 0;
+}
+.markdown-rendered .callout-content > :last-child {
+  margin-bottom: 0;
+}
+.markdown-rendered .callout .callout {
+  margin: 0.6em 0;
+}
+.markdown-rendered .callout.is-collapsible > .callout-title {
+  cursor: pointer;
+}
+.markdown-rendered .callout.is-collapsed > .callout-content {
+  display: none;
+}

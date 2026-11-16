@@ -47,6 +47,15 @@
       "cssFormat": "px"
     },
     {
+      "key": "editor.properties-default-collapsed",
+      "label": "Properties Panel",
+      "description": "How a note's properties panel starts: Auto collapses blocks with more than 6 properties or 8 lines to one summary row, Collapsed always does, Expanded never does. Toggling a note's panel overrides this until the app quits.",
+      "category": "Editor",
+      "type": "enum",
+      "options": ["auto", "collapsed", "expanded"],
+      "default": "auto"
+    },
+    {
       "key": "editor.tab-size",
       "label": "Tab Size",
       "description": "Number of spaces per tab",

@@ -19,6 +19,7 @@ catalog:
   "@hugeicons/react": ^1.1.10
   "@lezer/common": ^1.5.5
   "@lezer/highlight": ^1.2.5
+  "@lezer/lr": ^1.4.8
   "@lezer/markdown": ^1.8.1
   "@lezer/yaml": ^1.0.4
   "@tailwindcss/vite": ^4.3.5

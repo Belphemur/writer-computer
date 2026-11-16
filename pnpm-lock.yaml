@@ -48,6 +48,9 @@ catalogs:
     '@lezer/highlight':
       specifier: ^1.2.5
       version: 1.2.5
+    '@lezer/lr':
+      specifier: ^1.4.8
+      version: 1.4.8
     '@lezer/markdown':
       specifier: ^1.8.1
       version: 1.8.1
@@ -189,6 +192,9 @@ importers:
       '@lezer/highlight':
         specifier: 'catalog:'
         version: 1.2.5
+      '@lezer/lr':
+        specifier: 'catalog:'
+        version: 1.4.8
       '@lezer/markdown':
         specifier: 'catalog:'
         version: 1.8.1

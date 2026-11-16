@@ -239,55 +239,124 @@ fn delete_children(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Outcome of [`write_records`].
+pub(crate) struct WriteReport {
+    /// File ids written (a note that failed and was marked still has one).
+    pub ids: Vec<i64>,
+    /// `(vault-relative path, message)` for every record that could not be written. The
+    /// rest of the batch is unaffected.
+    pub failed: Vec<(String, String)>,
+}
+
 /// Upsert records inside the caller's transaction. When `resolver` is given,
 /// new links are resolved immediately; otherwise they are left NULL for a
-/// later [`resolve_links`] pass. Returns the file ids written.
+/// later [`resolve_links`] pass.
+///
+/// Each record runs in its own savepoint: one note whose rows the database rejects must never
+/// roll back the batch. Its savepoint is undone, the note is logged once, and its `files` row
+/// is stored with an `index error` in `fm_error`, no child rows and its content hash, so a
+/// later scan or watcher event leaves it alone until its mtime, size or content changes.
 pub(crate) fn write_records(
     conn: &Connection,
     records: &[Box<FileRecord>],
     resolver: Option<&PathIndex>,
-) -> Result<Vec<i64>, IndexError> {
-    let mut ids = Vec::with_capacity(records.len());
+) -> Result<WriteReport, IndexError> {
+    let mut report = WriteReport {
+        ids: Vec::with_capacity(records.len()),
+        failed: Vec::new(),
+    };
+    // A path can reach one batch twice (a directory event plus a file event inside it): the second
+    // write finds the row the first created, so it must replace its children, not insert them again
+    // (`UNIQUE constraint failed: props.file_id, props.key` aborted the whole update).
+    let mut written: HashSet<&str> = HashSet::with_capacity(records.len());
     for rec in records {
-        let id: i64 = match &rec.content {
-            Content::MetaOnly(hash) if rec.existed => {
-                conn.prepare_cached(
-                    "UPDATE files SET size=?2, ctime=?3, mtime=?4, body_hash=COALESCE(?5, body_hash) \
-                     WHERE path=?1 RETURNING id",
-                )?
-                .query_row(
-                    params![rec.path, rec.size, rec.ctime, rec.mtime, hash],
-                    |r| r.get(0),
-                )?
-            }
-            Content::MetaOnly(_) => insert_file(conn, rec, None, None, None, None, None)?,
-            Content::ReadError(msg) => {
-                let id = insert_file(conn, rec, None, Some(msg), None, None, None)?;
-                delete_children(conn, id)?;
-                super::fts::delete_doc(conn, id)?;
-                id
-            }
-            Content::Parsed(note, hash) => {
-                let id = insert_file(
-                    conn,
-                    rec,
-                    note.fm_json.as_deref(),
-                    note.fm_error.as_deref(),
-                    Some(*hash),
-                    Some(note.words),
-                    Some(note.chars),
-                )?;
-                if rec.existed {
-                    delete_children(conn, id)?;
+        let existed = rec.existed || !written.insert(rec.path.as_str());
+        conn.execute_batch("SAVEPOINT index_record")?;
+        let id = match write_record(conn, rec, existed, resolver) {
+            Ok(id) => id,
+            Err(e) => {
+                conn.execute_batch("ROLLBACK TO index_record")?;
+                let msg = e.to_string();
+                log::warn!("vault index skipped a note: {}: {msg}", rec.path);
+                report.failed.push((rec.path.clone(), msg.clone()));
+                match mark_failed(conn, rec, &msg) {
+                    Ok(id) => id,
+                    Err(e2) => {
+                        conn.execute_batch("ROLLBACK TO index_record")?;
+                        conn.execute_batch("RELEASE index_record")?;
+                        log::warn!("vault index could not mark a note: {}: {e2}", rec.path);
+                        continue;
+                    }
                 }
-                write_children(conn, id, &rec.path, note, resolver)?;
-                super::fts::write_doc(conn, id, &rec.basename, &note.fts, rec.existed)?;
-                id
             }
         };
-        ids.push(id);
+        conn.execute_batch("RELEASE index_record")?;
+        report.ids.push(id);
     }
-    Ok(ids)
+    Ok(report)
+}
+
+fn write_record(
+    conn: &Connection,
+    rec: &FileRecord,
+    existed: bool,
+    resolver: Option<&PathIndex>,
+) -> Result<i64, IndexError> {
+    Ok(match &rec.content {
+        Content::MetaOnly(hash) if existed => conn
+            .prepare_cached(
+                "UPDATE files SET size=?2, ctime=?3, mtime=?4, body_hash=COALESCE(?5, body_hash) \
+                 WHERE path=?1 RETURNING id",
+            )?
+            .query_row(
+                params![rec.path, rec.size, rec.ctime, rec.mtime, hash],
+                |r| r.get(0),
+            )?,
+        Content::MetaOnly(_) => insert_file(conn, rec, None, None, None, None, None)?,
+        Content::ReadError(msg) => {
+            let id = insert_file(conn, rec, None, Some(msg), None, None, None)?;
+            delete_children(conn, id)?;
+            super::fts::delete_doc(conn, id)?;
+            id
+        }
+        Content::Parsed(note, hash) => {
+            let id = insert_file(
+                conn,
+                rec,
+                note.fm_json.as_deref(),
+                note.fm_error.as_deref(),
+                Some(*hash),
+                Some(note.words),
+                Some(note.chars),
+            )?;
+            if existed {
+                delete_children(conn, id)?;
+            }
+            write_children(conn, id, &rec.path, note, resolver)?;
+            super::fts::write_doc(conn, id, &rec.basename, &note.fts, existed)?;
+            id
+        }
+    })
+}
+
+/// Store a note the index could not write as a bare row carrying the error.
+fn mark_failed(conn: &Connection, rec: &FileRecord, msg: &str) -> Result<i64, IndexError> {
+    let hash = match &rec.content {
+        Content::Parsed(_, h) => Some(*h),
+        _ => None,
+    };
+    let id = insert_file(
+        conn,
+        rec,
+        None,
+        Some(&format!("index error: {msg}")),
+        hash,
+        None,
+        None,
+    )?;
+    delete_children(conn, id)?;
+    super::fts::delete_doc(conn, id)?;
+    Ok(id)
 }
 
 fn insert_file(
@@ -510,17 +579,18 @@ pub(crate) fn scan(
     let mut batch: Vec<Box<FileRecord>> = Vec::with_capacity(BATCH_SIZE);
     let mut write_error: Option<IndexError> = None;
 
-    let flush =
-        |conn: &mut Connection, batch: &mut Vec<Box<FileRecord>>| -> Result<(), IndexError> {
-            if batch.is_empty() {
-                return Ok(());
-            }
-            let tx = conn.transaction()?;
-            write_records(&tx, batch, None)?;
-            tx.commit()?;
-            batch.clear();
-            Ok(())
-        };
+    let flush = |conn: &mut Connection,
+                 batch: &mut Vec<Box<FileRecord>>|
+     -> Result<Vec<(String, String)>, IndexError> {
+        if batch.is_empty() {
+            return Ok(Vec::new());
+        }
+        let tx = conn.transaction()?;
+        let report = write_records(&tx, batch, None)?;
+        tx.commit()?;
+        batch.clear();
+        Ok(report.failed)
+    };
 
     for item in rx.iter() {
         if write_error.is_some() {
@@ -577,8 +647,9 @@ pub(crate) fn scan(
                 changed.push(rec.path.clone());
                 batch.push(rec);
                 if batch.len() >= BATCH_SIZE {
-                    if let Err(e) = flush(conn, &mut batch) {
-                        write_error = Some(e);
+                    match flush(conn, &mut batch) {
+                        Ok(failed) => push_failures(&mut stats, failed),
+                        Err(e) => write_error = Some(e),
                     }
                 }
             }
@@ -593,7 +664,7 @@ pub(crate) fn scan(
     if shared.cancelled() {
         return Err(IndexError::Cancelled);
     }
-    flush(conn, &mut batch)?;
+    push_failures(&mut stats, flush(conn, &mut batch)?);
 
     // Deletions: only valid because the walk completed.
     let gone: Vec<&String> = existing.keys().filter(|p| !seen.contains(*p)).collect();
@@ -619,6 +690,12 @@ pub(crate) fn scan(
         changed,
         full,
     })
+}
+
+fn push_failures(stats: &mut ScanStats, failed: Vec<(String, String)>) {
+    stats
+        .errors
+        .extend(failed.into_iter().map(|(p, e)| format!("{p}: {e}")));
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -711,6 +788,19 @@ pub(crate) fn index_paths(
         }
     }
 
+    // A directory event plus an event for a file inside it read the same file twice: keep the
+    // last read per path.
+    let last: HashMap<String, usize> = records
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (r.path.clone(), i))
+        .collect();
+    let mut i = 0;
+    records.retain(|r| {
+        i += 1;
+        last[r.path.as_str()] == i - 1
+    });
+
     let set_changed = !removed.is_empty() || records.iter().any(|r| !r.existed);
     for p in &removed {
         paths.remove(p);
@@ -720,6 +810,7 @@ pub(crate) fn index_paths(
     }
     let tx = conn.transaction()?;
     super::fts::delete_files(&tx, &removed)?;
+    // Per-note failures are isolated, logged and marked inside `write_records`.
     write_records(&tx, &records, Some(paths))?;
     if set_changed {
         resolve_links(&tx, paths, None)?;

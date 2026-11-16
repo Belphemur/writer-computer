@@ -152,20 +152,16 @@ describe("one completion, one sound", () => {
 });
 
 describe("media trace", () => {
-  it("is silent by default and names the plugin when enabled", async () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  it("always logs each sound with the plugin id (no flag: the release app has no console)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { host, nodeIpc } = await boot();
     plugin().ask();
     await flush();
     turn(nodeIpc.procs[0]);
     await flush(5);
-    expect(info).not.toHaveBeenCalled();
-    await flush(200);
-    localStorage.setItem("writer.hostMediaTrace", "1");
-    turn(nodeIpc.procs[0]);
-    await flush(5);
-    const lines = info.mock.calls.map((c) => String(c[0]));
-    expect(lines).toContain("[plugin] media AudioScheduledSourceNode.start from fx");
+    const lines = warn.mock.calls.map((c) => String(c[0]));
+    expect(lines).toContain("[plugin] sound: AudioScheduledSourceNode.start from fx");
+    expect(lines.join("\n")).not.toContain("sound storm");
     await host.shutdown();
   });
 
@@ -178,7 +174,7 @@ describe("media trace", () => {
       turn(nodeIpc.procs[0]);
       await flush(200);
     }
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).not.toContain("sound storm");
     turn(nodeIpc.procs[0]);
     await flush(5);
     expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("sound storm: fx");

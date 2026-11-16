@@ -77,7 +77,9 @@ export function normalizePath(path: string): string {
 // ---------------------------------------------------------------- yaml
 
 export function parseYaml(text: string): unknown {
-  return yamlParse(text);
+  // `logLevel: "error"`: a template's `{{date}}` value is a flow map used as a key, which `yaml`
+  // would warn about on every parse; callers only need the value or the thrown error.
+  return yamlParse(text, { logLevel: "error" });
 }
 
 export function stringifyYaml(value: unknown): string {

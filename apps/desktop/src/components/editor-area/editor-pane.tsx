@@ -1,6 +1,6 @@
 import type { EditorView } from "@codemirror/view";
 import { ProseMarkEditor } from "./prosemark-editor";
-import { FrontmatterPanel } from "./frontmatter-panel";
+import { PropertiesPanel } from "./properties-panel";
 import { EditorScrollContainer } from "./editor-scroll-container";
 import { EditorSearchOverview } from "./editor-search-overview";
 import { SectionRail } from "./section-rail";
@@ -64,7 +64,7 @@ export const EditorPane = memo(function EditorPane({ path, isActive }: EditorPan
             paddingRight: "var(--writer-editor-side-padding)",
           }}
         >
-          <FrontmatterPanel filePath={path} />
+          <PropertiesPanel filePath={path} />
         </div>
         <ProseMarkEditor
           filePath={path}

@@ -41,6 +41,19 @@ describe("registry coverage for the unmodified Copilot/SDK bundle", () => {
       "https",
       "zlib",
       "electron",
+      "diagnostics_channel",
+      "perf_hooks",
+      "worker_threads",
+      "tty",
+      "v8",
+      "vm",
+      "constants",
+      "querystring",
+      "punycode",
+      "domain",
+      "timers",
+      "timers/promises",
+      "sys",
     ];
     for (const id of ids) {
       expect(req(id), id).toBeTruthy();
@@ -51,6 +64,7 @@ describe("registry coverage for the unmodified Copilot/SDK bundle", () => {
     expect(req("@codemirror/view")).toBeTruthy();
     expect(req("@lezer/common")).toBeTruthy();
     expect(req("@lezer/highlight")).toBeTruthy();
+    expect(req("@lezer/lr")).toBeTruthy();
     expect((req("module") as { createRequire(): unknown }).createRequire()).toBe(req);
   });
 

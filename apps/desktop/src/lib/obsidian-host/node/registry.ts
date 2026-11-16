@@ -6,6 +6,20 @@ import { bufferModule } from "./buffer";
 import { createChildProcessModule, type PluginIdSource } from "./child-process";
 import { cryptoModule } from "./crypto";
 import { EventEmitter } from "./events";
+import {
+  constantsModule,
+  diagnosticsChannelModule,
+  domainModule,
+  perfHooksModule,
+  punycodeModule,
+  querystringModule,
+  timersModule,
+  timersPromisesModule,
+  ttyModule,
+  v8Module,
+  vmModule,
+  workerThreadsModule,
+} from "./extra-modules";
 import { createFsModule } from "./fs";
 import { createHttpModule } from "./http";
 import {
@@ -56,6 +70,19 @@ const SHARED: Readonly<Record<string, () => unknown>> = {
   url: () => urlModule,
   async_hooks: () => asyncHooksModule,
   electron: () => electronModule,
+  diagnostics_channel: () => diagnosticsChannelModule,
+  perf_hooks: () => perfHooksModule,
+  worker_threads: () => workerThreadsModule,
+  tty: () => ttyModule,
+  v8: () => v8Module,
+  vm: () => vmModule,
+  constants: () => constantsModule,
+  querystring: () => querystringModule,
+  punycode: () => punycodeModule,
+  domain: () => domainModule,
+  timers: () => timersModule,
+  "timers/promises": () => timersPromisesModule,
+  sys: () => utilModule,
 };
 const PER_CONTEXT = ["child_process", "fs", "fs/promises", "module"] as const;
 

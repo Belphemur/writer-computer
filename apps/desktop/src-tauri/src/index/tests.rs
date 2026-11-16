@@ -771,6 +771,182 @@ fn incremental_updates_and_link_reresolution() {
 }
 
 #[test]
+fn a_path_reported_twice_in_one_batch_does_not_violate_props_keys() {
+    let fx = build_fixture();
+    let index = open(&fx);
+    let root = index.root().to_path_buf();
+    write(
+        &root,
+        "Fresh/n.md",
+        "---\ntitle: t\nstatus: x\n---\n# n #tag\n[[Home]]\n",
+    );
+    // A new directory and a file inside it, as one watcher batch.
+    index
+        .index_paths_blocking(vec![root.join("Fresh"), root.join("Fresh/n.md")])
+        .unwrap();
+    assert!(index.get_file("Fresh/n.md").unwrap().is_some());
+    let backlinks = index.backlinks("Home.md").unwrap();
+    assert_eq!(
+        backlinks
+            .iter()
+            .filter(|b| b.source == "Fresh/n.md")
+            .count(),
+        1
+    );
+}
+
+fn prop_rows(index: &Index, path: &str) -> Vec<(String, Option<String>)> {
+    index
+        .read(|c| {
+            let mut st = c.prepare(
+                "SELECT p.key, p.v_text FROM props p JOIN files f ON f.id = p.file_id \
+                 WHERE f.path = ?1 ORDER BY p.key",
+            )?;
+            let rows = st.query_map([path], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .unwrap()
+}
+
+fn fm_error_of(index: &Index, path: &str) -> Option<String> {
+    index
+        .read(|c| {
+            Ok(
+                c.query_row("SELECT fm_error FROM files WHERE path = ?1", [path], |r| {
+                    r.get::<_, Option<String>>(0)
+                })?,
+            )
+        })
+        .unwrap()
+}
+
+/// Make the database reject every `props` row with this key, as a stand-in for any per-note
+/// write failure.
+fn poison_key(index: &Index, key: &str) {
+    let conn = rusqlite::Connection::open(index.db_path()).unwrap();
+    conn.busy_timeout(Duration::from_secs(10)).unwrap();
+    conn.execute_batch(&format!(
+        "DROP TRIGGER IF EXISTS poison; CREATE TRIGGER poison BEFORE INSERT ON props \
+         WHEN NEW.key = '{key}' BEGIN SELECT RAISE(ABORT, 'synthetic poison'); END;"
+    ))
+    .unwrap();
+}
+
+fn unpoison(index: &Index) {
+    let conn = rusqlite::Connection::open(index.db_path()).unwrap();
+    conn.busy_timeout(Duration::from_secs(10)).unwrap();
+    conn.execute_batch("DROP TRIGGER IF EXISTS poison;")
+        .unwrap();
+}
+
+fn open_counting(fx: &Fixture) -> (Index, Arc<Mutex<Vec<ChangeBatch>>>) {
+    let batches = Arc::new(Mutex::new(Vec::<ChangeBatch>::new()));
+    let sink = Arc::clone(&batches);
+    let index = Index::open(OpenParams {
+        root: fx.vault.path().to_path_buf(),
+        app_data_dir: fx.data.path().to_path_buf(),
+        cancel: Arc::new(AtomicBool::new(false)),
+        on_change: Some(Arc::new(move |b| sink.lock().push(b))),
+    })
+    .unwrap();
+    index.refresh_blocking().unwrap();
+    (index, batches)
+}
+
+#[test]
+fn duplicate_and_variant_frontmatter_keys_make_one_row_each() {
+    let fx = build_fixture();
+    let index = open(&fx);
+    write(
+        index.root(),
+        "Dup/keys.md",
+        "---\nstatus: first\nStatus: other case\nstatus: last\n\"1\": a\n1: b\nstatus :   x\ntags: [a]\ntags: [b]\n---\nstatus:: inline\n",
+    );
+    index
+        .index_paths_blocking(vec![index.root().join("Dup/keys.md")])
+        .unwrap();
+    assert_eq!(fm_error_of(&index, "Dup/keys.md"), None);
+    let rows = prop_rows(&index, "Dup/keys.md");
+    let get = |k: &str| rows.iter().filter(|(key, _)| key == k).collect::<Vec<_>>();
+    // Same key twice: the last value wins. Keys are case-sensitive: `Status` is its own row.
+    assert_eq!(get("status")[0].1.as_deref(), Some("x"));
+    assert_eq!(get("status").len(), 1);
+    assert_eq!(get("Status").len(), 1);
+    assert_eq!(get("1").len(), 1);
+    assert_eq!(get("1")[0].1.as_deref(), Some("b"));
+    assert_eq!(get("tags").len(), 1);
+    let tags = index.tag_files("b").unwrap();
+    assert!(tags.contains(&"Dup/keys.md".to_string()));
+    assert!(!index
+        .tag_files("a")
+        .unwrap()
+        .contains(&"Dup/keys.md".to_string()));
+}
+
+#[test]
+fn a_poisoned_note_is_isolated_marked_and_not_retried() {
+    let fx = build_fixture();
+    let (index, batches) = open_counting(&fx);
+    poison_key(&index, "poison_key");
+    let root = index.root().to_path_buf();
+    write(&root, "Iso/bad.md", "---\npoison_key: 1\n---\n# bad\n");
+    write(&root, "Iso/good.md", "---\nstatus: ok\n---\n# good #fine\n");
+    let batch = vec![
+        root.join("Iso"),
+        root.join("Iso/bad.md"),
+        root.join("Iso/good.md"),
+    ];
+    let changed = index.index_paths_blocking(batch.clone()).unwrap();
+    assert!(changed.contains(&"Iso/good.md".to_string()));
+    // The healthy sibling is fully indexed, the bad one is a marked bare row.
+    assert_eq!(prop_rows(&index, "Iso/good.md").len(), 1);
+    assert!(index.get_file("Iso/bad.md").unwrap().is_some());
+    assert!(prop_rows(&index, "Iso/bad.md").is_empty());
+    assert!(fm_error_of(&index, "Iso/bad.md")
+        .unwrap()
+        .starts_with("index error:"));
+    let sent = batches.lock().len();
+    // The same event again (the watcher fires every few seconds): nothing to do, no failed
+    // transaction, no `index://changed`.
+    for _ in 0..3 {
+        let again = index.index_paths_blocking(batch.clone()).unwrap();
+        assert!(again.is_empty(), "{again:?}");
+    }
+    assert_eq!(batches.lock().len(), sent);
+    // A warm scan leaves it alone too.
+    let stats = index.refresh_blocking().unwrap();
+    assert!(stats.errors.is_empty(), "{:?}", stats.errors);
+    // Changing the file retries it; once the cause is gone it indexes fully.
+    unpoison(&index);
+    write(&root, "Iso/bad.md", "---\npoison_key: 2\n---\n# bad v2\n");
+    index
+        .index_paths_blocking(vec![root.join("Iso/bad.md")])
+        .unwrap();
+    assert_eq!(prop_rows(&index, "Iso/bad.md").len(), 1);
+    assert_eq!(fm_error_of(&index, "Iso/bad.md"), None);
+}
+
+#[test]
+fn warm_start_and_cli_open_isolate_a_poisoned_note() {
+    let fx = build_fixture();
+    let index = open(&fx);
+    poison_key(&index, "poison_key");
+    let root = index.root().to_path_buf();
+    write(&root, "Warm/bad.md", "---\npoison_key: 1\n---\nx\n");
+    write(&root, "Warm/good.md", "---\nstatus: ok\n---\ny\n");
+    drop(index);
+    // The CLI path (`open_for_cli` scans before returning) must not fail.
+    let again = open(&fx);
+    assert_eq!(prop_rows(&again, "Warm/good.md").len(), 1);
+    assert!(fm_error_of(&again, "Warm/bad.md")
+        .unwrap()
+        .starts_with("index error:"));
+    let stats = again.refresh_blocking().unwrap();
+    assert!(stats.errors.is_empty(), "{:?}", stats.errors);
+    assert_eq!(stats.reparsed, 0);
+}
+
+#[test]
 fn change_callback_reports_paths_and_cold_build_is_full() {
     let fx = build_fixture();
     let batches = Arc::new(Mutex::new(Vec::<ChangeBatch>::new()));

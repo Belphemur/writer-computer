@@ -7,7 +7,10 @@
 // Input is untrusted (LLM output): the only way to get an element or attribute through is the
 // allowlist below; the post-pass only creates elements itself.
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Marked, type Tokens } from "marked";
+import { Marked, type Token, type Tokens } from "marked";
+import { decorateRenderedCallouts, toggleRenderedCallout } from "@/lib/callouts/dom";
+import { defaultCalloutTitle, parseCalloutHeader } from "@/lib/callouts/syntax";
+import "@/lib/callouts/callouts.css";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 import { openExternalUrl } from "../node/external-links";
@@ -34,6 +37,40 @@ function splitWiki(inner: string): { target: string; alias: string | null } {
   return { target, alias: i < 0 ? null : inner.slice(i + 1).trim() || null };
 }
 
+/** Callout (`> [!type]+ Title`) as the documented DOM, or null for a plain quote. The header is
+ *  read from the first paragraph's first line; the title renders as inline markdown and the
+ *  rest of the quote through the normal parser, so nested callouts, lists and embeds work. */
+function renderCallout(parser: { parse(tokens: Token[]): string }, tokens: Token[]): string | null {
+  const first = tokens[0];
+  if (first?.type !== "paragraph") return null;
+  const text = (first as Tokens.Paragraph).text;
+  const nl = text.indexOf("\n");
+  const header = parseCalloutHeader(nl < 0 ? text : text.slice(0, nl));
+  if (!header) return null;
+  const rest = nl < 0 ? "" : text.slice(nl + 1);
+  const title = header.title
+    ? (marked.parseInline(header.title, { async: false }) as string)
+    : escapeHtml(defaultCalloutTitle(header.type));
+  const body =
+    (rest.trim() ? (marked.parse(rest, { async: false }) as string) : "") +
+    parser.parse(tokens.slice(1));
+  const collapsible = header.fold !== "";
+  const collapsed = header.fold === "-";
+  const classes = ["callout", collapsible ? "is-collapsible" : "", collapsed ? "is-collapsed" : ""];
+  const attrs =
+    `data-callout="${escapeHtml(header.type)}" data-callout-fold="${header.fold}"` +
+    (header.metadata ? ` data-callout-metadata="${escapeHtml(header.metadata)}"` : "");
+  return (
+    `<div class="${classes.filter(Boolean).join(" ")}" ${attrs}>` +
+    `<div class="callout-title"><div class="callout-icon"></div>` +
+    `<div class="callout-title-inner">${title}</div>` +
+    (collapsible ? `<div class="callout-fold${collapsed ? " is-collapsed" : ""}"></div>` : "") +
+    `</div>` +
+    (body.trim() ? `<div class="callout-content">${body}</div>` : "") +
+    `</div>\n`
+  );
+}
+
 const marked = new Marked({
   gfm: true,
   // Obsidian's default ("Strict line breaks" off): a single newline inside a paragraph is a
@@ -43,17 +80,9 @@ const marked = new Marked({
     checkbox: ({ checked }: { checked: boolean }) =>
       `<input type="checkbox" class="task-list-item-checkbox" disabled${checked ? " checked" : ""}> `,
     blockquote(this: any, { tokens }: Tokens.Blockquote): string {
-      const body: string = this.parser.parse(tokens);
-      const m = /^\s*<p>\[!([A-Za-z0-9-]+)\]([+-]?)[ \t]*([^\n<]*)(<br>|\n|(?=<\/p>))?/.exec(body);
-      if (!m) return `<blockquote>\n${body}</blockquote>\n`;
-      const type = m[1].toLowerCase();
-      const title = m[3].trim() || type.charAt(0).toUpperCase() + type.slice(1);
-      let rest = body.slice(m[0].length);
-      rest = rest.startsWith("</p>") ? rest.slice(4) : `<p>${rest}`;
       return (
-        `<div class="callout" data-callout="${escapeHtml(type)}">` +
-        `<div class="callout-title"><div class="callout-title-inner">${title}</div></div>` +
-        `<div class="callout-content">${rest}</div></div>\n`
+        renderCallout(this.parser, tokens) ??
+        `<blockquote>\n${this.parser.parse(tokens)}</blockquote>\n`
       );
     },
   },
@@ -112,7 +141,7 @@ const SAFE_URI =
 const EXTERNAL = /^(?:https?|mailto|tel):/i;
 const DATA_IMAGE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[a-z0-9+/=\s]*$/i;
 const CLASS_OK =
-  /^(?:internal-link|internal-embed|is-unresolved|external-link|tag|callout|callout-title|callout-title-inner|callout-content|math|math-inline|math-block|task-list-item-checkbox|language-[\w+#.-]{1,40})$/;
+  /^(?:internal-link|internal-embed|is-unresolved|external-link|tag|callout|callout-title|callout-title-inner|callout-content|callout-icon|callout-fold|is-collapsible|is-collapsed|math|math-inline|math-block|task-list-item-checkbox|language-[\w+#.-]{1,40})$/;
 
 const PLUGIN_TAGS = [...SAFE_TAGS, "input", "mark"];
 const PLUGIN_ATTR = [
@@ -121,6 +150,8 @@ const PLUGIN_ATTR = [
   "data-href",
   "data-alias",
   "data-callout",
+  "data-callout-fold",
+  "data-callout-metadata",
   "type",
   "disabled",
   "checked",
@@ -131,6 +162,11 @@ function sanitizeNode(node: Element): void {
   const cls = (node.getAttribute("class") ?? "").split(/\s+/).filter((c) => CLASS_OK.test(c));
   if (cls.length > 0) node.setAttribute("class", cls.join(" "));
   else node.removeAttribute("class");
+
+  const fold = node.getAttribute("data-callout-fold");
+  if (fold !== null && !/^[+-]?$/.test(fold)) node.removeAttribute("data-callout-fold");
+  const meta = node.getAttribute("data-callout-metadata");
+  if (meta !== null && meta.length > 200) node.removeAttribute("data-callout-metadata");
 
   if (node.tagName === "INPUT") {
     // Static task-list glyph only.
@@ -370,6 +406,7 @@ export function markdownToSafeHtml(markdown: string): string {
 
 async function fill(markdown: string, el: HTMLElement, pass: Pass): Promise<void> {
   el.innerHTML = markdownToSafeHtml(markdown);
+  decorateRenderedCallouts(el);
   linkTags(el);
   resolveLinks(el, pass.app, pass.sourcePath);
   await resolveEmbeds(el, pass);
@@ -408,6 +445,9 @@ function attach(el: HTMLElement, app: App, sourcePath: string, component: Compon
   };
   const handler = (e: MouseEvent): void => {
     if (e.button > 1) return;
+    if (e.type === "click" && e.button === 0 && toggleRenderedCallout(e.target as Element, el)) {
+      return;
+    }
     const a = (e.target as Element | null)?.closest?.("a");
     if (!a || !el.contains(a)) return;
     if (e.type === "click" && e.button !== 0) return;

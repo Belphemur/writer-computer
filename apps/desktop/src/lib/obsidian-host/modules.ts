@@ -1,6 +1,8 @@
 // Adapted from opensidian (GPL-3.0-or-later).
 // The CommonJS `require` plugins get: `obsidian` -> the shim, CodeMirror/Lezer -> the app's own
-// module instances (so an extension built against them shares classes with the editor), the Node
+// module instances (so an extension built against them shares classes with the editor; the public
+// sample plugin's esbuild externals also list @codemirror/collab, which Writer does not ship, so
+// that one stays an UnsupportedModuleError), the Node
 // surface (node/), and `Cannot find module` (MODULE_NOT_FOUND) for everything else.
 import * as cmAutocomplete from "@codemirror/autocomplete";
 import * as cmCommands from "@codemirror/commands";
@@ -12,6 +14,7 @@ import * as cmState from "@codemirror/state";
 import * as cmView from "@codemirror/view";
 import * as lezerCommon from "@lezer/common";
 import * as lezerHighlight from "@lezer/highlight";
+import * as lezerLr from "@lezer/lr";
 import * as lezerMarkdown from "@lezer/markdown";
 import * as lezerYaml from "@lezer/yaml";
 import type { VaultIo } from "./api/vault";
@@ -31,6 +34,7 @@ const APP_MODULES: Readonly<Record<string, unknown>> = Object.freeze({
   "@codemirror/view": cmView,
   "@lezer/common": lezerCommon,
   "@lezer/highlight": lezerHighlight,
+  "@lezer/lr": lezerLr,
   "@lezer/markdown": lezerMarkdown,
   "@lezer/yaml": lezerYaml,
 });

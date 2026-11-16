@@ -140,13 +140,7 @@ export const OBSIDIAN_THEME_CSS = `:root {
 .markdown-rendered img { max-width: 100%; }
 .markdown-rendered .math { font-family: var(--font-monospace, monospace); }
 .markdown-rendered .math-block { display: block; text-align: center; margin: var(--size-4-2) 0; }
-.markdown-rendered .callout { margin: var(--size-4-3) 0; padding: var(--size-4-3); border-radius: var(--radius-m); background: color-mix(in srgb, rgb(var(--color-blue-rgb)) 10%, transparent); border-left: 3px solid var(--color-blue); }
-.markdown-rendered .callout[data-callout="warning"], .markdown-rendered .callout[data-callout="caution"], .markdown-rendered .callout[data-callout="attention"] { background: color-mix(in srgb, rgb(var(--callout-warning)) 10%, transparent); border-left-color: rgb(var(--callout-warning)); }
-.markdown-rendered .callout[data-callout="danger"], .markdown-rendered .callout[data-callout="error"], .markdown-rendered .callout[data-callout="failure"], .markdown-rendered .callout[data-callout="bug"] { background: color-mix(in srgb, rgb(var(--color-red-rgb)) 10%, transparent); border-left-color: var(--color-red); }
-.markdown-rendered .callout[data-callout="success"], .markdown-rendered .callout[data-callout="check"], .markdown-rendered .callout[data-callout="done"], .markdown-rendered .callout[data-callout="tip"] { background: color-mix(in srgb, rgb(var(--color-green-rgb)) 10%, transparent); border-left-color: var(--color-green); }
-.markdown-rendered .callout-title { font-weight: var(--font-semibold); margin-bottom: var(--size-2-2); }
-.markdown-rendered .callout-content > :first-child { margin-top: 0; }
-.markdown-rendered .callout-content > :last-child { margin-bottom: 0; }
+/* Callouts (.callout inside .markdown-rendered): src/lib/callouts/callouts.css */
 .markdown-rendered .markdown-embed { border-left: 2px solid var(--background-modifier-border); padding-left: var(--size-4-3); margin: var(--size-4-2) 0; }
 .markdown-rendered .internal-embed.is-unresolved { color: var(--text-faint); }
 .markdown-rendered input.task-list-item-checkbox { margin-right: var(--size-2-3); }

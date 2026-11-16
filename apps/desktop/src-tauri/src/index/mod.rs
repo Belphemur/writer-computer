@@ -446,6 +446,12 @@ fn worker_main(
                 };
                 let outcome = match result {
                     Ok(changed) => {
+                        log::debug!(
+                            target: "index",
+                            "paths job: {} written/removed, first: {}",
+                            changed.len(),
+                            changed.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                        );
                         notify(&shared, changed.clone(), false);
                         Ok(changed)
                     }

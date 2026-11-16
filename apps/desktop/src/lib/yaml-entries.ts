@@ -19,7 +19,7 @@ export function parseYamlEntries(yamlString: string): YamlEntry[] {
 
   let parsed: unknown;
   try {
-    parsed = parse(yamlString);
+    parsed = parse(yamlString, { logLevel: "error" });
   } catch {
     return [{ id: makeEntryId(), key: "", value: yamlString, isComplex: false }];
   }
@@ -58,7 +58,7 @@ export function serializeYamlEntries(entries: YamlEntry[]): string {
   for (const entry of filtered) {
     if (entry.isComplex) {
       try {
-        obj[entry.key] = parse(entry.value);
+        obj[entry.key] = parse(entry.value, { logLevel: "error" });
       } catch {
         obj[entry.key] = entry.value;
       }

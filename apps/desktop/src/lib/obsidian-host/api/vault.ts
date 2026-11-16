@@ -627,7 +627,7 @@ export function parseNoteMetadata(raw: string): CachedMetadata {
 
   if (parsed.frontmatter !== null) {
     try {
-      const fm = yamlParse(parsed.frontmatter);
+      const fm = yamlParse(parsed.frontmatter, { logLevel: "error" });
       if (fm && typeof fm === "object" && !Array.isArray(fm))
         out.frontmatter = fm as Record<string, any>;
     } catch {

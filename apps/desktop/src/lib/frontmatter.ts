@@ -83,7 +83,7 @@ function parseFrontmatterObject(frontmatter: string | null): Record<string, unkn
 
   let parsed: unknown;
   try {
-    parsed = parse(frontmatter);
+    parsed = parse(frontmatter, { logLevel: "error" });
   } catch {
     return null;
   }

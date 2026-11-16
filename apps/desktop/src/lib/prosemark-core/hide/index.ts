@@ -3,6 +3,7 @@ import { type HidableNodeSpec, hidableNodeFacet, hideInlineDecoration } from "./
 import type { InlineContext, MarkdownConfig } from "@lezer/markdown";
 import { markdownTags } from "../markdown/tags";
 import { stateWORDAt } from "../utils";
+import { isCalloutMarkerLink } from "@/lib/callouts/tree";
 
 export { hideExtension } from "./core";
 
@@ -64,6 +65,8 @@ const defaultHidableSpecs: HidableNodeSpec[] = [
   },
   {
     nodeName: "Link",
+    // The `[!type]` marker of a callout is a shortcut-reference `Link` to lezer; it stays raw.
+    predicate: (state, node) => !isCalloutMarkerLink(state, node),
     // `LinkTitle` is a sibling of `URL` in Lezer's tree, so `[text](url "title")`
     // must hide it too or the folded link reads `text"title"`.
     subNodeNameToHide: ["LinkMark", "URL", "LinkTitle"],

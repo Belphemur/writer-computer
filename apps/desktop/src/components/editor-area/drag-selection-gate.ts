@@ -100,7 +100,7 @@ const DRAG_END_USER_EVENT = "select.pointer.drag-end";
  * selection transaction into the outer editor.
  */
 // Widgets that own every pointer interaction inside them (docs/editor.md).
-const SELF_HANDLING_WIDGETS = [".cm-mermaid-widget", ".cm-base-embed"];
+const SELF_HANDLING_WIDGETS = [".cm-mermaid-widget", ".cm-base-embed", ".callout-fold"];
 
 function shouldStartDragGate(
   state: EditorState,

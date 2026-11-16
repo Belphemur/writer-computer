@@ -348,7 +348,7 @@ describe("require", () => {
           module.exports = class extends Plugin {};
         },
         cp: (_m, _e, require) => {
-          require("worker_threads");
+          require("tls");
         },
         cmx: (_m, _e, require) => {
           require("@codemirror/not-a-module");
@@ -361,7 +361,7 @@ describe("require", () => {
     expect(seen.state).toBe(cmState);
     expect(seen.joined).toBe("b/c.md");
     expect(seen.fsError).toMatch(/^ENOENT: no such file or directory/);
-    expect(host.getStatus("cp").error).toBe("Cannot find module 'worker_threads'");
+    expect(host.getStatus("cp").error).toBe("Cannot find module 'tls'");
     expect(host.getStatus("cmx").error).toMatch(/@codemirror\/not-a-module/);
   });
 });

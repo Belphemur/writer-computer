@@ -24,10 +24,12 @@ import { tauriHostIpc, pluginScriptUrl, type HostIpc, type PluginsState } from "
 import { makeRequire } from "./modules";
 import { createObsidianModule, type ObsidianModule } from "./obsidian-module";
 import { installDomHelpers } from "./api/dom";
+import { installLegacyGlobals } from "./api/legacy-globals";
 import { installMediaTrace } from "./api/media-trace";
 import { Buffer as NodeBuffer } from "./node/buffer";
 import type { NodeIpc } from "./node/ipc";
 import { getSharedProcess } from "./node/process";
+import { pluginIdFromStack } from "./node/child-process";
 import { ensureDeviceId } from "./node/device-id";
 import { configuredAgentPaths, primeConfiguredAgentPaths } from "./node/agent-clis";
 import { installExternalLinks } from "./node/external-links";
@@ -165,6 +167,7 @@ export class PluginHost {
   private seq = 0;
   private snapshot: HostSnapshot;
   private uninstallDom: (() => void) | null = null;
+  private uninstallLegacyGlobals: (() => void) | null = null;
   private uninstallMediaTrace: (() => void) | null = null;
   private uninstallTheme: (() => void) | null = null;
   private uninstallFetch: (() => void) | null = null;
@@ -215,6 +218,23 @@ export class PluginHost {
     return isMissingApiLogEnabled()
       ? wrapAppForDiagnostics(this.app, pluginId, this.options.onMissingApi, this.missingApiSeen)
       : this.app;
+  }
+
+  private readonly globalApps = new Map<string, App>();
+  /**
+   * The bare global `app`: the same shared App, wrapped per calling plugin (resolved from the
+   * stack) when the missing-API diagnostics are on, so those reports keep their plugin id.
+   */
+  private globalApp(): App {
+    if (!isMissingApiLogEnabled()) return this.app;
+    const id = pluginIdFromStack(new Error().stack);
+    if (!id) return this.app;
+    let wrapped = this.globalApps.get(id);
+    if (!wrapped) {
+      wrapped = this.appFor(id);
+      this.globalApps.set(id, wrapped);
+    }
+    return wrapped;
   }
 
   /** Convenience for the real app: Tauri-backed vault IO for the workspace at `root`. */
@@ -470,6 +490,7 @@ export class PluginHost {
     );
     if (typeof window === "undefined") return;
     this.uninstallDom ??= installDomHelpers();
+    this.uninstallLegacyGlobals ??= installLegacyGlobals(window, { app: () => this.globalApp() });
     this.uninstallMediaTrace ??= installMediaTrace();
     this.uninstallTheme ??= installObsidianTheme();
     this.uninstallFetch ??= installGlobalFetch();
@@ -482,6 +503,8 @@ export class PluginHost {
     if (this.records.size > 0 || this.loading > 0) return;
     this.uninstallDom?.();
     this.uninstallDom = null;
+    this.uninstallLegacyGlobals?.();
+    this.uninstallLegacyGlobals = null;
     this.uninstallMediaTrace?.();
     this.uninstallMediaTrace = null;
     this.uninstallTheme?.();

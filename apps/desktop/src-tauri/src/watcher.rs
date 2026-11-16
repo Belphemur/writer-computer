@@ -353,6 +353,22 @@ pub fn start_watcher(
                 }
             }
 
+            // One line per batch: what keeps an idle app busy shows up here (`WRITER_LOG=debug`).
+            wlog!(
+                "index feed: {} path(s){} first: {}",
+                index_paths.len(),
+                if rebuild_ignore { ", rescan" } else { "" },
+                index_paths
+                    .iter()
+                    .take(5)
+                    .map(|p| p
+                        .strip_prefix(&watched_root)
+                        .unwrap_or(p)
+                        .display()
+                        .to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             crate::commands::index::feed(
                 &handle,
                 &label,

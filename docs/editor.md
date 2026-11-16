@@ -224,10 +224,27 @@ A `transactionFilter` returning `[tr, { selection }]` adds a spec whose position
 
 `base-embed-decorations.ts` mounts `createRoot` per widget. Rules it learned: unmount from `destroy` in a `queueMicrotask` (CodeMirror can destroy a view inside a React commit, where a synchronous `root.unmount()` is refused); keep identity to what is rendered so unrelated typing never remounts, and use `updateDOM` (returning true) so a changed source re-renders the same root; give a block widget `side: 1` when it should sit below its source line (the default is above it); use padding, not margin, on the widget root (CodeMirror measures its box, not its margins); remember the settled height per widget and call `view.requestMeasure()` from a `ResizeObserver`. A wiki embed is not a syntax node, so find it as a top-level `Paragraph` whose single line matches, which also excludes frontmatter, code and comments for free.
 
+## The properties panel is not a block widget
+
+A note's frontmatter is not in the CodeMirror document: `OpenFile.frontmatter` (store) owns the YAML text and `PropertiesPanel` (`properties-panel.tsx`) is a React component rendered above the editor in `editor-pane.tsx`. None of the block-widget rules above apply to it, and its edits are store updates, not editor transactions (so they are outside CodeMirror undo). Edit the frontmatter only through `lib/frontmatter-properties.ts` (byte-minimal splices on the node ranges of the `yaml` Document, each verified by re-parse); never `stringify` the whole block. The panel subscribes to its own file's `frontmatter` string, so body typing does not render it. See `SPECs/properties-panel-spec.md`.
+
+## Callouts: line decorations on the real lines, widgets only at the edges
+
+`callout-decorations.ts` (spec: `SPECs/callouts-spec.md`) is the pattern for a block construct that must stay natively editable: a `StateField` over the tree emits `Decoration.line` on every line of the construct (class, `data-*` for user CSS), a replace widget over the marker prefix while the selection is away, and a widget at the end of the header for the fold chevron. Rules it learned:
+
+- Replace across line breaks (folding the body) must come from a `StateField`, not a `ViewPlugin`; register the replaced ranges with `EditorView.atomicRanges`.
+- Reveal on the whole construct's range (like `hideExtension`'s Blockquote hide zone) and honour `unfurlFreezeFacet`/`dragFrozenSelectionField` so a drag does not reflow it.
+- A caret on a folded header must not reveal the body; a caret in the body or at its very end does (clicking right of a folded title opens it for editing).
+- A widget with its own click handler: listeners in `toDOM(view)`, `ignoreEvent: true`, and add its class to `SELF_HANDLING_WIDGETS` in `drag-selection-gate.ts`. A domEventHandlers-based approach does not work: CodeMirror skips handlers for events from a widget whose `ignoreEvent` is true.
+- lezer parses `[!type]` as a shortcut-reference `Link`; the hide extension's Link spec skips it (`isCalloutMarkerLink`) or the raw header would show without brackets.
+- Nested constructs push line decorations outer first; for equal-position line decorations the later one wins non-class attributes, so the inner type wins.
+
 ## File map
 
+- `callout-decorations.ts` + `lib/callouts/` — callouts: line decorations on real quote lines, icon/chevron widgets, session fold state; the renderer for plugin markdown shares `lib/callouts/`.
 - `mermaid-decorations.ts` — canonical replace-only block widget with in-widget editing. Reference for live position lookup (`findEnclosingFencedCode`) and writing the fence back from a nested editor.
 - `mermaid-renderer.ts` — `renderMermaid`, the one call into Pele: render options, DOMPurify, LRU cache, error messages. `mermaid-canvas.css` holds the `--pele-*` theme mapping.
+- `properties-panel.tsx`, `property-value.tsx` — the collapsible properties panel (React, not a widget); the model is `lib/frontmatter-properties.ts`.
 - `base-embed-decorations.ts` — conditional replace <-> widget block widget hosting a React root (`EmbeddedBase`); `fenced-code.ts` is the shared fence parser.
 - `fold/image.ts` — canonical conditional replace ↔ widget, plus the measured-height cache for async-loading content.
 - `table-decorations.ts` — canonical conditional replace ↔ source-line styling; uses `selectAllDecorationsOnSelectExtension` for click-to-select.

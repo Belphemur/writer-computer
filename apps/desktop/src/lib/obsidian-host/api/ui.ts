@@ -333,6 +333,14 @@ export class ToggleComponent extends ValueComponent<boolean> {
     this.listeners.push(cb);
     return this;
   }
+  setTooltip(tooltip: string, _options?: unknown): this {
+    this.toggleEl.setAttribute("aria-label", tooltip);
+    return this;
+  }
+  /** Obsidian: performs the click (toggles the value and notifies `onChange`). */
+  onClick(): void {
+    this.toggleEl.click();
+  }
 }
 
 export class DropdownComponent extends ValueComponent<string> {

@@ -18,6 +18,7 @@ import {
   pluginExtensionCompartment,
 } from "@/lib/obsidian-host/editor-bridge";
 import { baseEmbedDecorations } from "./base-embed-decorations";
+import { calloutDecorations } from "./callout-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { editorBodyContextMenuExtension } from "./editor-body-menu";
 import { editorClipboardExtension } from "./editor-clipboard";
@@ -126,6 +127,7 @@ export function createEditorExtensions(
     headingWeightHighlight,
     viewportParsePlugin,
     tableDecorations(),
+    calloutDecorations(getFilePath),
     htmlBlockDecorations(),
     mermaidDecorations(),
     baseEmbedDecorations(getFilePath),

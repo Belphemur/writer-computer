@@ -566,6 +566,12 @@ Tauri commands (`src/commands/bases.rs`; paths are vault-relative or absolute in
 
 CLI: `writer base:query`, `base:views`, `base:create`, `bases` ([writer-cli-spec.md](./writer-cli-spec.md), "Implementation status").
 
+### Index write isolation and duplicate keys
+
+- Duplicate frontmatter keys: the last value wins and keeps the first key's position (`yaml.rs`, and the `fm_json` JSON object agrees), so `props` holds one row per key and `prop_items` one list. Keys are compared exactly (case-sensitive, no trimming beyond YAML's own); `Status` and `status` are two properties. The frontmatter patcher still refuses duplicate keys (it edits lines and cannot say which one to change).
+- One path reaching a write batch twice (a new-directory event plus an event for a file inside it) is read once (last read wins), and `write_records` also treats a repeated path as existing, so it replaces its children instead of inserting them again.
+- Every note is written inside its own savepoint. A note the database rejects is rolled back alone, logged once (`vault index skipped a note`), and stored as a bare `files` row with `fm_error = "index error: ..."`, its content hash and no child rows; the rest of the batch commits. Because the row carries the hash and stat, a later warm scan or watcher event leaves it alone (no repeated failure, no `index://changed`) until its mtime, size or content changes. Cold build, warm diff, watcher feed and `Index::open_for_cli` all go through `write_records`. No schema or parser version bump: a failed batch never committed partial rows.
+
 ## Files expected to change (when implemented)
 
 Rust (done for Phase 0): `apps/desktop/src-tauri/Cargo.toml`, `src/index/` (schema, parsing, resolution, builder, queries, tests), `src/watcher.rs` (feed), `src/commands/index.rs`, `src/commands/mod.rs`, `src/lib.rs`. Rust (later phases): `src/bases/` (`.base` parser, expression engine, query executor, `base_query` in `src/commands/`), `src/cli/` (Obsidian-parity commands), `src/commands/{fs,search}.rs` (file-kind classification). Frontend: `src/lib/bases/` (YAML Document round-trip and patch helpers only, no evaluator), `src/components/base-view/`, `src/components/editor-area/page-kinds/{base.ts,index.ts,views.tsx}`, CodeMirror `base-embed-decorations.ts`, `src/lib/obsidian-host/api/{vault.ts,views.ts}`, `link-navigation.ts`, `wiki-link*.ts`, sidebar file list. Docs: `docs/` note for the index and `CHANGELOG.md` per the repo rules.

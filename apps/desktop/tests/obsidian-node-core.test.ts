@@ -595,7 +595,7 @@ describe("require", () => {
     }
     expect(err?.message).toBe("Cannot find module 'left-pad'");
     expect(err?.code).toBe("MODULE_NOT_FOUND");
-    expect(() => req("node:worker_threads")).toThrow("Cannot find module 'node:worker_threads'");
+    expect(() => req("node:tls")).toThrow("Cannot find module 'node:tls'");
   });
 });
 
