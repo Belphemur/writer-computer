@@ -7,6 +7,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { parseWikiLink } from "@/lib/wiki-links";
 import { Events, callerPluginId, type EventRef } from "./core";
 import { logger } from "@/lib/logger";
+import { recordPluginMutation } from "./churn-guard";
 import { normalizePath, parseFrontMatterTags } from "./functions";
 
 // ---------------------------------------------------------------- IO boundary
@@ -116,6 +117,7 @@ export class DataAdapter {
     return this.io.readText(this.p(path));
   }
   async write(path: string, data: string): Promise<void> {
+    recordPluginMutation(callerPluginId(), this.p(path), "write");
     await this.ensureParent(this.p(path));
     await this.io.writeText(this.p(path), data);
   }
@@ -148,10 +150,12 @@ export class DataAdapter {
     await this.io.mkdir(this.p(path));
   }
   async remove(path: string): Promise<void> {
+    recordPluginMutation(callerPluginId(), this.p(path), "remove");
     traceRemove("adapter.remove", path, true);
     await this.io.remove(this.p(path), { permanent: true });
   }
   async rmdir(path: string, _recursive: boolean): Promise<void> {
+    recordPluginMutation(callerPluginId(), this.p(path), "rmdir");
     traceRemove("adapter.rmdir", path, true);
     await this.io.remove(this.p(path), { permanent: true });
   }
@@ -297,6 +301,23 @@ export class Vault extends Events {
   getAbstractFileByPath(path: string): TAbstractFile | null {
     const p = normalizePath(path);
     return this.index.get(p) ?? null;
+  }
+  /** Undocumented (Excalidraw, Templater): a case-insensitive `getAbstractFileByPath`. */
+  getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
+    const exact = this.getAbstractFileByPath(path);
+    if (exact) return exact;
+    const lower = normalizePath(path).toLowerCase();
+    for (const [p, node] of this.index) if (p.toLowerCase() === lower) return node;
+    return null;
+  }
+  /** Undocumented (Templater): a free `<path>.<ext>`, then `<path> 1.<ext>`, `<path> 2.<ext>`, ... */
+  getAvailablePath(path: string, extension: string): string {
+    const base = normalizePath(path);
+    const ext = extension ? `.${extension.replace(/^\./, "")}` : "";
+    for (let i = 0; ; i++) {
+      const candidate = `${base}${i === 0 ? "" : ` ${i}`}${ext}`;
+      if (!this.getAbstractFileByPathInsensitive(candidate)) return candidate;
+    }
   }
   getFileByPath(path: string): TFile | null {
     const f = this.getAbstractFileByPath(path);
@@ -447,6 +468,7 @@ export class Vault extends Events {
   }
 
   async modify(file: TFile, data: string): Promise<void> {
+    recordPluginMutation(callerPluginId(), file.path, "modify");
     await this.io.writeText(file.path, data);
     await this.refreshStat(file);
     this.trigger("modify", file);
@@ -463,6 +485,7 @@ export class Vault extends Events {
   }
 
   async delete(file: TAbstractFile, _force?: boolean): Promise<void> {
+    recordPluginMutation(callerPluginId(), file.path, "delete");
     traceRemove("vault.delete", file.path, true);
     await this.io.remove(file.path, { permanent: true });
     this.removeNode(file);

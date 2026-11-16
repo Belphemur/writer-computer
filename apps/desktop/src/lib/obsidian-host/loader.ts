@@ -2,7 +2,7 @@
 // PluginHost: boots trusted plugins, enables/disables them with full teardown, and keeps the
 // status map the settings UI reads.
 //
-// How plugin code gets in (the page CSP has no `unsafe-eval`, no blob:):
+// How plugin code gets in (the page CSP has no blob:; `unsafe-eval` was added only for plugins that evaluate strings themselves, see docs/decisions/2026-11-16-allow-unsafe-eval-in-the-app-csp-for-eval-based-community-plugins.md):
 //   1. load(id) injects <script src="writer-plugin://localhost/<id>/main.js?n=K">. Rust serves
 //      it only for a trusted vault and an enabled id, wrapped as
 //        __writerPluginDefine("<id>", function (module, exports, require, process, global, Buffer) { ... })

@@ -194,7 +194,7 @@ export const v8Module = {
 
 // ---------------------------------------------------------------- vm
 
-// The page CSP has no 'unsafe-eval', so there is no way to evaluate a string: say so.
+// Node's vm module is not provided (the CSP now allows 'unsafe-eval', but vm needs sandboxed contexts): say so.
 const noVm = (what: string) => (): never => {
   throw nodeError(
     "ERR_VM_UNSUPPORTED",

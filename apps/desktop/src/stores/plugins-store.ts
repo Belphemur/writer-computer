@@ -193,6 +193,51 @@ const hasView = (leaf: WorkspaceLeaf): boolean => {
 const leafTitle = (leaf: WorkspaceLeaf): string =>
   leaf.view.getDisplayText() || leaf.view.getViewType() || "Plugin view";
 
+/** Watcher events waiting for the plugin vault (see `notifyExternal`). */
+interface ExternalEvent {
+  kind: "create" | "modify" | "delete";
+  absPath: string;
+  started: boolean;
+  done: Promise<void>;
+  resolve: () => void;
+}
+const externalQueue: ExternalEvent[] = [];
+const externalLast = new Map<string, ExternalEvent>();
+let externalDraining = false;
+const EXTERNAL_YIELD_EVERY = 16;
+
+async function deliverExternalEvent(state: PluginsState, e: ExternalEvent): Promise<void> {
+  const current = session;
+  const root = state.root;
+  const snapshot = current?.host.getSnapshot();
+  if (!current || !root || !snapshot?.trusted || !snapshot.booted) return;
+  const path = toVaultPath(root, e.absPath);
+  if (path === null) return;
+  try {
+    await current.host.app.vault.notifyExternal(e.kind, path);
+  } catch (err) {
+    console.error("[plugins] notifyExternal failed:", err);
+  }
+}
+
+async function drainExternalQueue(deliver: (e: ExternalEvent) => Promise<void>): Promise<void> {
+  let handled = 0;
+  try {
+    for (let e = externalQueue.shift(); e; e = externalQueue.shift()) {
+      e.started = true;
+      if (externalLast.get(e.absPath) === e) externalLast.delete(e.absPath);
+      try {
+        await deliver(e);
+      } finally {
+        e.resolve();
+      }
+      if (++handled % EXTERNAL_YIELD_EVERY === 0) await new Promise<void>((r) => setTimeout(r, 0));
+    }
+  } finally {
+    externalDraining = false;
+  }
+}
+
 let session: Session | null = null;
 let generation = 0;
 // attach/detach run strictly one after another; `generation` lets a superseded attach bail out.
@@ -501,18 +546,27 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
 
     refresh: () => runAction("Refreshing plugins", (current) => current.host.refresh()),
 
-    notifyExternal: async (kind, absPath) => {
-      const current = session;
-      const root = get().root;
-      const snapshot = current?.host.getSnapshot();
-      if (!current || !root || !snapshot?.trusted || !snapshot.booted) return;
-      const path = toVaultPath(root, absPath);
-      if (path === null) return;
-      try {
-        await current.host.app.vault.notifyExternal(kind, path);
-      } catch (e) {
-        console.error("[plugins] notifyExternal failed:", e);
+    notifyExternal: (kind, absPath) => {
+      // One watcher burst reports the same path several times (the file, its parent folder,
+      // metadata and data records). A repeat of the newest pending event for a path collapses
+      // into it (order across different events is kept), and the queue is fed to the vault one
+      // event at a time, yielding regularly, so a flood (a plugin seeding a folder, another app
+      // rewriting it) cannot starve the UI thread.
+      const last = externalLast.get(absPath);
+      if (last && last.kind === kind && !last.started) return last.done;
+      let resolve!: () => void;
+      const done = new Promise<void>((r) => (resolve = r));
+      const entry: ExternalEvent = { kind, absPath, started: false, done, resolve };
+      externalQueue.push(entry);
+      externalLast.set(absPath, entry);
+      if (!externalDraining) {
+        externalDraining = true;
+        // Next microtask: a burst reported in one tick is queued whole, so repeats can collapse.
+        void Promise.resolve().then(() =>
+          drainExternalQueue((e) => deliverExternalEvent(get(), e)),
+        );
       }
+      return done;
     },
 
     clearActionError: () => set({ actionError: null }),

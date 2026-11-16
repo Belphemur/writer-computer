@@ -13,7 +13,7 @@ Run Obsidian community plugins (first target: obsidian-copilot) inside Writer, i
 
 1. **Path containment (done).** `WorkspaceState::authorize_path` (`state.rs`) resolves symlinks and `..` and allows only the workspace root, a standalone window's one hosted file, or a pending open. `read_file`, `write_file`, `create_file`, `create_directory`, `rename_entry`, `delete_entry` check it and fail with `InvalidPath`. The `_impl` functions stay unscoped because `get_startup_state` reads the standalone file before it is registered. Tests in `state.rs`. Coverage is now complete, see Status below.
 2. **Seal before plugin load (removed).** The plan was to capture `invoke` and neutralize `__TAURI_INTERNALS__` before any plugin script runs (opensidian `loader.js` `seal()`). It cannot work: Tauri defines `window.__TAURI_INTERNALS__` and every property on it (`invoke`, `ipc`, `postMessage`, ...) as non-writable and non-configurable, so any attempt throws "Attempting to change value of a readonly property". Verified by running the real built app in WKWebView. The in-page seal code, its tests and the `hostInvoke` indirection were deleted; all IPC uses plain `invoke` from `@tauri-apps/api/core`. See "Trust model" below.
-3. **CSP.** Add a `writer-plugin:` scheme to `script-src`; `'unsafe-eval'` and `blob:` only for a trusted vault. The asset protocol scope is narrowed (done, see Status).
+3. **CSP.** Add a `writer-plugin:` scheme to `script-src`; `blob:` was dropped; `'unsafe-eval'` + `'wasm-unsafe-eval'` are app-wide because Tauri cannot toggle the CSP per vault (see ADR 2026-11-16 allow-unsafe-eval). The asset protocol scope is narrowed (done, see Status).
 
 ## Status (Rust backend, 2026-11-13)
 

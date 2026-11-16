@@ -291,6 +291,29 @@ describe("plugins store actions", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith("modify", "notes/a.md");
   });
+
+  it("collapses repeated watcher events for a path but keeps the order of different ones", async () => {
+    const t = setup({ trusted: true });
+    await usePluginsStore.getState().attach("/ws", t.deps);
+    const { vault } = t.hosts[0].app;
+    const spy = vi.spyOn(vault, "notifyExternal").mockResolvedValue();
+    const n = usePluginsStore.getState().notifyExternal;
+    await Promise.all([
+      n("create", "/ws/s/a.md"),
+      n("create", "/ws/s/a.md"),
+      n("create", "/ws/s/a.md"),
+      n("delete", "/ws/s/a.md"),
+      n("create", "/ws/s/a.md"),
+      n("modify", "/ws/s"),
+      n("modify", "/ws/s"),
+    ]);
+    expect(spy.mock.calls).toEqual([
+      ["create", "s/a.md"],
+      ["delete", "s/a.md"],
+      ["create", "s/a.md"],
+      ["modify", "s"],
+    ]);
+  });
 });
 
 describe("planReconcile", () => {
