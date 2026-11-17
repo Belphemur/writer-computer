@@ -2,6 +2,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   CodeIcon,
   CommandLineIcon,
+  Database02Icon,
   DatabaseIcon,
   File02Icon,
   GlobeIcon,
@@ -61,10 +62,23 @@ const CODE_FAMILY_ICON: Record<CodeIconFamily, typeof CodeIcon> = {
   sql: DatabaseIcon,
 };
 
-/** The glyph of a file row: a document, or a glyph by language family for a code file. */
+/** The glyph of a file row: a document, a stacked-database glyph for a Base, or a glyph by language family for a code file. */
 export function FileIcon({ name }: { name?: string }) {
-  const icon = name && isCodeName(name) ? CODE_FAMILY_ICON[codeIconFamily(name)] : File02Icon;
-  return <HugeiconsIcon icon={icon} size={16} color="currentColor" strokeWidth={1.8} />;
+  const isBase = !!name && name.toLowerCase().endsWith(".base");
+  const icon = isBase
+    ? Database02Icon
+    : name && isCodeName(name)
+      ? CODE_FAMILY_ICON[codeIconFamily(name)]
+      : File02Icon;
+  return (
+    <HugeiconsIcon
+      icon={icon}
+      size={16}
+      color="currentColor"
+      strokeWidth={isBase ? 2.2 : 1.8}
+      data-testid={isBase ? "base-file-icon" : undefined}
+    />
+  );
 }
 
 /** Marks the `.agents` / `.claude` folders (and their `skills` folder): agent skills with scripts. */
