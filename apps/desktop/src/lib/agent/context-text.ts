@@ -7,6 +7,7 @@
  */
 import type { ContextRef } from "./events";
 import { isActiveNoteToken, mentionToken } from "./mentions";
+import { openTabsBlock, type OpenTab } from "./open-tabs";
 import { tokenizeMessage } from "./trigger";
 
 export function contextRefLabel(ref: ContextRef): string {
@@ -52,6 +53,8 @@ export type PromptInput = {
   cwd: string | null;
   /** Skill names known for this chat; a `/name` in the middle of the text gets a line. */
   skills?: readonly string[];
+  /** Editor tabs to report in an `<open-tabs>` footer (the store passes none when unchanged). */
+  openTabs?: readonly OpenTab[];
 };
 
 const REFERENCES_HEADER =
@@ -69,8 +72,10 @@ const REFERENCES_HEADER =
  *   attached ref once by the same token, with its kind. Nothing is inlined except a selection's
  *   quoted text. A mid-message `/skill` that is a known skill gets a line (the CLI does not
  *   expand it there).
+ * - Then, with `openTabs`, an `<open-tabs>` block (see `open-tabs.ts`) under the same
+ *   leading-command rule.
  */
-export function buildPrompt({ text, refs, cwd, skills = [] }: PromptInput): string {
+export function buildPrompt({ text, refs, cwd, skills = [], openTabs = [] }: PromptInput): string {
   const sentToken = (path: string) => mentionToken(relativeToCwd(path, cwd));
   const tokenFor = new Map<string, string>();
   const entries = new Map<string, string>();
@@ -139,6 +144,13 @@ export function buildPrompt({ text, refs, cwd, skills = [] }: PromptInput): stri
     })
     .join("");
 
-  if (leadingCommand || entries.size === 0) return sent;
-  return `${sent}\n\n<references>\n${REFERENCES_HEADER}\n${[...entries.values()].join("\n")}\n</references>`;
+  if (leadingCommand) return sent;
+  const blocks: string[] = [];
+  if (entries.size > 0)
+    blocks.push(
+      `<references>\n${REFERENCES_HEADER}\n${[...entries.values()].join("\n")}\n</references>`,
+    );
+  const tabsBlock = openTabsBlock(openTabs);
+  if (tabsBlock) blocks.push(tabsBlock);
+  return blocks.length === 0 ? sent : `${sent}\n\n${blocks.join("\n\n")}`;
 }

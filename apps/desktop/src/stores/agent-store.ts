@@ -40,8 +40,10 @@ import {
   type NoteState,
 } from "@/lib/agent/chat-persist";
 import { applyTitleSummary, shouldAutoTitle, type RegenerateOutcome } from "@/lib/agent/auto-title";
-import { buildPrompt } from "@/lib/agent/context-text";
+import { buildPrompt, relativeToCwd } from "@/lib/agent/context-text";
 import { mentionsActiveNote } from "@/lib/agent/mentions";
+import { openTabsBlock, openTabsFrom, type OpenTab } from "@/lib/agent/open-tabs";
+import { propertyTypeInfo } from "@/stores/property-types-store";
 import { reconcileRefs } from "@/lib/agent/draft-refs";
 import { createRefIo, prepareRefs, type RefIo } from "@/lib/agent/ref-resolve";
 import { chatFromNote } from "@/lib/agent/chat-from-note";
@@ -289,6 +291,30 @@ function attachActiveNoteDefault(): boolean {
   return useSettingsStore.getState().settings["agent.attach-active-note"] !== false;
 }
 
+function shareOpenTabsSetting(): boolean {
+  return useSettingsStore.getState().settings["agent.share-open-tabs"] !== false;
+}
+
+/** Vault-file editor tabs right now (`agent.share-open-tabs`), empty when the setting is off. */
+function currentOpenTabs(cwd: string | null): OpenTab[] {
+  if (!shareOpenTabsSetting()) return [];
+  const { tabs, activeTabId, openFiles } = useEditorStore.getState();
+  const root = useWorkspaceStore.getState().root;
+  return openTabsFrom({
+    tabs,
+    activeTabId,
+    toSentPath: (p) => {
+      const rel = toVaultRelative(p, root);
+      return rel ? relativeToCwd(rel, cwd) : null;
+    },
+    frontmatterOf: (p) => openFiles.get(p)?.frontmatter,
+    typeOf: (key) => propertyTypeInfo(key)?.type,
+  });
+}
+
+/** Signature of the `<open-tabs>` block last sent per chat; a turn repeats it only when it changed. */
+const lastOpenTabsSent = new Map<ChatId, string>();
+
 /** The refs sent with a message: the active note unless removed, then the explicit mentions. */
 export function contextForSend(draft: Draft, text = ""): ContextRef[] {
   const refs: ContextRef[] = [];
@@ -503,17 +529,26 @@ export const useAgentStore = create<AgentState>((set, get) => {
       // What claude receives is built at send time (the active note resolves now); the card and
       // the chat note keep `text` as the user saw it.
       const refs = await resolveRefs(text, context);
+      const tabs = currentOpenTabs(before.projectPath);
+      const tabsBlock = openTabsBlock(tabs);
+      // a fresh session (replay) never saw the previous footer
+      const unchanged =
+        !opts.replay && tabsBlock !== null && lastOpenTabsSent.get(chatId) === tabsBlock;
       let sendText = buildPrompt({
         text,
         refs,
         cwd: before.projectPath,
         skills: knownSkillNames(get(), before),
+        openTabs: unchanged ? [] : tabs,
       });
+      if (tabsBlock === null) lastOpenTabsSent.delete(chatId);
       if (opts.replay) {
         const seed = await persistence.history.replay(chatId);
         sendText = `${seed.text}\n\n${sendText}`;
       }
       await client.send({ chatId, messageId, text: sendText, context: refs });
+      if (tabsBlock !== null && sendText.includes(tabsBlock))
+        lastOpenTabsSent.set(chatId, tabsBlock);
     } catch (e) {
       const { kind, message } = classifyStartError(e);
       if (!opts.replay && !live && resumeSessionId !== null && isSessionMissing(message)) {

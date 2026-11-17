@@ -136,5 +136,87 @@
     ],
     "cwd": null,
     "prompt": "look at @\"Daniel Wierdsm\"\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @\"Team/Daniel Wierdsma.md\" (note)\n</references>"
+  },
+  {
+    "name": "open tabs after references: quoted paths, active marker, metadata",
+    "text": "summarise @activenote",
+    "refs": [
+      {
+        "kind": "active-note",
+        "path": "Notes/My Plan.md",
+        "inline": false
+      }
+    ],
+    "cwd": null,
+    "openTabs": [
+      {
+        "path": "Notes/My Plan.md",
+        "active": true,
+        "kind": "note",
+        "tags": ["plan", "q4"],
+        "props": [
+          {
+            "key": "type",
+            "value": "project"
+          }
+        ],
+        "links": [
+          {
+            "key": "owner",
+            "targets": ["Ana"]
+          },
+          {
+            "key": "up",
+            "targets": ["Index", "Roadmap"]
+          }
+        ]
+      },
+      {
+        "path": "Tasks.base",
+        "active": false,
+        "kind": "base",
+        "view": "Open tasks"
+      },
+      {
+        "path": "scripts/build.py",
+        "active": false,
+        "kind": "code"
+      }
+    ],
+    "prompt": "summarise @\"Notes/My Plan.md\"\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @\"Notes/My Plan.md\" (active note: the note open in Writer)\n</references>\n\n<open-tabs>\nEditor tabs open in Writer, in tab order, paths relative to the working directory (metadata only; read a note with the Read tool when relevant):\n- \"Notes/My Plan.md\" (active; note; tags: plan, q4; type: project; owner: [[Ana]]; up: [[Index]], [[Roadmap]])\n- \"Tasks.base\" (base; view \"Open tasks\")\n- \"scripts/build.py\" (code)\n</open-tabs>"
+  },
+  {
+    "name": "open tabs alone, no references",
+    "text": "what am I working on?",
+    "refs": [],
+    "cwd": null,
+    "openTabs": [
+      {
+        "path": "a.md",
+        "active": false,
+        "kind": "note"
+      },
+      {
+        "path": "b.md",
+        "active": true,
+        "kind": "note"
+      }
+    ],
+    "prompt": "what am I working on?\n\n<open-tabs>\nEditor tabs open in Writer, in tab order, paths relative to the working directory (metadata only; read a note with the Read tool when relevant):\n- \"a.md\" (note)\n- \"b.md\" (active; note)\n</open-tabs>"
+  },
+  {
+    "name": "a leading command gets no open-tabs footer",
+    "text": "/summarize this",
+    "refs": [],
+    "cwd": null,
+    "skills": ["summarize"],
+    "openTabs": [
+      {
+        "path": "a.md",
+        "active": true,
+        "kind": "note"
+      }
+    ],
+    "prompt": "/summarize this"
   }
 ]

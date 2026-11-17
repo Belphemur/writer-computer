@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
@@ -17,6 +17,7 @@ import {
   useAgentStore,
 } from "../src/stores/agent-store";
 import { useEditorStore } from "../src/stores/editor-store";
+import { useSettingsStore } from "../src/stores/settings-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
 import { goldens } from "./helpers/agent-goldens";
 
@@ -274,6 +275,75 @@ describe("agent store: a turn against the recorded backend", () => {
       await get().sendMessage('read @"Notes/My Note.md"');
       await mock.idle(id);
       expect(send.mock.calls[0]![0].text.startsWith('read @"../../Notes/My Note.md"\n')).toBe(true);
+    });
+  });
+
+  describe("open tabs footer", () => {
+    const tabsOf = (...paths: string[]) =>
+      useEditorStore.setState({
+        tabs: paths.map((p, i) => ({
+          id: `t${i}`,
+          location: { kind: "file", path: `/v/${p}` },
+          back: [],
+          forward: [],
+        })),
+        activeTabId: "t0",
+        openFiles: new Map(),
+      } as never);
+    beforeEach(() => {
+      useWorkspaceStore.setState({ root: "/v" } as never);
+      useSettingsStore.setState({ settings: {} } as never);
+    });
+    afterEach(() => {
+      useEditorStore.setState({ tabs: [], activeTabId: null } as never);
+      useSettingsStore.setState({ settings: {} } as never);
+    });
+
+    async function turn(id: string, text: string) {
+      const send = vi.spyOn(mock, "send");
+      get().setDraft(id, { text, mentions: [], activeNote: false });
+      await get().sendMessage(text);
+      await mock.idle(id);
+      return send.mock.calls[send.mock.calls.length - 1]![0].text;
+    }
+
+    it("sends the tabs on the first turn, skips them while unchanged, resends on change", async () => {
+      tabsOf("a.md", "My Plan.md");
+      get().openPane();
+      const id = get().activeChatId!;
+      const first = await turn(id, "one");
+      expect(first).toContain("<open-tabs>");
+      expect(first).toContain('- "a.md" (active; note)');
+      expect(first).toContain('- "My Plan.md" (note)');
+      expect(await turn(id, "two")).not.toContain("<open-tabs>");
+      tabsOf("a.md", "My Plan.md", "c.md");
+      expect(await turn(id, "three")).toContain('- "c.md" (note)');
+    });
+
+    it("resends when a tag changes in an open note", async () => {
+      tabsOf("a.md");
+      get().openPane();
+      const id = get().activeChatId!;
+      const files = (fm: string) =>
+        useEditorStore.setState({
+          openFiles: new Map([["/v/a.md", { frontmatter: fm }]]),
+        } as never);
+      files("tags: [x]");
+      expect(await turn(id, "one")).toContain("tags: x");
+      expect(await turn(id, "two")).not.toContain("<open-tabs>");
+      files("tags: [x, y]");
+      expect(await turn(id, "three")).toContain("tags: x, y");
+    });
+
+    it("is off with agent.share-open-tabs false, and absent with no file tabs", async () => {
+      useSettingsStore.setState({ settings: { "agent.share-open-tabs": false } } as never);
+      tabsOf("a.md");
+      get().openPane();
+      const id = get().activeChatId!;
+      expect(await turn(id, "one")).not.toContain("<open-tabs>");
+      useSettingsStore.setState({ settings: {} } as never);
+      tabsOf();
+      expect(await turn(id, "two")).not.toContain("<open-tabs>");
     });
   });
 

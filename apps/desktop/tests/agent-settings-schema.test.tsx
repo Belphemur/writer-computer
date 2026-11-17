@@ -47,6 +47,7 @@ describe("agent.* settings contract", () => {
       "agent.allowed-tools": DEFAULT_ALLOWED,
       "agent.disallowed-tools": [],
       "agent.attach-active-note": true,
+      "agent.share-open-tabs": true,
       "agent.show-turn-changes": true,
       "agent.inject-agents-md": "auto",
       "agent.max-concurrent-chats": 4,

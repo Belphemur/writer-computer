@@ -1385,7 +1385,11 @@ mod tests {
             let footer = prompt.contains("\n\n<references>\n");
             let leading = c["text"].as_str().unwrap().trim_start().starts_with('/');
             assert!(!(footer && leading), "{name}: no footer behind a command");
-            if refs.is_empty() && c.get("skills").is_none() {
+            assert!(
+                !(leading && prompt.contains("<open-tabs>")),
+                "{name}: no open-tabs behind a command"
+            );
+            if refs.is_empty() && c.get("skills").is_none() && c.get("openTabs").is_none() {
                 assert_eq!(prompt, c["text"].as_str().unwrap(), "{name}: unchanged");
             }
         }

@@ -648,6 +648,15 @@
       "default": true
     },
     {
+      "key": "agent.share-open-tabs",
+      "label": "Share open tabs",
+      "description": "Tell the agent which notes and files are open in your editor tabs (paths, tags and link properties only, never note text), once and again whenever they change. Turn off to share only the attached note.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "agent.inject-agents-md",
       "label": "Inject AGENTS.md",
       "description": "How a project's AGENTS.md reaches the agent. auto adds it only when Claude Code would ignore it (a CLAUDE.md sits next to it, or the CLI is older than 2.1.325); always always adds it; never relies on the CLI alone.",
