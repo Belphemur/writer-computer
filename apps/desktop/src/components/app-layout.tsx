@@ -1,14 +1,19 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar } from "./sidebar";
 import { EditorArea } from "./editor-area";
 import { EditorTabs } from "./editor-area/editor-tabs";
 import { SidebarToggleButton } from "./sidebar/sidebar-toggle-button";
 import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
-import { useActivePluginLeaf, useIsPluginPaneOpen, usePluginPaneWidth } from "@/hooks/use-plugins";
+import {
+  useActivePluginLeaf,
+  useClosePluginPane,
+  useIsPluginPaneOpen,
+  usePluginPaneWidth,
+} from "@/hooks/use-plugins";
 import { PluginViewPane } from "./plugins/plugin-view-pane";
-import { AgentPane } from "./agent/agent-pane";
-import { useAgentPaneDock, useAgentPaneWidth, useIsAgentPaneOpen } from "@/hooks/use-agent";
+import { DockPane } from "./dock-pane";
+import { closeDocks, useDockWidth, useOpenDockId } from "@/hooks/use-docks";
 import { PluginStatusBar } from "./plugins/plugin-strips";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useWorkspaceChromeMode, useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -33,12 +38,19 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
   const pluginPaneOpen = useIsPluginPaneOpen();
   const pluginPaneLeaf = useActivePluginLeaf();
   const pluginPaneWidth = usePluginPaneWidth();
-  const agentPaneOpen = useIsAgentPaneOpen();
-  const agentPaneWidth = useAgentPaneWidth();
-  useAgentPaneDock();
-  // One dock: the agent pane wins while open, otherwise the plugin pane.
-  const pluginPaneInset = agentPaneOpen
-    ? agentPaneWidth
+  const dockId = useOpenDockId();
+  const dockWidth = useDockWidth();
+  const closePluginPane = useClosePluginPane();
+  // One right-hand column: whichever pane opened last wins (the effect that runs on a change
+  // closes the other one), and an open dock beats the plugin pane while both exist.
+  useEffect(() => {
+    if (dockId) closePluginPane();
+  }, [dockId, closePluginPane]);
+  useEffect(() => {
+    if (pluginPaneOpen) closeDocks();
+  }, [pluginPaneOpen]);
+  const pluginPaneInset = dockId
+    ? dockWidth
     : pluginPaneOpen && pluginPaneLeaf
       ? pluginPaneWidth
       : 0;
@@ -192,7 +204,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
             {showWelcome ? <WelcomeScreen /> : <EditorArea />}
             <PluginStatusBar />
           </div>
-          {agentPaneOpen ? <AgentPane /> : <PluginViewPane />}
+          {dockId ? <DockPane id={dockId} /> : <PluginViewPane />}
         </div>
       </div>
     </div>

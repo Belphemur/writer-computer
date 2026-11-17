@@ -651,8 +651,8 @@ describe("history and project home in the pane", () => {
     resetStore();
     hoisted.invoke.mockReset();
     hoisted.invoke.mockImplementation(async (cmd: string) => {
-      if (cmd === "agent_list_chats") return [SUMMARY];
-      if (cmd === "agent_load_chat")
+      if (cmd === "plugin:agent|agent_list_chats") return [SUMMARY];
+      if (cmd === "plugin:agent|agent_load_chat")
         return { summary: SUMMARY, markdown: serializeChatNote(NOTE_DOC()) };
       return undefined;
     });

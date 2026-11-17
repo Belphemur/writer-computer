@@ -186,7 +186,7 @@ impl SourceIndex for FsSourceIndex {
 // -------------------------------------------------------------------------------------------
 // Manifest
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestEntry {
     /// `folder`, `note`, `tag`, `property`, `url`.
@@ -198,7 +198,7 @@ pub struct ManifestEntry {
     pub warning: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
     pub entries: Vec<ManifestEntry>,
@@ -441,7 +441,7 @@ pub fn diff_manifests(prev: &Manifest, next: &Manifest) -> Option<String> {
 // Instruction audit
 
 /// `agent.inject-agents-md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum InjectMode {
     #[default]
@@ -465,7 +465,7 @@ pub fn cli_is_older(version: Option<&str>) -> bool {
     (nums[0], nums[1], nums[2]) < VERIFIED_CLI
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum InstructionStatus {
     /// The CLI loads it itself (`AGENTS.md` alone, or imported by `CLAUDE.md`).
@@ -476,7 +476,7 @@ pub enum InstructionStatus {
     NotInjected,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct InstructionAudit {
     /// Vault-relative directory ("" for the vault root).
@@ -564,7 +564,7 @@ pub fn audit_dir(
 // -------------------------------------------------------------------------------------------
 // Bundle
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextBundle {
     /// Value for `--append-system-prompt`: the Writer block, then instructions, then the project.

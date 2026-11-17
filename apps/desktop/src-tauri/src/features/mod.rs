@@ -61,6 +61,8 @@ mod fixture;
 #[cfg(test)]
 mod ipc_tests;
 
+#[path = "../../../features/agent/rust/mod.rs"]
+mod agent;
 #[path = "../../../features/mouse-buttons/rust/mod.rs"]
 mod mouse_buttons;
 
@@ -88,6 +90,10 @@ pub struct RustPart {
     pub commands: Vec<String>,
     #[serde(default)]
     pub events: Vec<String>,
+    /// The `Feature` hooks the feature implements (`setup`, `onWorkspaceOpen`, `onWorkspaceClose`,
+    /// `onExit`): documentation for the Features section, vocabulary checked by the contract test.
+    #[serde(default)]
+    pub hooks: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -95,11 +101,13 @@ fn default_true() -> bool {
 }
 
 impl Manifest {
-    /// Does the feature have a Rust half? A feature without commands or events is TypeScript-only:
-    /// no plugin, no ACL, nothing in [`registry`].
+    /// Does the feature have a Rust half? A feature without commands, events or hooks is
+    /// TypeScript-only: no plugin, no ACL, nothing in [`registry`].
     #[cfg(test)]
     pub fn has_rust(&self) -> bool {
-        !self.rust.commands.is_empty() || !self.rust.events.is_empty()
+        !self.rust.commands.is_empty()
+            || !self.rust.events.is_empty()
+            || !self.rust.hooks.is_empty()
     }
 
     /// The settings key of this feature's kill switch.
@@ -123,7 +131,6 @@ pub trait Feature<R: Runtime>: Send + Sync {
     /// commands and events).
     fn manifest_source(&self) -> &'static str;
     /// `include_str!` of the feature's `settings.schema.json` fragment, if it has settings.
-    #[allow(dead_code)] // read by the contract test's schema drift check
     fn settings_source(&self) -> Option<&'static str> {
         None
     }
@@ -141,13 +148,11 @@ pub trait Feature<R: Runtime>: Send + Sync {
         Ok(())
     }
     /// A window now has a workspace root (open, switch or restore).
-    #[allow(dead_code)] // first real use: the agent pilot
+    #[allow(dead_code)] // no feature uses it yet
     fn on_workspace_open(&self, _app: &AppHandle<R>, _window: &WindowCtx<'_>) {}
-    /// A window was destroyed: stop what `on_workspace_open` started for `label`.
-    #[allow(dead_code)]
+    /// A window was destroyed or left its workspace: stop what it started for `label`.
     fn on_workspace_close(&self, _app: &AppHandle<R>, _label: &str) {}
     /// `RunEvent::Exit`.
-    #[allow(dead_code)]
     fn on_exit(&self, _app: &AppHandle<R>) {}
 
     /// `writer` CLI commands, appended to `cli::registry::COMMANDS`.
@@ -172,7 +177,7 @@ pub trait Feature<R: Runtime>: Send + Sync {
 /// Every registered first-party feature, in startup order (teardown runs reversed). A
 /// TypeScript-only feature is not listed: its manifest alone is enough.
 pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
-    vec![&mouse_buttons::MouseButtons]
+    vec![&agent::Agent, &mouse_buttons::MouseButtons]
 }
 
 /// Is the feature switched on? `features.<id>.enabled` at the global scope (a vault's config can
@@ -304,7 +309,7 @@ pub fn workspace_open<R: Runtime>(app: &AppHandle<R>, label: &str, root: &Path) 
     });
 }
 
-/// A window was destroyed.
+/// A window was destroyed or left its workspace (`commands::plugins::stop_window_work` calls this).
 pub fn workspace_close<R: Runtime>(app: &AppHandle<R>, label: &str) {
     run_hooks(app, "on_workspace_close", true, |f| {
         f.on_workspace_close(app, label)
@@ -335,6 +340,20 @@ pub fn skills() -> Vec<&'static BundledSkill> {
 
 fn skills_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'static BundledSkill> {
     features.iter().flat_map(|f| f.skills()).collect()
+}
+
+/// Settings fragments (`settings.schema.json` of each feature), for `config::settings_schema`,
+/// which appends their entries to the core file. Every registered feature counts whatever its
+/// toggle: a setting must keep its default and its place in the UI while the feature is off.
+pub fn settings_fragments() -> Vec<&'static str> {
+    settings_fragments_of(&registry::<Wry>())
+}
+
+fn settings_fragments_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'static str> {
+    features
+        .iter()
+        .filter_map(|f| f.settings_source())
+        .collect()
 }
 
 /// Feature DDL, for `index::schema`.
@@ -454,12 +473,21 @@ mod tests {
     }
 
     #[test]
-    fn the_registry_lists_mouse_buttons_and_every_entry_has_a_valid_manifest() {
+    fn the_registry_lists_the_features_and_every_entry_has_a_valid_manifest() {
         let ids: Vec<String> = registry::<Wry>()
             .iter()
             .map(|f| f.manifest().expect("manifest parses").id)
             .collect();
-        assert_eq!(ids, ["mouse-buttons"]);
+        assert_eq!(ids, ["agent", "mouse-buttons"]);
+    }
+
+    #[test]
+    fn fragments_are_read_from_every_registered_feature_whatever_its_toggle() {
+        let all = settings_fragments();
+        assert!(all.iter().any(|f| f.contains("\"agent.binary-path\"")));
+        // the core defaults include the agent's, so a disabled feature keeps its settings
+        assert!(crate::config::default_settings().contains_key("agent.pane-width"));
+        assert_eq!(settings_fragments_of(&fixture::registry::<Wry>()).len(), 1);
     }
 
     #[test]

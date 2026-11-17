@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, Runtime};
 
 struct Entry {
     root: PathBuf,
@@ -49,8 +49,8 @@ use super::blocking;
 
 /// Return this window's index, opening it (and queueing a warm scan) when the
 /// window has none for the current workspace and epoch.
-fn ensure_index(
-    app: &tauri::AppHandle,
+fn ensure_index<R: Runtime>(
+    app: &tauri::AppHandle<R>,
     label: &str,
     state: &Arc<WorkspaceState>,
 ) -> Result<Arc<Index>, AppError> {
@@ -59,8 +59,8 @@ fn ensure_index(
 
 /// [`ensure_index`], optionally without queueing the warm scan (the workspace
 /// bootstrap runs its own scan and waits for it).
-pub(crate) fn ensure_index_with(
-    app: &tauri::AppHandle,
+pub(crate) fn ensure_index_with<R: Runtime>(
+    app: &tauri::AppHandle<R>,
     label: &str,
     state: &Arc<WorkspaceState>,
     scan: bool,
@@ -211,9 +211,9 @@ fn to_vault_relative(
         .ok_or_else(|| AppError::InvalidPath(format!("{path} is not valid UTF-8")))
 }
 
-pub(crate) fn window_index(
-    app: &tauri::AppHandle,
-    webview: &tauri::Webview,
+pub(crate) fn window_index<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    webview: &tauri::Webview<R>,
 ) -> Result<(Arc<WorkspaceState>, Arc<Index>), AppError> {
     let label = webview.label();
     let state = app.state::<AppState>().get_or_create(label);

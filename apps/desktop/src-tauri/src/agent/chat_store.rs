@@ -144,7 +144,7 @@ type Result<T> = std::result::Result<T, ChatStoreError>;
 
 /// The frontmatter of a chat note. Field names are the wire names of the golden
 /// `*.parsed.json` files, shared with `chat-note.ts`.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMeta {
     pub chat_id: String,
@@ -163,6 +163,8 @@ pub struct ChatMeta {
     pub turns: u32,
     pub pinned: bool,
     pub archived_at: Option<i64>,
+    /// Free-form usage record: opaque to the bindings.
+    #[specta(type = Option<specta_typescript::Unknown>)]
     pub usage: Option<Value>,
     pub preview: Option<String>,
 }
@@ -182,7 +184,7 @@ impl ChatMeta {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     User,
@@ -199,7 +201,7 @@ impl Role {
 }
 
 /// One message of the transcript.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Turn {
     pub role: Role,
@@ -211,13 +213,15 @@ pub struct Turn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(type = Option<specta_typescript::Unknown>)]
     pub tools: Option<Value>,
     /// The turn's `TurnChangesSummary` (paths and counts, never contents), assistant only.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(type = Option<specta_typescript::Unknown>)]
     pub changes: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ParsedBody {
     /// Messages dropped by the size bound (`<!-- writer:trimmed {"messages":N} -->`).
@@ -1200,7 +1204,7 @@ pub fn is_session_missing(message: &str) -> bool {
         || m.contains("could not find session")
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplaySeed {
     /// Text to put in front of the first message of the new session.

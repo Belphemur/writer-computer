@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+// The agent feature contributes its palette commands when the built-in features load.
+import "../src/lib/features/builtin";
 import { CommandRegistry } from "../src/lib/obsidian-host/api/core";
 import {
   BUILTIN_COMMANDS,
@@ -70,13 +72,13 @@ describe("palette built-in commands", () => {
       "open-log-folder",
       "copy-recent-errors",
       "open-settings",
-      "agent-toggle-pane",
-      "agent-new-chat",
-      "agent-history",
-      // development builds only (`import.meta.env.DEV`, true under vitest)
-      "agent-use-demo-backend",
       "agent-new-project",
       "note-set-display-title",
+      // contributed by the agent feature (`features/agent`); development builds only for the demo
+      "agent.toggle-pane",
+      "agent.new-chat",
+      "agent.history",
+      "agent.use-demo-backend",
     ]);
   });
 

@@ -7,20 +7,19 @@
  * duplicates, resynchronises through `agent_snapshot` on a gap) and batches events per animation
  * frame so a delta storm costs at most one store update per frame (spec 3.5).
  */
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
-  AGENT_EVENT_CHANNEL,
+  agentEvents,
+  callAgent as call,
+  type AgentArgs as Args,
+  type AgentResult as Result,
+} from "../../../features/agent/web/ipc";
+import {
   type AgentBinaryInfo,
-  type AgentCommandMap,
   type AgentEvent,
   type AgentEventEnvelope,
   type AgentSessionState,
   type ChatId,
 } from "./events";
-
-type Args<K extends keyof AgentCommandMap> = AgentCommandMap[K][0];
-type Result<K extends keyof AgentCommandMap> = AgentCommandMap[K][1];
 
 export type Unsubscribe = () => void;
 
@@ -42,8 +41,6 @@ export interface AgentClient {
 }
 
 export function createTauriAgentClient(): AgentClient {
-  const call = <K extends keyof AgentCommandMap>(cmd: K, args: Args<K>) =>
-    invoke<Result<K>>(cmd, args as Record<string, unknown>);
   return {
     detectBinary: (a) => call("agent_detect_binary", a),
     start: (a) => call("agent_start", a),
@@ -57,8 +54,7 @@ export function createTauriAgentClient(): AgentClient {
     revertChanges: (a) => call("agent_revert_changes", a),
     listSkills: (a) => call("agent_list_skills", a),
     snapshot: (a) => call("agent_snapshot", a),
-    subscribe: (handler) =>
-      listen<AgentEventEnvelope>(AGENT_EVENT_CHANNEL, (e) => handler(e.payload)),
+    subscribe: (handler) => agentEvents.listen("event", handler),
   };
 }
 

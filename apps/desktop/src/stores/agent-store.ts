@@ -995,7 +995,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
       try {
         const { client } = await ensureRuntime();
         const binary = await client.detectBinary({
-          override: override ?? agentSettingsFrom(useSettingsStore.getState().settings).binaryPath,
+          binaryOverride:
+            override ?? agentSettingsFrom(useSettingsStore.getState().settings).binaryPath,
         });
         set({ binary });
       } catch {

@@ -6,7 +6,6 @@ import "@/lib/keybindings/core-bindings";
 import { keybindings } from "@/lib/keybindings/registry";
 import type { RegisteredCommand } from "@/lib/obsidian-host/api/core";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
-import { AGENT_PALETTE_COMMANDS } from "./agent-commands";
 import { PROJECT_PALETTE_COMMANDS } from "./project-commands";
 import { TITLE_PALETTE_COMMANDS } from "./title-commands";
 
@@ -192,7 +191,6 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     when: (c) => !c.isCompactFileMode,
     run: (c) => c.openSettings(),
   },
-  ...AGENT_PALETTE_COMMANDS,
   ...PROJECT_PALETTE_COMMANDS,
   ...TITLE_PALETTE_COMMANDS,
 ];

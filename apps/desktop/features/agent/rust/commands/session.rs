@@ -1,29 +1,29 @@
 //! Tauri commands of the agent pane's process runner (spec section 11, lane 1): thin glue that
 //! resolves the calling window and its trusted vault, then calls `agent::session::AgentSessions`.
-//! Project and chat-store commands live in `agent_projects.rs` / `agent_chats.rs`.
+//! Project and chat-store commands live in `projects.rs` / `chats.rs`.
 //!
 //! Failure policy. Bad input (not a uuid, a context path outside the vault, a chat that belongs
 //! to another window, a restricted vault) is an `Err`. Failures to START the CLI (binary not
 //! found, consent denied, spawn failed, too many processes) are `error` events of the chat, so
 //! the pane's error cards have one source; `agent_start` / `agent_send` return `Ok` for them.
 
-use super::blocking;
-use super::plugins::{consent_store, dialog_consent, trusted_root, vault_still_trusted};
 use crate::agent::binary::{self, AgentBinaryInfo};
 use crate::agent::events::*;
 use crate::agent::ports::InjectAgentsMd;
 use crate::agent::session::{AgentSessions, Rejected, Sink, StartParams, StartedIds};
+use crate::commands::blocking;
+use crate::commands::plugins::{consent_store, dialog_consent, trusted_root, vault_still_trusted};
 use crate::error::AppError;
 use crate::state::AppState;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, Runtime};
 
 fn rejected(r: Rejected) -> AppError {
     AppError::InvalidPath(r.0)
 }
 
-fn sink_for(app: &tauri::AppHandle, label: &str) -> Sink {
+fn sink_for<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Sink {
     let app = app.clone();
     let label = label.to_string();
     Arc::new(move |env| {
@@ -34,7 +34,7 @@ fn sink_for(app: &tauri::AppHandle, label: &str) -> Sink {
 
 /// `agent.inject-agents-md`; the key is added to the schema by the settings lane, a missing key
 /// (or any unknown value) is `auto`.
-fn inject_setting(app: &tauri::AppHandle, label: &str) -> InjectAgentsMd {
+fn inject_setting<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> InjectAgentsMd {
     let state = app.state::<AppState>().get_or_create(label);
     let guard = state.settings.read();
     InjectAgentsMd::parse(
@@ -45,26 +45,20 @@ fn inject_setting(app: &tauri::AppHandle, label: &str) -> InjectAgentsMd {
     )
 }
 
-fn sessions(app: &tauri::AppHandle) -> tauri::State<'_, AgentSessions> {
+fn sessions<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::State<'_, AgentSessions> {
     app.state::<AgentSessions>()
 }
 
-/// `{ override?: string | null }` -> where `claude` is and its version. The argument is named
-/// `override`, a Rust keyword, so the JSON body is read directly.
+/// `{ binaryOverride?: string | null }` -> where `claude` is and its version. Without an override
+/// the `agent.binary-path` setting is used.
 #[tauri::command]
-pub async fn agent_detect_binary(
-    request: tauri::ipc::Request<'_>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+#[specta::specta]
+pub async fn agent_detect_binary<R: Runtime>(
+    binary_override: Option<String>,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<AgentBinaryInfo, AppError> {
-    let from_arg = match request.body() {
-        tauri::ipc::InvokeBody::Json(v) => v
-            .get("override")
-            .and_then(|o| o.as_str())
-            .map(str::to_string),
-        _ => None,
-    };
-    let override_path = from_arg.or_else(|| {
+    let override_path = binary_override.or_else(|| {
         let state = app.state::<AppState>().get_or_create(webview.label());
         let guard = state.settings.read();
         guard
@@ -76,14 +70,15 @@ pub async fn agent_detect_binary(
 }
 
 #[tauri::command]
-pub async fn agent_start(
+#[specta::specta]
+pub async fn agent_start<R: Runtime>(
     chat_id: ChatId,
     project_path: Option<String>,
     resume_session_id: Option<String>,
     settings: AgentSettings,
     append_system_prompt: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<StartedIds, AppError> {
     let root = trusted_root(&webview, &app)?;
     let label = webview.label().to_string();
@@ -116,13 +111,14 @@ pub async fn agent_start(
 }
 
 #[tauri::command]
-pub async fn agent_send(
+#[specta::specta]
+pub async fn agent_send<R: Runtime>(
     chat_id: ChatId,
     message_id: MessageId,
     text: String,
     context: Vec<ContextRef>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     trusted_root(&webview, &app)?;
     let label = webview.label().to_string();
@@ -137,24 +133,26 @@ pub async fn agent_send(
 }
 
 #[tauri::command]
-pub async fn agent_cancel(
+#[specta::specta]
+pub async fn agent_cancel<R: Runtime>(
     chat_id: ChatId,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || sessions(&app).cancel(&label, &chat_id).map_err(rejected)).await
 }
 
 #[tauri::command]
-pub async fn agent_permission(
+#[specta::specta]
+pub async fn agent_permission<R: Runtime>(
     chat_id: ChatId,
     request_id: PermissionRequestId,
     decision: PermissionDecision,
     persist: Option<PermissionPersist>,
     message: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
@@ -166,11 +164,12 @@ pub async fn agent_permission(
 }
 
 #[tauri::command]
-pub async fn agent_set_permission_mode(
+#[specta::specta]
+pub async fn agent_set_permission_mode<R: Runtime>(
     chat_id: ChatId,
     mode: AgentPermissionMode,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
@@ -182,12 +181,13 @@ pub async fn agent_set_permission_mode(
 }
 
 #[tauri::command]
-pub async fn agent_set_model(
+#[specta::specta]
+pub async fn agent_set_model<R: Runtime>(
     chat_id: ChatId,
     model: Option<String>,
     effort: Option<Effort>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
@@ -199,10 +199,11 @@ pub async fn agent_set_model(
 }
 
 #[tauri::command]
-pub async fn agent_close(
+#[specta::specta]
+pub async fn agent_close<R: Runtime>(
     chat_id: ChatId,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || sessions(&app).close(&label, &chat_id).map_err(rejected)).await
@@ -211,11 +212,12 @@ pub async fn agent_close(
 /// Rebind an open chat to another CLI session; the next spawn `--resume`s it. (Opening a saved
 /// chat normally passes `resumeSessionId` to `agent_start` instead.)
 #[tauri::command]
-pub async fn agent_resume(
+#[specta::specta]
+pub async fn agent_resume<R: Runtime>(
     chat_id: ChatId,
     session_id: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
@@ -226,7 +228,7 @@ pub async fn agent_resume(
     .await
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, specta::Type)]
 pub struct SnapshotReply {
     pub state: AgentSessionState,
     pub events: Vec<AgentEventEnvelope>,
@@ -234,11 +236,12 @@ pub struct SnapshotReply {
 
 /// Events with `seq > afterSeq` still in the ring (the last 2,000), plus the current state.
 #[tauri::command]
-pub async fn agent_snapshot(
+#[specta::specta]
+pub async fn agent_snapshot<R: Runtime>(
     chat_id: ChatId,
     after_seq: u64,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<SnapshotReply, AppError> {
     let label = webview.label().to_string();
     blocking(move || {
@@ -251,11 +254,12 @@ pub async fn agent_snapshot(
 /// The diffs of one finished turn, or `null` when the in-memory snapshot is gone (the app was
 /// restarted, or the turn was dropped to stay under the memory cap). Spec "Turn changes".
 #[tauri::command]
-pub async fn agent_turn_changes(
+#[specta::specta]
+pub async fn agent_turn_changes<R: Runtime>(
     chat_id: ChatId,
     turn_id: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Option<TurnChanges>, AppError> {
     let root = trusted_root(&webview, &app)?;
     blocking(move || Ok(sessions(&app).changes().detail(&chat_id, &turn_id, &root))).await
@@ -264,12 +268,13 @@ pub async fn agent_turn_changes(
 /// Undo: restore the pre-turn content of `paths`. One outcome per path; a file that changed since
 /// the turn ended is refused, never overwritten. `null` when the snapshot is gone.
 #[tauri::command]
-pub async fn agent_revert_changes(
+#[specta::specta]
+pub async fn agent_revert_changes<R: Runtime>(
     chat_id: ChatId,
     turn_id: String,
     paths: Vec<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Option<Vec<RevertOutcome>>, AppError> {
     let root = trusted_root(&webview, &app)?;
     blocking(move || {

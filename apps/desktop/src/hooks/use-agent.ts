@@ -2,14 +2,13 @@
  * Domain hooks for the native agent pane. Components import these, never `stores/agent-store`
  * (docs/react-guidelines.md). One selector per hook; imperative actions live in `agent-api.ts`.
  */
-import { useEffect, useLayoutEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { skillsKey, useAgentStore } from "@/stores/agent-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { agentSettingsFrom, type ChatModelChoice } from "@/lib/agent/agent-settings";
 import type { AgentPermissionMode } from "@/lib/agent/events";
 import { useActiveFilePath } from "@/hooks/use-tabs";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
-import { useClosePluginPane, useIsPluginPaneOpen } from "@/hooks/use-plugins";
 import type { ChatId } from "@/lib/agent/events";
 import { contextStatus, type ContextStatus } from "@/lib/agent/context-usage";
 
@@ -64,38 +63,6 @@ export function useAgentProjectPath() {
 }
 export function useNewProjectDialog() {
   return useAgentStore((s) => s.newProjectDialog);
-}
-
-/** Mount once in the layout: restores the saved width, and keeps the dock to one view (the agent
- *  pane and the plugin pane close each other, spec section 2). */
-export function useAgentPaneDock() {
-  const agentOpen = useIsAgentPaneOpen();
-  const pluginOpen = useIsPluginPaneOpen();
-  const closePluginPane = useClosePluginPane();
-  const syncWidth = useAgentStore((s) => s.syncPaneWidth);
-  const syncOpen = useAgentStore((s) => s.syncPaneOpen);
-  const openSetting = useSettingsStore((s) => s.settings["agent.pane-open"]);
-  const widthSetting = useSettingsStore((s) => s.settings["agent.pane-width"]);
-  const closeAgent = useAgentStore((s) => s.closePane);
-  const restoreChats = useAgentStore((s) => s.restoreChats);
-  const root = useWorkspaceRoot();
-
-  // The chats that were open in this vault come back once per vault, whether or not the pane is open.
-  useEffect(() => {
-    if (root) void restoreChats(root);
-  }, [restoreChats, root]);
-
-  // The setting is the saved width (also edited in Settings): adopt it at startup and on change.
-  useEffect(() => syncWidth(widthSetting), [syncWidth, widthSetting]);
-  // The saved open/closed state, applied before the first paint so the pane does not flash.
-  useLayoutEffect(() => syncOpen(openSetting), [syncOpen, openSetting]);
-  // Whichever opened last wins: the effect that runs on a change closes the other pane.
-  useEffect(() => {
-    if (agentOpen) closePluginPane();
-  }, [agentOpen, closePluginPane]);
-  useEffect(() => {
-    if (pluginOpen) closeAgent();
-  }, [pluginOpen, closeAgent]);
 }
 
 /** The chat's permission mode: the composer choice, else the `agent.permission-mode` setting. */

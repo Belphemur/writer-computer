@@ -159,8 +159,9 @@ describe("Settings > Agent", () => {
     detect = { found: true, path: "/synthetic/bin/claude", version: "2.1.325", source: "path" };
     invokeMock.mockReset();
     invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
-      if (cmd === "agent_detect_binary") return detect;
-      if (cmd === "agent_permission_rules") return { allow: ["Bash(ls)"], deny: ["Bash(rm)"] };
+      if (cmd === "plugin:agent|agent_detect_binary") return detect;
+      if (cmd === "plugin:agent|agent_permission_rules")
+        return { allow: ["Bash(ls)"], deny: ["Bash(rm)"] };
       if (cmd === "set_setting") {
         setCalls.push([String(args.key), args.value]);
         return args.value;
@@ -234,12 +235,14 @@ describe("Settings > Agent", () => {
 
   it("Re-detect asks the backend again", async () => {
     await mount();
-    const before = invokeMock.mock.calls.filter((c) => c[0] === "agent_detect_binary").length;
+    const before = invokeMock.mock.calls.filter(
+      (c) => c[0] === "plugin:agent|agent_detect_binary",
+    ).length;
     await act(async () => buttonByText("Re-detect")!.click());
     await flush();
-    expect(invokeMock.mock.calls.filter((c) => c[0] === "agent_detect_binary").length).toBe(
-      before + 1,
-    );
+    expect(
+      invokeMock.mock.calls.filter((c) => c[0] === "plugin:agent|agent_detect_binary").length,
+    ).toBe(before + 1);
   });
 
   it("Configure opens a dialog with the path override and the saved rules", async () => {
@@ -253,7 +256,7 @@ describe("Settings > Agent", () => {
     expect(rules.textContent).toContain("Bash(ls)");
     expect(rules.textContent).toContain("Bash(rm)");
     await act(async () => buttonByText("Remove", rules)!.click());
-    expect(invokeMock).toHaveBeenCalledWith("agent_remove_permission_rule", {
+    expect(invokeMock).toHaveBeenCalledWith("plugin:agent|agent_remove_permission_rule", {
       projectPath: null,
       rule: "Bash(ls)",
     });

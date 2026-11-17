@@ -3,8 +3,6 @@
 //! and `agent/permission_rules.rs` (Tauri-free); this file resolves the window's workspace root,
 //! maps errors and runs the IO through `blocking`. Never logs titles or note text.
 
-use super::blocking;
-use super::plugins::{consent_store, trusted_root};
 use crate::agent::binary;
 use crate::agent::chat_store::{
     self, ChatAction, ChatStoreError, ListOptions, ListScope, ReplaySeed,
@@ -14,12 +12,14 @@ use crate::agent::events::ChatSummary;
 use crate::agent::permission_rules::{self, PermissionRules};
 use crate::agent::session::AgentSessions;
 use crate::agent::title;
+use crate::commands::blocking;
+use crate::commands::plugins::{consent_store, trusted_root};
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::vault_ops::VaultOpError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Manager, Runtime};
 
 fn store_err(e: ChatStoreError) -> AppError {
     match e {
@@ -34,20 +34,24 @@ fn vault_err(e: VaultOpError) -> AppError {
 }
 
 /// The window's workspace root, canonical (the store requires it).
-fn root_of(app: &tauri::AppHandle, webview: &tauri::Webview) -> Result<PathBuf, AppError> {
+fn root_of<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    webview: &tauri::Webview<R>,
+) -> Result<PathBuf, AppError> {
     let state = app.state::<AppState>().get_or_create(webview.label());
     let (root, _) = state.workspace_snapshot().ok_or(AppError::NoWorkspace)?;
     root.canonicalize().map_err(|e| AppError::Io(e.to_string()))
 }
 
 #[tauri::command]
-pub async fn agent_list_chats(
+#[specta::specta]
+pub async fn agent_list_chats<R: Runtime>(
     project_path: Option<String>,
     include_archived: Option<bool>,
     all: Option<bool>,
     query: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Vec<ChatSummary>, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -69,7 +73,7 @@ pub async fn agent_list_chats(
     .await
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadedChat {
     pub summary: ChatSummary,
@@ -77,10 +81,11 @@ pub struct LoadedChat {
 }
 
 #[tauri::command]
-pub async fn agent_load_chat(
+#[specta::specta]
+pub async fn agent_load_chat<R: Runtime>(
     chat_id: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<LoadedChat, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -92,12 +97,13 @@ pub async fn agent_load_chat(
 }
 
 #[tauri::command]
-pub async fn agent_save_chat(
+#[specta::specta]
+pub async fn agent_save_chat<R: Runtime>(
     chat_id: String,
     markdown: String,
     title_hint: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ChatSummary, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -106,7 +112,7 @@ pub async fn agent_save_chat(
     .await
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatActionName {
     Rename,
@@ -134,12 +140,13 @@ impl From<ChatActionName> for ChatAction {
 
 /// Rename, pin, archive and delete (to the system Trash). `None` after a delete.
 #[tauri::command]
-pub async fn agent_chat_action(
+#[specta::specta]
+pub async fn agent_chat_action<R: Runtime>(
     chat_id: String,
     action: ChatActionName,
     title: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Option<ChatSummary>, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -155,12 +162,13 @@ pub async fn agent_chat_action(
 /// placeholder title stays. The note must already be saved (the pane flushes first): the title
 /// input is read from it, exactly as for "Regenerate title".
 #[tauri::command]
-pub async fn agent_auto_title(
+#[specta::specta]
+pub async fn agent_auto_title<R: Runtime>(
     chat_id: String,
     title_model: Option<String>,
     chat_model: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Option<ChatSummary>, AppError> {
     let root = root_of(&app, &webview)?;
     let label = webview.label().to_string();
@@ -191,7 +199,7 @@ pub async fn agent_auto_title(
 }
 
 /// Why "Regenerate title" did nothing; the history list words each one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum RegenerateRefusal {
     /// The user never allowed Claude to run in this vault in this window.
@@ -204,7 +212,7 @@ pub enum RegenerateRefusal {
     Failed,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(tag = "status", rename_all = "kebab-case")]
 pub enum RegenerateOutcome {
     Done { summary: ChatSummary },
@@ -217,11 +225,12 @@ pub enum RegenerateOutcome {
 /// chat: see `consent::helper_program` for the consent rule. For an open chat the pane flushes
 /// its pending save first (the note is the input).
 #[tauri::command]
-pub async fn agent_regenerate_title(
+#[specta::specta]
+pub async fn agent_regenerate_title<R: Runtime>(
     chat_id: String,
     title_model: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<RegenerateOutcome, AppError> {
     let root = trusted_root(&webview, &app)?;
     let label = webview.label().to_string();
@@ -284,11 +293,12 @@ pub async fn agent_regenerate_title(
 /// The capped replay text for a new CLI session when the old one is gone (spec section 9).
 /// Not in `AgentCommandMap` of the contract; added for the runner/store glue.
 #[tauri::command]
-pub async fn agent_chat_replay(
+#[specta::specta]
+pub async fn agent_chat_replay<R: Runtime>(
     chat_id: String,
     max_tokens: Option<usize>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ReplaySeed, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -302,10 +312,11 @@ pub async fn agent_chat_replay(
 }
 
 #[tauri::command]
-pub async fn agent_permission_rules(
+#[specta::specta]
+pub async fn agent_permission_rules<R: Runtime>(
     project_path: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<PermissionRules, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -315,11 +326,12 @@ pub async fn agent_permission_rules(
 }
 
 #[tauri::command]
-pub async fn agent_remove_permission_rule(
+#[specta::specta]
+pub async fn agent_remove_permission_rule<R: Runtime>(
     project_path: Option<String>,
     rule: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {

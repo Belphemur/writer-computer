@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, Runtime};
 
 const TRUST_FILE: &str = "plugins_trust.json";
 const CONSENT_FILE: &str = "plugins_proc_consent.json";
@@ -65,7 +65,9 @@ impl Ctx {
     }
 }
 
-pub(crate) fn consent_store(app: &tauri::AppHandle) -> Result<ConsentStore, AppError> {
+pub(crate) fn consent_store<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<ConsentStore, AppError> {
     let dir = app
         .path()
         .app_data_dir()
@@ -73,7 +75,7 @@ pub(crate) fn consent_store(app: &tauri::AppHandle) -> Result<ConsentStore, AppE
     Ok(ConsentStore::new(dir.join(CONSENT_FILE)))
 }
 
-fn trust_file(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
+fn trust_file<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, AppError> {
     let dir = app
         .path()
         .app_data_dir()
@@ -83,7 +85,7 @@ fn trust_file(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
 
 /// The window's canonical workspace root, confined through `authorize_path`
 /// (this resolves a symlinked `.obsidian` that points out of the workspace).
-fn ctx_for(state: &WorkspaceState, app: &tauri::AppHandle) -> Result<Ctx, AppError> {
+fn ctx_for<R: Runtime>(state: &WorkspaceState, app: &tauri::AppHandle<R>) -> Result<Ctx, AppError> {
     let root = state
         .workspace_root
         .read()
@@ -97,7 +99,10 @@ fn ctx_for(state: &WorkspaceState, app: &tauri::AppHandle) -> Result<Ctx, AppErr
     })
 }
 
-fn window_ctx(webview: &tauri::Webview, app: &tauri::AppHandle) -> Result<Ctx, AppError> {
+fn window_ctx<R: Runtime>(
+    webview: &tauri::Webview<R>,
+    app: &tauri::AppHandle<R>,
+) -> Result<Ctx, AppError> {
     let state = app.state::<AppState>().get_or_create(webview.label());
     ctx_for(&state, app)
 }
@@ -166,7 +171,8 @@ pub fn stop_vault_work(app: &tauri::AppHandle, root: &Path) {
     }
 }
 
-/// A window closed or left its vault: stop what its plugins started.
+/// A window closed or left its vault: stop what its plugins and the features started for it
+/// (`features::Feature::on_workspace_close`).
 pub fn stop_window_work(app: &tauri::AppHandle, label: &str) {
     if let Some(streams) = app.try_state::<StreamRegistry>() {
         streams.cancel_window(label);
@@ -174,12 +180,11 @@ pub fn stop_window_work(app: &tauri::AppHandle, label: &str) {
     if let Some(procs) = app.try_state::<ProcManager>() {
         procs.kill_window(label);
     }
-    if let Some(agents) = app.try_state::<crate::agent::session::AgentSessions>() {
-        agents.kill_window(label);
-    }
     if let Some(env) = app.try_state::<PluginEnv>() {
         env.forget_window(label);
     }
+    // Feature hooks (the agent's CLI processes of this window).
+    crate::features::workspace_close(app, label);
 }
 
 #[tauri::command]
@@ -368,15 +373,19 @@ pub async fn plugin_store_uninstall(
 /* --------------------------------------------------------- plugin HTTP */
 
 /// The agent pane's gate: the window's canonical vault root, or the restricted-mode refusal.
-pub(crate) fn trusted_root(
-    webview: &tauri::Webview,
-    app: &tauri::AppHandle,
+pub(crate) fn trusted_root<R: Runtime>(
+    webview: &tauri::Webview<R>,
+    app: &tauri::AppHandle<R>,
 ) -> Result<PathBuf, AppError> {
     Ok(trusted_ctx(webview, app)?.root)
 }
 
 /// Same vault, still trusted (asked again after a consent dialog and before agent respawns).
-pub(crate) fn vault_still_trusted(app: &tauri::AppHandle, label: &str, root: &Path) -> bool {
+pub(crate) fn vault_still_trusted<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+    root: &Path,
+) -> bool {
     let Some(st) = app.state::<AppState>().get(label) else {
         return false;
     };
@@ -387,12 +396,18 @@ pub(crate) fn vault_still_trusted(app: &tauri::AppHandle, label: &str, root: &Pa
 }
 
 /// The native consent dialog, for the agent pane's first spawn per vault.
-pub(crate) fn dialog_consent(app: tauri::AppHandle, window: Option<tauri::Window>) -> impl Consent {
+pub(crate) fn dialog_consent<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    window: Option<tauri::Window<R>>,
+) -> impl Consent {
     DialogConsent { app, window }
 }
 
 /// A trusted vault's context, or the restricted-mode refusal.
-fn trusted_ctx(webview: &tauri::Webview, app: &tauri::AppHandle) -> Result<Ctx, AppError> {
+fn trusted_ctx<R: Runtime>(
+    webview: &tauri::Webview<R>,
+    app: &tauri::AppHandle<R>,
+) -> Result<Ctx, AppError> {
     let ctx = window_ctx(webview, app)?;
     ctx.require_trusted()?;
     Ok(ctx)
@@ -446,9 +461,9 @@ static CONSENT_PENDING: std::sync::atomic::AtomicUsize = std::sync::atomic::Atom
 
 /// The native consent dialog: outside the webview, so page script cannot
 /// answer for the user. Deny is the cancel button; closing the dialog denies.
-struct DialogConsent {
-    app: tauri::AppHandle,
-    window: Option<tauri::Window>,
+struct DialogConsent<R: Runtime> {
+    app: tauri::AppHandle<R>,
+    window: Option<tauri::Window<R>>,
 }
 
 const BTN_ONCE: &str = "Run once";
@@ -456,7 +471,7 @@ const BTN_ALWAYS: &str = "Always allow this plugin in this vault";
 const BTN_ALWAYS_AGENT: &str = "Always allow in this vault";
 const BTN_DENY: &str = "Deny";
 
-impl Consent for DialogConsent {
+impl<R: Runtime> Consent for DialogConsent<R> {
     fn ask(&self, req: &ConsentRequest) -> Decision {
         use std::sync::atomic::Ordering;
         use tauri_plugin_dialog::{

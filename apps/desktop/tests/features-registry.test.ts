@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
 import { resolveCommands } from "../src/components/command-palette/commands";
+import { closeDocks, openDock, subscribeDocks } from "../src/lib/features/docks";
 import { featurePaletteCommands } from "../src/lib/features/palette";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 import { keybindings } from "../src/lib/keybindings/registry";
@@ -68,7 +69,7 @@ describe("defineFeature", () => {
         contributes: { commands: [{ id: "b.x", label: "x", run: () => {} }] },
       }),
     ).toThrow(/must start with "a\."/);
-    expect(() => defineFeature({ id: "a", contributes: { docks: [] } })).toThrow(/no host yet/);
+    expect(() => defineFeature({ id: "a", contributes: { sidebar: [] } })).toThrow(/no host yet/);
   });
 });
 
@@ -206,5 +207,66 @@ describe("a feature's keybinding shows in the palette", () => {
     const cmd = resolveCommands(ctx, []).find((c) => c.id === "shown.go")!;
     expect(cmd.shortcut).toBe(keybindings.shortcutFor("shown.go"));
     expect(cmd.shortcut).toBeTruthy();
+  });
+});
+
+describe("docks", () => {
+  function dock(id: string, priority: number, open = false) {
+    let isOpen = open;
+    const listeners = new Set<() => void>();
+    return {
+      id,
+      priority,
+      isOpen: () => isOpen,
+      width: () => 100 + priority,
+      close: () => {
+        isOpen = false;
+        listeners.forEach((l) => l());
+      },
+      set: (v: boolean) => {
+        isOpen = v;
+        listeners.forEach((l) => l());
+      },
+      subscribe: (l: () => void) => {
+        listeners.add(l);
+        return () => void listeners.delete(l);
+      },
+      load: async () => () => null,
+    };
+  }
+
+  it("shows the open dock with the highest priority and drops it with its feature", async () => {
+    const low = dock("a.low", 1, true);
+    const high = dock("b.high", 5, true);
+    host.register({ id: "a", contributes: { docks: [low] } });
+    host.register({ id: "b", contributes: { docks: [high] } });
+    expect(openDock()?.id).toBe("b.high");
+    expect(openDock()?.width()).toBe(105);
+    await host.unregister("b");
+    expect(openDock()?.id).toBe("a.low");
+    low.set(false);
+    expect(openDock()).toBeNull();
+  });
+
+  it("notifies on a dock's own change and on registration, and closeDocks closes the open ones", async () => {
+    const d = dock("a.pane", 1);
+    const seen = vi.fn();
+    const un = subscribeDocks(seen);
+    host.register({ id: "a", contributes: { docks: [d] } });
+    expect(seen).toHaveBeenCalledTimes(1);
+    d.set(true);
+    expect(seen).toHaveBeenCalledTimes(2);
+    closeDocks();
+    expect(openDock()).toBeNull();
+    un();
+    d.set(true);
+    expect(seen).toHaveBeenCalledTimes(3); // closeDocks notified once more; nothing after unsubscribe
+    await host.unregister("a");
+  });
+
+  it("requires the feature id as the id prefix", () => {
+    expect(() => defineFeature({ id: "a", contributes: { docks: [dock("b.pane", 1)] } })).toThrow(
+      /must start with "a\."/,
+    );
   });
 });

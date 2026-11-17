@@ -272,10 +272,17 @@ struct SettingsSchemaFile {
 
 const SETTINGS_SCHEMA_JSON: &str = include_str!("../../shared/settings.schema.json");
 
+/// The core file followed by every feature's fragment (`features::settings_fragments`): the one
+/// merged schema, read identically by `lib/settings-schema.ts`.
 fn load_schema() -> Vec<SettingDef> {
-    let parsed: SettingsSchemaFile =
-        serde_json::from_str(SETTINGS_SCHEMA_JSON).expect("settings.schema.json is malformed");
-    parsed.settings
+    std::iter::once(SETTINGS_SCHEMA_JSON)
+        .chain(crate::features::settings_fragments())
+        .flat_map(|raw| {
+            let parsed: SettingsSchemaFile =
+                serde_json::from_str(raw).expect("settings schema is malformed");
+            parsed.settings
+        })
+        .collect()
 }
 
 pub fn settings_schema() -> Vec<SettingDef> {
@@ -892,7 +899,12 @@ mod tests {
             .iter()
             .filter(|d| d.key.starts_with("agent."))
             .collect();
-        assert_eq!(agent.len(), 20);
+        // The keys come from the agent feature's fragment; its shape is checked by
+        // `features::contract_tests` (every entry has a label, type and default), not by a count.
+        assert!(
+            !agent.is_empty(),
+            "the agent fragment is merged into the schema"
+        );
         assert_eq!(
             defaults.get("agent.enabled-models"),
             Some(&ConfigValue::List(vec![

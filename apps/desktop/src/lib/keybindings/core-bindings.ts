@@ -2,7 +2,6 @@
 // docs/keyboard-shortcuts.md: `tests/keybindings.test.ts` fails when the two disagree). The
 // handlers read store state at event time, as the old `if` chain did. A binding id equal to a
 // palette command id makes the palette show the key (`shortcutFor`), so the two cannot drift.
-import { toggleAgentPane } from "@/hooks/agent-api";
 import { toggleSidebar } from "@/hooks/use-sidebar";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
 import { closeWindow } from "@/lib/tauri";
@@ -34,16 +33,6 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
     layoutIndependent: true,
     run: () => {
       if (!isCompactFileMode()) void useEditorStore.getState().reopenClosedTab();
-    },
-  },
-  {
-    id: "agent-toggle-pane",
-    keys: ["Mod+Shift+A"],
-    description: "Show or hide the Agent pane",
-    category: "Agent",
-    layoutIndependent: true,
-    run: () => {
-      if (hasRoot() && !isCompactFileMode()) toggleAgentPane();
     },
   },
   {

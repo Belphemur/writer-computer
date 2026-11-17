@@ -77,3 +77,19 @@ export function hasPendingAgentPermission(): boolean {
 
 export const loadAgentSkills = (projectPath: string | null) =>
   useAgentStore.getState().loadSkills(projectPath);
+
+// ---- Dock plumbing for the agent feature's dock contribution (features/agent/web) ----
+export const agentPaneWidth = () => useAgentStore.getState().paneWidth;
+/** Calls `listener` when the pane opens, closes or is resized. */
+export const subscribeAgentPane = (listener: () => void) =>
+  useAgentStore.subscribe((s, prev) => {
+    if (s.paneOpen !== prev.paneOpen || s.paneWidth !== prev.paneWidth) listener();
+  });
+/** Adopt the saved width and open state (the `agent.pane-width` / `agent.pane-open` settings). */
+export const syncAgentPane = (saved: { width: unknown; open: unknown }) => {
+  const s = useAgentStore.getState();
+  s.syncPaneWidth(saved.width);
+  s.syncPaneOpen(saved.open);
+};
+/** The chats that were open in this vault come back (once per vault). */
+export const restoreAgentChats = (root: string) => useAgentStore.getState().restoreChats(root);

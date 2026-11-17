@@ -86,7 +86,7 @@ type Res<T> = Result<T, ProjectError>;
 
 /// [`ProjectInfo`] (the shared contract) plus what the contract has no field for. Serialises as
 /// a superset of `ProjectInfo`, so the typed client can read it as one.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectDetail {
     #[serde(flatten)]
@@ -103,7 +103,7 @@ pub struct ProjectDetail {
 }
 
 /// What a write did, for the dialog's confirmation line and for tests.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteReport {
     pub project: ProjectDetail,
@@ -114,7 +114,7 @@ pub struct WriteReport {
 }
 
 /// Partial update of `project.md`; only `Some` fields are written.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProjectUpdate {
     pub name: Option<String>,
@@ -731,7 +731,7 @@ pub fn create(root: &Path, req: &NewProjectRequest, now_ms: i64) -> Res<WriteRep
 
 /// Options of [`make_with`]. `description` and `inclusions` are applied only to keys the folder's
 /// `project.md` does not already have.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MakeOptions {
     pub create_agents_md: bool,

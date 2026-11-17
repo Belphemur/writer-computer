@@ -3,7 +3,7 @@
  * transport; the project commands are plain request/response calls with their own file so
  * lane 2 and lane 3 never edit the same one. Types extend the shared contract in `events.ts`.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { callAgent as call } from "../../../features/agent/web/ipc";
 import type { NewProjectRequest, ProjectInfo } from "./events";
 
 /** `ProjectInfo` plus what the contract has no field for (a superset on the wire). */
@@ -79,21 +79,21 @@ export interface ProjectClient {
 
 export function createProjectClient(): ProjectClient {
   return {
-    list: (includeArchived = false) => invoke("agent_list_projects", { includeArchived }),
-    read: (path) => invoke("agent_read_project", { path }),
+    list: (includeArchived = false) => call("agent_list_projects", { includeArchived }),
+    read: (path) => call("agent_read_project", { path }),
     create: (r) =>
-      invoke("agent_create_project", {
+      call("agent_create_project", {
         name: r.name,
         parent: r.parent,
         description: r.description,
         inclusions: r.inclusions,
         instructions: r.instructions,
       }),
-    make: (a) => invoke("agent_make_project", { ...a }),
-    update: (path, update) => invoke("agent_update_project", { path, update }),
-    archive: (path, archived) => invoke("agent_archive_project", { path, archived }),
-    inspectFolder: (path) => invoke("agent_inspect_folder", { path }),
-    manifest: (path) => invoke("agent_project_manifest", { path }),
+    make: (a) => call("agent_make_project", { ...a }),
+    update: (path, update) => call("agent_update_project", { path, update }),
+    archive: (path, archived) => call("agent_archive_project", { path, archived }),
+    inspectFolder: (path) => call("agent_inspect_folder", { path }),
+    manifest: (path) => call("agent_project_manifest", { path }),
   };
 }
 

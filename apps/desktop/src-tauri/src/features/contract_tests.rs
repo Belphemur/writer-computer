@@ -58,8 +58,17 @@ fn valid_event_name(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || "-/:_".contains(c))
 }
 
+const HOOKS: [&str; 4] = ["setup", "onWorkspaceOpen", "onWorkspaceClose", "onExit"];
+
 fn check_events(m: &Manifest) -> Result<(), String> {
     let id = &m.id;
+    for hook in &m.rust.hooks {
+        if !HOOKS.contains(&hook.as_str()) {
+            return Err(format!(
+                "{id}: unknown hook {hook:?}, expected one of {HOOKS:?}"
+            ));
+        }
+    }
     for event in &m.rust.events {
         if !event.starts_with(&format!("{id}:")) || !valid_event_name(event) {
             return Err(format!(
@@ -113,10 +122,9 @@ fn check_feature(
     Ok(())
 }
 
-/// What a feature adds to the settings schema: the generated kill switch plus its fragment.
-fn schema_entries(m: &Manifest, fragment: Option<&str>) -> Result<Vec<Value>, String> {
-    let id = &m.id;
-    let mut entries = vec![json!({
+/// The generated kill switch of a feature: it lives in `shared/settings.schema.json`, verbatim.
+fn kill_switch(m: &Manifest) -> Value {
+    json!({
         "key": m.enabled_key(),
         "label": m.name,
         "description": if m.has_rust() {
@@ -128,33 +136,75 @@ fn schema_entries(m: &Manifest, fragment: Option<&str>) -> Result<Vec<Value>, St
         "type": "boolean",
         "default": m.enabled_by_default,
         "scope": "global",
-    })];
-    if let Some(raw) = fragment {
-        let v: Value = serde_json::from_str(raw).map_err(|e| format!("{id}: fragment: {e}"))?;
-        let list = v["settings"]
-            .as_array()
-            .ok_or(format!("{id}: fragment has no settings array"))?;
-        for e in list {
-            let key = e["key"]
-                .as_str()
-                .ok_or(format!("{id}: entry without key"))?;
-            if !key.starts_with(&format!("{id}.")) {
-                return Err(format!("{id}: key {key} must start with \"{id}.\""));
+    })
+}
+
+const FRAGMENT_FIELDS: [&str; 6] = ["key", "label", "description", "category", "type", "default"];
+
+/// A feature's settings fragment: every key starts with `<id>.`, every entry has the fields the
+/// settings UI needs, no key repeats. (This replaces the hand count of the agent's keys.)
+fn fragment_entries(m: &Manifest, fragment: &str) -> Result<Vec<Value>, String> {
+    let id = &m.id;
+    let v: Value = serde_json::from_str(fragment).map_err(|e| format!("{id}: fragment: {e}"))?;
+    let list = v["settings"]
+        .as_array()
+        .ok_or(format!("{id}: fragment has no settings array"))?;
+    let mut seen = BTreeSet::new();
+    for e in list {
+        let key = e["key"]
+            .as_str()
+            .ok_or(format!("{id}: entry without key"))?;
+        if !key.starts_with(&format!("{id}.")) {
+            return Err(format!("{id}: key {key} must start with \"{id}.\""));
+        }
+        for field in FRAGMENT_FIELDS {
+            if e.get(field).is_none() {
+                return Err(format!("{id}: {key} has no {field}"));
             }
-            entries.push(e.clone());
+        }
+        if !seen.insert(key.to_string()) {
+            return Err(format!("{id}: duplicate key {key}"));
         }
     }
-    let mut seen = BTreeSet::new();
-    for e in &entries {
-        if !seen.insert(e["key"].as_str().unwrap().to_string()) {
-            return Err(format!("{id}: duplicate key {}", e["key"]));
-        }
+    Ok(list.clone())
+}
+
+/// What a feature adds to the settings schema: the generated kill switch plus its fragment.
+fn schema_entries(m: &Manifest, fragment: Option<&str>) -> Result<Vec<Value>, String> {
+    let mut entries = vec![kill_switch(m)];
+    if let Some(raw) = fragment {
+        entries.extend(fragment_entries(m, raw)?);
     }
     Ok(entries)
 }
 
-/// Every entry a feature contributes must be in `shared/settings.schema.json`, verbatim: that file
-/// stays the one thing Rust and TypeScript read at runtime. Fails with the JSON to add.
+/// A fragment's entries are merged at runtime (`config::settings_schema`): none may also sit in
+/// the shared file (one source), all must be in the merged schema, and no key repeats there.
+fn check_fragment_merged(
+    shared: &Value,
+    own: &[Value],
+    merged_keys: &[String],
+) -> Result<(), String> {
+    for e in own {
+        let key = e["key"].as_str().unwrap();
+        if shared["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["key"] == e["key"])
+        {
+            return Err(format!("{key} is in both its fragment and the shared file"));
+        }
+        match merged_keys.iter().filter(|k| *k == key).count() {
+            1 => {}
+            0 => return Err(format!("{key} is not in the merged schema")),
+            _ => return Err(format!("{key} is defined twice in the merged schema")),
+        }
+    }
+    Ok(())
+}
+
+/// The kill switch must be in `shared/settings.schema.json`, verbatim. Fails with the JSON to add.
 fn check_schema(shared: &Value, wanted: &[Value]) -> Result<(), String> {
     let have = shared["settings"].as_array().unwrap();
     for entry in wanted {
@@ -214,6 +264,10 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
     let defs = registry::<Wry>();
     let features_dir = crate_dir().join("../features");
     let shared = shared_schema();
+    let merged_keys: Vec<String> = crate::config::settings_schema()
+        .into_iter()
+        .map(|d| d.key)
+        .collect();
     let mut ids = BTreeSet::new();
     for def in &defs {
         let m = def.manifest().expect("feature.json parses");
@@ -244,8 +298,11 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
                 check_events(&m).unwrap();
             }
         }
-        let entries = schema_entries(&m, def.settings_source()).unwrap();
-        check_schema(&shared, &entries).unwrap();
+        check_schema(&shared, &[kill_switch(&m)]).unwrap();
+        if let Some(raw) = def.settings_source() {
+            let own = fragment_entries(&m, raw).unwrap();
+            check_fragment_merged(&shared, &own, &merged_keys).unwrap();
+        }
     }
     // A feature folder without a registry entry would silently get ACL but no plugin, unless it has
     // no Rust half (a TypeScript-only feature): then it has no plugin to register and only its
@@ -263,8 +320,12 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
                 .to_string();
             let m: Manifest = serde_json::from_value(read_json(&entry.path().join("feature.json")))
                 .expect("feature.json parses");
-            if !m.has_rust() {
-                check_schema(&shared, &schema_entries(&m, None).unwrap()).unwrap();
+            if !m.has_rust() && !ids.contains(&id) {
+                assert!(
+                    !entry.path().join("settings.schema.json").exists(),
+                    "{id}: a settings fragment needs a registry entry (Rust merges it)"
+                );
+                check_schema(&shared, &[kill_switch(&m)]).unwrap();
                 web_only.insert(id);
                 continue;
             }
@@ -315,6 +376,12 @@ fn a_stale_manifest_or_capability_fails_the_contract() {
         .unwrap_err()
         .contains("rust.commands"));
 
+    let mut hooked = m.clone();
+    hooked.rust.hooks = vec!["onSomethingElse".into()];
+    assert!(fixture_checks(&hooked, &declared, &cap)
+        .unwrap_err()
+        .contains("unknown hook"));
+
     let mut dotted = m.clone();
     dotted.rust.events = vec!["fixture-hello.greeted".into()];
     assert!(fixture_checks(&dotted, &declared, &cap)
@@ -340,29 +407,56 @@ fn a_stale_manifest_or_capability_fails_the_contract() {
 }
 
 #[test]
-fn settings_fragments_are_merged_into_the_shared_schema_or_the_test_fails() {
+fn the_kill_switch_must_be_in_the_shared_schema_verbatim_or_the_test_fails() {
     let m = fixture_def().manifest().unwrap();
     let wanted = schema_entries(&m, fixture_def().settings_source()).unwrap();
     assert_eq!(wanted[0]["key"], "features.fixture-hello.enabled");
     assert_eq!(wanted[1]["key"], "fixture-hello.greeting");
 
     let mut shared = json!({ "settings": [] });
-    let err = check_schema(&shared, &wanted).unwrap_err();
+    let err = check_schema(&shared, &wanted[..1]).unwrap_err();
     assert!(err.contains("features.fixture-hello.enabled") && err.contains("add:"));
 
-    shared["settings"] = json!(wanted);
-    check_schema(&shared, &wanted).unwrap();
-    shared["settings"][1]["default"] = json!("changed");
-    assert!(check_schema(&shared, &wanted)
+    shared["settings"] = json!(wanted[..1]);
+    check_schema(&shared, &wanted[..1]).unwrap();
+    shared["settings"][0]["default"] = json!(false);
+    assert!(check_schema(&shared, &wanted[..1])
         .unwrap_err()
         .contains("drifted"));
+}
+
+#[test]
+fn a_fragment_entry_must_be_merged_once_and_not_sit_in_the_shared_file() {
+    let m = fixture_def().manifest().unwrap();
+    let own = fragment_entries(&m, fixture::SETTINGS).unwrap();
+    let keys = vec!["fixture-hello.greeting".to_string()];
+    let empty = json!({ "settings": [] });
+    check_fragment_merged(&empty, &own, &keys).unwrap();
+    assert!(check_fragment_merged(&empty, &own, &[])
+        .unwrap_err()
+        .contains("not in the merged"));
+    let twice = vec![keys[0].clone(), keys[0].clone()];
+    assert!(check_fragment_merged(&empty, &own, &twice)
+        .unwrap_err()
+        .contains("twice"));
+    let shared = json!({ "settings": own });
+    assert!(check_fragment_merged(&shared, &own, &keys)
+        .unwrap_err()
+        .contains("both"));
+}
+
+#[test]
+fn a_fragment_entry_without_a_label_or_default_is_rejected() {
+    let m = fixture_def().manifest().unwrap();
+    let bad = r#"{"settings":[{"key":"fixture-hello.x","type":"string"}]}"#;
+    assert!(fragment_entries(&m, bad).unwrap_err().contains("has no"));
 }
 
 #[test]
 fn a_fragment_key_outside_the_feature_prefix_is_rejected() {
     let m = fixture_def().manifest().unwrap();
     let bad = r#"{"settings":[{"key":"editor.font-size"}]}"#;
-    assert!(schema_entries(&m, Some(bad))
+    assert!(fragment_entries(&m, bad)
         .unwrap_err()
         .contains("must start with"));
 }

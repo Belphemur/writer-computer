@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useAllSettings, useResetSetting, useSetSetting } from "@/hooks/use-settings";
+import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
 import { createTauriAgentClient } from "@/lib/agent/client";
 import {
   AGENT_BACKENDS,
@@ -23,7 +23,7 @@ import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
 import { AgentModels } from "./agent-models";
-import { SettingControl } from "./setting-control";
+import { SettingRows } from "./setting-rows";
 
 const text = (v: unknown, fallback: string): string => (typeof v === "string" ? v : fallback);
 
@@ -99,7 +99,7 @@ function useBackendStatus(backend: AgentBackendDescriptor, override: string) {
     setError(null);
     setInfo(null);
     try {
-      setInfo(await createTauriAgentClient().detectBinary({ override: override || null }));
+      setInfo(await createTauriAgentClient().detectBinary({ binaryOverride: override || null }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -201,30 +201,9 @@ function SelectRow({
   );
 }
 
-/** Settings rows of the generic kind, rendered with the shared `SettingControl`. */
+/** Settings rows of the generic kind, rendered with the shared `SettingRows`. */
 function SchemaRows({ keys }: { keys: readonly string[] }) {
-  const settings = useAllSettings();
-  const setSetting = useSetSetting();
-  const resetSetting = useResetSetting();
-  const defs = keys.flatMap((k) => SETTINGS_SCHEMA.filter((d) => d.key === k));
-  return (
-    <div className={CARD}>
-      {defs.map((def, i) => (
-        <div
-          key={def.key}
-          className={i === 0 ? undefined : "border-t border-[var(--line-subtler)]"}
-        >
-          <SettingControl
-            def={def}
-            value={settings[def.key]}
-            onChange={(v) => setSetting(def.key, v)}
-            onReset={() => void resetSetting(def.key)}
-            isModified={JSON.stringify(settings[def.key]) !== JSON.stringify(def.default)}
-          />
-        </div>
-      ))}
-    </div>
-  );
+  return <SettingRows defs={keys.flatMap((k) => SETTINGS_SCHEMA.filter((d) => d.key === k))} />;
 }
 
 const EFFORT_OPTIONS: { value: string; label: string }[] = [

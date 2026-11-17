@@ -1,0 +1,85 @@
+{
+  "id": "agent",
+  "name": "Agent",
+  "version": "1.0.0",
+  "description": "Chat with Claude Code over your notes in a pane beside the editor.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "medium",
+    "note": "Applies the saved pane state at startup (two store subscriptions); the chat pane loads when you first open it and one Claude process starts per open chat. Nothing runs while the pane is closed."
+  },
+  "rust": {
+    "commands": [
+      "agent_archive_project",
+      "agent_auto_title",
+      "agent_cancel",
+      "agent_chat_action",
+      "agent_chat_replay",
+      "agent_close",
+      "agent_create_project",
+      "agent_detect_binary",
+      "agent_inspect_folder",
+      "agent_list_chats",
+      "agent_list_projects",
+      "agent_list_skills",
+      "agent_load_chat",
+      "agent_make_project",
+      "agent_permission",
+      "agent_permission_rules",
+      "agent_project_manifest",
+      "agent_read_project",
+      "agent_regenerate_title",
+      "agent_remove_permission_rule",
+      "agent_resume",
+      "agent_revert_changes",
+      "agent_save_chat",
+      "agent_send",
+      "agent_set_model",
+      "agent_set_permission_mode",
+      "agent_snapshot",
+      "agent_start",
+      "agent_turn_changes",
+      "agent_update_project"
+    ],
+    "events": ["agent:event"],
+    "hooks": ["setup", "onWorkspaceClose", "onExit"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "agent.toggle-pane",
+        "label": "Agent: Toggle pane",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.new-chat",
+        "label": "Agent: New chat",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.history",
+        "label": "Agent: History",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.use-demo-backend",
+        "label": "Agent: Use demo backend (recorded sessions)",
+        "description": "Command",
+        "when": "dev-workspace-window"
+      }
+    ],
+    "keybindings": [
+      {
+        "id": "agent.toggle-pane",
+        "keys": ["Mod+Shift+A"],
+        "description": "Show or hide the Agent pane",
+        "layoutIndependent": true
+      }
+    ],
+    "docks": ["agent.pane"]
+  }
+}

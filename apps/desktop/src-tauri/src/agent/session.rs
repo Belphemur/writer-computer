@@ -218,7 +218,7 @@ impl Default for AgentSessions {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StartedIds {
     pub chat_id: String,

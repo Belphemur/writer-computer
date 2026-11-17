@@ -41,7 +41,7 @@ async function runCommand(id) {
 }
 
 async function openPane() {
-  if (!(await $("[data-agent-pane]").isExisting())) await runCommand("agent-toggle-pane");
+  if (!(await $("[data-agent-pane]").isExisting())) await runCommand("agent.toggle-pane");
   await $("[data-agent-pane]").waitForExist({ timeout: 8_000 });
 }
 
@@ -175,7 +175,7 @@ describe("Native agent pane + fake claude", function () {
     await browser.reloadSession();
     await $('button[aria-label="Hide sidebar"]').waitForExist({ timeout: 30_000 });
     await openPane();
-    await runCommand("agent-history");
+    await runCommand("agent.history");
     const row = await $("[data-agent-history-row]");
     await row.waitForExist({ timeout: 15_000 });
     strictEqual(
@@ -199,7 +199,7 @@ describe("Native agent pane + fake claude", function () {
         .split("\n")
         .filter((l) => l.includes('"ev":"title"')).length;
     const before = titleCalls();
-    await runCommand("agent-history");
+    await runCommand("agent.history");
     const row = await $("[data-agent-history-row]");
     await row.waitForExist({ timeout: 15_000 });
     await row.$('button[aria-label="More actions"]').click();

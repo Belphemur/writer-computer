@@ -11,7 +11,9 @@ export type SectionBlock =
   | { type: "community-plugins" }
   | { type: "secrets" }
   | { type: "logs" }
-  | { type: "agent" };
+  | { type: "agent" }
+  /** Generated from the feature manifests: a toggle per feature with its settings under it. */
+  | { type: "features" };
 
 export const SETTINGS_GROUPS = ["General", "Community plugins"] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -56,7 +58,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: "features",
     label: "Features",
     group: "General",
-    blocks: [category("Features")],
+    blocks: [{ type: "features" }],
   },
   {
     id: "privacy",
@@ -93,6 +95,9 @@ export const THEME_CATEGORY = "Theme";
 /** Schema category rendered by `AgentSection`, not by the generic category renderer. */
 export const AGENT_CATEGORY = "Agent";
 
+/** Schema category of the features' kill switches, rendered by `FeaturesSection`. */
+export const FEATURES_CATEGORY = "Features";
+
 /** Schema categories no section claims (a new category must be added to a section above). */
 export function unassignedCategories(): string[] {
   const claimed = new Set(
@@ -102,6 +107,7 @@ export function unassignedCategories(): string[] {
   );
   claimed.add(THEME_CATEGORY);
   claimed.add(AGENT_CATEGORY);
+  claimed.add(FEATURES_CATEGORY);
   return [...new Set(SETTINGS_SCHEMA.map((d) => d.category))].filter((c) => !claimed.has(c));
 }
 

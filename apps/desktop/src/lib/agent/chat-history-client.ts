@@ -3,12 +3,13 @@
  * request/response calls with their own file, like `project-client.ts`; `client.ts` stays the one
  * module for the chat transport. Types come from the shared contract in `events.ts`.
  */
-import { invoke } from "@tauri-apps/api/core";
+import {
+  callAgent as call,
+  type AgentArgs as Args,
+  type AgentResult as Result,
+} from "../../../features/agent/web/ipc";
 import type { RegenerateOutcome } from "./auto-title";
-import type { AgentCommandMap, ChatId, ChatSummary } from "./events";
-
-type Args<K extends keyof AgentCommandMap> = AgentCommandMap[K][0];
-type Result<K extends keyof AgentCommandMap> = AgentCommandMap[K][1];
+import type { ChatId, ChatSummary } from "./events";
 
 export type ChatAction = Args<"agent_chat_action">["action"];
 
@@ -45,14 +46,14 @@ export interface ChatHistoryClient {
 }
 
 export const chatHistoryClient: ChatHistoryClient = {
-  list: (a) => invoke("agent_list_chats", a),
-  load: (chatId) => invoke("agent_load_chat", { chatId }),
-  save: (a) => invoke("agent_save_chat", a),
-  action: (chatId, action, title) => invoke("agent_chat_action", { chatId, action, title }),
-  autoTitle: (a) => invoke("agent_auto_title", a),
-  regenerateTitle: (chatId, titleModel) => invoke("agent_regenerate_title", { chatId, titleModel }),
-  replay: (chatId, maxTokens) => invoke("agent_chat_replay", { chatId, maxTokens }),
-  permissionRules: (projectPath) => invoke("agent_permission_rules", { projectPath }),
+  list: (a) => call("agent_list_chats", a),
+  load: (chatId) => call("agent_load_chat", { chatId }),
+  save: (a) => call("agent_save_chat", a),
+  action: (chatId, action, title) => call("agent_chat_action", { chatId, action, title }),
+  autoTitle: (a) => call("agent_auto_title", a),
+  regenerateTitle: (chatId, titleModel) => call("agent_regenerate_title", { chatId, titleModel }),
+  replay: (chatId, maxTokens) => call("agent_chat_replay", { chatId, maxTokens }),
+  permissionRules: (projectPath) => call("agent_permission_rules", { projectPath }),
   removePermissionRule: (projectPath, rule) =>
-    invoke("agent_remove_permission_rule", { projectPath, rule }),
+    call("agent_remove_permission_rule", { projectPath, rule }),
 };

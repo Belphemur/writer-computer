@@ -3,16 +3,16 @@
 //! window's workspace root and maps errors. Every command is `async` and does its IO through
 //! `blocking`.
 
-use super::blocking;
-use super::index::window_index;
 use crate::agent::events::NewProjectRequest;
 use crate::agent::project::{self, MakeOptions, ProjectDetail, ProjectError, ProjectUpdate};
 use crate::agent::project_context::{self, Manifest};
+use crate::commands::blocking;
+use crate::commands::index::window_index;
 use crate::error::AppError;
 use crate::state::AppState;
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Manager, Runtime};
 
 fn map_err(e: ProjectError) -> AppError {
     match e {
@@ -23,7 +23,10 @@ fn map_err(e: ProjectError) -> AppError {
     }
 }
 
-fn root_of(app: &tauri::AppHandle, webview: &tauri::Webview) -> Result<PathBuf, AppError> {
+fn root_of<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    webview: &tauri::Webview<R>,
+) -> Result<PathBuf, AppError> {
     let state = app.state::<AppState>().get_or_create(webview.label());
     let (root, _) = state.workspace_snapshot().ok_or(AppError::NoWorkspace)?;
     Ok(root)
@@ -37,10 +40,11 @@ fn now_ms() -> i64 {
 }
 
 #[tauri::command]
-pub async fn agent_list_projects(
+#[specta::specta]
+pub async fn agent_list_projects<R: Runtime>(
     include_archived: Option<bool>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Vec<ProjectDetail>, AppError> {
     let root = root_of(&app, &webview)?;
     let include = include_archived.unwrap_or(false);
@@ -48,24 +52,26 @@ pub async fn agent_list_projects(
 }
 
 #[tauri::command]
-pub async fn agent_read_project(
+#[specta::specta]
+pub async fn agent_read_project<R: Runtime>(
     path: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || project::read(&root, &path).map_err(map_err)).await
 }
 
 #[tauri::command]
-pub async fn agent_create_project(
+#[specta::specta]
+pub async fn agent_create_project<R: Runtime>(
     name: String,
     parent: Option<String>,
     description: String,
     inclusions: Vec<String>,
     instructions: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
     let request = NewProjectRequest {
@@ -84,14 +90,15 @@ pub async fn agent_create_project(
 }
 
 #[tauri::command]
-pub async fn agent_make_project(
+#[specta::specta]
+pub async fn agent_make_project<R: Runtime>(
     path: String,
     create_agents_md: bool,
     instructions: Option<String>,
     description: Option<String>,
     inclusions: Option<Vec<String>>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -109,29 +116,31 @@ pub async fn agent_make_project(
 }
 
 #[tauri::command]
-pub async fn agent_update_project(
+#[specta::specta]
+pub async fn agent_update_project<R: Runtime>(
     path: String,
     update: ProjectUpdate,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || project::update(&root, &path, &update, now_ms()).map_err(map_err)).await
 }
 
 #[tauri::command]
-pub async fn agent_archive_project(
+#[specta::specta]
+pub async fn agent_archive_project<R: Runtime>(
     path: String,
     archived: bool,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || project::archive(&root, &path, archived, now_ms()).map_err(map_err)).await
 }
 
 /// What "Make project" would do to a folder, for the dialog's convert mode.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderInspection {
     pub path: String,
@@ -143,10 +152,11 @@ pub struct FolderInspection {
 }
 
 #[tauri::command]
-pub async fn agent_inspect_folder(
+#[specta::specta]
+pub async fn agent_inspect_folder<R: Runtime>(
     path: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<FolderInspection, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
@@ -171,7 +181,7 @@ pub async fn agent_inspect_folder(
 
 /// The project's source manifest resolved through the window's vault index, with the exact text
 /// the agent receives (the project home's "Preview manifest").
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestPreview {
     pub manifest: Manifest,
@@ -179,10 +189,11 @@ pub struct ManifestPreview {
 }
 
 #[tauri::command]
-pub async fn agent_project_manifest(
+#[specta::specta]
+pub async fn agent_project_manifest<R: Runtime>(
     path: String,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<ManifestPreview, AppError> {
     blocking(move || {
         let (state, index) = window_index(&app, &webview)?;

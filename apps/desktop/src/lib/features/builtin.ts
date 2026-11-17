@@ -4,23 +4,17 @@
 // once and switching it on adds them back. Core never imports a feature by name.
 import { useSettingsStore } from "@/stores/settings-store";
 import { createFeatureHost, featureHost } from "./registry";
-import type { FeatureDefinition } from "./types";
+import { isFeatureEnabled, MANIFEST_BY_PATH } from "./manifests";
+import type { FeatureDefinition, FeatureManifest } from "./types";
 
 type Host = ReturnType<typeof createFeatureHost>;
 
-interface Manifest {
-  id: string;
-  enabledByDefault?: boolean;
+export { isFeatureEnabled };
+
+type Manifest = Pick<FeatureManifest, "id" | "enabledByDefault"> & {
   /** Activation events from `feature.json`; only `onStartup` is acted on here, the rest are lazy by use. */
   activation?: string[];
-}
-
-export const enabledKey = (id: string) => `features.${id}.enabled`;
-
-export function isFeatureEnabled(manifest: Manifest, settings: Record<string, unknown>): boolean {
-  const v = settings[enabledKey(manifest.id)];
-  return typeof v === "boolean" ? v : (manifest.enabledByDefault ?? true);
-}
+};
 
 /** Registers the enabled features that are not registered and unregisters the disabled ones; a
  * feature that lists `onStartup` is activated as it is registered. */
@@ -45,13 +39,8 @@ const definitions = import.meta.glob<{ default: FeatureDefinition }>(
   "../../../features/*/web/index.ts",
   { eager: true },
 );
-const manifests = import.meta.glob<Manifest>("../../../features/*/feature.json", {
-  eager: true,
-  import: "default",
-});
-
 export const BUILTIN_FEATURES = Object.entries(definitions).map(([path, mod]) => {
-  const manifest = manifests[path.replace("/web/index.ts", "/feature.json")];
+  const manifest = MANIFEST_BY_PATH[path.replace("/web/index.ts", "/feature.json")];
   return { manifest, definition: mod.default };
 });
 

@@ -1,21 +1,22 @@
 //! Tauri glue for the `/` menu's skills on disk (`agent/skills.rs`, Tauri-free). Resolves the
 //! window's workspace root (never taken from the UI) and does the IO through `blocking`.
 
-use super::blocking;
 use crate::agent::skills::{self, DiskSkill, SkillsError};
+use crate::commands::blocking;
 use crate::error::AppError;
 use crate::state::AppState;
-use tauri::Manager;
+use tauri::{Manager, Runtime};
 
 /// Skills in `.claude/skills` and `.agents/skills` of `project_path` (vault-relative), the vault
 /// root and, read-only, the user's home (`~/.claude/skills`, `~/.agents/skills`), de-duplicated by
 /// name. Plugin-provided skills are not here: the CLI reports those in `session-started`. Logs
 /// counts only.
 #[tauri::command]
-pub async fn agent_list_skills(
+#[specta::specta]
+pub async fn agent_list_skills<R: Runtime>(
     project_path: Option<String>,
-    webview: tauri::Webview,
-    app: tauri::AppHandle,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
 ) -> Result<Vec<DiskSkill>, AppError> {
     let state = app.state::<AppState>().get_or_create(webview.label());
     let (root, _) = state.workspace_snapshot().ok_or(AppError::NoWorkspace)?;

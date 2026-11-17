@@ -18,7 +18,7 @@ const LOCAL: &str = if cfg!(any(windows, target_os = "android")) {
     "tauri://localhost"
 };
 
-fn request(cmd: &str, body: Value) -> InvokeRequest {
+pub(super) fn request(cmd: &str, body: Value) -> InvokeRequest {
     InvokeRequest {
         cmd: cmd.into(),
         callback: CallbackFn(0),
@@ -33,13 +33,13 @@ fn request(cmd: &str, body: Value) -> InvokeRequest {
 /// The real context (capabilities and permissions) without the configured window: that one asks
 /// for a vibrancy effect, which calls AppKit on the mock runtime's fake `NSWindow` and segfaults.
 /// The `main` window is created by hand, so the ACL still sees the label it grants.
-fn test_context() -> tauri::Context<MockRuntime> {
+pub(super) fn test_context() -> tauri::Context<MockRuntime> {
     let mut context = crate::context::<MockRuntime>();
     context.config_mut().app.windows.clear();
     context
 }
 
-fn with_main_window(app: &tauri::App<MockRuntime>) {
+pub(super) fn with_main_window(app: &tauri::App<MockRuntime>) {
     WebviewWindowBuilder::new(app, "main", Default::default())
         .build()
         .unwrap();
@@ -69,7 +69,9 @@ impl<R: Runtime> Feature<R> for Healthy {
 }
 
 /// An app built like `run()`: the real context, features installed from `setup`.
-fn app_with(features: Vec<&'static dyn Feature<MockRuntime>>) -> tauri::App<MockRuntime> {
+pub(super) fn app_with(
+    features: Vec<&'static dyn Feature<MockRuntime>>,
+) -> tauri::App<MockRuntime> {
     let dir = tempfile::tempdir().unwrap();
     let settings = settings_with(dir.path(), &[]);
     let mut app = mock_builder()

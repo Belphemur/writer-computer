@@ -31,7 +31,7 @@ pub const MAX_SKILL_FILE_BYTES: u64 = 64 * 1024;
 pub const MAX_DESCRIPTION_CHARS: usize = 300;
 const MAX_NAME_CHARS: usize = 64;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DiskSkill {
     pub name: String,

@@ -12,7 +12,7 @@
  *     UI change;
  *   - an event never carries note contents the user did not send (tool output is capped).
  *
- * Tauri transport: the backend emits `agent://event` with an {@link AgentEventEnvelope}; the UI
+ * Tauri transport: the backend emits `agent:event` with an {@link AgentEventEnvelope}; the UI
  * calls the commands listed in {@link AGENT_COMMANDS}.
  */
 
@@ -264,7 +264,7 @@ export function isAgentEvent(value: unknown): value is AgentEvent {
   return typeof t === "string" && (AGENT_EVENT_TYPES as readonly string[]).includes(t);
 }
 
-/** Payload of the Tauri event `agent://event`. `seq` is per chat, starts at 1 and increases by
+/** Payload of the Tauri event `agent:event`. `seq` is per chat, starts at 1 and increases by
  *  1; a gap means the UI missed events and must call `agent_snapshot` to resynchronise. */
 export type AgentEventEnvelope = { chatId: ChatId; seq: number; event: AgentEvent };
 
@@ -420,12 +420,10 @@ export type NewProjectRequest = {
 // ---------------------------------------------------------------------------------------------
 // Tauri surface (documented here, implemented by the backend lanes)
 
-export const AGENT_EVENT_CHANNEL = "agent://event";
-
 /** command name -> [args, result]. All commands are `async` and run IO through
  *  `commands::blocking`. Errors are `AppError` (see `error.rs`). */
 export type AgentCommandMap = {
-  agent_detect_binary: [{ override?: string | null }, AgentBinaryInfo];
+  agent_detect_binary: [{ binaryOverride?: string | null }, AgentBinaryInfo];
   agent_start: [StartSessionRequest, { chatId: ChatId; sessionId: string }];
   agent_send: [{ chatId: ChatId; messageId: MessageId; text: string; context: ContextRef[] }, void];
   agent_cancel: [{ chatId: ChatId }, void];

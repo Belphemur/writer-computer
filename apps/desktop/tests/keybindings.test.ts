@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
+import "../src/lib/features/builtin";
 import { useKeyboardShortcuts } from "../src/hooks/use-keyboard-shortcuts";
 import {
   chordMatches,
@@ -148,7 +149,9 @@ function documentedGlobalChords(): string[] {
 }
 
 describe("docs/keyboard-shortcuts.md Global table", () => {
-  const registryChords = () => new Set(CORE_BINDINGS.flatMap((b) => b.keys.map(normalizeChord)));
+  // Core bindings plus what the built-in features contribute (Cmd+Shift+A is the agent's).
+  const registryChords = () =>
+    new Set(keybindings.list().flatMap((b) => b.keys.map(normalizeChord)));
 
   it("has a registry entry for every documented shortcut", () => {
     const docs = documentedGlobalChords();

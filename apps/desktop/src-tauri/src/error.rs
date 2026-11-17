@@ -28,3 +28,10 @@ impl From<std::io::Error> for AppError {
         AppError::Io(err.to_string())
     }
 }
+
+/// Over IPC an error is its message, a string (the `Serialize` impl above).
+impl specta::Type for AppError {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        <String as specta::Type>::definition(types)
+    }
+}

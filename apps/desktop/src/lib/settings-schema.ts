@@ -1,10 +1,12 @@
 /**
  * Typed registry built from the JSON sources of truth.
  *
- *   - `apps/desktop/shared/settings.schema.json`
+ *   - `apps/desktop/shared/settings.schema.json` plus each built-in feature's
+ *     `features/<id>/settings.schema.json` fragment
  *       The settings *contract*: keys, types, defaults, labels, descriptions,
- *       and CSS-var bindings. Read by Rust (`include_str!` in config.rs) and
- *       imported here statically so TypeScript can derive literal types.
+ *       and CSS-var bindings. Read by Rust (`include_str!` in config.rs, fragments
+ *       through `features::settings_fragments`) and imported here statically so
+ *       TypeScript can derive literal types for the core keys.
  *
  *   - `apps/desktop/shared/themes/<slug>/{light,dark}.json`
  *       Default theme *values*. Each preset is a folder with one JSON file
@@ -61,7 +63,24 @@ export type SettingDef = {
   [Key in Exclude<KeysOfUnion<RawEntry>, keyof RawEntry>]?: SchemaField<RawEntry, Key>;
 };
 
-export const SETTINGS_SCHEMA: readonly SettingDef[] = schemaFile.settings;
+/** The settings each built-in feature contributes, by feature id: `features/<id>/settings.schema.json`
+ *  (same entry shape as the shared file). Rust appends the same fragments in `config.rs`
+ *  (`features::settings_fragments`), so both sides read one merged schema. The Features section
+ *  renders a feature's entries under it. */
+export const FEATURE_SETTINGS: Readonly<Record<string, readonly SettingDef[]>> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob<{ settings: SettingDef[] }>("../../features/*/settings.schema.json", {
+      eager: true,
+      import: "default",
+    }),
+  ).map(([path, fragment]) => [path.split("/").slice(-2)[0], fragment.settings]),
+);
+
+/** Core entries followed by every feature's fragment. */
+export const SETTINGS_SCHEMA: readonly SettingDef[] = [
+  ...schemaFile.settings,
+  ...Object.values(FEATURE_SETTINGS).flat(),
+];
 
 // ---------- Theme primaries ----------
 

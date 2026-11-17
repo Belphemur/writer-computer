@@ -17,7 +17,11 @@ export interface FeatureManifest {
   version: string;
   description: string;
   enabledByDefault?: boolean;
-  rust?: { commands?: string[]; events?: string[] };
+  /** Activation events: `onStartup`, `onWorkspaceOpen`, `onFileKind:<kind>`, ... */
+  activation?: string[];
+  /** Shown in Settings > Features so users see what the feature costs. */
+  memory?: { level: "low" | "medium" | "high"; note: string };
+  rust?: { commands?: string[]; events?: string[]; hooks?: string[] };
 }
 
 /** Everything a feature registers while active; `dispose` tears it down in reverse order. */
@@ -65,15 +69,33 @@ export interface EditorBodyMenuContribution {
   items: (view: EditorView, event: MouseEvent) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
 }
 
+/** A pane docked at the right edge (the agent pane). The layout shows the open dock with the
+ *  highest `priority`, or the plugin pane when none is open, and reserves `width()` for it. */
+export interface DockContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  /** Higher wins when more than one dock is open. */
+  priority: number;
+  isOpen: () => boolean;
+  /** Width of the column in pixels while open. */
+  width: () => number;
+  /** Called when another pane opens over this one. */
+  close: () => void;
+  /** Notifies when `isOpen` or `width` may have changed. */
+  subscribe: (listener: () => void) => Dispose;
+  /** A dynamic import: the pane's chunk loads when the dock first opens. */
+  load: () => Promise<ComponentType>;
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
   editorExtensions?: readonly EditorExtensionContribution[];
   menus?: { "editor-body"?: readonly EditorBodyMenuContribution[] };
+  docks?: readonly DockContribution[];
   // Declared by the spec, no host registry yet (each lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
   sidebar?: readonly unknown[];
-  docks?: readonly unknown[];
 }
 
 export interface FeatureDefinition {

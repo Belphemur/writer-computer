@@ -14,6 +14,7 @@ import { listen as tauriListen } from "@tauri-apps/api/event";
 import { featureEventName } from "./events";
 import { assertFeatureId } from "./id";
 import { editorExtensionContributions } from "./editor-extensions";
+import { dockContributions } from "./docks";
 import { editorBodyMenuContributions } from "./menus";
 import { featurePaletteCommands } from "./palette";
 import type {
@@ -27,7 +28,7 @@ import type {
 export function defineFeature<T extends FeatureDefinition>(def: T): T {
   assertFeatureId(def.id);
   const c = def.contributes ?? {};
-  for (const point of ["settingsBlocks", "sidebar", "docks"] as const) {
+  for (const point of ["settingsBlocks", "sidebar"] as const) {
     if (c[point] !== undefined) {
       throw new Error(`feature ${def.id}: contribution point "${point}" has no host yet`);
     }
@@ -37,6 +38,7 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.keybindings ?? []),
     ...(c.editorExtensions ?? []),
     ...(c.menus?.["editor-body"] ?? []),
+    ...(c.docks ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
@@ -115,6 +117,7 @@ export function createFeatureHost({
     keybindings.removeOwner(owner(id));
     editorExtensionContributions.removeOwner(owner(id));
     editorBodyMenuContributions.removeOwner(owner(id));
+    dockContributions.removeOwner(owner(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -161,6 +164,9 @@ export function createFeatureHost({
         }
         for (const m of def.contributes?.menus?.["editor-body"] ?? []) {
           editorBodyMenuContributions.add(m.id, { ...m, owner: o });
+        }
+        for (const d of def.contributes?.docks ?? []) {
+          dockContributions.add(d.id, { ...d, owner: o });
         }
       } catch (e) {
         removeContributions(def.id);

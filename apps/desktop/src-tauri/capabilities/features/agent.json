@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-agent",
+  "description": "Grants the agent feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["agent:default"]
+}

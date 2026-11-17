@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub const SETTINGS_REL: &str = ".claude/settings.local.json";
 const MAX_BYTES: u64 = 1024 * 1024;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, specta::Type)]
 pub struct PermissionRules {
     pub allow: Vec<String>,
     pub deny: Vec<String>,

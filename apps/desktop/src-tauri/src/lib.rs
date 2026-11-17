@@ -109,7 +109,6 @@ fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
             // drops on the last `Arc` release, unregistering FSEvents/inotify.
             commands::plugins::stop_window_work(&handle, &label);
             commands::index::stop_window(&handle, &label);
-            features::workspace_close(&handle, &label);
             handle.state::<AppState>().remove(&label);
         }
         _ => {}
@@ -369,11 +368,6 @@ fn install_app_menu(
         )),
     )));
 
-    // Agent projects: the runner resolves cwd and the appended system prompt through this port.
-    app.state::<agent::session::AgentSessions>()
-        .ports()
-        .set_project(std::sync::Arc::new(agent::project_context::ProjectLibrary));
-
     #[cfg(target_os = "macos")]
     {
         app.manage(CliMenuItem(cli_item));
@@ -558,7 +552,6 @@ pub fn run() {
         .manage(AppState::new())
         .manage(plugin_http::StreamRegistry::default())
         .manage(plugin_proc::ProcManager::default())
-        .manage(agent::session::AgentSessions::default())
         .manage(plugin_env::PluginEnv::default())
         .manage(commands::index::IndexRegistry::default())
         .setup(|app| {
@@ -703,36 +696,6 @@ pub fn run() {
             commands::settings::reset_setting,
             commands::skills::sync_managed_skills,
             commands::skills::list_managed_skill_dirs,
-            commands::agent::agent_detect_binary,
-            commands::agent::agent_start,
-            commands::agent::agent_send,
-            commands::agent::agent_cancel,
-            commands::agent::agent_permission,
-            commands::agent::agent_set_permission_mode,
-            commands::agent::agent_set_model,
-            commands::agent::agent_close,
-            commands::agent::agent_resume,
-            commands::agent::agent_snapshot,
-            commands::agent::agent_turn_changes,
-            commands::agent::agent_revert_changes,
-            commands::agent_skills::agent_list_skills,
-            commands::agent_chats::agent_list_chats,
-            commands::agent_chats::agent_load_chat,
-            commands::agent_chats::agent_save_chat,
-            commands::agent_chats::agent_chat_action,
-            commands::agent_chats::agent_auto_title,
-            commands::agent_chats::agent_regenerate_title,
-            commands::agent_chats::agent_chat_replay,
-            commands::agent_chats::agent_permission_rules,
-            commands::agent_chats::agent_remove_permission_rule,
-            commands::agent_projects::agent_list_projects,
-            commands::agent_projects::agent_read_project,
-            commands::agent_projects::agent_create_project,
-            commands::agent_projects::agent_make_project,
-            commands::agent_projects::agent_update_project,
-            commands::agent_projects::agent_archive_project,
-            commands::agent_projects::agent_inspect_folder,
-            commands::agent_projects::agent_project_manifest,
             telemetry::telemetry_should_prompt,
             telemetry::telemetry_mark_prompted,
             telemetry::telemetry_report_declined,
@@ -786,7 +749,6 @@ pub fn run() {
             if matches!(_event, tauri::RunEvent::Exit) {
                 logging::log_exit("exit", None);
                 _app.state::<plugin_proc::ProcManager>().kill_all();
-                _app.state::<agent::session::AgentSessions>().kill_all();
                 features::exit(_app);
                 logging::shutdown();
             }

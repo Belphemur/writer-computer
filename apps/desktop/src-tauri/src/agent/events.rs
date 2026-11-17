@@ -14,7 +14,7 @@ pub type MessageId = String;
 pub type ToolCallId = String;
 pub type PermissionRequestId = String;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum TurnFinishReason {
     Completed,
@@ -24,7 +24,7 @@ pub enum TurnFinishReason {
     Budget,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ToolOutcome {
     Ok,
@@ -32,7 +32,7 @@ pub enum ToolOutcome {
     Rejected,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionResolution {
     Allowed,
@@ -40,14 +40,14 @@ pub enum PermissionResolution {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum UsageScope {
     Message,
     Turn,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThinkingPhase {
     Start,
@@ -55,7 +55,7 @@ pub enum ThinkingPhase {
     End,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentErrorKind {
     BinaryNotFound,
@@ -70,7 +70,7 @@ pub enum AgentErrorKind {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionEndReason {
     Exit,
@@ -81,7 +81,7 @@ pub enum SessionEndReason {
 
 /// The CLI's `--permission-mode` choices minus `bypassPermissions`, which Writer never offers.
 /// (Wire names are the CLI's own camelCase, not kebab-case.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum AgentPermissionMode {
     #[serde(rename = "manual")]
     Manual,
@@ -107,7 +107,7 @@ impl AgentPermissionMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionPersist {
     Session,
@@ -115,7 +115,7 @@ pub enum PermissionPersist {
     AcceptEdits,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionDecision {
     Allow,
@@ -123,7 +123,7 @@ pub enum PermissionDecision {
 }
 
 /// Backend -> UI. One JSON object per event, `type` is the discriminant.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
@@ -170,6 +170,7 @@ pub enum AgentEvent {
     },
     ToolCallInput {
         tool_call_id: ToolCallId,
+        #[specta(type = specta_typescript::Unknown)]
         input: Value,
     },
     ToolCallFinished {
@@ -184,9 +185,11 @@ pub enum AgentEvent {
         tool_call_id: Option<ToolCallId>,
         tool: String,
         display_name: Option<String>,
+        #[specta(type = specta_typescript::Unknown)]
         input: Value,
         description: Option<String>,
         decision_reason: Option<String>,
+        #[specta(type = Vec<specta_typescript::Unknown>)]
         suggestions: Vec<Value>,
     },
     PermissionResolved {
@@ -243,7 +246,7 @@ pub enum AgentEvent {
 // -------------------------------------------------------------------------------------------
 // Turn changes (the "Changes" card; Tauri-free logic in `changes.rs`)
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ChangeStatus {
     Added,
@@ -253,7 +256,7 @@ pub enum ChangeStatus {
 }
 
 /// One changed file, as sent in `turn-changes` and stored in the chat note (paths and counts only).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChangeSummary {
     /// Vault-relative, forward slashes. For a rename, the new path.
@@ -269,7 +272,7 @@ pub struct FileChangeSummary {
     pub no_diff: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnChangesSummary {
     /// Opaque; unique per app run, so a stored summary never matches a later snapshot by accident.
@@ -280,7 +283,7 @@ pub struct TurnChangesSummary {
     pub bash: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiffRowKind {
     Context,
@@ -288,7 +291,7 @@ pub enum DiffRowKind {
     Del,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffRow {
     pub kind: DiffRowKind,
@@ -300,7 +303,7 @@ pub struct DiffRow {
 }
 
 /// Whether "Undo" can run now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum UndoState {
     Available,
@@ -311,7 +314,7 @@ pub enum UndoState {
     Reverted,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChange {
     #[serde(flatten)]
@@ -324,7 +327,7 @@ pub struct FileChange {
 }
 
 /// Reply of `agent_turn_changes`: the summary plus every diff.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnChanges {
     pub turn_id: String,
@@ -333,7 +336,7 @@ pub struct TurnChanges {
     pub bash: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum RevertResult {
     Reverted,
@@ -343,7 +346,7 @@ pub enum RevertResult {
 }
 
 /// Reply item of `agent_revert_changes`, one per requested path.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RevertOutcome {
     pub path: String,
@@ -352,8 +355,8 @@ pub struct RevertOutcome {
     pub message: Option<String>,
 }
 
-/// Payload of the Tauri event `agent://event`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Payload of the Tauri event `agent:event`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentEventEnvelope {
     pub chat_id: ChatId,
@@ -361,12 +364,12 @@ pub struct AgentEventEnvelope {
     pub event: AgentEvent,
 }
 
-pub const AGENT_EVENT_CHANNEL: &str = "agent://event";
+pub const AGENT_EVENT_CHANNEL: &str = "agent:event";
 
 // -------------------------------------------------------------------------------------------
 // Context references
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(
     tag = "kind",
     rename_all = "kebab-case",
@@ -398,7 +401,7 @@ pub enum ProjectSource {
 
 /// Data types (`ContextRef`, `ProjectSource`) use `kind` as their discriminant; events and
 /// commands use `type`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(
     tag = "kind",
     rename_all = "kebab-case",
@@ -439,7 +442,7 @@ pub enum ContextRef {
 // -------------------------------------------------------------------------------------------
 // Commands (UI -> backend)
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
@@ -479,7 +482,7 @@ pub enum AgentCommand {
 // -------------------------------------------------------------------------------------------
 // Sessions, chats, projects
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentSessionState {
     Idle,
@@ -492,7 +495,7 @@ pub enum AgentSessionState {
     Ended,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum Effort {
     Low,
@@ -514,7 +517,7 @@ impl Effort {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSettings {
     pub binary_path: Option<String>,
@@ -529,7 +532,7 @@ pub struct AgentSettings {
     pub subagent_model: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StartSessionRequest {
     pub chat_id: ChatId,
@@ -541,7 +544,7 @@ pub struct StartSessionRequest {
 
 /// Who chose a chat's title: nobody yet (the first message, cut), the automatic titler, or the
 /// user (a rename always wins and is never overwritten).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum TitleSource {
     #[default]
@@ -550,7 +553,7 @@ pub enum TitleSource {
     User,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSummary {
     pub chat_id: ChatId,
@@ -570,7 +573,7 @@ pub struct ChatSummary {
     pub title_source: TitleSource,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectInfo {
     pub path: String,
@@ -586,7 +589,7 @@ pub struct ProjectInfo {
     pub has_claude_md: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NewProjectRequest {
     pub name: String,

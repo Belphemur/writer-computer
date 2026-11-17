@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 pub const VERIFIED_VERSION: &str = "2.1.325";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum BinarySource {
     Override,
@@ -31,7 +31,7 @@ pub enum BinarySource {
 
 /// Mirror of `AgentBinaryInfo` in `events.ts`, plus `searched` (the directories tried when
 /// nothing was found; `[]` when found).
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentBinaryInfo {
     pub found: bool,
