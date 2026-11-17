@@ -47,3 +47,5 @@ Keep one ADR per significant architecture decision in `docs/decisions/`, using t
 - Specs only (status quo): no single list of decisions, decisions are amended in place and lose their date.
 - Numbered ADRs (`0001-...`, the skill default): numbers say nothing about when a decision was made and collide across parallel worktrees (`docs/workflows/worktrees.md`); a date prefix sorts the same way and is meaningful for backfilled records.
 - A wiki or Notion page: drifts from the code and is not versioned with it.
+
+2026-11-17: the consistency check moved to `scripts/check-adr.cjs` (repo-owned); the `adr-skill` itself is now installed from `skills-lock.json` and not committed.

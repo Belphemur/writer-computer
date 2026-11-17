@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "$comment": "Third-party skills under .agents/skills ship CommonJS scripts; the repo root is type=module. Not a package."
+}

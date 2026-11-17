@@ -8,7 +8,7 @@
  *   (when the index is a "| Date | Decision | Status | Links |" table) match the file
  * - the table is ordered by date
  *
- * Usage: node check_adr.js [--dir docs/decisions] [--repo-root .]
+ * Usage: node scripts/check-adr.cjs [--dir docs/decisions] [--repo-root .]
  * Exit code 1 when a problem is found.
  */
 

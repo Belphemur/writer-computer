@@ -39,3 +39,10 @@ apps/desktop/e2e/.cache/
 # QA recordings (large binaries; see the report's README)
 SPECs/Agent/qa-typing-pass-2026-10-04/videos/
 .vitest/
+
+# Agent skills: third-party skills are installed from skills-lock.json
+# (`npx skills experimental_install`) and not committed. Only our own skills are tracked:
+# add a `!` line here when creating one.
+.agents/skills/*
+!.agents/skills/engineering-philosophy/
+.claude/skills/*
