@@ -351,6 +351,7 @@ export function AgentSection() {
           "agent.restore-chats",
           "agent.orchestrate",
           "agent.show-thinking",
+          "agent.auto-reload",
           "agent.pane-width",
           "agent.pane-open",
         ]}

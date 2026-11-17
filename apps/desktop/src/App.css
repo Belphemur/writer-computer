@@ -154,6 +154,31 @@
   --tab-active-bg: color-mix(in srgb, var(--fg-base) calc(var(--contrast) * 34%), transparent);
 }
 
+/* Project accent colors (`shared/project-colors.json` lists the names; the agent's ProjectIcon
+   and swatches read `--project-color-<name>`). Dark values are the default, light mode darkens
+   them for contrast on a light surface. */
+:root {
+  --project-color-red: #ff6b6b;
+  --project-color-orange: #ff9f43;
+  --project-color-yellow: #f2c94c;
+  --project-color-green: #4cd68a;
+  --project-color-teal: #2ec4b6;
+  --project-color-blue: #5aa9ff;
+  --project-color-purple: #b48cff;
+  --project-color-pink: #ff7eb6;
+}
+
+[data-theme="light"] {
+  --project-color-red: #d63a3a;
+  --project-color-orange: #d9730d;
+  --project-color-yellow: #a87a00;
+  --project-color-green: #1f9d57;
+  --project-color-teal: #0f8f84;
+  --project-color-blue: #1f6fd1;
+  --project-color-purple: #7b4dd6;
+  --project-color-pink: #cf3f86;
+}
+
 /* App-wide focus indicator for keyboard navigation */
 :focus-visible {
   outline: 2px solid var(--accent, rgba(100, 149, 237, 0.7));

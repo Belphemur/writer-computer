@@ -52,6 +52,10 @@ export function useAgentChat(chatId: ChatId | null) {
 export function useChatTitle(chatId: ChatId) {
   return useAgentStore((s) => s.chats[chatId]?.title ?? "");
 }
+/** The vault-relative project folder the chat runs in, null for the vault root. */
+export function useChatProjectPath(chatId: ChatId) {
+  return useAgentStore((s) => s.chats[chatId]?.projectPath ?? null);
+}
 export function useChatState(chatId: ChatId) {
   return useAgentStore((s) => s.chats[chatId]?.state ?? "idle");
 }

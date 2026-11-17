@@ -36,6 +36,7 @@ import {
   newNoteState,
   recordEvents,
   recordSend,
+  recordSteer,
 } from "@features/agent/web/lib/chat-persist";
 import { createChatSaver } from "@features/agent/web/lib/chat-saver";
 import type { AgentEvent, ChatSummary } from "@features/agent/web/lib/events";
@@ -110,6 +111,26 @@ describe("chat-persist: what the note holds", () => {
     expect(r.finished).toBe(false);
     expect(r.note.messages).toEqual([]);
     expect(r.note.pending.length).toBe(events.length);
+  });
+
+  it("a steer is a marked user message placed after the assistant message of the turn it cut", () => {
+    let note = newNoteState("c", null, 0);
+    note = recordSend(note, { messageId: "m1", text: "go", context: [], ts: 1 });
+    const events = goldens["steer-now-text"]!;
+    const firstEnd = events.findIndex((e) => e.type === "turn-finished");
+    note = recordEvents(note, events.slice(0, 2), 2).note;
+    note = recordSteer(note, { messageId: "m2", text: "also this", context: [], ts: 3 });
+    expect(note.pending).toHaveLength(2); // the events before the steer are not lost
+    expect(note.messages).toHaveLength(1); // not yet: the cut turn's answer comes first
+    note = recordEvents(note, events.slice(2), 4).note;
+    expect(note.messages.map((m) => `${m.role}:${m.id}${m.steer ? ":steer" : ""}`)).toEqual([
+      "user:m1",
+      "assistant:m1-a",
+      "user:m2:steer",
+      "assistant:m2-a",
+    ]);
+    expect(note.messages[1]!.reason).toBe("interrupted");
+    expect(firstEnd).toBeGreaterThan(1);
   });
 
   it("keeps a renamed title and the session id of a resumed chat", () => {

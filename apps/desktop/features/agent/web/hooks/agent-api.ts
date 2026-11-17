@@ -45,6 +45,8 @@ export function openAgentHistory() {
 }
 /** History "Regenerate title": any chat, open or not; an open chat updates live. */
 export const regenerateAgentChatTitle = regenerateChatTitle;
+/** "Reload session" on the active chat (header button, palette, `/reload` runs the same store path). */
+export const reloadAgentSession = () => useAgentStore.getState().reloadSession();
 export const closeAgentChat = (id: ChatId) => useAgentStore.getState().closeChat(id);
 export const selectAgentChat = (id: ChatId) => useAgentStore.getState().selectChat(id);
 export const cycleAgentChat = (d: 1 | -1) => useAgentStore.getState().cycleChat(d);
@@ -53,6 +55,9 @@ export const setAgentDraft = (id: ChatId, patch: Partial<Draft>) =>
 export const addAgentDraftImages = (id: ChatId, refs: readonly ContextRef[]) =>
   useAgentStore.getState().addDraftImages(id, refs);
 export const sendAgentMessage = (text: string) => useAgentStore.getState().sendMessage(text);
+/** Cmd+Enter and "Send now": steers the text (or, with none, the queued messages) into the
+ *  running turn. */
+export const sendAgentNow = (text: string) => useAgentStore.getState().sendNow(text);
 export const stopAgent = () => useAgentStore.getState().stop();
 export const removeQueuedMessage = (id: ChatId) => useAgentStore.getState().removeQueued(id);
 export const retryAgent = () => useAgentStore.getState().retry();

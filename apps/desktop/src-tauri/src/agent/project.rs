@@ -33,6 +33,39 @@ pub const KEY_EXCLUSIONS: &str = "copilot-project-exclusions";
 pub const KEY_WEB_URLS: &str = "copilot-project-web-urls";
 pub const KEY_YOUTUBE_URLS: &str = "copilot-project-youtube-urls";
 pub const KEY_AGENT_MODE: &str = "writer-agent-mode";
+pub const KEY_ICON: &str = "writer-project-icon";
+pub const KEY_COLOR: &str = "writer-project-color";
+
+#[derive(Deserialize)]
+struct ProjectColors {
+    colors: Vec<String>,
+}
+
+/// The accent colors a project can have: `shared/project-colors.json`, the one list (the TS side
+/// imports the same file; each name is a `--project-color-<name>` theme token).
+pub fn project_colors() -> &'static [String] {
+    static COLORS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    COLORS.get_or_init(|| {
+        serde_json::from_str::<ProjectColors>(include_str!("../../../shared/project-colors.json"))
+            .expect("project-colors.json is malformed")
+            .colors
+    })
+}
+
+const MAX_ICON_CHARS: usize = 64;
+
+/// A Hugeicons export name (`Rocket01Icon`). Rust cannot list the ~4,000 names, so it checks the
+/// shape; the web side shows the default icon for a name the set does not have.
+fn valid_icon(name: &str) -> bool {
+    name.len() <= MAX_ICON_CHARS
+        && name.len() > "Icon".len()
+        && name.ends_with("Icon")
+        && name.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+fn valid_color(name: &str) -> bool {
+    project_colors().iter().any(|c| c == name)
+}
 
 /// `project.md` larger than this is not read (a project file is a few lines).
 const MAX_PROJECT_MD_BYTES: u64 = 256 * 1024;
@@ -98,6 +131,10 @@ pub struct ProjectDetail {
     pub youtube_urls: Vec<String>,
     /// `writer-agent-mode` (`manual` or `acceptEdits`), when set.
     pub agent_mode: Option<String>,
+    /// `writer-project-icon`: a Hugeicons export name, when set and well formed.
+    pub icon: Option<String>,
+    /// `writer-project-color`: one of `shared/project-colors.json`, when set and known.
+    pub color: Option<String>,
     /// Malformed values found in `project.md`.
     pub warnings: Vec<String>,
 }
@@ -125,6 +162,10 @@ pub struct ProjectUpdate {
     pub youtube_urls: Option<Vec<String>>,
     /// `Some("")` removes the key.
     pub agent_mode: Option<String>,
+    /// A Hugeicons export name; `Some("")` removes the key.
+    pub icon: Option<String>,
+    /// A name from `shared/project-colors.json`; `Some("")` removes the key.
+    pub color: Option<String>,
     pub touch_last_used: bool,
 }
 
@@ -402,6 +443,26 @@ pub fn parse_project_md(
             warnings.push(format!("{KEY_AGENT_MODE} must be manual or acceptEdits"));
         }
     }
+    let icon = text_value(props.get(KEY_ICON))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let icon = icon.filter(|i| {
+        let ok = valid_icon(i);
+        if !ok {
+            warnings.push(format!("{KEY_ICON} is not an icon name"));
+        }
+        ok
+    });
+    let color = text_value(props.get(KEY_COLOR))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let color = color.filter(|c| {
+        let ok = valid_color(c);
+        if !ok {
+            warnings.push(format!("{KEY_COLOR} is not one of the project colors"));
+        }
+        ok
+    });
     let info = ProjectInfo {
         path: folder_rel.to_string(),
         id: id.trim().to_string(),
@@ -421,6 +482,8 @@ pub fn parse_project_md(
         web_urls: parse_urls(&text_value(props.get(KEY_WEB_URLS)).unwrap_or_default()),
         youtube_urls: parse_urls(&text_value(props.get(KEY_YOUTUBE_URLS)).unwrap_or_default()),
         agent_mode,
+        icon,
+        color,
         warnings,
     }))
 }
@@ -636,6 +699,30 @@ fn new_id() -> String {
 
 fn set(text: &str, key: &str, value: Json) -> Res<String> {
     Ok(patch::set_property(text, key, &value, None)?)
+}
+
+/// Set `key` to `value` when `valid`, remove it for the empty string, else refuse. Removing a key
+/// that is not there is not an error.
+fn set_or_remove(
+    text: &str,
+    key: &str,
+    value: &str,
+    valid: fn(&str) -> bool,
+    expected: &str,
+) -> Res<String> {
+    if value.is_empty() {
+        return match patch::remove_property(text, key) {
+            Ok(t) => Ok(t),
+            Err(PatchError::NotFound(_)) => Ok(text.to_string()),
+            Err(e) => Err(e.into()),
+        };
+    }
+    if !valid(value) {
+        return Err(ProjectError::Invalid(format!(
+            "{key} must be {expected}, not {value}"
+        )));
+    }
+    set(text, key, Json::from(value))
 }
 
 /// `project.md` text for a brand new project.
@@ -887,6 +974,24 @@ pub fn update(root: &Path, rel: &str, up: &ProjectUpdate, now_ms: i64) -> Res<Pr
                 )))
             }
         }
+    }
+    if let Some(i) = &up.icon {
+        next = set_or_remove(
+            &next,
+            KEY_ICON,
+            i,
+            valid_icon,
+            "an icon name like Rocket01Icon",
+        )?;
+    }
+    if let Some(c) = &up.color {
+        next = set_or_remove(
+            &next,
+            KEY_COLOR,
+            c,
+            valid_color,
+            "one of the project colors",
+        )?;
     }
     if up.touch_last_used {
         next = set(&next, KEY_LAST_USED, Json::from(now_ms))?;
@@ -1276,6 +1381,87 @@ custom: value\n---\nfree notes\n";
         assert!(matches!(&s[1], ProjectSource::Url { .. }));
         assert!(matches!(&s[2], ProjectSource::Property { .. }));
         assert_eq!(u.len(), 5, "{u:?}");
+    }
+
+    #[test]
+    fn icon_and_color_round_trip_and_leave_copilot_keys_alone() {
+        let (_d, root) = vault();
+        let dir = root.join("I");
+        std::fs::create_dir_all(&dir).unwrap();
+        let head = "---\ncopilot-project-id: id1\ncopilot-project-name: I\ncopilot-project-description: 'keep me'   # c\ncopilot-project-inclusions: \"Notes/,#client\"\n";
+        std::fs::write(dir.join("project.md"), format!("{head}---\nbody\n")).unwrap();
+        let up = ProjectUpdate {
+            icon: Some("Rocket01Icon".into()),
+            color: Some("blue".into()),
+            ..Default::default()
+        };
+        let p = update(&root, "I", &up, NOW).unwrap();
+        assert_eq!(p.icon.as_deref(), Some("Rocket01Icon"));
+        assert_eq!(p.color.as_deref(), Some("blue"));
+        let after = std::fs::read_to_string(dir.join("project.md")).unwrap();
+        assert!(after.starts_with(head), "{after}");
+        assert!(after.contains("writer-project-icon: Rocket01Icon"));
+        assert!(after.contains("writer-project-color: blue"));
+        assert!(after.ends_with("---\nbody\n"));
+        // reset removes both keys and restores the original bytes
+        let up = ProjectUpdate {
+            icon: Some(String::new()),
+            color: Some(String::new()),
+            ..Default::default()
+        };
+        let p = update(&root, "I", &up, NOW).unwrap();
+        assert_eq!((p.icon, p.color), (None, None));
+        let after = std::fs::read_to_string(dir.join("project.md")).unwrap();
+        assert_eq!(after, format!("{head}---\nbody\n"));
+        // removing again is a no-op
+        assert!(update(&root, "I", &up, NOW).is_ok());
+    }
+
+    #[test]
+    fn unknown_color_and_bad_icon_are_rejected() {
+        let (_d, root) = vault();
+        create(&root, &req("Pick"), NOW).unwrap();
+        for up in [
+            ProjectUpdate {
+                color: Some("#ff0000".into()),
+                ..Default::default()
+            },
+            ProjectUpdate {
+                color: Some("chartreuse".into()),
+                ..Default::default()
+            },
+            ProjectUpdate {
+                icon: Some("rocket".into()),
+                ..Default::default()
+            },
+            ProjectUpdate {
+                icon: Some("../Icon".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(matches!(
+                update(&root, "Projects/Pick", &up, NOW),
+                Err(ProjectError::Invalid(_))
+            ));
+        }
+        let p = read(&root, "Projects/Pick").unwrap();
+        assert_eq!((p.icon, p.color), (None, None));
+    }
+
+    #[test]
+    fn a_hand_written_bad_value_is_a_warning_not_a_crash() {
+        let text = "---\ncopilot-project-id: x\nwriter-project-color: chartreuse\nwriter-project-icon: nope\n---\n";
+        let d = parse_project_md(text, "X", Path::new("/nonexistent"))
+            .unwrap()
+            .unwrap();
+        assert_eq!((d.icon.as_deref(), d.color.as_deref()), (None, None));
+        assert_eq!(d.warnings.len(), 2);
+    }
+
+    #[test]
+    fn the_color_list_is_the_shared_one() {
+        assert_eq!(project_colors().len(), 8);
+        assert!(project_colors().iter().all(|c| valid_color(c)));
     }
 
     #[test]

@@ -146,6 +146,24 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
     states.set(chatId, "idle");
   }
 
+  const send: AgentClient["send"] = async ({ chatId, text }) => {
+    const scenario = pick(text);
+    const turns = splitTurns(opts.goldens[scenario]);
+    let events: AgentEvent[];
+    if (scenario === "multi-turn-rule") {
+      const idx = multiCursor.get(chatId) ?? 0;
+      events = turns[idx % turns.length]!;
+      multiCursor.set(chatId, idx + 1);
+    } else events = turns.flat();
+    states.set(chatId, "running");
+    const prev = running.get(chatId) ?? Promise.resolve();
+    const p = prev.then(() => play(chatId, events));
+    running.set(chatId, p);
+    void p.finally(() => {
+      if (running.get(chatId) === p) running.delete(chatId);
+    });
+  };
+
   return {
     detectBinary: async () => ({
       found: true,
@@ -157,23 +175,9 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
       account: null,
     }),
     start: async ({ chatId }) => ({ chatId, sessionId: "00000000-0000-4000-8000-000000000001" }),
-    send: async ({ chatId, text }) => {
-      const scenario = pick(text);
-      const turns = splitTurns(opts.goldens[scenario]);
-      let events: AgentEvent[];
-      if (scenario === "multi-turn-rule") {
-        const idx = multiCursor.get(chatId) ?? 0;
-        events = turns[idx % turns.length]!;
-        multiCursor.set(chatId, idx + 1);
-      } else events = turns.flat();
-      states.set(chatId, "running");
-      const prev = running.get(chatId) ?? Promise.resolve();
-      const p = prev.then(() => play(chatId, events));
-      running.set(chatId, p);
-      void p.finally(() => {
-        if (running.get(chatId) === p) running.delete(chatId);
-      });
-    },
+    send,
+    // The demo has no live turn to join: a steer plays as a message that follows the running one.
+    steer: send,
     cancel: async ({ chatId }) => {
       cancelled.add(chatId);
       const m = waiters.get(chatId);
@@ -190,6 +194,7 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
     },
     setPermissionMode: async () => {},
     setModel: async () => {},
+    reload: async () => "started",
     listSkills: async () => [
       {
         name: "summarize-note",

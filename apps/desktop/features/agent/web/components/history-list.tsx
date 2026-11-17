@@ -28,6 +28,7 @@ import type { ChatSummary } from "@features/agent/web/lib/events";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { ChatRowMenu, type RowMenuItem } from "./chat-row-menu";
 import { Spinner } from "./agent-icon";
+import { ProjectPathIcon } from "./project-icon";
 
 function describe(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -441,7 +442,8 @@ export function HistoryList({
         )}
         {groups.map((g) => (
           <section key={g.projectPath ?? ""} data-agent-history-group={g.projectPath ?? ""}>
-            <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium text-[var(--text-muted)] uppercase">
+            <h2 className="flex items-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-medium text-[var(--text-muted)] uppercase">
+              {g.projectPath !== null && <ProjectPathIcon path={g.projectPath} size={12} />}
               {g.label}
             </h2>
             <ul>

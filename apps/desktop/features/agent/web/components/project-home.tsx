@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { openPath } from "@/lib/link-activation";
 import {
   openNewProjectDialog,
@@ -14,7 +14,9 @@ import {
 } from "@features/agent/web/lib/project-client";
 import { sourceKindLabel } from "@features/agent/web/lib/project-sources";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
-import { useProjectsStore } from "@features/agent/web/stores/projects-store";
+import { useProjectAppearance, useProjectsStore } from "@features/agent/web/stores/projects-store";
+import { ProjectIconPopover } from "./project-icon-picker";
+import { ProjectIcon } from "./project-icon";
 
 function describe(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -47,6 +49,9 @@ export function ProjectHome({
   const [error, setError] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const appearance = useProjectAppearance(projectPath);
 
   const load = useCallback(
     async (isStale: () => boolean = () => false) => {
@@ -75,6 +80,7 @@ export function ProjectHome({
     setManifest(null);
     setError(null);
     setConfirmArchive(false);
+    setPickerOpen(false);
     let stale = false;
     void load(() => stale);
     return () => {
@@ -131,9 +137,28 @@ export function ProjectHome({
 
   return (
     <div data-agent-slot="project-home" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
-        {project?.name ?? projectPath.split("/").pop()}
-      </h2>
+      <div ref={headerRef} className="relative flex items-center gap-2">
+        <ProjectIcon icon={appearance.icon} color={appearance.color} size={18} />
+        <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+          {project?.name ?? projectPath.split("/").pop()}
+        </h2>
+        <button
+          type="button"
+          className={BUTTON}
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen((o) => !o)}
+        >
+          Change icon…
+        </button>
+        {pickerOpen ? (
+          <ProjectIconPopover
+            projectPath={projectPath}
+            anchorRef={headerRef}
+            onClose={() => setPickerOpen(false)}
+          />
+        ) : null}
+      </div>
       <p className="truncate text-[12px] text-[var(--text-muted)]" title={projectPath}>
         {projectPath}
       </p>

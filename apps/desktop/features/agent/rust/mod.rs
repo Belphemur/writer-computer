@@ -59,6 +59,14 @@ impl<R: Runtime> Feature<R> for Agent {
         if !app.manage(state) {
             return Err("AgentSessions is already managed".into());
         }
+        // Config files the running CLIs read at start (skills, `.mcp.json`, settings, CLAUDE.md):
+        // the app's one file watcher reports them, `agent::config_sync` decides what is stale.
+        let handle = app.clone();
+        crate::watcher::observe_paths(Box::new(move |label, root, paths| {
+            if let Some(s) = sessions(&handle) {
+                s.config_paths_changed(label, root, paths);
+            }
+        }));
         Ok(())
     }
 

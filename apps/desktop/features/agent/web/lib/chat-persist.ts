@@ -25,6 +25,9 @@ export type NoteState = {
   extraFrontmatter: string;
   /** Events of the turn in flight, folded into the assistant message at `turn-finished`. */
   pending: AgentEvent[];
+  /** Steers sent into the turn in flight: they join the note after that turn's assistant message
+   *  (the order they read in), when it closes. */
+  steers?: ChatNoteMessage[];
 };
 
 export function newNoteState(chatId: string, projectPath: string | null, now: number): NoteState {
@@ -47,13 +50,12 @@ export function noteStateFromDoc(doc: ChatNoteDoc): NoteState {
   };
 }
 
-export function recordSend(
-  note: NoteState,
-  msg: { messageId: string; text: string; context: ContextRef[]; ts: number },
-): NoteState {
+type SentMessage = { messageId: string; text: string; context: ContextRef[]; ts: number };
+
+function userNoteMessage(msg: SentMessage): ChatNoteMessage {
   const context = contextLine(msg.context);
   const images = msg.context.flatMap((r) => (r.kind === "image" ? [r.path] : []));
-  const user: ChatNoteMessage = {
+  return {
     role: "user",
     id: msg.messageId,
     at: msg.ts,
@@ -61,7 +63,16 @@ export function recordSend(
     ...(context ? { context } : {}),
     ...(images.length > 0 ? { images } : {}),
   };
-  return { ...note, messages: [...note.messages, user], pending: [] };
+}
+
+export function recordSend(note: NoteState, msg: SentMessage): NoteState {
+  return { ...note, messages: [...note.messages, userNoteMessage(msg)], pending: [] };
+}
+
+/** A message sent into the running turn: a user message marked `steer`, placed after the
+ *  assistant message of the turn it cut short (the events in flight close into that one). */
+export function recordSteer(note: NoteState, msg: SentMessage): NoteState {
+  return { ...note, steers: [...(note.steers ?? []), { ...userNoteMessage(msg), steer: true }] };
 }
 
 /** Adds `events` to the turn in flight; a `turn-finished` closes it into an assistant message.
@@ -93,9 +104,12 @@ export function recordEvents(
     }
     const fold = foldAssistantEvents(pending);
     const lastUser = [...next.messages].reverse().find((m) => m.role === "user");
+    // a steer the CLI ran as its own turn gives a second assistant message after the same user
+    const base = `${lastUser?.id ?? `m${next.messages.length}`}-a`;
+    const taken = next.messages.filter((m) => m.id.startsWith(base)).length;
     const assistant: ChatNoteMessage = {
       role: "assistant",
-      id: `${lastUser?.id ?? `m${next.messages.length}`}-a`,
+      id: taken === 0 ? base : `${base}${taken + 1}`,
       at: now,
       text: fold.text,
       ...(fold.reason ? { reason: fold.reason } : {}),
@@ -105,7 +119,8 @@ export function recordEvents(
     next = {
       ...next,
       pending: [],
-      messages: [...next.messages, assistant],
+      steers: [],
+      messages: [...next.messages, assistant, ...(next.steers ?? [])],
       meta: {
         ...next.meta,
         usage: {

@@ -140,6 +140,11 @@ export function ComposerActions({
         <button
           type="button"
           aria-label={busy ? "Queue message" : "Send"}
+          title={
+            busy && chat.pendingPermissions.length === 0
+              ? "Enter queues the message, Cmd+Enter sends it now (stops the current step)"
+              : "Send"
+          }
           disabled={!canSend}
           onClick={onSend}
           className="rounded-md bg-[var(--accent)] p-1.5 text-[var(--bg-base)] hover:opacity-90 disabled:opacity-40"

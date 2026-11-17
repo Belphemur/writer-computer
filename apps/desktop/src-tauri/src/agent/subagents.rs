@@ -56,6 +56,15 @@ pub fn tier_model(tier: &str, setting: Option<&str>) -> Option<String> {
     (!chosen.eq_ignore_ascii_case(INHERIT)).then_some(chosen)
 }
 
+/// The `model` of a role's `--agents` entry (`None`: inherit the chat's), from its tier setting.
+fn role_model(
+    role: &super::roles::Role,
+    tier_models: &std::collections::BTreeMap<String, Option<String>>,
+) -> Option<String> {
+    let setting = tier_models.get(&role.tier).and_then(|m| m.as_deref());
+    tier_model(&role.tier, setting)
+}
+
 /// The tools that launch a sub-agent (`Task` in older CLIs, `Agent` now) and the input key that
 /// names the sub-agent type.
 const LAUNCH_TOOLS: [&str; 2] = ["Agent", "Task"];
@@ -72,10 +81,48 @@ pub fn launch_label(input: &Value) -> Option<String> {
     Some(super::roles::role_label(name))
 }
 
+/// Who a launch call starts and the model it runs (the `subagent-started` event).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchInfo {
+    /// The registry role id; `None` for a sub-agent type Writer does not define.
+    pub role: Option<String>,
+    /// The type as the call named it.
+    pub name: String,
+    pub model: Option<String>,
+}
+
+/// The launch call's role and model, resolved the way [`ClaudeAdapter::render`] resolved them
+/// when the process started: the role's tier through `tier_models`; a tier that inherits gets
+/// `inherited` (the chat's model). A type that is not a Writer role keeps `model: None` (its own
+/// definition decides, and Writer does not know it). `None` when the input names no type.
+pub fn resolve_launch(
+    input: &Value,
+    tier_models: &std::collections::BTreeMap<String, Option<String>>,
+    inherited: Option<&str>,
+) -> Option<LaunchInfo> {
+    let name = input.get(SUBAGENT_TYPE_KEY)?.as_str()?.to_string();
+    let role = super::roles::registry()
+        .roles
+        .iter()
+        .find(|r| backend_name(&r.id) == name);
+    let model =
+        role.and_then(|r| role_model(r, tier_models).or_else(|| inherited.map(String::from)));
+    Some(LaunchInfo {
+        role: role.map(|r| r.id.clone()),
+        name,
+        model,
+    })
+}
+
 /// The adapter for the `claude` CLI.
 pub struct ClaudeAdapter;
 
 impl RoleAdapter for ClaudeAdapter {
+    /// The CLI reads all of them once, at start.
+    fn restart_on_config_change(&self) -> bool {
+        true
+    }
+
     fn capability(&self, capability: &str) -> CapabilitySupport {
         match capability {
             "read" => CapabilitySupport::Tools(&["Read"]),
@@ -108,8 +155,7 @@ impl RoleAdapter for ClaudeAdapter {
                 "tools".into(),
                 json!(role_tools(self, role, input.writer_cli)),
             );
-            let setting = input.tier_models.get(&role.tier).and_then(|m| m.as_deref());
-            if let Some(model) = tier_model(&role.tier, setting) {
+            if let Some(model) = role_model(role, input.tier_models) {
                 def.insert("model".into(), json!(model));
             }
             agents.insert(backend_name(&role.id), Value::Object(def));
@@ -263,6 +309,49 @@ mod tests {
             Some("worker")
         );
         assert_eq!(launch_label(&json!({"description": "x"})), None);
+    }
+
+    #[test]
+    fn a_launch_resolves_its_role_and_the_model_of_its_tier() {
+        let input = json!({"subagent_type": "writer-explorer"});
+        let tiers = models(&[("cheap", " claude-haiku-4-5 ")]);
+        let got = resolve_launch(&input, &tiers, Some("chat-model")).unwrap();
+        assert_eq!(got.role.as_deref(), Some("explorer"));
+        assert_eq!(got.name, "writer-explorer");
+        assert_eq!(got.model.as_deref(), Some("claude-haiku-4-5"));
+        // the schema default when nothing is set: the same value `render` puts in `--agents`
+        let got = resolve_launch(&input, &BTreeMap::new(), None).unwrap();
+        assert_eq!(got.model, tier_model("cheap", None));
+        // the model in the event is the model in the config
+        let flags = Flags::current().with("changes-coverage", true);
+        let rendered = agents(&render(false, &tiers, &flags));
+        assert_eq!(
+            Some(rendered["writer-explorer"]["model"].as_str().unwrap()),
+            resolve_launch(&input, &tiers, None)
+                .unwrap()
+                .model
+                .as_deref()
+        );
+    }
+
+    #[test]
+    fn an_inheriting_tier_shows_the_chat_model_and_a_foreign_type_has_none() {
+        let inherit = json!({"subagent_type": "writer-worker"});
+        let tiers = models(&[("standard", "default")]);
+        assert_eq!(
+            resolve_launch(&inherit, &tiers, Some("chat-model"))
+                .unwrap()
+                .model
+                .as_deref(),
+            Some("chat-model")
+        );
+        let mine =
+            resolve_launch(&json!({"subagent_type": "my-agent"}), &tiers, Some("x")).unwrap();
+        assert_eq!((mine.role, mine.model), (None, None));
+        assert_eq!(
+            resolve_launch(&json!({"description": "x"}), &tiers, None),
+            None
+        );
     }
 
     #[test]

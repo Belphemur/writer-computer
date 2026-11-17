@@ -3,6 +3,7 @@ import {
   Cancel01Icon,
   Clock01Icon,
   Folder01Icon,
+  Refresh01Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { openSettings } from "@/hooks/editor-api";
@@ -10,6 +11,7 @@ import {
   closeAgentPane,
   openAgentHistory,
   openNewProjectDialog,
+  reloadAgentSession,
   setAgentView,
 } from "@features/agent/web/hooks/agent-api";
 import { useAgentView } from "@features/agent/web/hooks/use-agent";
@@ -61,6 +63,13 @@ export function AgentHeader({ projectPath }: { projectPath: string | null }) {
         <ProjectSwitcherSlot projectPath={projectPath} />
       </div>
       <div className="pointer-events-auto flex items-center">
+        {view === "chat" && (
+          <HeaderButton
+            label="Reload session (new skills and MCP servers)"
+            icon={Refresh01Icon}
+            onClick={() => void reloadAgentSession()}
+          />
+        )}
         <HeaderButton label="Chat history" icon={Clock01Icon} onClick={openAgentHistory} />
         <HeaderButton
           label="New project"

@@ -2,6 +2,7 @@
  * One registry for how a tool is named, grouped and summarised (docs/consolidation.md): the
  * permission card's "Type" line, the timeline row label and the group header all read it.
  */
+import { roleLabelOf } from "./agent-roles";
 import type { PermissionPersist, PermissionSuggestion } from "./events";
 import type { PermissionView } from "./transcript";
 
@@ -16,6 +17,8 @@ type ToolSpec = {
   primary: string[];
   /** Noun used by group headers ("Read 3 notes"). */
   noun: [singular: string, plural: string];
+  /** The call opens one file (counted as a file read on a sub-agent card; a search is not). */
+  readsFile?: boolean;
 };
 
 const SPECS: Record<string, ToolSpec> = {
@@ -46,6 +49,7 @@ const SPECS: Record<string, ToolSpec> = {
     present: "Reading",
     primary: ["file_path", "path"],
     noun: ["note", "notes"],
+    readsFile: true,
   },
   Grep: {
     kind: "read",
@@ -136,6 +140,7 @@ const FALLBACK: ToolSpec = {
 
 export const toolSpec = (tool: string): ToolSpec => SPECS[tool] ?? FALLBACK;
 export const toolKind = (tool: string): ToolKind => toolSpec(tool).kind;
+export const readsFile = (tool: string): boolean => toolSpec(tool).readsFile === true;
 
 export const KIND_LABEL: Record<ToolKind, string> = {
   execute: "Run a command",
@@ -241,15 +246,17 @@ export function permissionChoices(
 export function permissionSummary(req: PermissionView): string {
   const name = req.displayName ?? req.tool;
   const arg = primaryArg(req.tool, req.input);
+  // a sub-agent's request names its role ("Worker wants to edit ...")
+  const who = req.by ? roleLabelOf(req.by) : "The agent";
   switch (toolKind(req.tool)) {
     case "execute":
-      return `The agent wants to run ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
+      return `${who} wants to run ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
     case "edit": {
       const verb = req.tool === "Write" ? "write" : "edit";
-      return `The agent wants to ${verb}${arg ? ` ${truncate(arg, 140)}` : ` with ${name}`}`;
+      return `${who} wants to ${verb}${arg ? ` ${truncate(arg, 140)}` : ` with ${name}`}`;
     }
     default:
-      return `The agent wants to use ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
+      return `${who} wants to use ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
   }
 }
 

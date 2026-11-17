@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   createChat,
+  appendSteer,
   appendUserTurn,
   markCancelling,
   reduceEvent,
@@ -19,17 +20,23 @@ const run = (name: string, now = 1000) => {
   return reduceEvents(chat, goldens[name]!, now);
 };
 describe("reducer over the golden streams", () => {
-  it("has all eight goldens", () => {
-    expect(Object.keys(goldens).sort()).toEqual([
-      "interrupt",
-      "multi-turn-rule",
-      "ok-turn",
-      "permission-allow",
-      "permission-deny",
-      "thinking-redacted",
-      "thinking-summary",
-      "tool-auto-allowed",
-    ]);
+  it("has the goldens of every capture, the two steer ones among them", () => {
+    expect(Object.keys(goldens)).toEqual(
+      expect.arrayContaining([
+        "interrupt",
+        "multi-turn-rule",
+        "ok-turn",
+        "permission-allow",
+        "permission-deny",
+        "steer-deferred",
+        "steer-injected",
+        "steer-now-permission",
+        "steer-now-text",
+        "thinking-redacted",
+        "thinking-summary",
+        "tool-auto-allowed",
+      ]),
+    );
   });
 
   it("ok-turn: the final text replaces the deltas and the turn completes with usage", () => {
@@ -284,5 +291,136 @@ describe("timeline grouping", () => {
     expect(groupHeader([mk("Edit"), mk("Write")], false)).toBe("Edited 2 notes");
     expect(groupHeader([mk("Bash"), mk("Read")], false)).toBe("Used 2 tools");
     expect(groupHeader([mk("Bash")], true)).toBe("Running 1 command");
+  });
+});
+
+describe("a steer in the timeline (golden steer-injected and steer-deferred)", () => {
+  const STEER = { messageId: "s1", text: "go left", context: [] };
+  /** Reduces the events before `at`, sends the steer, then reduces the rest. */
+  function steerAt(name: string, at: (e: AgentEvent) => boolean) {
+    const events = goldens[name]!;
+    const i = events.findIndex(at);
+    expect(i).toBeGreaterThan(0);
+    let chat = appendUserTurn(
+      createChat("c1"),
+      { messageId: "u1", text: "go", context: [] },
+      0,
+      false,
+    );
+    chat = reduceEvents(chat, events.slice(0, i), 1000);
+    chat = appendSteer(chat, STEER, 1500);
+    return reduceEvents(chat, events.slice(i), 2000);
+  }
+
+  it("lands where it was sent, between the tool calls before and after it", () => {
+    const chat = steerAt("steer-injected", (e) => e.type === "tool-call-finished");
+    expect(chat.turns).toHaveLength(1);
+    const kinds = chat.turns[0]!.blocks.map((b) => b.kind);
+    const at = kinds.indexOf("steer");
+    expect(kinds.slice(0, at)).toEqual(["tool"]); // the Bash call of the first round
+    expect(kinds.slice(at + 1)).toContain("tool"); // the model's later reads follow the card
+    expect(chat.turns[0]!.blocks[at]).toMatchObject({
+      id: "steer:s1",
+      message: { text: "go left", ts: 1500 },
+    });
+    expect(chat.turns[0]!.status).toBe("completed");
+    expect(chat.state).toBe("idle");
+  });
+
+  it("a steer sent while text streams stays after the streaming text; its final text lands in place", () => {
+    const chat = steerAt("steer-deferred", (e) => e.type === "text");
+    const blocks = chat.turns[0]!.blocks;
+    expect(blocks.map((b) => b.kind)).toEqual(["text", "steer"]);
+    expect(blocks[0]).toMatchObject({ kind: "text", final: true });
+  });
+
+  it("a steer sent before any text is a card first; the answer streams after it", () => {
+    const chat = steerAt("steer-deferred", (e) => e.type === "text-delta");
+    expect(chat.turns[0]!.blocks.map((b) => b.kind)).toEqual(["steer", "text"]);
+  });
+
+  it("the deferred steer's turn is a second, agent-started turn that follows the first", () => {
+    const chat = steerAt("steer-deferred", (e) => e.type === "text");
+    expect(chat.turns).toHaveLength(2);
+    expect(chat.turns[0]!.blocks.at(-1)!.kind).toBe("steer");
+    expect(chat.turns[1]!.user).toBeNull();
+    expect(chat.turns[1]!.status).toBe("completed");
+  });
+
+  it("segments render the steer on its own, splitting the tool group around it", () => {
+    const chat = steerAt("steer-injected", (e) => e.type === "tool-call-finished");
+    expect(segmentTurn(chat.turns[0]!).map((s) => s.kind)).toEqual([
+      "group",
+      "steer",
+      ...segmentTurn(chat.turns[0]!)
+        .slice(2)
+        .map((s) => s.kind),
+    ]);
+  });
+
+  it("with no running turn it is a normal send", () => {
+    const idle = reduceEvents(
+      appendUserTurn(createChat("c1"), { messageId: "u1", text: "go", context: [] }, 0, false),
+      goldens["ok-turn"]!,
+      1000,
+    );
+    const chat = appendSteer(idle, STEER, 3000);
+    expect(chat.turns).toHaveLength(2);
+    expect(chat.turns[1]!.user?.text).toBe("go left");
+    expect(chat.state).toBe("running");
+  });
+});
+
+describe("a forced steer (priority now) cuts the running turn cleanly", () => {
+  const STEER = { messageId: "s1", text: "go left", context: [] };
+  function cutAt(name: string, at: (e: AgentEvent) => boolean) {
+    const events = goldens[name]!;
+    const i = events.findIndex(at);
+    let chat = appendUserTurn(
+      createChat("c1"),
+      { messageId: "u1", text: "go", context: [] },
+      0,
+      false,
+    );
+    chat = reduceEvents(chat, events.slice(0, i), 1000);
+    expect(i).toBeGreaterThan(0);
+    return { chat: appendSteer(chat, STEER, 1500), rest: events.slice(i) };
+  }
+
+  it("a tool waiting for permission becomes interrupted, its card is cancelled at once and none is left", () => {
+    const { chat: sent, rest } = cutAt(
+      "steer-now-permission",
+      (e) => e.type === "permission-resolved",
+    );
+    const tool = sent.turns[0]!.blocks.find((b): b is ToolBlock => b.kind === "tool")!;
+    expect(tool).toMatchObject({ status: "interrupted", permission: "cancelled" });
+    expect(sent.pendingPermissions).toEqual([]);
+    const chat = reduceEvents(sent, rest, 2000);
+    const after = chat.turns[0]!.blocks.find((b): b is ToolBlock => b.kind === "tool")!;
+    expect(after.status).toBe("interrupted");
+    expect(chat.turns[0]!.status).toBe("interrupted");
+    // the steer's own turn follows, as the next turn, and asks again
+    expect(chat.turns).toHaveLength(2);
+    expect(chat.turns[1]!.user).toBeNull();
+    expect(chat.pendingPermissions).toHaveLength(1);
+  });
+
+  it("text being written is closed where it stopped and the steer's answer is the next turn", () => {
+    const { chat: sent, rest } = cutAt("steer-now-text", (e) => e.type === "text");
+    const kinds = sent.turns[0]!.blocks.map((b) => b.kind);
+    expect(kinds).toEqual(["text", "steer"]);
+    const chat = reduceEvents(sent, rest, 2000);
+    expect(chat.turns).toHaveLength(2);
+    expect(chat.turns[0]!.status).toBe("interrupted");
+    expect(chat.turns[1]!.status).toBe("completed");
+    expect(chat.state).toBe("idle");
+  });
+
+  it("an unacknowledged steer is marked not delivered with a notice, and the rest is untouched", () => {
+    const { chat: sent } = cutAt("steer-now-text", (e) => e.type === "text");
+    const chat = reduceEvent(sent, { type: "steer-undelivered", messageId: "s1" }, 3000);
+    expect(chat.turns[0]!.blocks.at(-1)).toMatchObject({ kind: "steer", undelivered: true });
+    expect(chat.localNotice).toBe("The steer was not acknowledged");
+    expect(reduceEvent(sent, { type: "steer-undelivered", messageId: "other" }, 3000)).toBe(sent);
   });
 });

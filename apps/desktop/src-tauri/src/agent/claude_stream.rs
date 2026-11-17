@@ -44,6 +44,9 @@ pub struct MapOutput {
     /// Sub-agent tasks that started or ended (`system` `task_*` lines). Not UI events: the runner
     /// keeps its turn open while a task runs (`SPECs/agent-roles-spec.md`, section 2).
     pub tasks: Vec<TaskSignal>,
+    /// The `uuid` of a user message the CLI echoed back (`--replay-user-messages`, `isReplay`):
+    /// the receipt that it took a message Writer wrote mid-turn (a steer). Not a UI event.
+    pub user_echo: Option<String>,
 }
 
 /// A sub-agent task seen on the stream, by the CLI's task id.
@@ -63,6 +66,9 @@ pub struct ClaudeStreamMapper {
     started_tools: HashSet<String>,
     finished_tools: HashSet<String>,
     pending_permissions: HashSet<String>,
+    /// The launch call (`tool_use_id`) of each sub-agent task id: `task_updated` carries only
+    /// the task id.
+    task_calls: HashMap<String, String>,
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -151,6 +157,7 @@ impl ClaudeStreamMapper {
                 }],
                 unsupported_control_request: None,
                 tasks: Vec::new(),
+                user_echo: None,
             },
         }
     }
@@ -161,7 +168,12 @@ impl ClaudeStreamMapper {
             Some("system") => self.system(v, &mut out),
             Some("stream_event") => self.stream_event(v, &mut out),
             Some("assistant") => self.assistant(v, &mut out),
-            Some("user") => self.user(v, &mut out),
+            Some("user") => {
+                if v.get("isReplay").and_then(Value::as_bool) == Some(true) {
+                    out.user_echo = str_of(v, "uuid").map(String::from);
+                }
+                self.user(v, &mut out)
+            }
             Some("control_request") => self.control_request(v, &mut out),
             Some("control_cancel_request") => {
                 if let Some(id) = str_of(v, "request_id") {
@@ -190,6 +202,23 @@ impl ClaudeStreamMapper {
     }
 
     fn system(&mut self, v: &Value, out: &mut MapOutput) {
+        /// `init.mcp_servers`: `[{name, status}]`; an entry without a name is dropped, a missing
+        /// status is `unknown`.
+        fn mcp_servers(v: &Value) -> Vec<McpServerStatus> {
+            v.get("mcp_servers")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| {
+                            Some(McpServerStatus {
+                                name: str_of(x, "name")?.to_string(),
+                                status: str_of(x, "status").unwrap_or("unknown").to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
         match str_of(v, "subtype") {
             Some("init") => {
                 let names = |key: &str| -> Vec<String> {
@@ -210,6 +239,7 @@ impl ClaudeStreamMapper {
                     tools: names("tools"),
                     slash_commands: names("slash_commands"),
                     skills: names("skills"),
+                    mcp_servers: mcp_servers(v),
                     cli_version: str_of(v, "claude_code_version").map(String::from),
                 });
             }
@@ -218,6 +248,13 @@ impl ClaudeStreamMapper {
             Some("task_started") => {
                 if let Some(id) = str_of(v, "task_id") {
                     out.tasks.push(TaskSignal::Started(id.to_string()));
+                    if let Some(call) = str_of(v, "tool_use_id") {
+                        self.task_calls.insert(id.to_string(), call.to_string());
+                        out.events.push(AgentEvent::SubagentStatus {
+                            tool_call_id: call.to_string(),
+                            status: SubagentRunStatus::Running,
+                        });
+                    }
                 }
             }
             Some("task_updated") => {
@@ -225,19 +262,31 @@ impl ClaudeStreamMapper {
                     .get("patch")
                     .and_then(|p| str_of(p, "status"))
                     .unwrap_or_default();
-                if let (Some(id), true) = (
-                    str_of(v, "task_id"),
-                    matches!(
-                        status,
-                        "completed" | "failed" | "killed" | "cancelled" | "stopped"
-                    ),
-                ) {
+                let status = SubagentRunStatus::from_cli(status);
+                if let (Some(id), true) = (str_of(v, "task_id"), status.is_final()) {
                     out.tasks.push(TaskSignal::Ended(id.to_string()));
+                    if let Some(call) = self.task_calls.get(id) {
+                        out.events.push(AgentEvent::SubagentStatus {
+                            tool_call_id: call.clone(),
+                            status,
+                        });
+                    }
                 }
             }
             Some("task_notification") => {
                 if let Some(id) = str_of(v, "task_id") {
                     out.tasks.push(TaskSignal::Ended(id.to_string()));
+                    let call = str_of(v, "tool_use_id")
+                        .map(String::from)
+                        .or_else(|| self.task_calls.get(id).cloned());
+                    if let Some(call_id) = call {
+                        out.events.push(AgentEvent::SubagentStatus {
+                            tool_call_id: call_id,
+                            status: SubagentRunStatus::from_cli(
+                                str_of(v, "status").unwrap_or("completed"),
+                            ),
+                        });
+                    }
                 }
             }
             Some("thinking_tokens") => {
@@ -270,6 +319,16 @@ impl ClaudeStreamMapper {
         str_of(v, "parent_tool_use_id").map(String::from)
     }
 
+    /// A message made by a sub-agent says whose it is, once, before its first block.
+    fn note_message_parent(v: &Value, message_id: &str, out: &mut MapOutput) {
+        if let Some(parent) = Self::parent_tool(v) {
+            out.events.push(AgentEvent::SubagentMessage {
+                message_id: message_id.to_string(),
+                parent_tool_call_id: parent,
+            });
+        }
+    }
+
     fn stream_event(&mut self, v: &Value, out: &mut MapOutput) {
         let Some(ev) = v.get("event") else { return };
         match str_of(ev, "type") {
@@ -280,6 +339,7 @@ impl ClaudeStreamMapper {
                     .unwrap_or("")
                     .to_string();
                 self.start_message(&id, true);
+                Self::note_message_parent(v, &id, out);
             }
             Some("content_block_start") => {
                 let idx = ev.get("index").and_then(Value::as_u64).unwrap_or(0) as u32;
@@ -377,6 +437,7 @@ impl ClaudeStreamMapper {
         if new_message {
             // No stream_event preceded it (partial messages off): a complete message.
             self.start_message(&id, false);
+            Self::note_message_parent(v, &id, out);
             if let Some(usage) = msg.get("usage") {
                 out.events
                     .push(usage_event(UsageScope::Message, usage, None, None, None));
@@ -600,8 +661,23 @@ impl ClaudeStreamMapper {
 /// A user turn. Plain text goes as a string; with images the content is an array of native
 /// `image` blocks (base64) followed by the text block (shape verified against the real CLI).
 pub fn encode_user_message(text: &str, images: &[ImagePart]) -> String {
+    user_value(text, images).to_string()
+}
+
+/// A steer: a user message written while a turn runs, with `priority:"now"` so the CLI aborts the
+/// running tool or text, ends that turn with a `result` and starts this message's turn at once
+/// (verified, spec 3.13). The `uuid` comes back on stdout as the receipt
+/// (`--replay-user-messages`, see [`MapOutput::user_echo`]).
+pub fn encode_steer_message(text: &str, images: &[ImagePart], uuid: &str) -> String {
+    let mut line = user_value(text, images);
+    line["uuid"] = json!(uuid);
+    line["priority"] = json!("now");
+    line.to_string()
+}
+
+fn user_value(text: &str, images: &[ImagePart]) -> Value {
     if images.is_empty() {
-        return json!({"type":"user","message":{"role":"user","content":text}}).to_string();
+        return json!({"type":"user","message":{"role":"user","content":text}});
     }
     let mut content: Vec<Value> = images
         .iter()
@@ -610,7 +686,7 @@ pub fn encode_user_message(text: &str, images: &[ImagePart]) -> String {
         })
         .collect();
     content.push(json!({"type":"text","text":text}));
-    json!({"type":"user","message":{"role":"user","content":content}}).to_string()
+    json!({"type":"user","message":{"role":"user","content":content}})
 }
 
 pub fn encode_interrupt(request_id: &str) -> String {
@@ -802,6 +878,8 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
         "--output-format",
         "stream-json",
         "--include-partial-messages",
+        // the receipt of a steer (`MapOutput::user_echo`)
+        "--replay-user-messages",
         "--verbose",
         "--permission-prompt-tool",
         "stdio",
@@ -905,6 +983,12 @@ mod tests {
             "multi-turn-rule" => include_str!("fixtures/multi-turn-rule.jsonl"),
             "thinking-summary" => include_str!("fixtures/thinking-summary.jsonl"),
             "thinking-redacted" => include_str!("fixtures/thinking-redacted.jsonl"),
+            "steer-injected" => include_str!("fixtures/steer-injected.jsonl"),
+            "steer-deferred" => include_str!("fixtures/steer-deferred.jsonl"),
+            "steer-now-text" => include_str!("fixtures/steer-now-text.jsonl"),
+            "steer-now-permission" => include_str!("fixtures/steer-now-permission.jsonl"),
+            "subagent-parallel" => include_str!("fixtures/subagent-parallel.jsonl"),
+            "subagent-background" => include_str!("fixtures/subagent-background.jsonl"),
             other => panic!("unknown fixture {other}"),
         }
     }
@@ -946,6 +1030,12 @@ mod tests {
             "multi-turn-rule",
             "thinking-summary",
             "thinking-redacted",
+            "steer-injected",
+            "steer-deferred",
+            "steer-now-text",
+            "steer-now-permission",
+            "subagent-parallel",
+            "subagent-background",
         ] {
             let (events, _) = run(name);
             let actual = serde_json::to_string_pretty(&events).unwrap() + "\n";
@@ -959,6 +1049,134 @@ mod tests {
             });
             assert_eq!(actual, expected, "golden drift in {name}");
         }
+    }
+
+    /// What the CLI does with a user message written mid-turn (real captures, 2.1.326, haiku, with
+    /// `--replay-user-messages` and a `uuid` on the message): it echoes the message back
+    /// (`isReplay`, same `uuid`) when it takes it. At a tool boundary that is inside the running
+    /// turn (one `result`); with no boundary it is after the turn's `result`, as the start of a
+    /// second turn with its own `result`.
+    #[test]
+    fn steer_receipt_comes_inside_the_turn_or_after_its_end() {
+        const STEER: &str = "00000000-0000-4000-8000-0000000000a1";
+        let positions = |name: &str| {
+            let mut m = ClaudeStreamMapper::new();
+            let (mut echo, mut finished) = (None, Vec::new());
+            for (i, line) in fixture(name).lines().enumerate() {
+                let out = m.map_line(line);
+                if out.user_echo.as_deref() == Some(STEER) {
+                    echo = Some(i);
+                }
+                if out
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, AgentEvent::TurnFinished { .. }))
+                {
+                    finished.push(i);
+                }
+            }
+            (echo.expect("the steer is echoed"), finished)
+        };
+        let (echo, finished) = positions("steer-injected");
+        assert_eq!(finished.len(), 1, "one turn");
+        assert!(echo < finished[0], "received inside the turn");
+        let (echo, finished) = positions("steer-deferred");
+        assert_eq!(finished.len(), 2, "the steer ran as a second turn");
+        assert!(finished[0] < echo && echo < finished[1]);
+    }
+
+    #[test]
+    fn a_steer_carries_its_uuid_and_a_plain_message_does_not() {
+        let v: Value = serde_json::from_str(&encode_steer_message("go left", &[], "u-1")).unwrap();
+        assert_eq!(v["uuid"], "u-1");
+        assert_eq!(v["priority"], "now");
+        assert_eq!(v["message"]["content"], "go left");
+        let v: Value = serde_json::from_str(&encode_user_message("go left", &[])).unwrap();
+        assert!(v.get("uuid").is_none());
+    }
+
+    /// Two sub-agents at once (`subagent-parallel`, built from the observed line shapes): every
+    /// message a sub-agent made says whose it is, once, the main agent's say nothing, and the
+    /// `task_*` lines become one status per run keyed by the launch call.
+    #[test]
+    fn parallel_sub_agents_are_told_apart_by_message_and_by_run() {
+        let (events, _) = run("subagent-parallel");
+        let parents: Vec<(&str, &str)> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::SubagentMessage {
+                    message_id,
+                    parent_tool_call_id,
+                } => Some((message_id.as_str(), parent_tool_call_id.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            parents,
+            [
+                ("msg_e1", "toolu_ex"),
+                ("msg_w1", "toolu_wk"),
+                ("msg_e2", "toolu_ex"),
+                ("msg_w2", "toolu_wk"),
+                ("msg_e3", "toolu_ex"),
+                ("msg_w3", "toolu_wk"),
+            ],
+            "a streamed message is told once (message_start), not again by its assistant line"
+        );
+        let statuses: Vec<(&str, SubagentRunStatus)> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::SubagentStatus {
+                    tool_call_id,
+                    status,
+                } => Some((tool_call_id.as_str(), *status)),
+                _ => None,
+            })
+            .collect();
+        use SubagentRunStatus::{Completed, Running};
+        assert_eq!(
+            statuses,
+            [
+                ("toolu_ex", Running),
+                ("toolu_wk", Running),
+                ("toolu_ex", Completed),
+                ("toolu_ex", Completed),
+                ("toolu_wk", Completed),
+                ("toolu_wk", Completed),
+            ],
+            "task_updated is mapped through the task id, task_notification by its call id"
+        );
+        let nested: Vec<(&str, Option<&str>)> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallStarted {
+                    tool_call_id,
+                    parent_tool_call_id,
+                    ..
+                } => Some((tool_call_id.as_str(), parent_tool_call_id.as_deref())),
+                _ => None,
+            })
+            .collect();
+        assert!(nested.contains(&("toolu_ex", None)) && nested.contains(&("toolu_wk", None)));
+        assert!(nested.contains(&("toolu_e_grep", Some("toolu_ex"))));
+        assert!(nested.contains(&("toolu_w_edit", Some("toolu_wk"))));
+    }
+
+    /// A background run's launch call returns at once; only the `task_*` lines end the run.
+    #[test]
+    fn a_background_run_ends_by_its_task_lines_not_its_launch_result() {
+        let (events, _) = run("subagent-background");
+        let launch_result = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ToolCallFinished { tool_call_id, .. } if tool_call_id == "toolu_agent1"))
+            .unwrap();
+        let done = events
+            .iter()
+            .position(|e| {
+                matches!(e, AgentEvent::SubagentStatus { status, .. } if *status == SubagentRunStatus::Completed)
+            })
+            .unwrap();
+        assert!(done > launch_result);
     }
 
     /// `--thinking-display summarized` (real capture, 2.1.326): the deltas carry the summary text
@@ -1290,6 +1508,31 @@ mod tests {
     }
 
     #[test]
+    fn init_carries_the_mcp_servers_with_their_status() {
+        let mut m = ClaudeStreamMapper::new();
+        let out = m.map_line(
+            r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/v","mcp_servers":[{"name":"notes","status":"connected"},{"name":"web","status":"failed"},{"name":"bare"},{"status":"x"}]}"#,
+        );
+        match &out.events[..] {
+            [AgentEvent::SessionStarted { mcp_servers, .. }] => {
+                let got: Vec<_> = mcp_servers
+                    .iter()
+                    .map(|s| (s.name.as_str(), s.status.as_str()))
+                    .collect();
+                assert_eq!(
+                    got,
+                    [
+                        ("notes", "connected"),
+                        ("web", "failed"),
+                        ("bare", "unknown")
+                    ]
+                );
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
     fn cancel_after_answer_is_not_reported_twice() {
         let mut m = ClaudeStreamMapper::new();
         let req = r#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"t1"}}"#;
@@ -1602,6 +1845,7 @@ mod tests {
             disallowed_tools: vec![],
             orchestrate: true,
             show_thinking: false,
+            auto_reload: true,
             memory: AgentMemory::Default,
             tier_models: Default::default(),
         }
@@ -1624,6 +1868,7 @@ mod tests {
         assert_eq!(&args[..3], ["-p", "--input-format", "stream-json"]);
         for flag in [
             "--include-partial-messages",
+            "--replay-user-messages",
             "--verbose",
             "--permission-prompt-tool",
         ] {
@@ -1743,7 +1988,7 @@ mod tests {
     }
 
     #[test]
-    fn task_lines_map_to_started_and_ended_signals_and_no_events() {
+    fn task_lines_map_to_signals_and_one_status_event_per_state_change() {
         let mut m = ClaudeStreamMapper::new();
         let lines = [
             r#"{"type":"system","subtype":"task_started","task_id":"t1","tool_use_id":"toolu_1","subagent_type":"writer-worker","is_backgrounded":false}"#,
@@ -1753,7 +1998,15 @@ mod tests {
             r#"{"type":"system","subtype":"task_notification","task_id":"t1","tool_use_id":"toolu_1","status":"completed"}"#,
         ];
         let out: Vec<_> = lines.iter().map(|l| m.map_line(l)).collect();
-        assert!(out.iter().all(|o| o.events.is_empty()));
+        let status = |status| AgentEvent::SubagentStatus {
+            tool_call_id: "toolu_1".into(),
+            status,
+        };
+        assert_eq!(out[0].events, [status(SubagentRunStatus::Running)]);
+        // progress and a non-final update change nothing; both end lines say how it ended
+        assert!(out[1].events.is_empty() && out[2].events.is_empty());
+        assert_eq!(out[3].events, [status(SubagentRunStatus::Completed)]);
+        assert_eq!(out[4].events, [status(SubagentRunStatus::Completed)]);
         assert_eq!(out[0].tasks, [TaskSignal::Started("t1".into())]);
         assert!(out[1].tasks.is_empty() && out[2].tasks.is_empty());
         assert_eq!(out[3].tasks, [TaskSignal::Ended("t1".into())]);

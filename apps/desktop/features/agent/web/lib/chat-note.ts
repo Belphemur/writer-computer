@@ -20,6 +20,8 @@ import type {
 
 export const ESCAPE = "\u200B";
 export const MAX_TOOL_INPUT_CHARS = 500;
+/** A sub-agent's final answer kept in the note, so a reopened chat shows the card's summary. */
+export const MAX_SUBAGENT_SUMMARY_CHARS = 500;
 export const DEFAULT_REPLAY_TOKENS = 8000;
 
 export type ChatNoteUsage = { inputTokens: number; outputTokens: number; costUsd: number };
@@ -56,6 +58,21 @@ export type ChatNoteTool = {
   /** The input when its JSON is at most 500 chars, else a truncated string. */
   input: unknown;
   outcome: ToolOutcome;
+  /** The launch call of the sub-agent run that made this call (absent: the main agent). A note
+   *  without it still opens: the rows are then listed flat. */
+  parent?: string;
+  /** On a launch call: who ran and its closing answer. Absent on notes written before cards. */
+  sub?: ChatNoteSubagent;
+};
+
+export type ChatNoteSubagent = {
+  /** The registry role id; null for a type Writer does not define. */
+  role: string | null;
+  /** The sub-agent type as the call named it. */
+  name: string;
+  model: string | null;
+  /** The run's final answer, cut to 500 characters. */
+  summary?: string;
 };
 
 export type ChatNoteMessage = {
@@ -71,6 +88,9 @@ export type ChatNoteMessage = {
   /** Vault-relative paths of the images attached to a user message; written as `![[...]]` lines
    *  after the message comment (and listed in it), so a reopened chat shows them. */
   images?: string[];
+  /** A user message sent into the running turn (a steer): `"steer":true` in its comment. Notes
+   *  without the mark read as a plain message; an older Writer ignores the key. */
+  steer?: boolean;
   tools?: ChatNoteTool[];
   /** The "Changes" card's summary (assistant only): paths and counts, never contents. */
   changes?: TurnChangesSummary;
@@ -219,6 +239,7 @@ export function capToolInput(input: unknown): unknown {
 function serializeMessage(m: ChatNoteMessage): string {
   const msg: Record<string, unknown> = { id: m.id, at: m.at };
   if (m.reason) msg.reason = m.reason;
+  if (m.steer) msg.steer = true;
   const images = m.images ?? [];
   if (images.length > 0) msg.images = images;
   const blocks = [`## ${m.role} · ${headerTime(m.at)}\n<!-- writer:msg ${commentJson(msg)} -->`];
@@ -327,12 +348,14 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
   let at = parseHeaderTime(when);
   let reason: TurnFinishReason | undefined;
   let images: string[] | undefined;
+  let steer = false;
   const msg = rest.length > 0 ? jsonOr<Record<string, unknown>>(payload(rest[0], "msg")) : null;
   if (rest.length > 0 && payload(rest[0], "msg") !== null) {
     if (msg) {
       if (typeof msg.id === "string") id = msg.id;
       if (typeof msg.at === "number") at = msg.at;
       if (typeof msg.reason === "string") reason = msg.reason as TurnFinishReason;
+      steer = msg.steer === true;
       if (Array.isArray(msg.images)) {
         const paths = msg.images.filter((p): p is string => typeof p === "string");
         if (paths.length > 0) images = paths;
@@ -371,6 +394,7 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
   if (reason) message.reason = reason;
   if (context !== undefined) message.context = context;
   if (images) message.images = images;
+  if (steer) message.steer = true;
   if (tools) message.tools = tools;
   if (changes && Array.isArray(changes.files)) message.changes = changes;
   return message;
@@ -485,16 +509,23 @@ export type AssistantFold = {
 export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFold {
   const blocks = new Map<string, string>();
   const tools = new Map<string, ChatNoteTool>();
+  // messages a sub-agent made: its text belongs to its run, not to the assistant's answer
+  const subMessages = new Set<string>();
   let reason: TurnFinishReason | undefined;
   const usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   for (const ev of events) {
     switch (ev.type) {
+      case "subagent-message":
+        subMessages.add(ev.messageId);
+        break;
       case "text-delta": {
+        if (subMessages.has(ev.messageId)) break;
         const k = `${ev.messageId}:${ev.blockIndex}`;
         blocks.set(k, (blocks.get(k) ?? "") + ev.text);
         break;
       }
       case "text":
+        if (subMessages.has(ev.messageId)) break;
         blocks.set(`${ev.messageId}:${ev.blockIndex}`, ev.text);
         break;
       case "tool-call-started":
@@ -503,8 +534,14 @@ export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFol
           tool: ev.tool,
           input: null,
           outcome: "rejected",
+          ...(ev.parentToolCallId ? { parent: ev.parentToolCallId } : {}),
         });
         break;
+      case "subagent-started": {
+        const t = tools.get(ev.toolCallId);
+        if (t) t.sub = { role: ev.role, name: ev.name, model: ev.model };
+        break;
+      }
       case "tool-call-input": {
         const t = tools.get(ev.toolCallId);
         if (t) t.input = capToolInput(ev.input);
@@ -512,7 +549,10 @@ export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFol
       }
       case "tool-call-finished": {
         const t = tools.get(ev.toolCallId);
-        if (t) t.outcome = ev.outcome;
+        if (t) {
+          t.outcome = ev.outcome;
+          if (t.sub && ev.output) t.sub.summary = ev.output.slice(0, MAX_SUBAGENT_SUMMARY_CHARS);
+        }
         break;
       }
       case "usage":

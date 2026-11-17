@@ -8,12 +8,14 @@ import {
 import {
   useActiveChatId,
   useAgentChatIds,
+  useChatProjectPath,
   useChatState,
   useChatTitle,
 } from "@features/agent/web/hooks/use-agent";
 import type { ChatId } from "@features/agent/web/lib/events";
 import { useScrollTabIntoView } from "@/hooks/use-scroll-active-tab-into-view";
 import { Ico, Spinner } from "./agent-icon";
+import { ProjectPathIcon } from "./project-icon";
 
 export async function requestCloseChat(chatId: ChatId, busy: boolean) {
   if (busy) {
@@ -38,6 +40,7 @@ function Tab({
   count: number;
 }) {
   const title = useChatTitle(id);
+  const projectPath = useChatProjectPath(id);
   const state = useChatState(id);
   const busy =
     state === "running" ||
@@ -91,6 +94,7 @@ function Tab({
       {state === "error" && (
         <Ico icon={Alert02Icon} size={12} className="text-[var(--agent-error)]" />
       )}
+      {projectPath && <ProjectPathIcon path={projectPath} size={12} />}
       <span className="truncate">{title}</span>
       {status && <span className="sr-only">({status})</span>}
       <button

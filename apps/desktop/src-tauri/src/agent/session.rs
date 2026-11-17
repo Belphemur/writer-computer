@@ -11,6 +11,7 @@
 
 use super::binary;
 use super::changes::ChangeStore;
+use super::config_sync::{CliMcpProbe, McpProbe, Msg, Worker};
 use super::events::*;
 use super::images::{self, Outgoing};
 use super::memory;
@@ -24,6 +25,7 @@ use parking_lot::{Condvar, Mutex};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -42,6 +44,16 @@ pub struct Timing {
     pub term_to_kill: Duration,
     pub idle_after: Duration,
     pub reaper_every: Duration,
+    /// Quiet time after the last watched config change before a restart (a burst is one change).
+    pub config_debounce: Duration,
+    /// Waits before the 1st, 2nd and 3rd MCP re-check; the last repeats (`config_sync::backoff`).
+    pub mcp_backoff: [Duration; 3],
+    /// A `claude mcp list` run is killed after this.
+    pub mcp_probe_timeout: Duration,
+    /// A steer the CLI has not echoed after this long is reported undelivered. Measured: the echo
+    /// follows the aborted turn's `result` within about a second, so this only catches a broken
+    /// process.
+    pub steer_ack: Duration,
 }
 
 impl Default for Timing {
@@ -52,6 +64,14 @@ impl Default for Timing {
             term_to_kill: Duration::from_secs(3),
             idle_after: Duration::from_secs(30 * 60),
             reaper_every: Duration::from_secs(30),
+            config_debounce: Duration::from_secs(2),
+            mcp_backoff: [
+                Duration::from_secs(60),
+                Duration::from_secs(120),
+                Duration::from_secs(300),
+            ],
+            mcp_probe_timeout: Duration::from_secs(45),
+            steer_ack: Duration::from_secs(30),
         }
     }
 }
@@ -184,6 +204,15 @@ pub(crate) struct Shared {
     pub timing: Timing,
     /// In-memory pre-turn snapshots behind the "Changes" card (`changes.rs`).
     pub changes: Arc<ChangeStore>,
+    /// To the config worker (`config_sync::Worker`): watcher paths and MCP status reports.
+    pub config_tx: Mutex<Sender<Msg>>,
+}
+
+impl Shared {
+    /// Never blocks; a worker that is gone (app exit) drops the message.
+    pub(crate) fn send_config(&self, msg: Msg) {
+        let _ = self.config_tx.lock().send(msg);
+    }
 }
 
 impl Shared {
@@ -205,7 +234,7 @@ impl Shared {
         }
     }
 
-    fn all(&self) -> Vec<Arc<Session>> {
+    pub(crate) fn all(&self) -> Vec<Arc<Session>> {
         self.sessions.lock().values().cloned().collect()
     }
 }
@@ -258,18 +287,37 @@ fn is_uuid(s: &str) -> bool {
 
 impl AgentSessions {
     pub fn with_timing(timing: Timing) -> Self {
-        Self::with_spawner(timing, &|name, f| {
-            std::thread::Builder::new()
-                .name(name.into())
-                .spawn(f)
-                .map(drop)
-                .map_err(|e| e.to_string())
-        })
-        .expect("spawn idle reaper")
+        Self::with_probe(timing, Arc::new(CliMcpProbe))
     }
 
-    /// `spawn` starts the idle reaper; an `Err` (no thread) fails the construction.
+    /// [`Self::with_timing`] with another MCP re-check (tests).
+    pub fn with_probe(timing: Timing, probe: Arc<dyn McpProbe>) -> Self {
+        Self::build(
+            timing,
+            &|name, f| {
+                std::thread::Builder::new()
+                    .name(name.into())
+                    .spawn(f)
+                    .map(drop)
+                    .map_err(|e| e.to_string())
+            },
+            probe,
+        )
+        .expect("spawn agent threads")
+    }
+
+    /// `spawn` starts the idle reaper and the config worker; an `Err` (no thread) fails the
+    /// construction.
     pub fn with_spawner(timing: Timing, spawn: &Spawner<'_>) -> Result<Self, String> {
+        Self::build(timing, spawn, Arc::new(CliMcpProbe))
+    }
+
+    fn build(
+        timing: Timing,
+        spawn: &Spawner<'_>,
+        probe: Arc<dyn McpProbe>,
+    ) -> Result<Self, String> {
+        let (config_tx, config_rx) = channel();
         let shared = Arc::new(Shared {
             procs: Arc::new(ProcManager::default()),
             ports: Arc::new(AgentPorts::default()),
@@ -277,8 +325,17 @@ impl AgentSessions {
             gate: Mutex::new(()),
             timing,
             changes: Arc::new(ChangeStore::default()),
+            config_tx: Mutex::new(config_tx.clone()),
         });
         let weak: Weak<Shared> = Arc::downgrade(&shared);
+        let worker = Worker {
+            rx: config_rx,
+            tx: config_tx,
+            shared: Weak::clone(&weak),
+            probe,
+            timing,
+        };
+        spawn("agent-config", Box::new(move || worker.run()))?;
         spawn(
             "agent-reaper",
             Box::new(move || loop {
@@ -294,6 +351,17 @@ impl AgentSessions {
             }),
         )?;
         Ok(Self { shared })
+    }
+
+    /// The watcher's changed paths of window `label`'s vault `root`: marks the chats whose CLI
+    /// read one of them stale (`config_sync`). Cheap and non-blocking: the watcher thread calls
+    /// it for every batch.
+    pub fn config_paths_changed(&self, label: &str, root: &Path, paths: Vec<PathBuf>) {
+        self.shared.send_config(Msg::Paths {
+            label: label.to_string(),
+            root: root.to_path_buf(),
+            paths,
+        });
     }
 
     pub fn changes(&self) -> Arc<ChangeStore> {
@@ -407,6 +475,7 @@ impl AgentSessions {
                 cli_dir: p.cli_dir.clone(),
                 memory_dir,
                 settings,
+                restart_on_config_change: ClaudeAdapter.restart_on_config_change(),
             },
             missing,
         ))
@@ -492,6 +561,7 @@ impl AgentSessions {
             cli_dir: None,
             memory_dir: None,
             settings: req.settings.clone(),
+            restart_on_config_change: false,
         });
         let session = Session::new(
             SessionInit {
@@ -530,11 +600,38 @@ impl AgentSessions {
         text: String,
         context: &[ContextRef],
     ) -> Result<(), Rejected> {
+        let (s, out) = self.outgoing(label, chat_id, text, context)?;
+        s.send(out)
+            .map_err(|e| Rejected(format!("cannot send: {e:?}")))
+    }
+
+    /// `send`, but forced into the running turn at once instead of after it (see `Session::steer`);
+    /// `message_id` (the UI's card key) is the receipt id.
+    pub fn steer(
+        &self,
+        label: &str,
+        chat_id: &str,
+        message_id: &str,
+        text: String,
+        context: &[ContextRef],
+    ) -> Result<(), Rejected> {
+        let (s, out) = self.outgoing(label, chat_id, text, context)?;
+        s.steer(out, message_id)
+            .map_err(|e| Rejected(format!("cannot send: {e:?}")))
+    }
+
+    /// The validated message of a send or a steer, with its session.
+    fn outgoing(
+        &self,
+        label: &str,
+        chat_id: &str,
+        text: String,
+        context: &[ContextRef],
+    ) -> Result<(Arc<Session>, Outgoing), Rejected> {
         let s = self.get(label, chat_id)?;
         validate_context(&s.root, context).map_err(Rejected)?;
         let images = images::load_parts(&s.root, context).map_err(Rejected)?;
-        s.send(Outgoing { text, images })
-            .map_err(|e| Rejected(format!("cannot send: {e:?}")))
+        Ok((s, Outgoing { text, images }))
     }
 
     pub fn cancel(&self, label: &str, chat_id: &str) -> Result<(), Rejected> {
@@ -580,6 +677,12 @@ impl AgentSessions {
         }
         self.get(label, chat_id)?.set_model(model, effort);
         Ok(())
+    }
+
+    pub fn reload(&self, label: &str, chat_id: &str) -> Result<ReloadOutcome, Rejected> {
+        self.get(label, chat_id)?
+            .reload()
+            .map_err(|e| Rejected(format!("cannot reload: {e:?}")))
     }
 
     pub fn close(&self, label: &str, chat_id: &str) -> Result<(), Rejected> {

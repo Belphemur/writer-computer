@@ -58,6 +58,11 @@ export interface AgentCommands {
     "agent_send",
     { chatId: string; messageId: string; text: string; context: ContextRef[] }
   >;
+  /** `agent_send` into the running turn at once, never queued (an ordinary send when idle). */
+  agent_steer: Command<
+    "agent_steer",
+    { chatId: string; messageId: string; text: string; context: ContextRef[] }
+  >;
   agent_cancel: Command<"agent_cancel", { chatId: string }>;
   agent_permission: Command<
     "agent_permission",
@@ -78,6 +83,8 @@ export interface AgentCommands {
     "agent_set_model",
     { chatId: string; model: string | null; effort: Effort | null }
   >;
+  /** "Reload session": restart an idle chat's process (`--resume`); `busy` during a turn or card. */
+  agent_reload: Command<"agent_reload", { chatId: string }>;
   agent_close: Command<"agent_close", { chatId: string }>;
   agent_resume: Command<"agent_resume", { chatId: string; sessionId: string }>;
   /** Events with seq > afterSeq still buffered (bounded ring), plus the current state. */

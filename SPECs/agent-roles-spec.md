@@ -39,7 +39,7 @@ Requirement: no `worker` role ships until a fake-claude runner test and one manu
 
 ## 3. Role registry (one source of truth)
 
-File: `apps/desktop/shared/agent-roles.json`, read by Rust (`include_str!`, serde) and TypeScript (JSON import), like `shared/code-files.json`. A contract test in each language parses it and checks the invariants below.
+File: `apps/desktop/shared/agent-roles.json`, read by Rust (`include_str!`, serde) and TypeScript (JSON import), like `shared/code-files.json`. A contract test in each language parses it and checks the invariants below. Each role also has `label` (the name the UI shows: Explorer, Worker) and `icon` (a key from a closed set the pane maps to its icons, `components/role-icons.ts`; a TypeScript test ties the two); both are UI-only and Rust ignores them. The sub-agent card that uses them is in `native-agent-spec.md` section 3.14.
 
 ```json
 {

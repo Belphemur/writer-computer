@@ -13,6 +13,8 @@ import { folderOfFile } from "@features/agent/web/lib/project-sources";
 import { useProjectBadge } from "@features/agent/web/project-badge";
 import { usePaneStore } from "@features/agent/web/stores/pane-store";
 import manifest from "../feature.json";
+import { AGENT_CONTEXT } from "./api";
+import { agentContextService } from "./service";
 
 type Availability = {
   hasWorkspace: boolean;
@@ -46,6 +48,7 @@ const ACTIONS: Record<string, (c: Availability) => void | Promise<void>> = {
       : (await agentApi()).openAgentPane(),
   "agent.new-chat": async () => (await agentApi()).startNewAgentChat(),
   "agent.history": async () => (await agentApi()).openAgentHistory(),
+  "agent.reload-session": async () => (await agentApi()).reloadAgentSession(),
   "agent.use-demo-backend": async () => {
     const api = await agentApi();
     api.setAgentBackend("mock");
@@ -119,6 +122,8 @@ export default defineFeature({
         },
       ],
     },
+    // What other features use to attach notes to the chat (the graph's "Attach to agent chat").
+    services: [{ id: AGENT_CONTEXT, service: agentContextService }],
     // The badge on a folder that holds a project.
     fileTreeDecorations: [{ id: "agent.project-badge", useBadge: useProjectBadge }],
     // The Agent page of Settings: backend tabs, Claude status, models and the generic rows.

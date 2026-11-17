@@ -14,6 +14,7 @@ pub mod changes;
 pub mod chat_store;
 pub mod claude_stream;
 pub mod cli_launcher;
+pub mod config_sync;
 pub mod env;
 pub mod events;
 pub mod images;

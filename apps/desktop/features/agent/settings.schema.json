@@ -157,6 +157,15 @@
       "default": true
     },
     {
+      "key": "agent.auto-reload",
+      "label": "Reload chats when their config changes",
+      "description": "Restart a chat's Claude process (keeping the conversation) when a file it read at start changes: a skill in .claude/skills or .agents/skills, .mcp.json, .claude/settings*.json, CLAUDE.md or AGENTS.md in the vault or the chat's project, or when an MCP server that was failing connects. Idle chats restart at once, busy ones after the turn, and a message sent while a chat is out of date restarts it first. Writer never looks at your home Claude folder (~/.claude): changes there need the Reload session action. Off: only Reload session restarts a chat.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "agent.memory",
       "label": "Agent memory",
       "description": "Where the agent keeps what it remembers across chats. Vault: plain Markdown files in the vault (.writer/memory/ for the whole vault, <project>/.memory/ for a project), readable and editable by anyone with the vault. Default: Claude Code's own folder in your home directory. Off: no memory. Applies to chats started or resumed after the change.",

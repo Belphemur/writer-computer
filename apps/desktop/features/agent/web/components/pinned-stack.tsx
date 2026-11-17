@@ -1,5 +1,5 @@
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
-import { removeQueuedMessage } from "@features/agent/web/hooks/agent-api";
+import { removeQueuedMessage, sendAgentNow } from "@features/agent/web/hooks/agent-api";
 import type { Chat, QueuedMessage } from "@features/agent/web/hooks/use-agent";
 import { Ico } from "./agent-icon";
 import { PermissionCard } from "./permission-card";
@@ -21,6 +21,14 @@ export function PinnedStack({ chat, queued }: { chat: Chat; queued: QueuedMessag
             Queued
           </span>
           <span className="min-w-0 flex-1 truncate">{queued.text}</span>
+          <button
+            type="button"
+            title="Cmd+Enter"
+            onClick={() => void sendAgentNow("")}
+            className="rounded px-1.5 py-0.5 text-[11px] font-medium text-text-secondary hover:bg-[var(--surface-selected)] hover:text-text-primary"
+          >
+            Send now
+          </button>
           <button
             type="button"
             aria-label="Remove queued message"

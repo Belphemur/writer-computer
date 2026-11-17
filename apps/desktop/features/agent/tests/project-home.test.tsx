@@ -37,6 +37,8 @@ const project: ProjectDetail = {
   webUrls: [],
   youtubeUrls: [],
   agentMode: null,
+  icon: null,
+  color: null,
   warnings: [],
 };
 

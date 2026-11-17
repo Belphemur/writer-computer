@@ -1,4 +1,5 @@
 import { reportedMatches } from "@features/agent/web/lib/model-label";
+import { RELOAD_NOT_STARTED_TEXT, reloadNoticeFor } from "@features/agent/web/lib/session-reload";
 import { parseWriterCommand } from "@features/agent/web/lib/writer-commands";
 import { create } from "zustand";
 import {
@@ -22,7 +23,9 @@ import type {
   PermissionPersist,
 } from "@features/agent/web/lib/events";
 import {
+  appendSteer,
   appendUserTurn,
+  canSteer,
   createChat,
   failSend,
   isBusy,
@@ -40,6 +43,7 @@ import {
   noteStateFromDoc,
   recordEvents,
   recordSend,
+  recordSteer,
   type NoteState,
 } from "@features/agent/web/lib/chat-persist";
 import {
@@ -144,6 +148,8 @@ interface AgentState {
   /** Switches the active chat's model (and effort): live when a session runs (`set_model`), else
    *  at the next start. `effort` undefined keeps the current one. */
   setChatModel: (model: string | null, effort?: ChatModelChoice["effort"]) => Promise<void>;
+  /** Reloads the active chat's session (header action, palette, `/reload`). */
+  reloadSession: () => Promise<void>;
   setView: (view: AgentView) => void;
   setBackend: (backend: AgentBackend) => void;
   newChat: (projectPath?: string | null) => ChatId;
@@ -154,7 +160,12 @@ interface AgentState {
   /** Adds image refs to the draft (read at call time, so a save that finished after more typing
    *  never overwrites it); an image already attached is not added twice. */
   addDraftImages: (chatId: ChatId, refs: readonly ContextRef[]) => void;
-  sendMessage: (text: string) => Promise<void>;
+  /** Enter: sends, or queues while a turn runs. `steer` (Cmd+Enter) writes it into the running
+   *  turn instead of queueing it (a normal send when idle). */
+  sendMessage: (text: string, opts?: { steer?: boolean }) => Promise<void>;
+  /** Cmd+Enter and the chip's "Send now": the text in the composer is steered; with none, the
+   *  queued messages are (one merged message, the chip clears). */
+  sendNow: (text: string) => Promise<void>;
   removeQueued: (chatId: ChatId) => void;
   stop: () => Promise<void>;
   decidePermission: (
@@ -563,6 +574,20 @@ function titleModelSetting(): string | null {
   return typeof m === "string" ? m : null;
 }
 
+/** "Reload session" for one chat: restarts its idle process with `--resume`. Resolves to the
+ *  notice to show now (refused while a turn or permission card is open, nothing to reload yet, a
+ *  failure), or `null` when it started: the `session-reloaded` event brings the notice. */
+export async function reloadChatSession(chatId: ChatId): Promise<string | null> {
+  const chat = useAgentStore.getState().chats[chatId];
+  if (!chat?.session || chat.state === "ended") return RELOAD_NOT_STARTED_TEXT;
+  try {
+    const { client } = await ensureRuntime();
+    return reloadNoticeFor(await client.reload({ chatId }));
+  } catch (e) {
+    return `Could not reload the session: ${classifyStartError(e).message}`;
+  }
+}
+
 /** Show a title Rust applied to the note: the tab title and the note's flags, with no focus
  *  change. A chat that is not open in the pane changes nothing here (its note is the truth). */
 function adoptTitleSummary(chatId: ChatId, summary: ChatSummary) {
@@ -592,12 +617,14 @@ export async function regenerateChatTitle(chatId: ChatId): Promise<RegenerateOut
 
 export const useAgentStore = create<AgentState>((set, get) => {
   /** Writes the user card and talks to the backend; the caller checked the chat is free.
-   *  `replay`: start a fresh session seeded with the note's text (the CLI lost the old one). */
+   *  `replay`: start a fresh session seeded with the note's text (the CLI lost the old one).
+   *  `steer`: the chat is mid-turn; the card joins that turn's timeline and the message goes into
+   *  the running turn. */
   async function deliver(
     chatId: ChatId,
     text: string,
     context: ContextRef[],
-    opts: { replay?: boolean } = {},
+    opts: { replay?: boolean; steer?: boolean } = {},
   ) {
     const before = get().chats[chatId];
     if (!before) return;
@@ -608,13 +635,15 @@ export const useAgentStore = create<AgentState>((set, get) => {
       : (before.session?.sessionId ?? before.resumeSessionId);
     const now = Date.now();
     set((s) => {
-      const chat = appendUserTurn(s.chats[chatId]!, { messageId, text, context }, now, live);
+      const msg = { messageId, text, context };
+      const chat = opts.steer
+        ? appendSteer(s.chats[chatId]!, msg, now)
+        : appendUserTurn(s.chats[chatId]!, msg, now, live);
       const note = s.notes[chatId];
+      const record = opts.steer ? recordSteer : recordSend;
       return {
         ...withChat(s, chatId, chat),
-        notes: note
-          ? { ...s.notes, [chatId]: recordSend(note, { messageId, text, context, ts: now }) }
-          : s.notes,
+        notes: note ? { ...s.notes, [chatId]: record(note, { ...msg, ts: now }) } : s.notes,
         resuming: { ...s.resuming, [chatId]: !live && resumeSessionId !== null },
       };
     });
@@ -655,7 +684,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const seed = await persistence.history.replay(chatId);
         sendText = `${seed.text}\n\n${sendText}`;
       }
-      await client.send({ chatId, messageId, text: sendText, context: refs });
+      const message = { chatId, messageId, text: sendText, context: refs };
+      if (opts.steer) await client.steer(message);
+      else await client.send(message);
       if (tabsBlock !== null && sendText.includes(tabsBlock))
         lastOpenTabsSent.set(chatId, tabsBlock);
     } catch (e) {
@@ -868,7 +899,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         };
       }),
 
-    sendMessage: async (rawText) => {
+    sendMessage: async (rawText, opts = {}) => {
       const chatId = get().activeChatId;
       const chat = chatId ? get().chats[chatId] : null;
       const text = rawText.trim();
@@ -882,15 +913,23 @@ export const useAgentStore = create<AgentState>((set, get) => {
           chat,
           args: writer.args,
           regenerateTitle: regenerateChatTitle,
+          reloadSession: reloadChatSession,
         });
-        set((s) =>
-          s.chats[chatId] ? withChat(s, chatId, { ...s.chats[chatId]!, localNotice: notice }) : s,
-        );
+        // `null`: the command's own event shows the notice
+        if (notice !== null) {
+          set((s) =>
+            s.chats[chatId] ? withChat(s, chatId, { ...s.chats[chatId]!, localNotice: notice }) : s,
+          );
+        }
         return;
       }
       const context = contextForSend(get().drafts[chatId] ?? EMPTY_DRAFT, text);
       // Clear the draft now; the mentions are consumed, the active-note choice persists.
       get().setDraft(chatId, { text: "", mentions: [], parked: [] });
+      if (opts.steer && canSteer(chat)) {
+        await deliver(chatId, text, context, { steer: true });
+        return;
+      }
       if (isBusy(chat)) {
         set((s) => {
           const q = s.queued[chatId];
@@ -906,6 +945,15 @@ export const useAgentStore = create<AgentState>((set, get) => {
         return;
       }
       await deliver(chatId, text, context);
+    },
+    sendNow: async (rawText) => {
+      if (rawText.trim()) return get().sendMessage(rawText, { steer: true });
+      const chatId = get().activeChatId;
+      const chat = chatId ? get().chats[chatId] : null;
+      const queued = chatId ? get().queued[chatId] : undefined;
+      if (!chatId || !chat || !queued || !(canSteer(chat) || !isBusy(chat))) return;
+      get().removeQueued(chatId);
+      await deliver(chatId, queued.text, queued.context, { steer: canSteer(chat) });
     },
     removeQueued: (chatId) =>
       set((s) => {
@@ -949,6 +997,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
                 error: { kind: "unknown", message: m, retryable: true, at: Date.now() },
               })
             : s,
+        );
+      }
+    },
+    reloadSession: async () => {
+      const chatId = get().activeChatId;
+      if (!chatId) return;
+      const notice = await reloadChatSession(chatId);
+      if (notice !== null) {
+        set((s) =>
+          s.chats[chatId] ? withChat(s, chatId, { ...s.chats[chatId]!, localNotice: notice }) : s,
         );
       }
     },

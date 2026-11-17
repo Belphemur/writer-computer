@@ -20,6 +20,10 @@ import {
 } from "@features/agent/web/lib/project-sources";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectsStore } from "@features/agent/web/stores/projects-store";
+import { logger } from "@/lib/logger";
+import { NO_APPEARANCE, type ProjectAppearance } from "@features/agent/web/lib/project-appearance";
+import { ProjectIcon } from "./project-icon";
+import { ProjectIconPicker } from "./project-icon-picker";
 import { VaultPickerInput } from "./vault-picker-input";
 
 const FOCUSABLE =
@@ -81,6 +85,8 @@ function DialogBody({
   const [tagInput, setTagInput] = useState("");
   const [inspection, setInspection] = useState<FolderInspection | null>(null);
   const [createAgentsMd, setCreateAgentsMd] = useState(true);
+  const [appearance, setAppearance] = useState<ProjectAppearance>(NO_APPEARANCE);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -112,6 +118,9 @@ function DialogBody({
       const card = cardRef.current;
       if (!card) return;
       if (event.key === "Escape") {
+        // The icon picker closes itself on Escape; the dialog stays.
+        if (event.target instanceof Element && event.target.closest("[data-project-icon-picker]"))
+          return;
         event.preventDefault();
         event.stopPropagation();
         onClose();
@@ -173,6 +182,12 @@ function DialogBody({
             inclusions,
             instructions,
           });
+      if (appearance.icon || appearance.color) {
+        // The project exists by now; a failed icon write must not undo or hide that.
+        await client
+          .update(project.path, { icon: appearance.icon ?? "", color: appearance.color ?? "" })
+          .catch((e: unknown) => logger.warn("agent", `could not set the project icon: ${e}`));
+      }
       void useProjectsStore.getState().refresh();
       onClose();
       openProjectInPane(project);
@@ -298,6 +313,37 @@ function DialogBody({
                 </div>
               </>
             )}
+
+            <div className="mt-3">
+              <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+                Icon and color{" "}
+                <span className="font-normal text-[var(--text-muted)]">(optional)</span>
+              </span>
+              <div className="mt-1.5">
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded={pickerOpen}
+                  onClick={() => setPickerOpen((o) => !o)}
+                  className="flex h-9 items-center gap-2 rounded-lg bg-[var(--surface-input)] px-3 text-[13px] text-[var(--text-secondary)]"
+                >
+                  <ProjectIcon icon={appearance.icon} color={appearance.color} size={16} />
+                  Choose icon…
+                </button>
+              </div>
+              {pickerOpen ? (
+                <div className="mt-1.5">
+                  <ProjectIconPicker
+                    value={appearance}
+                    onChange={(next, kind) => {
+                      setAppearance(next);
+                      if (kind !== "color") setPickerOpen(false);
+                    }}
+                    onClose={() => setPickerOpen(false)}
+                  />
+                </div>
+              ) : null}
+            </div>
 
             <label className="mt-3 block">
               <span className="text-[12px] font-medium text-[var(--text-secondary)]">

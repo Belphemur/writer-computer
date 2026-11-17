@@ -205,6 +205,11 @@ pub trait RoleAdapter {
     fn capability(&self, capability: &str) -> CapabilitySupport;
     /// Roles, tiers and flags to this backend's config.
     fn render(&self, input: &RenderInput<'_>) -> Rendered;
+    /// The backend reads skills, MCP servers, settings and instruction files only when its
+    /// process starts, so Writer restarts a chat's process (`--resume`) when one of them changes
+    /// (`config_sync.rs`, `agent.auto-reload`). A backend that reloads them itself answers
+    /// `false` and none of that applies to it.
+    fn restart_on_config_change(&self) -> bool;
 }
 
 /// The tool names a backend gives a role's granted capabilities, in order, without repeats.

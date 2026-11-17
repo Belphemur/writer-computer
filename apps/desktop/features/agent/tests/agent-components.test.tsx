@@ -214,6 +214,87 @@ describe("AgentPane", () => {
     expect($("[data-agent-footer]")!.textContent).toMatch(/Stopped/);
   });
 
+  describe("Cmd+Enter: send now", () => {
+    async function running() {
+      await openPane();
+      await act(async () => await get().sendMessage("write"));
+      await flush(10);
+      expect(chat().state).toBe("awaiting-permission");
+    }
+
+    it("steers the typed text into the running turn; the card says Steer", async () => {
+      await running();
+      // the permission card owns Cmd+Enter while it shows: use a turn with no card open
+      act(() =>
+        useAgentStore.setState((s) => {
+          const c = s.chats[s.activeChatId!]!;
+          const next = { ...c, pendingPermissions: [], state: "running" as const };
+          return { chats: { ...s.chats, [c.chatId]: next } };
+        }),
+      );
+      const steer = vi.spyOn(mock, "steer");
+      type(null, "use the other one");
+      key($("[data-agent-composer]")!, "Enter", { metaKey: true });
+      await flush(10);
+      expect(steer).toHaveBeenCalledTimes(1);
+      expect(get().queued[get().activeChatId!]).toBeUndefined();
+      const card = $("[data-agent-steer]")!;
+      expect(card.textContent).toContain("Steer");
+      expect(card.textContent).toContain("use the other one");
+      expect(composerText(composerView(container))).toBe("");
+    });
+
+    it("with an empty composer sends the queued message; the chip's Send now does the same", async () => {
+      await running();
+      await act(async () => await get().sendMessage("queued one"));
+      expect($("[data-agent-queued]")!.textContent).toContain("queued one");
+      const steer = vi.spyOn(mock, "steer");
+      await act(async () => button("Send now").click());
+      await flush(10);
+      expect(steer).toHaveBeenCalledTimes(1);
+      expect($("[data-agent-queued]")).toBeNull();
+    });
+
+    it("while a permission card shows, Cmd+Enter still allows once", async () => {
+      await running();
+      const steer = vi.spyOn(mock, "steer");
+      type(null, "typed");
+      key($("[data-agent-composer]")!, "Enter", { metaKey: true });
+      await flush(10);
+      expect(steer).not.toHaveBeenCalled();
+      expect(chat().pendingPermissions[0]?.tool).not.toBe("Write");
+    });
+
+    it("is a plain send while idle, and the send button's tooltip names the shortcut", async () => {
+      await openPane();
+      type(null, "hello");
+      key($("[data-agent-composer]")!, "Enter", { metaKey: true });
+      await flush(10);
+      expect(chat().turns[0]!.user?.text).toBe("hello");
+      expect($("[data-agent-steer]")).toBeNull();
+      await act(async () => mock.idle(get().activeChatId!));
+      await running();
+      type(null, "x");
+      // a permission card owns Cmd+Enter: no steer hint while it shows
+      expect(button("Queue message").title).toBe("Send");
+      expect($("[data-agent-composer]")!.getAttribute("aria-placeholder") ?? "").not.toContain(
+        "Cmd+Enter",
+      );
+      act(() =>
+        useAgentStore.setState((st) => {
+          const c = st.chats[st.activeChatId!]!;
+          return {
+            chats: {
+              ...st.chats,
+              [c.chatId]: { ...c, pendingPermissions: [], state: "running" as const },
+            },
+          };
+        }),
+      );
+      expect(button("Queue message").title).toContain("Cmd+Enter");
+    });
+  });
+
   it("disables the composer for a blocking error and shows the fix", async () => {
     await openPane();
     act(() =>

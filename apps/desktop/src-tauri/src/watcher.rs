@@ -135,6 +135,38 @@ fn event_kind_str(kind: &EventKind) -> Option<&'static str> {
     }
 }
 
+/// Sees the changed paths of every watched workspace: `(window label, vault root, paths)`.
+pub type PathObserver = Box<dyn Fn(&str, &Path, Vec<PathBuf>) + Send + Sync>;
+
+static PATH_OBSERVERS: parking_lot::RwLock<Vec<PathObserver>> =
+    parking_lot::RwLock::new(Vec::new());
+
+/// Registers a consumer of the watcher's changed paths (the one source of file changes: no second
+/// watcher). It gets each batch's paths BEFORE any ignore rule (the agent's config files are
+/// hidden dot files the sidebar never lists), created, modified or removed, Writer's own writes
+/// included, and runs on the watcher thread: it must only filter and hand off, never block.
+pub fn observe_paths(observer: PathObserver) {
+    PATH_OBSERVERS.write().push(observer);
+}
+
+fn notify_observers(label: &str, root: &Path, events: &[Event]) {
+    let observers = PATH_OBSERVERS.read();
+    if observers.is_empty() {
+        return;
+    }
+    let paths: Vec<PathBuf> = events
+        .iter()
+        .filter(|e| event_kind_str(&e.kind).is_some())
+        .flat_map(|e| e.paths.iter().cloned())
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+    for o in observers.iter() {
+        o(label, root, paths.clone());
+    }
+}
+
 /// Start a file watcher targeted at a specific window. All emitted events
 /// are routed via `emit_to(&window_label, ...)` so two windows hosting
 /// different workspaces don't cross-talk on file events. The watcher
@@ -210,6 +242,8 @@ pub fn start_watcher(
                 last_emit = Instant::now();
                 continue;
             }
+
+            notify_observers(&label, &watched_root, &pending);
 
             let mut rebuild_ignore = false;
             // Paths the vault index must re-read. Collected before the

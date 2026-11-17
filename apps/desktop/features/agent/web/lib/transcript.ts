@@ -7,9 +7,11 @@ import type {
   AgentSessionState,
   ChatId,
   ContextRef,
+  McpServerStatus,
   MessageId,
   PermissionRequestId,
   PermissionSuggestion,
+  SubagentRunStatus,
   ToolCallId,
   TurnChangesSummary,
   TurnFinishReason,
@@ -31,6 +33,8 @@ export type TextBlock = {
   text: string;
   /** True once the final `text` event arrived (or the turn ended); the block stops streaming. */
   final: boolean;
+  /** The sub-agent run (its `Agent`/`Task` call) that wrote it; absent: the main agent. */
+  parentToolCallId?: ToolCallId | null;
 };
 
 export type ThinkingBlock = {
@@ -44,6 +48,8 @@ export type ThinkingBlock = {
   endedAt: number | null;
   text: string;
   estimatedTokens: number | null;
+  /** The sub-agent run that thought it; absent: the main agent. */
+  parentToolCallId?: ToolCallId | null;
 };
 
 export type ToolBlock = {
@@ -64,7 +70,35 @@ export type ToolBlock = {
   permission: ToolPermission | null;
 };
 
-export type Block = TextBlock | ThinkingBlock | ToolBlock;
+/** A message the user sent into the running turn (a steer), at the point of the timeline where it
+ *  was sent. */
+export type SteerBlock = {
+  kind: "steer";
+  /** `steer:<messageId>` */
+  id: string;
+  message: UserMessage;
+  /** The CLI never acknowledged it (`steer-undelivered`): shown with a Retry button. */
+  undelivered?: boolean;
+};
+
+export type Block = TextBlock | ThinkingBlock | ToolBlock | SteerBlock;
+
+/** What the backend said about one sub-agent run (keyed by its launch call id in
+ *  `Turn.subagents`): who it is and the model it runs (`subagent-started`, resolved in Rust), how
+ *  it ended when the CLI said so (`subagent-status`: the only end of a background run), and the UI
+ *  clock for its elapsed time. */
+export type SubagentMeta = {
+  /** The registry role id (`explorer`); null for a sub-agent type Writer does not define. */
+  role: string | null;
+  /** The sub-agent type as the call named it. */
+  name: string;
+  model: string | null;
+  status: SubagentRunStatus | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  /** The run's final answer, kept in the chat note (the launch call's output is not). */
+  summary?: string;
+};
 
 export type TurnStatus = "running" | TurnFinishReason;
 
@@ -103,6 +137,10 @@ export type Turn = {
   errors: string[];
   /** What the agent changed in the vault this turn (`turn-changes`, or the chat note). */
   changes?: TurnChangesSummary;
+  /** The sub-agent runs of the turn by launch call id. */
+  subagents?: Record<ToolCallId, SubagentMeta>;
+  /** The sub-agent run that made each message (`subagent-message`); absent: the main agent's. */
+  messageParents?: Record<MessageId, ToolCallId>;
 };
 
 export type PermissionView = {
@@ -134,6 +172,9 @@ export type SessionInfo = {
   tools: string[];
   slashCommands: string[];
   skills: string[];
+  /** The MCP servers of the latest `init`; `null` after a reload until the next message's init
+   *  (the CLI reports them only then). */
+  mcpServers: McpServerStatus[] | null;
   cliVersion: string | null;
 };
 

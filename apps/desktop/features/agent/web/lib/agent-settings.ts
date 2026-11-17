@@ -52,6 +52,7 @@ export function agentSettingsFrom(settings: Record<string, unknown>): AgentSetti
     disallowedTools: list(read(settings, "agent.disallowed-tools")),
     orchestrate: read(settings, "agent.orchestrate") !== false,
     showThinking: read(settings, "agent.show-thinking") !== false,
+    autoReload: read(settings, "agent.auto-reload") !== false,
     memory: (MEMORIES as readonly unknown[]).includes(memory)
       ? (memory as AgentMemory)
       : (agentSettingDefault("agent.memory") as AgentMemory),

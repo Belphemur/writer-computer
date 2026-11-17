@@ -7,6 +7,7 @@ import {
   loadAgentSkills,
   removeQueuedMessage,
   sendAgentMessage,
+  sendAgentNow,
   setAgentDraft,
   stopAgent,
 } from "@features/agent/web/hooks/agent-api";
@@ -81,6 +82,9 @@ function placeholder(chat: Chat): string {
       return "This chat has ended";
     case "error":
       return isComposerDisabled(chat) ? "Fix the problem above to continue" : "Ask anything";
+    case "running":
+      // a permission card owns Cmd+Enter (allow once), so the steer hint waits for it to close
+      return "Enter queues, Cmd+Enter sends now (stops the current step)";
     default:
       return "Ask anything, @ to add context, / for commands";
   }
@@ -389,6 +393,16 @@ export function Composer({
     if (e.key === "Enter" && !e.shiftKey && !mod) {
       e.preventDefault();
       send();
+      return true;
+    }
+
+    // Cmd+Enter: send now, into the running turn (a plain send when idle). A pending permission
+    // card took the chord above.
+    if (e.key === "Enter" && mod && !e.shiftKey) {
+      e.preventDefault();
+      if (disabled) return true;
+      setMenu(null);
+      void sendAgentNow(text);
       return true;
     }
 

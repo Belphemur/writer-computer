@@ -1,17 +1,30 @@
 /** Splits a turn's blocks into render segments: runs of tool/thinking rows become one
  *  collapsible group, text blocks stand alone (spec 3.2 `timeline-group`). Pure. */
-import type { Block, TextBlock, ThinkingBlock, ToolBlock, Turn } from "./transcript";
+import type { Block, SteerBlock, TextBlock, ThinkingBlock, ToolBlock, Turn } from "./transcript";
+import { splitRuns, type SubagentSegmentData } from "./subagents";
 import { groupTitle } from "./tool-kinds";
 
 export type Segment =
   | { kind: "text"; block: TextBlock }
+  | { kind: "steer"; block: SteerBlock }
+  | { kind: "subagent"; run: SubagentSegmentData }
   | { kind: "group"; id: string; blocks: (ToolBlock | ThinkingBlock)[] };
 
-export function segmentTurn(turn: Turn): Segment[] {
+/** Render segments of a list of blocks; a launch call that has a run in `runs` becomes the
+ *  sub-agent's card instead of a tool row. */
+export function segmentBlocks(
+  blocks: readonly Block[],
+  runs?: ReadonlyMap<string, SubagentSegmentData>,
+): Segment[] {
   const out: Segment[] = [];
-  for (const block of turn.blocks) {
-    if (block.kind === "text") {
-      out.push({ kind: "text", block });
+  for (const block of blocks) {
+    if (block.kind === "text" || block.kind === "steer") {
+      out.push({ kind: block.kind, block } as Segment);
+      continue;
+    }
+    const run = block.kind === "tool" ? runs?.get(block.id) : undefined;
+    if (run) {
+      out.push({ kind: "subagent", run });
       continue;
     }
     const last = out[out.length - 1];
@@ -19,6 +32,13 @@ export function segmentTurn(turn: Turn): Segment[] {
     else out.push({ kind: "group", id: `group:${block.id}`, blocks: [block] });
   }
   return out;
+}
+
+/** A turn's segments: the main agent's own rows and text in order, each delegated run as one card
+ *  at the place its launch call sits (the sub-agent's blocks are inside the card, not here). */
+export function segmentTurn(turn: Turn): Segment[] {
+  const { main, runs } = splitRuns(turn);
+  return segmentBlocks(main, runs);
 }
 
 export function groupHeader(blocks: readonly Block[], running: boolean): string {

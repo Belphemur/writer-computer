@@ -1,0 +1,351 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault",
+    "permissionMode": "default",
+    "tools": [
+      "Agent",
+      "Edit",
+      "Grep",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_m1",
+    "blockIndex": 0,
+    "text": "I will hand the search and the fix to two helpers."
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_ex",
+    "messageId": "msg_m1",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_ex",
+    "input": {
+      "description": "Find notes about pricing",
+      "prompt": "List the notes that mention pricing.",
+      "run_in_background": false,
+      "subagent_type": "writer-explorer"
+    }
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_wk",
+    "messageId": "msg_m1",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_wk",
+    "input": {
+      "description": "Fix the typo in Plan",
+      "prompt": "In Plan.md change teh to the.",
+      "run_in_background": false,
+      "subagent_type": "writer-worker"
+    }
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_ex",
+    "status": "running"
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_wk",
+    "status": "running"
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_e1",
+    "parentToolCallId": "toolu_ex"
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_e1",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_e1",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_e_grep",
+    "messageId": "msg_e1",
+    "tool": "Grep",
+    "parentToolCallId": "toolu_ex"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_e_grep",
+    "input": {
+      "pattern": "pricing"
+    }
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_w1",
+    "parentToolCallId": "toolu_wk"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_w_read",
+    "messageId": "msg_w1",
+    "tool": "Read",
+    "parentToolCallId": "toolu_wk"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_w_read",
+    "input": {
+      "file_path": "/vault/Plan.md"
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_e_grep",
+    "output": "Plan.md\nPricing.md",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_w_read",
+    "output": "1\tFix teh typo",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_e2",
+    "parentToolCallId": "toolu_ex"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_e_read",
+    "messageId": "msg_e2",
+    "tool": "Read",
+    "parentToolCallId": "toolu_ex"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_e_read",
+    "input": {
+      "file_path": "/vault/Pricing.md"
+    }
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_w2",
+    "parentToolCallId": "toolu_wk"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_w_edit",
+    "messageId": "msg_w2",
+    "tool": "Edit",
+    "parentToolCallId": "toolu_wk"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_w_edit",
+    "input": {
+      "file_path": "/vault/Plan.md",
+      "new_string": "the",
+      "old_string": "teh"
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_e_read",
+    "output": "1\tPricing",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_w_edit",
+    "output": "File updated",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_e3",
+    "parentToolCallId": "toolu_ex"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_e3",
+    "blockIndex": 0,
+    "text": "Found 2 notes: Plan.md and Pricing.md."
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_w3",
+    "parentToolCallId": "toolu_wk"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_w3",
+    "blockIndex": 0,
+    "text": "Plan.md: fixed teh to the."
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_ex",
+    "status": "completed"
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_ex",
+    "status": "completed"
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_wk",
+    "status": "completed"
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_wk",
+    "status": "completed"
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_ex",
+    "output": "Found 2 notes: Plan.md and Pricing.md.",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_wk",
+    "output": "Plan.md: fixed teh to the.",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_m2",
+    "blockIndex": 0,
+    "text": "Both helpers are done."
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.002,
+    "contextWindow": null
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 10,
+    "apiDurationMs": 5,
+    "numTurns": 3,
+    "isError": false,
+    "result": "Both helpers are done.",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

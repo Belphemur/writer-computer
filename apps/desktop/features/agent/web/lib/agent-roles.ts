@@ -14,6 +14,16 @@ export const AGENT_TIERS: readonly string[] = registry.tiers;
 
 export const AGENT_ROLES: readonly AgentRole[] = registry.roles;
 
+/** The role a sub-agent type or role id names (`writer-worker` or `worker`), if Writer defines it.
+ *  Rust sends the role id (`SubagentStarted.role`, `FileChangeSummary.by`); the display name and
+ *  icon key live in the registry, never in a component. */
+export const roleOf = (name: string | null | undefined): AgentRole | undefined =>
+  AGENT_ROLES.find((r) => r.id === name || `writer-${r.id}` === name);
+
+/** What the UI calls a sub-agent: the registry's label for a Writer role, else the name as the
+ *  backend gave it. */
+export const roleLabelOf = (name: string): string => roleOf(name)?.label ?? name;
+
 /** The Claude backend's model setting for a tier (`agent.claude.model-cheap`, ...). Each backend
  *  owns its keys in its feature's settings fragment; Claude is the only backend today. */
 export const claudeTierSettingKey = (tier: string): string => `agent.claude.model-${tier}`;

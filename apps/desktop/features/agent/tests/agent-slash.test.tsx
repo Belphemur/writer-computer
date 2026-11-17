@@ -79,6 +79,7 @@ describe("slash menu logic", () => {
     });
     expect(items.map((i) => i.name)).toEqual([
       "regenerate-title",
+      "reload",
       "release-notes",
       "writer-cli",
       "writer-search",
@@ -89,6 +90,7 @@ describe("slash menu logic", () => {
     ]);
     expect(items.map((i) => i.source)).toEqual([
       "writer",
+      "writer",
       "project",
       "vault",
       "vault",
@@ -97,7 +99,7 @@ describe("slash menu logic", () => {
       "cli",
       "cli",
     ]);
-    expect(items[2]).toMatchObject({ kind: "skill", description: "Use the writer command line" });
+    expect(items[3]).toMatchObject({ kind: "skill", description: "Use the writer command line" });
     expect(items.find((i) => i.name === "user-skill")).toMatchObject({
       source: "cli",
       kind: "skill",
@@ -155,6 +157,7 @@ describe("slash menu logic", () => {
   it("before any other source exists only Writer's own commands are listed (no invented built-ins)", () => {
     expect(mergeSlashItems([], null).map((i) => [i.name, i.source])).toEqual([
       ["regenerate-title", "writer"],
+      ["reload", "writer"],
     ]);
   });
 
@@ -173,7 +176,7 @@ describe("slash menu logic", () => {
 
   it("filters fuzzily on the name with the vault ranker, then by description words", () => {
     const items = mergeSlashItems(DISK, { slashCommands: ["compact"], skills: [] });
-    expect(filterSlash(items, "").map((i) => i.name)).toHaveLength(6);
+    expect(filterSlash(items, "").map((i) => i.name)).toHaveLength(7);
     expect(filterSlash(items, "search")[0]!.name).toBe("writer-search");
     expect(filterSlash(items, "wcli").map((i) => i.name)).toEqual(["writer-cli"]);
     expect(filterSlash(items, "relnot").map((i) => i.name)).toContain("release-notes");
@@ -241,6 +244,7 @@ describe("the / menu in the composer", () => {
     await flush(5);
     expect(rows()).toEqual([
       "//regenerate-titleWrite a new title for this chatWriter",
+      "//reloadRestart this chat's session to pick up new skills and MCP serversWriter",
       "//release-notesDraft bullets for a releaseproject",
       "//writer-cliUse the writer command linevault",
       "//writer-searchSearch the vault from the shellvault",
@@ -263,6 +267,7 @@ describe("the / menu in the composer", () => {
     expect(useAgentStore.getState().chats[id]!.turns).toHaveLength(0);
     type(ta(), "/");
     await flush(5);
+    key(ta(), "ArrowDown");
     key(ta(), "ArrowDown");
     key(ta(), "ArrowDown");
     key(ta(), "Tab");
@@ -304,13 +309,13 @@ describe("the / menu in the composer", () => {
   });
 
   it("a pick replaces only the token under the caret and keeps the text around it", async () => {
-    typeAt("first /wr and then /rel later", "first /wr".length);
+    typeAt("first /wr and then /rele later", "first /wr".length);
     await flush(5);
     key(ta(), "Enter");
     await flush();
-    expect(draftText()).toBe("first /writer-cli and then /rel later");
+    expect(draftText()).toBe("first /writer-cli and then /rele later");
     expect(ta().state.selection.main.head).toBe("first /writer-cli ".length);
-    typeAt(draftText().replace("/rel", "/re"), "first /writer-cli and then /re".length);
+    typeAt(draftText(), "first /writer-cli and then /rele".length);
     await flush(5);
     key(ta(), "Enter");
     await flush();
@@ -432,6 +437,9 @@ describe("the / menu in the composer", () => {
     type(ta(), "/");
     await flush(5);
     expect(useAgentStore.getState().skills[""]!.status).toBe("error");
-    expect(rows()).toEqual(["//regenerate-titleWrite a new title for this chatWriter"]);
+    expect(rows()).toEqual([
+      "//regenerate-titleWrite a new title for this chatWriter",
+      "//reloadRestart this chat's session to pick up new skills and MCP serversWriter",
+    ]);
   });
 });

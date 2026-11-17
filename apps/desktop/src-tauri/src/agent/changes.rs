@@ -24,6 +24,7 @@
 use super::events::*;
 use super::line_diff::{counts, diff_lines, split_lines, Edit};
 use super::memory;
+use super::sub_tracker::Author;
 use crate::vault_ops;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -93,7 +94,7 @@ fn read_snap(abs: &Path, keep_text: bool) -> Snap {
 
 struct FileRec {
     /// The sub-agent role that made the first edit of this file in the turn (`None`: the main agent).
-    by: Option<String>,
+    by: Option<Author>,
     rel: String,
     abs: PathBuf,
     pre: Snap,
@@ -258,7 +259,8 @@ fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
         removed,
         old_path: e.from.map(|i| files[i].rel.clone()),
         no_diff,
-        by: f.by.clone(),
+        by: f.by.as_ref().map(|a| a.label.clone()),
+        by_call: f.by.as_ref().map(|a| a.call_id.clone()),
     }
 }
 
@@ -343,7 +345,7 @@ impl ChangeStore {
         self.capture_by(chat_id, root, cwd, tool, input, None);
     }
 
-    /// [`ChangeStore::capture`] for a call made by a sub-agent: `by` is its role label, kept on
+    /// [`ChangeStore::capture`] for a call made by a sub-agent: `by` is its role label and run, kept on
     /// the file's record (the first snapshot wins, so the first author does too).
     pub fn capture_by(
         &self,
@@ -352,7 +354,7 @@ impl ChangeStore {
         cwd: &Path,
         tool: &str,
         input: &Value,
-        by: Option<&str>,
+        by: Option<&Author>,
     ) {
         let shell = tool == SHELL_TOOL;
         if !shell && !EDIT_TOOLS.contains(&tool) {
@@ -415,7 +417,7 @@ impl ChangeStore {
             }
             add_bytes += snap.bytes();
             kept.push(FileRec {
-                by: by.map(String::from),
+                by: by.cloned(),
                 rel: c.rel.clone(),
                 abs: c.abs.clone(),
                 pre: snap,

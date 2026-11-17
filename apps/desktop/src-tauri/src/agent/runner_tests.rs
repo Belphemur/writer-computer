@@ -6,13 +6,16 @@
 //!
 //! A `{"type":"fake_pause"}` line in a fixture makes the script wait until the test creates `go`
 //! (`Harness::go`), so a test can act between two lines (a tool "running" after its call was
-//! announced). Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
+//! announced). A `{"type":"fake_take_stdin"}` line makes it read one stdin line right there, in
+//! the middle of the turn (a steer taken at a tool boundary); the `uuid` of the line it was given
+//! replaces `__STEER_UUID__` in the lines that follow, the way the real CLI echoes it. Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
 //! 2.1.326 run that delegated to a sub-agent (`system` `task_*` lines, `parent_tool_use_id`).
 //!
 //! Modes (read from `mode.txt` at every stdin line, and once at launch): `normal`,
 //! `crash-after-init`, `crash-before-init`, `hang`, `resume-missing`, `mode-error`,
 //! `unsupported`, `grandchild`.
 
+use super::config_sync::{McpProbe, ProbeTarget};
 use super::events::*;
 use super::ports::{ChatPort, InjectAgentsMd, ProjectPort, SpawnContext};
 use super::session::{AgentSessions, Sink, StartParams, StartedIds, Timing};
@@ -41,16 +44,19 @@ fi
 exec 3<&0
 if [ "$MODE" = grandchild ]; then sleep 300 & echo $! > "$D/grandchild.pid"; fi
 turn=0
+STEER_UUID=""
+uuid_of() { printf '%s' "$1" | sed -nE 's/.*"uuid":"([^"]*)".*/\1/p'; }
 play() { # fixture, max lines
   sed -E "s/\"session_id\":\"[^\"]*\"/\"session_id\":\"$SID\"/g" "$1" > "$D/turn.tmp"
   exec 4< "$D/turn.tmp"
   n=0
   while IFS= read -r l <&4; do
-    printf '%s\n' "$l"
+    printf '%s\n' "${l//__STEER_UUID__/$STEER_UUID}"
     n=$((n+1))
     [ -n "$2" ] && [ "$n" -ge "$2" ] && break
     case "$l" in
       *'"type":"control_request"'*) read -r resp <&3 || exit 0; echo "$resp" >> "$D/stdin.log";;
+      *'"type":"fake_take_stdin"'*) read -r resp <&3 || exit 0; echo "$resp" >> "$D/stdin.log"; STEER_UUID=$(uuid_of "$resp");;
       *'"type":"fake_pause"'*) while [ ! -e "$D/go" ]; do sleep 0.05; done; rm -f "$D/go";;
     esac
   done
@@ -70,7 +76,7 @@ while IFS= read -r line <&3; do
         printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$rid"
       fi
       continue;;
-    *'"type":"user"'*) ;;
+    *'"type":"user"'*) STEER_UUID=$(uuid_of "$line");;
     *) continue;;
   esac
   f="$(sed -n "$((turn+1))p" "$D/turns.txt")"; turn=$((turn+1))
@@ -123,6 +129,10 @@ fn test_timing() -> Timing {
         term_to_kill: Duration::from_millis(300),
         idle_after: Duration::from_secs(1800),
         reaper_every: Duration::from_millis(50),
+        config_debounce: Duration::from_millis(150),
+        mcp_backoff: [Duration::from_millis(200); 3],
+        mcp_probe_timeout: Duration::from_secs(5),
+        steer_ack: Duration::from_millis(600),
     }
 }
 
@@ -132,6 +142,15 @@ impl Harness {
     }
 
     fn with_timing(turns: &[&str], mode: &str, timing: Timing) -> Self {
+        Self::with_probe(
+            turns,
+            mode,
+            timing,
+            Arc::new(super::config_sync::CliMcpProbe),
+        )
+    }
+
+    fn with_probe(turns: &[&str], mode: &str, timing: Timing, probe: Arc<dyn McpProbe>) -> Self {
         init_env();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("vault");
@@ -153,7 +172,7 @@ impl Harness {
                 root,
                 fdir,
                 fake,
-                sessions: AgentSessions::with_timing(timing),
+                sessions: AgentSessions::with_probe(timing, probe),
                 rx,
                 sink,
                 seen: Vec::new(),
@@ -195,6 +214,7 @@ impl Harness {
             disallowed_tools: vec![],
             orchestrate: true,
             show_thinking: false,
+            auto_reload: true,
             memory: AgentMemory::Default,
             tier_models: Default::default(),
         }
@@ -443,6 +463,142 @@ fn one_process_serves_several_turns_and_queues_while_busy() {
     let second = stdin.find("second").expect("second sent");
     assert!(first < second);
     assert!(h.sessions.get("w", CHAT).unwrap().is_live());
+}
+
+/// The steer uuid recorded in the `steer-*` fixtures.
+const STEER_ID: &str = "7c1f0a52-2b44-4d1e-9a60-0f3b8f6d2e11";
+const STEER_FIXTURE_UUID: &str = "00000000-0000-4000-8000-0000000000a1";
+
+/// Plays a `steer-*` capture as the CLI's turns (one per `result` line). The steer's uuid becomes
+/// the placeholder the fake fills in from the line it is given (as the real CLI echoes it).
+/// `first` is a fake control line placed after the first turn's init (where the test acts), and
+/// `second` one placed at the start of the next turn.
+fn use_steer_turns(h: &Harness, name: &str, first: &str, second: Option<&str>) {
+    let text = std::fs::read_to_string(fixture(name))
+        .unwrap()
+        .replace(STEER_FIXTURE_UUID, "__STEER_UUID__");
+    let mut turns: Vec<Vec<String>> = vec![Vec::new()];
+    for l in text.lines() {
+        turns.last_mut().unwrap().push(l.to_string());
+        if l.contains("\"type\":\"result\"") {
+            turns.push(Vec::new());
+        }
+    }
+    turns.retain(|t| !t.is_empty());
+    turns[0].insert(1, format!(r#"{{"type":"{first}"}}"#));
+    if let Some(line) = second {
+        turns[1].insert(0, format!(r#"{{"type":"{line}"}}"#));
+    }
+    let mut list = String::new();
+    for (i, t) in turns.iter().enumerate() {
+        let file = h.fdir.join(format!("steer-turn-{i}.jsonl"));
+        std::fs::write(&file, t.join("\n") + "\n").unwrap();
+        list.push_str(&format!("{}\n", file.display()));
+    }
+    std::fs::write(h.fdir.join("turns.txt"), list).unwrap();
+}
+
+fn started(h: &mut Harness) {
+    h.next(CHAT, "session-started", |e| {
+        matches!(e, AgentEvent::SessionStarted { .. })
+    });
+}
+
+#[test]
+fn a_steer_is_written_into_the_running_turn_not_queued() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(&h, "steer-injected", "fake_take_stdin", None);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "left instead".into(), &[])
+        .unwrap();
+    // The fake blocks on stdin in the middle of the turn: the turn can only finish when the steer
+    // was written then, not held until the turn's end.
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+    let stdin = h.lines("stdin.log");
+    assert_eq!(stdin.len(), 2, "the steer is the only other line");
+    assert!(stdin[1].contains("left instead") && stdin[1].contains("\"uuid\""));
+    // taken inside the turn (receipt before the result): nothing waits, nothing is sent after
+    h.drain();
+    assert_eq!(h.lines("stdin.log").len(), 2);
+}
+
+#[test]
+fn a_steer_the_cli_runs_as_the_next_turn_keeps_the_session_working_until_that_ends() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(&h, "steer-deferred", "fake_pause", Some("fake_pause"));
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "also this".into(), &[])
+        .unwrap();
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    // no tool boundary took the steer: the CLI starts its turn by itself, the session is not idle
+    assert_eq!(
+        h.sessions.get("w", CHAT).unwrap().state(),
+        AgentSessionState::Running
+    );
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle after the steer's turn", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+}
+
+#[test]
+fn a_steer_the_cli_never_acknowledges_is_reported_and_frees_the_session() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    let mut first: Vec<String> = std::fs::read_to_string(fixture("ok-turn"))
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect();
+    first.insert(1, r#"{"type":"fake_pause"}"#.into());
+    let file = h.fdir.join("paused.jsonl");
+    std::fs::write(&file, first.join("\n") + "\n").unwrap();
+    std::fs::write(
+        h.fdir.join("turns.txt"),
+        format!("{}\n{}\n", file.display(), fixture("ok-turn").display()),
+    )
+    .unwrap();
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "also this".into(), &[])
+        .unwrap();
+    h.go();
+    // the fake plays the steer's turn without ever echoing it
+    match h.next(CHAT, "steer-undelivered", |e| {
+        matches!(e, AgentEvent::SteerUndelivered { .. })
+    }) {
+        AgentEvent::SteerUndelivered { message_id } => assert_eq!(message_id, STEER_ID),
+        _ => unreachable!(),
+    }
+    h.wait_until("idle after the report", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+}
+
+#[test]
+fn a_steer_with_no_running_turn_is_an_ordinary_send() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "again".into(), &[])
+        .unwrap();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let stdin = h.lines("stdin.log");
+    assert!(stdin[1].contains("again") && !stdin[1].contains("\"uuid\""));
 }
 
 #[test]
@@ -1438,12 +1594,53 @@ fn a_sub_agent_edit_is_snapshotted_before_it_runs_and_attributed_to_its_role() {
     assert_eq!(f.status, ChangeStatus::Modified);
     assert_eq!((f.added, f.removed), (2, 1), "diffed against the OLD text");
     assert_eq!(f.by.as_deref(), Some("worker"));
+    assert_eq!(
+        f.by_call.as_deref(),
+        Some("toolu_agent1"),
+        "the card links to the sub-agent run that made the edit"
+    );
     let changes = h.sessions.changes();
     let out = changes
         .revert(CHAT, &summary.turn_id, &h.root, &["notes.txt".into()])
         .unwrap();
     assert_eq!(out[0].result, RevertResult::Reverted);
     assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\nline\n");
+}
+
+/// The UI never resolves a model: `subagent-started` follows the launch call's input with the role
+/// and the model of its tier (the setting the process started with), from the same code that
+/// wrote the `--agents` JSON; a tier that inherits shows the chat's own model.
+#[test]
+fn a_launch_is_announced_with_its_role_and_the_model_of_its_tier() {
+    for (setting, expected) in [
+        (Some("opus"), "opus"),
+        (Some("default"), "claude-sonnet-5-5"),
+    ] {
+        let mut h = Harness::new(&["subagent-edit"], "normal");
+        let notes = h.root.join("notes.txt");
+        std::fs::write(&notes, "old\nline\n").unwrap();
+        h.use_fixture_for("subagent-edit", &notes);
+        let mut p = h.params(CHAT, "w", None);
+        p.request
+            .settings
+            .tier_models
+            .insert("standard".into(), setting.map(String::from));
+        h.sessions.start(p).unwrap();
+        h.send(CHAT, "edit it");
+        let started = h.next(CHAT, "the launch announced", |e| {
+            matches!(e, AgentEvent::SubagentStarted { .. })
+        });
+        assert_eq!(
+            started,
+            AgentEvent::SubagentStarted {
+                tool_call_id: "toolu_agent1".into(),
+                role: Some("worker".into()),
+                name: "writer-worker".into(),
+                model: Some(expected.into()),
+            }
+        );
+        h.go();
+    }
 }
 
 /// Item 5b: the first `result` arrives while a background sub-agent still works (its task is
@@ -1639,4 +1836,391 @@ fn the_system_block_claims_writer_only_when_the_launcher_is_on_the_path() {
     p.cli_dir = Some(PathBuf::from("/writer/launcher/bin"));
     h.sessions.start(p).unwrap();
     assert_eq!(*seen.0.lock(), vec![false, true]);
+}
+
+fn is_reloaded(e: &AgentEvent) -> bool {
+    matches!(e, AgentEvent::SessionReloaded { .. })
+}
+
+#[test]
+fn a_manual_reload_respawns_with_resume_and_the_same_argv_otherwise() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    let first_pid = h.lines("pids.log")[0].clone();
+    assert_eq!(
+        h.sessions.reload("w", CHAT).unwrap(),
+        ReloadOutcome::Started
+    );
+    h.next(CHAT, "session-reloaded", is_reloaded);
+    h.wait_until("the new process started", || {
+        h.lines("argv.log").len() == 2 && h.lines("pids.log").len() == 2
+    });
+    let argv = h.lines("argv.log");
+    assert_ne!(h.lines("pids.log")[1], first_pid);
+    // the chat's id was the session id; only the flag that names it changes
+    assert_eq!(
+        argv[0].replace("--session-id", "--resume"),
+        argv[1],
+        "same model, permission mode and settings"
+    );
+    assert!(argv[1].contains(&format!("--resume {CHAT}")));
+    assert_eq!(
+        h.sessions.get("w", CHAT).unwrap().state(),
+        AgentSessionState::Idle
+    );
+    // the conversation goes on in the new process, and the next init refreshes the lists
+    h.send(CHAT, "again");
+    h.next(CHAT, "second init", |e| {
+        matches!(e, AgentEvent::SessionStarted { .. })
+    });
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+}
+
+#[test]
+fn a_reload_is_refused_during_a_turn_and_during_a_permission_card() {
+    let mut h = Harness::new(&["tool-auto-allowed"], "hang");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.wait_until("turn running", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Running
+    });
+    h.wait_until("process up", || h.lines("pids.log").len() == 1);
+    assert_eq!(h.sessions.reload("w", CHAT).unwrap(), ReloadOutcome::Busy);
+    h.drain();
+    assert_eq!(h.lines("pids.log").len(), 1, "nothing was touched");
+    assert!(!h.seen.iter().any(|e| is_reloaded(&e.event)));
+
+    let mut h = Harness::new(&["permission-allow"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "run it");
+    h.next(CHAT, "permission-request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    });
+    assert_eq!(h.sessions.reload("w", CHAT).unwrap(), ReloadOutcome::Busy);
+    h.drain();
+    assert_eq!(h.lines("pids.log").len(), 1);
+    assert!(!h.seen.iter().any(|e| is_reloaded(&e.event)));
+}
+
+#[test]
+fn reloading_a_chat_with_no_process_only_reports_it() {
+    let mut t = test_timing();
+    t.idle_after = Duration::from_millis(300);
+    let mut h = Harness::with_timing(&["ok-turn"], "normal", t);
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    h.wait_until("idle kill", || h.sessions.live_count("w") == 0);
+    assert_eq!(
+        h.sessions.reload("w", CHAT).unwrap(),
+        ReloadOutcome::Started
+    );
+    h.next(CHAT, "session-reloaded", is_reloaded);
+    assert_eq!(h.lines("pids.log").len(), 1, "the next message starts it");
+}
+
+// ------------------------------------------------------------------------------ config change
+
+fn skill_change(h: &Harness) {
+    h.sessions.config_paths_changed(
+        "w",
+        &h.root,
+        vec![h.root.join(".claude/skills/new/SKILL.md")],
+    );
+}
+
+fn reloads(h: &Harness) -> Vec<Option<String>> {
+    h.seen
+        .iter()
+        .filter_map(|e| match &e.event {
+            AgentEvent::SessionReloaded { reason } => Some(reason.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn reason(h: &mut Harness) -> Option<String> {
+    match h.next(CHAT, "session-reloaded", is_reloaded) {
+        AgentEvent::SessionReloaded { reason } => reason,
+        _ => unreachable!(),
+    }
+}
+
+fn first_turn(h: &mut Harness) {
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+}
+
+#[test]
+fn an_idle_chat_restarts_under_the_hood_when_a_skill_appears() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    first_turn(&mut h);
+    skill_change(&h);
+    assert_eq!(reason(&mut h).as_deref(), Some("skill new changed"));
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+    let argv = h.lines("argv.log");
+    assert_eq!(argv[0].replace("--session-id", "--resume"), argv[1]);
+    h.wait_until("idle again", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+    // nothing else changed: no second restart
+    h.drain();
+    assert_eq!(reloads(&h).len(), 1);
+}
+
+#[test]
+fn a_busy_chat_restarts_right_after_its_turn_and_a_waiting_message_follows() {
+    let mut h = Harness::new(&["interrupt", "ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "do something");
+    h.next(CHAT, "request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    });
+    skill_change(&h);
+    std::thread::sleep(Duration::from_millis(600)); // well past the debounce
+    assert_eq!(h.lines("pids.log").len(), 1, "not during the turn");
+    h.sessions.cancel("w", CHAT).unwrap();
+    h.turn_finished(CHAT);
+    assert_eq!(reason(&mut h).as_deref(), Some("skill new changed"));
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+    assert!(h.lines("argv.log")[1].contains("--resume"));
+}
+
+#[test]
+fn a_send_while_stale_restarts_first_then_sends() {
+    let mut t = test_timing();
+    t.config_debounce = Duration::from_secs(30); // the send comes first
+    let mut h = Harness::with_timing(&["ok-turn", "ok-turn"], "normal", t);
+    first_turn(&mut h);
+    skill_change(&h);
+    std::thread::sleep(Duration::from_millis(150)); // the worker marks the chat stale
+    h.send(CHAT, "after the change");
+    assert_eq!(reason(&mut h).as_deref(), Some("skill new changed"));
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    assert_eq!(h.lines("pids.log").len(), 2);
+    let stdin = h.log("stdin.log");
+    assert_eq!(stdin.matches("\"type\":\"user\"").count(), 2);
+    // the second message went to the NEW process only: it ran after the restart
+    assert!(h.lines("argv.log")[1].contains("--resume"));
+}
+
+#[test]
+fn a_burst_of_changes_is_one_restart() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    first_turn(&mut h);
+    for i in 0..5 {
+        h.sessions.config_paths_changed(
+            "w",
+            &h.root,
+            vec![h.root.join(format!(".claude/skills/s{i}/SKILL.md"))],
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    reason(&mut h);
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+    std::thread::sleep(Duration::from_millis(500));
+    h.drain();
+    assert_eq!(reloads(&h).len(), 1);
+    assert_eq!(h.lines("pids.log").len(), 2);
+}
+
+#[test]
+fn an_unrelated_change_restarts_nothing() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    first_turn(&mut h);
+    h.sessions.config_paths_changed(
+        "w",
+        &h.root,
+        vec![
+            h.root.join("notes/a.md"),
+            h.root.join("other/.mcp.json"),
+            // the user's home Claude folder is never a vault path
+            PathBuf::from("/home/u/.claude/settings.json"),
+            PathBuf::from("/home/u/.claude/skills/x/SKILL.md"),
+        ],
+    );
+    // another window's vault change does not reach this chat either
+    h.sessions
+        .config_paths_changed("other", &h.root, vec![h.root.join("AGENTS.md")]);
+    std::thread::sleep(Duration::from_millis(600));
+    h.drain();
+    assert!(reloads(&h).is_empty());
+    assert_eq!(h.lines("pids.log").len(), 1);
+}
+
+#[test]
+fn with_auto_reload_off_nothing_restarts_but_the_manual_reload_still_works() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    let mut p = h.params(CHAT, "w", None);
+    p.request.settings.auto_reload = false;
+    h.sessions.start(p).unwrap();
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    h.sessions
+        .config_paths_changed("w", &h.root, vec![h.root.join("AGENTS.md")]);
+    std::thread::sleep(Duration::from_millis(600));
+    h.drain();
+    assert!(reloads(&h).is_empty());
+    assert_eq!(h.lines("pids.log").len(), 1);
+    // a send is not delayed by a restart either
+    assert_eq!(
+        h.sessions.reload("w", CHAT).unwrap(),
+        ReloadOutcome::Started
+    );
+    assert_eq!(reason(&mut h), None, "manual: no reason");
+}
+
+#[test]
+fn a_backend_that_reloads_itself_is_never_restarted() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    first_turn(&mut h);
+    h.sessions
+        .get("w", CHAT)
+        .unwrap()
+        .set_restart_on_config_change_for_test(false);
+    skill_change(&h);
+    std::thread::sleep(Duration::from_millis(600));
+    h.drain();
+    assert!(reloads(&h).is_empty());
+    assert_eq!(h.lines("pids.log").len(), 1);
+}
+
+#[test]
+fn a_chat_without_a_process_has_nothing_to_restart() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    h.sessions.close("w", CHAT).unwrap();
+    h.wait_until("closed", || h.sessions.live_count("w") == 0);
+    skill_change(&h);
+    std::thread::sleep(Duration::from_millis(400));
+    h.drain();
+    assert!(reloads(&h).is_empty());
+}
+
+// ------------------------------------------------------------------------------- MCP health
+
+#[derive(Default)]
+struct FakeProbe {
+    calls: Mutex<Vec<Instant>>,
+    /// Answers in order; the last repeats.
+    answers: Mutex<Vec<Vec<(&'static str, &'static str)>>>,
+}
+
+impl FakeProbe {
+    fn new(answers: Vec<Vec<(&'static str, &'static str)>>) -> Arc<Self> {
+        Arc::new(Self {
+            calls: Mutex::new(Vec::new()),
+            answers: Mutex::new(answers),
+        })
+    }
+    fn count(&self) -> usize {
+        self.calls.lock().len()
+    }
+}
+
+impl McpProbe for FakeProbe {
+    fn probe(&self, target: &ProbeTarget, _t: Duration) -> Result<Vec<McpServerStatus>, String> {
+        assert!(target.program.ends_with("claude"), "the chat's own CLI");
+        assert!(target.cwd.is_absolute());
+        let mut calls = self.calls.lock();
+        let n = calls.len();
+        calls.push(Instant::now());
+        let answers = self.answers.lock();
+        let a = answers
+            .get(n)
+            .or(answers.last())
+            .cloned()
+            .unwrap_or_default();
+        Ok(a.into_iter()
+            .map(|(name, status)| McpServerStatus {
+                name: name.into(),
+                status: status.into(),
+            })
+            .collect())
+    }
+}
+
+fn mcp_harness(turns: &[&str], probe: Arc<FakeProbe>) -> Harness {
+    Harness::with_probe(turns, "normal", test_timing(), probe)
+}
+
+#[test]
+fn a_failing_mcp_server_that_connects_restarts_the_chat_with_the_reason() {
+    let probe = FakeProbe::new(vec![
+        vec![("notes", "failed"), ("web", "connected")],
+        vec![("notes", "connected"), ("web", "connected")],
+    ]);
+    let mut h = mcp_harness(&["mcp-failing", "ok-turn"], probe.clone());
+    first_turn(&mut h);
+    assert_eq!(
+        reason(&mut h).as_deref(),
+        Some("MCP server notes connected")
+    );
+    assert_eq!(
+        probe.count(),
+        2,
+        "rechecked on the backoff until it connected"
+    );
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+    // the chat keeps working in the new process
+    h.send(CHAT, "again");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+}
+
+#[test]
+fn the_mcp_recheck_never_runs_while_every_server_is_healthy() {
+    let probe = FakeProbe::new(vec![vec![]]);
+    let mut h = mcp_harness(&["ok-turn"], probe.clone());
+    first_turn(&mut h);
+    std::thread::sleep(Duration::from_millis(900)); // several backoff periods
+    assert_eq!(probe.count(), 0);
+}
+
+#[test]
+fn the_mcp_recheck_stops_when_the_chat_closes() {
+    let probe = FakeProbe::new(vec![vec![("notes", "failed")]]);
+    let mut h = mcp_harness(&["mcp-failing"], probe.clone());
+    first_turn(&mut h);
+    h.wait_until("first recheck", || probe.count() >= 1);
+    h.sessions.close("w", CHAT).unwrap();
+    h.wait_until("closed", || h.sessions.live_count("w") == 0);
+    std::thread::sleep(Duration::from_millis(300));
+    let n = probe.count();
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(probe.count(), n, "no more checks after the close");
+    h.drain();
+    assert!(reloads(&h).is_empty());
+}
+
+#[test]
+fn a_server_that_connects_for_the_probe_but_fails_in_the_chat_restarts_it_only_once() {
+    let probe = FakeProbe::new(vec![vec![("notes", "connected"), ("web", "connected")]]);
+    let mut h = mcp_harness(
+        &["mcp-failing", "mcp-failing", "mcp-failing"],
+        probe.clone(),
+    );
+    first_turn(&mut h);
+    reason(&mut h);
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+    h.send(CHAT, "again");
+    h.turn_finished(CHAT);
+    std::thread::sleep(Duration::from_millis(800));
+    h.drain();
+    assert_eq!(reloads(&h).len(), 1, "no restart loop");
+}
+
+#[test]
+fn the_mcp_recheck_is_off_with_auto_reload_off() {
+    let probe = FakeProbe::new(vec![vec![("notes", "connected")]]);
+    let mut h = mcp_harness(&["mcp-failing"], probe.clone());
+    let mut p = h.params(CHAT, "w", None);
+    p.request.settings.auto_reload = false;
+    h.sessions.start(p).unwrap();
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    std::thread::sleep(Duration::from_millis(700));
+    assert_eq!(probe.count(), 0);
 }

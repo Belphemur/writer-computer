@@ -32,7 +32,9 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  useProjectsStore.setState({ folderPaths: new Set(["/v/Projects/Acme"]) });
+  useProjectsStore.setState({
+    folderPaths: new Map([["/v/Projects/Acme", { icon: null, color: null }]]),
+  });
   host.register(agentFeature);
 });
 afterEach(async () => {

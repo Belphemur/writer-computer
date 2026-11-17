@@ -72,9 +72,11 @@ describe("palette built-in commands", () => {
       // contributed by the agent feature (`features/agent`); development builds only for the demo
       "agent.toggle-pane",
       "agent.new-chat",
+      "agent.reload-session",
       "agent.history",
       "agent.use-demo-backend",
       "agent.new-project",
+      "graph.open",
     ]);
   });
 

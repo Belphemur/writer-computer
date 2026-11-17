@@ -1,6 +1,6 @@
 # Link activation: every link behaves like a browser link
 
-Status: **accepted rule (user, 2026-11-17)**; implemented 2026-11-17 for the surfaces below, with the exceptions listed under "Implementation notes". Applies to every clickable reference to a note, file, folder, chat or URL anywhere in Writer, core and features alike.
+Status: **accepted rule (user, 2026-11-17)**; implemented 2026-11-17 for the surfaces below, with the exceptions listed under "Implementation notes". Applies to every clickable reference to a note, file, folder, chat or URL anywhere in Writer, core and features alike. ADR: [`2026-11-17-open-every-link-like-a-browser-link-through-one-link-activation-module`](../docs/decisions/2026-11-17-open-every-link-like-a-browser-link-through-one-link-activation-module.md).
 
 ## 1. The rule
 

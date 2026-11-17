@@ -11,6 +11,8 @@ import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { Ico } from "./agent-icon";
+import { ProjectIconPopover } from "./project-icon-picker";
+import { ProjectPathIcon } from "./project-icon";
 
 /**
  * The header title as a project switcher (spec 4.6). `projectPath` is the active chat's project
@@ -25,6 +27,8 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [active, setActive] = useState(0);
+  /** The project whose icon and color the picker is editing (it replaces the list popover). */
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
@@ -81,7 +85,11 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
         }}
         className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-[13px] font-medium text-text-primary hover:bg-[var(--item-hover-bg)]"
       >
-        <Ico icon={Folder01Icon} size={14} className="shrink-0 text-text-icon-muted" />
+        {projectPath ? (
+          <ProjectPathIcon path={projectPath} />
+        ) : (
+          <Ico icon={Folder01Icon} size={14} className="shrink-0 text-text-icon-muted" />
+        )}
         <span className="truncate">{label}</span>
         <Ico icon={ArrowDown01Icon} size={12} className="shrink-0 text-text-icon-muted" />
       </button>
@@ -130,12 +138,39 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
                   e.preventDefault();
                   choose(o.path);
                 }}
-                className={`flex cursor-pointer items-baseline gap-2 rounded-md px-2 py-1.5 text-[13px] ${
+                className={`group/row flex cursor-pointer items-baseline gap-2 rounded-md px-2 py-1.5 text-[13px] ${
                   i === active ? "bg-[var(--item-hover-bg)]" : ""
                 }`}
               >
+                <span className="self-center">
+                  {o.path ? (
+                    <ProjectPathIcon path={o.path} />
+                  ) : (
+                    <Ico icon={Folder01Icon} size={14} className="text-text-icon-muted" />
+                  )}
+                </span>
                 <span className="truncate text-[var(--text-primary)]">{o.text}</span>
-                <span className="truncate text-[12px] text-[var(--text-muted)]">{o.detail}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-muted)]">
+                  {o.detail}
+                </span>
+                {o.path ? (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label={`Change icon for ${o.text}`}
+                    title="Change icon…"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setOpen(false);
+                      setFilter("");
+                      setPickerFor(o.path);
+                    }}
+                    className="shrink-0 self-center rounded px-1 text-[12px] text-[var(--text-muted)] opacity-0 hover:bg-[var(--item-hover-bg)] group-hover/row:opacity-100"
+                  >
+                    …
+                  </button>
+                ) : null}
               </li>
             ))}
             {options.length === 0 ? (
@@ -169,6 +204,13 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
             </button>
           </div>
         </div>
+      ) : null}
+      {pickerFor ? (
+        <ProjectIconPopover
+          projectPath={pickerFor}
+          anchorRef={wrapRef}
+          onClose={() => setPickerFor(null)}
+        />
       ) : null}
     </div>
   );

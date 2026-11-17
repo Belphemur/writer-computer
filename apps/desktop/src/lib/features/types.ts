@@ -209,6 +209,8 @@ export interface FileTreeBadge {
   /** Tooltip and accessible name. */
   label: string;
   icon: IconSvgElement;
+  /** A CSS color for the icon (a `var(--token)`); the muted default when absent. */
+  color?: string;
   testId?: string;
 }
 

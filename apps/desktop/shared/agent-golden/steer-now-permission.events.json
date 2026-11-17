@@ -1,0 +1,173 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s1",
+    "messageId": "msg_s1",
+    "tool": "Write",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s1",
+    "input": {
+      "content": "hello\n",
+      "file_path": "/vault/Projects/Demo/a.txt"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "permission-request",
+    "requestId": "5d7f5acc-b5d3-46b3-87d5-2375c42715b8",
+    "toolCallId": "toolu_s1",
+    "tool": "Write",
+    "displayName": "Write",
+    "input": {
+      "content": "hello\n",
+      "file_path": "/vault/Projects/Demo/a.txt"
+    },
+    "description": "a.txt",
+    "decisionReason": null,
+    "suggestions": [
+      {
+        "destination": "session",
+        "mode": "acceptEdits",
+        "type": "setMode"
+      }
+    ]
+  },
+  {
+    "type": "permission-resolved",
+    "requestId": "5d7f5acc-b5d3-46b3-87d5-2375c42715b8",
+    "resolution": "cancelled"
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s1",
+    "output": "Tool permission request aborted",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "interrupted",
+    "durationMs": 1000,
+    "apiDurationMs": 800,
+    "numTurns": 2,
+    "isError": false,
+    "result": "",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  },
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s2",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s2",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s2",
+    "messageId": "msg_s2",
+    "tool": "Write",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s2",
+    "input": {
+      "content": "hello\n",
+      "file_path": "/vault/Projects/Demo/a.txt"
+    }
+  },
+  {
+    "type": "permission-request",
+    "requestId": "6db59731-e1dd-4ce4-9403-2634e77bd0f5",
+    "toolCallId": "toolu_s2",
+    "tool": "Write",
+    "displayName": "Write",
+    "input": {
+      "content": "hello\n",
+      "file_path": "/vault/Projects/Demo/a.txt"
+    },
+    "description": "a.txt",
+    "decisionReason": null,
+    "suggestions": [
+      {
+        "destination": "session",
+        "mode": "acceptEdits",
+        "type": "setMode"
+      }
+    ]
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  }
+]

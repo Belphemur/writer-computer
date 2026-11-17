@@ -61,7 +61,7 @@ The Agent pane is the chat on the right. It shares the right side with the plugi
 | Esc                         | In order: close an open menu, remove the queued message, stop the running turn, back to the note |
 | Enter (focus on the card)   | Allow once, when a "Permission required" card has focus                                          |
 | Esc (focus on the card)     | Deny, when a "Permission required" card has focus                                                |
-| Cmd+Enter                   | Allow once, from the message box while a permission card shows                                   |
+| Cmd+Enter                   | Allow once, from the message box while a permission card shows; otherwise send now (see below)   |
 | Cmd+Shift+Enter             | Always allow in this project, from the message box while a permission card offers it             |
 | Cmd+Backspace               | Deny, from the message box while a permission card shows                                         |
 | Cmd+Shift+N                 | New chat (only while the pane has focus; Cmd+N stays "create new note")                          |
@@ -74,6 +74,8 @@ The Agent pane is the chat on the right. It shares the right side with the plugi
 | Cmd+B / Cmd+I               | Wrap the selection in `**` / `*` (again to unwrap), from the message box only                    |
 | Shift+Enter in a list       | New line that continues the bullet, number, task or quote; on an empty item it ends the list     |
 | ArrowLeft / ArrowRight      | Between chat tabs                                                                                |
+
+Cmd+Enter while the agent works forces your message in now: the step the agent is on (a running tool, or the text it is writing) is stopped and your message starts its next turn (it appears in the chat marked "Steer"). With an empty message box it sends the queued message that way, and the queued message has a "Send now" button. Enter still queues. While a permission card shows, Cmd+Enter allows once instead. When the agent is idle, Cmd+Enter is a normal send.
 
 The command palette also has "Agent: Toggle pane", "Agent: New chat" and "Agent: History".
 

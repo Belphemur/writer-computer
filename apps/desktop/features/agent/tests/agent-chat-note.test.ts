@@ -127,12 +127,68 @@ function withImages(): ChatNoteDoc {
   return d;
 }
 
+/** Two sub-agent runs: the launch calls carry who ran and the closing answer, the calls they made
+ *  carry the launch call's id (`parent`), and the Changes card links its file to the run. */
+function withSubagents(): ChatNoteDoc {
+  const d = base();
+  d.messages[1]!.tools = [
+    {
+      id: "toolu_ex",
+      tool: "Agent",
+      input: { subagent_type: "writer-explorer", description: "Find notes about pricing" },
+      outcome: "ok",
+      sub: {
+        role: "explorer",
+        name: "writer-explorer",
+        model: "haiku",
+        summary: "Found 2 notes: Plan.md and Pricing.md.",
+      },
+    },
+    {
+      id: "toolu_wk",
+      tool: "Agent",
+      input: { subagent_type: "writer-worker", description: "Fix the typo in Plan" },
+      outcome: "ok",
+      sub: { role: "worker", name: "writer-worker", model: null },
+    },
+    {
+      id: "toolu_e_grep",
+      tool: "Grep",
+      input: { pattern: "pricing" },
+      outcome: "ok",
+      parent: "toolu_ex",
+    },
+    {
+      id: "toolu_w_edit",
+      tool: "Edit",
+      input: { file_path: "Plan.md" },
+      outcome: "ok",
+      parent: "toolu_wk",
+    },
+  ];
+  d.messages[1]!.changes = {
+    turnId: "t19a2f02",
+    files: [
+      {
+        path: "Plan.md",
+        status: "modified",
+        added: 1,
+        removed: 1,
+        by: "worker",
+        byCall: "toolu_wk",
+      },
+    ],
+  };
+  return d;
+}
+
 const CASES: Record<string, () => ChatNoteDoc> = {
   basic: base,
   escape: escapes,
   props,
   changes: withChanges,
   images: withImages,
+  subagents: withSubagents,
 };
 
 describe("chat note golden files", () => {

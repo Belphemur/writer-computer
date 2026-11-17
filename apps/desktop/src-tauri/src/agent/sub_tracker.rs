@@ -15,6 +15,14 @@ use super::subagents::{is_launch_tool, launch_label};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+/// Who made a call: the role label and the launch call of the sub-agent run it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Author {
+    pub label: String,
+    /// The `Agent`/`Task` call id: what the UI keys the sub-agent card by.
+    pub call_id: String,
+}
+
 #[derive(Default)]
 struct Launch {
     /// The role label, known once the call's input is complete.
@@ -64,10 +72,13 @@ impl SubTracker {
         }
     }
 
-    /// The role label of the sub-agent that made `call_id`; `None` for the main agent's own calls.
-    pub fn author_of(&self, call_id: Option<&str>) -> Option<String> {
+    /// The sub-agent that made `call_id`; `None` for the main agent's own calls.
+    pub fn author_of(&self, call_id: Option<&str>) -> Option<Author> {
         let parent = self.parents.get(call_id?)?;
-        self.launches.get(parent)?.label.clone()
+        Some(Author {
+            label: self.launches.get(parent)?.label.clone()?,
+            call_id: parent.clone(),
+        })
     }
 
     /// A launch call has no result yet, or a task is running.
@@ -92,7 +103,13 @@ mod tests {
         t.on_input("a1", &json!({"subagent_type": "writer-worker"}));
         t.on_started("w1", "Write", Some("a1"));
         t.on_started("m1", "Write", None);
-        assert_eq!(t.author_of(Some("w1")).as_deref(), Some("worker"));
+        assert_eq!(
+            t.author_of(Some("w1")),
+            Some(Author {
+                label: "worker".into(),
+                call_id: "a1".into()
+            })
+        );
         assert_eq!(t.author_of(Some("m1")), None, "the main agent's own call");
         assert_eq!(t.author_of(None), None);
         assert_eq!(t.author_of(Some("unknown")), None);

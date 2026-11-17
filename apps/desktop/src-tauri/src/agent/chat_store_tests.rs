@@ -46,7 +46,15 @@ fn all(root: &Path) -> Vec<ChatSummary> {
 
 #[test]
 fn golden_notes_parse_to_the_shared_json() {
-    for name in ["basic", "escape", "props", "changes", "images"] {
+    for name in [
+        "basic",
+        "escape",
+        "props",
+        "changes",
+        "images",
+        "subagents",
+        "steer",
+    ] {
         let (meta, body) = parse_note(&fixture(&format!("{name}.md"))).unwrap();
         let golden: Value = serde_json::from_str(&fixture(&format!("{name}.parsed.json"))).unwrap();
         assert_eq!(

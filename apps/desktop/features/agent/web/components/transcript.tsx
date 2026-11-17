@@ -1,8 +1,7 @@
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { segmentTurn } from "@features/agent/web/lib/timeline";
-import { AssistantText } from "./assistant-text";
 import { ErrorCard } from "./error-card";
-import { TimelineGroup } from "./timeline-group";
+import { SegmentList } from "./subagent-card";
 import { TurnChangesCard } from "./turn-changes-card";
 import { TurnFooter } from "./turn-footer";
 import { useStickToBottom } from "./use-stick-to-bottom";
@@ -16,7 +15,8 @@ function lastFinalText(chat: Chat): string {
     const blocks = chat.turns[t]!.blocks;
     for (let b = blocks.length - 1; b >= 0; b--) {
       const block = blocks[b]!;
-      if (block.kind === "text" && block.final) return block.text;
+      // the answer is the main agent's: a sub-agent's text belongs to its card
+      if (block.kind === "text" && block.final && !block.parentToolCallId) return block.text;
     }
   }
   return "";
@@ -53,17 +53,7 @@ export function Transcript({ chat }: { chat: Chat }) {
             }
           >
             {turn.user && <UserTurnCard message={turn.user} />}
-            {segmentTurn(turn).map((seg) =>
-              seg.kind === "text" ? (
-                <AssistantText key={seg.block.id} block={seg.block} />
-              ) : (
-                <TimelineGroup
-                  key={seg.id}
-                  blocks={seg.blocks}
-                  running={turn.status === "running"}
-                />
-              ),
-            )}
+            <SegmentList segments={segmentTurn(turn)} running={turn.status === "running"} />
             <TurnChangesCard chatId={chat.chatId} turn={turn} />
             <TurnFooter turn={turn} />
           </div>

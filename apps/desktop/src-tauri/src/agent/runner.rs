@@ -18,20 +18,22 @@ use super::binary::is_older_than_verified;
 use super::changes::{ChangeStore, ClosedTurn};
 use super::claude_stream::{
     build_args, encode_control_error, encode_interrupt, encode_permission_allow,
-    encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_user_message,
-    updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
+    encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_steer_message,
+    encode_user_message, updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
 };
+use super::config_sync::{self, Decision, McpWatch, Msg, ProbeTarget, Reason, StaleView};
 use super::env;
 use super::events::*;
 use super::images::Outgoing;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
-use super::sub_tracker::SubTracker;
+use super::sub_tracker::{Author, SubTracker};
+use super::subagents::{is_launch_tool, resolve_launch};
 use crate::plugin_proc::{Emit, Prepared, ProcEvent, ProcManager, Sig};
 use base64::Engine as _;
 use parking_lot::Mutex;
 use serde_json::Value;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -102,6 +104,8 @@ pub(crate) struct LaunchConfig {
     /// The memory folder of this chat (`agent.memory` = `vault`), created already.
     pub memory_dir: Option<PathBuf>,
     pub settings: AgentSettings,
+    /// The backend's `RoleAdapter::restart_on_config_change`.
+    pub restart_on_config_change: bool,
 }
 
 pub(crate) struct SessionInit {
@@ -131,6 +135,23 @@ enum Closing {
     Idle,
 }
 
+/// Why the next restart happens (`Inner::reload_pending`).
+enum ReloadWhy {
+    /// The user's "Reload session".
+    Manual,
+    /// A watched file changed or an MCP server came back (`Reason::describe`).
+    Config(String),
+}
+
+impl ReloadWhy {
+    fn text(self) -> Option<String> {
+        match self {
+            Self::Manual => None,
+            Self::Config(t) => Some(t),
+        }
+    }
+}
+
 struct PendingPerm {
     input: Value,
     suggestions: Vec<Value>,
@@ -146,6 +167,15 @@ struct Inner {
     cli_dir: Option<PathBuf>,
     memory_dir: Option<PathBuf>,
     settings: AgentSettings,
+    restart_on_config_change: bool,
+    /// A file the running process read at start changed (first cause kept); cleared when the next
+    /// process starts. See `config_sync.rs`.
+    stale: Option<Reason>,
+    /// MCP servers the latest `init` reported as not connected, and the ones that already caused
+    /// an automatic restart (each at most once per chat: a server that connects for the probe but
+    /// fails inside the session must not loop).
+    mcp_failing: BTreeSet<String>,
+    mcp_restarted: BTreeSet<String>,
 
     session_id: String,
     /// A later spawn must `--resume` (init seen, or the request asked to resume).
@@ -170,6 +200,11 @@ struct Inner {
     tool_names: HashMap<String, String>,
     /// Who made each call and which sub-agents are still working (see `sub_tracker.rs`).
     subs: SubTracker,
+    /// The tier model settings the running process was started with (what its `--agents` JSON
+    /// holds), and the model its `init` reported: what the `subagent-started` event resolves a
+    /// launch's model from.
+    agent_tiers: BTreeMap<String, Option<String>>,
+    session_model: Option<String>,
     /// The first `turn-finished` came while a sub-agent still worked: the Changes card stays open
     /// (late sub-agent edits join it) until a later `turn-finished` finds none working, or the
     /// process ends.
@@ -178,6 +213,13 @@ struct Inner {
     turn_active: bool,
     queue: VecDeque<Outgoing>,
     inflight: Vec<Outgoing>,
+    /// Steers written mid-turn (their uuids) that the CLI has not acknowledged yet: it echoes a
+    /// user message back (`MapOutput::user_echo`) when it takes it, at a tool boundary inside the
+    /// running turn or as the start of the next one. While any is unacknowledged, a normal end of
+    /// turn is not the end of the work: the CLI starts the steer's turn by itself.
+    steers: Vec<String>,
+    /// The first turn ended while a steer was unacknowledged: `turn_active` is held for it.
+    steer_hold: bool,
     seed: Option<String>,
     respawns: u8,
     fallback_used: bool,
@@ -187,6 +229,9 @@ struct Inner {
     /// (request id, the model asked for)
     model_request: Option<(String, Option<String>)>,
     restart_after_turn: bool,
+    /// The process is being stopped to be replaced: the restart that follows respawns although no
+    /// message waits, then reports `session-reloaded`.
+    reload_pending: Option<ReloadWhy>,
     last_activity: Instant,
 }
 
@@ -344,6 +389,12 @@ impl Session {
                 cli_dir: config.cli_dir,
                 memory_dir: config.memory_dir,
                 settings: config.settings,
+                restart_on_config_change: config.restart_on_config_change,
+                agent_tiers: BTreeMap::new(),
+                session_model: None,
+                stale: None,
+                mcp_failing: BTreeSet::new(),
+                mcp_restarted: BTreeSet::new(),
                 session_id: init.session_id,
                 resume_next: init.resume,
                 terminal: false,
@@ -365,6 +416,8 @@ impl Session {
                 turn_active: false,
                 queue: VecDeque::new(),
                 inflight: Vec::new(),
+                steers: Vec::new(),
+                steer_hold: false,
                 seed: None,
                 respawns: 0,
                 fallback_used: false,
@@ -373,6 +426,7 @@ impl Session {
                 mode_request: None,
                 model_request: None,
                 restart_after_turn: false,
+                reload_pending: None,
                 last_activity: Instant::now(),
             }),
         })
@@ -415,6 +469,9 @@ impl Session {
     /// Refresh the next spawn's configuration. A running process keeps its own.
     pub(crate) fn configure(&self, config: LaunchConfig) {
         let mut g = self.inner.lock();
+        // read live by the config watch: a running chat follows the setting too
+        g.settings.auto_reload = config.settings.auto_reload;
+        g.restart_on_config_change = config.restart_on_config_change;
         if g.live_gen.is_some() || g.spawning {
             return;
         }
@@ -478,6 +535,7 @@ impl Session {
                 memory_dir: g.memory_dir.as_deref(),
             })
             .map_err(SpawnError::Invalid)?;
+            g.agent_tiers = g.settings.tier_models.clone();
             g.spawning = true;
             if g.state != AgentSessionState::Reconnecting {
                 g.state = AgentSessionState::Starting;
@@ -529,6 +587,8 @@ impl Session {
             g.pid = None;
             g.mapper = ClaudeStreamMapper::new();
             g.last_activity = Instant::now();
+            // the new process reads everything fresh
+            g.stale = None;
             gen
         };
         let prepared = Prepared {
@@ -677,7 +737,7 @@ impl Session {
     fn on_line(self: &Arc<Self>, gen: u64, line: &str) {
         let mut started: Option<ChatSessionInfo> = None;
         // snapshots to take and the turn to finish happen after the lock is released (file IO)
-        let mut captures: Vec<(String, Value, Option<String>)> = Vec::new();
+        let mut captures: Vec<(String, Value, Option<Author>)> = Vec::new();
         let mut closed: Option<ClosedTurn> = None;
         {
             let mut g = self.inner.lock();
@@ -689,6 +749,9 @@ impl Session {
                 self.on_control_response(&mut g, line);
             }
             let out = g.mapper.map_line(line);
+            if let Some(uuid) = &out.user_echo {
+                g.steers.retain(|s| s != uuid);
+            }
             if let Some(id) = out.unsupported_control_request {
                 // never leave the CLI waiting
                 log::info!(target: "agent", "agent: answered an unsupported control request with an error");
@@ -698,6 +761,8 @@ impl Session {
                 g.subs.on_task(signal);
             }
             for mut ev in out.events {
+                // runner-originated events that follow `ev`
+                let mut extra: Vec<AgentEvent> = Vec::new();
                 match &ev {
                     AgentEvent::ToolCallStarted {
                         tool_call_id,
@@ -714,6 +779,21 @@ impl Session {
                         input,
                     } => {
                         g.subs.on_input(tool_call_id, input);
+                        if g.tool_names
+                            .get(tool_call_id)
+                            .is_some_and(|t| is_launch_tool(t))
+                        {
+                            let inherited =
+                                g.session_model.as_deref().or(g.settings.model.as_deref());
+                            if let Some(launch) = resolve_launch(input, &g.agent_tiers, inherited) {
+                                extra.push(AgentEvent::SubagentStarted {
+                                    tool_call_id: tool_call_id.clone(),
+                                    role: launch.role,
+                                    name: launch.name,
+                                    model: launch.model,
+                                });
+                            }
+                        }
                         if let Some(tool) = g.tool_names.get(tool_call_id) {
                             let by = g.subs.author_of(Some(tool_call_id));
                             captures.push((tool.clone(), input.clone(), by));
@@ -751,9 +831,12 @@ impl Session {
                     tool_call_id, by, ..
                 } = &mut ev
                 {
-                    *by = g.subs.author_of(tool_call_id.as_deref());
+                    *by = g.subs.author_of(tool_call_id.as_deref()).map(|a| a.label);
                 }
                 self.apply(&mut g, ev, &mut started);
+                for ev in extra {
+                    self.apply(&mut g, ev, &mut started);
+                }
             }
         }
         for (tool, input, by) in captures {
@@ -763,7 +846,7 @@ impl Session {
                 &self.cwd,
                 &tool,
                 &input,
-                by.as_deref(),
+                by.as_ref(),
             );
         }
         if let Some(turn) = closed {
@@ -783,9 +866,20 @@ impl Session {
                 session_id,
                 model,
                 cli_version,
+                mcp_servers,
                 ..
             } => {
+                g.mcp_failing = config_sync::failing(mcp_servers);
+                // watch a failing server only when a recovery could restart this chat
+                let watch = !g.mcp_failing.is_empty() && self.restarts_on_config(g);
+                if let Some(shared) = self.shared.upgrade() {
+                    shared.send_config(Msg::Mcp {
+                        chat_id: self.chat_id.clone(),
+                        failing: watch,
+                    });
+                }
                 g.init_seen = true;
+                g.session_model = model.clone();
                 g.resume_next = true;
                 if !session_id.is_empty() {
                     g.session_id = session_id.clone();
@@ -832,14 +926,38 @@ impl Session {
                     g.state = AgentSessionState::Running;
                 }
             }
-            AgentEvent::TurnFinished { .. } => {
+            AgentEvent::TurnFinished { reason, .. } => {
+                // A steer aborts the running turn, so `interrupted` is its own doing; the user's stop
+                // (`cancel`) and any failure forget the steers.
+                if !matches!(
+                    reason,
+                    TurnFinishReason::Completed | TurnFinishReason::Interrupted
+                ) {
+                    g.steers.clear();
+                }
+                if !g.steers.is_empty() {
+                    // The steer cut this turn short (or waited for its end): the CLI starts the
+                    // steer's turn by itself. Still working; nothing flushes until that turn ends.
+                    g.steer_hold = true;
+                    g.last_activity = Instant::now();
+                    self.log.push(ev);
+                    return;
+                }
+                g.steer_hold = false;
                 g.turn_active = false;
                 g.inflight.clear();
                 g.respawns = 0;
                 g.cancel_token += 1;
                 g.state = AgentSessionState::Idle;
                 self.log.push(ev);
-                if g.restart_after_turn {
+                // stale: restart right after the turn (a waiting message is sent after it)
+                let stale_restart = g.stale.is_some()
+                    && config_sync::decide(self.stale_view(g, false)) == Decision::RestartNow;
+                if stale_restart {
+                    g.restart_after_turn = false;
+                    let why = self.config_why(g);
+                    self.begin_reload(g, why);
+                } else if g.restart_after_turn {
                     g.restart_after_turn = false;
                     g.closing = Some(Closing::Restart);
                     self.terminate(g);
@@ -932,6 +1050,7 @@ impl Session {
     fn on_exit(self: &Arc<Self>, gen: u64, code: Option<i32>, signal: Option<String>) {
         let mut respawn: Option<(Vec<Outgoing>, Option<String>)> = None;
         let mut closed: Option<ClosedTurn> = None;
+        let reloaded: Option<ReloadWhy>;
         {
             let mut g = self.inner.lock();
             if g.live_gen != Some(gen) {
@@ -946,6 +1065,8 @@ impl Session {
             g.live_gen = None;
             g.ready = false;
             g.pid = None;
+            g.steers.clear();
+            g.steer_hold = false;
             self.live.store(false, Ordering::SeqCst);
             self.proc_cell.store(0, Ordering::SeqCst);
             let closing = g.closing.take();
@@ -955,6 +1076,7 @@ impl Session {
             g.mode_request = None;
             g.model_request = None;
             g.restart_after_turn = false;
+            reloaded = g.reload_pending.take();
             self.drop_pending(&mut g);
             g.mapper = ClaudeStreamMapper::new();
             let clean = code == Some(0) && signal.is_none();
@@ -984,8 +1106,8 @@ impl Session {
                 Some(Closing::Restart) | Some(Closing::Idle) => {
                     g.turn_active = false;
                     g.state = AgentSessionState::Idle;
-                    // a message may already be waiting
-                    if !g.queue.is_empty() {
+                    // a message may already be waiting, or a reload asked for the new process
+                    if !g.queue.is_empty() || reloaded.is_some() {
                         respawn = Some((Vec::new(), None));
                     }
                 }
@@ -1075,7 +1197,14 @@ impl Session {
             let me = Arc::clone(self);
             std::thread::Builder::new()
                 .name("agent-respawn".into())
-                .spawn(move || me.respawn(replay, replaced_from))
+                .spawn(move || {
+                    // before the new process: the notice comes ahead of its first events
+                    if let Some(why) = reloaded {
+                        me.log
+                            .push(AgentEvent::SessionReloaded { reason: why.text() });
+                    }
+                    me.respawn(replay, replaced_from)
+                })
                 .expect("spawn respawn thread");
         }
     }
@@ -1161,7 +1290,8 @@ impl Session {
 
     /// Write the next queued user message when the CLI is ready and no turn is running.
     fn flush_queue(&self, g: &mut Inner) {
-        if !g.ready || g.turn_active || g.terminal {
+        // a process that is being stopped gets nothing: the respawn sends the queue
+        if !g.ready || g.turn_active || g.terminal || g.closing.is_some() {
             return;
         }
         let Some(out) = g.queue.pop_front() else {
@@ -1197,9 +1327,17 @@ impl Session {
                 return Err(SpawnError::Ended);
             }
             g.respawns = 0;
+            // stale and idle: restart first, then send (the respawn writes the queue)
+            let restart_first = g.stale.is_some()
+                && config_sync::decide(self.stale_view(&g, self.is_busy(&g)))
+                    == Decision::RestartNow;
             g.queue.push_back(out);
             if g.live_gen.is_none() && !g.spawning {
                 true
+            } else if restart_first {
+                let why = self.config_why(&g);
+                self.begin_reload(&mut g, why);
+                false
             } else {
                 self.flush_queue(&mut g);
                 false
@@ -1216,9 +1354,224 @@ impl Session {
         Ok(())
     }
 
+    /// A steer: write the message to the CLI now, into the running turn, never held in Writer's
+    /// queue. It carries `priority:"now"`: the CLI aborts the running tool or text, ends that turn
+    /// and starts this message's turn at once. `message_id` (the UI's card key, a uuid) is the
+    /// receipt id: the CLI echoes it, and a steer not echoed within `Timing::steer_ack` is
+    /// reported undelivered. With no running turn on a live process it is an ordinary send.
+    pub(crate) fn steer(
+        self: &Arc<Self>,
+        out: Outgoing,
+        message_id: &str,
+    ) -> Result<(), SpawnError> {
+        let gen = {
+            let mut g = self.inner.lock();
+            if g.terminal {
+                return Err(SpawnError::Ended);
+            }
+            if !(g.ready && g.turn_active) {
+                drop(g);
+                return self.send(out);
+            }
+            let uuid = if uuid::Uuid::parse_str(message_id).is_ok() {
+                message_id.to_string()
+            } else {
+                uuid::Uuid::new_v4().to_string()
+            };
+            g.steers.push(uuid.clone());
+            g.inflight.push(out.clone());
+            g.last_activity = Instant::now();
+            self.write(encode_steer_message(&out.text, &out.images, &uuid));
+            (g.live_gen, uuid)
+        };
+        let (gen, uuid) = gen;
+        let me = Arc::clone(self);
+        let wait = self.timing.steer_ack;
+        std::thread::Builder::new()
+            .name("agent-steer-ack".into())
+            .spawn(move || {
+                std::thread::sleep(wait);
+                me.steer_unacknowledged(gen, &uuid);
+            })
+            .expect("spawn steer watchdog");
+        Ok(())
+    }
+
+    /// The steer's receipt time is up: unless it arrived, report it and, when it was what kept the
+    /// session working, let the session go idle.
+    fn steer_unacknowledged(&self, gen: Option<u64>, uuid: &str) {
+        let mut g = self.inner.lock();
+        if g.live_gen != gen || !g.steers.iter().any(|s| s == uuid) {
+            return;
+        }
+        g.steers.retain(|s| s != uuid);
+        log::warn!(target: "agent", "agent: a steer was not acknowledged");
+        self.log.push(AgentEvent::SteerUndelivered {
+            message_id: uuid.to_string(),
+        });
+        if g.steers.is_empty() && g.steer_hold {
+            g.steer_hold = false;
+            g.turn_active = false;
+            g.inflight.clear();
+            g.state = AgentSessionState::Idle;
+            self.flush_queue(&mut g);
+        }
+    }
+
+    /// "Reload session": replace an idle process by a new one (`--resume`, same argv otherwise) so
+    /// it re-reads skills, MCP servers, settings and instruction files. Refused (`Busy`) while a
+    /// turn runs, a permission card is open or a process is starting, never queued: a restart
+    /// that fires later, behind the user's back, would cut nothing short but would be invisible.
+    /// With no process (never started, or ended when idle) there is nothing to stop: the next
+    /// message already starts a fresh one, so only the notice is reported.
+    pub(crate) fn reload(self: &Arc<Self>) -> Result<ReloadOutcome, SpawnError> {
+        let mut g = self.inner.lock();
+        if g.terminal {
+            return Err(SpawnError::Ended);
+        }
+        if self.is_busy(&g) {
+            return Ok(ReloadOutcome::Busy);
+        }
+        if g.live_gen.is_none() {
+            drop(g);
+            self.log.push(AgentEvent::SessionReloaded { reason: None });
+            return Ok(ReloadOutcome::Started);
+        }
+        log::info!(target: "agent", "agent: reloading the session");
+        self.begin_reload(&mut g, ReloadWhy::Manual);
+        Ok(ReloadOutcome::Started)
+    }
+
+    // ----------------------------------------------------------- config change (config_sync)
+
+    /// A turn runs, a permission card is open, a process is starting or being replaced, or a
+    /// message waits: a restart must not cut into it.
+    fn is_busy(&self, g: &Inner) -> bool {
+        g.turn_active
+            || !g.pending.is_empty()
+            || g.spawning
+            || !g.queue.is_empty()
+            || g.closing.is_some()
+            || matches!(
+                g.state,
+                AgentSessionState::Starting
+                    | AgentSessionState::Reconnecting
+                    | AgentSessionState::Cancelling
+            )
+    }
+
+    /// The setting is on and the backend needs the restart (`RoleAdapter::restart_on_config_change`).
+    fn restarts_on_config(&self, g: &Inner) -> bool {
+        g.settings.auto_reload && g.restart_on_config_change
+    }
+
+    fn stale_view(&self, g: &Inner, busy: bool) -> StaleView {
+        StaleView {
+            auto_reload: g.settings.auto_reload,
+            backend_restarts: g.restart_on_config_change,
+            live: g.live_gen.is_some(),
+            busy,
+        }
+    }
+
+    fn config_why(&self, g: &Inner) -> ReloadWhy {
+        g.stale
+            .as_ref()
+            .map_or(ReloadWhy::Manual, |r| ReloadWhy::Config(r.describe()))
+    }
+
+    /// Stops the process so that the restart path respawns it (`--resume`, same argv).
+    fn begin_reload(&self, g: &mut Inner, why: ReloadWhy) {
+        g.reload_pending = Some(why);
+        g.closing = Some(Closing::Restart);
+        self.terminate(g);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_restart_on_config_change_for_test(&self, on: bool) {
+        self.inner.lock().restart_on_config_change = on;
+    }
+
+    /// A watched file changed: `true` when this chat's process is now stale (the worker then
+    /// arms the debounce). Nothing for a chat without a process, with the setting off, or on a
+    /// backend that reloads itself.
+    pub(crate) fn config_changed(&self, reason: Reason) -> bool {
+        let mut g = self.inner.lock();
+        if g.terminal || g.live_gen.is_none() || !self.restarts_on_config(&g) {
+            return false;
+        }
+        if g.stale.is_none() {
+            g.stale = Some(reason);
+        }
+        true
+    }
+
+    /// The change burst is over: apply [`config_sync::decide`]. Busy chats are left stale; the
+    /// end of the turn restarts them (`apply`, `TurnFinished`).
+    pub(crate) fn settle(&self) {
+        let mut g = self.inner.lock();
+        if g.stale.is_none() || g.terminal {
+            return;
+        }
+        match config_sync::decide(self.stale_view(&g, self.is_busy(&g))) {
+            Decision::RestartNow => {
+                log::info!(target: "agent", "agent: config changed, restarting the idle process");
+                let why = self.config_why(&g);
+                self.begin_reload(&mut g, why);
+            }
+            Decision::AfterTurn => {}
+            Decision::Ignore | Decision::Forget => g.stale = None,
+        }
+    }
+
+    /// What the MCP re-check runs, `None` when there is no process (or the chat ended). The
+    /// environment is built outside the lock (it may run the login shell).
+    pub(crate) fn probe_target(&self) -> Option<ProbeTarget> {
+        let (program, cli_dir, memory) = {
+            let g = self.inner.lock();
+            if g.terminal || g.live_gen.is_none() {
+                return None;
+            }
+            (g.program.clone()?, g.cli_dir.clone(), g.settings.memory)
+        };
+        Some(ProbeTarget {
+            program,
+            cwd: self.cwd.clone(),
+            env: env::with_memory_mode(env::current(cli_dir.as_deref()), memory),
+        })
+    }
+
+    /// The result of an MCP re-check. A server that was failing and connects now makes the chat
+    /// stale (once per server and chat), reason "MCP server <name> connected".
+    pub(crate) fn mcp_checked(&self, probed: &[McpServerStatus]) -> McpWatch {
+        let mut g = self.inner.lock();
+        if g.terminal || g.live_gen.is_none() || !self.restarts_on_config(&g) {
+            return McpWatch::Stop;
+        }
+        let check = config_sync::check(&g.mcp_failing, probed);
+        g.mcp_failing = check.still_failing;
+        let fresh = check
+            .recovered
+            .into_iter()
+            .find(|n| !g.mcp_restarted.contains(n));
+        if let Some(name) = fresh {
+            g.mcp_restarted.insert(name.clone());
+            if g.stale.is_none() {
+                g.stale = Some(Reason::McpServer(name));
+            }
+            return McpWatch::Recovered;
+        }
+        if g.mcp_failing.is_empty() {
+            McpWatch::Stop
+        } else {
+            McpWatch::Keep
+        }
+    }
+
     pub(crate) fn cancel(self: &Arc<Self>) {
         let mut g = self.inner.lock();
         g.queue.clear();
+        g.steers.clear();
         if g.live_gen.is_none() {
             g.turn_active = false;
             return;

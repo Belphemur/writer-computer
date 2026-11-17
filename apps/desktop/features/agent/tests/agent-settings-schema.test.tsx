@@ -58,6 +58,7 @@ describe("agent.* settings contract", () => {
       "agent.chats-keep-days": 0,
       "agent.auto-title-chats": true,
       "agent.show-thinking": true,
+      "agent.auto-reload": true,
       "agent.memory": "vault",
       "agent.orchestrate": true,
       "agent.claude.model-cheap": "haiku",
@@ -121,6 +122,7 @@ describe("agent.* settings contract", () => {
       disallowedTools: [],
       orchestrate: true,
       showThinking: true,
+      autoReload: true,
       memory: "vault",
       tierModels: { cheap: "haiku", standard: "sonnet", strong: "default" },
     });
@@ -129,6 +131,7 @@ describe("agent.* settings contract", () => {
         ...defaults,
         "agent.orchestrate": false,
         "agent.show-thinking": false,
+        "agent.auto-reload": false,
         "agent.memory": "off",
         "agent.claude.model-cheap": "  ",
         "agent.effort": "high",
@@ -141,6 +144,7 @@ describe("agent.* settings contract", () => {
       allowedTools: ["Bash(git status)"],
       orchestrate: false,
       showThinking: false,
+      autoReload: false,
       memory: "off",
       tierModels: { cheap: null, standard: "sonnet", strong: "default" },
     });

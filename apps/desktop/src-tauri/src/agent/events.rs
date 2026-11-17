@@ -151,6 +151,8 @@ pub enum AgentEvent {
         slash_commands: Vec<String>,
         /// Skills the CLI loaded (project, user and plugin), by name.
         skills: Vec<String>,
+        /// The MCP servers the CLI reports with their connection state (`init.mcp_servers`).
+        mcp_servers: Vec<McpServerStatus>,
         cli_version: Option<String>,
     },
     TextDelta {
@@ -257,6 +259,92 @@ pub enum AgentEvent {
         exit_code: Option<i32>,
         signal: Option<String>,
     },
+    /// Runner-originated: the process was replaced (the user's `agent_reload`, or Writer after a
+    /// config change, `config_sync.rs`) so it re-reads skills, MCP servers, settings and
+    /// instruction files. Never stored in the chat
+    /// note; the UI shows a transient notice and forgets the old session lists.
+    SessionReloaded {
+        /// What made Writer restart the process ("skill writer-graph changed", "MCP server
+        /// github connected"); `None` for the user's own "Reload session".
+        reason: Option<String>,
+    },
+    /// Runner-originated: the CLI never acknowledged a steer within `Timing::steer_ack` (its
+    /// `message_id` is the one `agent_steer` was given). The message was not delivered.
+    SteerUndelivered { message_id: String },
+    /// An API message made by a sub-agent, not by the main agent: its `text`, `thinking` and tool
+    /// events (the message ids it names) belong to the sub-agent run started by the `Agent`/`Task`
+    /// call `parent_tool_call_id`. Sent once, before the message's first block; never for the main
+    /// agent's own messages. Tool calls carry their own `parent_tool_call_id`.
+    SubagentMessage {
+        message_id: MessageId,
+        parent_tool_call_id: ToolCallId,
+    },
+    /// Runner-originated, when the `Agent`/`Task` call's input is complete: who the sub-agent is
+    /// and the model it runs, resolved from the role's tier through the backend adapter's tier
+    /// setting as it was when the process started (`subagents::resolve_launch`). The UI never
+    /// recomputes either.
+    SubagentStarted {
+        tool_call_id: ToolCallId,
+        /// The registry role id (`explorer`, `worker`); `None` for a sub-agent type Writer does
+        /// not define (a user's own agent).
+        role: Option<String>,
+        /// The sub-agent type as the call named it (`writer-worker`).
+        name: String,
+        /// The model the sub-agent runs; a tier that inherits shows the chat's model.
+        model: Option<String>,
+    },
+    /// A sub-agent run changed state, from the CLI's `task_started` / `task_updated` /
+    /// `task_notification` lines. The only source of the end of a background run (its launch call
+    /// returns at once); a foreground run's end is also its launch call's result.
+    SubagentStatus {
+        tool_call_id: ToolCallId,
+        status: SubagentRunStatus,
+    },
+}
+
+/// The state of a sub-agent run as the CLI reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SubagentRunStatus {
+    Running,
+    Completed,
+    Failed,
+    /// Killed, cancelled or stopped.
+    Stopped,
+}
+
+impl SubagentRunStatus {
+    /// A CLI status word (`completed`, `failed`, `killed`, ...) to a state; anything not final is
+    /// `Running`.
+    pub fn from_cli(word: &str) -> Self {
+        match word {
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            "killed" | "cancelled" | "stopped" => Self::Stopped,
+            _ => Self::Running,
+        }
+    }
+
+    pub fn is_final(self) -> bool {
+        self != Self::Running
+    }
+}
+
+/// One entry of `init.mcp_servers`: the server name and the CLI's own status word (`connected`,
+/// `failed`, `pending`, `needs-auth`, ... passed through, never interpreted here).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct McpServerStatus {
+    pub name: String,
+    pub status: String,
+}
+
+/// What `agent_reload` did: `Started` (the process is being replaced, or there was none to
+/// replace) or `Busy` (a turn or a permission card is open: nothing was touched).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReloadOutcome {
+    Started,
+    Busy,
 }
 
 // -------------------------------------------------------------------------------------------
@@ -291,6 +379,10 @@ pub struct FileChangeSummary {
     /// the turn decides (the card's first-snapshot-wins rule).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
+    /// The `Agent`/`Task` call of that sub-agent run (the id of its card in the transcript), so the
+    /// card can link to it. Absent with `by`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_call: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -560,6 +652,9 @@ pub struct AgentSettings {
     pub show_thinking: bool,
     /// `agent.memory`.
     pub memory: AgentMemory,
+    /// `agent.auto-reload`: restart the chat's process under the hood when a file it read at start
+    /// changes (read live by the runner, applied even to a running chat).
+    pub auto_reload: bool,
     /// The `agent.claude.model-<tier>` settings by tier id, as stored (the tiers are the ones of
     /// `shared/agent-roles.json`); Rust resolves them in `subagents::tier_model`.
     #[serde(default)]
@@ -681,6 +776,10 @@ mod tests {
                 tools: vec!["Bash".into()],
                 slash_commands: vec![],
                 skills: vec!["s".into()],
+                mcp_servers: vec![McpServerStatus {
+                    name: "m".into(),
+                    status: "connected".into(),
+                }],
                 cli_version: Some("2.1.325".into()),
             },
             AgentEvent::TextDelta {
@@ -761,6 +860,27 @@ mod tests {
                 message: "no claude".into(),
                 retryable: false,
             },
+            AgentEvent::SubagentMessage {
+                message_id: "m".into(),
+                parent_tool_call_id: "a".into(),
+            },
+            AgentEvent::SubagentStarted {
+                tool_call_id: "a".into(),
+                role: Some("worker".into()),
+                name: "writer-worker".into(),
+                model: Some("sonnet".into()),
+            },
+            AgentEvent::SubagentStatus {
+                tool_call_id: "a".into(),
+                status: SubagentRunStatus::Stopped,
+            },
+            AgentEvent::SteerUndelivered {
+                message_id: "m".into(),
+            },
+            AgentEvent::SessionReloaded { reason: None },
+            AgentEvent::SessionReloaded {
+                reason: Some("skill x changed".into()),
+            },
             AgentEvent::SessionEnded {
                 reason: SessionEndReason::VaultSwitched,
                 exit_code: None,
@@ -776,6 +896,7 @@ mod tests {
                     old_path: Some("b.md".into()),
                     no_diff: false,
                     by: None,
+                    by_call: None,
                 }],
                 bash: true,
             }),
@@ -804,12 +925,37 @@ mod tests {
                 old_path: None,
                 no_diff: false,
                 by: Some("worker".into()),
+                by_call: Some("toolu_1".into()),
             }],
             bash: false,
         });
         assert_eq!(
             round_trip(&ev),
-            json!({"type":"turn-changes","turnId":"t1","files":[{"path":"a.md","status":"modified","added":3,"removed":1,"by":"worker"}]})
+            json!({"type":"turn-changes","turnId":"t1","files":[{"path":"a.md","status":"modified","added":3,"removed":1,"by":"worker","byCall":"toolu_1"}]})
+        );
+        // the sub-agent events' wire shape
+        assert_eq!(
+            round_trip(&AgentEvent::SubagentStarted {
+                tool_call_id: "a".into(),
+                role: Some("worker".into()),
+                name: "writer-worker".into(),
+                model: None,
+            }),
+            json!({"type":"subagent-started","toolCallId":"a","role":"worker","name":"writer-worker","model":null})
+        );
+        assert_eq!(
+            round_trip(&AgentEvent::SubagentStatus {
+                tool_call_id: "a".into(),
+                status: SubagentRunStatus::Completed,
+            }),
+            json!({"type":"subagent-status","toolCallId":"a","status":"completed"})
+        );
+        assert_eq!(
+            round_trip(&AgentEvent::SubagentMessage {
+                message_id: "m".into(),
+                parent_tool_call_id: "a".into(),
+            }),
+            json!({"type":"subagent-message","messageId":"m","parentToolCallId":"a"})
         );
         let detail = TurnChanges {
             turn_id: "t1".into(),
@@ -822,6 +968,7 @@ mod tests {
                     old_path: None,
                     no_diff: false,
                     by: None,
+                    by_call: None,
                 },
                 rows: vec![DiffRow {
                     kind: DiffRowKind::Add,
@@ -952,6 +1099,7 @@ mod tests {
                 disallowed_tools: vec![],
                 orchestrate: true,
                 show_thinking: true,
+                auto_reload: true,
                 memory: AgentMemory::Vault,
                 tier_models: BTreeMap::from([("cheap".to_string(), Some("haiku".to_string()))]),
             },

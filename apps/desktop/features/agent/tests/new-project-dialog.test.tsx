@@ -41,6 +41,8 @@ function detail(path: string, over: Partial<ProjectDetail> = {}): ProjectDetail 
     webUrls: [],
     youtubeUrls: [],
     agentMode: null,
+    icon: null,
+    color: null,
     warnings: [],
     ...over,
   };

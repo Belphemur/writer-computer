@@ -7,7 +7,7 @@ import type { ChatNoteDoc, ChatNoteMessage } from "./chat-note";
 import { imageRef } from "./chat-images";
 import type { ChatSummary } from "./events";
 import { createChat } from "./reduce";
-import type { Chat, ToolBlock, Turn } from "./transcript";
+import type { Chat, SubagentMeta, ToolBlock, Turn, UserMessage } from "./transcript";
 
 function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
   return (m.tools ?? []).map((t) => ({
@@ -15,7 +15,7 @@ function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
     id: t.id,
     messageId: m.id,
     tool: t.tool,
-    parentToolCallId: null,
+    parentToolCallId: t.parent ?? null,
     inputText: "",
     input: t.input,
     hasInput: true,
@@ -26,18 +26,40 @@ function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
   }));
 }
 
+/** The sub-agent runs a note kept (who, which model, the closing answer); the time and the CLI's
+ *  own status are not stored, so a restored card shows neither. */
+function subagentsOf(m: ChatNoteMessage): Record<string, SubagentMeta> | null {
+  const runs = (m.tools ?? []).filter((t) => t.sub);
+  if (runs.length === 0) return null;
+  return Object.fromEntries(
+    runs.map((t) => [
+      t.id,
+      {
+        ...t.sub!,
+        status: null,
+        startedAt: null,
+        endedAt: null,
+      } satisfies SubagentMeta,
+    ]),
+  );
+}
+
+function userMessage(m: ChatNoteMessage): UserMessage {
+  return {
+    messageId: m.id,
+    text: m.text,
+    // the images come back as refs (thumbnails); the other attachments only as the label
+    context: (m.images ?? []).map(imageRef),
+    ...(m.context ? { contextLabel: m.context } : {}),
+    ts: m.at,
+  };
+}
+
 export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "projectPath">): Chat {
   const turns: Turn[] = [];
   const open = (m: ChatNoteMessage | null, at: number): Turn => ({
     id: `turn-${turns.length}`,
-    user: m && {
-      messageId: m.id,
-      text: m.text,
-      // the images come back as refs (thumbnails); the other attachments only as the label
-      context: (m.images ?? []).map(imageRef),
-      ...(m.context ? { contextLabel: m.context } : {}),
-      ts: m.at,
-    },
+    user: m && userMessage(m),
     blocks: [],
     status: "completed",
     startedAt: at,
@@ -49,6 +71,13 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
   });
   let current: Turn | null = null;
   for (const m of doc.messages) {
+    const last = turns[turns.length - 1];
+    if (m.role === "user" && m.steer && last) {
+      // a steer sits in the timeline of the turn it cut short; its answer is the next turn
+      last.blocks.push({ kind: "steer", id: `steer:${m.id}`, message: userMessage(m) });
+      current = null;
+      continue;
+    }
     if (m.role === "user") {
       current = open(m, m.at);
       turns.push(current);
@@ -59,6 +88,8 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
       turns.push(current);
     }
     current.blocks.push(...toolBlocks(m));
+    const subagents = subagentsOf(m);
+    if (subagents) current.subagents = subagents;
     if (m.text.trim()) {
       current.blocks.push({
         kind: "text",

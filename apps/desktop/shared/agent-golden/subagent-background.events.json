@@ -1,0 +1,181 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault",
+    "permissionMode": "default",
+    "tools": [
+      "Agent",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_agent1",
+    "messageId": "msg_a1",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_agent1",
+    "input": {
+      "description": "Edit the note",
+      "prompt": "Edit __FILE__",
+      "run_in_background": true,
+      "subagent_type": "writer-worker"
+    }
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_agent1",
+    "status": "running"
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_agent1",
+    "output": "Async agent launched",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_t1",
+    "blockIndex": 0,
+    "text": "done"
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": null
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 10,
+    "apiDurationMs": 5,
+    "numTurns": 2,
+    "isError": false,
+    "result": "done",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_w1",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_write1",
+    "messageId": "msg_w1",
+    "tool": "Write",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_write1",
+    "input": {
+      "content": "new\nline\nadded\n",
+      "file_path": "__FILE__"
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_write1",
+    "output": "File updated",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_agent1",
+    "status": "completed"
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_agent1",
+    "status": "completed"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_t2",
+    "blockIndex": 0,
+    "text": "the worker finished"
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": null
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 10,
+    "apiDurationMs": 5,
+    "numTurns": 2,
+    "isError": false,
+    "result": "done",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

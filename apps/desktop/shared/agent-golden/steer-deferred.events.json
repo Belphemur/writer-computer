@@ -1,0 +1,136 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s1",
+    "blockIndex": 0,
+    "text": "1. The"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s1",
+    "blockIndex": 0,
+    "text": "1. The ocean covers about 71% of Earth's surface.\n2. The ocean holds roughly 97% of Earth's water.\n3. The Pacific is the largest ocean, covering more area than all land combined.\n4. The deepest known point, the Challenger Deep, is about 10,935 meters deep.\n5. Sunlight fades to darkness below about 1,000 meters.\n6. More than 80% of the ocean remains unexplored and unmapped in detail.\n7. The ocean produces roughly half of the oxygen we breathe.\n8. Phytoplankton are the main producers of ocean oxygen.\n9. The ocean absorbs about 90% of the excess heat from greenhouse warming.\n10. Seawater averages about 3.5% salt by weight.\n11. The Dead Sea is so salty that people float easily in it.\n12. Ocean currents act like a global conveyor belt for heat.\n13. The Gulf Stream warms much of northwestern Europe.\n14. Tides are caused mainly by the Moon's gravity.\n15. Spring tides occur during new and full moons.\n16. Waves are created mostly by wind blowing across the surface.\n17. Tsunamis are triggered by underwater earthquakes, landslides, or eruptions.\n18. Tsunami waves can travel at speeds over 500 km/h in deep water.\n19. Hydrothermal vents support ecosystems that rely on chemosynthesis.\n20. Giant tube worms live near hydrothermal vents without sunlight.\n21. The blue whale is the largest animal known to have lived on Earth.\n22. Blue whale hearts can weigh about 180 kg.\n23. Some octopuses have three hearts and blue blood.\n24. Giant squid have eyes that can be about 27 cm across.\n25. Sharks have existed for over 400 million years.\n26. Sharks can detect electric fields using sensory organs called ampullae of Lorenzini.\n27. Coral reefs cover less than 1% of the ocean floor but support about 25% of marine species.\n28. Coral are animals that live in partnership with algae.\n29. Bioluminescence is common among deep-sea creatures.\n30. The anglerfish uses a glowing lure to attract prey.\n31. Sea otters use tools, such as rocks, to crack open shellfish.\n32. Emperor penguins can dive more than 500 meters.\n33. Ocean water pressure at the deepest point is over 1,000 times surface pressure.\n34. Antarctic krill form one of the largest animal biomasses on Earth.\n35. The Mariana Trench is one of the deepest trenches in the world.\n36. Most of the ocean's sound is produced by natural sources such as waves and whales.\n37. Sound travels faster and farther in water than in air.\n38. Marine snow, falling organic debris, carries carbon into the deep sea.\n39. The ocean stores far more carbon than the atmosphere.\n40. Seagrass meadows can capture carbon at rates much higher than many forests per unit area."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 1000,
+    "apiDurationMs": 800,
+    "numTurns": 1,
+    "isError": false,
+    "result": "1. The ocean covers about 71% of Earth's surface.\n2. The ocean holds roughly 97% of Earth's water.\n3. The Pacific is the largest ocean, covering more area than all land combined.\n4. The deepest known point, the Challenger Deep, is about 10,935 meters deep.\n5. Sunlight fades to darkness below about 1,000 meters.\n6. More than 80% of the ocean remains unexplored and unmapped in detail.\n7. The ocean produces roughly half of the oxygen we breathe.\n8. Phytoplankton are the main producers of ocean oxygen.\n9. The ocean absorbs about 90% of the excess heat from greenhouse warming.\n10. Seawater averages about 3.5% salt by weight.\n11. The Dead Sea is so salty that people float easily in it.\n12. Ocean currents act like a global conveyor belt for heat.\n13. The Gulf Stream warms much of northwestern Europe.\n14. Tides are caused mainly by the Moon's gravity.\n15. Spring tides occur during new and full moons.\n16. Waves are created mostly by wind blowing across the surface.\n17. Tsunamis are triggered by underwater earthquakes, landslides, or eruptions.\n18. Tsunami waves can travel at speeds over 500 km/h in deep water.\n19. Hydrothermal vents support ecosystems that rely on chemosynthesis.\n20. Giant tube worms live near hydrothermal vents without sunlight.\n21. The blue whale is the largest animal known to have lived on Earth.\n22. Blue whale hearts can weigh about 180 kg.\n23. Some octopuses have three hearts and blue blood.\n24. Giant squid have eyes that can be about 27 cm across.\n25. Sharks have existed for over 400 million years.\n26. Sharks can detect electric fields using sensory organs called ampullae of Lorenzini.\n27. Coral reefs cover less than 1% of the ocean floor but support about 25% of marine species.\n28. Coral are animals that live in partnership with algae.\n29. Bioluminescence is common among deep-sea creatures.\n30. The anglerfish uses a glowing lure to attract prey.\n31. Sea otters use tools, such as rocks, to crack open shellfish.\n32. Emperor penguins can dive more than 500 meters.\n33. Ocean water pressure at the deepest point is over 1,000 times surface pressure.\n34. Antarctic krill form one of the largest animal biomasses on Earth.\n35. The Mariana Trench is one of the deepest trenches in the world.\n36. Most of the ocean's sound is produced by natural sources such as waves and whales.\n37. Sound travels faster and farther in water than in air.\n38. Marine snow, falling organic debris, carries carbon into the deep sea.\n39. The ocean stores far more carbon than the atmosphere.\n40. Seagrass meadows can capture carbon at rates much higher than many forests per unit area.",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  },
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s2",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s2",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s2",
+    "blockIndex": 1,
+    "text": "1. The"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s2",
+    "blockIndex": 1,
+    "text": "1. The ocean covers about 71% of Earth's surface.\n2. The ocean holds roughly 97% of Earth's water.\n3. The Pacific is the largest ocean, covering more area than all land combined.\n4. The deepest known point, the Challenger Deep, is about 10,935 meters deep.\n5. Sunlight fades to darkness below about 1,000 meters.\n6. More than 80% of the ocean remains unexplored and unmapped in detail.\n7. The ocean produces roughly half of the oxygen we breathe.\n8. Phytoplankton are the main producers of ocean oxygen.\n9. The ocean absorbs about 90% of the excess heat from greenhouse warming.\n10. Seawater averages about 3.5% salt by weight.\n11. The Dead Sea is so salty that people float easily in it.\n12. Ocean currents act like a global conveyor belt for heat.\n13. The Gulf Stream warms much of northwestern Europe.\n14. Tides are caused mainly by the Moon's gravity.\n15. Spring tides occur during new and full moons.\n16. Waves are created mostly by wind blowing across the surface.\n17. Tsunamis are triggered by underwater earthquakes, landslides, or eruptions.\n18. Tsunami waves can travel at speeds over 500 km/h in deep water.\n19. Hydrothermal vents support ecosystems that rely on chemosynthesis.\n20. Giant tube worms live near hydrothermal vents without sunlight.\n21. The blue whale is the largest animal known to have lived on Earth.\n22. Blue whale hearts can weigh about 180 kg.\n23. Some octopuses have three hearts and blue blood.\n24. Giant squid have eyes that can be about 27 cm across.\n25. Sharks have existed for over 400 million years.\n26. Sharks can detect electric fields using sensory organs called ampullae of Lorenzini.\n27. Coral reefs cover less than 1% of the ocean floor but support about 25% of marine species.\n28. Coral are animals that live in partnership with algae.\n29. Bioluminescence is common among deep-sea creatures.\n30. The anglerfish uses a glowing lure to attract prey.\n31. Sea otters use tools, such as rocks, to crack open shellfish.\n32. Emperor penguins can dive more than 500 meters.\n33. Ocean water pressure at the deepest point is over 1,000 times surface pressure.\n34. Antarctic krill form one of the largest animal biomasses on Earth.\n35. The Mariana Trench is one of the deepest trenches in the world.\n36. Most of the ocean's sound is produced by natural sources such as waves and whales.\n37. Sound travels faster and farther in water than in air.\n38. Marine snow, falling organic debris, carries carbon into the deep sea.\n39. The ocean stores far more carbon than the atmosphere.\n40. Seagrass meadows can capture carbon at rates much higher than many forests per unit area.\n\nPINEAPPLE"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 1000,
+    "apiDurationMs": 800,
+    "numTurns": 1,
+    "isError": false,
+    "result": "1. The ocean covers about 71% of Earth's surface.\n2. The ocean holds roughly 97% of Earth's water.\n3. The Pacific is the largest ocean, covering more area than all land combined.\n4. The deepest known point, the Challenger Deep, is about 10,935 meters deep.\n5. Sunlight fades to darkness below about 1,000 meters.\n6. More than 80% of the ocean remains unexplored and unmapped in detail.\n7. The ocean produces roughly half of the oxygen we breathe.\n8. Phytoplankton are the main producers of ocean oxygen.\n9. The ocean absorbs about 90% of the excess heat from greenhouse warming.\n10. Seawater averages about 3.5% salt by weight.\n11. The Dead Sea is so salty that people float easily in it.\n12. Ocean currents act like a global conveyor belt for heat.\n13. The Gulf Stream warms much of northwestern Europe.\n14. Tides are caused mainly by the Moon's gravity.\n15. Spring tides occur during new and full moons.\n16. Waves are created mostly by wind blowing across the surface.\n17. Tsunamis are triggered by underwater earthquakes, landslides, or eruptions.\n18. Tsunami waves can travel at speeds over 500 km/h in deep water.\n19. Hydrothermal vents support ecosystems that rely on chemosynthesis.\n20. Giant tube worms live near hydrothermal vents without sunlight.\n21. The blue whale is the largest animal known to have lived on Earth.\n22. Blue whale hearts can weigh about 180 kg.\n23. Some octopuses have three hearts and blue blood.\n24. Giant squid have eyes that can be about 27 cm across.\n25. Sharks have existed for over 400 million years.\n26. Sharks can detect electric fields using sensory organs called ampullae of Lorenzini.\n27. Coral reefs cover less than 1% of the ocean floor but support about 25% of marine species.\n28. Coral are animals that live in partnership with algae.\n29. Bioluminescence is common among deep-sea creatures.\n30. The anglerfish uses a glowing lure to attract prey.\n31. Sea otters use tools, such as rocks, to crack open shellfish.\n32. Emperor penguins can dive more than 500 meters.\n33. Ocean water pressure at the deepest point is over 1,000 times surface pressure.\n34. Antarctic krill form one of the largest animal biomasses on Earth.\n35. The Mariana Trench is one of the deepest trenches in the world.\n36. Most of the ocean's sound is produced by natural sources such as waves and whales.\n37. Sound travels faster and farther in water than in air.\n38. Marine snow, falling organic debris, carries carbon into the deep sea.\n39. The ocean stores far more carbon than the atmosphere.\n40. Seagrass meadows can capture carbon at rates much higher than many forests per unit area.\n\nPINEAPPLE",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

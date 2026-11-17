@@ -142,7 +142,8 @@ export function FileTreeBadgeIcon({ badge }: { badge: FileTreeBadge }) {
       aria-label={badge.label}
       title={badge.label}
       data-testid={badge.testId}
-      className="ml-auto flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70"
+      style={badge.color ? { color: badge.color } : undefined}
+      className={`ml-auto flex shrink-0 items-center ${badge.color ? "" : "text-[var(--text-icon-muted)] opacity-70"}`}
     >
       <HugeiconsIcon icon={badge.icon} size={12} color="currentColor" strokeWidth={1.8} />
     </span>

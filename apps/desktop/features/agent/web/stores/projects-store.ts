@@ -1,29 +1,40 @@
 import { create } from "zustand";
+import { useMemo } from "react";
 import { projectClient, type ProjectDetail } from "@features/agent/web/lib/project-client";
+import { appearanceOf, type ProjectAppearance } from "@features/agent/web/lib/project-appearance";
 import { logger } from "@/lib/logger";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
 interface ProjectsState {
   /** Non-archived projects of the open workspace, most recently used first. */
   projects: ProjectDetail[];
-  /** Absolute folder paths of those projects, for the sidebar badge (one Set lookup per row). */
-  folderPaths: Set<string>;
+  /** Absolute folder path of each of those projects with its icon and color, for the sidebar
+   *  badge (one Map lookup per row). */
+  folderPaths: Map<string, ProjectAppearance>;
   loadedRoot: string | null;
   refresh: () => Promise<void>;
+  /** The one write of a project's icon and color (spec 4.8): `project.md` through
+   *  `agent_update_project`, then the list entry is replaced by what was written. `null` removes
+   *  the key. Rejects with the backend's message. */
+  setAppearance: (path: string, next: ProjectAppearance) => Promise<void>;
   clear: () => void;
 }
 
 let refreshSeq = 0;
 
+function folderPathsOf(root: string, projects: ProjectDetail[]): Map<string, ProjectAppearance> {
+  return new Map(projects.map((p) => [`${root}/${p.path}`, appearanceOf(p)]));
+}
+
 export const useProjectsStore = create<ProjectsState>((set) => ({
   projects: [],
-  folderPaths: new Set(),
+  folderPaths: new Map(),
   loadedRoot: null,
   refresh: async () => {
     const root = useWorkspaceStore.getState().root;
     const seq = ++refreshSeq;
     if (!root) {
-      set({ projects: [], folderPaths: new Set(), loadedRoot: null });
+      set({ projects: [], folderPaths: new Map(), loadedRoot: null });
       return;
     }
     try {
@@ -32,19 +43,36 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
       if (seq !== refreshSeq || useWorkspaceStore.getState().root !== root) return;
       set({
         projects,
-        folderPaths: new Set(projects.map((p) => `${root}/${p.path}`)),
+        folderPaths: folderPathsOf(root, projects),
         loadedRoot: root,
       });
     } catch (error) {
       logger.warn("agent", `could not list the projects: ${String(error)}`);
     }
   },
-  clear: () => set({ projects: [], folderPaths: new Set(), loadedRoot: null }),
+  setAppearance: async (path, next) => {
+    const written = await projectClient.update(path, {
+      icon: next.icon ?? "",
+      color: next.color ?? "",
+    });
+    const root = useWorkspaceStore.getState().root;
+    set((s) => {
+      const projects = s.projects.map((p) => (p.path === path ? written : p));
+      return { projects, folderPaths: root ? folderPathsOf(root, projects) : s.folderPaths };
+    });
+  },
+  clear: () => set({ projects: [], folderPaths: new Map(), loadedRoot: null }),
 }));
 
-/** Does the sidebar folder at this absolute path hold a project? */
-export function useIsProjectFolder(path: string, isDir: boolean): boolean {
-  return useProjectsStore((s) => isDir && s.folderPaths.has(path));
+/** The icon and color of the project at a vault-relative path (none for a path that is not a
+ *  listed project, such as the vault root). Selects the two strings, so a rename re-renders no
+ *  icon. */
+export function useProjectAppearance(path: string | null): ProjectAppearance {
+  const icon = useProjectsStore((s) => appearanceOf(s.projects.find((p) => p.path === path)).icon);
+  const color = useProjectsStore(
+    (s) => appearanceOf(s.projects.find((p) => p.path === path)).color,
+  );
+  return useMemo(() => ({ icon, color }), [icon, color]);
 }
 
 /** Keeps the list in step with the open workspace: load on open and switch, drop on close.

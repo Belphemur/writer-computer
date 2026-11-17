@@ -54,6 +54,9 @@ describe("agent event contract", () => {
       "permission-resolved",
       "model-refused",
       "turn-changes",
+      "session-reloaded",
+      "steer-undelivered", // the runner's watchdog
+      "subagent-started", // the runner resolves the role and the model
     ]);
     for (const t of AGENT_EVENT_TYPES) {
       if (!runnerOnly.has(t)) expect(seen.has(t), t).toBe(true);
@@ -97,6 +100,16 @@ describe("agent event contract", () => {
           return e.turnId;
         case "session-ended":
           return e.reason;
+        case "session-reloaded":
+          return e.reason ?? "";
+        case "steer-undelivered":
+          return e.messageId;
+        case "subagent-message":
+          return e.parentToolCallId;
+        case "subagent-started":
+          return e.name;
+        case "subagent-status":
+          return e.status;
         default: {
           const never: never = e;
           return never;

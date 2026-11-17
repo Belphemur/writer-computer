@@ -35,6 +35,7 @@
       "agent_project_manifest",
       "agent_read_project",
       "agent_regenerate_title",
+      "agent_reload",
       "agent_remove_permission_rule",
       "agent_resume",
       "agent_revert_changes",
@@ -45,6 +46,7 @@
       "agent_set_permission_mode",
       "agent_snapshot",
       "agent_start",
+      "agent_steer",
       "agent_turn_changes",
       "agent_update_project"
     ],
@@ -62,6 +64,12 @@
       {
         "id": "agent.new-chat",
         "label": "Agent: New chat",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.reload-session",
+        "label": "Agent: Reload session",
         "description": "Command",
         "when": "workspace-window"
       },
@@ -103,6 +111,8 @@
     "menus": {
       "sidebar-folder": ["agent.make-project"]
     },
-    "fileTreeDecorations": ["agent.project-badge"]
-  }
+    "fileTreeDecorations": ["agent.project-badge"],
+    "services": ["agent.context"]
+  },
+  "provides": ["agent.context"]
 }

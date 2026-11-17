@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "chatId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
+    "title": "Plan the Q4 review",
+    "titleRenamed": false,
+    "titleAuto": false,
+    "backend": "claude",
+    "sessionId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
+    "project": "Demo",
+    "projectPath": "Projects/Demo",
+    "cliVersion": "2.1.325",
+    "model": "claude-sonnet-5-5",
+    "createdAt": 1794906725123,
+    "updatedAt": 1794906785123,
+    "turns": 4,
+    "pinned": false,
+    "archivedAt": null,
+    "usage": {
+      "inputTokens": 120,
+      "outputTokens": 45,
+      "costUsd": 0.0123
+    },
+    "preview": "List the notes."
+  },
+  "trimmed": 0,
+  "turns": [
+    {
+      "role": "user",
+      "id": "m-user-1",
+      "at": 1794906725123,
+      "text": "List the notes."
+    },
+    {
+      "role": "assistant",
+      "id": "m-user-1-a",
+      "at": 1794906730000,
+      "text": "One moment.",
+      "reason": "interrupted"
+    },
+    {
+      "role": "user",
+      "id": "m-steer-1",
+      "at": 1794906735000,
+      "text": "Only the ones tagged #client.",
+      "steer": true
+    },
+    {
+      "role": "assistant",
+      "id": "m-steer-1-a",
+      "at": 1794906785123,
+      "text": "Two notes are tagged #client.",
+      "reason": "completed"
+    }
+  ]
+}

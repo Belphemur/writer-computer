@@ -163,6 +163,88 @@ describe("agent store: a turn against the recorded backend", () => {
     await mock.idle(id);
   });
 
+  describe("steer (Cmd+Enter)", () => {
+    async function awaitingPermission() {
+      get().openPane();
+      const id = get().activeChatId!;
+      await get().sendMessage("write");
+      await vi.waitFor(() => expect(chat().state).toBe("awaiting-permission"));
+      return id;
+    }
+    const finish = async (id: string) => {
+      await get().stop();
+      await mock.idle(id);
+    };
+
+    it("with text, goes into the running turn at once, as a card at that point, never queued", async () => {
+      const id = await awaitingPermission();
+      const send = vi.spyOn(mock, "send");
+      const steer = vi.spyOn(mock, "steer");
+      await get().sendNow("take the other file");
+      expect(steer).toHaveBeenCalledTimes(1);
+      expect(steer.mock.calls[0]![0]).toMatchObject({ chatId: id });
+      expect(steer.mock.calls[0]![0].text).toContain("take the other file");
+      expect(send).not.toHaveBeenCalled();
+      expect(get().queued[id]).toBeUndefined();
+      expect(chat().turns).toHaveLength(1);
+      const last = chat().turns[0]!.blocks.at(-1)!;
+      expect(last).toMatchObject({ kind: "steer", message: { text: "take the other file" } });
+      await finish(id);
+    });
+
+    it("with an empty composer sends the queued messages now, merged, and clears the chip", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("second");
+      await get().sendMessage("third");
+      expect(get().queued[id]!.text).toBe("second\n\nthird");
+      const steer = vi.spyOn(mock, "steer");
+      await get().sendNow("");
+      expect(steer).toHaveBeenCalledTimes(1);
+      expect(steer.mock.calls[0]![0].text).toContain("second\n\nthird");
+      expect(get().queued[id]).toBeUndefined();
+      expect(chat().turns[0]!.blocks.at(-1)).toMatchObject({
+        kind: "steer",
+        message: { text: "second\n\nthird" },
+      });
+      await finish(id);
+    });
+
+    it("leaves the queue alone when the composer has text", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("later");
+      await get().sendNow("now");
+      expect(get().queued[id]!.text).toBe("later");
+      await finish(id);
+    });
+
+    it("while idle is a plain send, and does nothing with nothing to send", async () => {
+      get().openPane();
+      const id = get().activeChatId!;
+      const send = vi.spyOn(mock, "send");
+      const steer = vi.spyOn(mock, "steer");
+      await get().sendNow("");
+      expect(send).not.toHaveBeenCalled();
+      await get().sendNow("hello");
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(steer).not.toHaveBeenCalled();
+      expect(chat().turns[0]!.user?.text).toBe("hello");
+      await mock.idle(id);
+    });
+
+    it("does nothing while the chat is stopping: the composer is off, nothing is steered or queued", async () => {
+      const id = await awaitingPermission();
+      const steer = vi.spyOn(mock, "steer");
+      const stopping = get().stop();
+      expect(chat().state).toBe("cancelling");
+      await get().sendNow("too late");
+      expect(steer).not.toHaveBeenCalled();
+      expect(get().queued[id]).toBeUndefined();
+      await stopping;
+      await mock.idle(id);
+      expect(chat().turns).toHaveLength(1);
+    });
+  });
+
   it("removing the queued chip drops it", async () => {
     get().openPane();
     const id = get().activeChatId!;

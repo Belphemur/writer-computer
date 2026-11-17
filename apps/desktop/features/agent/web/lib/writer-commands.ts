@@ -23,14 +23,17 @@ export type WriterCommandContext = {
   args: string;
   /** The store's `regenerateChatTitle`, injected so this module stays pure. */
   regenerateTitle: (chatId: ChatId) => Promise<RegenerateOutcome>;
+  /** The store's `reloadChatSession`: the notice to show now, or `null` when it started. */
+  reloadSession: (chatId: ChatId) => Promise<string | null>;
 };
 
 export type WriterCommand = {
   /** Without the leading slash, lower case. */
   name: string;
   description: string;
-  /** Runs locally; resolves to the one-line result shown in the transcript (errors included). */
-  run: (ctx: WriterCommandContext) => Promise<string>;
+  /** Runs locally; resolves to the one-line result shown in the transcript (errors included), or
+   *  `null` when an event brings the notice. */
+  run: (ctx: WriterCommandContext) => Promise<string | null>;
 };
 
 export const WRITER_COMMANDS: readonly WriterCommand[] = [
@@ -48,6 +51,11 @@ export const WRITER_COMMANDS: readonly WriterCommand[] = [
         return `Could not regenerate the title: ${String(e)}`;
       }
     },
+  },
+  {
+    name: "reload",
+    description: "Restart this chat's session to pick up new skills and MCP servers",
+    run: ({ chatId, reloadSession }) => reloadSession(chatId),
   },
 ];
 

@@ -14,13 +14,16 @@ import type {
   MessageId,
   PermissionResolution,
   PermissionSuggestion,
+  SubagentRunStatus,
 } from "./events";
 import { contextTokensOf } from "./context-usage";
+import { isBackgroundLaunch, launchEnd } from "./subagents";
 import type {
   Block,
   Chat,
   ContextUsage,
   PermissionView,
+  SubagentMeta,
   ThinkingBlock,
   ToolBlock,
   ToolPermission,
@@ -124,6 +127,50 @@ function patchTool(chat: Chat, toolCallId: string, fn: (b: ToolBlock) => ToolBlo
   return chat;
 }
 
+/** The sub-agent run of a launch call, in whichever turn holds the call (a background run's status
+ *  can arrive after its turn closed); a run nothing launched is ignored. */
+function patchSubagent(
+  chat: Chat,
+  toolCallId: string,
+  fn: (meta: SubagentMeta | undefined, block: ToolBlock) => SubagentMeta | undefined,
+): Chat {
+  for (let t = chat.turns.length - 1; t >= 0; t--) {
+    const turn = chat.turns[t]!;
+    const block = turn.blocks.find((b) => b.id === toolCallId);
+    if (block?.kind !== "tool") continue;
+    const meta = fn(turn.subagents?.[toolCallId], block);
+    if (!meta) return chat;
+    const turns = chat.turns.slice();
+    turns[t] = { ...turn, subagents: { ...turn.subagents, [toolCallId]: meta } };
+    return { ...chat, turns };
+  }
+  return chat;
+}
+
+const blankSubagent = (): SubagentMeta => ({
+  role: null,
+  name: "",
+  model: null,
+  status: null,
+  startedAt: null,
+  endedAt: null,
+});
+
+/** A run that never reported its end (the process went away): it stopped. */
+function stopRunning(chat: Chat, now: number): Chat {
+  let changed = false;
+  const turns = chat.turns.map((turn) => {
+    const runs = Object.entries(turn.subagents ?? {}).filter(([, m]) => m.status === "running");
+    if (runs.length === 0) return turn;
+    changed = true;
+    const subagents = { ...turn.subagents };
+    for (const [id, m] of runs)
+      subagents[id] = { ...m, status: "stopped", endedAt: m.endedAt ?? now };
+    return { ...turn, subagents };
+  });
+  return changed ? { ...chat, turns } : chat;
+}
+
 /** Activity moves an idle or starting chat to running; waiting/cancelling states are kept. */
 function active(chat: Chat): Chat {
   return chat.state === "idle" || chat.state === "starting" || chat.state === "reconnecting"
@@ -135,9 +182,36 @@ function addBlock(turn: Turn, block: Block): Turn {
   return { ...turn, blocks: [...turn.blocks, block] };
 }
 
-function blockExists(chat: Chat, id: string): boolean {
-  const last = chat.turns[chat.turns.length - 1];
-  return isRunning(last) && last.blocks.some((b) => b.id === id);
+function blockExists(chat: Chat, id: string, parent: string | null = null): boolean {
+  const i = parent ? runTurnIndex(chat, parent) : -1;
+  const turn = i >= 0 ? chat.turns[i] : chat.turns[chat.turns.length - 1];
+  return (i >= 0 || isRunning(turn)) && !!turn?.blocks.some((b) => b.id === id);
+}
+
+/** The run (launch call) a sub-agent message belongs to, from `subagent-message`. */
+function parentOfMessage(chat: Chat, messageId: string): string | null {
+  for (let t = chat.turns.length - 1; t >= 0; t--) {
+    const parent = chat.turns[t]!.messageParents?.[messageId];
+    if (parent) return parent;
+  }
+  return null;
+}
+
+/** The turn holding a launch call: a background run keeps working after its turn closed, and its
+ *  late rows belong in its card, not in a turn of their own. -1 when no turn holds it. */
+function runTurnIndex(chat: Chat, launchId: string): number {
+  for (let t = chat.turns.length - 1; t >= 0; t--)
+    if (chat.turns[t]!.blocks.some((b) => b.id === launchId)) return t;
+  return -1;
+}
+
+/** [`inTurn`] for something a sub-agent made: in the turn of its launch call when there is one. */
+function inRunTurn(chat: Chat, now: number, parent: string | null, fn: (turn: Turn) => Turn): Chat {
+  const i = parent ? runTurnIndex(chat, parent) : -1;
+  if (i < 0) return inTurn(chat, now, fn);
+  const turns = chat.turns.slice();
+  turns[i] = fn(turns[i]!);
+  return { ...chat, turns };
 }
 
 function removePending(chat: Chat, requestId: string): PermissionView[] {
@@ -155,6 +229,7 @@ function closeBlocks(blocks: Block[], now: number, toolStatus: ToolBlock["status
   return blocks.map((b) => {
     if (b.kind === "text") return b.final ? b : { ...b, final: true };
     if (b.kind === "thinking") return b.endedAt === null ? { ...b, endedAt: now } : b;
+    if (b.kind === "steer") return b;
     return b.status === "running" || b.status === "waiting"
       ? {
           ...b,
@@ -211,6 +286,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
           tools: event.tools,
           slashCommands: event.slashCommands,
           skills: event.skills ?? [],
+          mcpServers: event.mcpServers ?? [],
           cliVersion: event.cliVersion,
         },
       };
@@ -219,15 +295,16 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
     case "text-delta": {
       const id = `text:${event.messageId}:${event.blockIndex}`;
       let next = active(chat);
-      if (blockExists(next, id)) {
-        return inTurn(next, now, (t) => ({
+      const parent = parentOfMessage(next, event.messageId);
+      if (blockExists(next, id, parent)) {
+        return inRunTurn(next, now, parent, (t) => ({
           ...t,
           blocks: mapBlock(t.blocks, id, (b) =>
             b.kind === "text" && !b.final ? { ...b, text: b.text + event.text } : b,
           )!,
         }));
       }
-      next = inTurn(next, now, (t) =>
+      next = inRunTurn(next, now, parent, (t) =>
         addBlock(t, {
           kind: "text",
           id,
@@ -235,6 +312,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
           blockIndex: event.blockIndex,
           text: event.text,
           final: false,
+          parentToolCallId: t.messageParents?.[event.messageId] ?? null,
         }),
       );
       return next;
@@ -243,7 +321,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
     case "text": {
       const id = `text:${event.messageId}:${event.blockIndex}`;
       const next = active(chat);
-      return inTurn(next, now, (t) => {
+      return inRunTurn(next, now, parentOfMessage(next, event.messageId), (t) => {
         const replaced = mapBlock(t.blocks, id, (b) =>
           b.kind === "text" ? { ...b, text: event.text, final: true } : b,
         );
@@ -256,6 +334,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
               blockIndex: event.blockIndex,
               text: event.text,
               final: true,
+              parentToolCallId: t.messageParents?.[event.messageId] ?? null,
             });
       });
     }
@@ -263,7 +342,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
     case "thinking": {
       const id = `thinking:${event.messageId}:${event.blockIndex}`;
       const next = active(chat);
-      return inTurn(next, now, (t) => {
+      return inRunTurn(next, now, parentOfMessage(next, event.messageId), (t) => {
         const update = (b: ThinkingBlock): ThinkingBlock => {
           const estimatedTokens = event.estimatedTokens ?? b.estimatedTokens;
           if (event.phase === "delta") return { ...b, text: b.text + event.text, estimatedTokens };
@@ -287,6 +366,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
           endedAt: null,
           text: "",
           estimatedTokens: null,
+          parentToolCallId: t.messageParents?.[event.messageId] ?? null,
         };
         return addBlock(t, update(fresh));
       });
@@ -308,7 +388,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
         truncated: false,
         permission: null,
       };
-      return inTurn(active(chat), now, (t) => addBlock(t, block));
+      return inRunTurn(active(chat), now, event.parentToolCallId, (t) => addBlock(t, block));
     }
 
     case "tool-call-input-delta":
@@ -329,7 +409,8 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       let next = patchTool(chat, event.toolCallId, (b) => ({
         ...b,
         status:
-          event.outcome === "rejected" && b.permission === "cancelled"
+          b.status === "interrupted" ||
+          (event.outcome === "rejected" && b.permission === "cancelled")
             ? "interrupted"
             : toolStatusOf(event.outcome),
         output: event.output,
@@ -342,8 +423,40 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
             : b.permission,
       }));
       if (pending) next = afterPermissionChange(next, removePending(next, pending.requestId));
-      return next;
+      // a foreground run ends with its launch call's result, which is also its summary
+      return patchSubagent(next, event.toolCallId, (meta, block) =>
+        meta && !isBackgroundLaunch(block) ? launchEnd(meta, event, now) : meta,
+      );
     }
+
+    case "subagent-message":
+      return inRunTurn(active(chat), now, event.parentToolCallId, (t) => ({
+        ...t,
+        messageParents: { ...t.messageParents, [event.messageId]: event.parentToolCallId },
+      }));
+
+    case "subagent-started":
+      return patchSubagent(chat, event.toolCallId, (meta) => ({
+        ...(meta ?? blankSubagent()),
+        role: event.role,
+        name: event.name,
+        model: event.model,
+        startedAt: meta?.startedAt ?? now,
+      }));
+
+    case "subagent-status":
+      return patchSubagent(chat, event.toolCallId, (meta) => {
+        const base = meta ?? blankSubagent();
+        // a run that ended stays ended (the CLI repeats the last status)
+        if (base.status !== null && base.status !== "running") return base;
+        const status: SubagentRunStatus = event.status;
+        return {
+          ...base,
+          status,
+          startedAt: base.startedAt ?? now,
+          endedAt: status === "running" ? null : now,
+        };
+      });
 
     case "permission-request": {
       if (chat.pendingPermissions.some((p) => p.requestId === event.requestId)) return chat;
@@ -436,10 +549,12 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       return { ...chat, rateLimit: { status: event.status, resetsAt: event.resetsAt } };
 
     case "turn-finished": {
-      const closed = finishTurns(chat, now, event.reason, {
+      const finished = finishTurns(chat, now, event.reason, {
         durationMs: event.durationMs,
         errors: event.errors,
       });
+      // a normal end can leave a background run going; a stopped or failed turn ends its runs
+      const closed = event.reason === "completed" ? finished : stopRunning(finished, now);
       return {
         ...closed,
         pendingPermissions: [],
@@ -476,7 +591,10 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
     case "session-ended": {
       const midTurn = isRunning(chat.turns[chat.turns.length - 1]);
       const lost = midTurn && event.reason === "exit";
-      const closed = midTurn ? finishTurns(chat, now, lost ? "error" : "interrupted") : chat;
+      const closed = stopRunning(
+        midTurn ? finishTurns(chat, now, lost ? "error" : "interrupted") : chat,
+        now,
+      );
       return {
         ...closed,
         pendingPermissions: [],
@@ -485,10 +603,37 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       };
     }
 
+    // The process was replaced (the user's reload, or Writer after a config change): a transient
+    // notice, never stored in the chat note, and the lists of the old process are no longer
+    // current until the next message's `init`.
+    case "steer-undelivered": {
+      const id = `steer:${event.messageId}`;
+      let found = false;
+      const turns = chat.turns.map((t) => {
+        const blocks = mapBlock(t.blocks, id, (b) => {
+          found = true;
+          return b.kind === "steer" ? { ...b, undelivered: true } : b;
+        });
+        return blocks ? { ...t, blocks } : t;
+      });
+      return found ? { ...chat, turns, localNotice: STEER_UNDELIVERED_TEXT } : chat;
+    }
+
+    case "session-reloaded":
+      return {
+        ...chat,
+        localNotice: reloadedNotice(event.reason),
+        session: chat.session && { ...chat.session, mcpServers: null },
+      };
+
     default:
       return chat;
   }
 }
+
+/** "Session reloaded", with the cause when Writer restarted the chat by itself. */
+export const reloadedNotice = (reason: string | null | undefined): string =>
+  reason ? `Session reloaded: ${reason}` : "Session reloaded";
 
 /** Folds a batch (one animation frame) into the chat. */
 export function reduceEvents(chat: Chat, events: readonly AgentEvent[], now?: number): Chat {
@@ -526,6 +671,34 @@ export function appendUserTurn(
   };
 }
 
+export const STEER_UNDELIVERED_TEXT = "The steer was not acknowledged";
+
+/** A message forced into the running turn (`priority:"now"`: the CLI aborts the running tool or
+ *  text, ends the turn and starts the message's turn): a card at the tail of the timeline, where it
+ *  was sent. What the abort will do is what an interrupt does, so it is done now by the same
+ *  `closeBlocks` (running tools become "interrupted", their permission cards are cancelled);
+ *  the CLI's own `turn-finished` and the aborted tool's result then change nothing.
+ *  With no running turn it is a normal send. */
+export function appendSteer(
+  chat: Chat,
+  msg: { messageId: MessageId; text: string; context: ContextRef[] },
+  now: number,
+): Chat {
+  const last = chat.turns[chat.turns.length - 1];
+  if (!isRunning(last)) return appendUserTurn(chat, msg, now, true);
+  const block = {
+    kind: "steer" as const,
+    id: `steer:${msg.messageId}`,
+    message: { ...msg, ts: now },
+  };
+  const turns = chat.turns.slice();
+  turns[turns.length - 1] = addBlock(
+    { ...last, blocks: closeBlocks(last.blocks, now, "interrupted") },
+    block,
+  );
+  return { ...chat, turns, pendingPermissions: [], state: "running", localNotice: null };
+}
+
 /** The user pressed stop: wait for `turn-finished`. */
 export function markCancelling(chat: Chat): Chat {
   return chat.state === "running" ||
@@ -546,6 +719,10 @@ export function failSend(chat: Chat, message: string, kind: ChatErrorKind, now: 
   };
 }
 type ChatErrorKind = NonNullable<Chat["error"]>["kind"];
+
+/** A turn is running and takes a message into it (a starting or cancelling one does not). */
+export const canSteer = (chat: Chat): boolean =>
+  chat.state === "running" || chat.state === "awaiting-permission";
 
 export const isBusy = (chat: Chat): boolean =>
   chat.state === "running" ||

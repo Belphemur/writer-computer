@@ -1,0 +1,334 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s1",
+    "messageId": "msg_s1",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s1",
+    "input": {
+      "command": "ls",
+      "description": "List files in the working directory"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s1",
+    "output": "f1.txt\nf2.txt\nf3.txt\nf4.txt\nf5.txt",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s2",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s2",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s2",
+    "messageId": "msg_s2",
+    "tool": "Read",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s2",
+    "input": {
+      "file_path": "/vault/Projects/Demo/f1.txt"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s2",
+    "output": "1\tfile 1 content\n2\t",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s3",
+    "blockIndex": 0,
+    "text": "Read"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s3",
+    "blockIndex": 0,
+    "text": "Read."
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s3",
+    "messageId": "msg_s3",
+    "tool": "Read",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s3",
+    "input": {
+      "file_path": "/vault/Projects/Demo/f2.txt"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s3",
+    "output": "1\tfile 2 content\n2\t",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s4",
+    "blockIndex": 0,
+    "text": "Read"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s4",
+    "blockIndex": 0,
+    "text": "Read."
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s4",
+    "messageId": "msg_s4",
+    "tool": "Read",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s4",
+    "input": {
+      "file_path": "/vault/Projects/Demo/f3.txt"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s4",
+    "output": "1\tfile 3 content\n2\t",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s5",
+    "blockIndex": 0,
+    "text": "Read."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s5",
+    "blockIndex": 0,
+    "text": "Read."
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s5",
+    "messageId": "msg_s5",
+    "tool": "Read",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s5",
+    "input": {
+      "file_path": "/vault/Projects/Demo/f4.txt"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s5",
+    "output": "1\tfile 4 content\n2\t",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s6",
+    "blockIndex": 0,
+    "text": "Read."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s6",
+    "blockIndex": 0,
+    "text": "Read."
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_s6",
+    "messageId": "msg_s6",
+    "tool": "Read",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_s6",
+    "input": {
+      "file_path": "/vault/Projects/Demo/f5.txt"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_s6",
+    "output": "1\tfile 5 content\n2\t",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s7",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_s7",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_s7",
+    "blockIndex": 1,
+    "text": "The"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_s7",
+    "blockIndex": 1,
+    "text": "The directory contains five files: f1.txt through f5.txt. Each one has a single line of text, \"file N content,\" where N matches the file's number. Nothing else is in them.\n\nPINEAPPLE"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 100,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 1000,
+    "apiDurationMs": 800,
+    "numTurns": 7,
+    "isError": false,
+    "result": "The directory contains five files: f1.txt through f5.txt. Each one has a single line of text, \"file N content,\" where N matches the file's number. Nothing else is in them.\n\nPINEAPPLE",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

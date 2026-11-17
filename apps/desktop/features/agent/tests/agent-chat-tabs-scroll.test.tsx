@@ -16,6 +16,7 @@ vi.mock("@features/agent/web/hooks/use-agent", () => ({
   useAgentChatIds: () => ["c1", "c2"],
   useChatState: () => "idle",
   useChatTitle: (id: string) => id,
+  useChatProjectPath: () => null,
 }));
 
 import { ChatTabs } from "@features/agent/web/components/chat-tabs";

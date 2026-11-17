@@ -11,6 +11,7 @@ import {
 import type { Turn } from "@features/agent/web/lib/transcript";
 import { changesKey, useTurnChangesStore } from "@features/agent/web/stores/turn-changes-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { revealSubagentCard } from "./subagent-card";
 import { Ico } from "./agent-icon";
 import { vaultLinkHandlers } from "./agent-links";
 import { DiffView } from "./diff-view";
@@ -181,15 +182,26 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
                       <span className="text-[11px]">{STATUS_LABEL[f.status]}</span>
                     </button>
                     <FileName f={f} />
-                    {f.by && (
-                      <span
-                        data-agent-change-by={f.by}
-                        title={`Edited by the ${f.by} sub-agent`}
-                        className="shrink-0 rounded-full bg-[var(--surface-subtle)] px-1.5 text-[10.5px] leading-4 text-text-muted"
-                      >
-                        {f.by}
-                      </span>
-                    )}
+                    {f.by &&
+                      (f.byCall ? (
+                        <button
+                          type="button"
+                          data-agent-change-by={f.by}
+                          title={`Edited by the ${f.by} sub-agent: show its card`}
+                          onClick={() => revealSubagentCard(f.byCall!)}
+                          className="shrink-0 rounded-full bg-[var(--surface-subtle)] px-1.5 text-[10.5px] leading-4 text-text-muted underline-offset-2 hover:text-text-primary hover:underline"
+                        >
+                          {f.by}
+                        </button>
+                      ) : (
+                        <span
+                          data-agent-change-by={f.by}
+                          title={`Edited by the ${f.by} sub-agent`}
+                          className="shrink-0 rounded-full bg-[var(--surface-subtle)] px-1.5 text-[10.5px] leading-4 text-text-muted"
+                        >
+                          {f.by}
+                        </span>
+                      ))}
                     {!f.noDiff && <Counts added={f.added} removed={f.removed} />}
                     <span className="ml-auto flex items-center gap-2">{undoControl(f)}</span>
                   </div>

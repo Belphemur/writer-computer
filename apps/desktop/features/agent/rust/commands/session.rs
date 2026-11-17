@@ -150,6 +150,29 @@ pub async fn agent_send<R: Runtime>(
     .await
 }
 
+/// A steer: like `agent_send`, but forced into the running turn at once (`priority:"now"`: the
+/// running tool or text is aborted) instead of queued after it (spec 3.13). `message_id` is the
+/// receipt id the CLI echoes. With no running turn it is an ordinary send.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_steer<R: Runtime>(
+    chat_id: ChatId,
+    message_id: MessageId,
+    text: String,
+    context: Vec<ContextRef>,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<(), AppError> {
+    root_of(&app, &webview)?;
+    let label = webview.label().to_string();
+    blocking(move || {
+        sessions(&app)
+            .steer(&label, &chat_id, &message_id, text, &context)
+            .map_err(rejected)
+    })
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_cancel<R: Runtime>(
@@ -214,6 +237,19 @@ pub async fn agent_set_model<R: Runtime>(
             .map_err(rejected)
     })
     .await
+}
+
+/// "Reload session": restart an idle chat's process with `--resume` so it re-reads skills, MCP
+/// servers and settings. `busy` (nothing done) while a turn or a permission card is open.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_reload<R: Runtime>(
+    chat_id: ChatId,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<ReloadOutcome, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || sessions(&app).reload(&label, &chat_id).map_err(rejected)).await
 }
 
 #[tauri::command]

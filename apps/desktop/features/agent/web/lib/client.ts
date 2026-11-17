@@ -27,10 +27,13 @@ export interface AgentClient {
   detectBinary(args: Args<"agent_detect_binary">): Promise<AgentBinaryInfo>;
   start(args: Args<"agent_start">): Promise<Result<"agent_start">>;
   send(args: Args<"agent_send">): Promise<void>;
+  /** Like `send`, but into the running turn at once instead of queued after it. */
+  steer(args: Args<"agent_steer">): Promise<void>;
   cancel(args: Args<"agent_cancel">): Promise<void>;
   permission(args: Args<"agent_permission">): Promise<void>;
   setPermissionMode(args: Args<"agent_set_permission_mode">): Promise<void>;
   setModel(args: Args<"agent_set_model">): Promise<void>;
+  reload(args: Args<"agent_reload">): Promise<Result<"agent_reload">>;
   close(args: Args<"agent_close">): Promise<void>;
   turnChanges(args: Args<"agent_turn_changes">): Promise<Result<"agent_turn_changes">>;
   revertChanges(args: Args<"agent_revert_changes">): Promise<Result<"agent_revert_changes">>;
@@ -48,10 +51,12 @@ export function createTauriAgentClient(): AgentClient {
     detectBinary: (a) => call("agent_detect_binary", a),
     start: (a) => call("agent_start", a),
     send: (a) => done(call("agent_send", a)),
+    steer: (a) => done(call("agent_steer", a)),
     cancel: (a) => done(call("agent_cancel", a)),
     permission: (a) => done(call("agent_permission", a)),
     setPermissionMode: (a) => done(call("agent_set_permission_mode", a)),
     setModel: (a) => done(call("agent_set_model", a)),
+    reload: (a) => call("agent_reload", a),
     close: (a) => done(call("agent_close", a)),
     turnChanges: (a) => call("agent_turn_changes", a),
     revertChanges: (a) => call("agent_revert_changes", a),

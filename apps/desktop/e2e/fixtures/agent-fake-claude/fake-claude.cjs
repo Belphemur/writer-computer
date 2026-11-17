@@ -25,6 +25,9 @@
 // FAKE_CLAUDE_RESUME_MISSING=result, answers the first prompt with an error result). Sessions live
 // in $FAKE_CLAUDE_HOME (default <tmp>/writer-fake-claude); delete a file there to forget a session.
 //
+// A user message written while a turn runs is taken after it (the real CLI's no-tool-boundary
+// case, fixture steer-deferred), echoed with `isReplay` when `--replay-user-messages` is set.
+//
 // Env: FAKE_CLAUDE_LOG (JSON lines: spawn, stdin, exit), FAKE_CLAUDE_FIXTURES (capture dir),
 // FAKE_CLAUDE_DELAY_MS (ms between lines, default 0), FAKE_CLAUDE_VERSION (default 2.1.325).
 const fs = require("node:fs");
@@ -459,6 +462,18 @@ async function main() {
     if (inbox.length === 0 && stdinClosed) break;
     const msg = inbox.shift();
     if (msg.type === "user") {
+      // `--replay-user-messages`: the receipt that the message was taken. Like the real CLI, a
+      // message written mid-turn waits here in the inbox, so its receipt comes when its turn starts.
+      if (argv.includes("--replay-user-messages")) {
+        out({
+          type: "user",
+          message: msg.message,
+          session_id: sessionId,
+          parent_tool_use_id: null,
+          uuid: msg.uuid || require("node:crypto").randomUUID(),
+          isReplay: true,
+        });
+      }
       const c = msg.message?.content;
       const prompt = typeof c === "string" ? c : (c || []).map((b) => b.text || "").join("");
       const ok = await runTurn(prompt);
