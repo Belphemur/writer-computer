@@ -234,7 +234,7 @@ function SettingsBody({
   return (
     <div className="flex flex-col gap-2.5">
       {error ? (
-        <div role="alert" className="text-[12px] text-[var(--danger,#e5484d)]">
+        <div role="alert" className="text-[12px] text-[var(--danger)]">
           {error}
         </div>
       ) : null}

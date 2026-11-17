@@ -250,11 +250,7 @@ export function ExpressionInput({
         />
       )}
       {error ? (
-        <div
-          role="alert"
-          data-completion-error
-          className="mt-0.5 text-[11px] text-[var(--danger,#e5484d)]"
-        >
+        <div role="alert" data-completion-error className="mt-0.5 text-[11px] text-[var(--danger)]">
           Function suggestions are unavailable: {error}
         </div>
       ) : null}

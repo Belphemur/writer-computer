@@ -198,11 +198,7 @@ export function CardsView({ result, shown, view, actions, label }: BaseViewProps
 
   if ("error" in layout)
     return (
-      <div
-        role="alert"
-        data-base-error
-        className="px-4 py-3 text-[13px] text-[var(--danger,#e5484d)]"
-      >
+      <div role="alert" data-base-error className="px-4 py-3 text-[13px] text-[var(--danger)]">
         The query result could not be displayed: {layout.error}
       </div>
     );

@@ -568,11 +568,26 @@ body.tree-dragging [data-tree-path] {
   color: var(--text-muted);
 }
 
-/* Native agent pane (components/agent). Status colours: warn is the accent mixed toward amber,
-   error a fixed red mixed with the foreground; status is always paired with an icon and text. */
+/* Semantic status colours: one definition for the whole app (success, warning, danger/error).
+   Always pair a status colour with an icon and text, never colour alone. The `-soft` variants are
+   tinted backgrounds for badges and banners. Light mode darkens the hue for contrast on pale
+   surfaces. */
 :root {
-  --agent-warn: color-mix(in srgb, var(--accent) 70%, #f5b301);
-  --agent-error: color-mix(in srgb, #e5484d 85%, var(--fg-base));
+  --success: #3fb950;
+  --warning: #e0a526;
+  --danger: #ef5b60;
+  --success-soft: color-mix(in srgb, var(--success) 16%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 18%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 14%, transparent);
+  /* Native agent pane aliases (components/agent) */
+  --agent-warn: var(--warning);
+  --agent-error: var(--danger);
+}
+
+[data-theme="light"] {
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --danger: #cf222e;
 }
 
 .agent-markdown {

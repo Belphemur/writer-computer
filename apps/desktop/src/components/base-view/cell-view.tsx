@@ -5,7 +5,7 @@ import type { ViewActions } from "@/lib/bases/view-registry";
 /** What opening a link or file cell does; the one shape every view takes (`ViewActions`). */
 export type CellActions = ViewActions;
 
-const ERROR_TEXT = "text-[var(--danger,#e5484d)]";
+const ERROR_TEXT = "text-[var(--danger)]";
 const LINK_CLASS =
   "cursor-pointer truncate text-link underline-offset-2 hover:underline focus-visible:underline";
 
@@ -14,7 +14,7 @@ function ErrorBadge({ message }: { message: string }) {
     <span
       data-cell-error
       title={message}
-      className={`inline-flex max-w-full items-center gap-1 truncate rounded-sm bg-[color-mix(in_srgb,var(--danger,#e5484d)_14%,transparent)] px-1.5 text-[11px] font-medium ${ERROR_TEXT}`}
+      className={`inline-flex max-w-full items-center gap-1 truncate rounded-sm bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 text-[11px] font-medium ${ERROR_TEXT}`}
     >
       <span aria-hidden="true">!</span>
       <span className="truncate">Error: {message}</span>

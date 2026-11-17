@@ -82,7 +82,7 @@ function ViewBody({ ctx, close }: { ctx: MenuContext; close: () => void }) {
         {confirming ? (
           <button
             type="button"
-            className={`${SMALL_BUTTON} text-[var(--danger,#e5484d)]`}
+            className={`${SMALL_BUTTON} text-[var(--danger)]`}
             onClick={() => void run((t) => deleteView(t, ctx.viewIndex), null)}
           >
             Confirm delete

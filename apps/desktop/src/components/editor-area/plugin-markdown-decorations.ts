@@ -356,7 +356,7 @@ const pluginMarkdownTheme = EditorView.baseTheme({
   ".cm-plugin-inline": { display: "inline" },
   ".cm-plugin-inline p": { display: "inline", margin: "0" },
   ".writer-plugin-block-error": {
-    border: "1px solid var(--destructive, #c0392b)",
+    border: "1px solid var(--danger)",
     borderRadius: "6px",
     padding: "6px 10px",
     fontSize: "12px",

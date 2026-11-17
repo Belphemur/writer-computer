@@ -153,7 +153,7 @@ const GridCell = memo(function GridCell(p: GridCellProps) {
         p.editing ? "p-0" : "px-2"
       } ${p.inRange ? "bg-[var(--surface-selected)]" : ""} ${
         p.selected ? "ring-1 ring-inset ring-[var(--focus-border)]" : ""
-      } ${isError ? "bg-[color-mix(in_srgb,var(--danger,#e5484d)_8%,transparent)]" : ""}`}
+      } ${isError ? "bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]" : ""}`}
     >
       {p.editing ? (
         <CellEditor
@@ -518,11 +518,7 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
 
   if (!grid) {
     return (
-      <div
-        role="alert"
-        data-base-error
-        className="px-4 py-3 text-[13px] text-[var(--danger,#e5484d)]"
-      >
+      <div role="alert" data-base-error className="px-4 py-3 text-[13px] text-[var(--danger)]">
         The query result could not be displayed: {(layout as { error: string }).error}
       </div>
     );

@@ -145,7 +145,7 @@ function FilterBody({ ctx, close }: { ctx: MenuContext; close: () => void }) {
   return (
     <div className="flex flex-col gap-2.5">
       {error ? (
-        <div role="alert" className="text-[12px] text-[var(--danger,#e5484d)]">
+        <div role="alert" className="text-[12px] text-[var(--danger)]">
           {error}
         </div>
       ) : null}
@@ -263,11 +263,7 @@ function FilterBody({ ctx, close }: { ctx: MenuContext; close: () => void }) {
               </code>
             ) : null}
             {state !== null && state !== undefined ? (
-              <div
-                role="alert"
-                data-filter-error
-                className="text-[12px] text-[var(--danger,#e5484d)]"
-              >
+              <div role="alert" data-filter-error className="text-[12px] text-[var(--danger)]">
                 {state}
               </div>
             ) : null}

@@ -16,14 +16,14 @@ export function extrasFor(document: BaseDocument | null, viewName: string | unde
   return view && entry ? extraPropertiesOf(entry, view) : [];
 }
 
-const DANGER = "text-[var(--danger,#e5484d)]";
+const DANGER = "text-[var(--danger)]";
 
 export function ErrorBanner({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div
       role="alert"
       data-base-error
-      className={`border-b border-[var(--line-subtler)] bg-[color-mix(in_srgb,var(--danger,#e5484d)_10%,transparent)] px-3 py-2 text-[13px] ${DANGER}`}
+      className={`border-b border-[var(--line-subtler)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-3 py-2 text-[13px] ${DANGER}`}
     >
       <div className="font-medium">{title}</div>
       {children ? <div className="mt-0.5 text-text-secondary">{children}</div> : null}
