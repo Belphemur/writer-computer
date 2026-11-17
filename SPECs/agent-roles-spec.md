@@ -182,6 +182,8 @@ Worker prompt (proposal, neutral):
 
 ## 10. Decisions (user, 2026-11-17)
 
+Recorded as the ADR [Define agent roles once and map them to each agent backend through adapters](../docs/decisions/2026-11-17-define-agent-roles-once-and-map-them-to-each-agent-backend-through-adapters.md).
+
 1. Tiers: `cheap`, `standard`, `strong`; `strong` defaults to the chat's own model.
 2. `worker` ships **on by default**, but only once the Changes-card prerequisites (answer A items 1-4: snapshot ordering test, turn kept open until every sub-agent finishes, per-role attribution, sub-agent permission cards) are implemented and tested. Until then it is not offered.
 3. The title call moves onto the cheap tier: one cheap model per backend (`agent.title-model` migrates like `agent.subagent-model`). Every tier model setting is a **dropdown** of the backend's known models (from the model catalog the composer's model picker already uses), with a "custom" entry for a free value, never a bare text field.
