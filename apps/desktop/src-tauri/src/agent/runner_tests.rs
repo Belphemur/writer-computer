@@ -16,12 +16,9 @@
 use super::events::*;
 use super::ports::{ChatPort, InjectAgentsMd, ProjectPort, SpawnContext};
 use super::session::{AgentSessions, Sink, StartParams, StartedIds, Timing};
-use crate::plugin_consent::ConsentStore;
-use crate::plugin_proc::{Consent, ConsentRequest, Decision};
 use parking_lot::Mutex;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
@@ -35,6 +32,7 @@ SID=""; prev=""
 for a in "$@"; do case "$prev" in --session-id|--resume) SID="$a";; esac; prev="$a"; done
 echo "$@" >> "$D/argv.log"
 echo "$$" >> "$D/pids.log"
+echo "$PATH" >> "$D/path.log"
 pwd >> "$D/cwd.log"
 if [ "$MODE" = resume-missing ]; then
   case " $* " in *" --resume "*) echo "No conversation found with session ID: $SID" >&2; exit 1;; esac
@@ -105,33 +103,6 @@ fn fixture(name: &str) -> PathBuf {
         .join(format!("{name}.jsonl"))
 }
 
-struct Ask {
-    decision: Decision,
-    asked: AtomicUsize,
-}
-
-impl Ask {
-    fn new(decision: Decision) -> Self {
-        Self {
-            decision,
-            asked: AtomicUsize::new(0),
-        }
-    }
-    fn asked(&self) -> usize {
-        self.asked.load(Ordering::SeqCst)
-    }
-}
-
-impl Consent for Ask {
-    fn ask(&self, req: &ConsentRequest) -> Decision {
-        self.asked.fetch_add(1, Ordering::SeqCst);
-        let m = req.message();
-        assert!(m.contains("--permission-mode"), "dialog shows the argv");
-        assert!(!m.contains("dangerously"));
-        self.decision
-    }
-}
-
 struct Harness {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -140,7 +111,6 @@ struct Harness {
     sessions: AgentSessions,
     rx: Receiver<AgentEventEnvelope>,
     sink: Sink,
-    store: ConsentStore,
     seen: Vec<AgentEventEnvelope>,
     cursor: usize,
 }
@@ -178,7 +148,6 @@ impl Harness {
                 let _ = tx.lock().send(e);
             });
             Harness {
-                store: ConsentStore::new(dir.path().join("consent.json")),
                 _dir: dir,
                 root,
                 fdir,
@@ -240,16 +209,13 @@ impl Harness {
                 append_system_prompt: None,
             },
             inject_agents_md: InjectAgentsMd::Auto,
-            store: self.store.clone(),
-            still_ok: Arc::new(|| true),
+            cli_dir: None,
             sink: Arc::clone(&self.sink),
         }
     }
 
     fn start(&self, chat: &str) -> StartedIds {
-        self.sessions
-            .start(self.params(chat, "w", None), &Ask::new(Decision::Once))
-            .unwrap()
+        self.sessions.start(self.params(chat, "w", None)).unwrap()
     }
 
     fn send(&self, chat: &str, text: &str) {
@@ -704,72 +670,12 @@ fn a_process_that_never_comes_up_is_retried_twice_then_the_session_ends() {
 }
 
 #[test]
-fn consent_denied_is_an_error_event_and_nothing_is_spawned() {
-    let mut h = Harness::new(&["ok-turn"], "normal");
-    let deny = Ask::new(Decision::Deny);
-    h.sessions.start(h.params(CHAT, "w", None), &deny).unwrap();
-    match h.next(CHAT, "spawn-denied", |e| {
-        matches!(e, AgentEvent::Error { .. })
-    }) {
-        AgentEvent::Error { kind, .. } => assert_eq!(kind, AgentErrorKind::SpawnDenied),
-        _ => unreachable!(),
-    }
-    assert_eq!(deny.asked(), 1);
-    assert!(h.lines("pids.log").is_empty(), "no process");
-    assert_eq!(
-        h.sessions.get("w", CHAT).unwrap().state(),
-        AgentSessionState::Error
-    );
-    assert!(
-        h.store.list(&h.root).is_empty(),
-        "a denial is not remembered"
-    );
-
-    // asked again on retry, and a message without a started process cannot sneak one in
-    h.send(CHAT, "sneaky");
-    h.next(CHAT, "not consented", |e| {
-        matches!(
-            e,
-            AgentEvent::Error {
-                kind: AgentErrorKind::SpawnDenied,
-                ..
-            }
-        )
-    });
-    assert!(h.lines("pids.log").is_empty());
-
-    let once = Ask::new(Decision::Once);
-    h.sessions.start(h.params(CHAT, "w", None), &once).unwrap();
-    assert_eq!(once.asked(), 1);
-    h.send(CHAT, "now");
-    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
-}
-
-#[test]
-fn always_allow_is_remembered_per_vault_for_every_chat() {
-    let h = Harness::new(&["ok-turn"], "normal");
-    let always = Ask::new(Decision::Always);
-    let chat2 = "6a2f41a2-9b7c-4d52-8c36-2f1c4ee0a111";
-    h.sessions
-        .start(h.params(CHAT, "w", None), &always)
-        .unwrap();
-    h.sessions
-        .start(h.params(chat2, "w", None), &always)
-        .unwrap();
-    assert_eq!(always.asked(), 1, "second chat skips the dialog");
-    h.wait_until("both processes", || h.lines("pids.log").len() == 2);
-    assert!(h
-        .store
-        .has_wildcard(&h.root, super::consent::AGENT_PLUGIN_ID));
-}
-
-#[test]
 fn a_missing_binary_is_a_binary_not_found_event() {
     let mut h = Harness::new(&["ok-turn"], "normal");
     let mut p = h.params(CHAT, "w", None);
     p.request.settings.binary_path =
         Some(h.fdir.join("does-not-exist").to_string_lossy().into_owned());
-    h.sessions.start(p, &Ask::new(Decision::Once)).unwrap();
+    h.sessions.start(p).unwrap();
     match h.next(CHAT, "binary-not-found", |e| {
         matches!(e, AgentEvent::Error { .. })
     }) {
@@ -812,9 +718,11 @@ fn close_ends_the_session_and_the_whole_process_group() {
 #[test]
 fn closing_a_chat_that_never_started_ends_it_at_once() {
     let mut h = Harness::new(&["ok-turn"], "normal");
-    let deny = Ask::new(Decision::Deny);
-    h.sessions.start(h.params(CHAT, "w", None), &deny).unwrap();
-    h.next(CHAT, "denied", |e| matches!(e, AgentEvent::Error { .. }));
+    let mut p = h.params(CHAT, "w", None);
+    p.request.settings.binary_path =
+        Some(h.fdir.join("does-not-exist").to_string_lossy().into_owned());
+    h.sessions.start(p).unwrap();
+    h.next(CHAT, "not found", |e| matches!(e, AgentEvent::Error { .. }));
     h.sessions.close("w", CHAT).unwrap();
     match h.next(CHAT, "ended", |e| {
         matches!(e, AgentEvent::SessionEnded { .. })
@@ -836,9 +744,7 @@ fn vault_and_window_shutdown_kill_the_group_without_orphans() {
 
     // another window's chat is untouched by `kill_window("w")`
     let other = "7b3a52b3-0c8d-4e63-9d47-3a2d5ff1b222";
-    h.sessions
-        .start(h.params(other, "w2", None), &Ask::new(Decision::Once))
-        .unwrap();
+    h.sessions.start(h.params(other, "w2", None)).unwrap();
     h.wait_until("second process", || h.lines("pids.log").len() == 2);
     assert_eq!(h.sessions.live_count("w"), 1);
     assert_eq!(h.sessions.live_count("w2"), 1);
@@ -867,9 +773,7 @@ fn the_fifth_process_in_a_window_is_refused() {
         .map(|i| format!("00000000-0000-4000-8000-00000000000{i}"))
         .collect();
     for id in &ids {
-        h.sessions
-            .start(h.params(id, "w", None), &Ask::new(Decision::Once))
-            .unwrap();
+        h.sessions.start(h.params(id, "w", None)).unwrap();
     }
     match h.next(&ids[4], "busy", |e| matches!(e, AgentEvent::Error { .. })) {
         AgentEvent::Error { kind, message, .. } => {
@@ -881,10 +785,7 @@ fn the_fifth_process_in_a_window_is_refused() {
     assert_eq!(h.sessions.live_count("w"), 4);
     // another window has its own budget
     h.sessions
-        .start(
-            h.params("00000000-0000-4000-8000-0000000000aa", "w2", None),
-            &Ask::new(Decision::Once),
-        )
+        .start(h.params("00000000-0000-4000-8000-0000000000aa", "w2", None))
         .unwrap();
     assert_eq!(h.sessions.live_count("w2"), 1);
     // closing one frees a slot
@@ -922,7 +823,7 @@ fn a_missing_resume_session_starts_a_new_one_seeded_from_the_note() {
     let old = "11111111-2222-4333-8444-555555555555";
     let mut p = h.params(CHAT, "w", None);
     p.request.resume_session_id = Some(old.into());
-    let ids = h.sessions.start(p, &Ask::new(Decision::Once)).unwrap();
+    let ids = h.sessions.start(p).unwrap();
     assert_eq!(ids.session_id, old);
     h.send(CHAT, "hello again");
     assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
@@ -1171,23 +1072,17 @@ fn chats_belong_to_their_window_and_context_paths_stay_in_the_vault() {
     assert!(h.sessions.cancel("other-window", CHAT).is_err());
     assert!(h
         .sessions
-        .start(
-            h.params(CHAT, "other-window", None),
-            &Ask::new(Decision::Once)
-        )
+        .start(h.params(CHAT, "other-window", None))
         .is_err());
     let outside = [ContextRef::Note {
         path: "../secrets.md".into(),
     }];
     assert!(h.sessions.send("w", CHAT, "x".into(), &outside).is_err());
     assert!(h.lines("stdin.log").is_empty());
-    assert!(h
-        .sessions
-        .start(h.params("not-a-uuid", "w", None), &Ask::new(Decision::Once))
-        .is_err());
+    assert!(h.sessions.start(h.params("not-a-uuid", "w", None)).is_err());
     let mut p = h.params("22222222-2222-4222-8222-222222222222", "w", None);
     p.request.resume_session_id = Some("--evil".into());
-    assert!(h.sessions.start(p, &Ask::new(Decision::Once)).is_err());
+    assert!(h.sessions.start(p).is_err());
 }
 
 struct Proj {
@@ -1230,7 +1125,7 @@ fn project_chats_use_the_project_cwd_prompt_and_mode_through_the_port() {
     h.sessions.ports().set_project(proj.clone());
     let mut p = h.params(CHAT, "w", Some("Projects/Demo"));
     p.inject_agents_md = InjectAgentsMd::Always;
-    h.sessions.start(p, &Ask::new(Decision::Once)).unwrap();
+    h.sessions.start(p).unwrap();
     h.wait_until("process", || !h.lines("argv.log").is_empty());
 
     let seen = proj.seen.lock().clone();
@@ -1261,7 +1156,7 @@ fn project_chats_use_the_project_cwd_prompt_and_mode_through_the_port() {
         "w",
         Some("../elsewhere"),
     );
-    assert!(h.sessions.start(bad, &Ask::new(Decision::Once)).is_err());
+    assert!(h.sessions.start(bad).is_err());
 }
 
 #[test]
@@ -1385,7 +1280,7 @@ fn orchestration_passes_the_agents_flag_only_when_on() {
                 .tier_models
                 .insert("cheap".into(), Some(m.into()));
         }
-        h.sessions.start(p, &Ask::new(Decision::Once)).unwrap();
+        h.sessions.start(p).unwrap();
         h.wait_until("process", || !h.lines("argv.log").is_empty());
         let argv = &h.lines("argv.log")[0];
         assert_eq!(argv.contains("--agents"), orchestrate, "{argv}");
@@ -1586,4 +1481,65 @@ fn a_main_agent_edit_carries_no_role() {
             .unwrap();
     }
     assert_eq!(turn_changes(&mut h).files[0].by, None);
+}
+
+/// Records what the port was told about the `writer` command.
+struct CliSeen(Mutex<Vec<bool>>);
+
+impl ProjectPort for CliSeen {
+    fn resolve_cwd(&self, root: &Path, project: Option<&str>) -> Result<PathBuf, String> {
+        super::ports::DefaultProject.resolve_cwd(root, project)
+    }
+    fn append_system_prompt(&self, ctx: &SpawnContext<'_>) -> Result<Option<String>, String> {
+        self.0.lock().push(ctx.writer_cli);
+        Ok(None)
+    }
+    fn project_permission_mode(
+        &self,
+        _root: &Path,
+        _p: Option<&str>,
+    ) -> Option<AgentPermissionMode> {
+        None
+    }
+    fn touch_last_used(&self, _root: &Path, _project: &str) {}
+}
+
+#[test]
+fn a_start_needs_no_vault_trust_and_no_consent() {
+    // Nothing but the agent's own call: no store, no dialog, no trust file. The chat spawns and
+    // answers (ADR 2026-11-17: the feature switch is the approval).
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    assert_eq!(h.lines("pids.log").len(), 1);
+}
+
+#[test]
+fn the_launcher_dir_is_first_on_the_spawned_path() {
+    let h = Harness::new(&["ok-turn"], "normal");
+    let mut p = h.params(CHAT, "w", None);
+    p.cli_dir = Some(PathBuf::from("/writer/launcher/bin"));
+    h.sessions.start(p).unwrap();
+    h.wait_until("process", || !h.lines("path.log").is_empty());
+    let path = &h.lines("path.log")[0];
+    assert!(
+        path.starts_with("/writer/launcher/bin:"),
+        "launcher dir first: {path}"
+    );
+}
+
+#[test]
+fn the_system_block_claims_writer_only_when_the_launcher_is_on_the_path() {
+    let h = Harness::new(&["ok-turn"], "normal");
+    // the skills are installed for the spawned CLI: only the launcher decides
+    crate::managed_skills::sync(&h.root, crate::managed_skills::Mode::Apply).unwrap();
+    let seen = Arc::new(CliSeen(Mutex::new(vec![])));
+    h.sessions.ports().set_project(seen.clone());
+    h.sessions.start(h.params(CHAT, "w", None)).unwrap();
+    let other = "6a2f41a2-9b7c-4d52-8c36-2f1c4ee0a111";
+    let mut p = h.params(other, "w", None);
+    p.cli_dir = Some(PathBuf::from("/writer/launcher/bin"));
+    h.sessions.start(p).unwrap();
+    assert_eq!(*seen.0.lock(), vec![false, true]);
 }

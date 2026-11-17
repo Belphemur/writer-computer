@@ -210,7 +210,7 @@ pub fn run_capture_in(
     let mut cmd = Command::new(program);
     cmd.args(args)
         .env_clear()
-        .envs(super::env::current())
+        .envs(super::env::current(None))
         .current_dir(cwd)
         .stdin(if stdin_text.is_some() {
             Stdio::piped()

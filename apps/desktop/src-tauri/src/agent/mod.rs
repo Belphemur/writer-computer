@@ -13,7 +13,7 @@ pub mod binary;
 pub mod changes;
 pub mod chat_store;
 pub mod claude_stream;
-pub mod consent;
+pub mod cli_launcher;
 pub mod env;
 pub mod events;
 pub mod images;

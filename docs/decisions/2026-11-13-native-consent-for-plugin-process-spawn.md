@@ -41,3 +41,7 @@ Limits: cwd confined to the vault, at most 8 live processes, process groups kill
 - [ ] `cargo test` covers consent storage, env allow-list filtering and `plugin_fs_probe`/`plugin_open_path` in `plugin_env.rs`.
 - [ ] `vp test` passes `tests/obsidian-node-child-process.test.ts`.
 - [ ] In the e2e fixture, consent is pre-approved through `plugins_proc_consent.json`; the dialog UX itself is not covered (spec "Does NOT prove").
+
+## Addendum (2026-11-17)
+
+This consent governs community plugins only. The first-party agent pane no longer uses it (no `writer-agent` consent, no dialog): the agent feature's switch is its approval, see the addendum of [build a first-party agent pane](2026-11-17-build-a-first-party-agent-pane-over-the-claude-clis-stream-json-protocol.md).

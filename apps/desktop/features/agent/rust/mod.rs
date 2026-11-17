@@ -149,13 +149,22 @@ mod tests {
         label: &str,
         cmd: &str,
     ) -> Result<serde_json::Value, String> {
+        call_with(app, label, cmd, json!({}))
+    }
+
+    fn call_with(
+        app: &tauri::App<MockRuntime>,
+        label: &str,
+        cmd: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         if app.get_webview_window(label).is_none() {
             WebviewWindowBuilder::new(app, label, Default::default())
                 .build()
                 .unwrap();
         }
         let w = app.get_webview_window(label).unwrap();
-        get_ipc_response(&w, request(&format!("plugin:agent|{cmd}"), json!({})))
+        get_ipc_response(&w, request(&format!("plugin:agent|{cmd}"), args))
             .map(|b| b.deserialize().unwrap())
             .map_err(|e| e.to_string())
     }
@@ -179,6 +188,35 @@ mod tests {
             let err = call(&app, "stranger", cmd).unwrap_err();
             assert!(err.contains("not allowed"), "{cmd} from stranger: {err}");
         }
+    }
+
+    /// The Changes card must load in a vault that never went through the Obsidian community-plugin
+    /// trust gate (no trust file at all): the agent feature being on is its approval.
+    #[test]
+    fn turn_changes_and_undo_work_in_a_vault_that_is_not_plugin_trusted() {
+        let app = app_with(agent());
+        app.manage(AppState::new());
+        let vault = tempfile::tempdir().unwrap();
+        app.state::<AppState>()
+            .get_or_create("main")
+            .replace_workspace_root(vault.path().to_path_buf());
+        let chat = "3f1c4ee0-a111-4d52-8c36-6a2f41a29b7c";
+        // `null` is the documented answer for a snapshot that is gone; before the fix this was the
+        // restricted-mode refusal
+        let r = call_with(
+            &app,
+            "main",
+            "agent_turn_changes",
+            json!({ "chatId": chat, "turnId": "t1" }),
+        );
+        assert_eq!(r, Ok(serde_json::Value::Null));
+        let r = call_with(
+            &app,
+            "main",
+            "agent_revert_changes",
+            json!({ "chatId": chat, "turnId": "t1", "paths": [] }),
+        );
+        assert_eq!(r, Ok(serde_json::Value::Null));
     }
 
     #[test]

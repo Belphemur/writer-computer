@@ -81,3 +81,7 @@ Chosen option: drive the CLI directly. The protocol was verified against claude 
 ## More Information
 
 Revisit if a second backend is requested (add an ACP mapper behind the same events), if the CLI changes the stream-json framing (fixtures fail first), or if a supported Rust SDK appears.
+
+## Addendum (2026-11-17): the feature switch is the approval
+
+The agent no longer requires the Obsidian community-plugin vault trust, nor a per-vault spawn consent. Before, every agent command went through the plugin host's `trusted_root` (so a vault in restricted mode refused the Changes card with "plugins are in restricted mode for this vault") and the first spawn per vault showed the native "Writer: start Claude Code?" dialog. Both were the plugin trust model applied to a first-party feature that is not a plugin. Now the agent commands use the window's plain workspace root (the same authorization as the core fs and chat-store commands) and the runner spawns `claude` directly (`ProcManager::spawn`): enabling `features.agent.enabled` is the user's approval, and what the agent may DO stays the CLI's permission card. The agent's pseudo plugin id `writer-agent`, `agent/consent.rs` and the dialog wording are removed. The community-plugin consent for `plugin_proc_spawn` is unchanged. A related change in the same pass: the spawned `claude` gets a `writer` launcher on its PATH (spec "Writer CLI for the agent").

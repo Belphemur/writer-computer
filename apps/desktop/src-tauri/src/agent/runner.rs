@@ -95,6 +95,9 @@ pub(crate) struct LaunchConfig {
     pub add_dirs: Vec<String>,
     /// The `--agents` JSON (`subagents::agents_json`), `None` when orchestration is off.
     pub agents: Option<String>,
+    /// Directory holding the `writer` launcher, put first on the child's PATH (`cli_launcher`);
+    /// `None` when there is none.
+    pub cli_dir: Option<PathBuf>,
     pub settings: AgentSettings,
 }
 
@@ -137,6 +140,7 @@ struct Inner {
     system_prompt: Option<String>,
     add_dirs: Vec<String>,
     agents: Option<String>,
+    cli_dir: Option<PathBuf>,
     settings: AgentSettings,
 
     session_id: String,
@@ -332,6 +336,7 @@ impl Session {
                 system_prompt: config.system_prompt,
                 add_dirs: config.add_dirs,
                 agents: config.agents,
+                cli_dir: config.cli_dir,
                 settings: config.settings,
                 session_id: init.session_id,
                 resume_next: init.resume,
@@ -412,6 +417,7 @@ impl Session {
         g.system_prompt = config.system_prompt;
         g.add_dirs = config.add_dirs;
         g.agents = config.agents;
+        g.cli_dir = config.cli_dir;
         g.settings = config.settings;
     }
 
@@ -424,13 +430,11 @@ impl Session {
         self.log.push(err.to_event());
     }
 
-    /// Make sure a process is running. `consent` is asked once per session unless the vault
-    /// remembers "always"; `None` is for respawns (needs the earlier consent).
-    pub(crate) fn ensure_process(
-        self: &Arc<Self>,
-        consent: Option<&dyn Consent>,
-    ) -> Result<(), SpawnError> {
-        let result = self.ensure_inner(consent);
+    /// Make sure a process is running. Starting `claude` needs no per-vault question: turning the
+    /// agent feature on is the approval (ADR 2026-11-17); what the agent may DO is the CLI's
+    /// permission card.
+    pub(crate) fn ensure_process(self: &Arc<Self>) -> Result<(), SpawnError> {
+        let result = self.ensure_inner();
         if result.is_err() {
             let mut g = self.inner.lock();
             g.spawning = false;
@@ -438,8 +442,8 @@ impl Session {
         result
     }
 
-    fn ensure_inner(self: &Arc<Self>, consent: Option<&dyn Consent>) -> Result<(), SpawnError> {
-        let (program, args, used_resume, consented) = {
+    fn ensure_inner(self: &Arc<Self>) -> Result<(), SpawnError> {
+        let (program, args, used_resume, cli_dir) = {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
@@ -466,30 +470,11 @@ impl Session {
             if g.state != AgentSessionState::Reconnecting {
                 g.state = AgentSessionState::Starting;
             }
-            (program, args, used_resume, g.consented)
+            (program, args, used_resume, g.cli_dir.clone())
         };
 
-        let env = env::current();
+        let env = env::current(cli_dir.as_deref());
         let display = redact_prompt(&args);
-        if !consented {
-            let asker = consent.ok_or(SpawnError::NotConsented)?;
-            let env_keys: Vec<String> = env.iter().map(|(k, _)| k.clone()).collect();
-            let still_ok = Arc::clone(&self.still_ok);
-            match consent::gate(
-                &self.store,
-                asker,
-                &self.root,
-                &program,
-                &display,
-                &self.cwd,
-                &env_keys,
-                &*still_ok,
-            ) {
-                Gate::Allowed => self.inner.lock().consented = true,
-                Gate::Denied => return Err(SpawnError::Denied),
-                Gate::Changed => return Err(SpawnError::Changed),
-            }
-        }
         self.launch(program, args, display, env, used_resume)
     }
 
@@ -544,17 +529,9 @@ impl Session {
             self.project_path.as_deref().unwrap_or("."),
         );
         let emit = self.make_emit(gen);
-        let still_ok = Arc::clone(&self.still_ok);
-        let res = self.procs.spawn_with_consent(
-            &Preconsented,
-            &self.store,
-            &self.label,
-            &self.root,
-            AGENT_PLUGIN_ID,
-            &prepared,
-            &*still_ok,
-            emit,
-        );
+        let res = self
+            .procs
+            .spawn(&self.label, &self.root, "agent", &prepared, emit);
         let mut g = self.inner.lock();
         match res {
             Ok(id) => {
@@ -575,8 +552,6 @@ impl Session {
                 self.live.store(false, Ordering::SeqCst);
                 if e.starts_with("EBUSY") {
                     Err(SpawnError::Busy)
-                } else if e.contains("trust or vault changed") {
-                    Err(SpawnError::Changed)
                 } else {
                     Err(SpawnError::Invalid(e))
                 }
@@ -1101,7 +1076,7 @@ impl Session {
                 g.queue.push_front(out);
             }
         }
-        match self.ensure_process(None) {
+        match self.ensure_process() {
             Ok(()) => {
                 let mut g = self.inner.lock();
                 if g.queue.is_empty()
@@ -1213,7 +1188,7 @@ impl Session {
             }
         };
         if need_process {
-            if let Err(e) = self.ensure_process(None) {
+            if let Err(e) = self.ensure_process() {
                 let mut g = self.inner.lock();
                 g.queue.clear();
                 g.state = AgentSessionState::Error;

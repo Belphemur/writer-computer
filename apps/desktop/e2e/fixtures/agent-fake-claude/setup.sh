@@ -1,8 +1,7 @@
 #!/bin/sh
 # Scratch vault + fake `claude` for the native agent pane e2e. Prints KEY=value lines (VAULT,
-# EXTRA_PATH, LOG) on stdout; everything else goes to stderr. Seeds ONLY recent_workspaces.json,
-# plugins_trust.json and plugins_proc_consent.json (pseudo plugin id `writer-agent`) in the e2e
-# app's data dir: a native dialog cannot be driven.
+# EXTRA_PATH, LOG) on stdout; everything else goes to stderr. Seeds ONLY recent_workspaces.json
+# in the e2e app's data dir (the agent needs neither plugin trust nor a spawn consent).
 #
 # Usage: setup.sh [vault-dir]    (default: a fresh mktemp dir)
 set -eu
@@ -35,9 +34,6 @@ chmod +x "$VAULT/.bin/claude"
 mkdir -p "$DATA"
 rm -f "$DATA/recent_workspaces.json" "$DATA/plugins_trust.json" "$DATA/plugins_proc_consent.json"
 printf '["%s"]' "$VAULT" > "$DATA/recent_workspaces.json"
-printf '{"%s": true}' "$VAULT" > "$DATA/plugins_trust.json"
-# Format: { vault: { plugin id: ["*" or absolute programs] } } (src-tauri/src/plugin_consent.rs)
-printf '{"%s": {"writer-agent": ["*"]}}' "$VAULT" > "$DATA/plugins_proc_consent.json"
 
 echo "VAULT=$VAULT"
 echo "EXTRA_PATH=$VAULT/.bin"

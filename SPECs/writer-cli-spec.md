@@ -897,3 +897,7 @@ Deviations from the Obsidian CLI, and why:
 - Exit code `1` also covers invalid input values; legacy `writer <path>` keeps `3`.
 - Writes use the app's atomic write (temp file and rename); the app does not need to run, but a note open in the app with unsaved edits is not coordinated by the CLI.
 - Unverified: no run against the real app or GUI; the CLI and the app writing the same index database at the same time (the open lock waits at most 15 seconds and fails with a message, SQLite's busy timeout is 10 seconds and is reported as "index busy"); clipboard tools on Linux and Windows; the OS trash on Linux and Windows.
+
+## Launcher for the agent pane
+
+The agent pane's `claude` process gets a `writer` command without any user setup: Writer links `<app data>/bin/writer` to its own binary and puts that directory first on the child's PATH. It does not replace the optional "Install 'writer' Command Line Tool" symlink. Details and tests: [`native-agent-spec.md`](native-agent-spec.md) "Writer CLI for the agent".

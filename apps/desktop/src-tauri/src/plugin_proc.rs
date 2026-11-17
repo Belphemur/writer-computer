@@ -124,9 +124,6 @@ impl ConsentRequest {
     /// The dialog body. Every page-supplied value is Debug-quoted so a newline
     /// cannot fake a line of the dialog, and nothing is truncated.
     pub fn message(&self) -> String {
-        if self.plugin_id == crate::agent::consent::AGENT_PLUGIN_ID {
-            return self.agent_message();
-        }
         let mut cmd = format!("{:?}", self.program.to_string_lossy());
         for a in &self.args {
             cmd.push(' ');
@@ -152,34 +149,6 @@ impl ConsentRequest {
              The program runs with your own permissions. \"Always allow\" \
              lets this plugin run programs without asking in this vault.",
             self.plugin_id,
-            self.cwd.to_string_lossy(),
-            self.vault.to_string_lossy(),
-        )
-    }
-}
-
-impl ConsentRequest {
-    /// The same dialog for Writer's own agent pane (pseudo plugin id `writer-agent`): no
-    /// "plugin" wording, the program and every argument spelled out.
-    fn agent_message(&self) -> String {
-        let mut cmd = format!("{:?}", self.program.to_string_lossy());
-        for a in &self.args {
-            cmd.push(' ');
-            cmd.push_str(&format!("{a:?}"));
-        }
-        let env = if self.env_keys.is_empty() {
-            "(none)".to_string()
-        } else {
-            self.env_keys.join(", ")
-        };
-        format!(
-            "Writer's agent pane wants to start Claude Code in this vault.\n\n\
-             Command:\n{cmd}\n\n\
-             Working directory:\n{:?}\n\n\
-             Environment variables passed on (names only): {env}\n\n\
-             Vault: {:?}\n\n\
-             The program runs with your own permissions. What it may do inside a chat is \
-             asked separately, one action at a time. No flag skips those questions.",
             self.cwd.to_string_lossy(),
             self.vault.to_string_lossy(),
         )
@@ -409,10 +378,11 @@ impl ProcManager {
         self.spawn(label, root, plugin_id, p, emit)
     }
 
-    /// Spawn WITHOUT asking: callers must have obtained consent. Private to
-    /// the module family on purpose. An exec failure is NOT an `Err`: it is
+    /// Spawn WITHOUT asking: the caller owns the approval (the community-plugin path asks
+    /// first, see `spawn_with_consent`; Writer's own agent pane is approved by its feature switch,
+    /// ADR 2026-11-17). An exec failure is NOT an `Err`: it is
     /// delivered as the terminal `error` event of the returned id.
-    fn spawn(
+    pub fn spawn(
         &self,
         label: &str,
         root: &Path,

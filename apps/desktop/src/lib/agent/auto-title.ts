@@ -72,7 +72,6 @@ export type { RegenerateOutcome, RegenerateRefusal };
 
 /** The inline sentence for each refusal: the one place that words them. */
 export const REGENERATE_REFUSAL_TEXT: Record<RegenerateRefusal, string> = {
-  "not-consented": "Open a chat once and allow Claude to run, then try again.",
   "no-binary": "Claude Code was not found. Check Settings > Agent.",
   "no-reply": "This chat has no reply to title yet.",
   failed: "Could not generate a title. The old one is kept.",

@@ -313,14 +313,14 @@ describe("HistoryList", () => {
     it("shows a short inline error, keeps the old title, and allows a retry", async () => {
       const regenerateTitle = vi
         .fn<(id: string) => Promise<RegenerateOutcome>>()
-        .mockResolvedValueOnce({ status: "refused", reason: "not-consented" })
+        .mockResolvedValueOnce({ status: "refused", reason: "no-binary" })
         .mockRejectedValueOnce(new Error("disk full"));
       await mount({ regenerateTitle });
       await openMenu();
       await act(async () => item("Regenerate title").click());
       await flush();
       const alert = rows()[0].querySelector('[role="alert"]')!;
-      expect(alert.textContent).toContain("Open a chat once and allow Claude to run");
+      expect(alert.textContent).toContain("Claude Code was not found");
       expect(container.textContent).toContain("Quarterly review");
       await openMenu();
       await act(async () => item("Regenerate title").click());

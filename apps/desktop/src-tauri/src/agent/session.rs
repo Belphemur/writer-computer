@@ -17,8 +17,7 @@ use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
 use super::roles::{Flags, RenderInput, RoleAdapter};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
 use super::subagents::ClaudeAdapter;
-use crate::plugin_consent::ConsentStore;
-use crate::plugin_proc::{Consent, ProcManager};
+use crate::plugin_proc::ProcManager;
 use parking_lot::{Condvar, Mutex};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -238,13 +237,12 @@ pub struct Rejected(pub String);
 pub struct StartParams {
     /// Tauri window label, the owner of the chat.
     pub label: String,
-    /// Canonical, trusted vault root.
+    /// Canonical vault root of the window.
     pub root: PathBuf,
     pub request: StartSessionRequest,
     pub inject_agents_md: InjectAgentsMd,
-    pub store: ConsentStore,
-    /// Trust and vault are unchanged (asked after the dialog and before respawns).
-    pub still_ok: Arc<dyn Fn() -> bool + Send + Sync>,
+    /// Directory with the `writer` launcher (`cli_launcher`), `None` when none could be made.
+    pub cli_dir: Option<PathBuf>,
     pub sink: Sink,
 }
 
@@ -319,16 +317,6 @@ impl AgentSessions {
         Ok(s)
     }
 
-    /// The program of any chat of this window whose spawn the user consented to (a "Run once"
-    /// counts): what a helper call for a chat without a session may reuse.
-    pub fn consented_program(&self, label: &str) -> Option<PathBuf> {
-        self.shared
-            .all()
-            .iter()
-            .filter(|s| s.label == label)
-            .find_map(|s| s.helper_target().map(|(program, _)| program))
-    }
-
     /// Live agent processes of a window.
     pub fn live_count(&self, label: &str) -> usize {
         self.shared.live_in_window(label)
@@ -356,7 +344,10 @@ impl AgentSessions {
         } else {
             Vec::new()
         };
-        let writer_cli = crate::managed_skills::claude_skills_installed(&p.root);
+        // Named only when the command is really there: the skills are installed for the spawned
+        // CLI AND the launcher directory is on its PATH (spec "Writer CLI for the agent").
+        let writer_cli =
+            p.cli_dir.is_some() && crate::managed_skills::claude_skills_installed(&p.root);
         // The roles the Claude adapter produces for this session: the `--agents` JSON and, from
         // the same output, the orchestration line of the system block.
         let rendered = settings.orchestrate.then(|| {
@@ -386,6 +377,7 @@ impl AgentSessions {
                 system_prompt,
                 add_dirs,
                 agents,
+                cli_dir: p.cli_dir.clone(),
                 settings,
             },
             missing,
@@ -393,9 +385,9 @@ impl AgentSessions {
     }
 
     /// Create (or find) the chat's session and make sure its process runs. Blocking: login
-    /// shell, version probe, consent dialog. Spawn-class failures are `error` events of the
+    /// shell, version probe. Spawn-class failures are `error` events of the
     /// chat; only bad input is `Err`.
-    pub fn start(&self, p: StartParams, consent: &dyn Consent) -> Result<StartedIds, Rejected> {
+    pub fn start(&self, p: StartParams) -> Result<StartedIds, Rejected> {
         let req = &p.request;
         if !is_uuid(&req.chat_id) {
             return Err(Rejected("chat id must be a uuid".into()));
@@ -440,7 +432,7 @@ impl AgentSessions {
         let session = self.session_for(&p, &cwd, existing, Some(config));
         if let Some(err) = missing {
             session.fail(&err);
-        } else if let Err(err) = session.ensure_process(Some(consent)) {
+        } else if let Err(err) = session.ensure_process() {
             session.fail(&err);
         }
         Ok(StartedIds {
@@ -469,6 +461,7 @@ impl AgentSessions {
             system_prompt: None,
             add_dirs: Vec::new(),
             agents: None,
+            cli_dir: None,
             settings: req.settings.clone(),
         });
         let session = Session::new(
@@ -484,8 +477,6 @@ impl AgentSessions {
                     .unwrap_or_else(|| req.chat_id.clone()),
                 resume: req.resume_session_id.is_some(),
                 shared: Arc::downgrade(&self.shared),
-                store: p.store.clone(),
-                still_ok: Arc::clone(&p.still_ok),
                 sink: Arc::clone(&p.sink),
             },
             config,

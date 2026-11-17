@@ -372,37 +372,6 @@ pub async fn plugin_store_uninstall(
 
 /* --------------------------------------------------------- plugin HTTP */
 
-/// The agent pane's gate: the window's canonical vault root, or the restricted-mode refusal.
-pub(crate) fn trusted_root<R: Runtime>(
-    webview: &tauri::Webview<R>,
-    app: &tauri::AppHandle<R>,
-) -> Result<PathBuf, AppError> {
-    Ok(trusted_ctx(webview, app)?.root)
-}
-
-/// Same vault, still trusted (asked again after a consent dialog and before agent respawns).
-pub(crate) fn vault_still_trusted<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    label: &str,
-    root: &Path,
-) -> bool {
-    let Some(st) = app.state::<AppState>().get(label) else {
-        return false;
-    };
-    match ctx_for(&st, app) {
-        Ok(c) => c.root == root && c.trusted(),
-        Err(_) => false,
-    }
-}
-
-/// The native consent dialog, for the agent pane's first spawn per vault.
-pub(crate) fn dialog_consent<R: Runtime>(
-    app: tauri::AppHandle<R>,
-    window: Option<tauri::Window<R>>,
-) -> impl Consent {
-    DialogConsent { app, window }
-}
-
 /// A trusted vault's context, or the restricted-mode refusal.
 fn trusted_ctx<R: Runtime>(
     webview: &tauri::Webview<R>,
@@ -468,7 +437,6 @@ struct DialogConsent<R: Runtime> {
 
 const BTN_ONCE: &str = "Run once";
 const BTN_ALWAYS: &str = "Always allow this plugin in this vault";
-const BTN_ALWAYS_AGENT: &str = "Always allow in this vault";
 const BTN_DENY: &str = "Deny";
 
 impl<R: Runtime> Consent for DialogConsent<R> {
@@ -483,21 +451,15 @@ impl<R: Runtime> Consent for DialogConsent<R> {
         }
         // one dialog at a time: a plugin spawning in a loop queues here
         let _turn = CONSENT_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
-        let agent = req.plugin_id == crate::agent::consent::AGENT_PLUGIN_ID;
-        let (title, always) = if agent {
-            ("Writer: start Claude Code?", BTN_ALWAYS_AGENT)
-        } else {
-            ("Writer: run program?", BTN_ALWAYS)
-        };
         let mut d = self
             .app
             .dialog()
             .message(req.message())
-            .title(title)
+            .title("Writer: run program?")
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::YesNoCancelCustom(
                 BTN_ONCE.to_string(),
-                always.to_string(),
+                BTN_ALWAYS.to_string(),
                 BTN_DENY.to_string(),
             ));
         if let Some(w) = &self.window {
@@ -509,9 +471,7 @@ impl<R: Runtime> Consent for DialogConsent<R> {
             MessageDialogResult::Yes => Decision::Once,
             MessageDialogResult::No => Decision::Always,
             MessageDialogResult::Custom(s) if s == BTN_ONCE => Decision::Once,
-            MessageDialogResult::Custom(s) if s == BTN_ALWAYS || s == BTN_ALWAYS_AGENT => {
-                Decision::Always
-            }
+            MessageDialogResult::Custom(s) if s == BTN_ALWAYS => Decision::Always,
             _ => Decision::Deny,
         }
     }

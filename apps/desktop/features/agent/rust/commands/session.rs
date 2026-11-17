@@ -1,22 +1,24 @@
 //! Tauri commands of the agent pane's process runner (spec section 11, lane 1): thin glue that
-//! resolves the calling window and its trusted vault, then calls `agent::session::AgentSessions`.
+//! resolves the calling window and its vault, then calls `agent::session::AgentSessions`.
 //! Project and chat-store commands live in `projects.rs` / `chats.rs`.
 //!
 //! Failure policy. Bad input (not a uuid, a context path outside the vault, a chat that belongs
-//! to another window, a restricted vault) is an `Err`. Failures to START the CLI (binary not
-//! found, consent denied, spawn failed, too many processes) are `error` events of the chat, so
+//! to another window) is an `Err`. Failures to START the CLI (binary not found, spawn failed,
+//! too many processes) are `error` events of the chat, so
 //! the pane's error cards have one source; `agent_start` / `agent_send` return `Ok` for them.
 
+use super::root_of;
 use crate::agent::binary::{self, AgentBinaryInfo};
+use crate::agent::cli_launcher;
 use crate::agent::events::*;
 use crate::agent::ports::InjectAgentsMd;
 use crate::agent::session::{AgentSessions, Rejected, Sink, StartParams, StartedIds};
 use crate::commands::blocking;
-use crate::commands::plugins::{consent_store, dialog_consent, trusted_root, vault_still_trusted};
 use crate::error::AppError;
 use crate::state::AppState;
 use serde::Serialize;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 use tauri::{Emitter, Manager, Runtime};
 
 fn rejected(r: Rejected) -> AppError {
@@ -43,6 +45,26 @@ fn inject_setting<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> InjectA
             .and_then(|s| s.get("agent.inject-agents-md"))
             .and_then(|v| v.as_str()),
     )
+}
+
+/// The directory holding the `writer` launcher (`agent::cli_launcher`), made once per run in the
+/// app's data directory; `None` (logged once) when it could not be made, so the agent is told
+/// there is no `writer` command instead of being promised one. Blocking: file IO.
+fn launcher_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let made = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())
+            .and_then(|d| {
+                let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+                cli_launcher::ensure(&d.join("bin"), &exe).map_err(|e| e.to_string())
+            });
+        made.inspect_err(|e| log::warn!(target: "agent", "agent: no writer launcher: {e}"))
+            .ok()
+    })
+    .clone()
 }
 
 fn sessions<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::State<'_, AgentSessions> {
@@ -80,9 +102,8 @@ pub async fn agent_start<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<StartedIds, AppError> {
-    let root = trusted_root(&webview, &app)?;
+    let root = root_of(&app, &webview)?;
     let label = webview.label().to_string();
-    let store = consent_store(&app)?;
     let params = StartParams {
         label: label.clone(),
         root: root.clone(),
@@ -94,18 +115,15 @@ pub async fn agent_start<R: Runtime>(
             append_system_prompt,
         },
         inject_agents_md: inject_setting(&app, &label),
-        store,
-        still_ok: {
-            let (app, label, root) = (app.clone(), label.clone(), root.clone());
-            Arc::new(move || vault_still_trusted(&app, &label, &root))
-        },
+        cli_dir: None,
         sink: sink_for(&app, &label),
     };
-    let consent = dialog_consent(app.clone(), webview.window().into());
     blocking(move || {
-        app.state::<AgentSessions>()
-            .start(params, &consent)
-            .map_err(rejected)
+        let params = StartParams {
+            cli_dir: launcher_dir(&app),
+            ..params
+        };
+        app.state::<AgentSessions>().start(params).map_err(rejected)
     })
     .await
 }
@@ -120,7 +138,7 @@ pub async fn agent_send<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
-    trusted_root(&webview, &app)?;
+    root_of(&app, &webview)?;
     let label = webview.label().to_string();
     // `message_id` is the UI's key for the optimistic card; the CLI has no use for it
     let _ = message_id;
@@ -261,7 +279,7 @@ pub async fn agent_turn_changes<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<Option<TurnChanges>, AppError> {
-    let root = trusted_root(&webview, &app)?;
+    let root = root_of(&app, &webview)?;
     blocking(move || Ok(sessions(&app).changes().detail(&chat_id, &turn_id, &root))).await
 }
 
@@ -276,7 +294,7 @@ pub async fn agent_revert_changes<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<Option<Vec<RevertOutcome>>, AppError> {
-    let root = trusted_root(&webview, &app)?;
+    let root = root_of(&app, &webview)?;
     blocking(move || {
         Ok(sessions(&app)
             .changes()

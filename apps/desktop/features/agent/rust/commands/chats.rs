@@ -3,23 +3,21 @@
 //! and `agent/permission_rules.rs` (Tauri-free); this file resolves the window's workspace root,
 //! maps errors and runs the IO through `blocking`. Never logs titles or note text.
 
+use super::root_of;
 use crate::agent::binary;
 use crate::agent::chat_store::{
     self, ChatAction, ChatStoreError, ListOptions, ListScope, ReplaySeed,
 };
-use crate::agent::consent;
 use crate::agent::events::ChatSummary;
 use crate::agent::images::{self, ChatImage};
 use crate::agent::permission_rules::{self, PermissionRules};
 use crate::agent::session::AgentSessions;
 use crate::agent::title;
 use crate::commands::blocking;
-use crate::commands::plugins::{consent_store, trusted_root};
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::vault_ops::VaultOpError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tauri::{Manager, Runtime};
 
 fn store_err(e: ChatStoreError) -> AppError {
@@ -32,16 +30,6 @@ fn store_err(e: ChatStoreError) -> AppError {
 
 fn vault_err(e: VaultOpError) -> AppError {
     store_err(e.into())
-}
-
-/// The window's workspace root, canonical (the store requires it).
-fn root_of<R: Runtime>(
-    app: &tauri::AppHandle<R>,
-    webview: &tauri::Webview<R>,
-) -> Result<PathBuf, AppError> {
-    let state = app.state::<AppState>().get_or_create(webview.label());
-    let (root, _) = state.workspace_snapshot().ok_or(AppError::NoWorkspace)?;
-    root.canonicalize().map_err(|e| AppError::Io(e.to_string()))
 }
 
 #[tauri::command]
@@ -159,7 +147,7 @@ pub async fn agent_chat_action<R: Runtime>(
 
 /// Automatic chat title (spec "Automatic chat titles"): one small `claude -p` call for a title,
 /// applied through the chat store only while the user has not renamed the chat. Never an error
-/// for the user: no consented session, a failed call or a refused title all answer `None` and the
+/// for the user: no live session, a failed call or a refused title all answer `None` and the
 /// placeholder title stays. The note must already be saved (the pane flushes first): the title
 /// input is read from it, exactly as for "Regenerate title".
 #[tauri::command]
@@ -180,7 +168,7 @@ pub async fn agent_auto_title<R: Runtime>(
             .ok()
             .and_then(|s| s.helper_target())
         else {
-            log::debug!(target: "agent", "agent: no title call (no consented session)");
+            log::debug!(target: "agent", "agent: no title call (no live session)");
             return Ok(None);
         };
         // a failed call or an apply failure (the note is gone, a lock error) is quiet
@@ -203,8 +191,6 @@ pub async fn agent_auto_title<R: Runtime>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum RegenerateRefusal {
-    /// The user never allowed Claude to run in this vault in this window.
-    NotConsented,
     /// No `claude` program was found.
     NoBinary,
     /// The chat has no assistant reply yet.
@@ -223,7 +209,7 @@ pub enum RegenerateOutcome {
 /// "Regenerate title" for ANY chat of the vault, open or not (spec "Automatic chat titles"): the
 /// same title input and call as the automatic title, applied as `RegenerateTitle` (the user asked,
 /// so it replaces even their own title and leaves an automatic one). Needs no live session of the
-/// chat: see `consent::helper_program` for the consent rule. For an open chat the pane flushes
+/// chat: it runs the `claude` program `binary::find` locates. For an open chat the pane flushes
 /// its pending save first (the note is the input).
 #[tauri::command]
 #[specta::specta]
@@ -233,9 +219,8 @@ pub async fn agent_regenerate_title<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<RegenerateOutcome, AppError> {
-    let root = trusted_root(&webview, &app)?;
+    let root = root_of(&app, &webview)?;
     let label = webview.label().to_string();
-    let store = consent_store(&app)?;
     let override_path = {
         let state = app.state::<AppState>().get_or_create(&label);
         let guard = state.settings.read();
@@ -252,20 +237,10 @@ pub async fn agent_regenerate_title<R: Runtime>(
             .project()
             .resolve_cwd(&root, summary.project_path.as_deref())
             .map_err(AppError::InvalidPath)?;
-        let mut missing = false;
-        let program =
-            consent::helper_program(sessions.consented_program(&label), &store, &root, || {
-                let found = binary::find(override_path.as_deref());
-                missing = found.is_none();
-                found
+        let Some(program) = binary::find(override_path.as_deref()) else {
+            return Ok(RegenerateOutcome::Refused {
+                reason: RegenerateRefusal::NoBinary,
             });
-        let Some(program) = program else {
-            let reason = if missing {
-                RegenerateRefusal::NoBinary
-            } else {
-                RegenerateRefusal::NotConsented
-            };
-            return Ok(RegenerateOutcome::Refused { reason });
         };
         Ok(
             match title::title_chat(

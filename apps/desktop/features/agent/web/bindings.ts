@@ -53,7 +53,7 @@ export const commands = {
 	/**
 	 *  Automatic chat title (spec "Automatic chat titles"): one small `claude -p` call for a title,
 	 *  applied through the chat store only while the user has not renamed the chat. Never an error
-	 *  for the user: no consented session, a failed call or a refused title all answer `None` and the
+	 *  for the user: no live session, a failed call or a refused title all answer `None` and the
 	 *  placeholder title stays. The note must already be saved (the pane flushes first): the title
 	 *  input is read from it, exactly as for "Regenerate title".
 	 */
@@ -62,7 +62,7 @@ export const commands = {
 	 *  "Regenerate title" for ANY chat of the vault, open or not (spec "Automatic chat titles"): the
 	 *  same title input and call as the automatic title, applied as `RegenerateTitle` (the user asked,
 	 *  so it replaces even their own title and leaves an automatic one). Needs no live session of the
-	 *  chat: see `consent::helper_program` for the consent rule. For an open chat the pane flushes
+	 *  chat: it runs the `claude` program `binary::find` locates. For an open chat the pane flushes
 	 *  its pending save first (the note is the input).
 	 */
 	agentRegenerateTitle: (chatId: string, titleModel: string | null, options?: InvokeOptions) => __TAURI_INVOKE<RegenerateOutcome>("plugin:agent|agent_regenerate_title", { chatId, titleModel }, options),
@@ -369,8 +369,6 @@ export type RegenerateOutcome = { status: "done"; summary: ChatSummary } | { sta
 
 /**  Why "Regenerate title" did nothing; the history list words each one. */
 export type RegenerateRefusal = 
-/**  The user never allowed Claude to run in this vault in this window. */
-"not-consented" | 
 /**  No `claude` program was found. */
 "no-binary" | 
 /**  The chat has no assistant reply yet. */

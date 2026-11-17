@@ -1,15 +1,16 @@
 //! The child's environment (spec 8): the app's environment minus anything secret-looking
 //! (`plugin_env::secret_looking`, shared with the plugin host), except what the claude CLI itself
 //! needs for sign-in and routing; `TERM=dumb`; PATH = the login-shell PATH first, then the app's,
-//! then `/usr/local/bin` (the `writer` shim).
+//! then `/usr/local/bin` (the user-installed `writer` shim); the launcher directory of
+//! `cli_launcher` (the `writer` command that always works) goes before all of them.
 //! Writer's own secrets (the plugin keychain item) are never in the process environment, so
 //! there is nothing of ours to leak; `WRITER_*` variables are dropped anyway.
 //!
-//! The child is started with `env_clear()` plus exactly this list, so what the consent dialog
-//! shows (names only) is what the child gets.
+//! The child is started with `env_clear()` plus exactly this list.
 
 use crate::plugin_env::secret_looking;
 use std::collections::HashSet;
+use std::path::Path;
 
 /// Secret-looking names the CLI needs: API-key / token auth, and the Bedrock / Vertex settings.
 const EXACT: &[&str] = &[
@@ -38,10 +39,14 @@ fn allowed(name: &str) -> bool {
 /// list it (fish without `path_helper`) still lets the agent's Bash run `writer`.
 const WRITER_SHIM_DIR: &str = "/usr/local/bin";
 
-/// `login` entries first, then `app`, then [`WRITER_SHIM_DIR`]: absolute and unique.
-fn merge_path(login: &str, app: &str) -> String {
+/// `launcher` first (so a stale user-installed shim never wins), then `login` entries, then `app`,
+/// then [`WRITER_SHIM_DIR`]: absolute and unique.
+fn merge_path(launcher: Option<&Path>, login: &str, app: &str) -> String {
     let mut seen = HashSet::new();
-    let dirs: Vec<_> = std::env::split_paths(login)
+    let dirs: Vec<_> = launcher
+        .map(Path::to_path_buf)
+        .into_iter()
+        .chain(std::env::split_paths(login))
         .chain(std::env::split_paths(app))
         .chain(std::iter::once(std::path::PathBuf::from(WRITER_SHIM_DIR)))
         .filter(|d| d.is_absolute() && seen.insert(d.clone()))
@@ -55,6 +60,7 @@ fn merge_path(login: &str, app: &str) -> String {
 pub fn child_env(
     vars: impl Iterator<Item = (String, String)>,
     login_path: &str,
+    launcher_dir: Option<&Path>,
 ) -> Vec<(String, String)> {
     let mut app_path = String::new();
     let mut out: Vec<(String, String)> = Vec::new();
@@ -68,7 +74,10 @@ pub fn child_env(
             out.push((k, v));
         }
     }
-    out.push(("PATH".into(), merge_path(login_path, &app_path)));
+    out.push((
+        "PATH".into(),
+        merge_path(launcher_dir, login_path, &app_path),
+    ));
     out.push(("TERM".into(), "dumb".into()));
     out.sort();
     out
@@ -76,11 +85,12 @@ pub fn child_env(
 
 /// The running app's environment, with the user's login PATH (cached, blocks up to 10 s the
 /// first time: call from a blocking thread).
-pub fn current() -> Vec<(String, String)> {
+pub fn current(launcher_dir: Option<&Path>) -> Vec<(String, String)> {
     child_env(
         std::env::vars_os()
             .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))),
         &crate::plugin_env::login_path(),
+        launcher_dir,
     )
 }
 
@@ -92,6 +102,7 @@ mod tests {
         child_env(
             pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())),
             "/login/bin:/usr/bin",
+            None,
         )
     }
 
@@ -157,5 +168,26 @@ mod tests {
         let e = env(&[("PATH", "/usr/local/bin:/usr/bin")]);
         let path = &e.iter().find(|(k, _)| k == "PATH").unwrap().1;
         assert_eq!(path, "/login/bin:/usr/bin:/usr/local/bin");
+    }
+
+    #[test]
+    fn the_launcher_dir_is_first_and_not_repeated() {
+        let path_of = |launcher: &str, app: &str| {
+            let e = child_env(
+                [("PATH".to_string(), app.to_string())].into_iter(),
+                "/login/bin",
+                Some(Path::new(launcher)),
+            );
+            e.into_iter().find(|(k, _)| k == "PATH").unwrap().1
+        };
+        assert_eq!(
+            path_of("/data/bin", "/usr/bin"),
+            "/data/bin:/login/bin:/usr/bin:/usr/local/bin"
+        );
+        // already on the app's PATH: still first, listed once
+        assert_eq!(
+            path_of("/usr/bin", "/usr/bin:/x"),
+            "/usr/bin:/login/bin:/x:/usr/local/bin"
+        );
     }
 }
