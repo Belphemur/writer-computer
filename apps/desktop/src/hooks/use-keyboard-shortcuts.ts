@@ -6,6 +6,7 @@ import { toggleSidebar } from "@/hooks/use-sidebar";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
 import { getWorkspaceChromeMode } from "@/lib/compact-mode";
 import { closeWindow } from "@/lib/tauri";
+import { logger } from "@/lib/logger";
 
 function isEditableTargetFocused(): boolean {
   const active = document.activeElement;
@@ -159,18 +160,32 @@ export function useKeyboardShortcuts() {
     // has no page history of its own to walk, so they drive the editor's navigation history.
     function handleMouseUp(e: MouseEvent) {
       if (e.button !== 3 && e.button !== 4) return;
+      logger.log("info", "app", `mouse side button ${e.button} reached the page (mouseup)`);
       e.preventDefault();
       const { navigateBack, navigateForward } = useEditorStore.getState();
       void (e.button === 3 ? navigateBack() : navigateForward());
     }
     // Some engines also synthesise `auxclick` for the side buttons; keep it from doing anything.
     function swallowSideAuxClick(e: MouseEvent) {
-      if (e.button === 3 || e.button === 4) e.preventDefault();
+      if (e.button === 3 || e.button === 4) {
+        logger.log("info", "app", `mouse side button ${e.button} reached the page (auxclick)`);
+        e.preventDefault();
+      }
+    }
+    // Diagnostics: do side buttons reach the webview as pointer/mouse-down events at all?
+    function logSideDown(e: MouseEvent) {
+      if (e.button === 3 || e.button === 4) {
+        logger.log("info", "app", `mouse side button ${e.button} reached the page (${e.type})`);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("mouseup", handleMouseUp);
     window.addEventListener("auxclick", swallowSideAuxClick);
+    window.addEventListener("mousedown", logSideDown);
+    window.addEventListener("pointerdown", logSideDown);
     return () => {
+      window.removeEventListener("mousedown", logSideDown);
+      window.removeEventListener("pointerdown", logSideDown);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("mouseup", handleMouseUp);
       window.removeEventListener("auxclick", swallowSideAuxClick);
