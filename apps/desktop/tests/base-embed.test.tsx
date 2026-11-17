@@ -70,6 +70,7 @@ import { useEditorStore } from "../src/stores/editor-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
 import type { BaseQueryResult, IndexChangedEvent } from "../src/lib/bases/types";
 import { BASE_PATH, baseDocument, taskResult } from "./helpers/bases-fixtures";
+import { open, optionNames, options, pickView, trigger } from "./helpers/view-switcher";
 import { withFullParse } from "./helpers/parsed-state";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -583,11 +584,13 @@ describe("embedded base: behaviour", () => {
   it("selects the view named in the embed and lets the switcher change it", async () => {
     await mountEmbed({ ...fileEmbed, view: "Board" });
     expect(m.baseQuery.mock.calls[0]![0]).toMatchObject({ view: "Board" });
-    const tabs = [...host.querySelectorAll<HTMLElement>('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(["Table", "Board"]);
-    expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
-    await act(async () => tabs[0]!.click());
+    expect(trigger(host).textContent).toBe("Board");
+    await open(host);
+    expect(optionNames()).toEqual(["Table", "Board"]);
+    expect(options()[1]!.getAttribute("aria-selected")).toBe("true");
+    await act(async () => options()[0]!.click());
     await flush();
+    expect(trigger(host).textContent).toBe("Table");
     expect(m.baseQuery.mock.calls.at(-1)![0]).toMatchObject({ view: "Table" });
   });
 
@@ -616,7 +619,7 @@ describe("embedded base: behaviour", () => {
 
   it("Open base opens the file in a new tab with the chosen view", async () => {
     await mountEmbed(fileEmbed);
-    await act(async () => host.querySelectorAll<HTMLElement>('[role="tab"]')[1]!.click());
+    await pickView(host, "Board");
     await flush();
     const { consumePendingAnchor } = await import("../src/lib/pending-anchor");
     await act(async () => host.querySelector<HTMLButtonElement>("[data-embed-open]")!.click());

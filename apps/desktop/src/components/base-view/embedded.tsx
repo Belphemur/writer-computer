@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import * as editorApi from "@/hooks/editor-api";
 import { embedKey, type BaseEmbed } from "@/lib/bases/embeds";
-import { viewNames, viewOfResult } from "@/lib/bases/grid";
+import { viewChoices, viewNames, viewOfResult } from "@/lib/bases/grid";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import type { BaseViewProps, ViewConfig } from "@/lib/bases/view-registry";
 import { BaseToolbar } from "./base-toolbar";
@@ -92,7 +92,7 @@ function FileEmbed({
     <Frame label={`Embedded base ${embed.target}`}>
       <BaseToolbar
         compact
-        viewNames={[]}
+        views={[]}
         selected={undefined}
         onSelect={() => {}}
         counts={null}
@@ -166,6 +166,7 @@ function Body({
       result && result.availableViews.length > 0 ? result.availableViews : viewNames(document),
     [result, document],
   );
+  const choices = useMemo(() => viewChoices(names, document), [names, document]);
   const view = viewOfResult(document, result);
   const viewType = result?.view.type || view?.type || "table";
   const title = source.kind === "file" ? "The base" : "The base block";
@@ -204,7 +205,7 @@ function Body({
     <Frame label={label}>
       <BaseToolbar
         compact
-        viewNames={names}
+        views={choices}
         selected={chosen ?? result?.view.name ?? names[0]}
         onSelect={setChosen}
         counts={result ? { shown: result.rows.length, matched: result.totalMatched } : null}

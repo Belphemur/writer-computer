@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, type MouseEvent, type PointerEvent } from "rea
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { useIsActive } from "@/hooks/use-tabs";
+import { openFileInNewTab } from "@/hooks/editor-api";
 import { getFileStem } from "@/lib/paths";
 import type { DirEntry } from "@/types/fs";
 import { FileIcon, FolderIcon } from "./file-tree-icons";
@@ -74,6 +75,15 @@ export const FileTreeNode = memo(function FileTreeNode({
     }
   }
 
+  // Middle-click opens a file in a new tab (folders keep their normal behavior).
+  function handleAuxClick(event: MouseEvent<HTMLElement>) {
+    if (event.button !== 1 || isRenaming || entry.is_dir) return;
+    event.preventDefault();
+    void openFileInNewTab(entry.path).catch((error: unknown) => {
+      console.error("[sidebar] Failed to open in new tab:", error);
+    });
+  }
+
   function handleContextMenu(event: MouseEvent<HTMLElement>) {
     if (!entry.is_dir && !entry.is_markdown) return;
     if (!onContextMenu) return;
@@ -137,6 +147,7 @@ export const FileTreeNode = memo(function FileTreeNode({
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={onPointerDown ? (event) => onPointerDown(event, entry) : undefined}
       onClick={handleClick}
+      onAuxClick={handleAuxClick}
       onContextMenu={handleContextMenu}
       className={`group ${entry.is_dir ? "group/folder " : ""}flex h-[32px] w-full items-center gap-1.5 overflow-hidden rounded-lg pr-2 text-left text-[13px] leading-[1.15] text-[var(--fg-base)] ${isDragging ? "opacity-40" : ""} ${bgClassName}`}
       style={{ paddingLeft: depth === 0 ? 10 : depth * 12 + 6 }}

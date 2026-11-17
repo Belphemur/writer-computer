@@ -172,3 +172,19 @@ export function viewOfResult(
 export function viewNames(document: { views: BaseView[] } | null): string[] {
   return document ? document.views.map((v) => v.name) : [];
 }
+
+/** A view in the toolbar's view switcher; `type` is `undefined` when the document has no such view. */
+export interface ViewChoice {
+  name: string;
+  type: string | undefined;
+}
+
+/** `names` (the result's `availableViews` or the document's) with each view's type for its icon. */
+export function viewChoices(
+  names: readonly string[],
+  document: { views: BaseView[] } | null,
+): ViewChoice[] {
+  const types = new Map<string, string>();
+  for (const v of document?.views ?? []) if (!types.has(v.name)) types.set(v.name, v.type);
+  return names.map((name) => ({ name, type: types.get(name) }));
+}

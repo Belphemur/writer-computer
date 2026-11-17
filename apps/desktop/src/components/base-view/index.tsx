@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
-import { viewNames, viewOfResult } from "@/lib/bases/grid";
+import { viewChoices, viewNames, viewOfResult } from "@/lib/bases/grid";
 import { listBaseViews, subscribeBaseViews, type BaseViewProps } from "@/lib/bases/view-registry";
 import * as editorApi from "@/hooks/editor-api";
 import { getFileName } from "@/lib/paths";
@@ -44,6 +44,7 @@ export function BaseView({
       result && result.availableViews.length > 0 ? result.availableViews : viewNames(document),
     [result, document],
   );
+  const choices = useMemo(() => viewChoices(names, document), [names, document]);
   const view = viewOfResult(document, result);
   const title = getFileName(location.path);
   const viewIndex = result?.view.index ?? null;
@@ -99,7 +100,7 @@ export function BaseView({
       aria-hidden={!isActive}
     >
       <BaseToolbar
-        viewNames={names}
+        views={choices}
         selected={selected}
         onSelect={(name) => editorApi.setBaseTabView(tabId, name)}
         counts={result ? { shown: result.rows.length, matched: result.totalMatched } : null}

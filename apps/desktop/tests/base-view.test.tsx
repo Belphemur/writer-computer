@@ -23,6 +23,7 @@ import { REQUERY_DEBOUNCE_MS } from "../src/components/base-view/use-base-query"
 import * as ipc from "../src/lib/bases/ipc";
 import { rawToCell, type EditKind } from "../src/lib/bases/cells";
 import type { BaseQueryResult, IndexChangedEvent, NoteProperties } from "../src/lib/bases/types";
+import { open, optionNames, options, trigger } from "./helpers/view-switcher";
 import { useEditorStore } from "../src/stores/editor-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
 import {
@@ -277,16 +278,17 @@ describe("rendering", () => {
     );
   });
 
-  it("renders the view tabs and switches views through the tab state", async () => {
+  it("renders the view dropdown and switches views through the tab state", async () => {
     await mount();
-    const tabs = [...host.querySelectorAll<HTMLElement>('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(["Table", "Board"]);
-    expect(tabs[0]!.getAttribute("aria-selected")).toBe("true");
+    expect(trigger(host).textContent).toBe("Table");
+    await open(host);
+    expect(optionNames()).toEqual(["Table", "Board"]);
+    expect(options()[0]!.getAttribute("aria-selected")).toBe("true");
     useEditorStore.setState({
       tabs: [{ id: "tab-1", location: { kind: "base", path: BASE_PATH }, back: [], forward: [] }],
       activeTabId: "tab-1",
     });
-    await click(tabs[1]!);
+    await act(async () => options()[1]!.click());
     expect(useEditorStore.getState().tabs[0]!.location).toEqual({
       kind: "base",
       path: BASE_PATH,
@@ -295,7 +297,7 @@ describe("rendering", () => {
     // The location is the source of truth: re-rendering with it queries the new view.
     await rerender({ kind: "base", path: BASE_PATH, view: "Board" }, true);
     expect(m.baseQuery).toHaveBeenLastCalledWith(expect.objectContaining({ view: "Board" }));
-    expect(host.querySelectorAll('[role="tab"]')[1]!.getAttribute("aria-selected")).toBe("true");
+    expect(trigger(host).textContent).toBe("Board");
   });
 
   it("shows the count of limited results", async () => {
@@ -436,14 +438,11 @@ describe("base document problems", () => {
     expect(host.querySelector("[data-base-raw-text]")!.textContent).toBe("views: [oops");
   });
 
-  it("uses the view names of the result for the tabs", async () => {
+  it("uses the view names of the result for the dropdown", async () => {
     m.baseQuery.mockResolvedValue({ ...taskResult(), availableViews: ["One", "Two", "Three"] });
     await mount();
-    expect([...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual([
-      "One",
-      "Two",
-      "Three",
-    ]);
+    await open(host);
+    expect(optionNames()).toEqual(["One", "Two", "Three"]);
   });
 });
 
