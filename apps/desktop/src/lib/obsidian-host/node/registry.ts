@@ -108,7 +108,7 @@ export function createNodeRegistry(ctx: NodeRegistryContext): NodeRegistry {
       if (Object.prototype.hasOwnProperty.call(SHARED, id)) value = SHARED[id]();
       else if (id === "child_process") value = createChildProcessModule({ pluginId: ctx.pluginId });
       else if (id === "fs" || id === "fs/promises") {
-        fs ??= createFsModule({ io: ctx.io });
+        fs ??= createFsModule({ io: ctx.io, pluginId: ctx.pluginId });
         value = id === "fs" ? fs.fs : fs.promises;
       } else if (id === "module") value = createModuleModule(ctx.require, NODE_MODULE_IDS);
       cache.set(id, value);

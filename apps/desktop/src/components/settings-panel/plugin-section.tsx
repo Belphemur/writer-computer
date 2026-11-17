@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import "./plugin-settings.css";
 import { mountSettingTab } from "@/components/plugins/mount-setting-tab";
 import type { SettingTabEntry } from "@/lib/obsidian-host/api/core";
 
@@ -28,7 +29,7 @@ export function PluginSectionContent({ entry }: { entry: SettingTabEntry }) {
       <div
         ref={hostRef}
         data-plugin-settings-host={owner}
-        className="vertical-tab-content-container text-[13px] text-[var(--text-primary)]"
+        className="plugin-settings vertical-tab-content-container text-[13px] text-[var(--text-primary)]"
       />
     </>
   );

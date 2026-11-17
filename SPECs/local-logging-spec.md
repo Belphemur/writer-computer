@@ -70,3 +70,8 @@ Rust (`logging::tests`, `commands::logs::tests`): path and secret redaction, JSO
 ## Not verified
 
 Not run in a real window: the log folder opening in Finder, real file rotation across midnight, the panic flush under `panic = "abort"`, the `writer` symlink path writing `cli.*.log`.
+
+## Lifecycle and crash lines
+
+- `writer started` on launch, `writer exiting` (`stage=exit-requested`, then `stage=exit`) on quit. Panics are logged by the panic hook (message, location, backtrace, flushed before abort).
+- Native crashes, force quits, `kill -9` and power loss leave no line, so a `writer.running` file in the log directory holds the pid while the app runs and is removed on a clean exit. If the next launch finds it with a dead pid it logs a warn: `previous run did not exit cleanly`.

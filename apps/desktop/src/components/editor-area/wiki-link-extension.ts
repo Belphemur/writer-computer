@@ -350,14 +350,7 @@ function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boole
         const workspaceRoot = getWorkspaceRoot();
         if (!workspaceRoot) return true;
 
-        void resolveWikiLink(
-          rawTarget,
-          workspaceRoot,
-          tauri.fuzzySearch,
-          tauri.fileExists,
-          getFilePath(),
-          (fileName) => tauri.findFileByName(workspaceRoot, fileName),
-        )
+        void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
           .then((result) => {
             if (isDisposed()) return;
             if (result.kind === "internal") {

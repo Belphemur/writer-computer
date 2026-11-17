@@ -6,8 +6,19 @@
 //   `createEditorExtensions` adds it to every editor; `setPluginEditorExtensions` reconfigures all
 //   live views when a plugin is enabled/disabled. A Compartment is a shared key: each view keeps
 //   its own value for it, so one instance serves every editor.
-import { Compartment, EditorSelection, StateField, type Extension } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
+import { markdown } from "@codemirror/lang-markdown";
+import { language } from "@codemirror/language";
+import {
+  Compartment,
+  EditorSelection,
+  EditorState,
+  StateEffect,
+  StateField,
+  Transaction,
+  type Extension,
+} from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { logger } from "@/lib/logger";
 import type { EditorBackend, EditorSelectionRange } from "./api/views";
 
 export const pluginExtensionCompartment = new Compartment();
@@ -95,21 +106,134 @@ export function getPluginEditorExtensions(): Extension[] {
   return currentExtensions;
 }
 
+function toError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e));
+}
+
 /**
- * Applies `extensions` to every live editor. A view that rejects them (a plugin handed over an
- * invalid extension) is reset to none so the editor keeps working; the first error is returned.
+ * Builds `extension` into a throwaway state AND a detached view (with the host fields and a
+ * markdown tree, like a live editor), then runs one edit through it. A field that throws on
+ * create, a facet provider that throws or returns junk, a view plugin that cannot be built, or a
+ * value from a mismatched `@codemirror/state` instance all show up here instead of in the user's
+ * editor. Returns the failure, or null when the extension is safe to add.
  */
-export function setPluginEditorExtensions(extensions: Extension[]): Error | null {
-  currentExtensions = extensions;
+export function validatePluginExtension(extension: Extension): Error | null {
+  let view: EditorView | null = null;
+  try {
+    const doc = "# Heading\n\nText with **bold** and a [[link]].\n";
+    const md = markdown();
+    const base = EditorState.create({ doc, extensions: [md, hostFields] });
+    const state = EditorState.create({ doc, extensions: [md, hostFields, extension] });
+    // Writer's markdown language must stay the document's language: an extension that supplies
+    // another one (at a higher precedence) empties the markdown syntax tree, and every
+    // tree-driven decoration (hidden markup, headings, emphasis, callouts) goes raw.
+    if (state.facet(language) !== base.facet(language))
+      throw new Error("the extension replaces the editor's language (markdown)");
+    view = new EditorView({ state, parent: document.createElement("div") });
+    view.dispatch({ changes: { from: doc.length, insert: "x" } });
+    view.dispatch({ selection: { anchor: 0 } });
+    return null;
+  } catch (e) {
+    return toError(e);
+  } finally {
+    try {
+      view?.destroy();
+    } catch {
+      /* the throwaway view is gone either way */
+    }
+  }
+}
+
+const appendVerdicts = new WeakMap<object, Error | null>();
+
+/**
+ * Transaction filter for every Writer editor. Plugins reach the view through `editor.cm` and may
+ * dispatch top-level `StateEffect.reconfigure` (replaces the WHOLE configuration: the markdown
+ * language, Prosemark and every Writer extension are gone) or `appendConfig` (can add a language
+ * that wins over markdown). Writer never uses either, so the first is dropped and the second is
+ * only kept when the extension passes `validatePluginExtension`; the rest of the transaction
+ * (changes, selection, other effects) goes through untouched.
+ */
+export const pluginConfigGuard: Extension = EditorState.transactionFilter.of((tr) => {
+  if (!tr.effects.some((e) => e.is(StateEffect.reconfigure) || e.is(StateEffect.appendConfig)))
+    return tr;
+  let dropped = null as string | null;
+  const effects = tr.effects.filter((e) => {
+    if (e.is(StateEffect.reconfigure)) {
+      dropped = "a top-level editor reconfigure";
+      return false;
+    }
+    if (e.is(StateEffect.appendConfig)) {
+      const value = e.value as Extension;
+      let verdict: Error | null | undefined =
+        typeof value === "object" && value ? appendVerdicts.get(value) : undefined;
+      if (verdict === undefined) {
+        verdict = validatePluginExtension(value);
+        if (typeof value === "object" && value) appendVerdicts.set(value, verdict);
+        if (verdict) logger.warn("plugin", `editor appendConfig rejected: ${verdict.message}`);
+      }
+      if (verdict) {
+        dropped = `an editor extension (${verdict.message})`;
+        return false;
+      }
+    }
+    return true;
+  });
+  if (dropped === null) return tr;
+  return {
+    changes: tr.changes,
+    selection: tr.selection,
+    effects,
+    scrollIntoView: tr.scrollIntoView,
+    userEvent: tr.annotation(Transaction.userEvent),
+    annotations: [
+      Transaction.addToHistory.of(tr.annotation(Transaction.addToHistory) ?? true),
+      Transaction.remote.of(tr.annotation(Transaction.remote) ?? false),
+    ],
+    filter: false,
+  };
+});
+
+/**
+ * Applies `extensions` to every live editor. Each extension is validated in isolation first
+ * (`owners[i]` names the plugin that registered `extensions[i]`, for the log); a rejected one is
+ * dropped and logged while the rest still apply, so a broken plugin extension can never take
+ * Writer's own editor extensions (live preview, hiding, decorations) down with it. The first
+ * rejection is returned.
+ */
+export function setPluginEditorExtensions(
+  extensions: Extension[],
+  owners: readonly string[] = [],
+): Error | null {
   let failure: Error | null = null;
+  const accepted: Extension[] = [];
+  extensions.forEach((extension, i) => {
+    const error = validatePluginExtension(extension);
+    if (!error) {
+      accepted.push(extension);
+      return;
+    }
+    failure ??= error;
+    const plugin = owners[i];
+    logger.warn("plugin", `editor extension rejected and skipped: ${error.message}`, {
+      plugin,
+      phase: "editor-extension",
+      stack: error.stack,
+    });
+    console.warn(`[plugin] editor extension from ${plugin ?? "unknown"} rejected:`, error);
+  });
+  currentExtensions = accepted;
   for (const view of views.keys()) {
     try {
       view.dispatch({
-        effects: pluginExtensionCompartment.reconfigure([hostFields, ...extensions]),
+        effects: pluginExtensionCompartment.reconfigure([hostFields, ...accepted]),
       });
     } catch (e) {
-      failure ??= e instanceof Error ? e : new Error(String(e));
-      console.error("[plugin] editor extension rejected:", e);
+      failure ??= toError(e);
+      logger.warn("plugin", `editor extensions rejected by a live editor: ${toError(e).message}`, {
+        phase: "editor-extension",
+        stack: toError(e).stack,
+      });
       try {
         view.dispatch({ effects: pluginExtensionCompartment.reconfigure([hostFields]) });
       } catch (resetError) {
@@ -117,7 +241,6 @@ export function setPluginEditorExtensions(extensions: Extension[]): Error | null
       }
     }
   }
-  if (failure) currentExtensions = [];
   return failure;
 }
 

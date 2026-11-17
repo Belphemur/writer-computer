@@ -21,7 +21,8 @@ export function mountSettingTab(
   host.replaceChildren(tab.containerEl);
   let error: string | null = null;
   try {
-    tab.display();
+    if (tab.hostDisplay) tab.hostDisplay();
+    else tab.display();
   } catch (e) {
     console.error(`[plugin] settings tab ${pluginId}:${tab.id} display threw:`, e);
     recordPluginError(pluginId, "settings-tab", e);

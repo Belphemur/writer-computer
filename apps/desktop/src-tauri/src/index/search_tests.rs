@@ -589,3 +589,60 @@ fn perf_smoke_cold_build_and_query_latency() {
         1
     );
 }
+
+/// Links, backlinks and the search "title" come from the file name: a note's
+/// frontmatter `title` and first heading are text to search, never a name.
+#[test]
+fn file_name_not_title_drives_links_and_the_title_column() {
+    let v = V::new();
+    v.write(
+        "notes/plain-name.md",
+        "---\ntitle: Fancy Display Title\n---\n# Quasar Heading\nbody\n",
+    );
+    v.write("other/Fancy Display Title.md", "# Something Else\n");
+    v.write(
+        "src.md",
+        "[[plain-name]] [[Fancy Display Title]] [[Quasar Heading]] [[PLAIN-NAME#Quasar Heading|x]]\n",
+    );
+    let index = v.index();
+    let link = |raw: &str| {
+        index
+            .links("src.md")
+            .unwrap()
+            .into_iter()
+            .find(|l| l.raw == raw)
+            .unwrap()
+            .target
+    };
+    assert_eq!(link("plain-name").as_deref(), Some("notes/plain-name.md"));
+    // `title:` of plain-name.md is ignored: the name goes to the file called that
+    assert_eq!(
+        link("Fancy Display Title").as_deref(),
+        Some("other/Fancy Display Title.md")
+    );
+    assert_eq!(link("Quasar Heading"), None);
+    assert_eq!(link("PLAIN-NAME").as_deref(), Some("notes/plain-name.md"));
+    assert_eq!(index.backlinks("notes/plain-name.md").unwrap().len(), 2);
+    assert!(index
+        .unresolved()
+        .unwrap()
+        .iter()
+        .any(|u| u.target == "Quasar Heading"));
+    // the hit's title is the file stem, whatever the frontmatter or heading says
+    let page = search(&index, "plain-name");
+    assert_eq!(page.hits[0].path, "notes/plain-name.md");
+    assert_eq!(page.hits[0].title, "plain-name");
+    // frontmatter title and H1 stay searchable as text
+    assert!(paths(&search(&index, "Quasar")).contains(&"notes/plain-name.md"));
+    assert!(paths(&search(&index, "Fancy")).contains(&"notes/plain-name.md"));
+}
+
+#[test]
+fn file_name_match_outranks_heading_and_body_matches() {
+    let v = V::new();
+    v.write("a/Comet.md", "nothing relevant\n");
+    v.write("b/other.md", "# Comet\nComet comet comet comet\n");
+    v.write("c/third.md", "---\ntitle: Comet\n---\nComet\n");
+    let index = v.index();
+    assert_eq!(search(&index, "comet").hits[0].path, "a/Comet.md");
+}

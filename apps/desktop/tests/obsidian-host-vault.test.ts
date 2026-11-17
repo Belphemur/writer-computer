@@ -236,6 +236,16 @@ describe("Vault over a VaultIo", () => {
     expect(cache.getFirstLinkpathDest("nope", "z/y.md")).toBeNull();
     expect(cache.getFirstLinkpathDest("", "z/y.md")?.path).toBe("z/y.md");
   });
+
+  it("getFirstLinkpathDest ties break like the Rust resolver: nearest folder, shortest, alphabetical", async () => {
+    const io = createMemoryVaultIo({ "a/n.md": "", "b/n.md": "", "b/s/n.md": "" });
+    const vault = new Vault(io);
+    await vault.load();
+    const cache = new MetadataCache(vault);
+    expect(cache.getFirstLinkpathDest("n", "b/s/deep/src.md")?.path).toBe("b/s/n.md");
+    expect(cache.getFirstLinkpathDest("n", "b/src.md")?.path).toBe("b/n.md");
+    expect(cache.getFirstLinkpathDest("N", "z/src.md")?.path).toBe("a/n.md");
+  });
 });
 
 describe("Editor facade", () => {

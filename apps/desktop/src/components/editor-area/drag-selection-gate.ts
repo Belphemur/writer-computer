@@ -44,6 +44,10 @@ const dragFrozenSelectionField = StateField.define<readonly SelectionRange[] | n
     return null;
   },
   update(value, tr) {
+    // A tab swap / external reload replaces the whole document in this same view. No drag can
+    // span that, and a freeze surviving it (pointerup lost to a popup, a native drag or a
+    // window leave) leaves every later note without hide/fold decorations: raw markdown.
+    if (value && tr.isUserEvent("writer")) return null;
     for (const e of tr.effects) {
       if (e.is(startDragEffect)) return e.value;
       if (e.is(endDragEffect)) return null;
@@ -149,6 +153,7 @@ const dragSelectionPlugin = ViewPlugin.fromClass(
   class {
     private readonly onWindowPointerUp: (e: PointerEvent) => void;
     private readonly onWindowPointerCancel: (e: PointerEvent) => void;
+    private readonly onWindowPointerMove: (e: PointerEvent) => void;
     private readonly onContentPointerDown: (e: PointerEvent) => void;
     private readonly onContentBlur: () => void;
 
@@ -159,12 +164,17 @@ const dragSelectionPlugin = ViewPlugin.fromClass(
       };
       this.onWindowPointerUp = () => this.endDrag();
       this.onWindowPointerCancel = () => this.endDrag();
+      // Self-heal a lost pointerup: a pointer moving with no button down is not dragging.
+      this.onWindowPointerMove = (e) => {
+        if (e.buttons === 0) this.endDrag();
+      };
       this.onContentBlur = () => this.endDrag();
 
       this.view.contentDOM.addEventListener("pointerdown", this.onContentPointerDown);
       this.view.contentDOM.addEventListener("blur", this.onContentBlur);
       window.addEventListener("pointerup", this.onWindowPointerUp);
       window.addEventListener("pointercancel", this.onWindowPointerCancel);
+      window.addEventListener("pointermove", this.onWindowPointerMove);
     }
 
     private endDrag(): void {
@@ -183,6 +193,7 @@ const dragSelectionPlugin = ViewPlugin.fromClass(
       this.view.contentDOM.removeEventListener("blur", this.onContentBlur);
       window.removeEventListener("pointerup", this.onWindowPointerUp);
       window.removeEventListener("pointercancel", this.onWindowPointerCancel);
+      window.removeEventListener("pointermove", this.onWindowPointerMove);
     }
   },
 );

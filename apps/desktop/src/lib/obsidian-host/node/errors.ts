@@ -27,6 +27,9 @@ const ERRNO: Record<string, [number, string]> = {
   ENOTDIR: [-20, "not a directory"],
   EISDIR: [-21, "illegal operation on a directory"],
   ENOSYS: [-38, "function not implemented"],
+  EFBIG: [-27, "file too large"],
+  EILSEQ: [-84, "illegal byte sequence"],
+  ESTALE: [-70, "stale file: it changed on disk"],
   UNKNOWN: [-4094, "unknown error"],
 };
 

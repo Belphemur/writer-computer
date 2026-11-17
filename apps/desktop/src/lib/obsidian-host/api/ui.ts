@@ -7,6 +7,13 @@ import { createEl } from "./dom";
 import { recordPluginError } from "../error-log";
 import { isValidSecretId } from "./secret-storage";
 import { prepareFuzzySearch, renderMatches, setIcon, type SearchResult } from "./functions";
+import {
+  newViewState,
+  renderDefinitions,
+  teardownView,
+  type DefinitionViewState,
+  type SettingDefinitionItem,
+} from "./setting-definitions";
 import type { App } from "./app";
 import type { Plugin } from "./core";
 import { pointRect, type Rect } from "@/lib/popup-position";
@@ -502,9 +509,22 @@ export class SliderComponent extends ValueComponent<number> {
   }
   setValue(value: number): this {
     this.sliderEl.value = String(value);
+    this.syncReadout();
     return this;
   }
+  private readoutEl: HTMLElement | null = null;
+  private syncReadout(): void {
+    if (this.readoutEl) this.readoutEl.textContent = String(this.getValue());
+  }
+  /** Obsidian shows the value in a hover tooltip; Writer shows it as a readout beside the slider
+   *  (like its native range settings). Only added when the plugin asks for it. */
   setDynamicTooltip(): this {
+    if (!this.readoutEl) {
+      this.readoutEl = createEl("span", { cls: "writer-slider-readout" });
+      this.sliderEl.after(this.readoutEl);
+      this.sliderEl.addEventListener("input", () => this.syncReadout());
+    }
+    this.syncReadout();
     return this;
   }
   onChange(cb: (value: number) => unknown): this {
@@ -697,15 +717,150 @@ export class Setting {
 
 // ---------------------------------------------------------------- setting tabs
 
+export class SettingGroup {
+  listEl: HTMLElement;
+  headingEl: HTMLElement | null = null;
+  constructor(public containerEl: HTMLElement) {
+    this.listEl = createEl("div", { cls: "setting-group", parent: containerEl });
+  }
+  setHeading(text: string | DocumentFragment): this {
+    this.headingEl ??= createEl("div", { cls: "setting-group-heading", parent: this.listEl });
+    this.headingEl.replaceChildren(text);
+    return this;
+  }
+  addClass(...classes: string[]): this {
+    this.listEl.classList.add(...classes);
+    return this;
+  }
+  addSetting(cb: (setting: Setting) => void): this {
+    cb(new Setting(this.listEl));
+    return this;
+  }
+  addSearch(cb: (component: any) => unknown): this {
+    return this.addSetting((s) => s.addSearch(cb));
+  }
+  addExtraButton(cb: (component: any) => unknown): this {
+    return this.addSetting((s) => s.addExtraButton(cb));
+  }
+}
+
+export abstract class SettingPage {
+  rootEl: HTMLElement = createEl("div", { cls: "setting-page" });
+  titlebarEl: HTMLElement = createEl("div", { cls: "setting-page-titlebar", parent: this.rootEl });
+  containerEl: HTMLElement = createEl("div", { cls: "setting-page-content", parent: this.rootEl });
+  title = "";
+  abstract display(): void;
+  hide(): void {
+    this.containerEl.replaceChildren();
+  }
+}
+
+/**
+ * Obsidian 1.13: a tab either returns declarative `getSettingDefinitions()` (rendered by the app;
+ * `display()` is then NOT called) or, when that is empty, implements classic `display()`.
+ * `hostDisplay()` is the host's entry point and applies that precedence.
+ */
 export abstract class SettingTab implements SettingTabLike {
   id = "";
   name = "";
+  icon = "";
   containerEl: HTMLElement;
+  settingItems: SettingDefinitionItem[] = [];
+  view: DefinitionViewState = newViewState();
+  private shown = false;
+  private declarative = false;
   constructor(public app: App) {
     this.containerEl = createEl("div", { cls: "vertical-tab-content" });
   }
-  abstract display(): void;
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [];
+  }
+  getControlValue(key: string): unknown {
+    return (this.app.vault as { getConfig?: (k: string) => unknown }).getConfig?.(key);
+  }
+  setControlValue(key: string, value: unknown): void | Promise<void> {
+    (this.app.vault as { setConfig?: (k: string, v: unknown) => void }).setConfig?.(key, value);
+  }
+  /** Stores fresh definitions; re-renders a displayed declarative tab, keeping scroll and focus. */
+  update(): void {
+    try {
+      this.settingItems = this.getSettingDefinitions() ?? [];
+    } catch (e) {
+      console.error(`[plugin] settings tab ${this.id} getSettingDefinitions threw:`, e);
+      return;
+    }
+    if (this.shown && this.declarative && !this.view.onFactoryPage) this.rerender();
+  }
+  /** Re-evaluates every `visible` / `disabled` predicate in place (no re-render). */
+  refreshDomState(): void {
+    for (const r of this.view.refreshers) r();
+  }
+  /** Host entry: declarative definitions win over a plugin's own display(). */
+  hostDisplay(): void {
+    this.shown = true;
+    this.settingItems = this.getSettingDefinitions() ?? [];
+    this.declarative = this.settingItems.length > 0;
+    if (this.declarative) this.rerender(false);
+    else this.display();
+  }
+  /** Default display renders the definitions; a plugin's classic override replaces it. */
+  display(): void {
+    this.shown = true;
+    this.settingItems = this.getSettingDefinitions() ?? [];
+    this.declarative = this.settingItems.length > 0;
+    if (this.declarative) this.rerender(false);
+  }
+  private navigate = (path: string[]): void => {
+    this.view.path = path;
+    this.rerender(false);
+  };
+  private rerender(keep = true): void {
+    const scrolls: [HTMLElement, number][] = [];
+    if (keep)
+      for (let n = this.containerEl.parentElement; n; n = n.parentElement)
+        if (n.scrollTop > 0) scrolls.push([n, n.scrollTop]);
+    const active = keep ? document.activeElement : null;
+    let focus: { key: string; start: number | null; end: number | null; sel: string } | null = null;
+    if (active instanceof HTMLElement && this.containerEl.contains(active)) {
+      const row = active.closest<HTMLElement>("[data-setting-key],[data-setting-name]");
+      if (row) {
+        const k = row.dataset.settingKey ?? row.dataset.settingName ?? "";
+        const attr =
+          row.dataset.settingKey !== undefined ? "data-setting-key" : "data-setting-name";
+        const all = Array.from(row.querySelectorAll("input,textarea,select,[tabindex]"));
+        const text = active as HTMLInputElement;
+        focus = {
+          key: `[${attr}="${CSS.escape(k)}"]`,
+          start: text.selectionStart ?? null,
+          end: text.selectionEnd ?? null,
+          sel: String(all.indexOf(active)),
+        };
+      }
+    }
+    renderDefinitions(this, this.settingItems, this.navigate);
+    this.refreshDomState();
+    for (const [n, top] of scrolls) n.scrollTop = top;
+    if (focus) {
+      const row = this.containerEl.querySelector<HTMLElement>(focus.key);
+      const all = row
+        ? Array.from(row.querySelectorAll<HTMLElement>("input,textarea,select,[tabindex]"))
+        : [];
+      const target = all[Number(focus.sel)] ?? row;
+      if (target) {
+        target.focus();
+        if (focus.start !== null && "setSelectionRange" in target) {
+          try {
+            (target as HTMLInputElement).setSelectionRange(focus.start, focus.end);
+          } catch {
+            // input types without selection support
+          }
+        }
+      }
+    }
+  }
   hide(): void {
+    this.shown = false;
+    teardownView(this.view);
     this.containerEl.replaceChildren();
   }
 }
@@ -719,7 +874,17 @@ export class PluginSettingTab extends SettingTab {
     this.id = plugin.manifest.id;
     this.name = plugin.manifest.name;
   }
-  display(): void {}
+  /** Reads `this.plugin.settings`. */
+  getControlValue(key: string): unknown {
+    return (this.plugin as unknown as { settings?: Record<string, unknown> }).settings?.[key];
+  }
+  /** Mutates and persists `this.plugin.settings` (data.json). */
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    const p = this.plugin as unknown as { settings?: Record<string, unknown> };
+    p.settings ??= {};
+    p.settings[key] = value;
+    await this.plugin.saveData(p.settings);
+  }
 }
 
 // ---------------------------------------------------------------- Menu

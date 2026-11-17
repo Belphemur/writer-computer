@@ -939,3 +939,167 @@ fn skills_sync_installs_checks_and_reports_conflicts() {
     assert!(t.exists(".obsidian/app.json"));
     assert_eq!(t.read(".obsidian/app.json"), "{}");
 }
+
+const LINKY: &str = "---\nrelated: \"[[Old Name]]\"\n---\n# Home\n[[Old Name]] [[Old Name|alias]] [[Old Name#H]] [[Old Name#^b]] [[docs/Old Name]] [[docs/Old Name.md#H|x]]\n[m](docs/Old%20Name.md) [n](<docs/Old Name.md#H>) [web](https://x.y/Old%20Name.md) [[Other]]\n`[[Old Name]]` code\n```\n[[Old Name]]\n```\n";
+
+fn linky_vault() -> T {
+    let t = T::new();
+    t.write("docs/Old Name.md", "# Old\n## H\ntext ^b\n");
+    t.write("Home2.md", LINKY);
+    t.write("Other.md", "other\n");
+    t.write(
+        "views.base",
+        "filters:\n  and:\n    - file.hasLink(link(\"Old Name\"))\n    - 'file.hasLink(file(\"docs/Old Name.md\"))'\nproperties:\n  note:\n    displayName: \"[[Old Name]]\"\nviews: []\n",
+    );
+    t
+}
+
+#[test]
+fn rename_rewrites_every_link_form_keeping_style() {
+    let t = linky_vault();
+    let out = t.ok(&["rename", "file=Old Name", "name=New"]);
+    assert!(
+        out.starts_with("Renamed docs/Old Name.md -> docs/New.md (updated "),
+        "{out}"
+    );
+    assert!(t.exists("docs/New.md") && !t.exists("docs/Old Name.md"));
+    assert_eq!(
+        t.read("Home2.md"),
+        "---\nrelated: \"[[New]]\"\n---\n# Home\n[[New]] [[New|alias]] [[New#H]] [[New#^b]] [[docs/New]] [[docs/New.md#H|x]]\n[m](docs/New.md) [n](<docs/New.md#H>) [web](https://x.y/Old%20Name.md) [[Other]]\n`[[Old Name]]` code\n```\n[[Old Name]]\n```\n"
+    );
+    let base = t.read("views.base");
+    assert!(
+        base.contains("link(\"New\")") && base.contains("file(\"docs/New.md\")"),
+        "{base}"
+    );
+    assert!(base.contains("displayName: \"[[New]]\""), "{base}");
+    // the index agrees: backlinks and unresolved are computed by name
+    assert_eq!(t.ok(&["backlinks", "file=New", "total"]), "1\n");
+    assert_eq!(t.ok(&["unresolved", "total"]), "1\n"); // [[missing note]] only
+                                                       // idempotent: the old name no longer exists
+    assert_eq!(t.code(&["rename", "file=Old Name", "name=New"]).0, 1);
+}
+
+#[test]
+fn rename_dry_run_and_opt_out_write_nothing_to_links() {
+    let t = linky_vault();
+    let home = t.read("Home2.md");
+    let out = t.ok(&["rename", "file=Old Name", "name=New", "dry-run"]);
+    assert!(
+        out.starts_with("Would rename docs/Old Name.md -> docs/New.md (would update "),
+        "{out}"
+    );
+    assert!(
+        out.contains("  Home2.md (") && out.contains("  views.base ("),
+        "{out}"
+    );
+    assert!(t.exists("docs/Old Name.md") && !t.exists("docs/New.md"));
+    assert_eq!(t.read("Home2.md"), home);
+    let json = t.ok(&[
+        "rename",
+        "file=Old Name",
+        "name=New",
+        "dry-run",
+        "format=json",
+    ]);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["dryRun"], true);
+    assert_eq!(v["to"], "docs/New.md");
+    assert!(v["links"].as_u64().unwrap() >= 10);
+    // opt out: file moves, links stay
+    t.ok(&["rename", "file=Old Name", "name=New", "no-update-links"]);
+    assert!(t.exists("docs/New.md"));
+    assert_eq!(t.read("Home2.md"), home);
+}
+
+#[test]
+fn rename_validates_names_and_never_overwrites() {
+    let t = linky_vault();
+    for bad in [
+        "a/b", "a\\b", "x:y", "x?", "..", ".hidden", "a#b", "a^b", "a[b", "CON", "x.", "",
+        "a\u{7}b",
+    ] {
+        let arg = format!("name={bad}");
+        let (code, err) = t.code(&["rename", "file=Old Name", &arg]);
+        assert!(code == 1 || code == 2, "{bad:?} accepted: {err}");
+    }
+    t.write("docs/Sibling.md", "s\n");
+    assert_eq!(t.code(&["rename", "file=Old Name", "name=Sibling"]).0, 1);
+    assert!(t.exists("docs/Old Name.md") && t.exists("docs/Sibling.md"));
+    // a same-name file in another folder is not a collision
+    t.write("elsewhere/Other.md", "x\n");
+    t.ok(&["rename", "file=Old Name", "name=Other"]);
+    assert!(t.exists("docs/Other.md"));
+    // the folder name stays; `.obsidian` is never a target
+    assert_eq!(t.code(&["move", "file=Other", "to=.obsidian"]).0, 1);
+}
+
+#[test]
+fn rename_attachments_notes_with_path_and_extension_rules() {
+    let t = T::new();
+    t.write("img/pic one.png", "png");
+    t.write(
+        "A.md",
+        "![[pic one.png]] ![[img/pic one.png|200]] ![p](img/pic%20one.png) [[pic one]]\n",
+    );
+    t.ok(&["rename", "path=img/pic one.png", "name=photo"]);
+    assert!(t.exists("img/photo.png"));
+    assert_eq!(
+        t.read("A.md"),
+        "![[photo.png]] ![[img/photo.png|200]] ![p](img/photo.png) [[pic one]]\n"
+    );
+    // explicit extension is accepted when it matches, appended otherwise
+    t.ok(&["rename", "path=img/photo.png", "name=shot.png"]);
+    assert!(t.exists("img/shot.png"));
+    t.ok(&["rename", "path=Archive/Old.md", "name=v1.2"]);
+    assert!(t.exists("Archive/v1.2.md"));
+    assert_eq!(t.read("Projects/Beta.md").len() > 0, true);
+}
+
+#[test]
+fn rename_case_only_goes_through_a_temporary_name() {
+    let t = T::new();
+    t.write("Notes/gamma.md", "# g\n");
+    t.write("L.md", "[[gamma]] [[Notes/gamma]]\n");
+    let out = t.ok(&["rename", "path=Notes/gamma.md", "name=Gamma"]);
+    assert!(
+        out.starts_with("Renamed Notes/gamma.md -> Notes/Gamma.md"),
+        "{out}"
+    );
+    let names: Vec<String> = fs::read_dir(t.vault.path().join("Notes"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["Gamma.md".to_string()]);
+    assert_eq!(t.read("L.md"), "[[Gamma]] [[Notes/Gamma]]\n");
+}
+
+#[test]
+fn rename_with_duplicate_names_keeps_links_unambiguous() {
+    let t = T::new();
+    t.write("a/Twin.md", "a\n");
+    t.write("b/Other.md", "b\n");
+    t.write("S.md", "[[a/Twin]] [[Twin]]\n");
+    // renaming a/Twin to Other creates a second `Other`: bare links to it fall back to the path
+    t.ok(&["rename", "path=a/Twin.md", "name=Other"]);
+    let s = t.read("S.md");
+    assert!(s.starts_with("[[a/Other]] "), "{s}");
+    assert!(
+        s.contains("[[a/Other]]\n") || s.ends_with("[[Other]]\n"),
+        "{s}"
+    );
+    assert_eq!(t.ok(&["backlinks", "path=a/Other.md", "total"]), "1\n");
+}
+
+#[test]
+fn move_dry_run_and_rename_unresolved_target() {
+    let t = T::new();
+    assert_eq!(t.code(&["rename", "file=does not exist", "name=x"]).0, 1);
+    assert_eq!(t.code(&["rename", "name=x"]).0, 2);
+    let out = t.ok(&["move", "file=Beta", "to=Archive", "dry-run"]);
+    assert!(
+        out.starts_with("Would move Projects/Beta.md -> Archive/Beta.md"),
+        "{out}"
+    );
+    assert!(t.exists("Projects/Beta.md"));
+}

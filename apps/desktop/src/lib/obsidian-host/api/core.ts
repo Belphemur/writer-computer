@@ -536,6 +536,9 @@ export interface SettingTabLike {
   name: string;
   containerEl: HTMLElement;
   display(): void;
+  /** Host entry (our SettingTab): picks declarative definitions over display(), like Obsidian. */
+  hostDisplay?(): void;
+  update?(): void;
   hide(): void;
 }
 export interface SettingTabEntry {
@@ -694,6 +697,11 @@ export class Plugin extends Component {
   addSettingTab(tab: SettingTabLike): void {
     tab.id = tab.id || this.manifest.id;
     tab.name = tab.name || this.manifest.name;
+    try {
+      tab.update?.(); // Obsidian: addSettingTab() indexes the definitions
+    } catch (e) {
+      console.error(`[plugin] ${this.manifest.id} settings tab update threw:`, e);
+    }
     this.services.settingTabs.add(`${this.manifest.id}:${tab.id}`, {
       owner: this.manifest.id,
       tab,

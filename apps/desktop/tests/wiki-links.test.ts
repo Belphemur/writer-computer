@@ -106,208 +106,74 @@ function makeResult(overrides: Partial<SearchResult> & { path: string }): Search
 }
 
 describe("resolveWikiLink", () => {
-  test("resolves unique stem to internal path", async () => {
-    const fuzzySearch = vi
-      .fn()
-      .mockResolvedValue([makeResult({ path: "/vault/Roadmap.md", relative_path: "Roadmap.md" })]);
-    const fileExists = vi.fn();
+  // The backend resolver (index/resolve.rs, covered by Rust tests) does the matching; these tests
+  // pin what the frontend sends it and how it maps the answer.
+  const resolver = (answer: string | null) =>
+    vi
+      .fn<(target: string, source: string | null) => Promise<string | null>>()
+      .mockResolvedValue(answer);
 
-    const result = await resolveWikiLink("Roadmap", "/vault", fuzzySearch, fileExists);
+  test("resolves by file name through the backend resolver, from the source note", async () => {
+    const resolve = resolver("/vault/Roadmap.md");
+    const result = await resolveWikiLink("Roadmap", "/vault/src.md", resolve);
     expect(result).toEqual({ kind: "internal", path: "/vault/Roadmap.md" });
-    expect(fuzzySearch).toHaveBeenCalledWith("Roadmap", 50);
+    expect(resolve).toHaveBeenCalledWith("Roadmap", "/vault/src.md");
   });
 
-  test("returns unresolved for ambiguous stem", async () => {
-    const fuzzySearch = vi.fn().mockResolvedValue([
-      makeResult({
-        path: "/vault/planning/Roadmap.md",
-        filename: "Roadmap.md",
-        relative_path: "planning/Roadmap.md",
-      }),
-      makeResult({
-        path: "/vault/teams/Roadmap.md",
-        filename: "Roadmap.md",
-        relative_path: "teams/Roadmap.md",
-      }),
-    ]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink("Roadmap", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "unresolved" });
-  });
-
-  test("resolves workspace-relative path with slash", async () => {
-    const fuzzySearch = vi.fn();
-    const fileExists = vi.fn().mockResolvedValue(true);
-
-    const result = await resolveWikiLink("planning/Roadmap", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "internal", path: "/vault/planning/Roadmap.md" });
-    expect(fileExists).toHaveBeenCalledWith("/vault/planning/Roadmap.md");
-    expect(fuzzySearch).not.toHaveBeenCalled();
-  });
-
-  test("resolves workspace-relative paths with spaces and aliases with spaces", async () => {
-    const fuzzySearch = vi.fn();
-    const fileExists = vi.fn().mockResolvedValue(true);
-
+  test("duplicate names are the backend's call (nearest, shortest, alphabetical), not unresolved", async () => {
     const result = await resolveWikiLink(
-      "Project Notes/My Note|Label With Spaces",
-      "/vault",
-      fuzzySearch,
-      fileExists,
+      "Callout",
+      "/vault/a.md",
+      resolver("/vault/Formatting/Callout.md"),
     );
-
-    expect(result).toEqual({ kind: "internal", path: "/vault/Project Notes/My Note.md" });
-    expect(fileExists).toHaveBeenCalledWith("/vault/Project Notes/My Note.md");
-    expect(fuzzySearch).not.toHaveBeenCalled();
-    expect(parseWikiLink("Project Notes/My Note|Label With Spaces")).toMatchObject({
-      path: "Project Notes/My Note",
-      displayText: "Label With Spaces",
-    });
+    expect(result).toEqual({ kind: "internal", path: "/vault/Formatting/Callout.md" });
   });
 
-  test("returns unresolved for missing path target", async () => {
-    const fuzzySearch = vi.fn();
-    const fileExists = vi.fn().mockResolvedValue(false);
-
-    const result = await resolveWikiLink("planning/Missing", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "unresolved" });
+  test("sends the target without .md, alias, heading and block id", async () => {
+    const resolve = resolver("/vault/Project Notes/My Note.md");
+    await resolveWikiLink("Project Notes/My Note.md#Heading|Label With Spaces", null, resolve);
+    expect(resolve).toHaveBeenLastCalledWith("Project Notes/My Note", null);
+    await resolveWikiLink("Format your notes#^376b9d|second option", null, resolve);
+    expect(resolve).toHaveBeenLastCalledWith("Format your notes", null);
   });
 
-  test("strips .md before resolution", async () => {
-    const fuzzySearch = vi
-      .fn()
-      .mockResolvedValue([makeResult({ path: "/vault/Notes.md", relative_path: "Notes.md" })]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink("Notes.md", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "internal", path: "/vault/Notes.md" });
-    expect(fuzzySearch).toHaveBeenCalledWith("Notes", 50);
+  test("keeps non-markdown names whole (attachments, bases)", async () => {
+    const resolve = resolver("/vault/img/Figure 1.png");
+    await resolveWikiLink("Figure 1.png", null, resolve);
+    expect(resolve).toHaveBeenLastCalledWith("Figure 1.png", null);
   });
 
-  test("strips .markdown before resolution", async () => {
-    const fuzzySearch = vi
-      .fn()
-      .mockResolvedValue([
-        makeResult({ path: "/vault/Notes.md", filename: "Notes.md", relative_path: "Notes.md" }),
-      ]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink("Notes.markdown", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "internal", path: "/vault/Notes.md" });
-  });
-
-  test("returns unresolved for empty target", async () => {
-    const fuzzySearch = vi.fn();
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink("  ", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "unresolved" });
-  });
-
-  test("case-insensitive stem matching", async () => {
-    const fuzzySearch = vi
-      .fn()
-      .mockResolvedValue([makeResult({ path: "/vault/Roadmap.md", relative_path: "Roadmap.md" })]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink("roadmap", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "internal", path: "/vault/Roadmap.md" });
-  });
-
-  test("returns unresolved when no results match stem", async () => {
-    const fuzzySearch = vi
-      .fn()
-      .mockResolvedValue([
-        makeResult({ path: "/vault/SomeOther.md", relative_path: "SomeOther.md" }),
-      ]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink("Missing", "/vault", fuzzySearch, fileExists);
-    expect(result).toEqual({ kind: "unresolved" });
-  });
-
-  test("resolves piped links by target instead of alias text", async () => {
-    const fuzzySearch = vi.fn().mockResolvedValue([
-      makeResult({
-        path: "/vault/Adventurer/No prior experience.md",
-        relative_path: "Adventurer/No prior experience.md",
-      }),
-    ]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink(
-      "No prior experience|I have no prior experience",
-      "/vault",
-      fuzzySearch,
-      fileExists,
+  test("a base link carries its #view fragment, a note link does not", async () => {
+    expect(await resolveWikiLink("Tasks.base#Active", null, resolver("/vault/Tasks.base"))).toEqual(
+      {
+        kind: "internal",
+        path: "/vault/Tasks.base",
+        fragment: "Active",
+      },
     );
-
-    expect(result).toEqual({
+    expect(await resolveWikiLink("Note#Heading", null, resolver("/vault/Note.md"))).toEqual({
       kind: "internal",
-      path: "/vault/Adventurer/No prior experience.md",
+      path: "/vault/Note.md",
     });
   });
 
-  test("resolves fragments against the target file", async () => {
-    const fuzzySearch = vi.fn().mockResolvedValue([
-      makeResult({
-        path: "/vault/Formatting/Format your notes.md",
-        relative_path: "Formatting/Format your notes.md",
-      }),
-    ]);
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink(
-      "Format your notes#^376b9d|second option",
-      "/vault",
-      fuzzySearch,
-      fileExists,
-    );
-
-    expect(result).toEqual({
-      kind: "internal",
-      path: "/vault/Formatting/Format your notes.md",
-    });
+  test("unresolved when the backend finds nothing; empty targets never ask", async () => {
+    expect(await resolveWikiLink("Missing", null, resolver(null))).toEqual({ kind: "unresolved" });
+    const resolve = resolver("/x");
+    expect(await resolveWikiLink("  ", null, resolve)).toEqual({ kind: "unresolved" });
+    expect(resolve).not.toHaveBeenCalled();
   });
 
-  test("resolves same-file fragment links to the current file", async () => {
-    const fuzzySearch = vi.fn();
-    const fileExists = vi.fn();
-
-    const result = await resolveWikiLink(
-      "#^0f681f|with great power comes great responsibility",
-      "/vault",
-      fuzzySearch,
-      fileExists,
-      "/vault/Vault is just a local folder.md",
-    );
-
-    expect(result).toEqual({
-      kind: "internal",
-      path: "/vault/Vault is just a local folder.md",
-    });
-    expect(fuzzySearch).not.toHaveBeenCalled();
+  test("same-file fragment links resolve to the current file without asking", async () => {
+    const resolve = resolver(null);
+    const result = await resolveWikiLink("#^0f681f|alias", "/vault/Self.md", resolve);
+    expect(result).toEqual({ kind: "internal", path: "/vault/Self.md" });
+    expect(resolve).not.toHaveBeenCalled();
   });
 
-  test("keeps duplicate stems unresolved unless the path is qualified", async () => {
-    const fuzzySearch = vi.fn().mockResolvedValue([
-      makeResult({
-        path: "/vault/Formatting/Callout.md",
-        filename: "Callout.md",
-        relative_path: "Formatting/Callout.md",
-      }),
-      makeResult({
-        path: "/vault/Other/Callout.md",
-        filename: "Callout.md",
-        relative_path: "Other/Callout.md",
-      }),
-    ]);
-    const fileExists = vi.fn().mockResolvedValue(false);
-
-    const result = await resolveWikiLink("Callout", "/vault", fuzzySearch, fileExists);
-
-    expect(result).toEqual({ kind: "unresolved" });
+  test("backend errors (index still building) propagate instead of becoming unresolved", async () => {
+    const resolve = vi.fn().mockRejectedValue(new Error("index is still building"));
+    await expect(resolveWikiLink("Note", null, resolve)).rejects.toThrow("still building");
   });
 });
 

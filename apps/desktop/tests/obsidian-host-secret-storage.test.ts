@@ -114,4 +114,45 @@ describe("SecretStorage", () => {
     expect(calls).toEqual(["set:a=new", "delete:gone"]);
     expect(store.get("a")).toBe("new");
   });
+
+  it("reports unavailable on a denied keychain, then retry fills the cache and notifies", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { backend, store } = fakeBackend({ k: "v" });
+    const load = backend.secretsLoad;
+    let deny = true;
+    backend.secretsLoad = async () => {
+      if (deny) throw new Error("User canceled the authorization");
+      return load();
+    };
+    const s = new SecretStorage();
+    const seen = vi.fn();
+    s.subscribe(seen);
+    await s.hydrate(backend);
+    expect(s.status).toEqual({ state: "unavailable", reason: "User canceled the authorization" });
+    expect(s.getSecret("k")).toBeNull();
+    // a write while unavailable is not sent to the store (no partial overwrite) and is logged
+    s.setSecret("new", "n");
+    await s.flush();
+    expect(store.has("new")).toBe(false);
+    expect(errorLog().some((e) => e.phase === "set:new")).toBe(true);
+    deny = false;
+    await s.retry();
+    await s.flush();
+    expect(s.status).toEqual({ state: "ready" });
+    expect(s.getSecret("k")).toBe("v");
+    expect(s.getSecret("new")).toBe("n");
+    expect(store.get("new")).toBe("n"); // replayed after the successful read
+    expect(seen).toHaveBeenCalled();
+  });
+
+  it("retry stays unavailable when the keychain still fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { backend } = fakeBackend();
+    backend.secretsLoad = async () => {
+      throw new Error("locked");
+    };
+    const s = new SecretStorage();
+    await s.hydrate(backend);
+    expect((await s.retry()).state).toBe("unavailable");
+  });
 });

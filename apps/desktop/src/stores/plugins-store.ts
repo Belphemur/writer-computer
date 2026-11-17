@@ -149,6 +149,8 @@ interface PluginsState {
   selectLeaf: (leaf: WorkspaceLeaf) => void;
   /** Mirrors a Settings > Secrets change into the running host (null = deleted). */
   syncSecret: (id: string, value: string | null) => void;
+  /** Re-attempts the host's keychain read after a denial; no-op when it already succeeded. */
+  retrySecrets: () => Promise<void>;
 }
 
 interface Session {
@@ -373,17 +375,18 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       services.settingTabs.subscribe(sync(() => set({ settingTabs: services.settingTabs.list() }))),
       services.registrations.subscribe(
         sync(() => {
-          const next = services.registrations
-            .list()
-            .filter((r) => r.kind === "editorExtension")
-            .map((r) => r.value as Extension);
+          const regs = services.registrations.list().filter((r) => r.kind === "editorExtension");
+          const next = regs.map((r) => r.value as Extension);
           if (
             next.length === appliedExtensions.length &&
             next.every((x, i) => x === appliedExtensions[i])
           )
             return;
           appliedExtensions = next;
-          const failure = setPluginEditorExtensions(next);
+          const failure = setPluginEditorExtensions(
+            next,
+            regs.map((r) => r.owner),
+          );
           if (failure)
             set({ actionError: `A plugin editor extension was rejected: ${failure.message}` });
         }),
@@ -452,6 +455,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
     paneWidth: PANE_DEFAULT_WIDTH,
 
     syncSecret: (id, value) => session?.host.app.secretStorage.applyExternal(id, value),
+    retrySecrets: async () => void (await session?.host.app.secretStorage.retry()),
 
     attach: (root, deps) => {
       const gen = ++generation;

@@ -47,6 +47,17 @@ const FILE: ParamSpec = p(
 );
 const PATH: ParamSpec = p("path", "exact vault-relative path, e.g. folder/note.md");
 
+const RELOCATE_FLAGS: &[(&str, &str)] = &[
+    (
+        "dry-run",
+        "print the plan (files and link counts) and change nothing",
+    ),
+    (
+        "no-update-links",
+        "do not rewrite links to the file (they are updated by default)",
+    ),
+];
+
 const NO_FLAGS: &[(&str, &str)] = &[];
 const NO_PARAMS: &[ParamSpec] = &[];
 const NO_FORMATS: &[&str] = &[];
@@ -204,11 +215,16 @@ pub static COMMANDS: &[CommandSpec] = &[
     cmd!(
         "move",
         "Content",
-        "Move a file and update links to it",
-        &[FILE, PATH, req("to", "destination folder or path")],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
+        "Move (and optionally rename) a file and update links to it",
+        &[
+            FILE,
+            PATH,
+            req("to", "destination folder or path"),
+            p("format", "text | json")
+        ],
+        RELOCATE_FLAGS,
+        &["text", "json"],
+        Some("text"),
         cmd_notes::mv
     ),
     cmd!(
@@ -218,11 +234,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[
             FILE,
             PATH,
-            req("name", "new name (extension kept if omitted)")
+            req("name", "new name (extension kept if omitted)"),
+            p("format", "text | json")
         ],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
+        RELOCATE_FLAGS,
+        &["text", "json"],
+        Some("text"),
         cmd_notes::rename
     ),
     cmd!(

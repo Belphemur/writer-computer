@@ -2,32 +2,42 @@
 //! macOS Keychain, Windows Credential Manager, Linux Secret Service (via the `keyring`
 //! crate). Nothing is ever written to disk by Writer.
 //!
-//! Layout: one credential per secret (`secret:<id>`; Windows caps a credential blob at a
-//! few KB, so one blob for everything would not scale) plus an index credential
-//! (`__index__`, a JSON array of ids) because credential stores cannot be enumerated
-//! portably. The service name derives from the app identifier, so the e2e build (a
-//! different identifier) never touches the real keychain. Secrets are shared by every
-//! plugin and vault of the user, like Obsidian's keychain: that sharing is the API's point.
+//! Layout: ONE credential (account `secrets:v2`) holds a JSON document
+//! `{"version":2,"secrets":{"<id>":"<value>"}}`. One item means one access, so a rebuilt
+//! (ad-hoc signed) app triggers one Keychain password prompt instead of one per secret. The
+//! document is read once per process into memory; every change writes the whole document
+//! back, and the cache is updated only after that write succeeded. A failed read is never
+//! cached, so a retry (after the user denied a prompt, or unlocked the keychain) just works.
+//! There is no migration from the earlier one-item-per-secret layout (`secret:<id>` plus
+//! `__index__`): those items are ignored and the user re-enters keys.
 //!
-//! Order of writes keeps the index a superset of what exists: set = secret then index;
-//! delete = index then secret. A crash in between leaves an orphan secret, never an id
-//! that points at nothing the user can see.
+//! A corrupt document is an error and is never overwritten. Errors never contain secret
+//! values. The service name derives from the app identifier, so the e2e build (a different
+//! identifier) never touches the real keychain. Secrets are shared by every plugin and vault
+//! of the user, like Obsidian's keychain.
+//!
+//! Item size: macOS Keychain and the Linux Secret Service accept far more than we need;
+//! Windows Credential Manager caps a blob at 2560 bytes and `keyring` stores UTF-16, so the
+//! whole document is capped at 1280 UTF-8 bytes there and 64 KiB elsewhere.
 
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const INDEX_ACCOUNT: &str = "__index__";
+const DOC_ACCOUNT: &str = "secrets:v2";
+const DOC_VERSION: u32 = 2;
 const MAX_ID_LEN: usize = 256;
-/// Windows Credential Manager rejects larger blobs; a longer "secret" is not a key anyway.
 const MAX_SECRET_BYTES: usize = 2048;
 const MAX_SECRETS: usize = 256;
+#[cfg(windows)]
+const MAX_DOC_BYTES: usize = 1280;
+#[cfg(not(windows))]
+const MAX_DOC_BYTES: usize = 64 * 1024;
 
 pub trait SecretBackend: Send + Sync {
     /// `Ok(None)` when the credential does not exist.
     fn get(&self, account: &str) -> Result<Option<String>, String>;
     fn set(&self, account: &str, value: &str) -> Result<(), String>;
-    /// Deleting a missing credential is not an error.
-    fn delete(&self, account: &str) -> Result<(), String>;
 }
 
 /// The OS credential store through `keyring`.
@@ -59,23 +69,20 @@ impl SecretBackend for KeyringBackend {
             .set_password(value)
             .map_err(|e| e.to_string())
     }
-
-    fn delete(&self, account: &str) -> Result<(), String> {
-        match self.entry(account)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
-    }
 }
+
+type Secrets = BTreeMap<String, String>;
 
 pub struct PluginSecrets {
     backend: Box<dyn SecretBackend>,
-    /// Serialises read-modify-write of the index.
-    lock: Mutex<()>,
+    /// The cached document (`None` until a read succeeded). Also serialises read-modify-write.
+    cache: Mutex<Option<Secrets>>,
 }
 
-fn account(id: &str) -> String {
-    format!("secret:{id}")
+#[derive(Serialize, Deserialize)]
+struct Doc {
+    version: u32,
+    secrets: Secrets,
 }
 
 fn check_id(id: &str) -> Result<(), String> {
@@ -85,11 +92,25 @@ fn check_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn encode(secrets: &Secrets) -> Result<String, String> {
+    let raw = serde_json::to_string(&Doc {
+        version: DOC_VERSION,
+        secrets: secrets.clone(),
+    })
+    .map_err(|_| "EIO: could not encode the secrets".to_string())?;
+    if raw.len() > MAX_DOC_BYTES {
+        return Err(format!(
+            "EINVAL: all secrets together are limited to {MAX_DOC_BYTES} bytes by the system credential store"
+        ));
+    }
+    Ok(raw)
+}
+
 impl PluginSecrets {
     pub fn new(backend: Box<dyn SecretBackend>) -> Self {
         Self {
             backend,
-            lock: Mutex::new(()),
+            cache: Mutex::new(None),
         }
     }
 
@@ -98,46 +119,49 @@ impl PluginSecrets {
         format!("{app_identifier}.plugin-secrets")
     }
 
-    fn read_index(&self) -> Result<Vec<String>, String> {
-        match self.backend.get(INDEX_ACCOUNT)? {
-            None => Ok(Vec::new()),
-            // A corrupt index is an error, not an empty list: writing over it would orphan
-            // every secret the user has.
-            Some(raw) => serde_json::from_str(&raw)
-                .map_err(|e| format!("EIO: the secret index is unreadable: {e}")),
+    /// Reads the document into the cache if it is not there yet. A failed read leaves the
+    /// cache empty so the next call tries again.
+    fn loaded<'a>(&self, guard: &'a mut Option<Secrets>) -> Result<&'a mut Secrets, String> {
+        if guard.is_none() {
+            let secrets = match self.backend.get(DOC_ACCOUNT)? {
+                None => Secrets::new(),
+                // Corrupt = error, never empty: writing over it would destroy the user's keys.
+                // The parse error is not echoed: it can quote document content.
+                Some(raw) => match serde_json::from_str::<Doc>(&raw) {
+                    Ok(d) if d.version == DOC_VERSION => d.secrets,
+                    Ok(_) => return Err("EIO: the secret store has an unsupported version".into()),
+                    Err(e) => {
+                        return Err(format!(
+                            "EIO: the secret store is unreadable (line {}, column {})",
+                            e.line(),
+                            e.column()
+                        ))
+                    }
+                },
+            };
+            *guard = Some(secrets);
         }
+        Ok(guard.as_mut().expect("just loaded"))
     }
 
-    fn write_index(&self, ids: &[String]) -> Result<(), String> {
-        let raw = serde_json::to_string(ids).map_err(|e| e.to_string())?;
-        self.backend.set(INDEX_ACCOUNT, &raw)
+    /// Every secret as `id -> value`.
+    pub fn load_all(&self) -> Result<Secrets, String> {
+        let mut g = self.cache.lock();
+        Ok(self.loaded(&mut g)?.clone())
     }
 
-    /// Every secret as `id -> value`. A secret listed in the index but gone from the store
-    /// is skipped.
-    pub fn load_all(&self) -> Result<BTreeMap<String, String>, String> {
-        let _g = self.lock.lock();
-        let mut out = BTreeMap::new();
-        for id in self.read_index()? {
-            if let Some(v) = self.backend.get(&account(&id))? {
-                out.insert(id, v);
-            }
-        }
-        Ok(out)
-    }
-
-    /// Ids of the secrets that exist, sorted. Values are read only to drop index entries whose
-    /// credential is gone, and never leave this function: the Settings UI lists names only.
+    /// Ids of the secrets, sorted. The Settings UI lists names only.
     pub fn list_ids(&self) -> Result<Vec<String>, String> {
-        let _g = self.lock.lock();
-        let mut out = Vec::new();
-        for id in self.read_index()? {
-            if self.backend.get(&account(&id))?.is_some() {
-                out.push(id);
-            }
-        }
-        out.sort();
-        Ok(out)
+        let mut g = self.cache.lock();
+        Ok(self.loaded(&mut g)?.keys().cloned().collect())
+    }
+
+    /// Writes `next` as the whole document, then makes it the cache.
+    fn commit(&self, guard: &mut Option<Secrets>, next: Secrets) -> Result<(), String> {
+        let raw = encode(&next)?;
+        self.backend.set(DOC_ACCOUNT, &raw)?;
+        *guard = Some(next);
+        Ok(())
     }
 
     pub fn set(&self, id: &str, value: &str) -> Result<(), String> {
@@ -147,29 +171,24 @@ impl PluginSecrets {
                 "EINVAL: a secret is limited to {MAX_SECRET_BYTES} bytes"
             ));
         }
-        let _g = self.lock.lock();
-        let mut ids = self.read_index()?;
-        let known = ids.iter().any(|i| i == id);
-        if !known && ids.len() >= MAX_SECRETS {
+        let mut g = self.cache.lock();
+        // Never writes unless the full document was read first: no partial overwrite.
+        let mut next = self.loaded(&mut g)?.clone();
+        if !next.contains_key(id) && next.len() >= MAX_SECRETS {
             return Err(format!("EINVAL: at most {MAX_SECRETS} secrets"));
         }
-        self.backend.set(&account(id), value)?;
-        if !known {
-            ids.push(id.to_string());
-            self.write_index(&ids)?;
-        }
-        Ok(())
+        next.insert(id.to_string(), value.to_string());
+        self.commit(&mut g, next)
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
         check_id(id)?;
-        let _g = self.lock.lock();
-        let mut ids = self.read_index()?;
-        if ids.iter().any(|i| i == id) {
-            ids.retain(|i| i != id);
-            self.write_index(&ids)?;
+        let mut g = self.cache.lock();
+        let mut next = self.loaded(&mut g)?.clone();
+        if next.remove(id).is_none() {
+            return Ok(());
         }
-        self.backend.delete(&account(id))
+        self.commit(&mut g, next)
     }
 }
 
@@ -181,18 +200,24 @@ mod tests {
     #[derive(Default, Clone)]
     struct Fake {
         map: Arc<Mutex<BTreeMap<String, String>>>,
+        /// Fails get/set with this message while set (a denied or locked keychain).
+        fail: Arc<Mutex<Option<String>>>,
+        gets: Arc<Mutex<usize>>,
     }
 
     impl SecretBackend for Fake {
         fn get(&self, a: &str) -> Result<Option<String>, String> {
+            *self.gets.lock() += 1;
+            if let Some(m) = self.fail.lock().clone() {
+                return Err(m);
+            }
             Ok(self.map.lock().get(a).cloned())
         }
         fn set(&self, a: &str, v: &str) -> Result<(), String> {
+            if let Some(m) = self.fail.lock().clone() {
+                return Err(m);
+            }
             self.map.lock().insert(a.into(), v.into());
-            Ok(())
-        }
-        fn delete(&self, a: &str) -> Result<(), String> {
-            self.map.lock().remove(a);
             Ok(())
         }
     }
@@ -203,49 +228,98 @@ mod tests {
     }
 
     #[test]
-    fn set_load_overwrite_delete() {
-        let (s, _) = secrets();
+    fn fresh_install_is_empty_and_writes_nothing() {
+        let (s, f) = secrets();
         assert!(s.load_all().unwrap().is_empty());
+        assert!(s.list_ids().unwrap().is_empty());
+        assert!(f.map.lock().is_empty());
+    }
+
+    #[test]
+    fn set_load_overwrite_delete_list() {
+        let (s, f) = secrets();
         s.set("openai", "k1").unwrap();
         s.set("anthropic", "k2").unwrap();
         s.set("openai", "k3").unwrap();
-        let all = s.load_all().unwrap();
-        assert_eq!(all.len(), 2);
-        assert_eq!(all["openai"], "k3");
+        assert_eq!(s.load_all().unwrap()["openai"], "k3");
+        assert_eq!(s.list_ids().unwrap(), ["anthropic", "openai"]);
         s.delete("openai").unwrap();
         s.delete("openai").unwrap();
-        assert_eq!(
-            s.load_all().unwrap().keys().collect::<Vec<_>>(),
-            ["anthropic"]
-        );
+        assert_eq!(s.list_ids().unwrap(), ["anthropic"]);
+        // exactly one keychain item, whatever the number of secrets
+        assert_eq!(f.map.lock().keys().collect::<Vec<_>>(), [DOC_ACCOUNT]);
     }
 
     #[test]
-    fn list_ids_returns_sorted_names_only_for_secrets_that_exist() {
-        let (s, f) = secrets();
-        assert!(s.list_ids().unwrap().is_empty());
-        s.set("zeta", "v").unwrap();
-        s.set("alpha", "v").unwrap();
-        s.set("gone", "v").unwrap();
-        f.delete(&account("gone")).unwrap();
-        assert_eq!(s.list_ids().unwrap(), ["alpha", "zeta"]);
-        s.delete("alpha").unwrap();
-        assert_eq!(s.list_ids().unwrap(), ["zeta"]);
-    }
-
-    #[test]
-    fn list_ids_fails_on_a_corrupt_index() {
-        let (s, f) = secrets();
-        f.set(INDEX_ACCOUNT, "{not json").unwrap();
-        assert!(s.list_ids().is_err());
-    }
-
-    #[test]
-    fn survives_a_new_instance_over_the_same_store() {
+    fn stores_the_documented_json_shape() {
         let (s, f) = secrets();
         s.set("a", "1").unwrap();
-        let again = PluginSecrets::new(Box::new(f));
+        let raw = f.get(DOC_ACCOUNT).unwrap().unwrap();
+        assert_eq!(raw, r#"{"version":2,"secrets":{"a":"1"}}"#);
+    }
+
+    #[test]
+    fn reads_the_keychain_once_per_process() {
+        let (s, f) = secrets();
+        s.set("a", "1").unwrap();
+        *f.gets.lock() = 0;
+        let again = PluginSecrets::new(Box::new(f.clone()));
+        again.load_all().unwrap();
+        again.list_ids().unwrap();
+        again.set("b", "2").unwrap();
+        again.delete("b").unwrap();
+        assert_eq!(*f.gets.lock(), 1);
         assert_eq!(again.load_all().unwrap()["a"], "1");
+    }
+
+    #[test]
+    fn legacy_items_are_ignored_and_left_alone() {
+        let (s, f) = secrets();
+        f.set("__index__", r#"["old"]"#).unwrap();
+        f.set("secret:old", "legacy-value").unwrap();
+        assert!(s.load_all().unwrap().is_empty());
+        s.set("new", "v").unwrap();
+        assert_eq!(s.list_ids().unwrap(), ["new"]);
+        assert_eq!(f.get("secret:old").unwrap().unwrap(), "legacy-value");
+    }
+
+    #[test]
+    fn a_corrupt_document_is_an_error_and_is_not_overwritten() {
+        for bad in ["{not json", r#"{"version":1,"secrets":{}}"#, "[1,2]"] {
+            let (s, f) = secrets();
+            f.set(DOC_ACCOUNT, bad).unwrap();
+            assert!(s.load_all().is_err());
+            assert!(s.list_ids().is_err());
+            assert!(s.set("a", "1").is_err());
+            assert!(s.delete("a").is_err());
+            assert_eq!(f.get(DOC_ACCOUNT).unwrap().unwrap(), bad);
+        }
+    }
+
+    #[test]
+    fn a_failed_read_is_not_cached_and_blocks_writes() {
+        let (s, f) = secrets();
+        s.set("a", "1").unwrap();
+        let s = PluginSecrets::new(Box::new(f.clone()));
+        *f.fail.lock() = Some("user canceled".into());
+        assert!(s.load_all().is_err());
+        assert!(s.set("b", "2").is_err());
+        assert!(s.delete("a").is_err());
+        *f.fail.lock() = None;
+        // the retry works without a restart, and nothing was lost or overwritten
+        assert_eq!(s.load_all().unwrap().len(), 1);
+        s.set("b", "2").unwrap();
+        assert_eq!(s.list_ids().unwrap(), ["a", "b"]);
+    }
+
+    #[test]
+    fn a_failed_write_keeps_the_cache_and_the_store_unchanged() {
+        let (s, f) = secrets();
+        s.set("a", "1").unwrap();
+        *f.fail.lock() = Some("keychain locked".into());
+        assert!(s.set("b", "2").is_err());
+        *f.fail.lock() = None;
+        assert_eq!(s.list_ids().unwrap(), ["a"]);
     }
 
     #[test]
@@ -255,35 +329,61 @@ mod tests {
         assert!(s.set("bad\nid", "x").is_err());
         assert!(s.set(&"a".repeat(257), "x").is_err());
         assert!(s.set("big", &"x".repeat(MAX_SECRET_BYTES + 1)).is_err());
-        assert!(s.set("ok", &"x".repeat(MAX_SECRET_BYTES)).is_ok());
+    }
+
+    #[test]
+    fn the_document_has_a_size_cap_with_a_clear_error() {
+        let (s, f) = secrets();
+        let mut hit = None;
+        for i in 0..(MAX_DOC_BYTES / 1000 + 2) {
+            if let Err(e) = s.set(&format!("k{i}"), &"x".repeat(1000)) {
+                hit = Some(e);
+                break;
+            }
+        }
+        let e = hit.expect("cap reached");
+        assert!(e.contains("limited to") && e.contains("bytes"));
+        assert!(f.get(DOC_ACCOUNT).unwrap().unwrap().len() <= MAX_DOC_BYTES);
     }
 
     #[test]
     fn caps_the_number_of_secrets() {
+        // Many tiny secrets: the count cap (or the document cap on Windows) must trip cleanly.
         let (s, _) = secrets();
-        for i in 0..MAX_SECRETS {
-            s.set(&format!("id{i}"), "v").unwrap();
+        let mut failed = false;
+        for i in 0..=MAX_SECRETS {
+            if s.set(&format!("i{i}"), "v").is_err() {
+                failed = true;
+                break;
+            }
         }
-        assert!(s.set("one-more", "v").is_err());
-        s.set("id0", "changed").unwrap();
+        assert!(failed);
+        let n = s.list_ids().unwrap().len();
+        assert!(n <= MAX_SECRETS);
+        // replacing an existing id is still allowed at the cap
+        s.set("i0", "w").unwrap();
     }
 
     #[test]
-    fn a_corrupt_index_is_an_error_and_is_not_overwritten() {
+    fn errors_never_contain_values() {
         let (s, f) = secrets();
-        f.set(INDEX_ACCOUNT, "{not json").unwrap();
-        assert!(s.load_all().is_err());
-        assert!(s.set("a", "1").is_err());
-        assert_eq!(f.get(INDEX_ACCOUNT).unwrap().unwrap(), "{not json");
-    }
-
-    #[test]
-    fn a_listed_but_missing_secret_is_skipped() {
-        let (s, f) = secrets();
-        s.set("a", "1").unwrap();
-        s.set("b", "2").unwrap();
-        f.delete(&account("a")).unwrap();
-        assert_eq!(s.load_all().unwrap().keys().collect::<Vec<_>>(), ["b"]);
+        let secret = "synthetic-secret-value-XYZ";
+        s.set("a", secret).unwrap();
+        let e = s
+            .set("b", &format!("{secret}{}", "x".repeat(MAX_SECRET_BYTES)))
+            .unwrap_err();
+        assert!(!e.contains(secret));
+        // a corrupt document whose type error would quote a value
+        let s2 = PluginSecrets::new(Box::new(f.clone()));
+        f.set(
+            DOC_ACCOUNT,
+            &format!(r#"{{"version":"{secret}","secrets":{{}}}}"#),
+        )
+        .unwrap();
+        let e = s2.load_all().unwrap_err();
+        assert!(!e.contains(secret), "{e}");
+        let e = s2.set("c", "v").unwrap_err();
+        assert!(!e.contains(secret), "{e}");
     }
 
     #[test]

@@ -229,15 +229,14 @@ describe("opening a base in the editor store", () => {
 });
 
 describe("wiki links to bases", () => {
-  const never = async () => [];
-  const exists = (paths: string[]) => async (p: string) => paths.includes(p);
+  const backend = (files: Record<string, string>) => async (target: string) =>
+    files[target] ?? null;
 
   it("resolves [[folder/x.base#View]] to the file and carries the view as fragment", async () => {
     const result = await resolveWikiLink(
       "Projects/tasks.base#Board",
-      "/v",
-      never,
-      exists(["/v/Projects/tasks.base"]),
+      null,
+      backend({ "Projects/tasks.base": "/v/Projects/tasks.base" }),
     );
     expect(result).toEqual({
       kind: "internal",
@@ -247,26 +246,16 @@ describe("wiki links to bases", () => {
   });
 
   it("finds a bare [[x.base]] by file name", async () => {
-    const find = vi.fn(async (name: string) =>
-      name === "tasks.base" ? "/v/deep/tasks.base" : null,
-    );
-    expect(await resolveWikiLink("tasks.base", "/v", never, exists([]), null, find)).toEqual({
+    const find = backend({ "tasks.base": "/v/deep/tasks.base" });
+    expect(await resolveWikiLink("tasks.base", null, find)).toEqual({
       kind: "internal",
       path: "/v/deep/tasks.base",
     });
-    expect(await resolveWikiLink("missing.base", "/v", never, exists([]), null, find)).toEqual({
-      kind: "unresolved",
-    });
-    expect(await resolveWikiLink("tasks.base", "/v", never, exists([]))).toEqual({
-      kind: "unresolved",
-    });
+    expect(await resolveWikiLink("missing.base", null, find)).toEqual({ kind: "unresolved" });
   });
 
   it("leaves note links unchanged", async () => {
-    const found = [
-      { path: "/v/n.md", filename: "n.md", relative_path: "n.md", score: 1, match_indices: [] },
-    ];
-    expect(await resolveWikiLink("n", "/v", async () => found, exists([]))).toEqual({
+    expect(await resolveWikiLink("n", null, backend({ n: "/v/n.md" }))).toEqual({
       kind: "internal",
       path: "/v/n.md",
     });

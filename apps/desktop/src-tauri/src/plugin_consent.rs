@@ -67,6 +67,16 @@ impl ConsentStore {
             .is_some_and(|v| v.iter().any(|p| p == ANY_PROGRAM || *p == program))
     }
 
+    /// The plugin holds the wildcard ("always allow", every program) in this vault. A consent for
+    /// one named program does not count: `plugin_home_files` needs the full spawn capability.
+    pub fn has_wildcard(&self, root: &Path, plugin_id: &str) -> bool {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        self.read()
+            .get(&vault_key(root))
+            .and_then(|m| m.get(plugin_id))
+            .is_some_and(|v| v.iter().any(|p| p == ANY_PROGRAM))
+    }
+
     /// Grant the plugin every program in this vault.
     pub fn allow_plugin(&self, root: &Path, plugin_id: &str) -> Result<(), String> {
         self.allow(root, plugin_id, Path::new(ANY_PROGRAM))
@@ -168,7 +178,14 @@ mod tests {
         );
         assert!(!s.is_allowed(&v1, "other", Path::new("/bin/zsh")));
         assert!(!s.is_allowed(&v2, "copilot", Path::new("/bin/zsh")));
+        assert!(s.has_wildcard(&v1, "copilot"));
+        assert!(!s.has_wildcard(&v1, "other"), "per plugin");
+        assert!(!s.has_wildcard(&v2, "copilot"), "per vault");
         s.revoke(&v1, "copilot", ANY_PROGRAM).unwrap();
+        assert!(
+            !s.has_wildcard(&v1, "copilot"),
+            "a named program is not the wildcard"
+        );
         assert!(s.is_allowed(&v1, "copilot", prog), "program entry kept");
         s.clear_vault(&v1).unwrap();
         assert!(s.list(&v1).is_empty());

@@ -14,14 +14,7 @@ export async function openPropertyWikilink(value: string): Promise<void> {
   }
   const target = value.trim().replace(/^\[\[|\]\]$/g, "");
   try {
-    const result = await resolveWikiLink(
-      target,
-      root,
-      tauri.fuzzySearch,
-      tauri.fileExists,
-      null,
-      (name) => tauri.findFileByName(root, name),
-    );
+    const result = await resolveWikiLink(target, null, tauri.resolveWikiLinkTarget);
     if (result.kind === "internal") await editorApi.navigateToFile(result.path);
     else showEditorNotice(`"${target}" was not found in the vault`);
   } catch (e) {

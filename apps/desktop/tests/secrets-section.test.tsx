@@ -85,9 +85,10 @@ describe("Settings > Secrets", () => {
   it("shows a keychain error with a retry that recovers", async () => {
     failList = "keychain locked";
     await mount();
-    expect(container.querySelector("[data-secrets-error]")?.textContent).toContain(
-      "keychain locked",
-    );
+    const notice = container.querySelector("[data-secrets-error]")?.textContent ?? "";
+    expect(notice).toContain("keychain locked");
+    expect(notice).toContain("couldn't read the Keychain");
+    expect(notice).toContain("run without them");
     failList = null;
     await act(async () => button("Retry").click());
     expect(container.querySelector("[data-secrets-error]")).toBeNull();

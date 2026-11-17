@@ -86,3 +86,19 @@ describe("unfurlFreezeFacet integration", () => {
     expect(hideSize(s2)).toBe(before);
   });
 });
+
+describe("a freeze that outlives its pointerup", () => {
+  test("a document swap clears it and the new note gets hide decorations", () => {
+    let state = makeState();
+    state = state.update({ effects: startDragEffect.of(state.selection.ranges) }).state;
+    expect(state.facet(unfurlFreezeFacet)).toBe(true);
+    const swapped = state.update({
+      changes: { from: 0, to: state.doc.length, insert: "# other\n\ntext **b**\n" },
+      selection: EditorSelection.cursor(18),
+      userEvent: "writer.swap",
+    }).state;
+    expect(swapped.field(dragFrozenSelectionField)).toBeNull();
+    expect(swapped.facet(unfurlFreezeFacet)).toBe(false);
+    expect(hideSize(swapped)).toBeGreaterThan(0);
+  });
+});

@@ -7,7 +7,7 @@
 //!   handler) plus `help`; adding a command is one entry and one handler
 //! * `format.rs` — the shared table formatter (json/csv/tsv/md)
 //! * `vault.rs` — `vault=` and working-directory vault resolution
-//! * `cmd_*.rs` — handlers; `linkfix.rs` — link updates for move/rename
+//! * `cmd_*.rs` — handlers; `relocate/` (crate level) — link updates for move/rename
 //!
 //! Handlers return the text for stdout; nothing here prints except [`run_main`].
 //! Exit codes: 0 ok, 1 failure/validation, 2 usage (the launcher keeps its own).
@@ -20,7 +20,6 @@ mod cmd_notes;
 mod cmd_query;
 mod cmd_skills;
 pub mod format;
-pub mod linkfix;
 pub mod registry;
 pub mod vault;
 

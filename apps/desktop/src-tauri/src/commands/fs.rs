@@ -760,6 +760,68 @@ pub async fn rename_entry(
     blocking(move || rename_entry_impl(&old_path, &new_path)).await
 }
 
+/// What [`relocate_entry`] did to the links of the vault.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateResult {
+    /// Links rewritten across the vault.
+    pub links: usize,
+    /// Files in which links were rewritten.
+    pub files: usize,
+    /// Links to the file that could not be rewritten automatically.
+    pub skipped: usize,
+    /// False when the vault index was still building: the file was moved but
+    /// links were not updated (a partial link graph would miss referrers).
+    pub links_updated: bool,
+}
+
+fn vault_err(e: crate::vault_ops::VaultOpError) -> AppError {
+    use crate::vault_ops::VaultOpError as V;
+    match e {
+        V::NotFound(m) => AppError::NotFound(m),
+        V::Invalid(m) if m.ends_with("already exists") => AppError::AlreadyExists(m),
+        V::Invalid(m) => AppError::InvalidPath(m),
+        other => AppError::Io(other.to_string()),
+    }
+}
+
+/// Rename or move one file and rewrite every link to it, using the same
+/// `relocate` plan/apply as `writer rename` / `writer move`. Folders and
+/// files outside an indexed vault go through plain [`rename_entry_impl`].
+#[tauri::command]
+pub async fn relocate_entry(
+    old_path: String,
+    new_path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<RelocateResult, AppError> {
+    authorized_state(&app, &webview, &[&old_path, &new_path])?;
+    blocking(move || {
+        let (_, index) = crate::commands::index::window_index(&app, &webview)?;
+        let plain = RelocateResult {
+            links: 0,
+            files: 0,
+            skipped: 0,
+            links_updated: false,
+        };
+        if Path::new(&old_path).is_dir() || !index.is_ready() {
+            rename_entry_impl(&old_path, &new_path)?;
+            return Ok(plain);
+        }
+        let root = index.root().canonicalize()?;
+        let plan =
+            crate::relocate::plan(&root, &index, &old_path, &new_path, true).map_err(vault_err)?;
+        crate::relocate::apply(&plan).map_err(|e| AppError::Io(e.to_string()))?;
+        Ok(RelocateResult {
+            links: plan.links(),
+            files: plan.edits.len(),
+            skipped: plan.skipped,
+            links_updated: true,
+        })
+    })
+    .await
+}
+
 pub fn delete_entry_impl(path: &str) -> Result<(), AppError> {
     delete_entry_with(path, false)
 }

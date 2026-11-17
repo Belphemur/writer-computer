@@ -31,9 +31,7 @@ export function useCellActions(notify: (kind: "error", message: string) => void)
           void openAbsolute(toAbsolutePath(root, resolved));
           return;
         }
-        resolveWikiLink(target, root, tauri.fuzzySearch, tauri.fileExists, null, (name) =>
-          tauri.findFileByName(root, name),
-        ).then(
+        resolveWikiLink(target, null, tauri.resolveWikiLinkTarget).then(
           (result) => {
             if (result.kind === "internal") void openAbsolute(result.path);
             else notify("error", `"${target}" was not found in the vault`);

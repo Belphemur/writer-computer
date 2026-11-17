@@ -6,6 +6,7 @@ import {
 } from "@/hooks/use-file-tree";
 import { renameOpenFile, rewritePathPrefix } from "@/hooks/editor-api";
 import * as tauri from "@/lib/tauri";
+import { logger } from "@/lib/logger";
 import { getParentDir } from "@/lib/paths";
 import type { DirEntry } from "@/types/fs";
 import { canMoveInto, computeMovePath } from "./tree-move";
@@ -31,7 +32,19 @@ export function useMoveEntry() {
   // its name (rename) or its parent (move) — the handling is identical.
   const applyPathChange = useCallback(
     async (entry: DirEntry, newPath: string): Promise<void> => {
-      await tauri.renameEntry(entry.path, newPath);
+      if (entry.is_dir) {
+        await tauri.renameEntry(entry.path, newPath);
+      } else {
+        // Files go through the Rust relocate (the code behind `writer rename`): every link to the
+        // file in the vault is rewritten, like Obsidian's "Automatically update internal links".
+        const result = await tauri.relocateEntry(entry.path, newPath);
+        if (!result.linksUpdated) {
+          logger.warn(
+            "sidebar",
+            "file moved while the vault index was still building: links to it were not updated",
+          );
+        }
+      }
       if (entry.is_dir) {
         rewritePathPrefix(entry.path, newPath);
         rewriteExpandedDir(entry.path, newPath);

@@ -28,8 +28,7 @@ vi.mock("../src/lib/tauri", () => ({
   writeFile: vi.fn(),
   readFile: vi.fn(),
   fileExists: vi.fn(),
-  findFileByName: vi.fn(),
-  fuzzySearch: vi.fn(),
+  resolveWikiLinkTarget: vi.fn(),
 }));
 vi.mock("../src/lib/bases/ipc", () => ({
   baseList: vi.fn(),
@@ -86,7 +85,7 @@ const m = {
   notePropertySet: vi.mocked(ipc.notePropertySet),
   onIndexChanged: vi.mocked(ipc.onIndexChanged),
   fileExists: vi.mocked(tauri.fileExists),
-  findFileByName: vi.mocked(tauri.findFileByName),
+  resolveWikiLinkTarget: vi.mocked(tauri.resolveWikiLinkTarget),
 };
 
 let indexHandler: ((e: IndexChangedEvent) => void) | null;
@@ -118,7 +117,7 @@ beforeEach(() => {
   m.baseParseText.mockResolvedValue({ document: baseDocument(), error: null });
   m.baseQuery.mockImplementation(async () => taskResult());
   m.baseQueryText.mockImplementation(async () => taskResult());
-  m.findFileByName.mockResolvedValue(BASE_PATH);
+  m.resolveWikiLinkTarget.mockResolvedValue(BASE_PATH);
   m.fileExists.mockResolvedValue(true);
   m.onIndexChanged.mockImplementation(async (handler) => {
     indexHandler = handler;
@@ -505,7 +504,7 @@ describe("embedded base: states", () => {
   });
 
   it("a missing base file is an explicit error, with an Edit button", async () => {
-    m.findFileByName.mockResolvedValue(null);
+    m.resolveWikiLinkTarget.mockResolvedValue(null);
     const onEdit = await mountEmbed({ kind: "file", target: "gone.base" });
     expect(errorText()).toContain("Base not found: gone.base");
     host.querySelector<HTMLButtonElement>("[data-embed-edit]")!.click();
@@ -514,10 +513,10 @@ describe("embedded base: states", () => {
   });
 
   it("a file that appears later shows up on the next index change", async () => {
-    m.findFileByName.mockResolvedValue(null);
+    m.resolveWikiLinkTarget.mockResolvedValue(null);
     await mountEmbed(fileEmbed);
     expect(errorText()).toContain("Base not found");
-    m.findFileByName.mockResolvedValue(BASE_PATH);
+    m.resolveWikiLinkTarget.mockResolvedValue(BASE_PATH);
     await act(async () =>
       indexHandler!({ epoch: 1, root: "/vault", paths: ["x.base"], full: false }),
     );
@@ -526,7 +525,7 @@ describe("embedded base: states", () => {
   });
 
   it("a resolution failure is shown, not swallowed", async () => {
-    m.findFileByName.mockRejectedValue(new Error("lookup exploded"));
+    m.resolveWikiLinkTarget.mockRejectedValue(new Error("lookup exploded"));
     await mountEmbed(fileEmbed);
     expect(errorText()).toContain("lookup exploded");
   });

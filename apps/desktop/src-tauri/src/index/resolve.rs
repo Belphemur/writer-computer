@@ -76,6 +76,11 @@ impl PathIndex {
         idx
     }
 
+    /// Every indexed path (any order).
+    pub fn paths(&self) -> impl Iterator<Item = &String> {
+        self.paths.iter()
+    }
+
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.paths.len()
@@ -293,6 +298,39 @@ mod tests {
             i.resolve("a/s.md", "m.md", LinkKind::Markdown).as_deref(),
             Some("a/m.md")
         );
+    }
+
+    #[test]
+    fn unicode_spaces_extension_and_ties() {
+        let i = idx(&[
+            "Über Ordner/Größe Test.md",
+            "x/Zebra.MD",
+            "m/Twin.md",
+            "k/Twin.md",
+            "Some Folder/Sub Dir/My Note.md",
+        ]);
+        let r = |raw: &str| i.resolve("s/src.md", raw, LinkKind::Wikilink);
+        assert_eq!(
+            r("größe test").as_deref(),
+            Some("Über Ordner/Größe Test.md")
+        );
+        assert_eq!(r("GRÖSSE test"), None); // no ß -> SS folding: lowercase only
+        assert_eq!(r("zebra").as_deref(), Some("x/Zebra.MD"));
+        assert_eq!(r("Zebra.md").as_deref(), Some("x/Zebra.MD"));
+        assert_eq!(
+            r("sub dir/my note").as_deref(),
+            Some("Some Folder/Sub Dir/My Note.md")
+        );
+        assert_eq!(
+            r("Some Folder/Sub Dir/My Note.md").as_deref(),
+            Some("Some Folder/Sub Dir/My Note.md")
+        );
+        // equal depth and length: alphabetical
+        assert_eq!(r("twin").as_deref(), Some("k/Twin.md"));
+        // a frontmatter-title-like phrase that is nobody's file name does not resolve
+        assert_eq!(r("A Fancy Title"), None);
+        // a note never answers to a name with a different extension
+        assert_eq!(r("Twin.png"), None);
     }
 
     #[test]

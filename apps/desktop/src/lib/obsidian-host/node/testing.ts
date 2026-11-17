@@ -1,6 +1,14 @@
 // Test fakes for the Node surface. Not exported from index.ts.
 import { base64ToBytes, bytesToBase64 } from "../api/network";
-import type { FsProbe, NodeIpc, NodeOsInfo, ProcEvent, ProcSignal, ProcSpawnRequest } from "./ipc";
+import type {
+  FsProbe,
+  HomeFileRead,
+  NodeIpc,
+  NodeOsInfo,
+  ProcEvent,
+  ProcSignal,
+  ProcSpawnRequest,
+} from "./ipc";
 
 export interface FakeProc {
   id: number;
@@ -104,6 +112,52 @@ export class FakeNodeIpc implements NodeIpc {
   async osInfo(): Promise<NodeOsInfo> {
     if (this.failWith.osInfo) throw this.failWith.osInfo;
     return this.osinfo;
+  }
+  /** The real `~/.claude/settings.json` (null = absent) and who holds the spawn wildcard. */
+  homeSettings: string | null = null;
+  homeVersion = 1;
+  /** Plugin ids with the remembered "always allow every program" consent (Rust checks this). */
+  homeConsent = new Set<string>();
+  homeRestricted = false;
+  homeCalls: { op: "read" | "write"; pluginId: string; path: string; expected?: string | null }[] =
+    [];
+  private homeGate(pluginId: string, path: string): void {
+    const ok =
+      path === `${this.osinfo.homedir}/.claude/settings.json` &&
+      pluginId === "copilot" &&
+      this.homeConsent.has(pluginId) &&
+      !this.homeRestricted;
+    if (!ok) throw "Invalid path: EACCES: permission denied (outside the vault)";
+  }
+  private homeVer(): string | null {
+    return this.homeSettings === null ? null : `v${this.homeVersion}`;
+  }
+  async homeFileRead(pluginId: string, path: string): Promise<HomeFileRead> {
+    this.homeCalls.push({ op: "read", pluginId, path });
+    this.homeGate(pluginId, path);
+    const t = this.homeSettings;
+    return {
+      exists: t !== null,
+      text: t,
+      version: this.homeVer(),
+      size: t === null ? 0 : new TextEncoder().encode(t).length,
+      mode: t === null ? 0 : 0o644,
+      mtime_ms: t === null ? 0 : 1000,
+    };
+  }
+  async homeFileWrite(
+    pluginId: string,
+    path: string,
+    text: string,
+    expectedVersion: string | null,
+  ): Promise<string> {
+    this.homeCalls.push({ op: "write", pluginId, path, expected: expectedVersion });
+    this.homeGate(pluginId, path);
+    if (expectedVersion !== null && expectedVersion !== (this.homeVer() ?? ""))
+      throw "Invalid path: ESTALE: ~/.claude/settings.json changed on disk since it was read";
+    this.homeSettings = text;
+    this.homeVersion += 1;
+    return `v${this.homeVersion}`;
   }
   async openUrl(url: string): Promise<void> {
     if (this.openRejection) throw this.openRejection;

@@ -84,19 +84,28 @@ export function normalizeWikiTarget(raw: string): string {
 }
 
 /**
- * Resolve a wiki-link target to an internal file path or unresolved.
+ * Asks the backend (the vault index's file-name resolver, `index/resolve.rs`) for the
+ * absolute path a link target written in `sourcePath` points to, or null.
+ */
+export type ResolveLinkTarget = (
+  target: string,
+  sourcePath: string | null,
+) => Promise<string | null>;
+
+/**
+ * Resolve a wiki-link to an internal file path or unresolved.
  *
- * - If the target contains `/`, treat it as a workspace-relative path (without extension).
- * - Otherwise, treat it as a stem lookup across the workspace.
- *   Resolves only when exactly one markdown file matches the stem.
+ * Resolution is by file name, never by a note's title (frontmatter `title`, first heading):
+ * the backend resolver matches the name case-insensitively with the `.md` extension optional,
+ * a partial path (`folder/Name`) as a path suffix, and non-Markdown files by full name; with
+ * several matches the closest folder wins, then the shortest path, then alphabetical order.
+ * The same resolver builds backlinks, `writer` link commands and Bases `link()`.
+ * See SPECs/filename-links-and-rename-spec.md.
  */
 export async function resolveWikiLink(
   raw: string,
-  workspaceRoot: string,
-  fuzzySearch: (query: string, limit?: number) => Promise<SearchResult[]>,
-  fileExists: (path: string) => Promise<boolean>,
-  currentFilePath?: string | null,
-  findFileByName?: (fileName: string) => Promise<string | null>,
+  currentFilePath: string | null,
+  resolveLink: ResolveLinkTarget,
 ): Promise<WikiLinkTarget> {
   const link = parseWikiLink(raw);
   const target = link.path;
@@ -105,41 +114,13 @@ export async function resolveWikiLink(
   }
   if (!target) return { kind: "unresolved" };
 
-  // `[[x.base]]` and `[[x.base#View]]` name a file with its extension (a base is not a note, so
-  // the stem lookup over markdown files cannot find it); the fragment selects the view.
-  if (isBasePath(target)) {
-    const fragment = link.fragment ? { fragment: link.fragment } : {};
-    if (target.includes("/")) {
-      const path = normalizePath(`${workspaceRoot.replace(/\/$/, "")}/${target}`);
-      return (await fileExists(path))
-        ? { kind: "internal", path, ...fragment }
-        : { kind: "unresolved" };
-    }
-    const found = findFileByName ? await findFileByName(target) : null;
-    return found ? { kind: "internal", path: found, ...fragment } : { kind: "unresolved" };
+  const path = await resolveLink(target, currentFilePath);
+  if (!path) return { kind: "unresolved" };
+  // `[[x.base#View]]`: the fragment selects the view of a base.
+  if (isBasePath(target) && link.fragment) {
+    return { kind: "internal", path, fragment: link.fragment };
   }
-
-  if (target.includes("/")) {
-    const basePath = normalizePath(`${workspaceRoot.replace(/\/$/, "")}/${target}`);
-    const candidatePaths = [`${basePath}.md`, `${basePath}.markdown`];
-    const existence = await Promise.all(candidatePaths.map((path) => fileExists(path)));
-    const matchIndex = existence.findIndex(Boolean);
-    if (matchIndex !== -1) {
-      return { kind: "internal", path: candidatePaths[matchIndex] };
-    }
-    return { kind: "unresolved" };
-  }
-
-  // Stem lookup: find all files whose stem matches (case-insensitive)
-  const results = await fuzzySearch(target, 50);
-  const targetLower = target.toLowerCase();
-  const exactMatches = results.filter((r) => getFileStem(r.filename).toLowerCase() === targetLower);
-
-  if (exactMatches.length === 1) {
-    return { kind: "internal", path: exactMatches[0].path };
-  }
-
-  return { kind: "unresolved" };
+  return { kind: "internal", path };
 }
 
 // Image formats supported by Obsidian-style embeds (`![[image.png]]`),

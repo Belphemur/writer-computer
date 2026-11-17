@@ -449,6 +449,57 @@ pub fn init_app() {
             dir = %dir.display(),
             "writer started"
         );
+        mark_running(&dir);
+    }
+}
+
+const RUNNING_FILE: &str = "writer.running";
+
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // SAFETY: signal 0 only checks that the process exists.
+        let r = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+/// Crash detector: a `writer.running` file holds the pid while the app runs and is removed on a
+/// clean exit. Finding one whose process is gone means the last run ended without going through
+/// exit (native crash, SIGKILL, power loss, force quit) and no panic line explains it.
+fn mark_running(dir: &Path) {
+    let file = dir.join(RUNNING_FILE);
+    if let Some(prev) = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| t.trim().parse::<u32>().ok())
+    {
+        if prev != std::process::id() && !pid_alive(prev) {
+            tracing::warn!(
+                target: "app",
+                previous_pid = prev,
+                "previous run did not exit cleanly (crash, force quit, kill or power loss; a panic would be logged separately)"
+            );
+        }
+    }
+    let _ = std::fs::write(&file, std::process::id().to_string());
+}
+
+/// Records why the app is going away. Call from the run loop (`stage` is `exit-requested` or
+/// `exit`); the final stage also removes the crash-detector file.
+pub fn log_exit(stage: &str, code: Option<i32>) {
+    match code {
+        Some(c) => tracing::info!(target: "app", stage, code = c, "writer exiting"),
+        None => tracing::info!(target: "app", stage, "writer exiting"),
+    }
+    if stage == "exit" {
+        if let Some(dir) = log_dir() {
+            let _ = std::fs::remove_file(dir.join(RUNNING_FILE));
+        }
     }
 }
 
@@ -652,6 +703,17 @@ mod tests {
     fn keeps_harmless_text_and_url_path() {
         let out = red("fetched https://api.test/v1/models ok in 20ms");
         assert_eq!(out, "fetched https://api.test/v1/models ok in 20ms");
+    }
+
+    #[test]
+    fn running_marker_holds_our_pid_and_stale_pid_is_not_alive() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(RUNNING_FILE), "999999999").unwrap();
+        assert!(!pid_alive(999_999_999));
+        assert!(pid_alive(std::process::id()));
+        mark_running(tmp.path());
+        let text = std::fs::read_to_string(tmp.path().join(RUNNING_FILE)).unwrap();
+        assert_eq!(text, std::process::id().to_string());
     }
 
     #[test]

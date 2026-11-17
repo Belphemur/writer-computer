@@ -7,6 +7,8 @@ backfilled: 2026-11-16
 
 # Store plugin secrets (`app.secretStorage`) in the OS credential store
 
+> Storage layout and failure behaviour refined by [2026-11-17 one Keychain item](2026-11-17-keep-all-plugin-secrets-in-one-keychain-item-and-run-plugins-without-them-when-it-is-unreadable.md): the per-secret items and index below are no longer used.
+
 > Backfilled on 2026-11-16. Date = `5bfe3ba` "Persist plugin secretStorage in the OS credential store" (adds `plugin_secrets.rs` and the `keyring` dependency). Spec: [`SPECs/obsidian-plugins-spec.md`](../../SPECs/obsidian-plugins-spec.md), "Plugin secrets".
 
 ## Context and Problem Statement

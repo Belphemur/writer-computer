@@ -8,6 +8,7 @@
 use crate::error::AppError;
 use crate::plugin_consent::{ConsentStore, Remembered};
 use crate::plugin_env::{self, OsInfo, PluginEnv, ProbeResult, ProbeScope};
+use crate::plugin_home_files::{self, HomeFile};
 use crate::plugin_http::{
     self, HttpClient, HttpRequest, HttpResponse, StreamEvent, StreamRegistry,
 };
@@ -690,6 +691,83 @@ pub async fn plugin_fs_probe(
             which: &which,
         };
         plugin_env::probe(&paths, &scope).map_err(AppError::InvalidPath)
+    })
+    .await
+}
+
+/// What the `fs` shim learns about an allowlisted home file (`plugin_home_files::HOME_FILES`).
+#[derive(Debug, Serialize)]
+pub struct HomeFileRead {
+    pub exists: bool,
+    pub text: Option<String>,
+    pub version: Option<String>,
+    pub size: u64,
+    pub mode: u32,
+    pub mtime_ms: f64,
+}
+
+/// The gates of an allowlisted home file: a trusted vault, the exact allowlisted path for this
+/// plugin id, and the plugin's remembered "always allow every program" spawn consent for this
+/// vault (a plugin that may spawn anything can already do what editing the file allows).
+fn home_file_entry(
+    plugin_id: &str,
+    path: &str,
+    webview: &tauri::Webview,
+    app: &tauri::AppHandle,
+) -> Result<(PathBuf, &'static HomeFile), AppError> {
+    let invalid = |e: String| AppError::InvalidPath(e);
+    let home = plugin_env::home_dir().ok_or_else(|| invalid("EACCES: no home directory".into()))?;
+    let entry = plugin_home_files::entry_for(&home, path, plugin_id).map_err(invalid)?;
+    let ctx = window_ctx(webview, app)?;
+    let consent = consent_store(app)?.has_wildcard(&ctx.root, plugin_id);
+    plugin_home_files::gate(ctx.trusted(), consent).map_err(invalid)?;
+    Ok((home, entry))
+}
+
+/// Read the allowlisted `~/.claude/settings.json` for a consented agent plugin.
+#[tauri::command]
+pub async fn plugin_home_file_read(
+    plugin_id: String,
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<HomeFileRead, AppError> {
+    let (home, entry) = home_file_entry(&plugin_id, &path, &webview, &app)?;
+    blocking(move || {
+        let r = plugin_home_files::read(&home, entry).map_err(AppError::InvalidPath)?;
+        Ok(HomeFileRead {
+            exists: r.exists,
+            text: r.text,
+            version: r.version,
+            size: r.size,
+            mode: r.mode,
+            mtime_ms: r.mtime_ms,
+        })
+    })
+    .await
+}
+
+/// Replace the allowlisted file atomically; `expected_version` is the `version` of the read the
+/// edit is based on (`""` = the file was absent). Returns the new version.
+#[tauri::command]
+pub async fn plugin_home_file_write(
+    plugin_id: String,
+    path: String,
+    text: String,
+    expected_version: Option<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<String, AppError> {
+    let (home, entry) = home_file_entry(&plugin_id, &path, &webview, &app)?;
+    blocking(move || {
+        let out = plugin_home_files::write(&home, entry, &text, expected_version.as_deref())
+            .map_err(AppError::InvalidPath)?;
+        log::info!(
+            target: "plugin_home_files",
+            "{}",
+            plugin_home_files::write_log_line(&plugin_id, entry, out.bytes)
+        );
+        Ok(out.version)
     })
     .await
 }

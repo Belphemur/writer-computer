@@ -15,6 +15,7 @@ import {
 import * as editorApi from "@/hooks/editor-api";
 import {
   getPluginCompartmentValue,
+  pluginConfigGuard,
   pluginExtensionCompartment,
 } from "@/lib/obsidian-host/editor-bridge";
 import { baseEmbedDecorations } from "./base-embed-decorations";
@@ -139,6 +140,7 @@ export function createEditorExtensions(
     storeSyncExtension(getFilePath),
     editorClipboardExtension(getFilePath, isDisposed),
     focusOnRevealExtension(isDisposed),
+    pluginConfigGuard,
     // Extensions community plugins registered; reconfigured on plugin enable/disable.
     pluginExtensionCompartment.of(getPluginCompartmentValue()),
   ];

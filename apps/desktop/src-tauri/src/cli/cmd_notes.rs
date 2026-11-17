@@ -3,13 +3,11 @@
 //! files (atomic write), never through the index, never into `.obsidian`.
 
 use super::args::Args;
-use super::linkfix::{rewrite_text, Move};
 use super::registry::CommandSpec;
 use super::{CliError, Ctx, Target};
 use crate::index::frontmatter;
 use crate::index::markdown;
 use crate::vault_ops;
-use std::collections::BTreeSet;
 use std::path::Path;
 
 fn name_of(path: &str) -> &str {
@@ -247,85 +245,78 @@ pub fn prepend(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErr
 }
 
 /// Move `from` to `new_rel` and rewrite links to it (and the relative links
-/// of the moved note itself) across the vault.
-fn relocate(ctx: &Ctx, from: &Target, new_rel: &str, verb: &str) -> Result<String, CliError> {
+/// of the moved note itself) across the vault: plan first, then apply
+/// (`crate::relocate`). `dry-run` prints the plan and writes nothing.
+fn relocate(
+    ctx: &Ctx,
+    args: &Args,
+    from: &Target,
+    new_rel: &str,
+    verb: &str,
+) -> Result<String, CliError> {
     let root = ctx.root()?.to_path_buf();
-    let dest = ctx.confine(new_rel)?;
-    let case_only = dest.rel != from.rel && dest.rel.eq_ignore_ascii_case(&from.rel);
-    if dest.rel == from.rel {
-        return Err(CliError::fail("source and destination are the same"));
-    }
-    if dest.abs.exists() && !case_only {
-        return Err(CliError::fail(format!("{} already exists", dest.rel)));
-    }
-    let index = ctx.index()?;
-    let before = index.cached_paths()?;
-    let mut after = (*before).clone();
-    after.remove(&from.rel);
-    after.insert(dest.rel.clone());
-    let mv = Move {
-        old: &from.rel,
-        new: &dest.rel,
+    let update = !args.flag("no-update-links");
+    let json = match args.get("format") {
+        None | Some("text") => false,
+        Some("json") => true,
+        Some(f) => {
+            return Err(CliError::Usage(format!(
+                "format= must be text or json, not {f}"
+            )))
+        }
     };
-    let mut sources: BTreeSet<String> = index
-        .backlinks(&from.rel)?
-        .into_iter()
-        .map(|b| b.source)
-        .collect();
-    if crate::vault_ops::is_markdown_rel(&from.rel) {
-        sources.insert(from.rel.clone());
+    let dry = args.flag("dry-run");
+    let plan = crate::relocate::plan(&root, ctx.index()?, &from.rel, new_rel, update)?;
+    for u in &plan.unreadable {
+        ctx.warn(format!("{u} is not UTF-8 text; its links were not checked"));
     }
-    let mut edits: Vec<(String, String)> = Vec::new();
-    let (mut links, mut skipped) = (0, 0);
-    for s in &sources {
-        if !crate::vault_ops::is_markdown_rel(s) {
-            continue;
-        }
-        let abs = ctx.confine(s)?.abs;
-        let text = vault_ops::read_text(&abs)?;
-        let s_after = if *s == from.rel {
-            dest.rel.as_str()
-        } else {
-            s.as_str()
-        };
-        let rw = rewrite_text(&text, s, s_after, &mv, &before, &after);
-        skipped += rw.skipped;
-        if rw.changed > 0 {
-            links += rw.changed;
-            edits.push((s.clone(), rw.text));
-        }
-    }
-    if let Some(parent) = dest.abs.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::rename(&from.abs, &dest.abs)?;
-    for (s, text) in &edits {
-        let abs = if *s == from.rel {
-            dest.abs.clone()
-        } else {
-            ctx.confine(s)?.abs
-        };
-        vault_ops::write_text(&abs, text).map_err(|e| {
-            CliError::fail(format!(
-                "{verb} {} -> {} done, but updating links in {s} failed: {e}",
-                from.rel, dest.rel
-            ))
-        })?;
-    }
-    let _ = root;
-    if skipped > 0 {
+    if plan.skipped > 0 {
         ctx.warn(format!(
-            "{skipped} link(s) to the file could not be rewritten automatically; check for broken links"
+            "{} link(s) to the file could not be rewritten automatically; check for broken links",
+            plan.skipped
         ));
     }
-    Ok(format!(
-        "{verb} {} -> {} (updated {links} link{} in {} file{})\n",
-        from.rel,
-        dest.rel,
-        if links == 1 { "" } else { "s" },
-        edits.len(),
-        if edits.len() == 1 { "" } else { "s" },
-    ))
+    if !dry {
+        crate::relocate::apply(&plan).map_err(|e| CliError::fail(e.to_string()))?;
+    }
+    let links = plan.links();
+    let files = plan.edits.len();
+    if json {
+        let v = serde_json::json!({
+            "from": plan.from, "to": plan.to, "dryRun": dry, "links": links, "files": files,
+            "skipped": plan.skipped,
+            "edits": plan.edits.iter().map(|e| serde_json::json!({"path": e.rel, "links": e.links})).collect::<Vec<_>>(),
+        });
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&v).unwrap_or_default()
+        ));
+    }
+    let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+    let mut out = if dry {
+        format!(
+            "Would {} {} -> {} (would update {} in {})\n",
+            if verb == "Renamed" { "rename" } else { "move" },
+            plan.from,
+            plan.to,
+            plural(links, "link"),
+            plural(files, "file"),
+        )
+    } else {
+        format!(
+            "{verb} {} -> {} (updated {} in {})\n",
+            plan.from,
+            plan.to,
+            plural(links, "link"),
+            plural(files, "file"),
+        )
+    };
+    if dry {
+        for e in &plan.edits {
+            out.push_str(&format!("  {} ({})\n", e.rel, plural(e.links, "link")));
+        }
+    }
+    Ok(out)
 }
 
 pub fn mv(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
@@ -346,7 +337,7 @@ pub fn mv(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
     } else {
         to.to_string()
     };
-    relocate(ctx, &t, &new_rel, "Moved")
+    relocate(ctx, args, &t, &new_rel, "Moved")
 }
 
 pub fn rename(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
@@ -357,6 +348,7 @@ pub fn rename(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
             "name= must be a file name without folders (use move to change folders)".into(),
         ));
     }
+    crate::relocate::validate_file_name(name).map_err(|e| CliError::fail(e.to_string()))?;
     let ext = ext_of(&t.rel);
     let full = match ext {
         Some(e) if ext_of(name).is_some_and(|n| n.eq_ignore_ascii_case(e)) => name.to_string(),
@@ -369,7 +361,7 @@ pub fn rename(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
     } else {
         format!("{folder}/{full}")
     };
-    relocate(ctx, &t, &new_rel, "Renamed")
+    relocate(ctx, args, &t, &new_rel, "Renamed")
 }
 
 pub fn delete(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {

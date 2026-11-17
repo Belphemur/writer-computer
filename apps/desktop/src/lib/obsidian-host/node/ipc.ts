@@ -46,6 +46,17 @@ export interface FsProbe {
   text?: string;
 }
 
+/** `plugin_home_file_read`: an allowlisted home file (home-files.ts); text/version only when it exists. */
+export interface HomeFileRead {
+  exists: boolean;
+  text: string | null;
+  /** Pass back as `expectedVersion` of the write that is based on this read. */
+  version: string | null;
+  size: number;
+  mode: number;
+  mtime_ms: number;
+}
+
 export interface NodeIpc {
   /** Resolves with the proc id. Events may be delivered before it resolves. */
   procSpawn(request: ProcSpawnRequest, onEvent: (ev: ProcEvent) => void): Promise<number>;
@@ -56,6 +67,15 @@ export interface NodeIpc {
   resolveLoginPath(): Promise<string>;
   osInfo(): Promise<NodeOsInfo>;
   fsProbe(paths: string[]): Promise<FsProbe[]>;
+  /** Rust gates it (trusted vault, allowlist, the plugin's spawn consent); refusals are `EACCES: ...`. */
+  homeFileRead(pluginId: string, path: string): Promise<HomeFileRead>;
+  /** Atomic replace; `expectedVersion` "" = must be absent, null = no check. Resolves the new version. */
+  homeFileWrite(
+    pluginId: string,
+    path: string,
+    text: string,
+    expectedVersion: string | null,
+  ): Promise<string>;
   /** `shell.openExternal`: Rust validates the scheme (http, https, mailto). */
   openUrl(url: string): Promise<void>;
   /** `shell.openPath` / `showItemInFolder`: Rust confines to the vault and agent config folders. */
@@ -75,6 +95,9 @@ export const tauriNodeIpc: NodeIpc = {
   resolveLoginPath: () => invoke("plugin_resolve_login_path"),
   osInfo: () => invoke("plugin_os_info"),
   fsProbe: (paths) => invoke("plugin_fs_probe", { paths }),
+  homeFileRead: (pluginId, path) => invoke("plugin_home_file_read", { pluginId, path }),
+  homeFileWrite: (pluginId, path, text, expectedVersion) =>
+    invoke("plugin_home_file_write", { pluginId, path, text, expectedVersion }),
   openUrl: (url) => invoke("plugin_open_url", { url }),
   openPath: (path, reveal) => invoke("plugin_open_path", { path, reveal }),
 };

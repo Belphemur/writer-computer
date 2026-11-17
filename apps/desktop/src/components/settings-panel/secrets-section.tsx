@@ -115,10 +115,11 @@ export function SecretsSection() {
         <div
           role="alert"
           data-secrets-error
-          className="mb-4 rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)] px-4 py-3 text-[13px] text-red-500"
+          className="mb-4 rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)] px-4 py-3 text-[13px] text-[var(--text-secondary)]"
         >
-          Could not read the system keychain: {error}
-          <button type="button" className={`${BUTTON} ml-3`} onClick={() => void refresh()}>
+          Writer couldn't read the Keychain — plugins that need API keys will run without them.
+          <span className="mt-1 block text-[12px] text-[var(--text-muted)]">{error}</span>
+          <button type="button" className={`${BUTTON} mt-2`} onClick={() => void refresh()}>
             Retry
           </button>
         </div>

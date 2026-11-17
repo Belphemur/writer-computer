@@ -908,12 +908,28 @@ export class MetadataCache extends Events {
         })
       : [...new Set([...byName, ...this.vault.getFilesByLowerName(want.toLowerCase())])];
     if (candidates.length === 0) return null;
-    const dir = sourcePath.includes("/") ? sourcePath.slice(0, sourcePath.lastIndexOf("/")) : "";
-    candidates.sort((a, b) => {
-      const sa = a.parent && a.parent.path === dir ? 0 : 1;
-      const sb = b.parent && b.parent.path === dir ? 0 : 1;
-      return sa - sb || a.path.length - b.path.length || a.path.localeCompare(b.path);
-    });
+    // Same order as the Rust resolver (index/resolve.rs): the most leading folders shared with the
+    // source note, then the fewest path components, then the shortest path, then alphabetical.
+    const srcDirs = sourcePath.split("/").slice(0, -1);
+    const shared = (path: string) => {
+      const dirs = path.split("/").slice(0, -1);
+      let n = 0;
+      while (
+        n < dirs.length &&
+        n < srcDirs.length &&
+        dirs[n].toLowerCase() === srcDirs[n].toLowerCase()
+      )
+        n++;
+      return n;
+    };
+    const depth = (path: string) => path.split("/").length;
+    candidates.sort(
+      (a, b) =>
+        shared(b.path) - shared(a.path) ||
+        depth(a.path) - depth(b.path) ||
+        a.path.length - b.path.length ||
+        (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+    );
     return candidates[0];
   }
 

@@ -5,7 +5,10 @@
 // UTF-8 text (no binary IO yet); `read_directory` hides dotfiles. stat/access/realpath outside the
 // vault go through `plugin_fs_probe` (allow-listed paths only, else EACCES); reads/writes outside
 // the vault are EACCES, except the home-directory mounts of `home-mounts.ts` (served from inside
-// the vault). mkdtemp/open/streams/symlink/chmod... are not supported.
+// the vault). Exactly one further exception: the REAL home files of `home-files.ts`
+// (`~/.claude/settings.json` for Copilot), served by `plugin_home_file_read/write` (Rust checks the
+// trusted vault, the plugin's spawn consent and the exact path), including the mkdtemp/open/rename
+// sequence Copilot saves them with. Other mkdtemp/open/streams/symlink/chmod... are not supported.
 //
 // Sync: WKWebView cannot block on IPC, so existsSync/statSync/lstatSync/accessSync/realpathSync/
 // readdirSync/readFileSync answer ONLY from a read-only cache filled asynchronously by
@@ -18,7 +21,14 @@ import { Buffer } from "./buffer";
 import { errnoError, messageOf, nodeError, type NodeError } from "./errors";
 import type { FsProbe } from "./ipc";
 import { posix } from "./path";
+import {
+  matchHomeFile,
+  matchHomeFileDir,
+  matchStagingPrefix,
+  type HomeFileEntry,
+} from "./home-files";
 import { mountedAbsPath, mountedVaultPath } from "./home-mounts";
+import { resolvePluginId, type PluginIdSource } from "./child-process";
 import { getBasePath, getNodeIpc, getOsInfo, syncContentCache, syncProbeCache } from "./state";
 
 type PathLike = string | URL | Uint8Array;
@@ -55,8 +65,9 @@ export class Stats {
     readonly size: number,
     readonly mtimeMs = 0,
     readonly ctimeMs = 0,
+    permissions = 0o644,
   ) {
-    this.mode = kind === "dir" ? 0o40755 : 0o100644;
+    this.mode = kind === "dir" ? 0o40755 : 0o100000 | permissions;
     this.mtime = new Date(mtimeMs);
     this.ctime = new Date(ctimeMs);
     this.atime = this.mtime;
@@ -166,6 +177,15 @@ export const constants = {
 
 export interface FsModuleOptions {
   io?: VaultIo;
+  /** The plugin this module belongs to; decides the real home files it may use (home-files.ts). */
+  pluginId?: PluginIdSource;
+}
+
+/** Staged (in-memory) temp directory a plugin writes an allowlisted home file through. */
+interface StagedDir {
+  entry: HomeFileEntry;
+  target: string;
+  files: Map<string, { text: string | null; committed: boolean }>;
 }
 
 const unsupported = (name: string): never => {
@@ -205,6 +225,99 @@ export function createFsModule(options: FsModuleOptions = {}) {
   /** The absolute path a plugin sees for a vault-relative path (home mounts keep their virtual path). */
   const absOf = (relPath: string): string =>
     mountedAbsPath(getOsInfo().homedir, relPath) ?? `${base()}/${relPath}`;
+  // ---- real home files (home-files.ts): reads, the atomic write, the staged-temp sequence
+  const homedir = (): string => getOsInfo().homedir;
+  const pid = (): string | null => (options.pluginId ? resolvePluginId(options.pluginId) : null);
+  const homeFileOf = (p: PathLike): HomeFileEntry | null => {
+    const id = pid();
+    if (id === null) return null;
+    try {
+      return matchHomeFile(homedir(), toAbs(p), id);
+    } catch {
+      return null;
+    }
+  };
+  /** Last version seen per file ("" = it was absent): the base of the next write's stale check. */
+  const homeVersions = new Map<string, string>();
+  const stagedDirs = new Map<string, StagedDir>();
+  const stagedOf = (p: PathLike): { dir: StagedDir; file: string } | null => {
+    let abs: string;
+    try {
+      abs = toAbs(p);
+    } catch {
+      return null;
+    }
+    const dir = stagedDirs.get(posix.dirname(abs));
+    return dir ? { dir, file: abs } : null;
+  };
+  const homeError = (syscall: string, path: string, e: unknown): NodeError => {
+    if ((e as NodeError)?.code) return e as NodeError;
+    const m = messageOf(e);
+    const code = /\b(E[A-Z]{3,6})\b/.exec(m)?.[1] ?? "EIO";
+    return errnoError(code, syscall, path, m.replace(/^.*?\bE[A-Z]{3,6}: /, ""));
+  };
+  const textBytes = (t: string): number => new TextEncoder().encode(t).length;
+  const remember = (abs: string, text: string | null): void => {
+    const key = cacheKey(abs);
+    if (text === null) {
+      syncProbeCache.delete(key);
+      syncContentCache.delete(key);
+      return;
+    }
+    // The sync API answers from these caches; `realpath` of a home file is the file itself.
+    syncProbeCache.set(key, {
+      path: abs,
+      exists: true,
+      is_file: true,
+      is_dir: false,
+      size: textBytes(text),
+    });
+    syncContentCache.set(key, text);
+  };
+  async function homeRead(abs: string, syscall: string) {
+    let r;
+    try {
+      r = await getNodeIpc().homeFileRead(pid() as string, abs);
+    } catch (e) {
+      throw homeError(syscall, abs, e);
+    }
+    homeVersions.set(abs, r.exists ? (r.version ?? "") : "");
+    remember(abs, r.exists ? (r.text ?? "") : null);
+    return r;
+  }
+  async function homeCommit(abs: string, text: string, syscall: string): Promise<void> {
+    try {
+      const v = await getNodeIpc().homeFileWrite(
+        pid() as string,
+        abs,
+        text,
+        homeVersions.get(abs) ?? null,
+      );
+      homeVersions.set(abs, v);
+    } catch (e) {
+      throw homeError(syscall, abs, e);
+    }
+  }
+  /**
+   * `renameSync`/`rename` of a CLOSED staged file onto its target: the atomic write already
+   * happened at close (Rust), so this only validates the move and refreshes the sync caches.
+   */
+  function finishStaged(from: PathLike, to: PathLike): void {
+    const st = stagedOf(from);
+    const file = st?.dir.files.get(st.file);
+    if (!st || !file || st.dir.target !== toAbs(to))
+      throw errnoError(
+        "EACCES",
+        "rename",
+        toPathString(from),
+        "permission denied (outside the vault)",
+      );
+    if (!file.committed)
+      throw errnoError("EIO", "rename", toPathString(from), "the staged file was not closed");
+    remember(st.dir.target, file.text);
+    st.dir.files.delete(st.file);
+  }
+
   const needIo = (): VaultIo => {
     if (!io) throw errnoError("EACCES", "open", undefined, "no vault is available to this fs");
     return io;
@@ -234,6 +347,17 @@ export function createFsModule(options: FsModuleOptions = {}) {
 
   async function statAny(path: PathLike, syscall: string): Promise<Stats> {
     const abs = toAbs(path);
+    const staged = stagedDirs.get(abs) ?? stagedOf(abs)?.dir;
+    if (staged) {
+      const f = stagedDirs.has(abs) ? undefined : staged.files.get(abs);
+      if (!stagedDirs.has(abs) && !f) throw errnoError("ENOENT", syscall, abs);
+      return f ? new Stats("file", textBytes(f.text ?? "")) : new Stats("dir", 0);
+    }
+    if (homeFileOf(abs)) {
+      const r = await homeRead(abs, syscall);
+      if (!r.exists) throw errnoError("ENOENT", syscall, abs);
+      return new Stats("file", r.size, r.mtime_ms, r.mtime_ms, r.mode);
+    }
     const r = rel(abs);
     if (r !== null) {
       const st = await wrapIo(syscall, abs, () => needIo().stat(r));
@@ -281,6 +405,12 @@ export function createFsModule(options: FsModuleOptions = {}) {
   };
 
   async function readFile(path: PathLike, opts?: unknown): Promise<string | Buffer> {
+    if (homeFileOf(path)) {
+      const abs = toAbs(path);
+      const r = await homeRead(abs, "open");
+      if (!r.exists) throw errnoError("ENOENT", "open", abs);
+      return encodingOf(opts) ? (r.text ?? "") : Buffer.from(r.text ?? "");
+    }
     const { rel: r } = inVault(path, "open");
     const st = await statAny(path, "open");
     if (st.isDirectory()) throw errnoError("EISDIR", "read", toPathString(path));
@@ -289,8 +419,17 @@ export function createFsModule(options: FsModuleOptions = {}) {
     return enc ? text : Buffer.from(text);
   }
   async function writeFile(path: PathLike, data: unknown, opts?: unknown): Promise<void> {
-    const { rel: r } = inVault(path, "open");
     const flag = typeof opts === "object" && opts ? (opts as { flag?: string }).flag : undefined;
+    if (homeFileOf(path)) {
+      const abs = toAbs(path);
+      let text = textOf(data);
+      if (flag?.startsWith("a"))
+        text = ((await readFile(path, "utf8").catch(() => "")) as string) + text;
+      await homeCommit(abs, text, "open");
+      remember(abs, text);
+      return;
+    }
+    const { rel: r } = inVault(path, "open");
     let text = textOf(data);
     if (flag?.startsWith("a")) {
       const existing = await readFile(path, "utf8").catch(() => "");
@@ -305,6 +444,21 @@ export function createFsModule(options: FsModuleOptions = {}) {
     });
 
   async function mkdir(path: PathLike, opts?: unknown): Promise<string | undefined> {
+    const id = pid();
+    if (id !== null && matchHomeFileDir(homedir(), toAbs(path), id)) {
+      // `~/.claude` itself: the write creates it (0700) when absent, so an absent directory is
+      // not created here; an existing one behaves as usual.
+      const dirStat = await statAny(path, "mkdir").catch(() => null);
+      if (!dirStat) return undefined;
+      if (
+        dirStat.isDirectory() &&
+        typeof opts === "object" &&
+        opts !== null &&
+        (opts as { recursive?: boolean }).recursive === true
+      )
+        return undefined;
+      throw errnoError("EEXIST", "mkdir", toPathString(path));
+    }
     const { abs, rel: r } = inVault(path, "mkdir");
     const recursive =
       typeof opts === "object" &&
@@ -352,6 +506,10 @@ export function createFsModule(options: FsModuleOptions = {}) {
 
   async function rm(path: PathLike, opts?: unknown): Promise<void> {
     const o = (opts ?? {}) as { recursive?: boolean; force?: boolean };
+    const stagedAbs = toAbs(path);
+    if (stagedDirs.delete(stagedAbs)) return; // the in-memory temp dir of a home-file write
+    const stagedFile = stagedOf(stagedAbs);
+    if (stagedFile?.dir.files.delete(stagedAbs)) return;
     const { rel: r } = await inVaultOrMissing(path, "rm").catch((e: NodeError) => {
       if (e.code === "ENOENT" && o.force) return { rel: null, abs: "" };
       throw e;
@@ -386,6 +544,7 @@ export function createFsModule(options: FsModuleOptions = {}) {
   }
 
   async function rename(from: PathLike, to: PathLike): Promise<void> {
+    if (stagedOf(from)) return finishStaged(from, to);
     const a = inVault(from, "rename");
     const b = inVault(to, "rename");
     await statAny(from, "rename");
@@ -419,6 +578,60 @@ export function createFsModule(options: FsModuleOptions = {}) {
     await writeFile(dest, await readFile(src, "utf8"));
   }
 
+  /** `mkdtemp(<~/.claude>/.copilot-rules-)`: an in-memory temp directory for the staged write. */
+  async function mkdtemp(prefix: PathLike): Promise<string> {
+    const id = pid();
+    const entry = id === null ? null : matchStagingPrefix(homedir(), toAbs(prefix), id);
+    if (!entry) return unsupported("mkdtemp");
+    const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let suffix = "";
+    for (let i = 0; i < 6; i++) suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
+    const dir = `${toAbs(prefix)}${suffix}`;
+    stagedDirs.set(dir, {
+      entry,
+      target: `${homedir().replace(/\/+$/, "")}/${entry.home}`,
+      files: new Map(),
+    });
+    return dir;
+  }
+
+  /** `open(<temp dir>/<file>, "w" | "wx")` of a staged directory: the content is committed on close. */
+  async function open(path: PathLike, flags?: unknown): Promise<unknown> {
+    const st = stagedOf(path);
+    const f = typeof flags === "string" ? flags : "w";
+    if (!st || posix.basename(st.file) !== st.dir.entry.staging.fileName || !/^[wa]x?\+?$/.test(f))
+      return unsupported("open");
+    if (st.dir.files.has(st.file) && f.includes("x")) throw errnoError("EEXIST", "open", st.file);
+    const file = { text: null as string | null, committed: false };
+    st.dir.files.set(st.file, file);
+    let closed = false;
+    const put = (data: unknown, append: boolean): void => {
+      const t = textOf(data);
+      file.text = append ? (file.text ?? "") + t : t;
+      file.committed = false;
+    };
+    return {
+      fd: -1,
+      writeFile: async (data: unknown) => put(data, false),
+      appendFile: async (data: unknown) => put(data, true),
+      write: async (data: unknown) => {
+        put(data, true);
+        return { bytesWritten: textBytes(textOf(data)), buffer: data };
+      },
+      chmod: async () => undefined, // Rust keeps the existing mode (0600 for a new file)
+      sync: async () => undefined,
+      datasync: async () => undefined,
+      stat: async () => new Stats("file", textBytes(file.text ?? "")),
+      close: async () => {
+        if (closed) return;
+        closed = true;
+        if (file.text === null || file.committed) return;
+        await homeCommit(st.dir.target, file.text, "close");
+        file.committed = true;
+      },
+    };
+  }
+
   const promises = {
     readFile,
     writeFile,
@@ -434,8 +647,8 @@ export function createFsModule(options: FsModuleOptions = {}) {
     readdir,
     realpath,
     copyFile,
-    mkdtemp: async (): Promise<never> => unsupported("mkdtemp"),
-    open: async (): Promise<never> => unsupported("open"),
+    mkdtemp,
+    open,
     opendir: async (): Promise<never> => unsupported("opendir"),
     symlink: async (): Promise<never> => unsupported("symlink"),
     chmod: async (): Promise<never> => unsupported("chmod"),
@@ -556,6 +769,11 @@ export function createFsModule(options: FsModuleOptions = {}) {
     "utimesSync",
   ])
     syncUnsupported[n] = () => unsupported(n);
+  // The only sync rename: a closed staged file onto its allowlisted home file.
+  syncUnsupported.renameSync = (from: PathLike, to: PathLike): void => {
+    if (!stagedOf(from)) return unsupported("renameSync");
+    finishStaged(from, to);
+  };
 
   const fsModule = {
     ...callbackForms,

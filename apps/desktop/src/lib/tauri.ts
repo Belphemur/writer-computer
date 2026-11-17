@@ -43,6 +43,29 @@ export function renameEntry(oldPath: string, newPath: string): Promise<void> {
   return invoke("rename_entry", { oldPath, newPath });
 }
 
+export interface RelocateResult {
+  links: number;
+  files: number;
+  skipped: number;
+  /** False when the index was still building: the file moved but links were not updated. */
+  linksUpdated: boolean;
+}
+
+/** Rename/move one file or folder and rewrite every link to a file (`relocate::plan`/`apply`,
+ *  the code behind `writer rename`). */
+export function relocateEntry(oldPath: string, newPath: string): Promise<RelocateResult> {
+  return invoke("relocate_entry", { oldPath, newPath });
+}
+
+/** Resolve a wikilink target (no brackets/alias/heading) written in `sourcePath` to an absolute
+ *  path with the vault index's file-name rules; null when nothing matches. */
+export function resolveWikiLinkTarget(
+  target: string,
+  sourcePath: string | null,
+): Promise<string | null> {
+  return invoke("resolve_wiki_link", { target, sourcePath });
+}
+
 export function deleteEntry(path: string): Promise<void> {
   return invoke("delete_entry", { path });
 }

@@ -8,7 +8,7 @@
 import { Component, Events } from "./core";
 import { renderMatches, type SearchResult } from "./functions";
 import { StringValue, Value } from "./bases-values";
-import { ButtonComponent, Modal, Setting, TextComponent, ValueComponent } from "./ui";
+import { ButtonComponent, Modal, TextComponent, ValueComponent } from "./ui";
 import { createEl } from "./dom";
 import { DataAdapter, TAbstractFile } from "./vault";
 import type { App } from "./app";
@@ -286,43 +286,7 @@ export class ConfirmationModal extends Modal {
   }
 }
 
-export class SettingGroup {
-  listEl: HTMLElement;
-  private headingEl: HTMLElement | null = null;
-  constructor(public containerEl: HTMLElement) {
-    this.listEl = createEl("div", { cls: "setting-group", parent: containerEl });
-  }
-  setHeading(text: string | DocumentFragment): this {
-    this.headingEl ??= createEl("div", { cls: "setting-group-heading", parent: this.listEl });
-    this.headingEl.replaceChildren(text);
-    return this;
-  }
-  addClass(...classes: string[]): this {
-    this.listEl.classList.add(...classes);
-    return this;
-  }
-  addSetting(cb: (setting: Setting) => void): this {
-    cb(new Setting(this.listEl));
-    return this;
-  }
-  addSearch(cb: (component: any) => unknown): this {
-    return this.addSetting((s) => s.addSearch(cb));
-  }
-  addExtraButton(cb: (component: any) => unknown): this {
-    return this.addSetting((s) => s.addExtraButton(cb));
-  }
-}
-
-export abstract class SettingPage {
-  rootEl: HTMLElement = createEl("div", { cls: "setting-page" });
-  titlebarEl: HTMLElement = createEl("div", { cls: "setting-page-titlebar", parent: this.rootEl });
-  containerEl: HTMLElement = createEl("div", { cls: "setting-page-content", parent: this.rootEl });
-  title = "";
-  abstract display(): void;
-  hide(): void {
-    this.containerEl.replaceChildren();
-  }
-}
+export { SettingGroup, SettingPage } from "./ui";
 
 export class MenuSeparator {}
 

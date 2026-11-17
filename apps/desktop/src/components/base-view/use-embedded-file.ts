@@ -28,9 +28,7 @@ export function useEmbeddedFile(target: string, notePath: string): EmbeddedFile 
       setState({ key, value: { status: "error", message: "No workspace is open" } });
       return;
     }
-    resolveWikiLink(target, root, tauri.fuzzySearch, tauri.fileExists, notePath, (name) =>
-      tauri.findFileByName(root, name),
-    ).then(
+    resolveWikiLink(target, notePath, tauri.resolveWikiLinkTarget).then(
       (result) => {
         if (!current) return;
         setState({

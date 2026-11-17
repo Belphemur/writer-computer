@@ -14,11 +14,13 @@ pub mod managed_skills;
 pub mod open_target;
 mod plugin_consent;
 mod plugin_env;
+mod plugin_home_files;
 mod plugin_http;
 mod plugin_proc;
 mod plugin_secrets;
 mod plugin_store;
 mod plugins;
+pub mod relocate;
 mod state;
 mod telemetry;
 #[cfg(desktop)]
@@ -623,6 +625,7 @@ pub fn run() {
             commands::fs::create_directory,
             commands::fs::create_sidebar_entry,
             commands::fs::rename_entry,
+            commands::fs::relocate_entry,
             commands::fs::delete_entry,
             commands::fs::file_exists,
             commands::fs::reveal_in_file_manager,
@@ -660,6 +663,7 @@ pub fn run() {
             commands::bases::note_properties,
             commands::search::fuzzy_search,
             commands::search::find_file_by_name,
+            commands::search::resolve_wiki_link,
             commands::images::save_clipboard_image,
             commands::settings::get_settings,
             commands::settings::get_setting,
@@ -699,6 +703,8 @@ pub fn run() {
             commands::plugins::plugin_resolve_login_path,
             commands::plugins::plugin_os_info,
             commands::plugins::plugin_fs_probe,
+            commands::plugins::plugin_home_file_read,
+            commands::plugins::plugin_home_file_write,
             commands::plugins::plugin_open_path,
             commands::plugins::plugin_open_url,
             #[cfg(target_os = "macos")]
@@ -711,7 +717,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, _event| {
+            if let tauri::RunEvent::ExitRequested { code, .. } = &_event {
+                logging::log_exit("exit-requested", *code);
+            }
             if matches!(_event, tauri::RunEvent::Exit) {
+                logging::log_exit("exit", None);
                 _app.state::<plugin_proc::ProcManager>().kill_all();
                 logging::shutdown();
             }

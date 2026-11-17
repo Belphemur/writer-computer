@@ -20,8 +20,8 @@ One bullet per command: `required` parameters are marked, everything else is opt
 - `create` — create a note (`.md` is appended; no name gives `Untitled`). Params: `name=`, `path=`, `content=`, `template=` (a note whose text is the starting content). Flags: `overwrite`, `open`, `newtab` (the last two are accepted and ignored).
 - `append` — add text at the end of a file, or of a section. Params: `file=`, `path=`, `content=` (required), `heading=`. Flags: `inline` (no newline between old and new text).
 - `prepend` — insert text after the frontmatter, or right after a heading. Params: `file=`, `path=`, `content=` (required), `heading=`. Flags: `inline`.
-- `move` — move a file and update links to it. Params: `file=`, `path=`, `to=` (required; destination folder or path).
-- `rename` — rename a file and update links to it. Params: `file=`, `path=`, `name=` (required; the extension is kept if omitted).
+- `move` — move (and optionally rename) a file and update links to it. Params: `file=`, `path=`, `to=` (required; destination folder or path), `format=` (text or json). Flags: `dry-run` (print the plan, change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
+- `rename` — rename a file and update links to it. Params: `file=`, `path=`, `name=` (required; the extension is kept if omitted), `format=` (text or json). Flags: `dry-run` (print the plan, change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
 - `delete` — move a file to the trash. Params: `file=`, `path=`. Flags: `permanent`.
 
 ## Search

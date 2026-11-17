@@ -18,7 +18,7 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 - `vault=` must be the first argument. Without it the vault is the nearest parent of the working directory that has a `.obsidian` folder, otherwise the working directory itself. Run from the vault root, or pass `vault=/absolute/path`.
 - `key=value` parameters. Quote values with spaces in the shell: `writer create name="Meeting notes"`. Parameter names are case-sensitive and a repeated parameter is an error.
 - Flags are bare words (`total`, `verbose`, `case`, `overwrite`, ...), never `--flag`. The only `--` options are `--copy` (also copy stdout to the clipboard) and `--help`.
-- `file=<name>` resolves like a wikilink: no folder, no extension (`file=Recipe`). `path=<path>` is exact from the vault root (`path=Projects/Recipe.md`). Give one of them, not both. There is no "active file": commands that act on a file need `file=` or `path=`.
+- `file=<name>` resolves like a wikilink, by **file name** (never by the note's `title:` property or first heading): no folder, no extension (`file=Recipe`), case-insensitive. With several files of that name the closest folder wins, then the shortest path, then alphabetical order; use `path=` to be exact. Links, backlinks, unresolved links and Bases `link()` all use this same rule. `path=<path>` is exact from the vault root (`path=Projects/Recipe.md`). Give one of them, not both. There is no "active file": commands that act on a file need `file=` or `path=`.
 - In `content=` the escapes `\n` and `\t` become a newline and a tab; `\\` is a backslash.
 - One pair of quotes surrounding a whole value is stripped after the shell has run. This matters for search phrases, see the `writer-search` skill.
 - `writer help` lists every command, `writer help <command>` (or `writer <command> --help`) shows its parameters, flags and formats. That output is authoritative if it ever differs from these notes.
@@ -62,11 +62,12 @@ writer tags counts sort=count
 writer backlinks file=Recipe format=json
 writer tasks todo verbose
 writer rename file=Recipe name="Best recipe"      # updates links in other notes
+writer rename file=Recipe name="Best recipe" dry-run   # show which files and how many links would change
 ```
 
 ## Safety
 
-- `rename` and `move` rewrite wikilinks, embeds and Markdown links to the file in every note that points at it (frontmatter links included, links in code spans and fences untouched). Prefer them over renaming with `mv`, which leaves links broken.
+- `rename` and `move` rewrite wikilinks (`[[Old]]`, `[[Old|alias]]`, `[[Old#Heading]]`, `[[Old#^block]]`, `[[folder/Old]]`), embeds (`![[Old.png]]`), Markdown links (`[x](folder/Old%20Name.md)`), wikilink values in frontmatter properties and references in `.base` files, keeping each link's style, alias and heading; links in code spans and fences are untouched. They refuse an existing target, names with `/ \ : * ? " < > | # ^ [ ]`, control characters, hidden or reserved names, and anything inside `.obsidian`. They stage every edit first and roll back on an I/O error. `dry-run` prints the plan and writes nothing; `no-update-links` moves the file only. `format=json` prints `{from, to, dryRun, links, files, edits}`. Prefer them over renaming with `mv`, which leaves links broken.
 - `delete` moves the file to the OS trash; `delete permanent` removes it for good. If the trash fails nothing is deleted.
 - `create` never overwrites unless the `overwrite` flag is given. It always produces a Markdown note (`.md` is appended), so it cannot create a `.base` file; write those with normal file edits.
 - `property:set`, `property:remove` and `task` edit only the targeted frontmatter line or checkbox character, so comments, key order and other text are preserved. Unparsable frontmatter is an error, not a rewrite.

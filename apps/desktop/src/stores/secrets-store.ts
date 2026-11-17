@@ -60,6 +60,8 @@ export const useSecretsStore = create<SecretsState>((set, get) => {
       try {
         const ids = await client.listIds();
         if (mine === seq) set({ ids, status: "ready", error: null });
+        // The Rust side has the document now, so a host that hydrated empty can fill its cache.
+        await usePluginsStore.getState().retrySecrets();
       } catch (e) {
         if (mine === seq) set({ status: "error", error: messageOf(e) });
       }

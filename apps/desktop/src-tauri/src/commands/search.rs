@@ -101,3 +101,43 @@ pub async fn find_file_by_name(
     })
     .await
 }
+
+/// Resolve the target of a wikilink (`Name`, `folder/Name`, `Name.md`,
+/// `image.png`; no brackets, `#heading` or `|alias`) written in `source_path`
+/// to an absolute file path, with the index's file-name rules (`index/resolve.rs`),
+/// the same ones that build backlinks, the CLI's `file=` and Bases `link()`.
+/// A note's frontmatter `title` or first heading never takes part.
+///
+/// `None` when nothing matches; an error while the cold build is running (the
+/// file may simply not be indexed yet), so callers do not cache a false miss.
+#[tauri::command]
+pub async fn resolve_wiki_link(
+    target: String,
+    source_path: Option<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, AppError> {
+    let state = app
+        .state::<crate::state::AppState>()
+        .get_or_create(webview.label());
+    let source = match &source_path {
+        Some(p) => Some(state.authorize_path(Path::new(p))?),
+        None => None,
+    };
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        let from = source
+            .as_deref()
+            .and_then(|p| p.strip_prefix(index.root()).ok())
+            .and_then(crate::index::paths::rel_to_string)
+            .unwrap_or_default();
+        match index.resolve_link(&from, &target).map_err(app_err)? {
+            Some(rel) => Ok(Some(index.root().join(rel).to_string_lossy().into_owned())),
+            None if index.is_ready() => Ok(None),
+            None => Err(AppError::Io(
+                "workspace index is still building; the link may not resolve yet".into(),
+            )),
+        }
+    })
+    .await
+}

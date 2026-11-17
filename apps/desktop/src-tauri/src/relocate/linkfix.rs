@@ -1,4 +1,4 @@
-//! Link updates for `move` and `rename`: rewrite wikilinks, embeds and
+//! Link updates for `move` and `rename` (shared by the CLI and the app): rewrite wikilinks, embeds and
 //! markdown links that point at the moved file, keeping each link's style
 //! (bare name stays a bare name while that still resolves to the file, path
 //! style stays path style, relative stays relative), its `#heading` and its
@@ -200,15 +200,82 @@ fn target_range(text: &str, link: &ParsedLink) -> Option<(usize, usize)> {
                 )
             };
             let dest = rest.get(skip..end)?;
+            // `<a b.md#H>`: the fragment sits inside the brackets
+            let (dest, end) = match dest.find('#') {
+                Some(h) if skip == 1 => (&dest[..h], skip + h),
+                _ => (dest, end),
+            };
             (percent_decode(dest) == link.raw).then_some((s + open + skip, s + open + end))
         }
     }
 }
 
-/// Rewrite the links of one note. `src_before`/`src_after` differ when the
-/// note itself is the file being moved (its relative links must follow).
-pub fn rewrite_text(
+/// A link with the byte range of its target text (`None`: not locatable).
+struct Found {
+    link: ParsedLink,
+    range: Option<(usize, usize)>,
+}
+
+/// Inner byte ranges of `link("x")` / `file("x")` string literals in a `.base`
+/// file (the expression language's two ways to name a file).
+fn base_call_literals(text: &str) -> Vec<Found> {
+    let b = text.as_bytes();
+    let mut out = Vec::new();
+    for name in ["link(", "file("] {
+        let mut from = 0;
+        while let Some(at) = text[from..].find(name) {
+            let start = from + at;
+            from = start + name.len();
+            // a call, not the tail of another identifier (`mylink(`)
+            if start > 0 && (b[start - 1].is_ascii_alphanumeric() || b[start - 1] == b'_') {
+                continue;
+            }
+            let mut i = from;
+            while i < b.len() && (b[i] == b' ' || b[i] == b'\t') {
+                i += 1;
+            }
+            let Some(&quote) = b.get(i) else { continue };
+            // a quote inside YAML double quotes is written `\"`
+            let (quote, open_len) = match (quote, b.get(i + 1)) {
+                (b'\\', Some(&q @ (b'"' | b'\''))) => (q, 2),
+                (q @ (b'"' | b'\''), _) => (q, 1),
+                _ => continue,
+            };
+            let inner_start = i + open_len;
+            let Some(len) =
+                text[inner_start..].find(|c: char| c as u32 == quote as u32 || c == '\n')
+            else {
+                continue;
+            };
+            if text.as_bytes()[inner_start + len] != quote {
+                continue;
+            }
+            let mut inner_end = inner_start + len;
+            if open_len == 2 && b[inner_end - 1] == b'\\' {
+                inner_end -= 1;
+            }
+            let raw = &text[inner_start..inner_end];
+            if raw.is_empty() || raw.contains("\\") {
+                continue;
+            }
+            out.push(Found {
+                link: ParsedLink {
+                    raw: raw.to_string(),
+                    kind: LinkKind::Wikilink,
+                    display: None,
+                    subpath: None,
+                    span: (inner_start, inner_end),
+                },
+                range: Some((inner_start, inner_end)),
+            });
+        }
+    }
+    out
+}
+
+fn apply_found(
     text: &str,
+    found: Vec<Found>,
     src_before: &str,
     src_after: &str,
     mv: &Move,
@@ -218,7 +285,7 @@ pub fn rewrite_text(
     let src_moved = src_before != src_after;
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut skipped = 0;
-    for link in collect_links(text) {
+    for Found { link, range } in found {
         if link.raw.is_empty() {
             continue;
         }
@@ -247,7 +314,7 @@ pub fn rewrite_text(
         } else {
             replacement
         };
-        match target_range(text, &link) {
+        match range {
             Some((s, e)) => edits.push((s, e, replacement)),
             None => skipped += 1,
         }
@@ -263,6 +330,48 @@ pub fn rewrite_text(
         changed,
         skipped,
     }
+}
+
+/// Rewrite the links of one note. `src_before`/`src_after` differ when the
+/// note itself is the file being moved (its relative links must follow).
+pub fn rewrite_text(
+    text: &str,
+    src_before: &str,
+    src_after: &str,
+    mv: &Move,
+    before: &PathIndex,
+    after: &PathIndex,
+) -> Rewrite {
+    let found = collect_links(text)
+        .into_iter()
+        .map(|link| {
+            let range = target_range(text, &link);
+            Found { link, range }
+        })
+        .collect();
+    apply_found(text, found, src_before, src_after, mv, before, after)
+}
+
+/// Rewrite the references of a `.base` file: `[[wikilinks]]` anywhere in its
+/// YAML and the string literal of `link("x")` / `file("x")` calls. Markdown
+/// links are not a thing in bases and are left alone.
+pub fn rewrite_base_text(
+    text: &str,
+    src: &str,
+    mv: &Move,
+    before: &PathIndex,
+    after: &PathIndex,
+) -> Rewrite {
+    let mut found: Vec<Found> = scan_links(text)
+        .into_iter()
+        .filter(|l| matches!(l.kind, LinkKind::Wikilink | LinkKind::Embed))
+        .map(|link| {
+            let range = target_range(text, &link);
+            Found { link, range }
+        })
+        .collect();
+    found.extend(base_call_literals(text));
+    apply_found(text, found, src, src, mv, before, after)
 }
 
 #[cfg(test)]
