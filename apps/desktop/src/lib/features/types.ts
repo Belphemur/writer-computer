@@ -3,6 +3,9 @@
 // the spec's list and are rejected with a clear error until their registry exists.
 import type { ComponentType } from "react";
 import type { CommandContext } from "@/components/command-palette/commands";
+import type { Extension } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
+import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
 import type { Keybinding } from "@/lib/keybindings/registry";
 
 export type Dispose = () => void;
@@ -48,9 +51,25 @@ export interface KeybindingContribution extends Omit<Keybinding, "run" | "phase"
   run: (feature: FeatureContext, e: KeyboardEvent) => void | Promise<void>;
 }
 
+export interface EditorExtensionContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  when?: () => boolean;
+  /** A dynamic import: not called until an editor needs the extension. */
+  load: () => Promise<Extension>;
+}
+
+export interface EditorBodyMenuContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  items: (view: EditorView, event: MouseEvent) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
+  editorExtensions?: readonly EditorExtensionContribution[];
+  menus?: { "editor-body"?: readonly EditorBodyMenuContribution[] };
   // Declared by the spec, no host registry yet (each lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
   sidebar?: readonly unknown[];

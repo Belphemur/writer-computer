@@ -1,0 +1,168 @@
+{
+  "id": "tables",
+  "name": "Tables",
+  "version": "1.0.0",
+  "description": "Rendered tables, table editing keys and toolbar, and the Table palette and context-menu commands.",
+  "enabledByDefault": true,
+  "activation": ["onFileKind:markdown"],
+  "memory": {
+    "level": "low",
+    "note": "Loads the table editor chunk when the first note editor opens; no background work."
+  },
+  "rust": {
+    "commands": [],
+    "events": []
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "tables.insert",
+        "label": "Table: Insert table",
+        "description": "Command",
+        "when": "editor"
+      },
+      {
+        "id": "tables.convert-selection",
+        "label": "Table: Convert selection to table",
+        "description": "Command",
+        "when": "selection"
+      },
+      {
+        "id": "tables.paste-as-table",
+        "label": "Table: Paste clipboard as table",
+        "description": "Command",
+        "when": "editor"
+      },
+      {
+        "id": "tables.addRowAbove",
+        "label": "Table: Add row above",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.addRowBelow",
+        "label": "Table: Add row below",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.addColumnLeft",
+        "label": "Table: Add column left",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.addColumnRight",
+        "label": "Table: Add column right",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.moveRowUp",
+        "label": "Table: Move row up",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.moveRowDown",
+        "label": "Table: Move row down",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.moveColumnLeft",
+        "label": "Table: Move column left",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.moveColumnRight",
+        "label": "Table: Move column right",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.duplicateRow",
+        "label": "Table: Duplicate row",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.deleteRow",
+        "label": "Table: Delete row",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.deleteColumn",
+        "label": "Table: Delete column",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.clearCell",
+        "label": "Table: Clear cell",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.alignLeft",
+        "label": "Table: Align column left",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.alignCenter",
+        "label": "Table: Align column center",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.alignRight",
+        "label": "Table: Align column right",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.alignNone",
+        "label": "Table: Clear column alignment",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.sortAscending",
+        "label": "Table: Sort by column A to Z",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.sortDescending",
+        "label": "Table: Sort by column Z to A",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.transpose",
+        "label": "Table: Transpose table",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.format",
+        "label": "Table: Format table",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.delete",
+        "label": "Table: Delete table",
+        "description": "Command",
+        "when": "in-table"
+      }
+    ],
+    "menus": {
+      "editor-body": ["tables.table-submenu"]
+    },
+    "editorExtensions": ["tables.editor"]
+  }
+}

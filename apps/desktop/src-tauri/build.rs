@@ -33,6 +33,10 @@ fn features(attrs: tauri_build::Attributes) -> tauri_build::Attributes {
                     .collect()
             })
             .unwrap_or_default();
+        // A TypeScript-only feature (no Rust commands) has no plugin and no permissions.
+        if commands.is_empty() {
+            return attrs;
+        }
         attrs.plugin(
             id,
             tauri_build::InlinedPlugin::new()

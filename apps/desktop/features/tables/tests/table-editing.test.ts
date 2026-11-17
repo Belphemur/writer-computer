@@ -27,7 +27,7 @@ import {
   tableCommands,
   convertSelectionToTable,
   type TableCommandId,
-} from "../src/components/editor-area/table-editing";
+} from "../web/table-editing";
 
 const views: EditorView[] = [];
 

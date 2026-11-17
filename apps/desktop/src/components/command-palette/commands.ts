@@ -8,7 +8,6 @@ import type { RegisteredCommand } from "@/lib/obsidian-host/api/core";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
 import { AGENT_PALETTE_COMMANDS } from "./agent-commands";
 import { PROJECT_PALETTE_COMMANDS } from "./project-commands";
-import { TABLE_PALETTE_COMMANDS } from "./table-commands";
 import { TITLE_PALETTE_COMMANDS } from "./title-commands";
 
 /** Everything a built-in command may read or do. Supplied by the palette component. */
@@ -195,7 +194,6 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   },
   ...AGENT_PALETTE_COMMANDS,
   ...PROJECT_PALETTE_COMMANDS,
-  ...TABLE_PALETTE_COMMANDS,
   ...TITLE_PALETTE_COMMANDS,
 ];
 

@@ -21,6 +21,6 @@
     "noFallthroughCasesInSwitch": true,
     "paths": { "@/*": ["./src/*"], "@shared/*": ["./shared/*"] }
   },
-  "include": ["src", "shared"],
+  "include": ["src", "shared", "features/*/web"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

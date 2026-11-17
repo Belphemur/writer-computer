@@ -107,7 +107,7 @@ These apply while you are typing in a note.
 
 These apply while your caret is inside a markdown table (the table shows its source while you edit it).
 
-<!-- Implemented in `apps/desktop/src/components/editor-area/table-editing.ts` (high-precedence keymap, active only when the selection is inside a table, never inside a code block). They all yield when the Obsidian "Advanced Tables" plugin (`table-editor-obsidian`) is enabled through the plugin host, so a key is not handled twice; the palette commands and the toolbar stay. Alt+ArrowUp/Down replace "Move line" and Cmd+Enter replaces "Insert line below" inside a table only. Spec: SPECs/table-editing-spec.md. -->
+<!-- Implemented in `apps/desktop/features/tables/web/table-editing.ts` (high-precedence keymap, active only when the selection is inside a table, never inside a code block). They all yield when the Obsidian "Advanced Tables" plugin (`table-editor-obsidian`) is enabled through the plugin host, so a key is not handled twice; the palette commands and the toolbar stay. Alt+ArrowUp/Down replace "Move line" and Cmd+Enter replaces "Insert line below" inside a table only. Spec: SPECs/table-editing-spec.md. -->
 
 | Shortcut                  | Action                                                                 |
 | ------------------------- | ---------------------------------------------------------------------- |

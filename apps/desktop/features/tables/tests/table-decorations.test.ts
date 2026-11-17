@@ -3,11 +3,8 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
-import { foldExtension } from "../src/lib/prosemark-core/main";
-import {
-  parseTableCellInlineMarkdown,
-  tableDecorations,
-} from "../src/components/editor-area/table-decorations";
+import { foldExtension } from "../../../src/lib/prosemark-core/main";
+import { parseTableCellInlineMarkdown, tableDecorations } from "../web/table-decorations";
 
 const before = "before\n";
 const table = ["| Name | Count |", "| --- | ---: |", "| Tea | 2 |"].join("\n");

@@ -718,6 +718,15 @@
       "step": 10,
       "scope": "global",
       "default": 420
+    },
+    {
+      "key": "features.tables.enabled",
+      "label": "Tables",
+      "description": "Turns the Tables feature on or off.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
     }
   ]
 }

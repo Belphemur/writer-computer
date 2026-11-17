@@ -12,6 +12,7 @@ import { useMenuEvents } from "./hooks/use-menu-events";
 import { useMouseNavigation } from "./hooks/use-mouse-navigation";
 import { useOpenDrop } from "./hooks/use-open-drop";
 import { usePluginHostLifecycle } from "./hooks/use-plugins";
+import "./lib/features/builtin";
 import "./lib/global-recents";
 import "./lib/standalone-watch";
 import "./App.css";

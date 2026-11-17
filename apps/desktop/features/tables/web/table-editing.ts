@@ -2,7 +2,7 @@
 // already shows while the caret is inside a table (the rendered widget only exists when it is not).
 // The markdown stays the single source of truth: every command is one transaction that replaces
 // only the changed span of the table, so each is one undo step. Parsing/formatting is
-// `src/lib/markdown-table.ts`; spec: `SPECs/table-editing-spec.md`.
+// `markdown-table.ts` (same folder); spec: `SPECs/table-editing-spec.md`.
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import {
   EditorSelection,
@@ -43,8 +43,9 @@ import {
   type Align,
   type MarkdownTable,
   type TableCursor,
-} from "@/lib/markdown-table";
+} from "./markdown-table";
 import { usePluginsStore } from "@/stores/plugins-store";
+import { getTableEditorView, setTableContextProbe, setTableEditorView } from "./active";
 
 // ---------------------------------------------------------------------------
 // Yielding to the Obsidian Advanced Tables plugin
@@ -740,11 +741,8 @@ const pasteHandler = EditorView.domEventHandlers({
 // View plugin: active view, format on leave, floating toolbar
 // ---------------------------------------------------------------------------
 
-let lastView: EditorView | null = null;
-/** The editor the table commands in the palette act on (the last one that had focus). */
-export function getTableEditorView(): EditorView | null {
-  return lastView;
-}
+export { getTableEditorView };
+setTableContextProbe((state) => tableContextAt(state) !== null);
 
 const TOOLBAR: ReadonlyArray<readonly [TableCommandId, string, string] | "---"> = [
   ["table.addRowBelow", "+ Row", "Add row below"],
@@ -801,16 +799,16 @@ class TableEditingPlugin {
     }
     view.dom.appendChild(this.toolbar);
     view.dom.addEventListener("focusin", this.onFocus);
-    if (view.hasFocus) lastView = view;
+    if (view.hasFocus) setTableEditorView(view);
     this.refresh(tableContextAt(view.state));
   }
 
   private onFocus = () => {
-    lastView = this.view;
+    setTableEditorView(this.view);
   };
 
   update(u: ViewUpdate) {
-    if (u.focusChanged && u.view.hasFocus) lastView = u.view;
+    if (u.focusChanged && u.view.hasFocus) setTableEditorView(u.view);
     if (this.pending !== null && u.docChanged) this.pending = u.changes.mapPos(this.pending, -1);
     const relevant =
       u.selectionSet || u.docChanged || u.focusChanged || u.geometryChanged || u.viewportChanged;
@@ -883,7 +881,7 @@ class TableEditingPlugin {
   destroy() {
     this.view.dom.removeEventListener("focusin", this.onFocus);
     this.toolbar.remove();
-    if (lastView === this.view) lastView = null;
+    if (getTableEditorView() === this.view) setTableEditorView(null);
   }
 }
 

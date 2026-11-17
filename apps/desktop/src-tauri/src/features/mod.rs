@@ -77,6 +77,13 @@ fn default_true() -> bool {
 }
 
 impl Manifest {
+    /// Does the feature have a Rust half? A feature without commands or events is TypeScript-only:
+    /// no plugin, no ACL, nothing in [`registry`].
+    #[cfg(test)]
+    pub fn has_rust(&self) -> bool {
+        !self.rust.commands.is_empty() || !self.rust.events.is_empty()
+    }
+
     /// The settings key of this feature's kill switch.
     pub fn enabled_key(&self) -> String {
         format!("features.{}.enabled", self.id)

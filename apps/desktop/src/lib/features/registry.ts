@@ -13,6 +13,8 @@ import { logger } from "@/lib/logger";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { featureEventName } from "./events";
 import { assertFeatureId } from "./id";
+import { editorExtensionContributions } from "./editor-extensions";
+import { editorBodyMenuContributions } from "./menus";
 import { featurePaletteCommands } from "./palette";
 import type {
   Dispose,
@@ -30,7 +32,12 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
       throw new Error(`feature ${def.id}: contribution point "${point}" has no host yet`);
     }
   }
-  const ids = [...(c.commands ?? []), ...(c.keybindings ?? [])].map((x) => x.id);
+  const ids = [
+    ...(c.commands ?? []),
+    ...(c.keybindings ?? []),
+    ...(c.editorExtensions ?? []),
+    ...(c.menus?.["editor-body"] ?? []),
+  ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
       throw new Error(`feature ${def.id}: contribution id "${id}" must start with "${def.id}."`);
@@ -106,6 +113,8 @@ export function createFeatureHost({
   function removeContributions(id: string) {
     featurePaletteCommands.removeOwner(owner(id));
     keybindings.removeOwner(owner(id));
+    editorExtensionContributions.removeOwner(owner(id));
+    editorBodyMenuContributions.removeOwner(owner(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -146,6 +155,12 @@ export function createFeatureHost({
             category: k.category ?? "Feature",
             run: (e) => whenActive(def.id, () => k.run(entry.ctx, e)),
           });
+        }
+        for (const x of def.contributes?.editorExtensions ?? []) {
+          editorExtensionContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const m of def.contributes?.menus?.["editor-body"] ?? []) {
+          editorBodyMenuContributions.add(m.id, { ...m, owner: o });
         }
       } catch (e) {
         removeContributions(def.id);

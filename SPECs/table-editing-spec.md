@@ -17,7 +17,7 @@ those below.
 
 ## Existing editor behaviour (before this change)
 
-- `table-decorations.ts` folds a GFM `Table` node into a read-only rendered `TableWidget`; when the
+- `features/tables/web/table-decorations.ts` folds a GFM `Table` node into a read-only rendered `TableWidget`; when the
   selection touches the table the widget goes away and the raw lines show as a monospace code-like
   block (`cm-table-source-line`). Caret in a table therefore always means "editing source".
 - No cell navigation: Tab indented or did nothing, Enter split the line, pipes were never aligned.
@@ -29,7 +29,7 @@ Source stays the single source of truth. Editing happens in the source lines tha
 while the caret is in a table; commands rewrite only the changed span of the table in one
 transaction (one undo step).
 
-- Model and formatting: `src/lib/markdown-table.ts` (pure). Cells keep raw markdown; only unescaped
+- Model and formatting: `features/tables/web/markdown-table.ts` (pure). Cells keep raw markdown; only unescaped
   `|` splits cells (GFM). Column width uses display width (CJK and emoji 2, combining marks 0),
   minimum 3. Uneven rows are padded, never truncated. Prefixes (indent, `>` quotes, a list marker on
   the first line) are kept.

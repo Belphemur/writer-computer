@@ -13,6 +13,7 @@ import {
   prosemarkMarkdownSyntaxExtensions,
 } from "@/lib/prosemark-core/main";
 import * as editorApi from "@/hooks/editor-api";
+import { featureEditorExtensions } from "@/lib/features/editor-extensions";
 import {
   getPluginCompartmentValue,
   pluginConfigGuard,
@@ -33,8 +34,6 @@ import { linkNavigationExtension } from "./link-navigation";
 import { markdownFormatting } from "./markdown-formatting";
 import { mathDecorations } from "./math-decorations";
 import { mermaidDecorations } from "./mermaid-decorations";
-import { tableDecorations } from "./table-decorations";
-import { tableEditing } from "./table-editing";
 import { viewportParsePlugin } from "./viewport-parse";
 import { wikiLinkExtension } from "./wiki-link-extension";
 
@@ -129,8 +128,8 @@ export function createEditorExtensions(
     prosemarkBaseThemeSetup(),
     headingWeightHighlight,
     viewportParsePlugin,
-    tableDecorations(),
-    tableEditing(),
+    // Contributed by built-in features (tables, ...): loaded lazily, switchable live.
+    featureEditorExtensions(),
     calloutDecorations(getFilePath),
     htmlBlockDecorations(),
     mermaidDecorations(),

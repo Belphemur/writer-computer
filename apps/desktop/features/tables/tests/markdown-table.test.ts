@@ -26,7 +26,7 @@ import {
   tableFromGrid,
   transpose,
   type MarkdownTable,
-} from "../src/lib/markdown-table";
+} from "../web/markdown-table";
 
 function table(src: string): MarkdownTable {
   const t = parseTable(src.split("\n"));

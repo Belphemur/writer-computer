@@ -53,6 +53,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     blocks: [{ type: "agent" }],
   },
   {
+    id: "features",
+    label: "Features",
+    group: "General",
+    blocks: [category("Features")],
+  },
+  {
     id: "privacy",
     label: "Privacy",
     group: "General",

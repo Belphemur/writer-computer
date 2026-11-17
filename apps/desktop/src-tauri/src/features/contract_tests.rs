@@ -113,7 +113,11 @@ fn schema_entries(m: &Manifest, fragment: Option<&str>) -> Result<Vec<Value>, St
     let mut entries = vec![json!({
         "key": m.enabled_key(),
         "label": m.name,
-        "description": format!("Turns the {} feature on or off. The Rust part takes effect after a restart.", m.name),
+        "description": if m.has_rust() {
+            format!("Turns the {} feature on or off. The Rust part takes effect after a restart.", m.name)
+        } else {
+            format!("Turns the {} feature on or off.", m.name)
+        },
         "category": "Features",
         "type": "boolean",
         "default": m.enabled_by_default,
@@ -218,7 +222,10 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
         let entries = schema_entries(&m, def.settings).unwrap();
         check_schema(&shared, &entries).unwrap();
     }
-    // A feature folder without a registry entry would silently get ACL but no plugin.
+    // A feature folder without a registry entry would silently get ACL but no plugin, unless it has
+    // no Rust half (a TypeScript-only feature): then it has no plugin to register and only its
+    // kill switch has to be in the shared schema.
+    let mut web_only = BTreeSet::new();
     for entry in std::fs::read_dir(&features_dir)
         .into_iter()
         .flatten()
@@ -229,6 +236,13 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
                 .as_str()
                 .unwrap()
                 .to_string();
+            let m: Manifest = serde_json::from_value(read_json(&entry.path().join("feature.json")))
+                .expect("feature.json parses");
+            if !m.has_rust() {
+                check_schema(&shared, &schema_entries(&m, None).unwrap()).unwrap();
+                web_only.insert(id);
+                continue;
+            }
             assert!(
                 ids.contains(&id),
                 "{id} has a folder but no entry in features::registry"
@@ -243,7 +257,7 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
             .and_then(|k| k.strip_suffix(".enabled"))
         {
             assert!(
-                ids.contains(id),
+                ids.contains(id) || web_only.contains(id),
                 "{key} is in the shared schema but {id} is not registered"
             );
         }
