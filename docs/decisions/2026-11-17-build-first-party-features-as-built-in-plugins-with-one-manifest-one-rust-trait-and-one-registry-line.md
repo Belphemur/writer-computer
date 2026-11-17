@@ -282,3 +282,5 @@ None. Questions 1 to 11 are resolved in "Decisions taken". What remains before a
 
 - Verified in source on 2026-11-17: ACL gate on plugin commands (`tauri-2.12.5/src/webview/mod.rs` ~L2078), `InlinedPlugin` (`tauri-build-2.7.4/src/lib.rs`), runtime plugin add in `setup` (`lib.rs` L604, `tauri_plugin_updater`).
 - Not verified (spike): that `capabilities_path_pattern` accepts a multi-folder pattern; that a plugin added in `setup` still gets its inlined ACL entries (they are generated at build time, so it should).
+
+2026-11-17: the `panic = "abort"` consequence is superseded by [Contain feature failures with unwinding panics and recover from native crashes on the next launch](2026-11-17-contain-feature-failures-with-unwinding-panics-and-recover-from-native-crashes-on-next-launch.md): release builds unwind and every feature boundary runs under one guard.
