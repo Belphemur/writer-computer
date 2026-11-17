@@ -68,6 +68,11 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 tracing-appender = "=0.2.5"
 tracing-log = { version = "=0.2.0", default-features = false, features = ["log-tracer", "std"] }
 unicode-normalization = "0.1.26"
+# Typed commands, events and types for built-in features (ADR 2026-11-17, Q7; review in
+# SPECs/typegen-maintainer-review.md). Exact pins on purpose: the rc line breaks between releases.
+tauri-specta = { version = "=2.0.0-rc.29", features = ["derive", "typescript"] }
+specta = { version = "=2.0.0-rc.28", features = ["derive", "function"] }
+specta-typescript = { version = "=0.0.15" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
