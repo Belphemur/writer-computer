@@ -7,6 +7,7 @@
 import { redo, undo } from "@codemirror/commands";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import { bindLinkActivation, type LinkTarget } from "@/lib/link-activation";
 import "./table-ui.css";
 import {
   HEADER_ROW,
@@ -59,6 +60,9 @@ export interface TableHost {
   fullscreen: boolean;
   /** Opens the fullscreen overlay (the inline widget only). */
   expand?(): void;
+  /** Maps a clicked element to a link to open. Set where the editor's own link handlers do not
+   *  reach the cells (the fullscreen overlay); the inline widget leaves it to them. */
+  linkTarget?(el: Element): LinkTarget | null;
 }
 
 /** The host of a table rendered inside the editor's own content. */
@@ -209,6 +213,8 @@ export function buildTableDOM(
     if (e.target instanceof Element && e.target.closest("button")) e.preventDefault();
   });
   wrapper.addEventListener("click", (e) => onClick(host, e));
+  // Claim the press: a left press on a link would focus the cell and swap the link for its source.
+  if (host.linkTarget) bindLinkActivation(wrapper, host.linkTarget, { claimPress: true });
   return wrapper;
 }
 

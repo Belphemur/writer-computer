@@ -5,7 +5,12 @@ import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { buildSlugIndex, parseDocumentHeadings } from "@/hooks/use-document-headings";
 import type { DocumentHeading } from "@/hooks/use-document-headings";
-import { openPath, type LinkIntent, linkActivationExtension } from "@/lib/link-activation";
+import {
+  openPath,
+  type LinkIntent,
+  type LinkTarget,
+  linkActivationExtension,
+} from "@/lib/link-activation";
 import { resolveLinkTarget } from "@/lib/paths";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import { linkUrlAt, rawUrlAt } from "@/lib/prosemark-core/links";
@@ -74,6 +79,12 @@ export function linkHrefAtPos(view: EditorView, pos: number): string | null {
   return linkUrlAt(view.state, pos) ?? rawUrlAt(view.state, pos) ?? null;
 }
 
+/** The href a rendered link element carries (`data-href`, set by table cells and other widgets
+ *  that cannot be mapped back to a source position), if the element is inside one. */
+export function renderedLinkHrefOf(el: Element): string | null {
+  return el.closest<HTMLElement>(".cm-rendered-link")?.dataset.href ?? null;
+}
+
 /** Resolve the link href under a mouse event, or null if it isn't a link.
  *  Shared by the mousedown (claim the press) and click (navigate) handlers. */
 function linkHrefAt(event: MouseEvent, view: EditorView): string | null {
@@ -90,12 +101,28 @@ function linkHrefAt(event: MouseEvent, view: EditorView): string | null {
   const isRawUrl = target.closest(".cm-url") !== null;
   if (!isRenderedLink && !isRawUrl) return null;
 
-  if (renderedLink instanceof HTMLElement && renderedLink.dataset.href) {
-    return renderedLink.dataset.href;
-  }
+  const carried = renderedLinkHrefOf(target);
+  if (carried) return carried;
   const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
   if (pos === null) return null;
   return (isRenderedLink ? linkUrlAt(view.state, pos) : rawUrlAt(view.state, pos)) ?? null;
+}
+
+/** The target of a link `href` written in the document: the one way a rendered link opens, for
+ *  the editor's own click handler and for rendered cells outside it (the fullscreen table). */
+export function linkTargetFor(
+  href: string,
+  view: EditorView,
+  getFilePath: () => string,
+  isDisposed: () => boolean,
+): LinkTarget {
+  return {
+    kind: "custom",
+    open: (intent) =>
+      void followLink(href, view, getFilePath(), intent).catch((error) => {
+        if (!isDisposed()) console.error("[editor] Failed to open link:", error);
+      }),
+  };
 }
 
 /** Left, middle and Cmd/Ctrl clicks on a link in the document (`lib/link-activation.ts`): the
@@ -109,13 +136,7 @@ export function linkNavigationExtension(
     linkActivationExtension((event, view) => {
       const href = linkHrefAt(event, view);
       if (href === null) return null;
-      return {
-        kind: "custom",
-        open: (intent) =>
-          void followLink(href, view, getFilePath(), intent).catch((error) => {
-            if (!isDisposed()) console.error("[editor] Failed to open link:", error);
-          }),
-      };
+      return linkTargetFor(href, view, getFilePath, isDisposed);
     }),
   );
 }

@@ -13,6 +13,8 @@ import {
   type RenderTable,
   type TableHost,
 } from "./table-cells";
+import { activateLink } from "@/lib/link-activation";
+import { cellLinkAt } from "./table-links";
 import { cellTextElement, setFullscreenHooks } from "./table-state";
 import { tableContextAtPos } from "./table-editing";
 
@@ -48,6 +50,20 @@ function makeHost(state: { view: EditorView; from: number }): TableHost {
     findCell: (_from, row, col) =>
       current?.wrapper.querySelector<HTMLElement>(`[data-row="${row}"][data-col="${col}"]`) ?? null,
     fullscreen: true,
+    linkTarget: (el) => {
+      const link = cellLinkAt(el, state.view);
+      if (!link) return null;
+      // A note that opens in this tab or an active new one closes the dialog first, so it is not
+      // left covering what you just navigated to. A background tab and a URL in the system
+      // browser leave the table open.
+      return {
+        kind: "custom",
+        open: (intent) => {
+          if (!link.external && intent !== "new-tab-background") closeTableFullscreen();
+          activateLink(link.target, intent);
+        },
+      };
+    },
   };
 }
 
@@ -93,7 +109,14 @@ export function openTableFullscreen(view: EditorView, from: number): void {
 
   const host = makeHost(state);
   const wrapper = buildTableDOM(renderTableOf(ctx.table), () => host);
-  body.appendChild(wrapper);
+  // The editor's theme rules (`.cm-inline-code`, `.cm-rendered-link`, `.cm-wiki-link`, the
+  // `--pm-*` variables) are keyed on the classes of `view.dom` (`.cm-editor` and the generated
+  // theme classes, light or dark); the overlay lives in `document.body`, so it carries the same
+  // classes on an inner element (not on the overlay, whose layout `.cm-editor` would change).
+  const scope = body.appendChild(document.createElement("div"));
+  scope.className = [...view.dom.classList].filter((c) => c !== "cm-focused").join(" ");
+  scope.classList.add("cm-table-fullscreen-scope");
+  scope.appendChild(wrapper);
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || document.querySelector(".cm-table-menu")) return;

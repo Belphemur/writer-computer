@@ -114,11 +114,18 @@ export function linkHandlers(target: LinkTarget, options: LinkHandlerOptions = {
 
 // -- Plain DOM ----------------------------------------------------------------
 
+export interface BindLinkOptions {
+  /** Claim every press on a link on mousedown, not only the middle button: for a link inside
+   *  editable content, where a left press would otherwise focus the text and replace the link. */
+  claimPress?: boolean;
+}
+
 /** A delegated listener for rendered HTML: `resolve(el)` maps the clicked element to a target
  *  (or null to leave the event alone). Returns the disposer. */
 export function bindLinkActivation(
   container: HTMLElement,
   resolve: (el: Element) => LinkTarget | null,
+  options: BindLinkOptions = {},
 ): () => void {
   const hit = (e: MouseEvent): LinkTarget | null => {
     const el = e.target instanceof Element ? e.target : null;
@@ -133,7 +140,8 @@ export function bindLinkActivation(
     activateLink(target, intent);
   };
   const down = (e: MouseEvent) => {
-    if (e.button === MIDDLE && hit(e)) e.preventDefault();
+    if ((e.button === MIDDLE || (options.claimPress && linkIntent(e))) && hit(e))
+      e.preventDefault();
   };
   container.addEventListener("click", run);
   container.addEventListener("auxclick", run);

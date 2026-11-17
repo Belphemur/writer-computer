@@ -64,6 +64,18 @@ turned it into markdown source. The rendered table is now the editing surface.
   scrolling both ways, with the same cells and handles. It edits the note's document through the same
   view (one undo history) and mirrors every document change. Escape, Close or a backdrop click close
   it and return focus to the note; one at a time; destroying the editor closes it.
+- Links in fullscreen: cells render through the same `setCellMarkdownContent` as the inline widget,
+  so wiki links, Markdown links and bare URLs carry the same `.cm-wiki-link` / `.cm-rendered-link`
+  markup (styled by the editor's own theme: the overlay is outside the editor, so an inner
+  `.cm-table-fullscreen-scope` element carries `view.dom`'s classes, `.cm-editor` and the generated
+  theme classes, and every theme rule and `--pm-*` variable for links, inline code and the rest
+  applies without a second copy). The editor's link extensions do not reach the overlay, so `table-links.ts`
+  maps the cell markup onto the same openers they use (`wikiLinkTarget`, `linkTargetFor`) and the
+  overlay binds them with `bindLinkActivation` (`claimPress`: a press on a link does not focus the
+  cell), per the gesture table of `SPECs/link-activation-spec.md`. A press elsewhere in the cell
+  edits it. A note opened in this tab or an active new tab closes the overlay first (it would
+  otherwise cover the note you navigated to); a middle or Cmd/Ctrl click (background tab) and a URL
+  in the system browser leave it open.
 - Events: the widget ignores editor events except on links (so a click on a link still follows it).
   While the Advanced Tables plugin is active the built-in source-mode keys yield; the in-cell keys do
   not (they belong to the rendered DOM).

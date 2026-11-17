@@ -19,7 +19,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import * as tauri from "@/lib/tauri";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
-import { linkActivationExtension, openPath } from "@/lib/link-activation";
+import { linkActivationExtension, openPath, type LinkTarget } from "@/lib/link-activation";
 import {
   wikiSuggestions,
   parseWikiLink,
@@ -307,6 +307,12 @@ async function wikiLinkCompletions(context: CompletionContext): Promise<Completi
 // Click handling
 // ---------------------------------------------------------------------------
 
+/** The raw target a rendered wiki link element carries (`data-wiki-target`, set by table cells),
+ *  if the element is inside one. */
+export function wikiTargetOf(el: Element): string | null {
+  return el.closest<HTMLElement>(".cm-wiki-link")?.dataset.wikiTarget ?? null;
+}
+
 /** Resolve the wiki-link target under a mouse event, or null if it isn't a
  *  wiki link. Shared by the mousedown (claim the press) and click (navigate)
  *  handlers. */
@@ -316,12 +322,36 @@ function wikiTargetAt(event: MouseEvent, view: EditorView): string | null {
   const wikiLink = target.closest(".cm-wiki-link");
   if (!wikiLink) return null;
 
-  if (wikiLink instanceof HTMLElement && wikiLink.dataset.wikiTarget) {
-    return wikiLink.dataset.wikiTarget;
-  }
+  const carried = wikiTargetOf(target);
+  if (carried) return carried;
   const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
   if (pos === null) return null;
   return extractWikiTarget(view.state.doc, pos);
+}
+
+/** The target of a wiki link written as `rawTarget`: it resolves against the note, then opens
+ *  for the gesture. One path for the editor's click handler and for rendered cells outside it
+ *  (the fullscreen table). */
+export function wikiLinkTarget(
+  rawTarget: string,
+  getFilePath: () => string,
+  isDisposed: () => boolean,
+): LinkTarget {
+  return {
+    kind: "custom",
+    open: (intent) => {
+      if (!getWorkspaceRoot()) return;
+      void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
+        .then((result) => {
+          if (isDisposed() || result.kind !== "internal") return;
+          if (result.fragment) setPendingAnchor(result.path, result.fragment);
+          return openPath(result.path, intent);
+        })
+        .catch((error) => {
+          if (!isDisposed()) console.error("[editor] Failed to follow wiki link:", error);
+        });
+    },
+  };
 }
 
 /** Left, middle and Cmd/Ctrl clicks on a wiki link (`lib/link-activation.ts`): the press is
@@ -332,21 +362,7 @@ function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boole
     linkActivationExtension((event, view) => {
       const rawTarget = wikiTargetAt(event, view);
       if (rawTarget === null) return null;
-      return {
-        kind: "custom",
-        open: (intent) => {
-          if (!getWorkspaceRoot()) return;
-          void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
-            .then((result) => {
-              if (isDisposed() || result.kind !== "internal") return;
-              if (result.fragment) setPendingAnchor(result.path, result.fragment);
-              return openPath(result.path, intent);
-            })
-            .catch((error) => {
-              if (!isDisposed()) console.error("[editor] Failed to follow wiki link:", error);
-            });
-        },
-      };
+      return wikiLinkTarget(rawTarget, getFilePath, isDisposed);
     }),
   );
 }
