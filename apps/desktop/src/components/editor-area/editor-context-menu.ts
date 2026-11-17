@@ -168,38 +168,107 @@ export function buildEditorBodyMenuItemsSpec(
 // -- Tab menu --
 
 export type TabMenuActionId =
+  | "pin"
+  | "unpin"
   | "close"
   | "close-others"
   | "close-all"
+  | "set-display-title"
   | "reveal-in-sidebar"
   | "copy-path";
 
 export interface TabMenuHandlers {
+  onTogglePin: () => void;
   onClose: () => void;
   onCloseOthers: () => void;
   onCloseAll: () => void;
-  onRevealInSidebar: () => void;
-  onCopyPath: () => void;
+  /** File-backed tabs only; the "Reveal" and "Copy path" group is left out without them. */
+  onRevealInSidebar?: () => void;
+  onCopyPath?: () => void;
+  /** Markdown notes only: opens the display-title dialog (the frontmatter `title`). */
+  onSetDisplayTitle?: () => void;
 }
+
+/** What the menu shows for the tab it was opened on (see `SPECs/pinned-tabs-spec.md`). */
+export interface TabMenuState {
+  pinned: boolean;
+  /** The new-tab page cannot be pinned, so it gets no pin item. */
+  pinnable: boolean;
+  /** Is there another tab Close others would close (pinned tabs are never closed by it)? */
+  closeOthersEnabled: boolean;
+  /** Is there a tab Close all would close? */
+  closeAllEnabled: boolean;
+}
+
+const DEFAULT_TAB_MENU_STATE: TabMenuState = {
+  pinned: false,
+  pinnable: true,
+  closeOthersEnabled: true,
+  closeAllEnabled: true,
+};
+
+export type TabMenuItemSpec =
+  | { kind: "item"; id: TabMenuActionId; text: string; action: () => void; enabled?: boolean }
+  | { kind: "separator" };
 
 export function buildTabMenuItemsSpec(
   handlers: TabMenuHandlers,
-): Array<
-  { kind: "item"; id: TabMenuActionId; text: string; action: () => void } | { kind: "separator" }
-> {
-  return [
-    { kind: "item", id: "close", text: "Close", action: handlers.onClose },
-    { kind: "item", id: "close-others", text: "Close others", action: handlers.onCloseOthers },
-    { kind: "item", id: "close-all", text: "Close all", action: handlers.onCloseAll },
-    { kind: "separator" },
+  state: TabMenuState = DEFAULT_TAB_MENU_STATE,
+): TabMenuItemSpec[] {
+  const items: TabMenuItemSpec[] = [];
+  if (state.pinnable) {
+    items.push(
+      {
+        kind: "item",
+        id: state.pinned ? "unpin" : "pin",
+        text: state.pinned ? "Unpin tab" : "Pin tab",
+        action: handlers.onTogglePin,
+      },
+      { kind: "separator" },
+    );
+  }
+  items.push(
+    // A pinned tab closes only after it is unpinned (the same rule as Cmd+W and middle click).
+    { kind: "item", id: "close", text: "Close", action: handlers.onClose, enabled: !state.pinned },
     {
       kind: "item",
-      id: "reveal-in-sidebar",
-      text: "Reveal in sidebar",
-      action: handlers.onRevealInSidebar,
+      id: "close-others",
+      text: "Close others",
+      action: handlers.onCloseOthers,
+      enabled: state.closeOthersEnabled,
     },
-    { kind: "item", id: "copy-path", text: "Copy path", action: handlers.onCopyPath },
-  ];
+    {
+      kind: "item",
+      id: "close-all",
+      text: "Close all",
+      action: handlers.onCloseAll,
+      enabled: state.closeAllEnabled,
+    },
+  );
+  if (handlers.onSetDisplayTitle) {
+    items.push(
+      { kind: "separator" },
+      {
+        kind: "item",
+        id: "set-display-title",
+        text: "Set display title...",
+        action: handlers.onSetDisplayTitle,
+      },
+    );
+  }
+  if (handlers.onRevealInSidebar && handlers.onCopyPath) {
+    items.push(
+      { kind: "separator" },
+      {
+        kind: "item",
+        id: "reveal-in-sidebar",
+        text: "Reveal in sidebar",
+        action: handlers.onRevealInSidebar,
+      },
+      { kind: "item", id: "copy-path", text: "Copy path", action: handlers.onCopyPath },
+    );
+  }
+  return items;
 }
 
 // -- Document title menu --
@@ -233,7 +302,14 @@ export function buildTitleMenuItemsSpec(
 // -- Shared popup helper --
 
 export type MenuItemSpec =
-  | { kind: "item"; id: string; text: string; action: () => void; accelerator?: string }
+  | {
+      kind: "item";
+      id: string;
+      text: string;
+      action: () => void;
+      accelerator?: string;
+      enabled?: boolean;
+    }
   | { kind: "separator" }
   | { kind: "submenu"; text: string; items: MenuItemSpec[] };
 
@@ -254,6 +330,7 @@ async function buildMenuItems(
         text: entry.text,
         action: entry.action,
         ...(entry.accelerator ? { accelerator: entry.accelerator } : {}),
+        ...(entry.enabled === false ? { enabled: false } : {}),
       });
     }),
   );

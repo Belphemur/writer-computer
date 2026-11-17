@@ -33,11 +33,12 @@ function makeTabHandlers(): TabMenuHandlers & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
+    onTogglePin: () => calls.push("toggle-pin"),
     onClose: () => calls.push("close"),
     onCloseOthers: () => calls.push("close-others"),
     onCloseAll: () => calls.push("close-all"),
-    onRevealInSidebar: () => calls.push("reveal-in-sidebar"),
-    onCopyPath: () => calls.push("copy-path"),
+    onRevealInSidebar: () => void calls.push("reveal-in-sidebar"),
+    onCopyPath: () => void calls.push("copy-path"),
   };
 }
 
@@ -193,6 +194,8 @@ describe("buildTabMenuItemsSpec", () => {
     const spec = buildTabMenuItemsSpec(makeTabHandlers());
     const summary = spec.map((e) => (e.kind === "separator" ? "---" : `${e.id}:${e.text}`));
     expect(summary).toEqual([
+      "pin:Pin tab",
+      "---",
       "close:Close",
       "close-others:Close others",
       "close-all:Close all",
@@ -202,6 +205,64 @@ describe("buildTabMenuItemsSpec", () => {
     ]);
   });
 
+  test("a markdown note adds Set display title, before the reveal group", () => {
+    const calls: string[] = [];
+    const spec = buildTabMenuItemsSpec({
+      ...makeTabHandlers(),
+      onSetDisplayTitle: () => calls.push("title"),
+    });
+    const summary = spec.map((e) => (e.kind === "separator" ? "---" : `${e.id}:${e.text}`));
+    expect(summary).toContain("set-display-title:Set display title...");
+    expect(summary.indexOf("set-display-title:Set display title...")).toBeLessThan(
+      summary.indexOf("reveal-in-sidebar:Reveal in sidebar"),
+    );
+    const item = spec.find((e) => e.kind === "item" && e.id === "set-display-title");
+    if (item?.kind === "item") item.action();
+    expect(calls).toEqual(["title"]);
+  });
+
+  const state = {
+    pinned: false,
+    pinnable: true,
+    closeOthersEnabled: true,
+    closeAllEnabled: true,
+  };
+  const enabledOf = (spec: ReturnType<typeof buildTabMenuItemsSpec>, id: string) => {
+    const entry = spec.find((e) => e.kind === "item" && e.id === id);
+    return entry && entry.kind === "item" ? entry.enabled !== false : null;
+  };
+
+  test("a pinned tab offers Unpin tab and a disabled Close", () => {
+    const spec = buildTabMenuItemsSpec(makeTabHandlers(), { ...state, pinned: true });
+    const first = spec[0]!;
+    expect(first.kind === "item" ? `${first.id}:${first.text}` : null).toBe("unpin:Unpin tab");
+    expect(enabledOf(spec, "close")).toBe(false);
+    expect(enabledOf(buildTabMenuItemsSpec(makeTabHandlers(), state), "close")).toBe(true);
+  });
+
+  test("the new-tab page gets no pin item", () => {
+    const spec = buildTabMenuItemsSpec(makeTabHandlers(), { ...state, pinnable: false });
+    expect(spec.some((e) => e.kind === "item" && (e.id === "pin" || e.id === "unpin"))).toBe(false);
+    expect(spec[0]).toMatchObject({ kind: "item", id: "close" });
+  });
+
+  test("Close others and Close all are disabled when nothing would close", () => {
+    const spec = buildTabMenuItemsSpec(makeTabHandlers(), {
+      ...state,
+      closeOthersEnabled: false,
+      closeAllEnabled: false,
+    });
+    expect(enabledOf(spec, "close-others")).toBe(false);
+    expect(enabledOf(spec, "close-all")).toBe(false);
+  });
+
+  test("a tab with no file leaves out Reveal in sidebar and Copy path", () => {
+    const { onRevealInSidebar: _r, onCopyPath: _c, ...handlers } = makeTabHandlers();
+    const spec = buildTabMenuItemsSpec(handlers, state);
+    expect(spec.some((e) => e.kind === "item" && e.id === "copy-path")).toBe(false);
+    expect(spec.at(-1)).toMatchObject({ id: "close-all" });
+  });
+
   test("each item invokes the matching handler", () => {
     const handlers = makeTabHandlers();
     const spec = buildTabMenuItemsSpec(handlers);
@@ -209,6 +270,7 @@ describe("buildTabMenuItemsSpec", () => {
       if (entry.kind === "item") entry.action();
     }
     expect(handlers.calls).toEqual([
+      "toggle-pin",
       "close",
       "close-others",
       "close-all",

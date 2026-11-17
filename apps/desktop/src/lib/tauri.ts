@@ -223,6 +223,8 @@ export interface SessionTabData {
   location: SerializedLocationData;
   back: SerializedLocationData[];
   forward: SerializedLocationData[];
+  /** Pinned tab; omitted when false, absent in older session files. */
+  pinned?: boolean;
 }
 
 export function saveSession(

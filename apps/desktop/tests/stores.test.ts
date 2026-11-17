@@ -12,6 +12,7 @@ vi.mock("@/lib/theme", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import { useEditorStore } from "../src/stores/editor-store";
+import { noteLabel } from "../src/lib/note-title";
 import { useSettingsStore } from "../src/stores/settings-store";
 import { useUIStore } from "../src/stores/ui-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
@@ -280,7 +281,24 @@ describe("editor-store", () => {
     expect(file?.content).toBe("\n# Hello\n\nBody");
   });
 
-  test("updateFrontmatter(path, null) unmounts the frontmatter panel, dirties the file, and re-infers title", async () => {
+  test("editing or having an H1 never sets the title: the file name stays the title", async () => {
+    mockedInvoke.mockResolvedValue({
+      path: "/test/Daniel/Notes/2026-08-31 - Spec.md",
+      content: "---\ntags: [x]\n---\n# Description\n\nBody",
+      modified_at: 1000,
+    });
+    const path = "/test/Daniel/Notes/2026-08-31 - Spec.md";
+
+    await useEditorStore.getState().openFile(path);
+    expect(useEditorStore.getState().openFiles.get(path)?.title).toBe("");
+
+    useEditorStore.getState().updateContent(path, "# Overview\n\nBody");
+    const file = useEditorStore.getState().openFiles.get(path);
+    expect(file?.title).toBe("");
+    expect(file?.titleSource).toBe("none");
+  });
+
+  test("updateFrontmatter(path, null) unmounts the frontmatter panel, dirties the file, and drops the title override", async () => {
     mockedInvoke.mockResolvedValue({
       path: "/test/file.md",
       content: "---\ntitle: Hello\n---\n\n# From Body\n\nBody",
@@ -293,9 +311,10 @@ describe("editor-store", () => {
     const file = useEditorStore.getState().openFiles.get("/test/file.md");
     expect(file?.frontmatter).toBeNull();
     expect(file?.isDirty).toBe(true);
-    // Title now falls back to the first H1 in the body since the frontmatter title is gone.
-    expect(file?.title).toBe("From Body");
-    expect(file?.titleSource).toBe("h1");
+    // The frontmatter title was the override; without it the note shows its file name (the
+    // body heading is never a title).
+    expect(file?.title).toBe("");
+    expect(file?.titleSource).toBe("none");
   });
 
   test("openNewTab appends and activates a launcher tab", () => {
@@ -1215,5 +1234,66 @@ describe("workspace-store closeWorkspace", () => {
     await useWorkspaceStore.getState().closeWorkspace();
     expect(useWorkspaceStore.getState().root).toBeNull();
     expect(mockedInvoke).not.toHaveBeenCalledWith("close_workspace", expect.anything());
+  });
+});
+
+describe("title never leaks across navigation or tab reuse", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useEditorStore.setState({
+      openFiles: new Map(),
+      tabs: [],
+      activeTabId: null,
+      activeFilePath: null,
+    });
+    useWorkspaceStore.setState({ chromeMode: "workspace" });
+  });
+
+  test("navigating from a folder note (# Overview) to a sub note keeps each file's own title", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce({
+        path: "/v/Daniel/Daniel.md",
+        content: "# Overview\n\nSummary",
+        modified_at: 1,
+      })
+      .mockResolvedValueOnce({
+        path: "/v/Daniel/Notes/2026-08-31 - Spec.md",
+        content: "---\ntags: [employee-note]\n---\n# Description\n\nBody",
+        modified_at: 2,
+      });
+    const folderNote = "/v/Daniel/Daniel.md";
+    const subNote = "/v/Daniel/Notes/2026-08-31 - Spec.md";
+
+    await useEditorStore.getState().openFile(folderNote);
+    await useEditorStore.getState().navigateToFile(subNote);
+
+    const { tabs, openFiles } = useEditorStore.getState();
+    expect(tabs[0].location).toMatchObject({ kind: "file", path: subNote });
+    // The store carries no title for either note: both render their file name.
+    expect(openFiles.get(folderNote)?.title).toBe("");
+    expect(openFiles.get(subNote)?.title).toBe("");
+    for (const p of [folderNote, subNote]) {
+      expect(noteLabel(p, openFiles.get(p)?.title).text).toBe(
+        p.slice(p.lastIndexOf("/") + 1).replace(/\.md$/, ""),
+      );
+    }
+    // Editing the sub note's heading, or the folder note's, changes neither label.
+    useEditorStore.getState().updateContent(subNote, "# Overview\n\nBody");
+    expect(useEditorStore.getState().openFiles.get(subNote)?.title).toBe("");
+  });
+
+  test("an override stays with its own file when the tab navigates away and back", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce({
+        path: "/v/A.md",
+        content: "---\ntitle: Pretty A\n---\n# H\n",
+        modified_at: 1,
+      })
+      .mockResolvedValueOnce({ path: "/v/B.md", content: "# H\n", modified_at: 2 });
+    await useEditorStore.getState().openFile("/v/A.md");
+    await useEditorStore.getState().navigateToFile("/v/B.md");
+    const { openFiles } = useEditorStore.getState();
+    expect(noteLabel("/v/B.md", openFiles.get("/v/B.md")?.title).text).toBe("B");
+    expect(noteLabel("/v/A.md", openFiles.get("/v/A.md")?.title).text).toBe("Pretty A");
   });
 });

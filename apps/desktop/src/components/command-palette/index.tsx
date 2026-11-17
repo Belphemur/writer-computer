@@ -22,7 +22,11 @@ import {
   useActiveFilePath,
   useActiveTabId,
   useCloseActiveTab,
-  useCloseTab,
+  useActiveTabPinState,
+  useCloseAllTabs,
+  usePinTab,
+  useUnpinTab,
+  useUnpinnedTabCount,
   useHasClosedTabs,
   useReopenClosedTab,
   useOpenFile,
@@ -45,7 +49,9 @@ import { useFuzzySearch } from "./use-fuzzy-search";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
 import { openStandaloneFile } from "@/hooks/use-open-drop";
 import { rankCandidates } from "@/lib/search-rank";
-import { getFileName, getFileStem, getParentDir } from "@/lib/paths";
+import { noteLabel } from "@/lib/note-title";
+import { NoteResultTitle } from "./note-result-title";
+import { getFileName, getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
 import type { RecentFile } from "@/lib/tauri";
 
@@ -65,24 +71,16 @@ function matchesSearch(text: string, q: string) {
  */
 function rankGlobalRecents(files: RecentFile[], query: string): RecentFile[] {
   const recency = (f: RecentFile) => ({ openedMs: f.opened_at > 0 ? f.opened_at * 1000 : null });
-  const opts = { nowMs: Date.now(), recency: true };
-  const byPath = rankCandidates(
-    files.map((item) => ({ item, path: item.path, recency: recency(item) })),
+  return rankCandidates(
+    files.map((item) => ({
+      item,
+      path: item.path,
+      title: item.title,
+      recency: recency(item),
+    })),
     query,
-    opts,
-  );
-  const byTitle = rankCandidates(
-    files
-      .filter((f) => f.title)
-      .map((item) => ({ item, path: `${item.title}.md`, recency: recency(item) })),
-    query,
-    opts,
-  );
-  const best = new Map<RecentFile, number>();
-  for (const { item, score } of [...byPath, ...byTitle]) {
-    best.set(item, Math.max(best.get(item) ?? -Infinity, score));
-  }
-  return files.filter((f) => best.has(f)).sort((a, b) => (best.get(b) ?? 0) - (best.get(a) ?? 0));
+    { nowMs: Date.now(), recency: true },
+  ).map(({ item }) => item);
 }
 
 function HighlightedPath({ path, indices }: { path: string; indices: number[] }) {
@@ -116,7 +114,11 @@ function FilePalette() {
   const closeWorkspace = useCloseWorkspace();
   const openFile = useOpenFile();
   const closeActiveTab = useCloseActiveTab();
-  const closeTab = useCloseTab();
+  const closeAllTabs = useCloseAllTabs();
+  const pinTab = usePinTab();
+  const unpinTab = useUnpinTab();
+  const activeTabPin = useActiveTabPinState();
+  const unpinnedTabCount = useUnpinnedTabCount();
   const activeTabId = useActiveTabId();
   const activeFilePath = useActiveFilePath();
   const tabs = useOpenTabs();
@@ -188,6 +190,8 @@ function FilePalette() {
           activeFilePath,
           hasActiveTab: activeTabId !== null,
           tabCount: tabs.length,
+          unpinnedTabCount,
+          activeTabPin,
           hasClosedTabs,
           hasPluginLeaves: pluginLeaves.length > 0,
           close,
@@ -195,11 +199,15 @@ function FilePalette() {
           openCreateFile: () => openCommandPalette("create-file"),
           openSearchNotes: () => openCommandPalette("search-notes"),
           openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
+          pinActiveTab: () => {
+            if (activeTabId) pinTab(activeTabId);
+          },
+          unpinActiveTab: () => {
+            if (activeTabId) unpinTab(activeTabId);
+          },
           closeActiveTab,
           reopenClosedTab: () => void reopenClosedTab(),
-          closeAllTabs: () => {
-            for (const tab of tabs) closeTab(tab.id);
-          },
+          closeAllTabs,
           openWorkspace: handleOpenWorkspace,
           closeWorkspace,
           toggleTheme,
@@ -253,7 +261,8 @@ function FilePalette() {
   const fileItems = visibleFiles.map((r) => (
     <CommandItem key={r.path} value={r.path} onSelect={() => handleSelect(r.path)}>
       <div className="flex min-w-0 flex-col">
-        <span className="truncate">{getFileName(r.path)}</span>
+        {/* An override leads (italic); the path below then carries the file name. */}
+        <NoteResultTitle path={r.path} name={getFileName(r.path)} override={r.title} />
         <span className="truncate text-[13px] text-text-muted">
           <HighlightedPath path={r.relative_path} indices={r.match_indices} />
         </span>
@@ -263,7 +272,11 @@ function FilePalette() {
   const recentItems = visibleRecents.map((entry) => (
     <CommandItem key={entry.path} value={entry.path} onSelect={() => handleSelect(entry.path)}>
       <div className="flex min-w-0 flex-col">
-        <span className="truncate">{entry.title || getFileStem(entry.name)}</span>
+        <NoteResultTitle
+          path={entry.path}
+          name={noteLabel(entry.path, null).text}
+          override={entry.title}
+        />
         <span className="truncate text-[13px] text-text-muted">{getParentDir(entry.path)}</span>
       </div>
     </CommandItem>

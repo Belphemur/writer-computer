@@ -1,12 +1,8 @@
 import { create } from "zustand";
 import type { FileContent } from "@/types/fs";
 import * as tauri from "@/lib/tauri";
-import {
-  getFrontmatterDisplayDate,
-  inferTitle,
-  parseDocument,
-  type TitleSource,
-} from "@/lib/frontmatter";
+import { getFrontmatterDisplayDate, inferTitle, type TitleSource } from "@/lib/frontmatter";
+import { parseOpenedFile } from "@/lib/open-file-parse";
 import { getDocumentStats, type DocumentStats } from "@/lib/document-stats";
 import { cancelSave, scheduleSave, registerSaveStore } from "@/lib/save";
 import {
@@ -41,6 +37,24 @@ export interface Tab {
   location: Location;
   back: Location[];
   forward: Location[];
+  /** Pinned tabs form the leading group of the strip (see `SPECs/pinned-tabs-spec.md`). */
+  pinned?: boolean;
+}
+
+export function isTabPinned(tab: Pick<Tab, "pinned">): boolean {
+  return tab.pinned === true;
+}
+
+/** How many tabs lead the strip pinned. The store keeps pinned tabs contiguous at the start. */
+export function pinnedTabCount(tabs: readonly Tab[]): number {
+  let n = 0;
+  while (n < tabs.length && isTabPinned(tabs[n]!)) n += 1;
+  return n;
+}
+
+/** Can this tab be pinned? Everything but the blank new-tab page. */
+export function isTabPinnable(tab: Pick<Tab, "location">): boolean {
+  return tab.location.kind !== "launcher";
 }
 
 /** A closed tab with the position it had, so reopening puts it back where it was. */
@@ -60,6 +74,8 @@ export interface SessionTab {
   location: SerializedLocation;
   back: SerializedLocation[];
   forward: SerializedLocation[];
+  /** Omitted when false; session files written before pinned tabs have no field. */
+  pinned?: boolean;
 }
 
 interface EditorState {
@@ -87,7 +103,20 @@ interface EditorState {
   closeFile: (path: string) => void;
   /** `remember: false` skips the reopen stack (failed opens, deleted files). */
   closeTab: (tabId: string, options?: { remember?: boolean }) => void;
+  /** Cmd+W and the palette's Close Current Tab: a pinned active tab is unpinned instead of closed. */
   closeActiveTab: () => void;
+  /** A user close gesture (middle click, Cmd+W): a pinned tab is unpinned, an unpinned one closes. */
+  closeTabByUser: (tabId: string) => void;
+  /** Closes every tab but `keepTabId` and the pinned ones. */
+  closeOtherTabs: (keepTabId: string) => void;
+  /** Closes every tab that is not pinned. */
+  closeAllTabs: () => void;
+  /** Moves a tab to the end of the pinned group; no-op for the launcher or an already pinned tab. */
+  pinTab: (tabId: string) => void;
+  /** Moves a tab to the start of the unpinned group. */
+  unpinTab: (tabId: string) => void;
+  /** Moves a tab to `toIndex`, clamped to its own group (pinned and unpinned never mix). */
+  moveTab: (tabId: string, toIndex: number) => void;
   /** Reopens the most recently closed tab (browser-style Cmd+Shift+T), at its old position. */
   reopenClosedTab: () => Promise<boolean>;
   setActiveFile: (path: string) => void;
@@ -257,8 +286,33 @@ function getTabIndex(tabs: Tab[], tabId: string) {
   return tabs.findIndex((tab) => tab.id === tabId);
 }
 
+/** Where a reopened tab goes: its old index, kept inside its own group (pinned or not). */
+function reopenIndex(tabs: readonly Tab[], tab: Tab, index: number): number {
+  const pinned = pinnedTabCount(tabs);
+  return isTabPinned(tab)
+    ? Math.min(index, pinned)
+    : Math.min(Math.max(index, pinned), tabs.length);
+}
+
 function getActiveTab(state: Pick<EditorState, "tabs" | "activeTabId">) {
   return state.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
+}
+
+/** The pinned tab that already shows `path` the way opening it would (same page kind), if any. */
+function findPinnedTabFor(tabs: readonly Tab[], path: string): Tab | undefined {
+  const kind = locationForPath(path).kind;
+  return tabs.find(
+    (tab) =>
+      isTabPinned(tab) && tab.location.kind === kind && locationPrimaryPath(tab.location) === path,
+  );
+}
+
+/** Focuses the pinned tab that shows `path` (opening a file never duplicates it). */
+function focusPinnedTabFor(state: EditorState, path: string): boolean {
+  const pinned = findPinnedTabFor(state.tabs, path);
+  if (!pinned) return false;
+  if (pinned.id !== state.activeTabId) state.setActiveTab(pinned.id);
+  return true;
 }
 
 function collectReferencedPaths(tabs: Tab[]) {
@@ -374,7 +428,7 @@ async function ensureFileLoaded(
   const loadPromise = tauri
     .readFile(path)
     .then((raw) => {
-      const parsed = parseDocument(raw.content);
+      const parsed = parseOpenedFile(path, raw.content);
       set((state) => {
         const file = state.openFiles.get(path);
         if (!file) return state;
@@ -422,6 +476,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   openFile: async (path: string) => {
     const state = get();
+    if (focusPinnedTabFor(state, path)) return;
     const activeTab = getActiveTab(state);
 
     if (activeTab?.location.kind === "launcher") {
@@ -467,7 +522,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // in the startup IPC) so the editor mounts loaded; `ensureFileLoaded`
     // then short-circuits on the non-loading entry.
     if (prefetched && prefetched.path === path) {
-      const parsed = parseDocument(prefetched.content);
+      const parsed = parseOpenedFile(path, prefetched.content);
       set((state) => {
         const files = new Map(state.openFiles);
         files.set(
@@ -774,7 +829,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         // A lone blank launcher tab is replaced rather than left next to the reopened tab.
         const onlyLauncher = state.tabs.length === 1 && state.tabs[0]!.location.kind === "launcher";
         const tabs = onlyLauncher ? [] : [...state.tabs];
-        tabs.splice(Math.min(entry.index, tabs.length), 0, reopened);
+        tabs.splice(reopenIndex(tabs, reopened, entry.index), 0, reopened);
         // Cursor and scroll come back unless another tab kept the file open meanwhile.
         const file = primary !== null && !wasOpen ? state.openFiles.get(primary) : undefined;
         let openFiles: Map<string, OpenFile> | undefined;
@@ -795,7 +850,67 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   closeActiveTab: () => {
     const activeTabId = get().activeTabId;
-    if (activeTabId) get().closeTab(activeTabId);
+    if (activeTabId) get().closeTabByUser(activeTabId);
+  },
+
+  closeTabByUser: (tabId: string) => {
+    const tab = get().tabs.find((candidate) => candidate.id === tabId);
+    if (!tab) return;
+    if (isTabPinned(tab)) get().unpinTab(tabId);
+    else get().closeTab(tabId);
+  },
+
+  closeOtherTabs: (keepTabId: string) => {
+    const { tabs, activeTabId } = get();
+    const ids = tabs
+      .filter((tab) => tab.id !== keepTabId && !isTabPinned(tab))
+      .map((tab) => tab.id);
+    // Land on the tab the user asked to keep, not on whichever neighbour survives the closes.
+    if (activeTabId !== null && ids.includes(activeTabId)) get().setActiveTab(keepTabId);
+    for (const id of ids) get().closeTab(id);
+  },
+
+  closeAllTabs: () => {
+    const ids = get()
+      .tabs.filter((tab) => !isTabPinned(tab))
+      .map((tab) => tab.id);
+    for (const id of ids) get().closeTab(id);
+  },
+
+  pinTab: (tabId: string) => {
+    set((state) => {
+      const tab = state.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab || isTabPinned(tab) || !isTabPinnable(tab)) return state;
+      const tabs = state.tabs.filter((candidate) => candidate.id !== tabId);
+      tabs.splice(pinnedTabCount(tabs), 0, { ...tab, pinned: true });
+      return { tabs };
+    });
+  },
+
+  unpinTab: (tabId: string) => {
+    set((state) => {
+      const tab = state.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab || !isTabPinned(tab)) return state;
+      const tabs = state.tabs.filter((candidate) => candidate.id !== tabId);
+      tabs.splice(pinnedTabCount(tabs), 0, { ...tab, pinned: false });
+      return { tabs };
+    });
+  },
+
+  moveTab: (tabId: string, toIndex: number) => {
+    set((state) => {
+      const from = getTabIndex(state.tabs, tabId);
+      if (from === -1) return state;
+      const tab = state.tabs[from]!;
+      const pinned = pinnedTabCount(state.tabs);
+      const [min, max] = isTabPinned(tab) ? [0, pinned - 1] : [pinned, state.tabs.length - 1];
+      const to = Math.min(Math.max(toIndex, min), max);
+      if (to === from) return state;
+      const tabs = [...state.tabs];
+      tabs.splice(from, 1);
+      tabs.splice(to, 0, tab);
+      return { tabs };
+    });
   },
 
   setActiveFile: (path: string) => {
@@ -812,6 +927,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   navigateToFile: async (path: string) => {
     const state = get();
+    if (focusPinnedTabFor(state, path)) return;
     const activeTab = getActiveTab(state);
     if (!activeTab) {
       await state.openFile(path);
@@ -823,6 +939,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
     // A plugin view holds a live leaf (e.g. a chat); navigating over it would destroy it.
     if (activeTab.location.kind === "plugin-view") {
+      await state.openFileInNewTab(path);
+      return;
+    }
+    // A pinned tab keeps its page: another file opens next to it, like a browser's pinned tab.
+    if (activeTab.pinned) {
       await state.openFileInNewTab(path);
       return;
     }
@@ -1210,6 +1331,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     prefetchedActiveFile: FileContent | null = null,
   ) => {
     const restoredTabs: Tab[] = [];
+    const sessionOrder: Tab[] = [];
     for (const sessionTab of tabs) {
       const location = deserializeLocation(sessionTab.location);
       if (!location) continue;
@@ -1219,13 +1341,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const forward = sessionTab.forward
         .map((l) => deserializeLocation(l))
         .filter((l): l is Location => l !== null);
-      restoredTabs.push({
-        id: createTabId(),
-        location,
-        back,
-        forward,
-      });
+      const tab: Tab = { id: createTabId(), location, back, forward };
+      if (sessionTab.pinned === true && isTabPinnable(tab)) tab.pinned = true;
+      sessionOrder.push(tab);
     }
+    // The active index points into the saved order; pinned tabs then move to the front (a stable
+    // partition, so a file written by hand or by a future client still gets a contiguous group).
+    const savedActiveTab = sessionOrder[activeIndex ?? 0] ?? sessionOrder[0] ?? null;
+    restoredTabs.push(
+      ...sessionOrder.filter((tab) => isTabPinned(tab)),
+      ...sessionOrder.filter((tab) => !isTabPinned(tab)),
+    );
 
     if (restoredTabs.length === 0) {
       set({
@@ -1247,8 +1373,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ]),
       ),
     ];
-    const activeTabIndex = activeIndex ?? 0;
-    const activeTab = restoredTabs[activeTabIndex] ?? restoredTabs[0] ?? null;
+    const activeTab = savedActiveTab;
     const activePath = activeTab ? locationPrimaryPath(activeTab.location) : null;
 
     // If the bundled `restore_workspace` IPC pre-fetched the active file, seed
@@ -1257,7 +1382,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const seededActive =
       prefetchedActiveFile && activePath && prefetchedActiveFile.path === activePath
         ? (() => {
-            const parsed = parseDocument(prefetchedActiveFile.content);
+            const parsed = parseOpenedFile(activePath, prefetchedActiveFile.content);
             return withDerived({
               ...createLoadingFile(activePath),
               path: activePath,
@@ -1344,13 +1469,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!existing) return state;
       if (existing.content === content && existing.isDirty) return state;
 
-      const { title, titleSource } = inferTitle(content, existing.frontmatter);
+      // The title comes from the frontmatter only, so a body edit never changes it.
       const files = new Map(state.openFiles);
       files.set(path, {
         ...existing,
         content,
-        title,
-        titleSource,
         isDirty: true,
       });
       return { openFiles: files };
@@ -1365,7 +1488,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const file = state.openFiles.get(path);
       if (!file || file.frontmatter === frontmatter) return state;
 
-      const { title, titleSource } = inferTitle(file.content, frontmatter);
+      const { title, titleSource } = inferTitle(frontmatter);
       const files = new Map(state.openFiles);
       files.set(
         path,
@@ -1425,7 +1548,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   reloadFromDisk: (path: string, rawContent: string) => {
     cancelSave(path);
-    const parsed = parseDocument(rawContent);
+    const parsed = parseOpenedFile(path, rawContent);
     set((state) => {
       const file = state.openFiles.get(path);
       if (!file) return state;
@@ -1494,7 +1617,7 @@ export function getEditorSessionSnapshot(state: Pick<EditorState, "tabs" | "acti
       .map((l) => serializeLocation(l))
       .filter((l): l is SerializedLocation => l !== null);
     const index = tabs.length;
-    tabs.push({ location, back, forward });
+    tabs.push({ location, back, forward, ...(isTabPinned(tab) ? { pinned: true } : {}) });
     if (state.activeTabId && tab.id === state.activeTabId) {
       activeIndex = index;
     }

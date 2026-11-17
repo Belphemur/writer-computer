@@ -25,7 +25,9 @@ export function closeFile(path: string) {
 }
 
 export function closeActiveTab() {
-  useEditorStore.getState().closeActiveTab();
+  // Programmatic (error recovery): closes even a pinned tab, unlike the user's Cmd+W.
+  const { activeTabId, closeTab } = useEditorStore.getState();
+  if (activeTabId) closeTab(activeTabId);
 }
 
 export function markSaved(path: string, diskContent: string) {

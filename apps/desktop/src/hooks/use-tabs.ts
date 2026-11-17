@@ -1,8 +1,10 @@
-import { useEditorStore } from "@/stores/editor-store";
+import { isTabPinnable, isTabPinned, useEditorStore } from "@/stores/editor-store";
 import { openSettings } from "./editor-api";
 import type { DocumentStats } from "@/lib/document-stats";
 
 export type { OpenFile, Tab, Location, FileLocation, SessionTab } from "@/stores/editor-store";
+
+export { isTabPinned, isTabPinnable, pinnedTabCount } from "@/stores/editor-store";
 
 const EMPTY_STATS: DocumentStats = { words: 0, characters: 0, paragraphs: 0 };
 
@@ -48,6 +50,45 @@ export function useOpenNewTab() {
 
 export function useCloseTab() {
   return useEditorStore((s) => s.closeTab);
+}
+
+/** A user close gesture (middle click): unpins a pinned tab, closes an unpinned one. */
+export function useCloseTabByUser() {
+  return useEditorStore((s) => s.closeTabByUser);
+}
+
+export function useCloseOtherTabs() {
+  return useEditorStore((s) => s.closeOtherTabs);
+}
+
+export function useCloseAllTabs() {
+  return useEditorStore((s) => s.closeAllTabs);
+}
+
+export function usePinTab() {
+  return useEditorStore((s) => s.pinTab);
+}
+
+export function useUnpinTab() {
+  return useEditorStore((s) => s.unpinTab);
+}
+
+export function useMoveTab() {
+  return useEditorStore((s) => s.moveTab);
+}
+
+/** The active tab's pin state; `null` when there is nothing to pin (no tab, or the new-tab page). */
+export function useActiveTabPinState(): "pinned" | "unpinned" | null {
+  return useEditorStore((s) => {
+    const tab = s.tabs.find((candidate) => candidate.id === s.activeTabId);
+    if (!tab || !isTabPinnable(tab)) return null;
+    return isTabPinned(tab) ? "pinned" : "unpinned";
+  });
+}
+
+/** Tabs that Close all would close (everything not pinned). */
+export function useUnpinnedTabCount() {
+  return useEditorStore((s) => s.tabs.filter((tab) => !isTabPinned(tab)).length);
 }
 
 export function useCloseActiveTab() {

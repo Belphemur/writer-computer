@@ -14,6 +14,8 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     activeFilePath: "/ws/a.md",
     hasActiveTab: true,
     tabCount: 2,
+    unpinnedTabCount: 2,
+    activeTabPin: "unpinned",
     hasClosedTabs: false,
     hasPluginLeaves: false,
     close: fn(),
@@ -21,6 +23,8 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     openCreateFile: fn(),
     openSearchNotes: fn(),
     openFileInCompactWindow: fn(),
+    pinActiveTab: fn(),
+    unpinActiveTab: fn(),
     closeActiveTab: fn(),
     closeAllTabs: fn(),
     reopenClosedTab: fn(),
@@ -53,6 +57,7 @@ describe("palette built-in commands", () => {
       "new-file",
       "search-notes",
       "open-in-compact-window",
+      "pin-tab",
       "close-tab",
       "close-all",
       "open-workspace",
@@ -71,7 +76,21 @@ describe("palette built-in commands", () => {
       // development builds only (`import.meta.env.DEV`, true under vitest)
       "agent-use-demo-backend",
       "agent-new-project",
+      "note-set-display-title",
     ]);
+  });
+
+  it("offers Clear display title only for a note that has a title override", async () => {
+    const editorApi = await import("../src/hooks/editor-api");
+    const spy = vi.spyOn(editorApi, "getOpenFile");
+    spy.mockReturnValue({ title: "" } as never);
+    expect(ids(resolveCommands(ctx(), []))).not.toContain("note-clear-display-title");
+    spy.mockReturnValue({ title: "Pretty" } as never);
+    expect(ids(resolveCommands(ctx(), []))).toContain("note-clear-display-title");
+    expect(ids(resolveCommands(ctx({ activeFilePath: "/ws/pic.png" }), []))).not.toContain(
+      "note-set-display-title",
+    );
+    spy.mockRestore();
   });
 
   it("limits a standalone compact window", () => {
@@ -101,6 +120,34 @@ describe("palette built-in commands", () => {
     expect(
       ids(resolveCommands(ctx({ hasClosedTabs: true, isCompactFileMode: true }), [])),
     ).not.toContain("reopen-closed-tab");
+  });
+
+  it("offers Pin Tab or Unpin Tab for the active tab, never on the new-tab page or in compact mode", () => {
+    const pin = ctx({ activeTabPin: "unpinned" });
+    expect(ids(resolveCommands(pin, []))).toContain("pin-tab");
+    expect(ids(resolveCommands(pin, []))).not.toContain("unpin-tab");
+    resolveCommands(pin, [])
+      .find((x) => x.id === "pin-tab")!
+      .run();
+    expect(pin.pinActiveTab).toHaveBeenCalledTimes(1);
+
+    const unpin = ctx({ activeTabPin: "pinned" });
+    expect(ids(resolveCommands(unpin, []))).toContain("unpin-tab");
+    expect(ids(resolveCommands(unpin, []))).not.toContain("pin-tab");
+    resolveCommands(unpin, [])
+      .find((x) => x.id === "unpin-tab")!
+      .run();
+    expect(unpin.unpinActiveTab).toHaveBeenCalledTimes(1);
+
+    const none = ids(resolveCommands(ctx({ activeTabPin: null }), []));
+    expect(none).not.toContain("pin-tab");
+    expect(none).not.toContain("unpin-tab");
+    expect(ids(resolveCommands(ctx({ isCompactFileMode: true }), []))).not.toContain("pin-tab");
+  });
+
+  it("offers Close All Tabs only while an unpinned tab remains", () => {
+    expect(ids(resolveCommands(ctx({ unpinnedTabCount: 0 }), []))).not.toContain("close-all");
+    expect(ids(resolveCommands(ctx({ unpinnedTabCount: 1 }), []))).toContain("close-all");
   });
 
   it("offers the log commands in every window and runs them", () => {

@@ -6,6 +6,7 @@ import { settingsKind } from "@/components/editor-area/page-kinds/settings";
 import { AGENT_PALETTE_COMMANDS } from "./agent-commands";
 import { PROJECT_PALETTE_COMMANDS } from "./project-commands";
 import { TABLE_PALETTE_COMMANDS } from "./table-commands";
+import { TITLE_PALETTE_COMMANDS } from "./title-commands";
 
 /** Everything a built-in command may read or do. Supplied by the palette component. */
 export interface CommandContext {
@@ -14,6 +15,10 @@ export interface CommandContext {
   activeFilePath: string | null;
   hasActiveTab: boolean;
   tabCount: number;
+  /** Tabs Close All Tabs would close (pinned tabs stay). */
+  unpinnedTabCount: number;
+  /** The active tab's pin state; `null` when it cannot be pinned (the new-tab page). */
+  activeTabPin: "pinned" | "unpinned" | null;
   /** Is there a closed tab to bring back (the reopen stack is not empty)? */
   hasClosedTabs: boolean;
   hasPluginLeaves: boolean;
@@ -23,6 +28,8 @@ export interface CommandContext {
   openCreateFile: () => void;
   openSearchNotes: () => void;
   openFileInCompactWindow: (path: string) => void;
+  pinActiveTab: () => void;
+  unpinActiveTab: () => void;
   closeActiveTab: () => void;
   closeAllTabs: () => void;
   reopenClosedTab: () => void;
@@ -90,8 +97,23 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     run: (c) => c.activeFilePath && c.openFileInCompactWindow(c.activeFilePath),
   },
   {
+    id: "pin-tab",
+    label: "Pin Tab",
+    description: COMMAND,
+    when: (c) => c.activeTabPin === "unpinned" && !c.isCompactFileMode,
+    run: (c) => c.pinActiveTab(),
+  },
+  {
+    id: "unpin-tab",
+    label: "Unpin Tab",
+    description: COMMAND,
+    when: (c) => c.activeTabPin === "pinned" && !c.isCompactFileMode,
+    run: (c) => c.unpinActiveTab(),
+  },
+  {
     id: "close-tab",
     label: "Close Current Tab",
+    // On a pinned tab it unpins first (SPECs/pinned-tabs-spec.md), like Cmd+W.
     description: COMMAND,
     when: (c) => c.hasActiveTab && !c.isCompactFileMode,
     run: (c) => c.closeActiveTab(),
@@ -107,7 +129,7 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     id: "close-all",
     label: "Close All Tabs",
     description: COMMAND,
-    when: (c) => c.tabCount > 0 && !c.isCompactFileMode,
+    when: (c) => c.unpinnedTabCount > 0 && !c.isCompactFileMode,
     run: (c) => c.closeAllTabs(),
   },
   {
@@ -169,6 +191,7 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   ...AGENT_PALETTE_COMMANDS,
   ...PROJECT_PALETTE_COMMANDS,
   ...TABLE_PALETTE_COMMANDS,
+  ...TITLE_PALETTE_COMMANDS,
 ];
 
 /**

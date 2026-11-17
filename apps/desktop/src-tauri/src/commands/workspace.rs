@@ -887,6 +887,9 @@ pub struct SessionTab {
     pub back: Vec<SerializedLocation>,
     #[serde(default)]
     pub forward: Vec<SerializedLocation>,
+    /// Pinned tab (pinned tabs lead the strip). Absent in older session files: unpinned.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -978,6 +981,20 @@ pub async fn load_session(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn session_tab_pinned_defaults_false_and_round_trips() {
+        let legacy: SessionTab =
+            serde_json::from_str(r#"{"location":{"kind":"launcher"}}"#).unwrap();
+        assert!(!legacy.pinned);
+        assert!(!serde_json::to_string(&legacy).unwrap().contains("pinned"));
+        let pinned: SessionTab =
+            serde_json::from_str(r#"{"location":{"kind":"settings"},"pinned":true}"#).unwrap();
+        assert!(pinned.pinned);
+        assert!(serde_json::to_string(&pinned)
+            .unwrap()
+            .contains("\"pinned\":true"));
+    }
 
     #[test]
     fn canonicalize_rejects_missing_path() {
