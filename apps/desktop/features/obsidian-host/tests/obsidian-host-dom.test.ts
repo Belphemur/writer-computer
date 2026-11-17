@@ -80,13 +80,13 @@ describe("DOM helpers", () => {
 });
 
 describe("icons", () => {
-  it("renders a registered svg and a neutral glyph for unknown names", () => {
+  it("renders a registered svg and leaves an unknown name empty (icons.test covers the table)", () => {
     addIcon("my-icon", '<path d="M0 0h10v10z"/>');
     const el = document.createElement("div");
     setIcon(el, "my-icon");
     expect(el.querySelector("svg path")).not.toBeNull();
     setIcon(el, "lucide-unknown");
-    expect(el.querySelector("svg")?.getAttribute("data-icon")).toBe("lucide-unknown");
+    expect(el.querySelector("svg")).toBeNull();
   });
 });
 

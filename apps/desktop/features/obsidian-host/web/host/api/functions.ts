@@ -5,6 +5,8 @@ import DOMPurify from "dompurify";
 import momentLib from "moment";
 import type { App } from "./app";
 import type { Component } from "./core";
+import { logger } from "@/lib/logger";
+import { BUILTIN_ICON_IDS, builtinIconMarkup } from "./icons";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 /** Must be >= the highest `minAppVersion` of plugins we want to load (Copilot needs 1.11.4). */
@@ -89,8 +91,7 @@ export function stringifyYaml(value: unknown): string {
 // ---------------------------------------------------------------- icons
 
 const customIcons = new Map<string, string>();
-const FALLBACK_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg>';
+const loggedUnknownIcons = new Set<string>();
 
 /** Register an SVG icon (inner markup of a 0 0 100 100 viewBox, as in Obsidian). */
 export function addIcon(name: string, svgContent: string): void {
@@ -100,33 +101,46 @@ export function removeIcon(name: string): void {
   customIcons.delete(name);
 }
 export function getIconIds(): string[] {
-  return [...customIcons.keys()];
+  return [...customIcons.keys(), ...BUILTIN_ICON_IDS];
 }
 
+const SVG_ATTRS = 'xmlns="http://www.w3.org/2000/svg" width="1em" height="1em"';
+
 /**
- * lucide-react is not a dependency, so a registered icon renders as SVG and every other name
- * renders a neutral glyph tagged with `data-icon` / `lucide-<name>` so a host stylesheet or a
- * later icon pack can take over.
+ * Obsidian's getIcon: a registered (`addIcon`) icon, else a built-in one from ./icons, else null.
+ * An unknown name is logged once (a plugin asking for an icon the host lacks is a host gap to
+ * fix, not something to paper over with a placeholder glyph).
  */
 export function getIcon(name: string): SVGSVGElement | null {
   if (typeof document === "undefined") return null;
-  const host = document.createElement("div");
   const custom = customIcons.get(name);
-  host.innerHTML = custom
-    ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1em" height="1em" fill="currentColor">${custom}</svg>`
-    : FALLBACK_SVG;
+  const builtin = custom === undefined ? builtinIconMarkup(name) : null;
+  if (custom === undefined && builtin === null) {
+    if (!loggedUnknownIcons.has(name)) {
+      loggedUnknownIcons.add(name);
+      logger.warn("plugin", `[plugin-api] unknown icon "${name}" (add it to api/icons.ts)`, {
+        phase: "missing-icon",
+      });
+    }
+    return null;
+  }
+  const host = document.createElement("div");
+  host.innerHTML =
+    custom !== undefined
+      ? `<svg ${SVG_ATTRS} viewBox="0 0 100 100" fill="currentColor">${custom}</svg>`
+      : `<svg ${SVG_ATTRS} viewBox="0 0 24 24" fill="none">${builtin}</svg>`;
   const svg = host.firstElementChild as SVGSVGElement | null;
   if (!svg) return null;
-  svg.classList.add("svg-icon", `lucide-${name}`);
+  svg.classList.add("svg-icon", `lucide-${name.replace(/^lucide-/, "")}`);
   svg.setAttribute("data-icon", name);
   return svg;
 }
 
+/** Replaces the children of `parent` with the icon; an unknown icon leaves it empty. */
 export function setIcon(parent: HTMLElement, iconId: string): void {
   parent.replaceChildren();
   const svg = getIcon(iconId);
   if (svg) parent.appendChild(svg);
-  else parent.textContent = iconId;
 }
 
 // ---------------------------------------------------------------- platform

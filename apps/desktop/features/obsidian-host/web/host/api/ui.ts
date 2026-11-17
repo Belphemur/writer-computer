@@ -893,12 +893,16 @@ export class MenuItem {
   dom: HTMLElement;
   private titleEl: HTMLElement;
   private iconEl: HTMLElement;
+  private clickCb: ((evt: MouseEvent | KeyboardEvent) => unknown) | null = null;
   section = "";
   submenu: Menu | null = null;
   constructor(private menu: Menu) {
     this.dom = createEl("div", { cls: "menu-item" });
+    this.dom.setAttribute("role", "menuitem");
     this.iconEl = createEl("div", { cls: "menu-item-icon", parent: this.dom });
     this.titleEl = createEl("div", { cls: "menu-item-title", parent: this.dom });
+    this.dom.addEventListener("click", (evt) => this.activate(evt));
+    this.dom.addEventListener("mouseenter", () => menu.select(this));
   }
   setTitle(title: string | DocumentFragment): this {
     this.titleEl.replaceChildren();
@@ -912,10 +916,12 @@ export class MenuItem {
   }
   setChecked(checked: boolean | null): this {
     this.dom.classList.toggle("is-checked", !!checked);
+    this.dom.setAttribute("aria-checked", String(!!checked));
     return this;
   }
   setDisabled(disabled: boolean): this {
     this.dom.classList.toggle("is-disabled", disabled);
+    this.dom.setAttribute("aria-disabled", String(disabled));
     return this;
   }
   setIsLabel(isLabel: boolean): this {
@@ -937,38 +943,74 @@ export class MenuItem {
     return this.submenu;
   }
   onClick(cb: (evt: MouseEvent | KeyboardEvent) => unknown): this {
-    this.dom.addEventListener("click", (evt) => {
-      if (this.dom.classList.contains("is-disabled")) return;
-      this.menu.hide();
-      void cb(evt);
-    });
+    this.clickCb = cb;
     return this;
+  }
+  /** Whether the keyboard and pointer can land on this item. */
+  get selectable(): boolean {
+    return !this.dom.classList.contains("is-disabled") && !this.dom.classList.contains("is-label");
+  }
+  /** Click or Enter: a submenu item opens its submenu, any other closes the menu and runs `onClick`. */
+  activate(evt: MouseEvent | KeyboardEvent): void {
+    if (!this.selectable) return;
+    if (this.submenu) {
+      this.menu.openSubmenu(this);
+      return;
+    }
+    this.menu.hideAll();
+    void this.clickCb?.(evt);
   }
 }
 
+type MenuEntry = { el: HTMLElement; item?: MenuItem };
+
+/** The section Obsidian puts last, whatever order items were added in. */
+const LAST_SECTION = "danger";
+
+/**
+ * Obsidian's `Menu`: a popover of `.menu-item` rows in the host popup layer (placement and
+ * clamping by `trackPopup`), styled by theme-compat. Arrow keys / Home / End move the selection,
+ * Enter and Space activate it, Escape closes (the innermost submenu first), a press outside closes.
+ */
 export class Menu {
   dom: HTMLElement;
-  private items: MenuItem[] = [];
+  private entries: MenuEntry[] = [];
   private hideCbs: (() => unknown)[] = [];
   private open = false;
   private tracked: TrackedPopup | null = null;
+  private parent: Menu | null = null;
+  private child: Menu | null = null;
+  private selected: MenuItem | null = null;
   private onDocClick = (evt: MouseEvent): void => {
-    if (!this.dom.contains(evt.target as Node)) this.hide();
+    if (!this.contains(evt.target as Node)) this.hide();
+  };
+  private onKeyDown = (evt: KeyboardEvent): void => {
+    if (this.child) return; // the innermost open submenu owns the keyboard
+    if (this.handleKey(evt)) {
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
   };
 
   constructor() {
     this.dom = createEl("div", { cls: "menu" });
+    this.dom.setAttribute("role", "menu");
+  }
+
+  private get items(): MenuItem[] {
+    return this.entries.flatMap((e) => (e.item ? [e.item] : []));
   }
 
   addItem(cb: (item: MenuItem) => unknown): this {
     const item = new MenuItem(this);
-    this.items.push(item);
-    this.dom.appendChild(item.dom);
+    this.entries.push({ el: item.dom, item });
     cb(item);
+    this.layout();
     return this;
   }
   addSeparator(): this {
-    createEl("div", { cls: "menu-separator", parent: this.dom });
+    this.entries.push({ el: createEl("div", { cls: "menu-separator" }) });
+    this.layout();
     return this;
   }
   setNoIcon(): this {
@@ -982,15 +1024,111 @@ export class Menu {
     this.hideCbs.push(cb);
   }
 
+  /** Items in the order they were added, or grouped by `setSection` (first-seen order, "danger"
+   *  last) with a separator between groups. */
+  private layout(): void {
+    const items = this.items;
+    if (!items.some((i) => i.section)) {
+      this.dom.replaceChildren(...this.entries.map((e) => e.el));
+      return;
+    }
+    const order = [...new Set(items.map((i) => i.section))].sort(
+      (a, b) => Number(a === LAST_SECTION) - Number(b === LAST_SECTION),
+    );
+    const els: HTMLElement[] = [];
+    for (const section of order) {
+      if (els.length) els.push(createEl("div", { cls: "menu-separator" }));
+      els.push(...items.filter((i) => i.section === section).map((i) => i.dom));
+    }
+    this.dom.replaceChildren(...els);
+  }
+
+  /** Whether `node` is inside this menu or one of its open submenus. */
+  private contains(node: Node): boolean {
+    return this.dom.contains(node) || (this.child?.contains(node) ?? false);
+  }
+
+  /** @internal Highlights an item (pointer hover and keyboard share one selection). */
+  select(item: MenuItem | null): void {
+    if (item && !item.selectable) return;
+    if (this.child && this.child !== item?.submenu) this.closeChild();
+    this.selected?.dom.classList.remove("is-selected");
+    this.selected = item;
+    item?.dom.classList.add("is-selected");
+  }
+
+  private move(delta: number): void {
+    const items = this.items.filter((i) => i.selectable);
+    if (!items.length) return;
+    const at = this.selected ? items.indexOf(this.selected) : -1;
+    const next =
+      at === -1 ? (delta > 0 ? 0 : items.length - 1) : (at + delta + items.length) % items.length;
+    this.select(items[next]);
+    this.selected?.dom.scrollIntoView?.({ block: "nearest" });
+  }
+
+  private handleKey(evt: KeyboardEvent): boolean {
+    switch (evt.key) {
+      case "ArrowDown":
+        this.move(1);
+        return true;
+      case "ArrowUp":
+        this.move(-1);
+        return true;
+      case "Home":
+      case "End": {
+        const items = this.items.filter((i) => i.selectable);
+        this.select((evt.key === "Home" ? items[0] : items[items.length - 1]) ?? null);
+        return true;
+      }
+      case "Enter":
+      case " ":
+        this.selected?.activate(evt);
+        return true;
+      case "ArrowRight":
+        if (this.selected?.submenu) this.selected.activate(evt);
+        return true;
+      case "ArrowLeft":
+        if (this.parent) this.hide();
+        return true;
+      case "Escape":
+        this.hide();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** @internal */
+  openSubmenu(item: MenuItem): void {
+    const sub = item.submenu;
+    if (!sub || sub === this.child) return;
+    this.closeChild();
+    this.select(item);
+    sub.parent = this;
+    this.child = sub;
+    const r = item.dom.getBoundingClientRect();
+    sub.showAtPosition({ x: r.right, y: r.top });
+    sub.move(1);
+  }
+
+  private closeChild(): void {
+    const sub = this.child;
+    this.child = null;
+    sub?.hide();
+  }
+
   showAtPosition(position: { x: number; y: number }): this {
     // Mounted in the host popup layer and kept inside the window: flips above the pointer near the
     // bottom edge, shifts left near the right edge, scrolls internally when taller than the window.
+    this.layout();
     this.dom.style.position = "fixed";
     this.dom.style.left = `${position.x}px`;
     this.dom.style.top = `${position.y}px`;
     getPopupLayer().appendChild(this.dom);
     this.tracked?.dispose();
     this.tracked = trackPopup(this.dom, () => pointRect(position.x, position.y), { gap: 0 });
+    if (!this.open) document.addEventListener("keydown", this.onKeyDown, true);
     this.open = true;
     // Defer so the click that opened the menu does not immediately close it.
     setTimeout(() => {
@@ -1004,12 +1142,25 @@ export class Menu {
   hide(): this {
     if (!this.open) return this;
     this.open = false;
+    this.closeChild();
+    if (this.parent?.child === this) this.parent.child = null;
+    this.parent = null;
     document.removeEventListener("mousedown", this.onDocClick, true);
+    document.removeEventListener("keydown", this.onKeyDown, true);
     this.tracked?.dispose();
     this.tracked = null;
+    this.select(null);
     this.dom.remove();
     for (const cb of this.hideCbs) cb();
     return this;
+  }
+  /** @internal Closes the whole chain, from the root menu down. */
+  hideAll(): void {
+    (this.parent ?? this).hideRoot();
+  }
+  private hideRoot(): void {
+    if (this.parent) this.parent.hideRoot();
+    else this.hide();
   }
   close(): void {
     this.hide();
