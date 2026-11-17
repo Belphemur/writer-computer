@@ -68,9 +68,9 @@ Two independent tools that combine:
 
 ## 5. Scale
 
-- The global graph requests at most 3,000 nodes (highest degree first, per the data contract); a banner says "Showing 3,000 of N notes, refine with filters" when truncated.
+- The global graph requests at most 10,000 nodes (highest degree first, per the data contract); a banner says "Showing 10,000 of N notes, refine with filters" when truncated.
 - Hubs above 300 links are drawn but not auto-expanded in the local graph.
-- Layout runs in a Web Worker; the canvas renders with WebGL so 3,000 nodes stay interactive. Libraries (ADR above, user's go 2026-11-17): `@react-sigma/core` over `sigma` 4 (WebGL), `graphology`, and `graphology-layout-forceatlas2` in its Web Worker mode.
+- Layout runs in a Web Worker; the canvas renders with WebGL so 10,000 nodes stay interactive. Libraries (ADR above, user's go 2026-11-17): `@react-sigma/core` over `sigma` 4 (WebGL), `graphology`, and `graphology-layout-forceatlas2` in its Web Worker mode.
 
 ## 6. Settings and persistence
 
