@@ -3,9 +3,11 @@
 //! Rust half of `features/mouse-buttons/`. On macOS the native `NSEvent` monitor
 //! ([`macos_mouse`]) turns buttons 3 and 4 into the `mouse-buttons:navigate` event; the web half
 //! (`web/`) listens for it and also handles the DOM events other webviews deliver. The monitor is
-//! opt-in (`WRITER_NATIVE_MOUSE`) since it aborted the app twice (spec "Crash"); the kill switch
-//! `features.mouse-buttons.enabled` sits above that: when it is off the runner never calls
+//! installed whenever `features.mouse-buttons.enabled` is on (default); that kill switch is the
+//! only control (the `WRITER_NATIVE_MOUSE` opt-in is gone). When it is off the runner never calls
 //! [`Feature::setup`], so the monitor is never installed and the web half registers nothing.
+//! The monitor aborted the app twice (spec "Crash"); every defence in [`macos_mouse`] stays, but a
+//! native abort cannot be caught in release builds, so the kill switch is the escape hatch.
 //! Spec: `SPECs/mouse-side-buttons-spec.md`.
 
 #[cfg(target_os = "macos")]
@@ -13,9 +15,6 @@ pub(crate) mod macos_mouse;
 
 use crate::features::Feature;
 use tauri::{AppHandle, Runtime};
-
-/// Environment switch for the native monitor (opt-in, see the module docs).
-pub(crate) const NATIVE_ENV: &str = "WRITER_NATIVE_MOUSE";
 
 pub struct MouseButtons;
 
@@ -25,22 +24,17 @@ impl<R: Runtime> Feature<R> for MouseButtons {
     }
 
     fn setup(&self, app: &AppHandle<R>) -> Result<(), String> {
-        native_setup(app, std::env::var_os(NATIVE_ENV).is_some())
+        native_setup(app)
     }
 }
 
 #[cfg(target_os = "macos")]
-fn native_setup<R: Runtime>(app: &AppHandle<R>, requested: bool) -> Result<(), String> {
-    if requested {
-        macos_mouse::install(app)
-    } else {
-        log::info!("native mouse monitor disabled (set {NATIVE_ENV}=1 to enable)");
-        Ok(())
-    }
+fn native_setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    macos_mouse::install(app)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn native_setup<R: Runtime>(_app: &AppHandle<R>, _requested: bool) -> Result<(), String> {
+fn native_setup<R: Runtime>(_app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
@@ -56,6 +50,14 @@ mod tests {
         assert_eq!(m.id, "mouse-buttons");
         #[cfg(target_os = "macos")]
         assert_eq!(m.rust.events, [macos_mouse::EVENT]);
+    }
+
+    #[test]
+    fn enabled_by_default_it_is_planned_so_the_runner_installs_the_monitor() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = crate::config::Settings::new(dir.path().to_path_buf()).unwrap();
+        let feats: Vec<&'static dyn Feature<Wry>> = vec![&MouseButtons];
+        assert_eq!(plan(feats, &s).len(), 1, "no env var gates it any more");
     }
 
     #[test]

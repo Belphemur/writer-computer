@@ -7,7 +7,7 @@
   "activation": ["onStartup"],
   "memory": {
     "level": "low",
-    "note": "Two DOM listeners and one event listener; on macOS the native monitor (opt-in with WRITER_NATIVE_MOUSE) adds one small worker thread."
+    "note": "Two DOM listeners and one event listener; on macOS the native monitor (installed while the feature is enabled) adds one small worker thread."
   },
   "rust": {
     "commands": [],
