@@ -265,18 +265,29 @@ pub async fn property_types(
 }
 
 /// Record a property's type vault-wide in `.writer/property-types.json` (never `.obsidian`).
+/// `values` is an enum's whole ordered list; without it a new enum is seeded from the values the
+/// vault already holds under that name.
 #[tauri::command]
 pub async fn property_type_set(
     name: String,
     ty: crate::property_types::PropertyType,
+    values: Option<Vec<String>>,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
     blocking(move || {
         let (_, index) = window_index(&app, &webview)?;
-        crate::property_types::set_type(index.root(), &name, ty).map_err(|e| match e {
-            crate::property_types::PropertyTypeError::Invalid(m) => AppError::InvalidPath(m),
-            other => AppError::Io(other.to_string()),
+        let seed = ty == crate::property_types::PropertyType::Enum && values.is_none();
+        let observed = if seed {
+            index.property_values(&name).map_err(app_err)?
+        } else {
+            Vec::new()
+        };
+        crate::property_types::set_type(index.root(), &name, ty, values, observed).map_err(|e| {
+            match e {
+                crate::property_types::PropertyTypeError::Invalid(m) => AppError::InvalidPath(m),
+                other => AppError::Io(other.to_string()),
+            }
         })
     })
     .await

@@ -227,6 +227,7 @@ export function convertProperty(
         : setList(text, key, links);
     }
     case "text":
+    case "enum": // a text value; whether it is in the type's list is not checked
       if (isList) {
         const joined = row.items.join(", ");
         return setScalar(text, key, joined === "" ? null : joined);

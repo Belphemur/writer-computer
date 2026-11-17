@@ -15,7 +15,7 @@ vi.mock("../src/lib/save", () => ({
 }));
 const ipc = vi.hoisted(() => ({
   propertyTypes: vi.fn(),
-  propertyTypeSet: vi.fn(async (_name: string, _ty: string) => {}),
+  propertyTypeSet: vi.fn(async (_name: string, _ty: string, _values?: string[]) => {}),
 }));
 // The fake backend keeps what was recorded, as the real one does, for the refetch after a write.
 const recorded = vi.hoisted(() => new Map<string, string>());
@@ -49,6 +49,7 @@ import { useEditorStore } from "../src/stores/editor-store";
 import { usePropertiesPanelStore } from "../src/stores/properties-panel-store";
 import { useSettingsStore } from "../src/stores/settings-store";
 import { usePropertyTypesStore } from "../src/stores/property-types-store";
+import { useWorkspaceStore } from "../src/stores/workspace-store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -316,6 +317,7 @@ describe("property type icon and menu", () => {
       "Text",
       "List",
       "Relationships",
+      "Enum",
       "Number",
       "Checkbox",
       "Date",
@@ -668,5 +670,140 @@ describe("relationships properties", () => {
     expect(stored()).toContain("nope: Missing"); // refused, kept
     expect(ipc.propertyTypeSet).toHaveBeenCalledWith("nope", "relationships");
     expect(q('[role="status"]')?.textContent).toBe("Not a link");
+  });
+});
+
+describe("middle-click on a relationship link", () => {
+  it("opens the note in a new tab; a plain click navigates in place", async () => {
+    const openNew = vi.fn(async () => {});
+    const navigate = vi.fn(async () => {});
+    useWorkspaceStore.setState({ root: "/vault" });
+    useEditorStore.setState({ openFileInNewTab: openNew, navigateToFile: navigate } as never);
+    recorded.set("manager", "relationships");
+    await mountAndLoad('manager: "[[Alpha]]"');
+    const link = q("[data-relationship] [data-wikilink]")!;
+    await act(async () => {
+      link.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
+    });
+    await act(async () => {});
+    expect(openNew).toHaveBeenCalledWith("/vault/Alpha.md");
+    expect(navigate).not.toHaveBeenCalled();
+    // other auxiliary buttons (right) do nothing; a left click still navigates in place
+    await act(async () => {
+      link.dispatchEvent(new MouseEvent("auxclick", { button: 2, bubbles: true }));
+    });
+    await act(async () => link.click());
+    await act(async () => {});
+    expect(openNew).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith("/vault/Alpha.md");
+  });
+});
+
+describe("enum properties", () => {
+  const enumInfo = (values: string[]) => ({
+    key: "status",
+    count: 3,
+    types: { text: 3 },
+    type: "enum",
+    source: "writer",
+    mismatched: 0,
+    obsidianType: "text",
+    values,
+  });
+  const trigger = () => q('button[aria-label="status value"]') as HTMLButtonElement;
+  const optionLabels = () =>
+    [...document.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')].map(
+      (o) => o.textContent,
+    );
+  const optionNamed = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')].find((o) =>
+      o.textContent?.startsWith(label),
+    ) as HTMLButtonElement;
+
+  beforeEach(() => {
+    ipc.propertyTypes.mockImplementation(
+      async () => [enumInfo(["todo", "doing", "done"])] as never,
+    );
+  });
+
+  it("is always a dropdown of its values, with the current one ticked", async () => {
+    await mountAndLoad("status: doing");
+    expect(q('input[aria-label="status value"]')).toBeNull();
+    expect(trigger().textContent).toContain("doing");
+    expect(trigger().dataset.notInList).toBeUndefined();
+    await act(async () => trigger().click());
+    expect(optionLabels()).toEqual(["No value", "todo", "doing", "done"]);
+    expect(optionNamed("doing").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(optionNamed("doing"));
+    await press(document.activeElement!.closest('[role="listbox"]')!, "ArrowDown");
+    expect(document.activeElement).toBe(optionNamed("done"));
+  });
+
+  it("picking writes the value, No value clears it, Escape keeps it", async () => {
+    await mountAndLoad("status: doing");
+    await act(async () => trigger().click());
+    await act(async () => optionNamed("done").click());
+    expect(stored()).toBe("status: done");
+    await act(async () => trigger().click());
+    await press(document.activeElement!.closest('[role="listbox"]')!, "Escape");
+    expect(doc('[role="listbox"]')).toBeNull();
+    expect(stored()).toBe("status: done");
+    await act(async () => trigger().click());
+    await act(async () => optionNamed("No value").click());
+    expect(stored()).toBe("status:");
+  });
+
+  it("shows a value outside the list marked, selectable, and never rewrites it", async () => {
+    await mountAndLoad("status: blocked");
+    expect(trigger().dataset.notInList).toBe("");
+    expect(trigger().textContent).toContain("not in list");
+    expect(stored()).toBe("status: blocked");
+    await act(async () => trigger().click());
+    expect(optionLabels()).toEqual(["No value", "blockednot in list", "todo", "doing", "done"]);
+    await act(async () => optionNamed("blocked").click()); // picking it again changes nothing
+    expect(stored()).toBe("status: blocked");
+  });
+
+  it("Add value... appends to the type's values through the one write path and sets it", async () => {
+    await mountAndLoad("status: todo");
+    await act(async () => trigger().click());
+    const add = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((b) =>
+      b.textContent?.startsWith("Add value"),
+    )!;
+    await act(async () => add.click());
+    const input = doc('input[aria-label="New value"]') as HTMLInputElement;
+    await type(input, "  review ", "enter");
+    await act(async () => {});
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("status", "enum", [
+      "todo",
+      "doing",
+      "done",
+      "review",
+    ]);
+    expect(usePropertyTypesStore.getState().byKey["status"]?.type).toBe("enum");
+    expect(stored()).toBe("status: review");
+    expect(doc('[role="listbox"]')).toBeNull();
+  });
+
+  it("choosing Enum in the type menu asks the backend to seed the values and keeps the notes", async () => {
+    ipc.propertyTypes.mockImplementation(
+      async () =>
+        [
+          {
+            key: "status",
+            count: 4,
+            types: { text: 4 },
+            type: "text",
+            source: "inferred",
+            mismatched: 0,
+          },
+        ] as never,
+    );
+    await mountAndLoad("status: doing");
+    await act(async () => typeButton("status", "Text").click());
+    await act(async () => menuItem("Enum").click());
+    // no values sent: the backend seeds them from every value the vault holds
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("status", "enum");
+    expect(stored()).toBe("status: doing");
   });
 });

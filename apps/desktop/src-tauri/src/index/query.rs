@@ -579,6 +579,26 @@ impl Index {
         })
     }
 
+    /// Every distinct scalar value of one property (any note, list items included) with the
+    /// number of notes holding it, for seeding an enum type. The name matches case-insensitively,
+    /// like the type record; empty and nested values are skipped.
+    pub fn property_values(&self, key: &str) -> Res<Vec<(String, i64)>> {
+        const SCALAR: &str = "('text','link','number','bool','date','datetime')";
+        self.read(|c| {
+            let mut st = c.prepare(&format!(
+                "SELECT v, COUNT(DISTINCT file_id) FROM ( \
+                   SELECT file_id, v_text AS v FROM props WHERE key = ?1 COLLATE NOCASE AND vtype IN {SCALAR} \
+                   UNION ALL \
+                   SELECT file_id, v_text FROM prop_items WHERE key = ?1 COLLATE NOCASE AND vtype IN {SCALAR}) \
+                 WHERE v IS NOT NULL AND TRIM(v) != '' GROUP BY v ORDER BY v"
+            ))?;
+            let rows = st
+                .query_map([key], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            Ok(rows)
+        })
+    }
+
     /// Per property name: the list values that are empty and those made only of wikilinks.
     pub fn list_shapes(&self) -> Res<Vec<ListShape>> {
         self.read(|c| {

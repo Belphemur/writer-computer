@@ -671,6 +671,7 @@ export function initialValue(type: PropertyType, now: Date = new Date()): Scalar
   const date = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   switch (type) {
     case "text":
+    case "enum": // nothing picked yet
     case "relationships": // no link yet: the first one written is a single value
       return null;
     case "number":

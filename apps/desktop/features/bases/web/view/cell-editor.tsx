@@ -1,7 +1,12 @@
 import { useRef, useState } from "react";
+import { PropertyEnumSelect } from "@/components/editor-area/enum-select";
+import { typeKey } from "@/lib/property-types";
+import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { rawToEditText, rawToListItems, type EditKind } from "../lib/cells";
 
 interface Props {
+  /** The note property behind the column: an enum property edits as the core dropdown. */
+  property: string;
   kind: EditKind;
   /** Raw frontmatter value the editor starts from (`undefined`: the key is absent). */
   raw: unknown;
@@ -153,7 +158,28 @@ function ListEditor({ raw, onCommit, onCancel }: Props) {
   );
 }
 
+/** The enum dropdown of a text cell (the one `EnumSelect` of the properties panel): a pick commits
+ *  at once, "No value" clears the cell, closing the list cancels. */
+function EnumEditor({ property, raw, onCommit, onCancel }: Props) {
+  return (
+    <PropertyEnumSelect
+      name={property}
+      value={raw === undefined || raw === null ? null : String(raw)}
+      defaultOpen
+      onSelect={(v) => {
+        onCommit({ text: v ?? "" });
+      }}
+      onDismiss={onCancel}
+      className="h-full bg-[var(--surface-input)] px-2 ring-1 ring-inset ring-[var(--focus-border)]"
+    />
+  );
+}
+
 /** The editor of one cell, by kind. Checkboxes never get one: they toggle in place. */
 export function CellEditor(props: Props) {
+  const isEnum =
+    usePropertyTypesStore((s) => s.byKey[typeKey(props.property)]?.type) === "enum" &&
+    props.kind === "text";
+  if (isEnum) return <EnumEditor {...props} />;
   return props.kind === "list" ? <ListEditor {...props} /> : <TextEditor {...props} />;
 }

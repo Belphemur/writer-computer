@@ -35,7 +35,8 @@ const INFO = (key: string, type: string, source = "writer") => ({
   type,
   source,
   mismatched: 0,
-  obsidianType: type === "relationships" ? "multitext" : type,
+  obsidianType: type === "relationships" ? "multitext" : type === "enum" ? "text" : type,
+  values: [] as string[],
 });
 
 beforeEach(() => {
@@ -68,6 +69,7 @@ describe("registry", () => {
       "Text",
       "List",
       "Relationships",
+      "Enum",
       "Number",
       "Checkbox",
       "Date",
@@ -138,6 +140,21 @@ describe("store", () => {
     await done;
     expect(ipc.propertyTypeSet).toHaveBeenCalledWith("Status", "checkbox");
   });
+  test("an enum without values is seeded by the backend; addEnumValue appends once, trimmed", async () => {
+    ipc.propertyTypes.mockResolvedValue([INFO("status", "enum", "writer")]);
+    await usePropertyTypesStore.getState().load();
+    await usePropertyTypesStore.getState().setType("status", "enum");
+    expect(ipc.propertyTypeSet).toHaveBeenLastCalledWith("status", "enum");
+    ipc.propertyTypeSet.mockClear();
+    ipc.propertyTypes.mockResolvedValue([{ ...INFO("status", "enum"), values: ["a"] }]);
+    await usePropertyTypesStore.getState().load(true);
+    expect(await usePropertyTypesStore.getState().addEnumValue("Status", " b ")).toBe("b");
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("Status", "enum", ["a", "b"]);
+    expect(usePropertyTypesStore.getState().byKey.status.values).toEqual(["a", "b"]);
+    ipc.propertyTypeSet.mockClear();
+    await usePropertyTypesStore.getState().addEnumValue("status", "a"); // already there
+    expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
+  });
   test("a failed write rolls the local record back", async () => {
     await usePropertyTypesStore.getState().load();
     ipc.propertyTypeSet.mockRejectedValue(new Error("disk full"));
@@ -172,6 +189,15 @@ describe("plugin host metadataTypeManager", () => {
     expect(m.getAllProperties().team.type).toBe("multitext");
     expect(m.getAssignedType("team")).toBe("multitext");
     await expect(m.setType("team", "relationships")).rejects.toThrow("Unknown property type");
+    expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
+  });
+  test("enum is reported as text and cannot be set by a plugin", async () => {
+    ipc.propertyTypes.mockResolvedValue([{ ...INFO("status", "enum"), values: ["a", "b"] }]);
+    const m = new MetadataTypeManager();
+    await m.load();
+    expect(m.getPropertyInfo("status")?.type).toBe("text");
+    expect(m.getAssignedType("status")).toBe("text");
+    await expect(m.setType("status", "enum")).rejects.toThrow("Unknown property type");
     expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
   });
   test("an inferred type is not an assigned one", async () => {

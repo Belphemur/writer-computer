@@ -1234,3 +1234,17 @@ fn nested_tags_match_whole_segment_prefixes_only() {
     assert_eq!(hits("tag:#research/hlo nested"), 2);
     assert_eq!(hits("tag:res nested"), 0);
 }
+
+#[test]
+fn property_values_lists_distinct_scalars_with_note_counts() {
+    let fx = build_fixture();
+    let index = open(&fx);
+    let status = index.property_values("Status").unwrap(); // case-insensitive name
+    assert_eq!(status.iter().map(|(_, n)| n).sum::<i64>(), 4);
+    assert!(status.iter().all(|(v, n)| !v.trim().is_empty() && *n >= 1));
+    assert!(
+        index.property_values("obj").unwrap().is_empty(),
+        "nested values are skipped"
+    );
+    assert!(index.property_values("no-such-key").unwrap().is_empty());
+}

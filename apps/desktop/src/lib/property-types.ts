@@ -8,6 +8,7 @@ import {
   Calendar03Icon,
   CheckmarkSquare02Icon,
   Clock01Icon,
+  DropdownFieldTypeIcon,
   HashtagIcon,
   LeftToRightListBulletIcon,
   Link01Icon,
@@ -18,8 +19,9 @@ import type { IconSvgElement } from "@hugeicons/react";
 import { isWikilink, type PropertyKind, type PropertyRow } from "./frontmatter-properties";
 
 /** Obsidian's names (`types.json` values), also the wire names with the backend, plus Writer's own
- *  `relationships` (a link or a list of links; Obsidian has no such type, so it lives only in
- *  `.writer/property-types.json` and plugins see it as `multitext` / `text`). */
+ *  `relationships` (a link or a list of links) and `enum` (one string of a recorded list).
+ *  Obsidian has neither, so they live only in `.writer/property-types.json` (`writerOnly`) and
+ *  plugins see them as `multitext` / `text`. */
 export type PropertyType =
   | "text"
   | "multitext"
@@ -29,7 +31,8 @@ export type PropertyType =
   | "datetime"
   | "tags"
   | "aliases"
-  | "relationships";
+  | "relationships"
+  | "enum";
 
 interface TypeDefinition {
   label: string;
@@ -38,6 +41,8 @@ interface TypeDefinition {
   warning: string;
   /** Offered in the type menu (tags and aliases are special names, shown only when current). */
   pickable: boolean;
+  /** Obsidian has no such type: recorded only in Writer's file, never assignable by a plugin. */
+  writerOnly?: boolean;
 }
 
 /** The registry: a new type is one entry here (and one in the Rust enum). */
@@ -54,6 +59,14 @@ export const PROPERTY_TYPES: Record<PropertyType, TypeDefinition> = {
     icon: Link01Icon,
     warning: "Not a link",
     pickable: true,
+    writerOnly: true,
+  },
+  enum: {
+    label: "Enum",
+    icon: DropdownFieldTypeIcon,
+    warning: "Not text",
+    pickable: true,
+    writerOnly: true,
   },
   number: { label: "Number", icon: HashtagIcon, warning: "Not a number", pickable: true },
   checkbox: {
@@ -92,6 +105,8 @@ export interface PropertyTypeInfo {
   /** The type name Obsidian and its plugins know this one by (Rust `PropertyType::obsidian_name`):
    *  `relationships` is `multitext` when the vault holds lists of links there, else `text`. */
   obsidianType: string;
+  /** An enum's allowed values, in order (empty for any other type). */
+  values: string[];
 }
 
 /** Name -> info lookups are case-insensitive, like Obsidian's `types.json`. */
@@ -144,6 +159,8 @@ const FITS: Record<PropertyType, readonly PropertyKind[]> = {
   aliases: ["list", "tags"],
   // a single link; a list of links is checked by items in `rowFitsType`
   relationships: ["link"],
+  // the dropdown edits a text value; anything else keeps its own editor and shows the warning
+  enum: ["text"],
 };
 
 /** Whether the row's value is a valid value of `type`. An empty value fits every type; a value

@@ -1,4 +1,4 @@
-import { memo, useCallback, useId, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ariaSort,
@@ -11,12 +11,13 @@ import {
   type GridItem,
   type GridLayout,
 } from "../lib/grid";
-import type { EditKind } from "../lib/cells";
+import { notePropertyName, type EditKind } from "../lib/cells";
 import type { BaseQueryResult, BaseView, Cell, Column } from "../lib/types";
 import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from "../lib/grid";
 import { fitColumnWidth } from "../lib/fit-width";
 import { createMeasure } from "./measure-text";
 import type { ViewConfig } from "../lib/view-registry";
+import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { CellEditor } from "./cell-editor";
 import { CellView, type CellActions } from "./cell-view";
 import type { CellRange, useBaseEdits } from "./use-base-edits";
@@ -157,6 +158,7 @@ const GridCell = memo(function GridCell(p: GridCellProps) {
     >
       {p.editing ? (
         <CellEditor
+          property={notePropertyName(p.column.key)}
           kind={p.editing.kind}
           raw={p.editing.raw}
           onCommit={p.onCommit}
@@ -187,6 +189,13 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
   const { collapsed, toggle: toggleGroup } = useGroupCollapse(view?.name ?? "");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  // enum properties edit as a dropdown: their values come from the property type store
+  useEffect(() => {
+    void usePropertyTypesStore
+      .getState()
+      .load()
+      .catch(() => {});
+  }, []);
 
   const { probeRow, beginEdit: beginCellEdit, toggleCheckbox, notify } = edits;
   const { columns, rows } = result;

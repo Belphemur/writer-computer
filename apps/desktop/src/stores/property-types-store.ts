@@ -12,8 +12,13 @@ interface PropertyTypesState {
   loadedAt: number;
   /** Fetch the vault's property types; skipped while a fetch is fresh unless `force`. */
   load: (force?: boolean) => Promise<void>;
-  /** Record `type` for `name` vault-wide; rolls the local state back when the write fails. */
-  setType: (name: string, type: PropertyType) => Promise<void>;
+  /** Record `type` for `name` vault-wide; rolls the local state back when the write fails.
+   *  `values` is an enum's whole list; without it the backend seeds a new enum from the vault's
+   *  existing values (and keeps a recorded enum's list). */
+  setType: (name: string, type: PropertyType, values?: string[]) => Promise<void>;
+  /** Append `value` to an enum property's list (the one write path for "Add value"); a value
+   *  already in the list is a no-op. Resolves to the stored value (trimmed). */
+  addEnumValue: (name: string, value: string) => Promise<string>;
 }
 
 let inflight: Promise<void> | null = null;
@@ -45,7 +50,7 @@ export const usePropertyTypesStore = create<PropertyTypesState>((set, get) => ({
     inflight = tracked;
     return tracked;
   },
-  setType: async (name, type) => {
+  setType: async (name, type, values) => {
     const key = typeKey(name);
     const before = get().byKey[key];
     const next: PropertyTypeInfo = {
@@ -55,12 +60,19 @@ export const usePropertyTypesStore = create<PropertyTypesState>((set, get) => ({
       type,
       source: "writer",
       mismatched: 0,
-      // only `relationships` differs from `type`; the refetch below replaces this guess
-      obsidianType: type === "relationships" ? (before?.obsidianType ?? "text") : type,
+      // only the Writer-only types differ from `type`; the refetch below replaces this guess
+      obsidianType:
+        type === "relationships"
+          ? (before?.obsidianType ?? "text")
+          : type === "enum"
+            ? "text"
+            : type,
+      // an unseeded enum shows its recorded list (if any) until the refetch brings the seed
+      values: type === "enum" ? (values ?? (before?.type === "enum" ? before.values : [])) : [],
     };
     set((s) => ({ byKey: { ...s.byKey, [key]: next } }));
     try {
-      await propertyTypeSet(name, type);
+      await propertyTypeSet(name, type, ...(values ? [values] : []));
     } catch (e) {
       set((s) => {
         const byKey = { ...s.byKey };
@@ -74,6 +86,14 @@ export const usePropertyTypesStore = create<PropertyTypesState>((set, get) => ({
     void get()
       .load(true)
       .catch(() => {});
+  },
+  addEnumValue: async (name, value) => {
+    const v = value.trim();
+    const info = get().byKey[typeKey(name)];
+    const current = info?.type === "enum" ? info.values : [];
+    if (v === "" || current.includes(v)) return v;
+    await get().setType(name, "enum", [...current, v]);
+    return v;
   },
 }));
 

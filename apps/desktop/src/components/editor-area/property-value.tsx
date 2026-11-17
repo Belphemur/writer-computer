@@ -4,6 +4,7 @@ import { openPropertyUrl } from "./property-links";
 import { CHIP, ChipRemove, FIELD } from "./property-chip";
 import { useWikiSuggest, WikiLinkButton } from "./property-wikilink";
 import { RelationshipsField } from "./relationships-field";
+import { PropertyEnumSelect } from "./enum-select";
 import type { SearchResult } from "@/types/fs";
 import type { PropertyType } from "@/lib/property-types";
 
@@ -284,6 +285,14 @@ export function PropertyValue({ row, actions, type }: FieldProps & { type?: Prop
     (row.kind === "link" || row.kind === "empty" || (row.kind === "list" && row.editable))
   )
     return <RelationshipsField row={row} actions={actions} />;
+  if (type === "enum" && (row.kind === "text" || row.kind === "empty"))
+    return (
+      <PropertyEnumSelect
+        name={row.key}
+        value={row.value === null ? null : String(row.value)}
+        onSelect={(v) => actions.setValue(row.key, v)}
+      />
+    );
   switch (row.kind) {
     case "checkbox":
       return <CheckboxField row={row} actions={actions} />;

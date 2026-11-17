@@ -709,4 +709,21 @@ describe("embedded base: behaviour", () => {
     await flush();
     expect(opened).toEqual(["/vault/Tasks/alpha.md"]);
   });
+
+  it("middle-clicking a link in a cell opens the note in a new tab too", async () => {
+    const result: BaseQueryResult = taskResult();
+    result.rows[0]!.cells[0] = {
+      type: "link",
+      value: { target: "alpha", display: null, resolved: "Tasks/alpha.md" },
+      display: "alpha",
+    };
+    m.baseQuery.mockResolvedValue(result);
+    await mountEmbed(fileEmbed);
+    const link = host.querySelector<HTMLElement>("[data-cell-link]")!;
+    await act(async () => {
+      link.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
+    });
+    await flush();
+    expect(opened).toEqual(["/vault/Tasks/alpha.md"]);
+  });
 });

@@ -54,6 +54,13 @@ export function WikiLinkButton({ value }: { value: string }) {
       type="button"
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => void openPropertyWikilink(value)}
+      // middle-click opens a new tab, as on a wiki link in the editor
+      onAuxClick={(e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        void openPropertyWikilink(value, true);
+      }}
       title={ok === false ? `${value} (note not found)` : value}
       data-wikilink
       data-unresolved={ok === false ? "" : undefined}

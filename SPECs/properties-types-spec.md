@@ -8,13 +8,14 @@ Every property row starts with an icon showing its type. Clicking it opens a men
 
 ## Types
 
-Obsidian's names are the wire names everywhere (Rust enum `PropertyType`, TS `PropertyType`): `text`, `multitext` (shown as "List"), `number`, `checkbox`, `date`, `datetime` ("Date & time"), `tags`, `aliases`, plus Writer's own `relationships`. The menu offers `text`, `multitext`, `relationships`, `number`, `checkbox`, `date`, `datetime` (Relationships right after List); `tags` and `aliases` are special names that show their own icon and appear in the menu only while current.
+Obsidian's names are the wire names everywhere (Rust enum `PropertyType`, TS `PropertyType`): `text`, `multitext` (shown as "List"), `number`, `checkbox`, `date`, `datetime` ("Date & time"), `tags`, `aliases`, plus Writer's own `relationships` and `enum`. The menu offers `text`, `multitext`, `relationships`, `enum`, `number`, `checkbox`, `date`, `datetime` (Relationships right after List); `tags` and `aliases` are special names that show their own icon and appear in the menu only while current.
 
 | id              | label         | icon (`@hugeicons/core-free-icons`) | value                                           |
 | --------------- | ------------- | ----------------------------------- | ----------------------------------------------- |
 | `text`          | Text          | `TextIcon`                          | a string                                        |
 | `multitext`     | List          | `LeftToRightListBulletIcon`         | a list                                          |
 | `relationships` | Relationships | `Link01Icon`                        | one `[[link]]` or a list of `[[links]]` (below) |
+| `enum`          | Enum          | `DropdownFieldTypeIcon`             | a string from the type's list (below)           |
 | `number`        | Number        | `HashtagIcon`                       |                                                 |
 | `checkbox`      | Checkbox      | `CheckmarkSquare02Icon`             |                                                 |
 | `date`          | Date          | `Calendar03Icon`                    |                                                 |
@@ -69,6 +70,16 @@ From relationships: to text a list is joined `", "` (a single link is already te
 
 Number: `^[-+]?(\d+\.?\d*|\.\d+)$` after trimming. Dates accept `YYYY-MM-DD` (also `/` and `.`), `D/M/YYYY` or `M/D/YYYY` only when one part is above 12, `March 5, 2026`, `5th Mar 2026`; times `H:mm[:ss]` with an optional offset (dropped); output is `YYYY-MM-DD` / `YYYY-MM-DDTHH:mm`. Tags drop a leading `#`. Nested maps, multi-line strings and placeholders are refused ("edit it in Source").
 
+## Enum
+
+A Writer-only type: a property whose value is always one of a list, shown as a dropdown. Obsidian has no such type, so like `relationships` it is stored only in `.writer/property-types.json`, an `.obsidian/types.json` entry named `enum` is skipped, and plugins see it as `text` (`PropertyType::obsidian_name`; `setType('enum')` from a plugin is rejected). The value on disk is a plain string, so the note stays valid for Obsidian. The registry flag `writerOnly` (TS) and `PropertyType::is_writer_only` (Rust) name the two Writer-only types once.
+
+- File shape: an enum entry is an object, `{"types": {"status": {"type": "enum", "values": ["todo", "doing", "done"]}}}`; every other type stays a bare string, so old files load unchanged. Values are ordered, trimmed, non-empty, unique (case-sensitive), one line each. Unknown entries in the file are preserved on rewrite. `property_types` reports `values` (empty for other types).
+- Value cell: always a dropdown (`EnumSelect`, a listbox popover: arrows, Home/End, Enter, Escape, type-to-add), with an empty choice that clears the value and a final "Add value..." entry. Adding appends to the type's values through `property_type_set(name, "enum", values)` (the one write path, `usePropertyTypesStore.addEnumValue`) and sets it on the note. A note whose value is not in the list shows it marked "not in list" and still selectable in the list; it is never rewritten until the user picks another value. Only text values (and empty) get the dropdown; a number or list under an enum type keeps its own editor and the "Not text" warning.
+- Converting to Enum: `property_type_set(name, "enum")` without `values` seeds the list with every distinct existing value of the property across the vault (scalar texts and list items, from the index's `props` / `prop_items`), sorted by note count descending then name; when the type already is an enum its values are kept. Notes are not rewritten (this note's value converts like text). Converting away keeps every note unchanged and drops the list.
+- Add property: choosing Enum records an empty list (nothing observed yet); values are added from the dropdown.
+- Bases: an enum property is text in expressions and in the engine. The table's cell editor for a text cell of an enum property is the same `EnumSelect` (through `PropertyEnumSelect`, core), so adding a value works there too.
+
 ## Add property
 
 The "Add property" row has the same type menu up front and a name field that suggests the vault's existing names (most used first) with their type icons; a known name defaults to its recorded type. Choosing a type there records it (a known name's type is not rewritten). List, tags and aliases rows keep their chip editing; date rows keep the native `date` / `datetime-local` inputs the panel already had.
@@ -78,6 +89,7 @@ The "Add property" row has the same type menu up front and a name field that sug
 - One value cell: a chip per link (`property-wikilink.tsx` link button: click opens the note, unresolved targets dimmed and dotted, "x" removes the link) and a "+" (or "+ Add link" while empty). Reorder by drag is not offered (the app has no generic drag util for chips).
 - "+" opens a picker (`relationship-picker.tsx`): a popover with a search field over the vault's own `fuzzy_search` (fuzzy, typo tolerant, recents first when empty, `index/rank.rs`; there is no second search), each result as note name plus folder hint. Type to filter, arrows move, Enter picks, Escape closes and refocuses "+", a click outside closes. Notes already in the property (by file name or path, any alias or heading form) are hidden. Typing `[[` in the raw inputs of text or mixed-list rows still autocompletes.
 - A pick writes `"[[File name]]"` by file name, never by title; the folder path form (`[[Projects/Beta]]`) only when another note shares the name (`linkForNote`). The first link of an empty property is a single value; a second turns it into a list; a list gains an item. Removing the only link of a single value empties the property. Every add or remove is one `updateFrontmatter` call (one undo step) through the single quoted, byte-minimal, CRLF-safe write path.
+- Middle-click on a chip (`auxclick`, button 1) opens the note in a new tab through `editorApi.openFileInNewTab`, the path an editor wiki link's middle-click uses; Bases link cells do the same. A plain click navigates in place; Cmd/Ctrl+click is not special anywhere for links, so it behaves like a plain click here too.
 - Renaming a note rewrites these links (single, flow list, block list, alias, heading, folder forms; tests in `relocate/linkfix.rs`).
 - Bases: a single link is a `link` value and a list of links a `list` of `link` values, so `list(employee).contains(list(this.employee)[0])` works whether `employee` is a single link or a list; aliases, headings and folder forms compare by the note they point to (test `relationships_properties_work_as_link_and_list_of_links`). `file.links` and `file.backlinks` already include frontmatter links.
 - CLI: `writer properties types` adds each property's type (`relationships` included) to the vault-wide listing.

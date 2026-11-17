@@ -43,6 +43,13 @@ function Link({
         e.stopPropagation();
         onOpen();
       }}
+      // middle-click opens it too (cell links always open in a new tab)
+      onAuxClick={(e) => {
+        if (e.button !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onOpen();
+      }}
       className={`${LINK_CLASS} ${unresolved ? "opacity-70" : ""} bg-transparent p-0 text-left`}
     >
       {label}

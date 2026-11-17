@@ -5,7 +5,8 @@
 //! - `.obsidian/types.json` (`{"types": {name: type}}`), read-only: an Obsidian vault's types show
 //!   up immediately. Writer never writes it.
 //! - `.writer/property-types.json`, same format, Writer's own record and the only file this module
-//!   writes. It wins over Obsidian's.
+//!   writes. It wins over Obsidian's. An `enum` entry is an object carrying its ordered values
+//!   (`{"type": "enum", "values": [...]}`); every other entry is a bare type string.
 //!
 //! With no record, the type is inferred from the observed values (the index's `props.vtype`
 //! counts; a property whose every non-empty value is a wikilink or a list of wikilinks is
@@ -23,9 +24,10 @@ pub const WRITER_FILE: &str = ".writer/property-types.json";
 pub const OBSIDIAN_FILE: &str = ".obsidian/types.json";
 
 /// Obsidian's type names (`types.json` values), which are also the wire names everywhere, plus
-/// Writer's own `relationships` (a link or a list of links). Obsidian has no such type: it is
-/// stored only in `.writer/property-types.json`, an `.obsidian/types.json` entry of that name is
-/// skipped, and plugins see it as `multitext` / `text` ([`PropertyType::obsidian_name`]).
+/// Writer's own `relationships` (a link or a list of links) and `enum` (one string of a recorded
+/// list). Obsidian has neither: they are stored only in `.writer/property-types.json`, an
+/// `.obsidian/types.json` entry of that name is skipped, and plugins see them as `multitext` /
+/// `text` ([`PropertyType::obsidian_name`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PropertyType {
@@ -38,6 +40,7 @@ pub enum PropertyType {
     Tags,
     Aliases,
     Relationships,
+    Enum,
 }
 
 impl PropertyType {
@@ -53,6 +56,7 @@ impl PropertyType {
             "tags" => PropertyType::Tags,
             "aliases" => PropertyType::Aliases,
             "relationships" => PropertyType::Relationships,
+            "enum" => PropertyType::Enum,
             _ => return None,
         })
     }
@@ -69,20 +73,26 @@ impl PropertyType {
             PropertyType::Tags => "tags",
             PropertyType::Aliases => "aliases",
             PropertyType::Relationships => "relationships",
+            PropertyType::Enum => "enum",
         }
     }
 
-    /// Parse a type name from Obsidian's `types.json`: Obsidian has no `relationships`.
+    /// Types Obsidian does not have: recorded only in Writer's own file.
+    pub fn is_writer_only(self) -> bool {
+        matches!(self, PropertyType::Relationships | PropertyType::Enum)
+    }
+
+    /// Parse a type name from Obsidian's `types.json`: Obsidian has no Writer-only type.
     pub fn parse_obsidian(s: &str) -> Option<PropertyType> {
-        PropertyType::parse(s).filter(|t| *t != PropertyType::Relationships)
+        PropertyType::parse(s).filter(|t| !t.is_writer_only())
     }
 
     /// The type name Obsidian (and so a plugin) knows this type by: `relationships` is a
-    /// `multitext` (`multi` is whether the property holds lists) or a `text`.
+    /// `multitext` (`multi` is whether the property holds lists) or a `text`; `enum` is a `text`.
     pub fn obsidian_name(self, multi: bool) -> &'static str {
         match self {
             PropertyType::Relationships if multi => "multitext",
-            PropertyType::Relationships => "text",
+            PropertyType::Relationships | PropertyType::Enum => "text",
             other => other.wire_name(),
         }
     }
@@ -95,6 +105,7 @@ impl PropertyType {
             (self, vtype),
             (_, "null")
                 | (PropertyType::Text, "text" | "link")
+                | (PropertyType::Enum, "text")
                 | (PropertyType::Number, "number")
                 | (PropertyType::Checkbox, "bool")
                 | (PropertyType::Date, "date")
@@ -129,18 +140,76 @@ pub fn normalize(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
+/// `{"types": {name: entry}}`. Entries stay raw JSON so an entry this build does not know is
+/// preserved when the file is rewritten; [`Recorded::from_entry`] reads the known shapes.
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct TypesFile {
     #[serde(default)]
-    types: BTreeMap<String, String>,
+    types: BTreeMap<String, serde_json::Value>,
 }
 
-/// Parse a types file leniently: unreadable, invalid or unknown entries are skipped (an Obsidian
-/// vault may carry types Writer does not know, and a broken file must not break the panel).
-fn read_types(
-    path: &Path,
-    parse: fn(&str) -> Option<PropertyType>,
-) -> BTreeMap<String, PropertyType> {
+/// One recorded type: the type and, for an enum, its ordered values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Recorded {
+    ty: PropertyType,
+    values: Vec<String>,
+}
+
+impl Recorded {
+    /// A bare type string, or `{"type": ..., "values": [...]}`. Unknown or invalid entries give
+    /// `None` (an Obsidian vault may carry types Writer does not know).
+    fn from_entry(
+        entry: &serde_json::Value,
+        parse: fn(&str) -> Option<PropertyType>,
+    ) -> Option<Recorded> {
+        let (name, values) = match entry {
+            serde_json::Value::String(s) => (s.as_str(), None),
+            serde_json::Value::Object(o) => (o.get("type")?.as_str()?, o.get("values")),
+            _ => return None,
+        };
+        let ty = parse(name)?;
+        let values = match (ty, values) {
+            (PropertyType::Enum, Some(serde_json::Value::Array(items))) => clean_values(
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect(),
+            ),
+            _ => Vec::new(),
+        };
+        Some(Recorded { ty, values })
+    }
+
+    /// The entry as stored: a bare string, except an enum, which carries its values.
+    fn to_entry(&self) -> serde_json::Value {
+        if self.ty == PropertyType::Enum {
+            serde_json::json!({"type": self.ty.wire_name(), "values": self.values})
+        } else {
+            serde_json::Value::String(self.ty.wire_name().to_owned())
+        }
+    }
+}
+
+/// An enum's values as stored: trimmed, non-empty, one line, first occurrence wins, order kept.
+pub fn clean_values(values: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    values
+        .into_iter()
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty() && !v.contains(['\n', '\r']) && seen.insert(v.clone()))
+        .collect()
+}
+
+/// The initial values of a property turned into an enum: every distinct observed value
+/// (`(value, notes)` pairs), most used first, then by name.
+pub fn seed_values(mut observed: Vec<(String, i64)>) -> Vec<String> {
+    observed.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    clean_values(observed.into_iter().map(|(v, _)| v).collect())
+}
+
+/// Parse a types file leniently: an unreadable or invalid file, or an unknown entry, is skipped (a
+/// broken file must not break the panel).
+fn read_types(path: &Path, parse: fn(&str) -> Option<PropertyType>) -> BTreeMap<String, Recorded> {
     let Ok(bytes) = std::fs::read(path) else {
         return BTreeMap::new();
     };
@@ -148,16 +217,16 @@ fn read_types(
         return BTreeMap::new();
     };
     file.types
-        .into_iter()
-        .filter_map(|(k, v)| parse(&v).map(|t| (normalize(&k), t)))
+        .iter()
+        .filter_map(|(k, v)| Recorded::from_entry(v, parse).map(|r| (normalize(k), r)))
         .collect()
 }
 
 /// Both records of a vault, merged with Writer's winning.
 #[derive(Debug, Default)]
 pub struct TypeTable {
-    writer: BTreeMap<String, PropertyType>,
-    obsidian: BTreeMap<String, PropertyType>,
+    writer: BTreeMap<String, Recorded>,
+    obsidian: BTreeMap<String, Recorded>,
 }
 
 impl TypeTable {
@@ -173,8 +242,19 @@ impl TypeTable {
         let key = normalize(name);
         self.writer
             .get(&key)
-            .map(|t| (*t, TypeSource::Writer))
-            .or_else(|| self.obsidian.get(&key).map(|t| (*t, TypeSource::Obsidian)))
+            .map(|r| (r.ty, TypeSource::Writer))
+            .or_else(|| {
+                self.obsidian
+                    .get(&key)
+                    .map(|r| (r.ty, TypeSource::Obsidian))
+            })
+    }
+
+    /// The recorded values of an enum property (empty for any other type).
+    pub fn values(&self, name: &str) -> &[String] {
+        self.writer
+            .get(&normalize(name))
+            .map_or(&[], |r| r.values.as_slice())
     }
 
     /// Every recorded name (lower-cased), Writer's and Obsidian's.
@@ -271,6 +351,8 @@ pub struct PropertyTypeInfo {
     /// The type name Obsidian and its plugins know `ty` by (`relationships` is `multitext` when
     /// the vault holds lists of links under this name, else `text`).
     pub obsidian_type: &'static str,
+    /// An enum's allowed values, in order (empty for any other type).
+    pub values: Vec<String>,
 }
 
 /// The vault's properties (from the index counts, merged case-insensitively) plus every recorded
@@ -310,6 +392,7 @@ pub fn report(root: &Path, counts: Vec<PropertyCount>) -> Vec<PropertyTypeInfo> 
                 source,
                 mismatched,
                 obsidian_type: ty.obsidian_name(multi),
+                values: table.values(&norm).to_vec(),
             }
         })
         .collect()
@@ -318,7 +401,18 @@ pub fn report(root: &Path, counts: Vec<PropertyCount>) -> Vec<PropertyTypeInfo> 
 /// Record `ty` for `name` vault-wide in Writer's own file (atomic replace; creates `.writer`).
 /// The only write of this module: the path is built from `root` alone and checked to stay inside
 /// it, never `.obsidian`.
-pub fn set_type(root: &Path, name: &str, ty: PropertyType) -> Result<(), PropertyTypeError> {
+///
+/// `values` only matters for [`PropertyType::Enum`] (any other type drops them): the given list
+/// replaces the recorded one; without it a recorded enum keeps its values, else `observed` (the
+/// property's distinct values with their note counts) seeds them ([`seed_values`]). Notes are
+/// never touched.
+pub fn set_type(
+    root: &Path,
+    name: &str,
+    ty: PropertyType,
+    values: Option<Vec<String>>,
+    observed: Vec<(String, i64)>,
+) -> Result<(), PropertyTypeError> {
     let key = normalize(name);
     if key.is_empty() || key.contains(['\n', '\r']) {
         return Err(PropertyTypeError::Invalid(
@@ -333,11 +427,22 @@ pub fn set_type(root: &Path, name: &str, ty: PropertyType) -> Result<(), Propert
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => TypesFile::default(),
         Err(e) => return Err(PropertyTypeError::Io(e.to_string())),
     };
-    let wire = serde_json::to_value(ty)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .ok_or_else(|| PropertyTypeError::Invalid("unserialisable type".into()))?;
-    file.types.insert(key, wire);
+    let values = if ty == PropertyType::Enum {
+        match values {
+            Some(v) => clean_values(v),
+            None => match file
+                .types
+                .get(&key)
+                .and_then(|e| Recorded::from_entry(e, PropertyType::parse))
+            {
+                Some(r) if r.ty == PropertyType::Enum => r.values,
+                _ => seed_values(observed),
+            },
+        }
+    } else {
+        Vec::new()
+    };
+    file.types.insert(key, Recorded { ty, values }.to_entry());
     let mut body =
         serde_json::to_string_pretty(&file).map_err(|e| PropertyTypeError::Io(e.to_string()))?;
     body.push('\n');
@@ -419,7 +524,7 @@ mod tests {
             None,
             "unknown Obsidian types are skipped"
         );
-        set_type(v.path(), "due", PropertyType::Datetime).unwrap();
+        set_type(v.path(), "due", PropertyType::Datetime, None, vec![]).unwrap();
         let t = TypeTable::load(v.path());
         assert_eq!(
             t.recorded("due"),
@@ -438,8 +543,8 @@ mod tests {
         write(v.path(), ".obsidian/types.json", obsidian);
         write(v.path(), "note.md", "---\ndue: 2026-01-01\n---\n");
         let before = files(v.path());
-        set_type(v.path(), "Due", PropertyType::Text).unwrap();
-        set_type(v.path(), "other", PropertyType::Number).unwrap();
+        set_type(v.path(), "Due", PropertyType::Text, None, vec![]).unwrap();
+        set_type(v.path(), "other", PropertyType::Number, None, vec![]).unwrap();
         let after = files(v.path());
         let added: Vec<_> = after.iter().filter(|f| !before.contains(f)).collect();
         assert_eq!(added, vec![WRITER_FILE]);
@@ -456,14 +561,14 @@ mod tests {
     #[test]
     fn set_type_refuses_bad_names_and_a_broken_record() {
         let v = tempfile::tempdir().unwrap();
-        assert!(set_type(v.path(), "  ", PropertyType::Text).is_err());
-        assert!(set_type(v.path(), "a\nb", PropertyType::Text).is_err());
+        assert!(set_type(v.path(), "  ", PropertyType::Text, None, vec![]).is_err());
+        assert!(set_type(v.path(), "a\nb", PropertyType::Text, None, vec![]).is_err());
         assert!(
             !v.path().join(".writer").exists(),
             "nothing written for a refused name"
         );
         write(v.path(), WRITER_FILE, "{ not json");
-        assert!(set_type(v.path(), "a", PropertyType::Text).is_err());
+        assert!(set_type(v.path(), "a", PropertyType::Text, None, vec![]).is_err());
         assert_eq!(
             std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap(),
             "{ not json"
@@ -476,7 +581,7 @@ mod tests {
         let v = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(out.path(), v.path().join(".writer")).unwrap();
-        assert!(set_type(v.path(), "a", PropertyType::Text).is_err());
+        assert!(set_type(v.path(), "a", PropertyType::Text, None, vec![]).is_err());
         assert!(files(out.path()).is_empty());
     }
 
@@ -546,7 +651,7 @@ mod tests {
         );
         let unused = r.iter().find(|p| p.key == "unused").unwrap();
         assert_eq!((unused.count, unused.ty), (0, PropertyType::Checkbox));
-        set_type(v.path(), "rating", PropertyType::Text).unwrap();
+        set_type(v.path(), "rating", PropertyType::Text, None, vec![]).unwrap();
         let r = report(
             v.path(),
             vec![count("Rating", &[("number", 3), ("text", 2)])],
@@ -594,7 +699,7 @@ mod tests {
             t.recorded("tags2"),
             Some((PropertyType::Multitext, TypeSource::Obsidian))
         );
-        set_type(v.path(), "team", PropertyType::Relationships).unwrap();
+        set_type(v.path(), "team", PropertyType::Relationships, None, vec![]).unwrap();
         let t = TypeTable::load(v.path());
         assert_eq!(
             t.recorded("team"),
@@ -714,9 +819,150 @@ mod tests {
         );
         // a recorded type wins; inference never writes the record
         assert!(!v.path().join(WRITER_FILE).exists());
-        set_type(v.path(), "manager", PropertyType::Text).unwrap();
+        set_type(v.path(), "manager", PropertyType::Text, None, vec![]).unwrap();
         let r = run();
         assert_eq!(get(&r, "manager").ty, PropertyType::Text);
         assert_eq!(get(&r, "manager").source, TypeSource::Writer);
+    }
+
+    fn strings(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn enum_values_round_trip_in_writers_file_and_other_entries_stay_bare() {
+        let v = tempfile::tempdir().unwrap();
+        set_type(
+            v.path(),
+            "Status",
+            PropertyType::Enum,
+            Some(strings(&["todo", " doing ", "", "done", "todo"])),
+            vec![],
+        )
+        .unwrap();
+        set_type(v.path(), "n", PropertyType::Number, None, vec![]).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(
+            raw["types"]["status"],
+            serde_json::json!({"type": "enum", "values": ["todo", "doing", "done"]})
+        );
+        assert_eq!(raw["types"]["n"], "number");
+        let t = TypeTable::load(v.path());
+        assert_eq!(
+            t.recorded("STATUS"),
+            Some((PropertyType::Enum, TypeSource::Writer))
+        );
+        assert_eq!(t.values("status"), ["todo", "doing", "done"]);
+        assert!(t.values("n").is_empty());
+    }
+
+    #[test]
+    fn old_entries_without_values_and_unknown_entries_survive_a_rewrite() {
+        let v = tempfile::tempdir().unwrap();
+        write(
+            v.path(),
+            WRITER_FILE,
+            r#"{"types":{"a":"text","b":{"type":"enum"},"c":{"type":"fancy","x":1}}}"#,
+        );
+        let t = TypeTable::load(v.path());
+        assert_eq!(t.recorded("a").unwrap().0, PropertyType::Text);
+        assert_eq!(t.recorded("b").unwrap().0, PropertyType::Enum);
+        assert!(t.values("b").is_empty());
+        assert_eq!(t.recorded("c"), None);
+        set_type(v.path(), "d", PropertyType::Text, None, vec![]).unwrap();
+        let raw = std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap();
+        assert!(raw.contains("\"fancy\""), "unknown entry preserved: {raw}");
+    }
+
+    #[test]
+    fn an_obsidian_enum_entry_is_skipped_and_enum_reads_as_text_for_plugins() {
+        let v = tempfile::tempdir().unwrap();
+        write(
+            v.path(),
+            ".obsidian/types.json",
+            r#"{"types":{"status":"enum"}}"#,
+        );
+        assert_eq!(TypeTable::load(v.path()).recorded("status"), None);
+        assert_eq!(PropertyType::Enum.obsidian_name(false), "text");
+        assert_eq!(PropertyType::Enum.obsidian_name(true), "text");
+        assert!(PropertyType::Enum.is_writer_only());
+        assert!(!PropertyType::Text.is_writer_only());
+        // never inferred
+        assert_eq!(infer("status", &obs(&[("text", 5)])), PropertyType::Text);
+    }
+
+    #[test]
+    fn converting_to_enum_seeds_by_frequency_then_name_and_keeps_existing_values() {
+        let v = tempfile::tempdir().unwrap();
+        let observed = vec![
+            ("done".to_string(), 5),
+            ("blocked".to_string(), 1),
+            ("todo".to_string(), 5),
+            ("doing".to_string(), 2),
+            ("  ".to_string(), 9),
+        ];
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            None,
+            observed.clone(),
+        )
+        .unwrap();
+        let t = TypeTable::load(v.path());
+        assert_eq!(t.values("status"), ["done", "todo", "doing", "blocked"]);
+        // choosing Enum again does not reseed a curated list
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["a", "b"])),
+            vec![],
+        )
+        .unwrap();
+        set_type(v.path(), "status", PropertyType::Enum, None, observed).unwrap();
+        assert_eq!(TypeTable::load(v.path()).values("status"), ["a", "b"]);
+        // converting away drops the list; converting back seeds again
+        set_type(v.path(), "status", PropertyType::Text, None, vec![]).unwrap();
+        let raw = std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap();
+        assert!(raw.contains("\"status\": \"text\"") && !raw.contains("values"));
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            None,
+            vec![("x".into(), 1)],
+        )
+        .unwrap();
+        assert_eq!(TypeTable::load(v.path()).values("status"), ["x"]);
+    }
+
+    #[test]
+    fn report_carries_enum_values_and_counts_only_non_text_values_as_mismatched() {
+        let v = tempfile::tempdir().unwrap();
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["todo", "done"])),
+            vec![],
+        )
+        .unwrap();
+        let counts = vec![PropertyCount {
+            key: "Status".into(),
+            count: 3,
+            types: obs(&[("text", 2), ("number", 1)]),
+        }];
+        let r = report(v.path(), counts);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].ty, PropertyType::Enum);
+        assert_eq!(r[0].values, ["todo", "done"]);
+        assert_eq!(r[0].mismatched, 1);
+        assert_eq!(r[0].obsidian_type, "text");
+        let json = serde_json::to_value(&r[0]).unwrap();
+        assert_eq!(json["type"], "enum");
+        assert_eq!(json["values"], serde_json::json!(["todo", "done"]));
     }
 }

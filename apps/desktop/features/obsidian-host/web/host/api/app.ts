@@ -3,7 +3,12 @@
 // workspace and the host services; it is created once per PluginHost.
 import { SecretStorage } from "./secret-storage";
 import { parseFrontmatter, serializeFile } from "@/lib/frontmatter";
-import { PROPERTY_TYPE_IDS, typeKey, type PropertyType } from "@/lib/property-types";
+import {
+  PROPERTY_TYPE_IDS,
+  PROPERTY_TYPES,
+  typeKey,
+  type PropertyType,
+} from "@/lib/property-types";
 import { usePropertyTypesStore } from "@/stores/property-types-store";
 import {
   type CommandRegistry,
@@ -285,8 +290,12 @@ export class MetadataTypeManager {
     return this.getAssignedType(name);
   }
   async setType(name: string, type: string): Promise<void> {
-    // `relationships` is Writer's own type: a plugin sees it as multitext / text and cannot assign it.
-    if (!(PROPERTY_TYPE_IDS as string[]).includes(type) || type === "relationships")
+    // Writer-only types (`relationships`, `enum`): a plugin sees them as multitext / text and
+    // cannot assign them.
+    if (
+      !(PROPERTY_TYPE_IDS as string[]).includes(type) ||
+      PROPERTY_TYPES[type as PropertyType].writerOnly
+    )
       throw new Error(`Unknown property type "${type}"`);
     await usePropertyTypesStore.getState().setType(name, type as PropertyType);
   }
