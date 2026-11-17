@@ -5,6 +5,7 @@
 // `contributedMenuItems` call in its builder.
 import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
 import { reportOwnerFailure } from "./health";
+import { withFeatureDivider } from "./origin";
 import { OwnedRegistry } from "@/lib/owned-registry";
 import type { MenuSurface, MenuSurfaces } from "./types";
 
@@ -48,10 +49,16 @@ export async function contributedMenuItems<S extends MenuSurface>(
   return parts.flat();
 }
 
-/** `spec` followed by a separator and `extra`, or `spec` alone when there is no extra item. */
+/** `spec` followed by a separator and `extra` (the one feature-after-core rule, `origin.ts`), or
+ *  `spec` alone when there is no extra item. A separator already ending `spec` is reused, never
+ *  doubled. */
 export function withContributedItems<T extends MenuItemSpec>(
   spec: readonly T[],
   extra: readonly MenuItemSpec[],
 ): Array<T | MenuItemSpec> {
-  return extra.length > 0 ? [...spec, { kind: "separator" }, ...extra] : [...spec];
+  let end = spec.length;
+  while (end > 0 && spec[end - 1]!.kind === "separator") end--;
+  return withFeatureDivider<T | MenuItemSpec, MenuItemSpec>(spec.slice(0, end), extra, {
+    kind: "separator",
+  });
 }

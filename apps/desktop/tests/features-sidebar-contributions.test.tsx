@@ -31,7 +31,11 @@ import { showBulkContextMenu } from "../src/components/sidebar/bulk-context-menu
 import { showFileContextMenu } from "../src/components/sidebar/file-context-menu";
 import { showFolderContextMenu } from "../src/components/sidebar/folder-context-menu";
 import { syncBuiltinFeatures } from "../src/lib/features/builtin";
-import { contributedMenuItems, menuContributions } from "../src/lib/features/menus";
+import {
+  contributedMenuItems,
+  menuContributions,
+  withContributedItems,
+} from "../src/lib/features/menus";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 import { sidebarActionContributions, sidebarPanelContributions } from "../src/lib/features/sidebar";
 import { statusItemContributions } from "../src/lib/features/status-items";
@@ -151,6 +155,20 @@ describe("sidebar panels", () => {
     expect(resolveSidebarPanel(tabs, "gone").id).toBe(FILES_PANEL_ID);
   });
 
+  it("puts a divider between Files and the feature panels, and none without a feature panel", async () => {
+    await act(async () => root.render(<Body />));
+    expect(container.querySelector("[data-feature-divider]")).toBeNull();
+
+    await act(async () => host.register(fixtureSidebarFeature()));
+    const row = container.querySelector("[role=tablist]")!;
+    expect([...row.children].map((c) => c.getAttribute("data-sidebar-panel-tab") ?? "|")).toEqual([
+      FILES_PANEL_ID,
+      "|",
+      "fixture-sidebar.panel-early",
+      "fixture-sidebar.panel-late",
+    ]);
+  });
+
   it("shows no switcher without a feature panel, then switches to the feature's panel", async () => {
     await act(async () => root.render(<Body />));
     expect(container.querySelector("[data-sidebar-header]")).toBeNull();
@@ -231,6 +249,17 @@ describe("sidebar menus", () => {
       [{ kind: "separator" }, expect.objectContaining({ text: "Folder docs" })],
       [{ kind: "separator" }, expect.objectContaining({ text: "Bulk 2" })],
     ]);
+  });
+
+  it("never doubles the separator when the core menu already ends with one", () => {
+    const item = (id: string) => ({ kind: "item", id, text: id, action: () => {} }) as const;
+    const sep = { kind: "separator" } as const;
+    expect(withContributedItems([item("a"), sep], [item("x")]).map((i) => i.kind)).toEqual([
+      "item",
+      "separator",
+      "item",
+    ]);
+    expect(withContributedItems([item("a"), sep], []).map((i) => i.kind)).toEqual(["item"]);
   });
 
   it("leaves the core menu untouched when no feature contributes", async () => {
@@ -333,5 +362,22 @@ describe("status items", () => {
 
     await act(async () => host.unregister(manifest.id));
     expect(container.querySelector("[data-testid=status-item]")).toBeNull();
+  });
+
+  it("separates the feature items from the core counts with a divider, only when both exist", async () => {
+    await act(async () => root.render(<DocumentFooter filePath="/v/n.md" />));
+    expect(container.querySelector("[data-feature-divider]")).toBeNull();
+
+    await act(async () => host.register(fixtureSidebarFeature()));
+    await flush();
+    const SEL = "[data-testid=status-item]";
+    const footer = container.querySelector("[data-document-footer]")!;
+    const kids = [...footer.children];
+    const at = kids.findIndex((k) => k.hasAttribute("data-feature-divider"));
+    expect(at).toBeGreaterThan(0);
+    expect(footer.querySelectorAll("[data-feature-divider]")).toHaveLength(1);
+    const isItem = (k: Element) => k.matches(SEL) || k.querySelector(SEL) !== null;
+    expect(kids.slice(at + 1).some(isItem)).toBe(true);
+    expect(kids.slice(0, at).some(isItem)).toBe(false);
   });
 });

@@ -57,7 +57,8 @@ export function SettingsNav({
           <div
             key={g.group}
             role="presentation"
-            className="flex gap-1 md:mt-5 md:flex-col md:first:mt-0"
+            data-nav-group={g.isFeatureGroup ? "features" : undefined}
+            className={`flex gap-1 md:mt-5 md:flex-col md:first:mt-0 ${g.isFeatureGroup ? "md:border-t md:border-[var(--line-subtler)] md:pt-4" : ""}`}
           >
             <div
               role="presentation"

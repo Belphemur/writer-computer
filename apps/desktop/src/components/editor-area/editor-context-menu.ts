@@ -1,3 +1,4 @@
+import { withContributedItems } from "@/lib/features/menus";
 import { Menu } from "@tauri-apps/api/menu/menu";
 import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
 import { MenuItem } from "@tauri-apps/api/menu/menuItem";
@@ -113,9 +114,6 @@ export function buildEditorBodyMenuItemsSpec(
     { kind: "item", id: "paste", text: "Paste", action: handlers.onPaste },
   ];
 
-  // Items built-in features contribute (see `lib/features/menus.ts`), after the clipboard group.
-  items.push(...extra);
-
   if (handlers.onRunCommand) {
     const run = handlers.onRunCommand;
     items.push({ kind: "separator" });
@@ -143,7 +141,8 @@ export function buildEditorBodyMenuItemsSpec(
     });
   }
 
-  return items;
+  // Items built-in features contribute (`lib/features/menus.ts`): after every core item.
+  return withContributedItems(items, extra);
 }
 
 // -- Tab menu --

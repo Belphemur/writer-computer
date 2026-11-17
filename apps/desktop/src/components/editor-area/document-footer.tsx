@@ -3,7 +3,9 @@ import { useFileStats } from "@/hooks/use-tabs";
 import { FeaturePane } from "@/components/feature-pane";
 import { useBooleanSetting, useSetSetting } from "@/hooks/use-settings";
 import { useRegistryItems } from "@/hooks/use-registry-items";
+import { FeatureDivider } from "@/components/feature-divider";
 import { byOrder } from "@/lib/features/order";
+import { withFeatureDivider } from "@/lib/features/origin";
 import { statusItemContributions } from "@/lib/features/status-items";
 import {
   FOOTER_METRICS,
@@ -50,16 +52,19 @@ export function DocumentFooter({ filePath }: { filePath: string }) {
       onContextMenu={handleContextMenu}
       className="flex absolute bottom-0 w-full z-10 h-11 shrink-0 items-center justify-end gap-5 px-6 text-[13px] leading-[1.15] text-[var(--text-muted)] md:px-8"
     >
-      {visibleMetrics.map((metric) => (
-        <FooterMetric
-          key={metric.settingKey}
-          label={metric.footerLabel}
-          value={stats[metric.statKey]}
-        />
-      ))}
-      {statusItems.map((item) => (
-        <FeaturePane key={item.id} contribution={item} filePath={filePath} />
-      ))}
+      {withFeatureDivider(
+        visibleMetrics.map((metric) => (
+          <FooterMetric
+            key={metric.settingKey}
+            label={metric.footerLabel}
+            value={stats[metric.statKey]}
+          />
+        )),
+        statusItems.map((item) => (
+          <FeaturePane key={item.id} contribution={item} filePath={filePath} />
+        )),
+        <FeatureDivider key="feature-divider" />,
+      )}
     </div>
   );
 }

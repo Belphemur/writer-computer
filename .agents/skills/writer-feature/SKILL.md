@@ -52,6 +52,8 @@ Required: `id`, `name`, `version`, `description`, `enabledByDefault`, `memory: {
 | `secrets`         | `[{ key: "features.<id>.<name>", label, description }]` | `ctx.secrets.get/set/delete(key)`                                                                                              |
 | editor extensions | none                                                    | `editorExtensions: [{ id, when?, load }]`                                                                                      |
 
+Feature items are always grouped after core items behind a separator: surfaces call `withFeatureDivider` (`src/lib/features/origin.ts`), never hand-place a divider; a new surface or point must use it and add a test that the divider shows only when a feature item exists.
+
 Icons come from `@hugeicons/core-free-icons`. `load` thunks are dynamic imports. `web/index.ts` imports only `defineFeature`, the manifest JSON, tiny state modules and `import()` thunks: it is loaded eagerly at startup, so a heavy import there lands in the startup chunk.
 
 ## 4. Steps: new TypeScript-only feature

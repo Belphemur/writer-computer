@@ -76,6 +76,24 @@ describe("buildSettingsNav", () => {
     expect(none.flatMap((g) => g.items).find((i) => i.badge)).toBeUndefined();
   });
 
+  it("groups feature pages after the core sections under a Features group, only when one exists", () => {
+    const load = async () => ({ default: () => null });
+    const none = buildSettingsNav({ hasWorkspace: true, pluginTabs: [] });
+    expect(none.some((g) => g.isFeatureGroup)).toBe(false);
+    const groups = buildSettingsNav({
+      hasWorkspace: true,
+      pluginTabs: [{ owner: "p", tabId: "t", label: "P" }],
+      featureSections: [
+        { id: "late", label: "Late", order: 50, load },
+        { id: "agent", label: "Agent", order: 40, load },
+      ],
+    });
+    expect(groups.map((g) => g.group)).toEqual(["General", "Features", "Community plugins"]);
+    const feature = groups.find((g) => g.isFeatureGroup)!;
+    expect(feature.items.map((i) => i.id)).toEqual(["agent", "late"]);
+    expect(groups.filter((g) => g.isFeatureGroup)).toHaveLength(1);
+  });
+
   it("merges feature pages with the core sections by order, and a core id wins", () => {
     const load = async () => ({ default: () => null });
     const items = (featureSections: Parameters<typeof buildSettingsNav>[0]["featureSections"]) =>
@@ -85,9 +103,8 @@ describe("buildSettingsNav", () => {
     const base = items([]);
     expect(base).not.toContain("agent");
     const withAgent = items([{ id: "agent", label: "Agent", order: 40, load }]);
-    // after Files & vault (30), before Features (100)
-    expect(withAgent.indexOf("agent")).toBe(withAgent.indexOf("files") + 1);
-    expect(withAgent.indexOf("agent")).toBe(withAgent.indexOf("features") - 1);
+    // behind every core section
+    expect(withAgent.indexOf("agent")).toBeGreaterThan(withAgent.indexOf("logs"));
     // a page named like a core section never replaces it
     expect(items([{ id: "privacy", label: "Imposter", order: 1, load }])).toEqual(base);
   });

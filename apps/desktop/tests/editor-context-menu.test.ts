@@ -78,6 +78,21 @@ describe("buildEditorBodyMenuItemsSpec", () => {
     ]);
   });
 
+  test("feature items come after every core item behind one separator, never doubled", () => {
+    const extra = [{ kind: "item", id: "f.x", text: "X", action: () => {} }] as const;
+    for (const hasLink of [false, true]) {
+      const spec = buildEditorBodyMenuItemsSpec(makeBodyHandlers(), hasLink, extra);
+      const kinds = spec.map((e) => e.kind);
+      expect(spec.at(-1)).toMatchObject({ id: "f.x" });
+      expect(spec.at(-2)).toEqual({ kind: "separator" });
+      expect(kinds.some((k, i) => k === "separator" && kinds[i + 1] === "separator")).toBe(false);
+    }
+    // no feature item: the core menu is unchanged
+    expect(buildEditorBodyMenuItemsSpec(makeBodyHandlers(), false, []).map((e) => e.kind)).toEqual(
+      buildEditorBodyMenuItemsSpec(makeBodyHandlers(), false).map((e) => e.kind),
+    );
+  });
+
   test("each item invokes the matching handler", () => {
     const handlers = makeBodyHandlers();
     const spec = buildEditorBodyMenuItemsSpec(handlers, true);

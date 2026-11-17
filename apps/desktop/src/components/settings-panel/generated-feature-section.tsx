@@ -26,7 +26,7 @@ function GeneratedFeatureSection({
   );
 }
 
-/** Where a generated page sits: after the core editing pages, before Features. */
+/** Where a generated page sits among the feature pages (a group of its own after the core pages). */
 export const GENERATED_SECTION_ORDER = 90;
 
 const cache = new Map<string, FeatureNavSection>();

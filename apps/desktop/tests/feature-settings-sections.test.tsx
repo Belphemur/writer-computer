@@ -108,8 +108,11 @@ describe("the Agent page", () => {
     // its own page, not a generated one
     expect(q("#settings-tab-agent")).not.toBeNull();
     expect(q("[id='settings-tab-feature:agent']")).toBeNull();
-    // placed between Files & vault and the Features page
-    expect(tabs().indexOf("Agent")).toBe(tabs().indexOf("Files & vault") + 1);
+    // grouped after every core page, behind the divider and the "Features" label
+    expect(tabs().indexOf("Agent")).toBe(tabs().indexOf("Logs") + 1);
+    const group = q("[data-nav-group='features']")!;
+    expect(group.previousElementSibling).not.toBeNull();
+    expect(group.textContent).toMatch(/^FeaturesAgent/);
 
     await mount("agent");
     await vi.waitFor(() => expect(q("[data-agent-status]")).not.toBeNull());

@@ -1,5 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
+import { FeatureDivider } from "@/components/feature-divider";
 import { byOrder } from "@/lib/features/order";
+import { withFeatureDivider } from "@/lib/features/origin";
 import { sidebarActionContributions } from "@/lib/features/sidebar";
 import { useRegistryItems } from "@/hooks/use-registry-items";
 import type { SidebarPanelTab } from "./sidebar-panels";
@@ -19,27 +21,32 @@ interface SidebarHeaderProps {
 export function SidebarHeader({ panels, selectedId, onSelect }: SidebarHeaderProps) {
   const actions = byOrder(useRegistryItems(sidebarActionContributions));
   const showSwitcher = panels.length > 1;
+  const renderTab = (p: SidebarPanelTab) => (
+    <button
+      key={p.id}
+      type="button"
+      role="tab"
+      aria-selected={p.id === selectedId}
+      aria-label={p.label}
+      title={p.label}
+      data-sidebar-panel-tab={p.id}
+      onClick={() => onSelect(p.id)}
+      className={`${BUTTON_CLASS} ${p.id === selectedId ? "bg-[var(--item-hover-bg)] text-[var(--fg-base)]" : ""}`}
+    >
+      <HugeiconsIcon icon={p.icon} size={16} color="currentColor" strokeWidth={2} />
+    </button>
+  );
   if (!showSwitcher && actions.length === 0) return null;
 
   return (
     <div data-sidebar-header className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1">
       <div role="tablist" aria-label="Sidebar panels" className="flex items-center gap-0.5">
         {showSwitcher &&
-          panels.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={p.id === selectedId}
-              aria-label={p.label}
-              title={p.label}
-              data-sidebar-panel-tab={p.id}
-              onClick={() => onSelect(p.id)}
-              className={`${BUTTON_CLASS} ${p.id === selectedId ? "bg-[var(--item-hover-bg)] text-[var(--fg-base)]" : ""}`}
-            >
-              <HugeiconsIcon icon={p.icon} size={16} color="currentColor" strokeWidth={2} />
-            </button>
-          ))}
+          withFeatureDivider(
+            panels.filter((p) => !p.contribution).map(renderTab),
+            panels.filter((p) => p.contribution).map(renderTab),
+            <FeatureDivider key="feature-divider" />,
+          )}
       </div>
       <div className="flex items-center gap-0.5">
         {actions.map((a) => (

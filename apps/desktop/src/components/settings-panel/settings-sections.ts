@@ -2,6 +2,7 @@
 // section X" entry points and the tests all derive from `SETTINGS_SECTIONS`; plugin sections
 // are appended at runtime by `buildSettingsNav`. No React here so stores and hooks can import it.
 import type { ComponentType } from "react";
+import { FEATURE_GROUP_LABEL } from "@/lib/features/origin";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 
 /** What a section's content pane is made of. Each type has exactly one renderer in
@@ -15,7 +16,9 @@ export type SectionBlock =
   /** Generated from the feature manifests: a toggle per feature, its info and failure state. */
   | { type: "features" };
 
-export const SETTINGS_GROUPS = ["General", "Community plugins"] as const;
+/** Core groups, then the feature pages (the one origin rule, `lib/features/origin.ts`), then the
+ *  community plugins' pages (which the "Browse plugins" footer button follows). */
+export const SETTINGS_GROUPS = ["General", FEATURE_GROUP_LABEL, "Community plugins"] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
 
 export interface SettingsSection {
@@ -153,11 +156,14 @@ export interface NavItem {
 
 export interface NavGroup {
   group: SettingsGroup;
+  /** The group of feature pages: the nav draws a divider above its label. */
+  isFeatureGroup: boolean;
   items: NavItem[];
 }
 
-/** The sidebar: registry sections (minus the ones needing a workspace when none is open), then
- *  one entry per plugin settings tab, grouped in `SETTINGS_GROUPS` order. */
+/** The sidebar: registry sections (minus the ones needing a workspace when none is open), the
+ *  feature pages under their own "Features" group, then one entry per plugin settings tab, grouped
+ *  in `SETTINGS_GROUPS` order (an empty group is not listed, so no feature page, no divider). */
 export function buildSettingsNav(opts: {
   hasWorkspace: boolean;
   pluginTabs: readonly PluginTabInfo[];
@@ -168,7 +174,7 @@ export function buildSettingsNav(opts: {
   updateCount?: number;
 }): NavGroup[] {
   const coreIds = new Set(SETTINGS_SECTIONS.map((s) => s.id));
-  const general: (NavItem & { order: number })[] = [
+  const sorted: (NavItem & { order: number })[] = [
     ...SETTINGS_SECTIONS.filter((s) => opts.hasWorkspace || !s.requiresWorkspace).map(
       (section) => ({
         id: section.id,
@@ -186,13 +192,13 @@ export function buildSettingsNav(opts: {
       .map((feature) => ({
         id: feature.id,
         label: feature.label,
-        group: "General" as const,
+        group: FEATURE_GROUP_LABEL as SettingsGroup,
         order: feature.order,
         feature,
       })),
   ].sort((a, b) => a.order - b.order);
   const items: NavItem[] = [
-    ...general,
+    ...sorted,
     ...(opts.hasWorkspace ? opts.pluginTabs : []).map((plugin) => ({
       id: pluginSectionId(plugin.owner, plugin.tabId),
       label: plugin.label,
@@ -202,6 +208,7 @@ export function buildSettingsNav(opts: {
   ];
   return SETTINGS_GROUPS.map((group) => ({
     group,
+    isFeatureGroup: group === FEATURE_GROUP_LABEL,
     items: items.filter((i) => i.group === group),
   })).filter((g) => g.items.length > 0);
 }
