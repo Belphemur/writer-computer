@@ -802,4 +802,29 @@ mod tests {
         let ok = run_base_view(&v.index, &doc, None, None, &clock()).unwrap();
         assert!(ok.error.is_none() && !ok.rows.is_empty());
     }
+
+    #[test]
+    fn has_tag_matches_nested_descendants_with_and_without_pushdown() {
+        let v = vault();
+        for (rel, body) in super::super::NESTED_TAG_NOTES {
+            write(v._vault.path(), rel, body);
+        }
+        // Re-open so the new notes are indexed.
+        let index = Arc::new(Index::open_for_cli(v._vault.path(), Some(v._data.path())).unwrap());
+        let v = Vault { index, ..v };
+        for (tag, want) in [
+            ("research", 3),
+            ("Research/HLO", 2),
+            ("research/hlo/docs", 1),
+            ("researcher", 1),
+            ("res", 0),
+            ("research/h", 0),
+        ] {
+            let base = format!("filters:\n  and:\n    - 'file.hasTag(\"{tag}\")'\n");
+            let (full, _) = query(&v, &base, false, None);
+            let (fast, _) = query(&v, &base, true, None);
+            assert_eq!(full, fast, "{tag}");
+            assert_eq!(full.rows.len(), want, "{tag}");
+        }
+    }
 }

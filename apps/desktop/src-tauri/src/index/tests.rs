@@ -1180,3 +1180,57 @@ fn perf_smoke_3000_notes() {
         "incremental too slow: {incr:?}"
     );
 }
+
+#[test]
+fn nested_tags_match_whole_segment_prefixes_only() {
+    let fx = Fixture {
+        vault: TempDir::new().unwrap(),
+        data: TempDir::new().unwrap(),
+    };
+    for (rel, body) in NESTED_TAG_NOTES {
+        write(fx.vault.path(), rel, body);
+    }
+    let index = open(&fx);
+    let files = |tag: &str| index.tag_files(tag).unwrap();
+    assert_eq!(
+        files("research"),
+        vec!["Tags/Deep.md", "Tags/Mid.md", "Tags/Top.md"]
+    );
+    assert_eq!(files("#Research/Hlo"), vec!["Tags/Deep.md", "Tags/Mid.md"]);
+    assert_eq!(files("research/hlo/docs"), vec!["Tags/Deep.md"]);
+    assert_eq!(files("researcher"), vec!["Tags/Other.md"]);
+    assert!(files("res").is_empty());
+    assert!(files("research/h").is_empty());
+    // Parent counts include their children.
+    let counts: BTreeMap<_, _> = index
+        .tags()
+        .unwrap()
+        .into_iter()
+        .map(|t| (t.tag, t.count))
+        .collect();
+    assert_eq!(counts.get("research"), Some(&3));
+    assert_eq!(counts.get("research/hlo"), Some(&2));
+    assert_eq!(counts.get("research/hlo/docs"), Some(&1));
+    assert_eq!(counts.get("researcher"), Some(&1));
+    // The metadata filter and Search `tag:` agree with `tag_files`.
+    let filtered = |tag: &str| {
+        index
+            .query_files(&FileFilter {
+                tag: Some(tag.into()),
+                ..Default::default()
+            })
+            .unwrap()
+            .total
+    };
+    assert_eq!((filtered("research"), filtered("research/h")), (3, 0));
+    let hits = |q: &str| {
+        index
+            .search(q, &SearchOptions::default())
+            .unwrap()
+            .hits
+            .len()
+    };
+    assert_eq!(hits("tag:research nested"), 3);
+    assert_eq!(hits("tag:#research/hlo nested"), 2);
+    assert_eq!(hits("tag:res nested"), 0);
+}

@@ -33,6 +33,20 @@ mod search_tests;
 #[cfg(test)]
 mod tests;
 
+/// Notes shared by the nested-tag tests of the index, search, CLI and Bases
+/// (one fixture, so the rule is checked the same way everywhere): `research`
+/// must match the first three notes, `research/hlo` the first two,
+/// `research/hlo/docs` the first, and nothing but `researcher` matches the
+/// last (a whole-segment prefix, never a substring). Every note
+/// contains the word `nested` (Search needs a term next to a `tag:` filter).
+#[cfg(test)]
+pub(crate) const NESTED_TAG_NOTES: &[(&str, &str)] = &[
+    ("Tags/Deep.md", "# Deep\nnested #research/hlo/docs\n"),
+    ("Tags/Mid.md", "---\ntags: [Research/HLO]\n---\nnested\n"),
+    ("Tags/Top.md", "nested #Research\n"),
+    ("Tags/Other.md", "nested #researcher\n"),
+];
+
 pub use build::ScanStats;
 pub use fts::{fts_size_bytes, FtsMaintenance, FTS_MAX_BODY_BYTES};
 pub use paths::{cli_app_data_dir, index_db_path, INDEX_DIR_ENV, RELEASE_IDENTIFIER};

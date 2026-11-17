@@ -1260,3 +1260,21 @@ fn search_finds_a_note_by_its_title_override_and_prints_only_paths() {
     t.ok(&["title", "file=Spec", "clear"]);
     assert_eq!(t.ok(&["search", "query=Zephyrine"]), "");
 }
+
+#[test]
+fn nested_tags_match_ancestors_in_tag_and_search() {
+    let t = T::new();
+    for (rel, body) in crate::index::NESTED_TAG_NOTES {
+        t.write(rel, body);
+    }
+    assert_eq!(t.ok(&["tag", "name=research", "total"]), "3\n");
+    assert_eq!(t.ok(&["tag", "name=#research/hlo", "total"]), "2\n");
+    assert_eq!(t.ok(&["tag", "name=research/hlo/docs", "total"]), "1\n");
+    assert_eq!(t.ok(&["tag", "name=researcher", "total"]), "1\n");
+    assert_eq!(t.ok(&["tag", "name=research/h", "total"]), "0\n");
+    assert_eq!(
+        t.ok(&["search", "query=tag:research nested", "total"]),
+        "3\n"
+    );
+    assert_eq!(t.ok(&["search", "query=tag:res nested", "total"]), "0\n");
+}

@@ -14,13 +14,13 @@ Add lightweight tag support: users can write `#tag` inside markdown documents an
 
 ## Non-Goals
 
-- Hierarchical tags (`#parent/child`) in v1.
+- A new tags pane: none exists, so none is built for the hierarchy (the list shows parent counts through `writer tags counts`).
 - Tag autocomplete inside the editor in v1 (follow-up).
 - Renaming tags across the workspace in v1.
 
 ## Tag Recognition Rules
 
-A tag is `#` followed by 1+ characters from `[A-Za-z0-9_-]`.
+A tag is `#` followed by 1+ letters, digits, `_`, `-` or `/` (Unicode letters allowed, not all digits, no leading, double or trailing `/`).
 
 Tags do not match when:
 
@@ -29,6 +29,16 @@ Tags do not match when:
 - inside frontmatter
 - as part of a URL fragment (e.g., `https://...#section`)
 - preceded by an alphanumeric character (so hex colors, headings markdown, and word-internal `#` do not match)
+
+## Nested tags
+
+Obsidian-compatible (public docs: https://help.obsidian.md/tags#Nested+tags). `#research/hlo/docs`, or `tags: [research/hlo/docs]` in frontmatter, is one tag with segments `research`, `hlo`, `docs`. Tags are case-insensitive and stored lowercase.
+
+**One rule: a query tag matches a note when the query equals the note's tag or is a whole-segment prefix of it.** `research` and `research/hlo` match `research/hlo/docs`; `res`, `research/h` and `researcher` do not.
+
+**One place:** the indexer (`index/note.rs`, through `markdown::with_ancestors`) stores every ancestor of a nested tag as its own `tags` row, so an equality lookup on `tags.tag` is the prefix rule and every consumer shares it with no per-caller prefix logic: `Index::tag_files` and `FileFilter.tag` (`index/query.rs`), Search `tag:` and the `tags` option (`index/search.rs`), `writer tag` / `writer tags` and `writer search tag:` (`cli/`), the Bases pushdown (`index/bases_source.rs`), and the agent project `#tag` sources (they call the same queries). `Index::tags()` counts files per tag with descendants included, so a parent's count includes its children. The one consumer that does not read the index is the Bases interpreter's `file.hasTag(...)` (`bases/functions.rs`, any-of, per the Bases docs "nested tags match"), which sees the file's tags as written and applies the same whole-segment prefix test; a differential Bases test checks both paths agree. `file.tags` and the Obsidian host's `getAllTags` list tags as written, like Obsidian (no ancestors).
+
+Tests: the shared fixture `index::NESTED_TAG_NOTES` (`#research/hlo/docs`, frontmatter `Research/HLO`, `#Research`, `#researcher`) drives the index, Search, CLI and Bases tests.
 
 ## Indexing
 
