@@ -43,3 +43,5 @@ Same decision area, no new ADR. Writer adds one type of its own, `relationships`
 ## More Information
 
 [SPECs/properties-types-spec.md](../../SPECs/properties-types-spec.md). Bases keeps typed values from the index (`bases/README.md` U19); the type record is a UI concern and never re-types a Bases value.
+
+**Addendum (2026-11-17): `enum`.** A second Writer-only type, `enum`: an ordered list of allowed values stored in `.writer/property-types.json` as `{"type":"enum","values":[...]}` (other entries stay bare strings; old files load; unknown entries survive a rewrite). Notes keep a plain text value, so Obsidian reads an enum as text and nothing is ever written to `.obsidian/types.json`. Converting an existing property seeds `values` from the index's observed values (frequency, then name) without rewriting notes; a value outside the list is shown as "not in list" and never changed. `is_writer_only()` covers `relationships` and `enum`, and the plugin host reports both as text and refuses to set them. Spec: `SPECs/properties-types-spec.md` "Enum".
