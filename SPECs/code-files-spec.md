@@ -20,7 +20,7 @@ Writer is also a notebook for agents. A skill is a folder with a `SKILL.md` and 
 - **Never shown, never opened as text, whatever the setting:** `.env`, `.env.*`, `*.env`, `.pem/.key/.p12/.pfx/.keystore`, `id_rsa*`/`id_ed25519*`/`id_ecdsa*`, and names whose stem contains `secret`, `credential`, `password`, `private-key`. Dotfiles are hidden anyway.
 - **Ignored folders**, setting `files.ignored-folders` (list, global; default `node_modules target dist build out .venv venv __pycache__ .next .nuxt .svelte-kit .turbo .cache .gradle .mypy_cache .pytest_cache .ruff_cache .tox coverage vendor Pods DerivedData`): a folder with such a name is hidden at any depth from the tree, quick open, the index and the watcher. Replacing the list replaces the default. A vault `.gitignore` is also respected (already true before this change; cheap and safe because the `ignore` crate matcher already existed). Note: a notes folder called `build` or `out` is hidden by default; edit the list to show it.
 - **Dot-folders stay hidden** (`.obsidian`, `.git`, `.chats`, `.writer`, any other), with one explicit exception, setting `files.show-agent-folders` (boolean, global, default on): the `skills` subtree of a top-level `.agents` and `.claude`. `.agents` or `.claude` appears only when it holds a `skills` folder; everything else inside them (`.claude/settings.json`, `settings.local.json`, credentials) stays hidden, as does any dotfile or `.git`/ignored folder inside a skill (`.agents/skills/x/.env`, `.../node_modules`). A `.agents` below the vault root is not special. A vault `.gitignore` that lists `.agents/` hides it.
-- **Symlinks** are never followed (directory entries are classified without following links; the index walker does not follow; `vault_ops::confine` still resolves and refuses links leaving the vault). A skill folder symlinked outside the vault is not listed.
+- **Symlinks** follow the rule in "Symlinks" below (a link to a folder or file of the same vault is shown; anything else is skipped).
 - The `index` setting change takes effect for the index at the next workspace open (the tree reads the filesystem live).
 
 ### Tree
@@ -51,9 +51,23 @@ Writer is also a notebook for agents. A skill is a folder with a `SKILL.md` and 
 - `writer files` lists indexed files of every type, so code files and `.agents/skills` files appear, `ext=py` filters, `writer read path=...` prints them; `writer rename/move` of a code file rewrites no links. The managed `writer-cli` skill says so (BUNDLE_VERSION 3).
 - The plugin host's `vault.getFiles()` includes code files (as Obsidian lists every file); `getMarkdownFiles()` stays `md`-only; dot-folders (including the agent exception) are filtered out of the plugin vault listing.
 
+## Symlinks
+
+Decision record: [ADR](../docs/decisions/2026-11-17-follow-symlinks-that-stay-inside-the-vault.md). Bug that motivated it: `.agents/skills` linked to `LLM-Agents/skills` showed `.agents` with nothing in it.
+
+- **One helper**, `fs_entry::resolve_entry` (Tauri-free), classifies every on-disk entry for the sidebar listing, the folder emptiness/classification checks (`directory_is_sidebar_visible`) and the `.agents`/`.claude` `skills` test. `symlink_in_path` and `write_target` serve the managed skills installer and the save path.
+- **A link is followed only if** its canonical target is inside the canonical vault root, is not the root or an ancestor of the link's own folder, is visible by `rel_is_visible` _at its real path_ (a link into `.git`, `.obsidian`, an ignored folder or a dot-folder is hidden, exactly as the target would be), is not matched by the vault `.gitignore` at its real path, and exists as a file or folder. Otherwise it is skipped silently (debug log): outside the vault (so no read or write ever goes through an escape), dangling, cycle, hidden target, special file. With no vault open no link is followed.
+- **Cycles:** a link to an ancestor is skipped outright; the recursive checks keep a visited set of canonical folders, so mutual cycles terminate (a mutual cycle can still be expanded by hand in the tree, each level listing the real folder).
+- **Sidebar:** a followed link is an ordinary folder or file at its link path (`.agents/skills/x/SKILL.md`), with a small link badge and the tooltip "symlink to LLM-Agents/skills" (`DirEntry.symlink_target`, vault-relative real path, absent otherwise). The real folder is listed too: **both paths are shown**.
+- **Index, search, links:** the index and the watcher never follow links (`ignore` walker without `follow_links`), so the real path is the only indexed one; the same file is never indexed twice and never duplicates quick open, search results or links. Consequence: a file opened through a link path has no index row under that path. The CLI works on real paths (`confine` resolves).
+- **Open, edit, save:** reading and `authorize_path` already resolve links, so a file reached through a link opens and saves under its link path. `write_file_impl` writes to the resolved target (temp file and rename in the target's folder), so the link is never replaced; a dangling link is an error. A link leaving the vault is refused by `authorize_path`.
+- **Rename, move, delete:** `rename_entry` and `relocate_entry` refuse a symlink itself ("rename or move the real file or folder instead"); entries inside a linked folder are real and are renamed in place. Deleting a link removes the link, never the target. New entries created inside a linked folder keep the link path in the tree.
+- **Managed skills:** the installer skips (`skipped-symlink`, logged, not a problem) any bundled skill whose folder, or a folder above it (`.agents/skills`), is a symlink, and removes nothing through a linked skills folder. A link leaving the vault still reports `error` ("outside the vault"). Writer's bundled skills are therefore not installed into a linked skills folder; copy them there. Spec table: [managed-vault-skills-spec](managed-vault-skills-spec.md).
+- **Known gaps:** the watcher reports real paths, so a change in the real folder refreshes the link's subtree in the tree only on the next listing; a rename in the real folder while the link subtree is open is not echoed until then. Not verified in a real window.
+
 ## Safety summary
 
-Nothing is read outside the vault (unchanged `authorize_path`/`confine`); nothing is written into `.obsidian`; secrets are never listed or opened as text; symlinks are not followed; code reads are guarded by size, NUL bytes and UTF-8.
+Nothing is read outside the vault (unchanged `authorize_path`/`confine`); nothing is written into `.obsidian`; secrets are never listed or opened as text; symlinks leaving the vault are never followed; code reads are guarded by size, NUL bytes and UTF-8.
 
 ## Tests
 

@@ -12,6 +12,12 @@ fn vault() -> (TempDir, PathBuf) {
     (t, root)
 }
 
+fn touch(root: &Path, rel: &str, text: &str) {
+    let p = root.join(rel);
+    fs::create_dir_all(p.parent().unwrap()).unwrap();
+    fs::write(p, text).unwrap();
+}
+
 fn skill(name: &str) -> &'static BundledSkill {
     SKILLS.iter().find(|s| s.name == name).unwrap()
 }
@@ -86,6 +92,16 @@ fn fresh_install_writes_both_roots() {
     for (rel, _) in snapshot(&root) {
         assert!(!rel.ends_with(".tmp"), "{rel}");
     }
+}
+
+#[test]
+fn claude_skills_installed_follows_the_install() {
+    let (_t, root) = vault();
+    assert!(!claude_skills_installed(&root));
+    sync(&root, Mode::Apply).unwrap();
+    assert!(claude_skills_installed(&root));
+    fs::remove_dir_all(root.join(".claude/skills/writer-bases")).unwrap();
+    assert!(!claude_skills_installed(&root));
 }
 
 #[test]
@@ -359,13 +375,56 @@ fn symlinked_skill_folder_out_of_the_vault_is_refused() {
 
 #[cfg(unix)]
 #[test]
-fn symlink_inside_the_vault_is_followed() {
+fn symlinked_skills_folder_inside_the_vault_is_not_clobbered() {
+    let (_t, root) = vault();
+    // the user's linked skills folder: `.agents/skills` and `.claude/skills` -> `LLM-Agents/skills`
+    touch(&root, "LLM-Agents/skills/mine/SKILL.md", "# mine\n");
+    for base in [".agents", ".claude"] {
+        fs::create_dir_all(root.join(base)).unwrap();
+        std::os::unix::fs::symlink("../LLM-Agents/skills", root.join(base).join("skills")).unwrap();
+    }
+    let before = snapshot(&root.join("LLM-Agents"));
+    let r = sync(&root, Mode::Apply).unwrap();
+    assert_eq!(
+        snapshot(&root.join("LLM-Agents")),
+        before,
+        "wrote through the link"
+    );
+    assert!(
+        r.outcomes
+            .iter()
+            .all(|o| o.action == Action::SkippedSymlink),
+        "{r:?}"
+    );
+    assert!(!r.changed());
+    assert!(
+        !claude_skills_installed(&root),
+        "skipped-symlink must not count as installed"
+    );
+    for base in [".agents", ".claude"] {
+        let m = fs::symlink_metadata(root.join(base).join("skills")).unwrap();
+        assert!(m.file_type().is_symlink(), "{base}/skills was replaced");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_to_a_real_skills_folder_skips_the_link_and_installs_the_real_one() {
     let (_t, root) = vault();
     fs::create_dir_all(root.join(".agents/skills")).unwrap();
     std::os::unix::fs::symlink(".agents", root.join(".claude")).unwrap();
     let r = sync(&root, Mode::Apply).unwrap();
     assert!(r.problems().next().is_none(), "{r:?}");
-    assert_all_installed(&root);
+    for o in &r.outcomes {
+        let want = if o.dir.starts_with(".claude/") {
+            Action::SkippedSymlink
+        } else {
+            Action::Installed
+        };
+        assert_eq!(o.action, want, "{o:?}");
+    }
+    // `.claude/skills` still reads the same content through the link
+    assert!(root.join(".claude/skills/writer-cli/SKILL.md").exists());
 }
 
 #[test]

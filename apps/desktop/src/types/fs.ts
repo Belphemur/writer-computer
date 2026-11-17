@@ -7,6 +7,8 @@ export interface DirEntry {
   /** Creation time in seconds; falls back to `modified_at` where the filesystem has none. */
   created_at: number;
   title: string | null;
+  /** Vault-relative real path when the entry is a symlink followed inside the vault. */
+  symlink_target?: string;
 }
 
 export interface FileContent {

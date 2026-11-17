@@ -5,6 +5,7 @@ import {
   DatabaseIcon,
   File02Icon,
   GlobeIcon,
+  Link01Icon,
   RoboticIcon,
   Settings02Icon,
   SparklesIcon,
@@ -77,6 +78,22 @@ export function AgentSkillsBadge() {
       className="ml-auto flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70"
     >
       <HugeiconsIcon icon={RoboticIcon} size={12} color="currentColor" strokeWidth={1.8} />
+    </span>
+  );
+}
+
+/** Marks a folder row that is a symlink to another folder of the vault; `target` is vault-relative. */
+export function SymlinkBadge({ target, withSibling }: { target: string; withSibling?: boolean }) {
+  const label = `symlink to ${target}`;
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="symlink-badge"
+      className={`${withSibling ? "ml-1" : "ml-auto"} flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70`}
+    >
+      <HugeiconsIcon icon={Link01Icon} size={12} color="currentColor" strokeWidth={1.8} />
     </span>
   );
 }

@@ -39,7 +39,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// Where each agent family looks for skills, relative to the vault root.
-pub const SKILL_ROOTS: [&str; 2] = [".agents/skills", ".claude/skills"];
+pub const SKILL_ROOTS: [&str; 2] = [".agents/skills", CLAUDE_SKILL_ROOT];
+
+/// The skills folder the spawned `claude` loads (project setting source).
+pub const CLAUDE_SKILL_ROOT: &str = ".claude/skills";
 
 /// The app-wide setting (global scope, default true) that turns the sync off.
 pub const SETTING_KEY: &str = "workspace.managed-agent-skills";
@@ -79,6 +82,9 @@ pub enum Action {
     SkippedNewer,
     /// A skill of the same name the user wrote (no marker); left untouched.
     SkippedUserOwned,
+    /// The skill folder, or a folder above it, is a symlink inside the vault (a skills folder the
+    /// user linked elsewhere); Writer never installs or removes anything through it.
+    SkippedSymlink,
     Error,
 }
 
@@ -92,6 +98,7 @@ impl Action {
             Action::Removed => "removed",
             Action::SkippedNewer => "skipped-newer",
             Action::SkippedUserOwned => "skipped-user-owned",
+            Action::SkippedSymlink => "skipped-symlink",
             Action::Error => "error",
         }
     }
@@ -263,7 +270,7 @@ pub fn parse_marker(text: &str) -> Option<Marker> {
 }
 
 /// Vault-relative skill directories (`.agents/skills/writer-cli`) whose `SKILL.md` carries the
-/// managed marker: what the sidebar badges and the editor warns about. Symlinks are skipped.
+/// managed marker: what the sidebar badges and the editor warns about. Skill folders that are symlinks are skipped.
 pub fn managed_dirs(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
     for skill_root in SKILL_ROOTS {
@@ -292,6 +299,17 @@ pub fn managed_dirs(root: &Path) -> Vec<String> {
     }
     out.sort();
     out
+}
+
+/// Are all bundled skills installed under `.claude/skills`, i.e. will the spawned `claude` see
+/// the `writer` skills? Built on [`managed_dirs`], so a skills folder Writer skipped as a symlink
+/// (`skipped-symlink`), a user-owned skill of the same name, or the setting turned off all count
+/// as "not installed".
+pub fn claude_skills_installed(root: &Path) -> bool {
+    let dirs = managed_dirs(root);
+    SKILLS
+        .iter()
+        .all(|s| dirs.contains(&format!("{CLAUDE_SKILL_ROOT}/{}", s.name)))
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +422,17 @@ fn sync_skill(v: &Vault, base: &str, skill: &BundledSkill) -> SkillOutcome {
         Ok(p) => p,
         Err(e) => return fail(format!("refused: {e}")),
     };
+    if let Some(link) = crate::fs_entry::symlink_in_path(&v.root, Path::new(&dir_rel)) {
+        log::info!("managed skills: {} is a symlink, skipped", link.display());
+        return outcome(
+            &dir_rel,
+            Action::SkippedSymlink,
+            format!(
+                "{} is a symbolic link; Writer does not install through it",
+                link.display()
+            ),
+        );
+    }
     let skill_md = dir_abs.join(SKILL_FILE);
     let installed = match v.read(&skill_md) {
         Ok(t) => t,
@@ -557,6 +586,9 @@ fn remove_obsolete(v: &Vault, base: &str, out: &mut Vec<SkillOutcome>) {
     let Ok(base_abs) = v.confine(base) else {
         return; // refused paths are reported by `sync_skill`
     };
+    if crate::fs_entry::symlink_in_path(&v.root, Path::new(base)).is_some() {
+        return; // a linked skills folder is the user's: nothing is removed through it
+    }
     let Ok(rd) = std::fs::read_dir(&base_abs) else {
         return;
     };

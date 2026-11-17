@@ -1,7 +1,9 @@
 use crate::error::AppError;
+use crate::fs_entry::ResolvedEntry;
 use crate::ignore::WorkspaceIgnore;
 use crate::state::{AppState, WorkspaceState};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -21,6 +23,10 @@ pub struct DirEntry {
     /// Display-title override from frontmatter `title:`. `None` (directories, `.base`, notes
     /// without the property): the entry shows its file name. A heading is never a title.
     pub title: Option<String>,
+    /// Vault-relative real path when this entry is a symlink followed inside the vault
+    /// (`fs_entry`); absent for ordinary entries. The sidebar shows it as a tooltip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlink_target: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,43 +142,102 @@ enum DirectoryContent {
     Other,
 }
 
-fn visible_fs_entry(
-    entry: Result<std::fs::DirEntry, std::io::Error>,
-    ignore: Option<&WorkspaceIgnore>,
-    root: Option<&Path>,
-) -> Result<Option<(PathBuf, std::fs::FileType)>, AppError> {
-    let entry = entry?;
-    let file_type = entry.file_type()?;
-    let path = entry.path();
-    if entry_hidden(root, &path, &entry.file_name().to_string_lossy())
-        || ignore.is_some_and(|matcher| matcher.is_ignored(&path, file_type.is_dir()))
-    {
-        return Ok(None);
+/// Vault-relative real path of a followed link, for the sidebar tooltip.
+fn symlink_target_label(real: &Path, root_real: Option<&Path>) -> String {
+    root_real
+        .and_then(|r| real.strip_prefix(r).ok())
+        .unwrap_or(real)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// One entry of a listed folder that is neither hidden by the visibility policy nor ignored, with
+/// symlinks resolved by `fs_entry` (the real path of a link must pass the same checks).
+struct VisibleEntry {
+    path: PathBuf,
+    name: String,
+    resolved: ResolvedEntry,
+}
+
+/// The walk context shared by every on-disk folder walk of this module.
+struct Walk<'a> {
+    ignore: Option<&'a WorkspaceIgnore>,
+    root: Option<&'a Path>,
+    root_real: Option<PathBuf>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(ignore: Option<&'a WorkspaceIgnore>, root: Option<&'a Path>) -> Self {
+        Walk {
+            ignore,
+            root,
+            root_real: crate::fs_entry::canonical_root(root),
+        }
     }
-    Ok(Some((path, file_type)))
+
+    fn visible(
+        &self,
+        entry: Result<std::fs::DirEntry, std::io::Error>,
+        parent_real: &Path,
+    ) -> Result<Option<VisibleEntry>, AppError> {
+        let entry = entry?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if entry_hidden(self.root, &path, &name) {
+            return Ok(None);
+        }
+        let Some(resolved) = crate::fs_entry::resolve_entry(
+            &path,
+            entry.file_type()?,
+            parent_real,
+            self.root_real.as_deref(),
+        ) else {
+            return Ok(None);
+        };
+        if let Some(matcher) = self.ignore {
+            let is_dir = resolved.is_dir();
+            if matcher.is_ignored(&path, is_dir)
+                || (resolved.symlink && matcher.is_ignored(&resolved.real, is_dir))
+            {
+                return Ok(None);
+            }
+        }
+        Ok(Some(VisibleEntry {
+            path,
+            name,
+            resolved,
+        }))
+    }
+
+    /// Canonical path of a folder about to be walked.
+    fn real_of(&self, dir: &Path) -> PathBuf {
+        dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
+    }
 }
 
 /// Classify a directory tree through the same visible/ignored lens as the
 /// sidebar. Folder-only trees count as empty so a newly created folder stays
 /// available for authoring; a visible non-Markdown file makes the tree
-/// `Other`. A Markdown file wins immediately.
+/// `Other`. A Markdown file wins immediately. `visited` holds the canonical
+/// folders already walked: a symlink cycle (or a folder reachable twice) is walked once.
 fn classify_directory_content(
+    walk: &Walk,
     path: &Path,
-    ignore: Option<&WorkspaceIgnore>,
-    root: Option<&Path>,
+    real: &Path,
+    visited: &mut HashSet<PathBuf>,
 ) -> Result<DirectoryContent, AppError> {
     let mut content = DirectoryContent::Empty;
     for entry in fs::read_dir(path)? {
-        let Some((entry_path, file_type)) = visible_fs_entry(entry, ignore, root)? else {
+        let Some(e) = walk.visible(entry, real)? else {
             continue;
         };
-        if file_type.is_file() {
-            if is_listed_file(&entry_path) {
+        if e.resolved.is_file() {
+            if is_listed_file(&e.path) {
                 return Ok(DirectoryContent::Markdown);
             }
             content = DirectoryContent::Other;
-        } else if file_type.is_dir() {
-            match classify_directory_content(&entry_path, ignore, root)? {
+        } else if visited.insert(e.resolved.real.clone()) {
+            match classify_directory_content(walk, &e.path, &e.resolved.real, visited)? {
                 DirectoryContent::Markdown => return Ok(DirectoryContent::Markdown),
                 DirectoryContent::Other => content = DirectoryContent::Other,
                 DirectoryContent::Empty => {}
@@ -186,16 +251,18 @@ fn classify_directory_content(
 /// ready we already know this subtree has no Markdown, so the first visible
 /// file proves it is not empty and lets us stop without walking the remainder.
 fn directory_tree_is_empty(
+    walk: &Walk,
     path: &Path,
-    ignore: Option<&WorkspaceIgnore>,
-    root: Option<&Path>,
+    real: &Path,
+    visited: &mut HashSet<PathBuf>,
 ) -> Result<bool, AppError> {
     for entry in fs::read_dir(path)? {
-        let Some((entry_path, file_type)) = visible_fs_entry(entry, ignore, root)? else {
+        let Some(e) = walk.visible(entry, real)? else {
             continue;
         };
-        if file_type.is_file()
-            || (file_type.is_dir() && !directory_tree_is_empty(&entry_path, ignore, root)?)
+        if e.resolved.is_file()
+            || (visited.insert(e.resolved.real.clone())
+                && !directory_tree_is_empty(walk, &e.path, &e.resolved.real, visited)?)
         {
             return Ok(false);
         }
@@ -224,16 +291,22 @@ fn directory_is_sidebar_visible(
         let ignore_arc: Option<Arc<WorkspaceIgnore>> =
             state.workspace_ignore.read().as_ref().map(Arc::clone);
         let root = state.workspace_root.read().clone();
+        let walk = Walk::new(ignore_arc.as_deref(), root.as_deref());
+        let real = walk.real_of(path);
+        let mut visited = HashSet::from([real.clone()]);
         if index_ready {
-            return directory_tree_is_empty(path, ignore_arc.as_deref(), root.as_deref());
+            return directory_tree_is_empty(&walk, path, &real, &mut visited);
         }
         return Ok(matches!(
-            classify_directory_content(path, ignore_arc.as_deref(), root.as_deref())?,
+            classify_directory_content(&walk, path, &real, &mut visited)?,
             DirectoryContent::Markdown | DirectoryContent::Empty
         ));
     }
+    let walk = Walk::new(None, None);
+    let real = walk.real_of(path);
+    let mut visited = HashSet::from([real.clone()]);
     Ok(matches!(
-        classify_directory_content(path, None, None)?,
+        classify_directory_content(&walk, path, &real, &mut visited)?,
         DirectoryContent::Markdown | DirectoryContent::Empty
     ))
 }
@@ -273,32 +346,39 @@ pub fn read_directory_with(
     let mut dirs = Vec::new();
     let mut files = Vec::new();
 
+    let walk = Walk::new(ignore_matcher, root_ref);
+    let dir_real = walk.real_of(&dir_path);
+
+    // Hidden and ignored entries never reach here (`Walk::visible`; the workspace `.gitignore`
+    // stays available because only listed files and folders are surfaced, never dotfiles, see
+    // the sidebar spec). Symlinks arrive resolved (`fs_entry`).
     for entry in fs::read_dir(&dir_path)?.flatten() {
-        let file_type = entry.file_type()?;
-        let entry_path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-
-        // Skip hidden files/dirs (the workspace `.gitignore` stays available
-        // because `read_directory` only surfaces markdown files and
-        // directories, never dotfiles — see the sidebar spec).
-        if entry_hidden(root_ref, &entry_path, &name) {
+        let Some(VisibleEntry {
+            path: entry_path,
+            name,
+            resolved,
+        }) = walk.visible(Ok(entry), &dir_real)?
+        else {
             continue;
-        }
+        };
+        let symlink_target = resolved
+            .symlink
+            .then(|| symlink_target_label(&resolved.real, walk.root_real.as_deref()));
 
-        if let Some(ignore) = ignore_matcher {
-            if ignore.is_ignored(&entry_path, file_type.is_dir()) {
-                continue;
-            }
-        }
-
-        if file_type.is_dir() {
+        if resolved.is_dir() {
             // `.agents` / `.claude` show only when they hold a `skills` folder (the rest of
-            // those folders is hidden), so a settings-only `.claude` never appears empty.
+            // those folders is hidden), so a settings-only `.claude` never appears empty. The
+            // folder may be a followed symlink; a link leaving the vault does not count.
             let agent_root = root_ref
                 .and_then(|r| entry_path.strip_prefix(r).ok())
                 .is_some_and(crate::code_files::is_agent_root_rel);
             let visible = if agent_root {
-                entry_path.join("skills").is_dir()
+                crate::fs_entry::resolve_path(
+                    &entry_path.join("skills"),
+                    &resolved.real,
+                    walk.root_real.as_deref(),
+                )
+                .is_some_and(|s| s.is_dir())
             } else {
                 directory_is_sidebar_visible(&entry_path, state)?
             };
@@ -311,25 +391,25 @@ pub fn read_directory_with(
                     modified_at: modified_time(&entry_path),
                     created_at: created_time(&entry_path),
                     title: None,
+                    symlink_target,
                 });
             }
-        } else if file_type.is_file() && is_listed_file(&entry_path) {
-            {
-                let title = if !titles || !is_note_file(&entry_path) {
-                    None
-                } else {
-                    extract_title(&entry_path)
-                };
-                files.push(DirEntry {
-                    name,
-                    path: entry_path.to_string_lossy().to_string(),
-                    is_dir: false,
-                    is_markdown: true,
-                    modified_at: modified_time(&entry_path),
-                    created_at: created_time(&entry_path),
-                    title,
-                });
-            }
+        } else if is_listed_file(&entry_path) {
+            let title = if !titles || !is_note_file(&entry_path) {
+                None
+            } else {
+                extract_title(&entry_path)
+            };
+            files.push(DirEntry {
+                name,
+                path: entry_path.to_string_lossy().to_string(),
+                is_dir: false,
+                is_markdown: true,
+                modified_at: modified_time(&entry_path),
+                created_at: created_time(&entry_path),
+                title,
+                symlink_target,
+            });
         }
     }
 
@@ -398,7 +478,9 @@ pub async fn read_file(
 }
 
 pub fn write_file_impl(path: &str, content: &str) -> Result<WriteResult, AppError> {
-    let file_path = PathBuf::from(path);
+    // A symlink is written through to its target, never replaced by the rename below. The command
+    // authorised the resolved path (inside the vault) before getting here.
+    let file_path = crate::fs_entry::write_target(Path::new(path))?;
 
     // Atomic write: write to temp file, then rename
     let dir = file_path
@@ -466,6 +548,7 @@ pub(crate) fn markdown_file_entry(path: &Path) -> Option<DirEntry> {
         } else {
             None
         },
+        symlink_target: None,
     })
 }
 
@@ -603,6 +686,7 @@ pub fn create_directory_impl(path: &str) -> Result<DirEntry, AppError> {
         modified_at: modified_time(&dir_path),
         created_at: created_time(&dir_path),
         title: None,
+        symlink_target: None,
     })
 }
 
@@ -678,7 +762,14 @@ fn create_sidebar_entry_with(
         };
         let result = create_candidate(&candidate, kind);
         match result {
-            Ok(entry) => return Ok(entry),
+            Ok(mut entry) => {
+                // Created through a symlinked folder: the entry belongs to the path the user
+                // opened (`.agents/skills/x`), not to the real folder it was written into.
+                if parent != parent_path && parent_path.starts_with(&root) {
+                    entry.path = parent_path.join(&entry.name).to_string_lossy().into_owned();
+                }
+                return Ok(entry);
+            }
             Err(AppError::AlreadyExists(_)) => {
                 suffix = suffix
                     .checked_add(1)
@@ -752,11 +843,23 @@ pub async fn create_sidebar_entry(
     .await
 }
 
+/// A symlink itself is never renamed or moved (its relative target would break, and a rewrite of
+/// links would act on the target). Entries *inside* a linked folder are real and fine.
+fn refuse_symlink_root(path: &str) -> Result<(), AppError> {
+    if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(AppError::InvalidPath(format!(
+            "{path} is a symbolic link: rename or move the real file or folder instead"
+        )));
+    }
+    Ok(())
+}
+
 pub fn rename_entry_impl(old_path: &str, new_path: &str) -> Result<(), AppError> {
     let old = PathBuf::from(old_path);
     if !old.exists() {
         return Err(AppError::NotFound(old_path.to_string()));
     }
+    refuse_symlink_root(old_path)?;
     let new = PathBuf::from(new_path);
     if new.exists() {
         return Err(AppError::AlreadyExists(new_path.to_string()));
@@ -813,6 +916,7 @@ pub async fn relocate_entry(
 ) -> Result<RelocateResult, AppError> {
     authorized_state(&app, &webview, &[&old_path, &new_path])?;
     blocking(move || {
+        refuse_symlink_root(&old_path)?;
         let (_, index) = crate::commands::index::window_index(&app, &webview)?;
         let plain = RelocateResult {
             links: 0,

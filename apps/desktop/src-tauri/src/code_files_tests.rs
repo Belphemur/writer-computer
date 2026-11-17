@@ -245,3 +245,218 @@ fn relocating_a_code_file_leaves_links_alone() {
         "see [[run.py]] and [[run]] and [x](tools/run.py)\n"
     );
 }
+
+// ------------------------------------------------------------------ symlinks
+// Rule (`fs_entry`): a link is followed only to a target inside the vault; the index never
+// follows links, so the real path is the one indexed.
+
+#[cfg(unix)]
+mod symlinks {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    /// The user's setup: `.agents/skills` and `.claude/skills` link to `LLM-Agents/skills`.
+    fn linked_vault() -> (TempDir, std::path::PathBuf) {
+        let (d, root) = vault();
+        touch(&root, "LLM-Agents/skills/x/SKILL.md", "# x\n");
+        touch(&root, "LLM-Agents/skills/x/run.py", "print(1)\n");
+        for base in [".agents", ".claude"] {
+            fs::create_dir_all(root.join(base)).unwrap();
+            symlink("../LLM-Agents/skills", root.join(base).join("skills")).unwrap();
+        }
+        (d, root)
+    }
+
+    #[test]
+    fn linked_skills_folder_is_listed_with_its_children() {
+        let (_d, root) = linked_vault();
+        let top = names(&root, "");
+        assert!(top.contains(&".agents".to_string()) && top.contains(&".claude".to_string()));
+        assert_eq!(names(&root, ".agents"), vec!["skills".to_string()]);
+        assert_eq!(names(&root, ".agents/skills"), vec!["x".to_string()]);
+        assert_eq!(
+            names(&root, ".claude/skills/x"),
+            vec!["run.py".to_string(), "SKILL.md".to_string()]
+        );
+        // the real folder is listed too (both paths are shown)
+        assert_eq!(names(&root, "LLM-Agents/skills"), vec!["x".to_string()]);
+        // the link carries its real vault-relative target
+        let state = state_for(&root);
+        let agents =
+            read_directory_impl(&root.join(".agents").to_string_lossy(), Some(&state)).unwrap();
+        assert_eq!(
+            agents[0].symlink_target.as_deref(),
+            Some("LLM-Agents/skills")
+        );
+        let real =
+            read_directory_impl(&root.join("LLM-Agents").to_string_lossy(), Some(&state)).unwrap();
+        assert_eq!(real[0].symlink_target, None);
+    }
+
+    #[test]
+    fn agent_root_with_an_escaping_or_dangling_skills_link_stays_hidden() {
+        let (_d, root) = vault();
+        let outside = TempDir::new().unwrap();
+        touch(outside.path(), "evil/SKILL.md", "x");
+        fs::create_dir_all(root.join(".agents")).unwrap();
+        fs::create_dir_all(root.join(".claude")).unwrap();
+        symlink(outside.path(), root.join(".agents/skills")).unwrap();
+        symlink("nowhere", root.join(".claude/skills")).unwrap();
+        touch(&root, "a.md", "x");
+        assert_eq!(names(&root, ""), vec!["a.md".to_string()]);
+    }
+
+    #[test]
+    fn outside_dangling_and_hidden_targets_are_skipped_file_links_are_listed() {
+        let (_d, root) = vault();
+        let outside = TempDir::new().unwrap();
+        touch(outside.path(), "out.md", "x");
+        touch(&root, "real/a.md", "# a\n");
+        touch(&root, ".obsidian/app.json", "{}");
+        symlink(outside.path(), root.join("escape")).unwrap();
+        symlink(outside.path().join("out.md"), root.join("escape.md")).unwrap();
+        symlink("missing", root.join("dangling")).unwrap();
+        symlink(".obsidian", root.join("hidden")).unwrap();
+        symlink("real/a.md", root.join("alias.md")).unwrap();
+        symlink("real", root.join("folder")).unwrap();
+        assert_eq!(
+            names(&root, ""),
+            vec!["folder", "real", "alias.md"]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(names(&root, "folder"), vec!["a.md".to_string()]);
+    }
+
+    #[test]
+    fn symlink_cycles_terminate() {
+        let (_d, root) = vault();
+        touch(&root, "a/note.txt", "x");
+        fs::create_dir_all(root.join("b")).unwrap();
+        symlink("..", root.join("a/up")).unwrap(); // ancestor: skipped outright
+        symlink("../b", root.join("a/to-b")).unwrap(); // mutual cycle a <-> b
+        symlink("../a", root.join("b/to-a")).unwrap();
+        // the recursive visibility walk of the root must finish (and `a` holds a text file)
+        let top = names(&root, "");
+        assert_eq!(top, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            names(&root, "a"),
+            vec!["to-b".to_string(), "note.txt".to_string()]
+        );
+        // a cycle with nothing else in it classifies as an empty folder, without recursing forever
+        let (_d2, r2) = vault();
+        fs::create_dir_all(r2.join("p")).unwrap();
+        fs::create_dir_all(r2.join("q")).unwrap();
+        symlink("../q", r2.join("p/l")).unwrap();
+        symlink("../p", r2.join("q/l")).unwrap();
+        assert_eq!(names(&r2, ""), vec!["p".to_string(), "q".to_string()]);
+    }
+
+    #[test]
+    fn index_holds_the_real_path_only() {
+        use crate::index::Index;
+        let (_d, root) = linked_vault();
+        let data = TempDir::new().unwrap();
+        symlink("LLM-Agents/skills/x/SKILL.md", root.join("alias.md")).unwrap();
+        let index = Index::open_for_cli(&root, Some(data.path())).unwrap();
+        let mut paths: Vec<String> = index
+            .query_files(&crate::index::FileFilter::default())
+            .unwrap()
+            .rows
+            .into_iter()
+            .map(|r| r.path)
+            .collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec!["LLM-Agents/skills/x/SKILL.md", "LLM-Agents/skills/x/run.py"]
+        );
+    }
+
+    #[test]
+    fn saving_through_a_link_keeps_the_link() {
+        let (_d, root) = linked_vault();
+        symlink("LLM-Agents/skills/x/SKILL.md", root.join("alias.md")).unwrap();
+        // through a linked file
+        write_file_impl(&root.join("alias.md").to_string_lossy(), "# one\n").unwrap();
+        assert!(fs::symlink_metadata(root.join("alias.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            fs::read_to_string(root.join("LLM-Agents/skills/x/SKILL.md")).unwrap(),
+            "# one\n"
+        );
+        // through a linked folder
+        let via = root.join(".agents/skills/x/run.py");
+        write_file_impl(&via.to_string_lossy(), "print(2)\n").unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("LLM-Agents/skills/x/run.py")).unwrap(),
+            "print(2)\n"
+        );
+        assert!(fs::symlink_metadata(root.join(".agents/skills"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        // no temp file left behind
+        assert!(!names(&root, "LLM-Agents/skills/x")
+            .iter()
+            .any(|n| n.starts_with(".~")));
+    }
+
+    #[test]
+    fn writes_through_an_escaping_link_are_refused_by_authorization() {
+        let (_d, root) = vault();
+        let outside = TempDir::new().unwrap();
+        touch(outside.path(), "o.md", "x");
+        symlink(outside.path().join("o.md"), root.join("l.md")).unwrap();
+        symlink(outside.path(), root.join("dir")).unwrap();
+        let state = state_for(&root);
+        assert!(state.authorize_path(&root.join("l.md")).is_err());
+        assert!(state.authorize_path(&root.join("dir/o.md")).is_err());
+    }
+
+    #[test]
+    fn a_symlink_itself_is_not_renamed_but_its_content_is() {
+        use crate::commands::fs::rename_entry_impl;
+        let (_d, root) = linked_vault();
+        let from = root.join(".agents/skills").to_string_lossy().into_owned();
+        let to = root.join(".agents/renamed").to_string_lossy().into_owned();
+        assert!(rename_entry_impl(&from, &to).is_err());
+        assert!(fs::symlink_metadata(root.join(".agents/skills")).is_ok());
+        // an entry inside the linked folder is real
+        let from = root
+            .join(".agents/skills/x/run.py")
+            .to_string_lossy()
+            .into_owned();
+        let to = root
+            .join(".agents/skills/x/go.py")
+            .to_string_lossy()
+            .into_owned();
+        rename_entry_impl(&from, &to).unwrap();
+        assert!(root.join("LLM-Agents/skills/x/go.py").exists());
+    }
+
+    #[test]
+    fn deleting_a_link_permanently_keeps_the_target() {
+        let (_d, root) = linked_vault();
+        crate::commands::fs::delete_entry_with(
+            &root.join(".claude/skills").to_string_lossy(),
+            true,
+        )
+        .unwrap();
+        assert!(!root.join(".claude/skills").exists());
+        assert!(root.join("LLM-Agents/skills/x/SKILL.md").exists());
+    }
+
+    #[test]
+    fn new_entries_in_a_linked_folder_keep_the_linked_path() {
+        use crate::commands::fs::{create_sidebar_entry_impl, SidebarEntryKind};
+        let (_d, root) = linked_vault();
+        let parent = root.join(".agents/skills");
+        let e = create_sidebar_entry_impl(&parent, &root, SidebarEntryKind::File).unwrap();
+        assert_eq!(Path::new(&e.path), parent.join("Untitled.md"));
+        assert!(root.join("LLM-Agents/skills/Untitled.md").exists());
+    }
+}

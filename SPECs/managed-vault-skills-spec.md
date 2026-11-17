@@ -63,16 +63,17 @@ These files are meant to be committed and shared with the vault (they are plain 
 
 Decided per `<root>/<name>` by the installed `SKILL.md`:
 
-| Installed state                                                                          | Action                                                                                           |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Directory missing, or only entries Writer would create (interrupted install, temp files) | **install**                                                                                      |
-| Marked, `writer-skills-version` < bundled                                                | **update** (overwrite changed files; delete files the old marker listed that the bundle dropped) |
-| Marked, same version, any managed file edited, missing or unreadable                     | **restore** (the files are fully managed; edits are overwritten)                                 |
-| Marked, same version, all files identical                                                | nothing (no write, mtimes unchanged)                                                             |
-| Marked, version > bundled (a newer Writer ran here)                                      | **leave untouched**, log, report `skipped-newer`                                                 |
-| `SKILL.md` without the marker, or a non-empty folder without `SKILL.md`                  | **never touch**, log a warning, report `skipped-user-owned`                                      |
-| Marked skill whose name is no longer bundled (version <= bundled)                        | **remove** the files Writer wrote, then the folders if empty; user files in them stay            |
-| Unreadable or non-UTF-8 `SKILL.md`                                                       | treated as user-owned                                                                            |
+| Installed state                                                                          | Action                                                                                            |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Directory missing, or only entries Writer would create (interrupted install, temp files) | **install**                                                                                       |
+| Marked, `writer-skills-version` < bundled                                                | **update** (overwrite changed files; delete files the old marker listed that the bundle dropped)  |
+| Marked, same version, any managed file edited, missing or unreadable                     | **restore** (the files are fully managed; edits are overwritten)                                  |
+| Marked, same version, all files identical                                                | nothing (no write, mtimes unchanged)                                                              |
+| Marked, version > bundled (a newer Writer ran here)                                      | **leave untouched**, log, report `skipped-newer`                                                  |
+| The skill folder, or a folder above it (`.agents/skills`), is a symlink inside the vault | **never touch**, log, report `skipped-symlink`; nothing is removed through a linked skills folder |
+| `SKILL.md` without the marker, or a non-empty folder without `SKILL.md`                  | **never touch**, log a warning, report `skipped-user-owned`                                       |
+| Marked skill whose name is no longer bundled (version <= bundled)                        | **remove** the files Writer wrote, then the folders if empty; user files in them stay             |
+| Unreadable or non-UTF-8 `SKILL.md`                                                       | treated as user-owned                                                                             |
 
 Writes of one skill go references first, `SKILL.md` last, so a crash leaves no marker over missing files and the next run reinstalls. Two Writer versions opening the same vault do not fight: the older one leaves the newer one's skills alone.
 
