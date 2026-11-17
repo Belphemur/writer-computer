@@ -890,7 +890,16 @@ mod tests {
             .iter()
             .filter(|d| d.key.starts_with("agent."))
             .collect();
-        assert_eq!(agent.len(), 11);
+        assert_eq!(agent.len(), 12);
+        assert_eq!(
+            defaults.get("agent.enabled-models"),
+            Some(&ConfigValue::List(vec![
+                "default".into(),
+                "opus".into(),
+                "sonnet".into(),
+                "haiku".into()
+            ]))
+        );
         for d in &agent {
             assert_eq!(
                 d.scope,

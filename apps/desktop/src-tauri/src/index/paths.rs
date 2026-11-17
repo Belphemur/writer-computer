@@ -54,13 +54,11 @@ pub fn cli_app_data_dir() -> Result<PathBuf, String> {
 }
 
 /// Is this vault-relative path covered by the index? Everything except hidden
-/// segments (which covers `.obsidian`, `.git`, `.writer`, `.DS_Store`) and
-/// `node_modules`.
+/// segments (which covers `.obsidian`, `.git`, `.chats`, `.writer`, `.DS_Store`),
+/// `node_modules` and the ignored-folder list, with the one exception of the
+/// `skills` subtree of `.agents` / `.claude` (`code_files::rel_is_visible`).
 pub fn is_indexable_rel(rel: &Path) -> bool {
-    rel.components().all(|c| {
-        let name = c.as_os_str().to_string_lossy();
-        !name.starts_with('.') && name != "node_modules"
-    })
+    crate::code_files::rel_is_visible(rel)
 }
 
 /// Forward-slash relative path; `None` when the path is not valid UTF-8.

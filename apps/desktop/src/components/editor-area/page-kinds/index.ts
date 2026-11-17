@@ -1,4 +1,5 @@
 import { baseKind, type BaseLocation } from "./base";
+import { codeKind, type CodeLocation } from "./code";
 import { fileKind, type FileLocation } from "./file";
 import { launcherKind, type LauncherLocation } from "./launcher";
 import { pluginFileKind, type PluginFileLocation } from "./plugin-file";
@@ -16,6 +17,7 @@ import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
 const kinds = [
   fileKind,
   baseKind,
+  codeKind,
   launcherKind,
   settingsKind,
   pluginViewKind,
@@ -25,6 +27,7 @@ const kinds = [
 export type Location =
   | FileLocation
   | BaseLocation
+  | CodeLocation
   | LauncherLocation
   | SettingsLocation
   | PluginViewLocation
@@ -48,10 +51,14 @@ export const locationBehavior = pageKind;
 
 /** The location that opens a workspace file path: the first kind that claims it via `forPath`
  *  (a `.base` opens as a table), else the text editor. The single place that routes a path. */
-export function locationForPath(path: string): FileLocation | BaseLocation | PluginFileLocation {
+export function locationForPath(
+  path: string,
+): FileLocation | BaseLocation | CodeLocation | PluginFileLocation {
   for (const k of kinds) {
     const location = (
-      k.forPath as (path: string) => FileLocation | BaseLocation | PluginFileLocation | null
+      k.forPath as (
+        path: string,
+      ) => FileLocation | BaseLocation | CodeLocation | PluginFileLocation | null
     )(path);
     if (location) return location;
   }
@@ -83,6 +90,7 @@ export function deserializeLocation(data: SerializedLocation | null | undefined)
 export type { PageKind, SerializedLocation, AnyPageKind } from "./types";
 export type { FileLocation } from "./file";
 export type { BaseLocation } from "./base";
+export type { CodeLocation } from "./code";
 export type { LauncherLocation } from "./launcher";
 export type { SettingsLocation } from "./settings";
 export type { PluginViewLocation } from "./plugin-view";

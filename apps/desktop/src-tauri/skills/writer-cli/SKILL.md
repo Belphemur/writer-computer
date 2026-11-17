@@ -38,7 +38,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | ---------- | --------------------------------------------------------------------------- |
 | Vault      | `vault`, `vaults`                                                           |
 | Files      | `files`, `file`, `folders`, `folder`                                        |
-| Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `delete`           |
+| Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `title`, `delete`  |
 | Search     | `search`, `search:context` (see the `writer-search` skill)                  |
 | Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases` |
 | Tags       | `tags`, `tag`                                                               |
@@ -52,7 +52,8 @@ See [references/commands.md](references/commands.md) for every command with its 
 ## Typical tasks
 
 ```
-writer files folder=Projects                      # list notes under a folder
+writer files folder=Projects                      # list files under a folder
+writer files ext=py                               # code files too: py, ts, sh... (see below)
 writer read file=Recipe                           # print a note
 writer create name="Weekly review" content="# Week\n\n- [ ] plan"
 writer append file="Weekly review" content="- [ ] follow up"
@@ -63,11 +64,15 @@ writer backlinks file=Recipe format=json
 writer tasks todo verbose
 writer rename file=Recipe name="Best recipe"      # updates links in other notes
 writer rename file=Recipe name="Best recipe" dry-run   # show which files and how many links would change
+writer title file=Recipe set="Best recipe"        # display title only (the `title` property); the file keeps its name
+writer title file=Recipe clear dry-run            # preview removing it
 ```
 
 ## Safety
 
+- Code and text files (py, ts, js, json, yaml, sh, rs, go, ... and `.agents/skills/<name>/` scripts) are listed by `files` and `search` (by name; their contents are not full-text indexed), and `read path=...` prints them. Generated folders (`node_modules`, `target`, `dist`, `build`, `__pycache__`, `.venv`, ...) and `.env`/secret-looking files are never listed. They are not link targets: `rename`/`move` of a code file moves it and rewrites no links.
 - `rename` and `move` rewrite wikilinks (`[[Old]]`, `[[Old|alias]]`, `[[Old#Heading]]`, `[[Old#^block]]`, `[[folder/Old]]`), embeds (`![[Old.png]]`), Markdown links (`[x](folder/Old%20Name.md)`), wikilink values in frontmatter properties and references in `.base` files, keeping each link's style, alias and heading; links in code spans and fences are untouched. They refuse an existing target, names with `/ \ : * ? " < > | # ^ [ ]`, control characters, hidden or reserved names, and anything inside `.obsidian`. They stage every edit first and roll back on an I/O error. `dry-run` prints the plan and writes nothing; `no-update-links` moves the file only. `format=json` prints `{from, to, dryRun, links, files, edits}`. Prefer them over renaming with `mv`, which leaves links broken.
+- A note's title is its file name; the first heading is never a title. `title file=X set=<new>` writes the frontmatter `title` property, an explicit display override that never renames the file or changes a link target, and rewrites links that show the old title as their alias (`[[X|Old]]` and `![[X|Old]]` become `[[X|New]]`; other links are untouched). `clear` removes the property and the old alias. `dry-run`, `no-update-links` and `format=json` (`{path, old, new, dryRun, links, files, edits}`) work like for `rename`; without `set=` or `clear` it prints the current title. To change the name links use, `rename` the file.
 - `delete` moves the file to the OS trash; `delete permanent` removes it for good. If the trash fails nothing is deleted.
 - `create` never overwrites unless the `overwrite` flag is given. It always produces a Markdown note (`.md` is appended), so it cannot create a `.base` file; write those with normal file edits.
 - `property:set`, `property:remove` and `task` edit only the targeted frontmatter line or checkbox character, so comments, key order and other text are preserved. Unparsable frontmatter is an error, not a rewrite.

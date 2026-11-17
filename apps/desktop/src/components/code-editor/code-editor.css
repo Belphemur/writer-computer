@@ -1,0 +1,45 @@
+/* The code editor reuses the note editor's CodeMirror theme variables (`--pm-syntax-*`,
+   `--pm-code-font`) from prosemark-theme.css and undoes its prose layout: no centred text
+   column, no hidden gutters, monospace. The outer `.writer-code-editor` element scrolls, like
+   the note editor's scroll container, so the search overlay and scroll restore work the same. */
+.writer-code-editor .cm-editor {
+  height: auto;
+  min-height: 100%;
+}
+
+.writer-code-editor .cm-editor .cm-scroller {
+  clip-path: none;
+  font-family: var(--pm-code-font);
+}
+
+.writer-code-editor .cm-editor .cm-selectionLayer {
+  width: auto;
+  height: auto;
+  contain: size style;
+  clip-path: none;
+}
+
+.writer-code-editor .cm-editor .cm-content {
+  max-width: none;
+  width: auto;
+  min-width: 100%;
+  margin: 0;
+  padding: 12px 0 40vh;
+  font-family: var(--pm-code-font);
+  letter-spacing: normal;
+}
+
+.writer-code-editor .cm-editor .cm-line {
+  padding: 0 16px 0 6px;
+}
+
+.writer-code-editor .cm-editor .cm-gutters {
+  display: flex;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.writer-code-editor .cm-editor .cm-gutterElement {
+  padding: 0 6px 0 12px;
+}

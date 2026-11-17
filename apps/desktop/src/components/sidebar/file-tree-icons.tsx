@@ -1,5 +1,16 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { File02Icon, SparklesIcon } from "@hugeicons/core-free-icons";
+import {
+  CodeIcon,
+  CommandLineIcon,
+  DatabaseIcon,
+  File02Icon,
+  GlobeIcon,
+  RoboticIcon,
+  Settings02Icon,
+  SparklesIcon,
+  Table01Icon,
+} from "@hugeicons/core-free-icons";
+import { codeIconFamily, isCodeName, type CodeIconFamily } from "@/lib/code-files";
 
 // Shared file/folder glyphs used by file-tree rows and the drag ghost so they
 // stay visually identical.
@@ -39,8 +50,52 @@ export function FolderIcon({ isExpanded }: { isExpanded: boolean }) {
   return <FolderClosedIcon />;
 }
 
-export function FileIcon() {
-  return <HugeiconsIcon icon={File02Icon} size={16} color="currentColor" strokeWidth={1.8} />;
+const CODE_FAMILY_ICON: Record<CodeIconFamily, typeof CodeIcon> = {
+  script: CommandLineIcon,
+  code: CodeIcon,
+  web: GlobeIcon,
+  config: Settings02Icon,
+  table: Table01Icon,
+  text: File02Icon,
+  sql: DatabaseIcon,
+};
+
+/** The glyph of a file row: a document, or a glyph by language family for a code file. */
+export function FileIcon({ name }: { name?: string }) {
+  const icon = name && isCodeName(name) ? CODE_FAMILY_ICON[codeIconFamily(name)] : File02Icon;
+  return <HugeiconsIcon icon={icon} size={16} color="currentColor" strokeWidth={1.8} />;
+}
+
+/** Marks the `.agents` / `.claude` folders (and their `skills` folder): agent skills with scripts. */
+export function AgentSkillsBadge() {
+  return (
+    <span
+      role="img"
+      aria-label="Agent skills"
+      title="Agent skills"
+      data-testid="agent-skills-badge"
+      className="ml-auto flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70"
+    >
+      <HugeiconsIcon icon={RoboticIcon} size={12} color="currentColor" strokeWidth={1.8} />
+    </span>
+  );
+}
+
+export const MANAGED_SKILL_TOOLTIP = "Managed by Writer, overwritten on update";
+
+/** Marks a skill folder Writer installed and keeps up to date. */
+export function ManagedSkillBadge() {
+  return (
+    <span
+      role="img"
+      aria-label={MANAGED_SKILL_TOOLTIP}
+      title={MANAGED_SKILL_TOOLTIP}
+      data-testid="managed-skill-badge"
+      className="ml-auto flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70"
+    >
+      <HugeiconsIcon icon={SparklesIcon} size={12} color="currentColor" strokeWidth={1.8} />
+    </span>
+  );
 }
 
 /** Marks a folder that holds an agent project (`project.md` with a project id). */

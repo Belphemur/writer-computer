@@ -1,6 +1,9 @@
 pub mod agent;
 pub mod bases;
 pub mod cli;
+pub mod code_files;
+#[cfg(test)]
+mod code_files_tests;
 mod commands;
 mod config;
 #[cfg(target_os = "macos")]
@@ -646,6 +649,7 @@ pub fn run() {
             commands::fs::create_sidebar_entry,
             commands::fs::rename_entry,
             commands::fs::relocate_entry,
+            commands::fs::retitle_note,
             commands::fs::delete_entry,
             commands::fs::file_exists,
             commands::fs::reveal_in_file_manager,
@@ -690,15 +694,18 @@ pub fn run() {
             commands::settings::set_setting,
             commands::settings::reset_setting,
             commands::skills::sync_managed_skills,
+            commands::skills::list_managed_skill_dirs,
             commands::agent::agent_detect_binary,
             commands::agent::agent_start,
             commands::agent::agent_send,
             commands::agent::agent_cancel,
             commands::agent::agent_permission,
             commands::agent::agent_set_permission_mode,
+            commands::agent::agent_set_model,
             commands::agent::agent_close,
             commands::agent::agent_resume,
             commands::agent::agent_snapshot,
+            commands::agent_skills::agent_list_skills,
             commands::agent_chats::agent_list_chats,
             commands::agent_chats::agent_load_chat,
             commands::agent_chats::agent_save_chat,

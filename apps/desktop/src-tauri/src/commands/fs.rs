@@ -18,8 +18,8 @@ pub struct DirEntry {
     /// Creation time in seconds since the epoch. Falls back to the modified
     /// time on filesystems without a birth time (many Linux mounts).
     pub created_at: u64,
-    /// Document title extracted from frontmatter `title:` or leading `# ` heading.
-    /// `None` for directories or files without a recognizable title.
+    /// Display-title override from frontmatter `title:`. `None` (directories, `.base`, notes
+    /// without the property): the entry shows its file name. A heading is never a title.
     pub title: Option<String>,
 }
 
@@ -38,8 +38,8 @@ pub struct WriteResult {
 
 use super::blocking;
 
-/// Extract a document title from a markdown file by reading its first few KB.
-/// Priority: YAML frontmatter `title:` field, then leading `# ` heading.
+/// The note's display-title override: a non-empty top-level frontmatter `title:` read from the
+/// first few KB. `None` means the note shows its file name; a heading is never a title.
 fn extract_title(path: &Path) -> Option<String> {
     use std::io::Read;
 
@@ -47,57 +47,26 @@ fn extract_title(path: &Path) -> Option<String> {
     let mut buf = vec![0u8; 4096];
     let n = file.read(&mut buf).ok()?;
     let text = std::str::from_utf8(&buf[..n]).ok()?;
-
-    // Check for YAML frontmatter (--- delimited)
-    if let Some(rest) = text
-        .strip_prefix("---\n")
-        .or_else(|| text.strip_prefix("---\r\n"))
-    {
-        // Find the closing ---
-        if let Some(end_pos) = rest.find("\n---\n").or_else(|| rest.find("\n---\r\n")) {
-            let yaml_block = &rest[..end_pos];
-            // Look for title: in the YAML
-            for line in yaml_block.lines() {
-                let trimmed = line.trim();
-                if let Some(value) = trimmed.strip_prefix("title:") {
-                    let value = value.trim();
-                    // Strip surrounding quotes
-                    let title = value
-                        .strip_prefix('"')
-                        .and_then(|v| v.strip_suffix('"'))
-                        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-                        .unwrap_or(value);
-                    if !title.is_empty() {
-                        return Some(title.to_string());
-                    }
-                }
-            }
-            // No frontmatter title — check for H1 in the body after frontmatter
-            let body_start = end_pos + "\n---\n".len();
-            return extract_leading_h1(&rest[body_start..]);
-        }
-    }
-
-    // No frontmatter — check for H1 heading
-    extract_leading_h1(text)
+    frontmatter_title(text)
 }
 
-/// Extract a title from the first `# ` heading, which must be the first
-/// non-blank line in the text.
-fn extract_leading_h1(text: &str) -> Option<String> {
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+fn frontmatter_title(text: &str) -> Option<String> {
+    let fm = crate::index::frontmatter::split(text).fm?;
+    for line in fm.lines() {
+        // Top-level key only: an indented `title:` belongs to a nested property.
+        let Some(value) = line.strip_prefix("title:") else {
             continue;
+        };
+        let value = value.trim();
+        let title = value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+            .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            .unwrap_or(value)
+            .trim();
+        if !title.is_empty() {
+            return Some(title.to_string());
         }
-        if let Some(heading) = trimmed.strip_prefix("# ") {
-            let title = heading.trim();
-            if !title.is_empty() {
-                return Some(title.to_string());
-            }
-        }
-        // First non-blank line is not an H1
-        return None;
     }
     None
 }
@@ -134,11 +103,29 @@ pub(crate) fn is_listed_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
         Some("md") | Some("base")
-    )
+    ) || crate::code_files::is_code_path(path)
 }
 
 fn is_base_file(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("base")
+}
+
+/// Only notes carry a frontmatter title; `.base` and code files show their file name.
+fn is_note_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+}
+
+/// Is this directory entry hidden from the tree? Inside a vault the rule is
+/// `code_files::rel_is_visible` (dot-folders hidden except `.agents/skills` and
+/// `.claude/skills`, the ignored-folder list); outside one (no workspace root) a leading dot or an
+/// ignored-folder name hides it.
+fn entry_hidden(root: Option<&Path>, path: &Path, name: &str) -> bool {
+    match root.and_then(|r| path.strip_prefix(r).ok()) {
+        Some(rel) => !crate::code_files::rel_is_visible(rel),
+        None => name.starts_with('.') || crate::code_files::rel_in_ignored_folder(Path::new(name)),
+    }
 }
 
 /// Recursively checks if a directory contains at least one visible .md file.
@@ -152,11 +139,12 @@ enum DirectoryContent {
 fn visible_fs_entry(
     entry: Result<std::fs::DirEntry, std::io::Error>,
     ignore: Option<&WorkspaceIgnore>,
+    root: Option<&Path>,
 ) -> Result<Option<(PathBuf, std::fs::FileType)>, AppError> {
     let entry = entry?;
     let file_type = entry.file_type()?;
     let path = entry.path();
-    if entry.file_name().to_string_lossy().starts_with('.')
+    if entry_hidden(root, &path, &entry.file_name().to_string_lossy())
         || ignore.is_some_and(|matcher| matcher.is_ignored(&path, file_type.is_dir()))
     {
         return Ok(None);
@@ -171,10 +159,11 @@ fn visible_fs_entry(
 fn classify_directory_content(
     path: &Path,
     ignore: Option<&WorkspaceIgnore>,
+    root: Option<&Path>,
 ) -> Result<DirectoryContent, AppError> {
     let mut content = DirectoryContent::Empty;
     for entry in fs::read_dir(path)? {
-        let Some((entry_path, file_type)) = visible_fs_entry(entry, ignore)? else {
+        let Some((entry_path, file_type)) = visible_fs_entry(entry, ignore, root)? else {
             continue;
         };
         if file_type.is_file() {
@@ -183,7 +172,7 @@ fn classify_directory_content(
             }
             content = DirectoryContent::Other;
         } else if file_type.is_dir() {
-            match classify_directory_content(&entry_path, ignore)? {
+            match classify_directory_content(&entry_path, ignore, root)? {
                 DirectoryContent::Markdown => return Ok(DirectoryContent::Markdown),
                 DirectoryContent::Other => content = DirectoryContent::Other,
                 DirectoryContent::Empty => {}
@@ -199,13 +188,14 @@ fn classify_directory_content(
 fn directory_tree_is_empty(
     path: &Path,
     ignore: Option<&WorkspaceIgnore>,
+    root: Option<&Path>,
 ) -> Result<bool, AppError> {
     for entry in fs::read_dir(path)? {
-        let Some((entry_path, file_type)) = visible_fs_entry(entry, ignore)? else {
+        let Some((entry_path, file_type)) = visible_fs_entry(entry, ignore, root)? else {
             continue;
         };
         if file_type.is_file()
-            || (file_type.is_dir() && !directory_tree_is_empty(&entry_path, ignore)?)
+            || (file_type.is_dir() && !directory_tree_is_empty(&entry_path, ignore, root)?)
         {
             return Ok(false);
         }
@@ -233,16 +223,17 @@ fn directory_is_sidebar_visible(
         // concurrent workspace switch's `workspace_ignore.write()`).
         let ignore_arc: Option<Arc<WorkspaceIgnore>> =
             state.workspace_ignore.read().as_ref().map(Arc::clone);
+        let root = state.workspace_root.read().clone();
         if index_ready {
-            return directory_tree_is_empty(path, ignore_arc.as_deref());
+            return directory_tree_is_empty(path, ignore_arc.as_deref(), root.as_deref());
         }
         return Ok(matches!(
-            classify_directory_content(path, ignore_arc.as_deref())?,
+            classify_directory_content(path, ignore_arc.as_deref(), root.as_deref())?,
             DirectoryContent::Markdown | DirectoryContent::Empty
         ));
     }
     Ok(matches!(
-        classify_directory_content(path, None)?,
+        classify_directory_content(path, None, None)?,
         DirectoryContent::Markdown | DirectoryContent::Empty
     ))
 }
@@ -276,6 +267,9 @@ pub fn read_directory_with(
         state.and_then(|s| s.workspace_ignore.read().as_ref().map(Arc::clone));
     let ignore_matcher: Option<&WorkspaceIgnore> = ignore_arc.as_deref();
 
+    let root_snapshot: Option<PathBuf> = state.and_then(|s| s.workspace_root.read().clone());
+    let root_ref = root_snapshot.as_deref();
+
     let mut dirs = Vec::new();
     let mut files = Vec::new();
 
@@ -287,7 +281,7 @@ pub fn read_directory_with(
         // Skip hidden files/dirs (the workspace `.gitignore` stays available
         // because `read_directory` only surfaces markdown files and
         // directories, never dotfiles — see the sidebar spec).
-        if name.starts_with('.') {
+        if entry_hidden(root_ref, &entry_path, &name) {
             continue;
         }
 
@@ -298,7 +292,17 @@ pub fn read_directory_with(
         }
 
         if file_type.is_dir() {
-            if directory_is_sidebar_visible(&entry_path, state)? {
+            // `.agents` / `.claude` show only when they hold a `skills` folder (the rest of
+            // those folders is hidden), so a settings-only `.claude` never appears empty.
+            let agent_root = root_ref
+                .and_then(|r| entry_path.strip_prefix(r).ok())
+                .is_some_and(crate::code_files::is_agent_root_rel);
+            let visible = if agent_root {
+                entry_path.join("skills").is_dir()
+            } else {
+                directory_is_sidebar_visible(&entry_path, state)?
+            };
+            if visible {
                 dirs.push(DirEntry {
                     name,
                     path: entry_path.to_string_lossy().to_string(),
@@ -311,7 +315,7 @@ pub fn read_directory_with(
             }
         } else if file_type.is_file() && is_listed_file(&entry_path) {
             {
-                let title = if !titles || is_base_file(&entry_path) {
+                let title = if !titles || !is_note_file(&entry_path) {
                     None
                 } else {
                     extract_title(&entry_path)
@@ -370,7 +374,12 @@ pub fn read_file_impl(path: &str) -> Result<FileContent, AppError> {
     if !file_path.exists() {
         return Err(AppError::NotFound(path.to_string()));
     }
-    let content = fs::read_to_string(&file_path)?;
+    // Code files are guarded: never past 20 MiB, never binary or invalid UTF-8.
+    let content = if crate::code_files::is_code_path(&file_path) {
+        crate::code_files::read_text_guarded(&file_path).map_err(|e| AppError::Io(e.to_string()))?
+    } else {
+        fs::read_to_string(&file_path)?
+    };
     Ok(FileContent {
         path: path.to_string(),
         content,
@@ -397,6 +406,12 @@ pub fn write_file_impl(path: &str, content: &str) -> Result<WriteResult, AppErro
         .ok_or_else(|| AppError::Io("No parent directory".into()))?;
     let temp_path = dir.join(format!(".~{}", uuid::Uuid::new_v4()));
     fs::write(&temp_path, content)?;
+    // Keep the mode of the file being replaced: an edited script stays executable.
+    if let Ok(existing) = fs::metadata(&file_path) {
+        if existing.is_file() {
+            let _ = fs::set_permissions(&temp_path, existing.permissions());
+        }
+    }
     fs::rename(&temp_path, &file_path)?;
 
     Ok(WriteResult {
@@ -432,7 +447,8 @@ pub(crate) fn markdown_file_entry(path: &Path) -> Option<DirEntry> {
         || !(path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("md"))
-            || is_base_file(path))
+            || is_base_file(path)
+            || crate::code_files::is_code_path(path))
     {
         return None;
     }
@@ -445,10 +461,10 @@ pub(crate) fn markdown_file_entry(path: &Path) -> Option<DirEntry> {
         is_markdown: true,
         modified_at: modified_time(path),
         created_at: created_time(path),
-        title: if is_base_file(path) {
-            None
-        } else {
+        title: if is_note_file(path) {
             extract_title(path)
+        } else {
+            None
         },
     })
 }
@@ -822,6 +838,59 @@ pub async fn relocate_entry(
     .await
 }
 
+/// What [`retitle_note`] did (or, for a dry run, would do).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetitleResult {
+    /// The display title before (`None`: the note showed its file name) and after.
+    pub old: Option<String>,
+    pub new: Option<String>,
+    /// Alias links (`[[File|Old title]]`) rewritten across the vault, and the notes holding them.
+    pub links: usize,
+    pub files: usize,
+    /// False when the index was still building: only the note's frontmatter changed.
+    pub links_updated: bool,
+    /// Something is (or would be) written.
+    pub changed: bool,
+}
+
+/// Set (`title`) or clear (`None`) a note's display title, the frontmatter `title` property, and
+/// optionally rewrite links that show the old title as their alias. Same plan/apply, dry run
+/// and rollback as [`relocate_entry`] (`relocate::retitle`); the file is never renamed.
+#[tauri::command]
+pub async fn retitle_note(
+    path: String,
+    title: Option<String>,
+    update_links: bool,
+    dry_run: bool,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<RetitleResult, AppError> {
+    authorized_state(&app, &webview, &[&path])?;
+    blocking(move || {
+        let (_, index) = crate::commands::index::window_index(&app, &webview)?;
+        let links_updated = update_links && index.is_ready();
+        let root = index.root().canonicalize()?;
+        let r =
+            crate::relocate::retitle::plan(&root, &index, &path, title.as_deref(), links_updated)
+                .map_err(vault_err)?;
+        let changed = !r.plan.edits.is_empty();
+        if changed && !dry_run {
+            crate::relocate::apply(&r.plan).map_err(|e| AppError::Io(e.to_string()))?;
+        }
+        let (links, files) = r.link_counts();
+        Ok(RetitleResult {
+            old: r.old,
+            new: r.new,
+            links,
+            files,
+            links_updated,
+            changed,
+        })
+    })
+    .await
+}
+
 pub fn delete_entry_impl(path: &str) -> Result<(), AppError> {
     delete_entry_with(path, false)
 }
@@ -991,13 +1060,13 @@ mod tests {
         fs::write(dir.path().join("hello.md"), "# Hello").unwrap();
         fs::write(dir.path().join("world.md"), "# World").unwrap();
         // Create a non-markdown file (should be filtered)
-        fs::write(dir.path().join("readme.txt"), "text").unwrap();
+        fs::write(dir.path().join("readme.bin"), "text").unwrap();
         // Create a subdirectory with markdown
         fs::create_dir(dir.path().join("notes")).unwrap();
         fs::write(dir.path().join("notes").join("note.md"), "# Note").unwrap();
         // Create a subdirectory without markdown (should be filtered)
         fs::create_dir(dir.path().join("empty")).unwrap();
-        fs::write(dir.path().join("empty").join("data.txt"), "data").unwrap();
+        fs::write(dir.path().join("empty").join("data.bin"), "data").unwrap();
         dir
     }
 
@@ -1013,10 +1082,10 @@ mod tests {
         // Remaining should be files, sorted alphabetically
         assert!(!result[1].is_dir);
         assert_eq!(result[1].name, "hello.md");
-        assert_eq!(result[1].title.as_deref(), Some("Hello"));
+        assert_eq!(result[1].title, None);
         assert!(!result[2].is_dir);
         assert_eq!(result[2].name, "world.md");
-        assert_eq!(result[2].title.as_deref(), Some("World"));
+        assert_eq!(result[2].title, None);
     }
 
     #[test]
@@ -1181,14 +1250,14 @@ mod tests {
         let outside = TempDir::new().unwrap();
         let kept = dir.path().join("kept.md");
         fs::write(&kept, "# Kept").unwrap();
-        fs::write(dir.path().join("note.txt"), "not markdown").unwrap();
+        fs::write(dir.path().join("note.bin"), "not markdown").unwrap();
         fs::write(outside.path().join("outside.md"), "# Outside").unwrap();
 
         let entries = read_file_entries_impl(
             vec![
                 kept.to_string_lossy().to_string(),
                 dir.path().join("missing.md").to_string_lossy().to_string(),
-                dir.path().join("note.txt").to_string_lossy().to_string(),
+                dir.path().join("note.bin").to_string_lossy().to_string(),
                 outside
                     .path()
                     .join("outside.md")
@@ -1438,59 +1507,57 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_title_from_h1() {
+    fn heading_is_never_a_title() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("doc.md");
         fs::write(&path, "# My Document\n\nSome content").unwrap();
-        assert_eq!(extract_title(&path).as_deref(), Some("My Document"));
+        assert_eq!(extract_title(&path), None);
+        fs::write(&path, "---\ndate: 2025-01-01\n---\n\n# Fallback Heading").unwrap();
+        assert_eq!(extract_title(&path), None);
     }
 
     #[test]
-    fn test_extract_title_from_frontmatter() {
+    fn frontmatter_title_is_the_override() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("doc.md");
-        fs::write(&path, "---\ntitle: Front Title\n---\n\nBody").unwrap();
+        fs::write(&path, "---\ntitle: Front Title\n---\n\n# Heading").unwrap();
         assert_eq!(extract_title(&path).as_deref(), Some("Front Title"));
-    }
-
-    #[test]
-    fn test_extract_title_frontmatter_quoted() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("doc.md");
         fs::write(&path, "---\ntitle: \"Quoted Title\"\n---\n\nBody").unwrap();
         assert_eq!(extract_title(&path).as_deref(), Some("Quoted Title"));
+        fs::write(&path, "---\r\ntitle: Crlf\r\n---\r\nBody").unwrap();
+        assert_eq!(extract_title(&path).as_deref(), Some("Crlf"));
     }
 
     #[test]
-    fn test_extract_title_frontmatter_beats_h1() {
+    fn empty_or_nested_title_is_not_an_override() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("doc.md");
-        fs::write(&path, "---\ntitle: FM Title\n---\n\n# Heading").unwrap();
-        assert_eq!(extract_title(&path).as_deref(), Some("FM Title"));
-    }
-
-    #[test]
-    fn test_extract_title_h1_after_empty_frontmatter() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("doc.md");
-        fs::write(&path, "---\ndate: 2025-01-01\n---\n\n# Fallback Heading").unwrap();
-        assert_eq!(extract_title(&path).as_deref(), Some("Fallback Heading"));
-    }
-
-    #[test]
-    fn test_extract_title_none_for_empty_file() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("doc.md");
+        fs::write(&path, "---\ntitle:\n---\nBody").unwrap();
+        assert_eq!(extract_title(&path), None);
+        fs::write(&path, "---\nmeta:\n  title: nested\n---\nBody").unwrap();
+        assert_eq!(extract_title(&path), None);
         fs::write(&path, "").unwrap();
         assert_eq!(extract_title(&path), None);
     }
 
+    /// A folder `X` holding `X.md` (first H1 `# Overview`) and `X/Notes/note.md` (H1 `# Description`):
+    /// no entry takes a title from a heading or from a neighbouring note.
     #[test]
-    fn test_extract_title_none_when_no_heading() {
+    fn folder_note_overview_heading_does_not_label_other_notes() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("doc.md");
-        fs::write(&path, "Just a paragraph.\nAnother line.").unwrap();
-        assert_eq!(extract_title(&path), None);
+        let x = dir.path().join("Daniel");
+        fs::create_dir_all(x.join("Notes")).unwrap();
+        fs::write(x.join("Daniel.md"), "# Overview\n").unwrap();
+        fs::write(
+            x.join("Notes").join("2026-08-31 - Spec.md"),
+            "---\ntags:\n  - employee-note\n---\n# Description\nbody\n",
+        )
+        .unwrap();
+        for d in [x.clone(), x.join("Notes")] {
+            for e in read_directory_impl(d.to_str().unwrap(), None).unwrap() {
+                assert_eq!(e.title, None, "{}", e.name);
+            }
+        }
     }
 
     #[test]

@@ -717,3 +717,23 @@ fn base_yaml_examples_parse() {
     }
     assert!(n >= 5, "found {n} yaml examples");
 }
+
+#[test]
+fn managed_dirs_lists_only_marked_skill_folders() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let root = dir.path();
+    let marked = root.join(".agents/skills/writer-cli");
+    let user = root.join(".agents/skills/mine");
+    std::fs::create_dir_all(&marked).unwrap();
+    std::fs::create_dir_all(&user).unwrap();
+    std::fs::write(
+        marked.join("SKILL.md"),
+        "---\nname: writer-cli\nwriter-managed: true\nwriter-skills-version: 1\n---\nx\n",
+    )
+    .unwrap();
+    std::fs::write(user.join("SKILL.md"), "---\nname: mine\n---\nx\n").unwrap();
+    assert_eq!(
+        super::managed_dirs(root),
+        vec![".agents/skills/writer-cli".to_string()]
+    );
+}

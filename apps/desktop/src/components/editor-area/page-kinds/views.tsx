@@ -2,11 +2,14 @@ import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
 import { BaseView } from "@/components/base-view";
+import { CodeEditorPane } from "@/components/code-editor/code-editor-pane";
+import { ManagedSkillBanner } from "@/components/code-editor/managed-skill-banner";
 import { PluginFileTab } from "@/components/plugins/plugin-file-tab";
 import { PluginViewTab } from "@/components/plugins/plugin-view-tab";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { Location } from "./index";
 import type { BaseLocation } from "./base";
+import type { CodeLocation } from "./code";
 import type { FileLocation } from "./file";
 import type { LauncherLocation } from "./launcher";
 import type { PluginFileLocation } from "./plugin-file";
@@ -30,7 +33,10 @@ import type { PageKindView } from "./types";
 // Page-kind view registry: exports the pageKindView resolver alongside the file-tab adapter component; not a Fast-Refresh component surface.
 // eslint-disable-next-line react-doctor/only-export-components
 const FileTabBody = ({ location, isActive }: { location: FileLocation; isActive: boolean }) => (
-  <EditorPane path={location.path} isActive={isActive} />
+  <>
+    <EditorPane path={location.path} isActive={isActive} />
+    {isActive ? <ManagedSkillBanner path={location.path} /> : null}
+  </>
 );
 
 const views = {
@@ -38,6 +44,9 @@ const views = {
     Component: FileTabBody,
     renderFooter: (l) => <DocumentFooter filePath={l.path} />,
   } satisfies PageKindView<FileLocation>,
+  code: {
+    Component: CodeEditorPane,
+  } satisfies PageKindView<CodeLocation>,
   base: {
     Component: BaseView,
   } satisfies PageKindView<BaseLocation>,

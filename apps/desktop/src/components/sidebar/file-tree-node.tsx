@@ -6,6 +6,7 @@ import { openFileInNewTab } from "@/hooks/editor-api";
 import { getFileStem } from "@/lib/paths";
 import type { DirEntry } from "@/types/fs";
 import { useIsProjectFolder } from "@/stores/projects-store";
+import { AgentFolderBadge } from "./agent-folder-badge";
 import { FileIcon, FolderIcon, ProjectBadge } from "./file-tree-icons";
 import { useFileTreeLabel } from "./use-file-tree-label";
 
@@ -24,10 +25,6 @@ interface FileTreeNodeProps {
   onPointerDown?: (event: PointerEvent<HTMLElement>, entry: DirEntry) => void;
   onRenameSubmit?: (entry: DirEntry, nextStem: string) => void;
   onRenameCancel?: () => void;
-  /** Tree-wide label mode from `appearance.sidebar-file-label`. `"filename"`
-   *  shows the file stem; anything else (incl. `undefined` pre-hydration)
-   *  shows the document title, falling back to the stem. */
-  fileLabelMode?: string;
 }
 
 export const FileTreeNode = memo(function FileTreeNode({
@@ -44,10 +41,9 @@ export const FileTreeNode = memo(function FileTreeNode({
   onPointerDown,
   onRenameSubmit,
   onRenameCancel,
-  fileLabelMode,
 }: FileTreeNodeProps) {
   const isActive = useIsActive(entry.path);
-  const displayName = useFileTreeLabel(entry, fileLabelMode);
+  const label = useFileTreeLabel(entry);
   const isProject = useIsProjectFolder(entry.path, entry.is_dir);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -109,13 +105,18 @@ export const FileTreeNode = memo(function FileTreeNode({
           className="flex w-5 antialiased shrink-0 items-center justify-center text-current"
           aria-hidden="true"
         >
-          {entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon />}
+          {entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon name={entry.name} />}
         </span>
         <input
           ref={inputRef}
           type="text"
           defaultValue={initialValue}
           aria-label={`Rename ${entry.name}`}
+          title={
+            entry.is_dir
+              ? undefined
+              : "Renames the file and updates the links to it. Use Set display title to change only the shown name."
+          }
           className="min-w-0 flex-1 rounded border border-[var(--surface-border)] bg-[var(--surface-elevated)] px-1 py-px text-[13px] leading-[1.15] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -145,7 +146,8 @@ export const FileTreeNode = memo(function FileTreeNode({
       data-tree-path={entry.path}
       aria-selected={isActive}
       aria-expanded={entry.is_dir ? isExpanded : undefined}
-      aria-label={entry.is_dir ? `${entry.name} folder` : displayName}
+      aria-label={entry.is_dir ? `${entry.name} folder` : label.text}
+      title={label.tooltip}
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={onPointerDown ? (event) => onPointerDown(event, entry) : undefined}
       onClick={handleClick}
@@ -172,16 +174,17 @@ export const FileTreeNode = memo(function FileTreeNode({
           </>
         ) : (
           <span className="opacity-60 group-hover:opacity-100">
-            <FileIcon />
+            <FileIcon name={entry.name} />
           </span>
         )}
       </span>
       <span
-        className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap ${isHighlighted ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`}
+        className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap ${label.isOverride ? "italic " : ""}${isHighlighted ? "opacity-100" : "opacity-60 group-hover:opacity-100"}`}
       >
-        {displayName}
+        {label.text}
       </span>
       {isProject ? <ProjectBadge /> : null}
+      {entry.is_dir ? <AgentFolderBadge entry={entry} /> : null}
     </button>
   );
 });

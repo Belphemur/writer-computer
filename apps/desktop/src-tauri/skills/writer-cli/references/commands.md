@@ -22,6 +22,7 @@ One bullet per command: `required` parameters are marked, everything else is opt
 - `prepend` — insert text after the frontmatter, or right after a heading. Params: `file=`, `path=`, `content=` (required), `heading=`. Flags: `inline`.
 - `move` — move (and optionally rename) a file and update links to it. Params: `file=`, `path=`, `to=` (required; destination folder or path), `format=` (text or json). Flags: `dry-run` (print the plan, change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
 - `rename` — rename a file and update links to it. Params: `file=`, `path=`, `name=` (required; the extension is kept if omitted), `format=` (text or json). Flags: `dry-run` (print the plan, change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
+- `title` — show, set or clear a note's display title (the title property); the file is not renamed. Params: `file=`, `path=`, `set=` (new display title (links showing the old title follow)), `format=` (text or json). Flags: `clear` (remove the title property (the note shows its file name)), `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links that show the old title as their alias).
 - `delete` — move a file to the trash. Params: `file=`, `path=`. Flags: `permanent`.
 
 ## Search

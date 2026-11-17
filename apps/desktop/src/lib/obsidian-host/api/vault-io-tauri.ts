@@ -42,14 +42,18 @@ export function createTauriVaultIo(root: string, name: string): VaultIo {
   const listDir = async (dir: string): Promise<VaultEntry[]> =>
     // `titles: false`: the plugin vault never shows sidebar titles, and extracting them opens
     // every markdown file of the folder.
-    (await call<DirEntry[]>("read_directory", { path: abs(dir), titles: false })).map((e) => ({
-      name: e.name,
-      path: rel(e.path),
-      isDir: e.is_dir,
-      mtime: e.modified_at * 1000,
-      ctime: e.created_at * 1000,
-      size: 0,
-    }));
+    (await call<DirEntry[]>("read_directory", { path: abs(dir), titles: false }))
+      // Obsidian lists no dot-folder: the sidebar's `.agents/skills` exception stays out of the
+      // plugin vault, so `getFiles()` is what it was (notes, bases and now code files).
+      .filter((e) => !e.name.startsWith("."))
+      .map((e) => ({
+        name: e.name,
+        path: rel(e.path),
+        isDir: e.is_dir,
+        mtime: e.modified_at * 1000,
+        ctime: e.created_at * 1000,
+        size: 0,
+      }));
   return {
     basePath: base,
     name,

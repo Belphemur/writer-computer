@@ -262,6 +262,38 @@ pub fn parse_marker(text: &str) -> Option<Marker> {
     None // no closing fence: not a frontmatter block
 }
 
+/// Vault-relative skill directories (`.agents/skills/writer-cli`) whose `SKILL.md` carries the
+/// managed marker: what the sidebar badges and the editor warns about. Symlinks are skipped.
+pub fn managed_dirs(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for skill_root in SKILL_ROOTS {
+        let Ok(entries) = std::fs::read_dir(root.join(skill_root)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let skill_file = entry.path().join(SKILL_FILE);
+            // a bounded read: the marker sits in the frontmatter at the top
+            let Ok(text) = std::fs::read_to_string(&skill_file) else {
+                continue;
+            };
+            if parse_marker(&text).is_some() {
+                out.push(format!(
+                    "{skill_root}/{}",
+                    entry.file_name().to_string_lossy()
+                ));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem access, confined to the vault
 // ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ interface DragGhostProps {
   paddingLeft: string;
   /** Folder expansion, so the folder glyph matches the row. */
   isExpanded: boolean;
-  fileLabelMode?: string;
 }
 
 /**
@@ -20,15 +19,8 @@ interface DragGhostProps {
  * the grabbed sidebar row — same selected fill (translucent), size, indent, icon,
  * and label — with a small count badge when several items move together.
  */
-export function DragGhost({
-  entry,
-  count,
-  width,
-  paddingLeft,
-  isExpanded,
-  fileLabelMode,
-}: DragGhostProps) {
-  const label = useFileTreeLabel(entry, fileLabelMode);
+export function DragGhost({ entry, count, width, paddingLeft, isExpanded }: DragGhostProps) {
+  const label = useFileTreeLabel(entry);
   return (
     <div className="relative" style={{ width }}>
       <div
@@ -36,9 +28,11 @@ export function DragGhost({
         style={{ paddingLeft }}
       >
         <span className="flex w-5 shrink-0 items-center justify-center opacity-60">
-          {entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon />}
+          {entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon name={entry.name} />}
         </span>
-        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+          {label.text}
+        </span>
       </div>
       {count > 1 && (
         <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-[11px] font-semibold leading-none text-white shadow-md ring-2 ring-[var(--bg-base)]">

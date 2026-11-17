@@ -120,3 +120,25 @@ pub async fn sync_managed_skills(
     .await
     .map_err(|e| AppError::Io(e.to_string()))?
 }
+
+/// Absolute paths of the Writer-managed skill folders of this window's workspace (marker in
+/// `SKILL.md`), for the sidebar badge and the "overwritten on update" editor warning.
+#[tauri::command]
+pub async fn list_managed_skill_dirs(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, AppError> {
+    let state = app.state::<AppState>().get_or_create(webview.label());
+    let root = state
+        .workspace_root
+        .read()
+        .clone()
+        .ok_or(AppError::NoWorkspace)?;
+    super::blocking(move || {
+        Ok(managed_skills::managed_dirs(&root)
+            .into_iter()
+            .map(|rel| root.join(rel).to_string_lossy().into_owned())
+            .collect())
+    })
+    .await
+}

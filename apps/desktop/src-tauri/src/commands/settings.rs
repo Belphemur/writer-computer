@@ -53,7 +53,28 @@ fn with_global_settings_mut<T>(
     let (enabled, email) = crate::telemetry::settings_snapshot(settings);
     crate::telemetry::apply_settings(enabled, email);
     crate::logging::apply_level_setting(crate::logging::level_setting(settings).as_deref());
+    apply_code_files_policy(settings);
     Ok(result)
+}
+
+/// Push the code-file settings (`files.code-extensions`, `files.ignored-folders`,
+/// `files.show-agent-folders`) into the process-wide policy.
+fn apply_code_files_policy(settings: &Settings) {
+    use crate::code_files as cf;
+    let list = |key: &str| match settings.get_global_or_default(key) {
+        Some(ConfigValue::List(items)) => Some(items.clone()),
+        _ => None,
+    };
+    let flag = |key: &str| {
+        settings
+            .get_global_or_default(key)
+            .and_then(|v| v.as_bool())
+    };
+    cf::set_policy(cf::policy_from_settings(
+        list(cf::SETTING_EXTENSIONS),
+        list(cf::SETTING_IGNORED),
+        flag(cf::SETTING_AGENT_FOLDERS),
+    ));
 }
 
 fn init_window_settings_at(
@@ -63,6 +84,7 @@ fn init_window_settings_at(
 ) -> Result<(), AppError> {
     let _global_guard = app_state.global_settings_file_lock.lock();
     let settings = Settings::new(config_dir).map_err(|error| AppError::Io(error.to_string()))?;
+    apply_code_files_policy(&settings);
     *state.settings.write() = Some(settings);
     Ok(())
 }

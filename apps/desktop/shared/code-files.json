@@ -1,0 +1,10 @@
+{
+  "$comment": "Shared by src-tauri/src/code_files.rs and src/lib/code-files.ts (spec: SPECs/code-files-spec.md). The default extension and ignored-folder lists are the defaults of files.code-extensions and files.ignored-folders in settings.schema.json.",
+  "maxReadBytes": 20971520,
+  "readOnlyBytes": 2097152,
+  "binarySniffBytes": 8192,
+  "fileNames": ["Dockerfile", "Makefile", "GNUmakefile"],
+  "neverExtensions": ["env", "pem", "key", "p12", "pfx", "keystore", "ipynb", "md", "base"],
+  "secretNameWords": ["secret", "credential", "password", "private-key", "private_key"],
+  "secretKeyPrefixes": ["id_rsa", "id_ed25519", "id_ecdsa"]
+}

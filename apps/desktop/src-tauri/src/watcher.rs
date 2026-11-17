@@ -58,10 +58,14 @@ fn should_ignore(path: &Path, workspace_root: &Path) -> bool {
             continue;
         }
         if name.starts_with('.') && name.len() > 1 {
-            return true;
+            // `.agents/skills` and `.claude/skills` are the one dot-folder exception.
+            if !crate::code_files::rel_is_visible(relative) {
+                return true;
+            }
         }
     }
-    false
+    // Generated folders (`target`, `dist`, `__pycache__`...) would flood the feed.
+    crate::code_files::rel_in_ignored_folder(relative)
 }
 
 /// Check the workspace ignore matcher, if any. Returns `false` when no
@@ -582,6 +586,29 @@ mod tests {
         let root = Path::new(ROOT);
         assert!(should_ignore(Path::new("/workspace/.DS_Store"), root));
         assert!(should_ignore(Path::new("/workspace/.hidden/file.md"), root));
+    }
+
+    #[test]
+    fn agent_skills_are_watched_and_generated_folders_are_not() {
+        let root = Path::new(ROOT);
+        assert!(!should_ignore(
+            Path::new("/workspace/.agents/skills/x/run.py"),
+            root
+        ));
+        assert!(!should_ignore(
+            Path::new("/workspace/.claude/skills/x/SKILL.md"),
+            root
+        ));
+        assert!(should_ignore(
+            Path::new("/workspace/.claude/settings.json"),
+            root
+        ));
+        assert!(should_ignore(
+            Path::new("/workspace/.agents/skills/x/node_modules/a.js"),
+            root
+        ));
+        assert!(should_ignore(Path::new("/workspace/app/target/a.rs"), root));
+        assert!(!should_ignore(Path::new("/workspace/.writer/config"), root));
     }
 
     #[test]
