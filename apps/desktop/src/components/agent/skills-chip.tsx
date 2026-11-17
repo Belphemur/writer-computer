@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
+import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCliCatalog, useDiskSkills, type Chat } from "@/hooks/use-agent";
 import {
@@ -26,6 +28,9 @@ function openSkill(item: SlashItem) {
  *  reported, including plugin skills) with its source, whether it is loaded and a link to its file. */
 export function SkillsChip({ chat }: { chat: Chat }) {
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(wrapRef, wrapRef, () => setOpen(false), open);
+  const placement = usePopoverPlacement(wrapRef, open, { width: 320, maxHeight: 288 });
   const disk = useDiskSkills(chat.projectPath);
   const catalog = useCliCatalog();
   const skills = useMemo(
@@ -34,7 +39,7 @@ export function SkillsChip({ chat }: { chat: Chat }) {
     [disk?.items, chat.session, catalog],
   );
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       <button
         type="button"
         aria-haspopup="dialog"
@@ -62,7 +67,8 @@ export function SkillsChip({ chat }: { chat: Chat }) {
               setOpen(false);
             }
           }}
-          className="absolute bottom-full left-0 z-30 mb-1 max-h-72 w-80 overflow-y-auto rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
+          style={placement}
+          className="absolute bottom-full left-0 z-30 mb-1 overflow-y-auto rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
         >
           {skills.length === 0 ? (
             <p className="px-2 py-1.5 text-[12.5px] text-text-muted">

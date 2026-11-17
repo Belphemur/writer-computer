@@ -10,10 +10,12 @@ export function usePopoverDismiss(
   popoverRef: RefObject<HTMLElement | null>,
   anchorRef: RefObject<HTMLElement | null>,
   onDismiss: () => void,
+  enabled = true,
 ) {
   const dismiss = useEffectEvent(onDismiss);
 
   useEffect(() => {
+    if (!enabled) return;
     const isInside = (target: EventTarget | null) =>
       target instanceof Node &&
       (popoverRef.current?.contains(target) || anchorRef.current?.contains(target));
@@ -39,5 +41,5 @@ export function usePopoverDismiss(
       document.removeEventListener("wheel", onWheel, true);
       window.removeEventListener("resize", onResize);
     };
-  }, [popoverRef, anchorRef]);
+  }, [popoverRef, anchorRef, enabled]);
 }

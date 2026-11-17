@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
+import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { ArrowDown01Icon, Folder01Icon } from "@hugeicons/core-free-icons";
 import { openNewProjectDialog, setAgentView, startNewAgentChat } from "@/hooks/agent-api";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -27,14 +29,12 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
     if (root && loadedRoot !== root) void useProjectsStore.getState().refresh();
   }, [root, loadedRoot]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  usePopoverDismiss(wrapRef, wrapRef, () => setOpen(false), open);
+  const placement = usePopoverPlacement(wrapRef, open, {
+    width: 288,
+    side: "bottom",
+    maxHeight: 520,
+  });
 
   const vaultName = root ? (root.split("/").filter(Boolean).pop() ?? "Vault") : "Agent";
   const current = projects.find((p) => p.path === projectPath);
@@ -82,7 +82,10 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
         <Ico icon={ArrowDown01Icon} size={12} className="shrink-0 text-text-icon-muted" />
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[var(--border-color)] bg-[var(--surface-primary)] p-1 shadow-lg">
+        <div
+          style={placement}
+          className="absolute left-0 top-full z-50 mt-1 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--surface-primary)] p-1 shadow-lg"
+        >
           <input
             autoFocus
             type="text"

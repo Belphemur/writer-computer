@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
+import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { setAgentChatModel, setAgentDefaultModel } from "@/hooks/agent-api";
 import { useChatModel } from "@/hooks/use-agent";
 import { useEnabledAgentModels } from "@/hooks/use-enabled-agent-models";
@@ -16,6 +18,9 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
   const models = useEnabledAgentModels({ currentModel: choice.model, sessionModel });
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(wrapRef, wrapRef, () => setOpen(false), open);
+  const placement = usePopoverPlacement(wrapRef, open, { width: 224, maxHeight: 480 });
   const requestedId = choice.model ?? DEFAULT_MODEL_ID;
   const current = models.find((m) => m.id === requestedId);
   const matches = reportedMatches(choice.model, reported);
@@ -35,7 +40,7 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
   };
 
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       <button
         type="button"
         aria-haspopup="menu"
@@ -69,7 +74,8 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
               move(-1);
             }
           }}
-          className="absolute bottom-full left-0 z-30 mb-1 w-56 rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
+          style={placement}
+          className="absolute bottom-full left-0 z-30 mb-1 overflow-y-auto rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
         >
           {models.map((m) => (
             <button
