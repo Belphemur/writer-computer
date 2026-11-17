@@ -662,6 +662,42 @@ impl Index {
         });
         Ok(rows)
     }
+
+    /// Vault-relative paths of every file whose name equals `name` under the resolver's key
+    /// (Unicode NFC, then lowercase: a decomposed macOS name matches its precomposed twin),
+    /// shallowest first, ties by path, at most `limit`. A pure-ASCII name is one indexed
+    /// `NOCASE` lookup; any other name scans the `files` rows once, since SQLite folds only
+    /// ASCII case and knows nothing of normalization.
+    pub fn find_files_by_exact_name(
+        &self,
+        name: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, IndexError> {
+        let mut rows: Vec<String> = if name.is_ascii() {
+            self.find_files_by_name(name, None)?
+        } else {
+            let key = crate::index::resolve::lower(name);
+            self.read(|c| {
+                let mut st = c.prepare("SELECT path, name FROM files")?;
+                let rows = st
+                    .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows
+                    .into_iter()
+                    .filter(|(_, n)| crate::index::resolve::lower(n) == key)
+                    .map(|(p, _)| p)
+                    .collect())
+            })?
+        };
+        rows.sort_by(|a, b| {
+            a.matches('/')
+                .count()
+                .cmp(&b.matches('/').count())
+                .then_with(|| a.cmp(b))
+        });
+        rows.truncate(limit);
+        Ok(rows)
+    }
 }
 
 #[cfg(test)]
@@ -1173,6 +1209,45 @@ mod tests {
         assert!(h
             .index
             .find_files_by_name("nope.png", None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn find_files_by_exact_name_matches_nfd_nfc_orders_and_caps() {
+        let nfd = "Fran\u{63}\u{327}ois.md";
+        let nfc = "Fran\u{e7}ois.md";
+        let h = harness(|r| {
+            write(r, &format!("a/b/{nfd}"), "x");
+            write(r, "Plain.md", "x");
+            write(r, "z/plain.md", "x");
+            write(r, "a/plain.md", "x");
+            write(r, "plain.md.bak", "x");
+        });
+        h.index.refresh_blocking().unwrap();
+        // NFC query finds the NFD file on disk, and the reverse.
+        assert_eq!(
+            h.index.find_files_by_exact_name(nfc, 10).unwrap(),
+            [format!("a/b/{nfd}")]
+        );
+        assert_eq!(
+            h.index
+                .find_files_by_exact_name(&nfd.to_uppercase(), 10)
+                .unwrap(),
+            [format!("a/b/{nfd}")]
+        );
+        // Exact name only (no stem or prefix match), shallowest first, capped.
+        assert_eq!(
+            h.index.find_files_by_exact_name("plain.md", 10).unwrap(),
+            ["Plain.md", "a/plain.md", "z/plain.md"]
+        );
+        assert_eq!(
+            h.index.find_files_by_exact_name("plain.md", 2).unwrap(),
+            ["Plain.md", "a/plain.md"]
+        );
+        assert!(h
+            .index
+            .find_files_by_exact_name("plain", 10)
             .unwrap()
             .is_empty());
     }

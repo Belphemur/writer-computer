@@ -29,7 +29,7 @@ pub struct PathIndex {
 /// The comparison key for every name and path: Unicode NFC, then lowercase. macOS file names are
 /// often decomposed (NFD: `c` + combining cedilla) while links are typed precomposed (NFC: `ç`);
 /// without normalizing, `[[François]]` never finds `François.md`.
-fn lower(s: &str) -> String {
+pub(crate) fn lower(s: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     s.nfc().collect::<String>().to_lowercase()
 }

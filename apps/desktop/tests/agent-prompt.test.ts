@@ -9,7 +9,7 @@ import {
   unattachedMentions,
 } from "../src/lib/agent/mentions";
 import { matchPath, prepare, prepareQuery } from "../src/lib/search-rank";
-import { prepareRefs, type RefIo } from "../src/lib/agent/ref-resolve";
+import { createRefIo, prepareRefs, type RefIo } from "../src/lib/agent/ref-resolve";
 import { applyTrigger, findTrigger, tokenizeMessage } from "../src/lib/agent/trigger";
 
 vi.mock("../src/lib/tauri", () => ({ fileExists: vi.fn(), findFilesByExactName: vi.fn() }));
@@ -232,6 +232,29 @@ describe("prepareRefs", () => {
     expect(buildPrompt({ text: "@Docs/ x", refs: out, cwd: "Projects/A" })).toContain(
       "@../../Docs x",
     );
+  });
+
+  it("does not look up by name while the recorded path still exists", async () => {
+    const findByName = vi.fn(async () => ["Elsewhere/Plan.md"]);
+    const refs = [{ kind: "note", path: "Old/Plan.md" }] as const;
+    const out = await prepareRefs("", refs, { exists: async () => true, findByName });
+    expect(out).toEqual(refs);
+    expect(findByName).not.toHaveBeenCalled();
+  });
+
+  it("createRefIo follows a moved note through the Rust command's vault-relative result", async () => {
+    const tauri = await import("../src/lib/tauri");
+    vi.mocked(tauri.fileExists).mockResolvedValue(false);
+    vi.mocked(tauri.findFilesByExactName).mockResolvedValue(["New/Plan.md"]);
+    const refs = [{ kind: "note", path: "Old/Plan.md" }] as const;
+    const out = await prepareRefs("", refs, createRefIo("/vault"));
+    expect(tauri.fileExists).toHaveBeenCalledWith("/vault/Old/Plan.md");
+    expect(tauri.findFilesByExactName).toHaveBeenCalledWith("Plan.md");
+    expect(out).toEqual([{ kind: "note", path: "New/Plan.md" }]);
+    vi.mocked(tauri.findFilesByExactName).mockResolvedValue([]);
+    expect(await prepareRefs("", refs, createRefIo("/vault"))).toEqual(refs);
+    vi.mocked(tauri.findFilesByExactName).mockResolvedValue(["A/Plan.md", "B/Plan.md"]);
+    expect(await prepareRefs("", refs, createRefIo("/vault"))).toEqual(refs);
   });
 
   it("does not re-resolve a token a pick already owns", async () => {

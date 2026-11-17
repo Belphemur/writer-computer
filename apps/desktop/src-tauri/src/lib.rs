@@ -698,6 +698,7 @@ pub fn run() {
             commands::bases::note_properties,
             commands::search::fuzzy_search,
             commands::search::find_file_by_name,
+            commands::search::find_files_by_exact_name,
             commands::search::resolve_wiki_link,
             commands::images::save_clipboard_image,
             commands::settings::get_settings,
