@@ -14,6 +14,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     activeFilePath: "/ws/a.md",
     hasActiveTab: true,
     tabCount: 2,
+    hasClosedTabs: false,
     hasPluginLeaves: false,
     close: fn(),
     toggleSidebar: fn(),
@@ -22,6 +23,7 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     openFileInCompactWindow: fn(),
     closeActiveTab: fn(),
     closeAllTabs: fn(),
+    reopenClosedTab: fn(),
     openWorkspace: vi.fn(async () => {}),
     closeWorkspace: fn(),
     toggleTheme: fn(),
@@ -63,6 +65,12 @@ describe("palette built-in commands", () => {
       "open-log-folder",
       "copy-recent-errors",
       "open-settings",
+      "agent-toggle-pane",
+      "agent-new-chat",
+      "agent-history",
+      // development builds only (`import.meta.env.DEV`, true under vitest)
+      "agent-use-demo-backend",
+      "agent-new-project",
     ]);
   });
 
@@ -81,6 +89,18 @@ describe("palette built-in commands", () => {
       "open-log-folder",
       "copy-recent-errors",
     ]);
+  });
+
+  it("offers Reopen Closed Tab only when a tab was closed and not in a compact window", () => {
+    expect(ids(resolveCommands(ctx(), []))).not.toContain("reopen-closed-tab");
+    const c = ctx({ hasClosedTabs: true });
+    const cmd = resolveCommands(c, []).find((x) => x.id === "reopen-closed-tab")!;
+    expect(cmd.label).toBe("Reopen Closed Tab");
+    cmd.run();
+    expect(c.reopenClosedTab).toHaveBeenCalledTimes(1);
+    expect(
+      ids(resolveCommands(ctx({ hasClosedTabs: true, isCompactFileMode: true }), [])),
+    ).not.toContain("reopen-closed-tab");
   });
 
   it("offers the log commands in every window and runs them", () => {

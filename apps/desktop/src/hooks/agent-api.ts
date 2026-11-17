@@ -1,0 +1,57 @@
+/**
+ * Imperative (non-reactive) access to the agent pane for event handlers, the palette and the
+ * keyboard hook (docs/react-guidelines.md: an API module, not `store.getState()` in components).
+ */
+import { useAgentStore, type AgentBackend, type AgentView, type Draft } from "@/stores/agent-store";
+import type { AgentPermissionMode, ChatId, PermissionPersist } from "@/lib/agent/events";
+
+export const toggleAgentPane = () => useAgentStore.getState().togglePane();
+export const openAgentPane = () => useAgentStore.getState().openPane();
+export const closeAgentPane = () => useAgentStore.getState().closePane();
+export const isAgentPaneOpen = () => useAgentStore.getState().paneOpen;
+export const setAgentPaneWidth = (w: number, persist = true) =>
+  useAgentStore.getState().setPaneWidth(w, persist);
+export const persistAgentPaneWidth = () => useAgentStore.getState().persistPaneWidth();
+export const openSavedAgentChat = (id: ChatId) => useAgentStore.getState().openSavedChat(id);
+export const setAgentView = (v: AgentView) => useAgentStore.getState().setView(v);
+export const setAgentBackend = (b: AgentBackend) => useAgentStore.getState().setBackend(b);
+
+/** Opens the pane on a fresh chat ("Agent: new chat"). */
+export function startNewAgentChat(projectPath?: string | null) {
+  const s = useAgentStore.getState();
+  s.newChat(projectPath);
+  if (!s.paneOpen) useAgentStore.setState({ paneOpen: true });
+}
+/** Opens the pane on the history view ("Agent: history"). Lane 4 renders the list. */
+export function openAgentHistory() {
+  const s = useAgentStore.getState();
+  if (s.order.length === 0) s.newChat();
+  useAgentStore.setState({ paneOpen: true, view: "history" });
+}
+export const closeAgentChat = (id: ChatId) => useAgentStore.getState().closeChat(id);
+export const selectAgentChat = (id: ChatId) => useAgentStore.getState().selectChat(id);
+export const cycleAgentChat = (d: 1 | -1) => useAgentStore.getState().cycleChat(d);
+export const setAgentDraft = (id: ChatId, patch: Partial<Draft>) =>
+  useAgentStore.getState().setDraft(id, patch);
+export const sendAgentMessage = (text: string) => useAgentStore.getState().sendMessage(text);
+export const stopAgent = () => useAgentStore.getState().stop();
+export const removeQueuedMessage = (id: ChatId) => useAgentStore.getState().removeQueued(id);
+export const retryAgent = () => useAgentStore.getState().retry();
+export const detectAgentBinary = (override?: string | null) =>
+  useAgentStore.getState().detectBinary(override);
+export const decideAgentPermission = (
+  requestId: string,
+  decision: "allow" | "deny",
+  persist?: PermissionPersist,
+  message?: string,
+) => useAgentStore.getState().decidePermission(requestId, decision, persist, message);
+export const setAgentPermissionMode = (m: AgentPermissionMode) =>
+  useAgentStore.getState().setPermissionMode(m);
+export const openNewProjectDialog = (opts?: { folder?: string | null }) =>
+  useAgentStore.getState().openNewProjectDialog(opts);
+
+export function hasPendingAgentPermission(): boolean {
+  const s = useAgentStore.getState();
+  const chat = s.activeChatId ? s.chats[s.activeChatId] : null;
+  return (chat?.pendingPermissions.length ?? 0) > 0;
+}

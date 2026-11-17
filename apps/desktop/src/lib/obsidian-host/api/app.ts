@@ -6,7 +6,6 @@ import { parseFrontmatter, serializeFile } from "@/lib/frontmatter";
 import {
   type CommandRegistry,
   Keymap,
-  Scope,
   type HostServices,
   type Plugin,
   type PluginManifest,
@@ -17,7 +16,9 @@ import { registerPluginBasesView } from "./bases-view";
 import { parseYaml, stringifyYaml } from "./functions";
 import type { Modal } from "./ui";
 import { MetadataCache, Vault, type TAbstractFile, type TFile, type VaultIo } from "./vault";
-import { detachedBridge, Workspace, type WorkspaceBridge } from "./views";
+import { createCanvasPluginStub } from "./canvas-compat";
+import { HotkeyManager } from "./hotkey-manager";
+import { createViewRegistry, detachedBridge, Workspace, type WorkspaceBridge } from "./views";
 
 export interface AppDeps {
   io: VaultIo;
@@ -94,7 +95,11 @@ export class App {
   workspace: Workspace;
   fileManager: FileManager;
   keymap = new Keymap();
-  scope = new Scope();
+  scope = this.keymap.getRootScope();
+  /** Undocumented: plugins register their default hotkeys here. */
+  hotkeyManager = new HotkeyManager();
+  /** Public `App.isMobile`: Writer is the desktop app. */
+  isMobile = false;
   lastEvent: Event | null = null;
   appId: string;
   /** Open Modals; the host closes them when a plugin is disabled. */
@@ -136,6 +141,8 @@ export class App {
    * manager (the same `shell.showItemInFolder` a plugin gets from `require("electron")`).
    */
   internalPlugins = {
+    /** Core plugins by id; only the Canvas stand-in Excalidraw's embedded notes reach for. */
+    plugins: { canvas: createCanvasPluginStub(() => this) } as Record<string, unknown>,
     getPluginById: (id: string) =>
       id === "file-explorer"
         ? {
@@ -149,10 +156,23 @@ export class App {
     getEnabledPluginById: (_id: string) => null,
   };
 
+  /**
+   * Undocumented `metadataTypeManager` (Tasks, Meta Bind, Dataview-adjacent plugins): property
+   * names and types derived from the frontmatter of every indexed note. `setType` keeps a local
+   * assignment for the session (Writer has no `types.json`).
+   */
+  metadataTypeManager = new MetadataTypeManager(() => this.metadataCache);
+
   private readonly basePath: string;
 
   /** Undocumented in the d.ts but plugins feature-detect these (Copilot, command palettes). */
   commands = commandsFacade(() => this.services.commands);
+
+  /**
+   * Undocumented `viewRegistry`: which view type opens a file extension, from the plugins'
+   * `registerExtensions` calls (removed with the plugin).
+   */
+  viewRegistry = createViewRegistry(() => this.services.registrations.list());
 
   constructor(
     public services: HostServices,
@@ -186,6 +206,17 @@ export class App {
     return registerPluginBasesView(this, pluginId, viewId, registration);
   }
 
+  /** The accent colour of the active theme (`--interactive-accent`, else Writer's accent). */
+  getAccentColor(): string {
+    if (typeof document === "undefined") return "";
+    const style = getComputedStyle(document.documentElement);
+    return (
+      style.getPropertyValue("--interactive-accent").trim() ||
+      style.getPropertyValue("--accent").trim() ||
+      "#7c3aed"
+    );
+  }
+
   isDarkMode(): boolean {
     return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
   }
@@ -211,4 +242,65 @@ export class App {
 /** Convenience: services + app in one call. */
 export function createApp(deps: AppDeps): App {
   return new App(deps.services, deps);
+}
+
+export interface PropertyInfo {
+  name: string;
+  type: string;
+  count: number;
+}
+
+function inferType(value: unknown): string {
+  if (typeof value === "boolean") return "checkbox";
+  if (typeof value === "number") return "number";
+  if (Array.isArray(value)) return "multitext";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return "datetime";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return "date";
+  return "text";
+}
+
+/** Property registry over the metadata cache (`app.metadataTypeManager`). */
+export class MetadataTypeManager {
+  private assigned = new Map<string, string>();
+  constructor(private cache: () => MetadataCache) {}
+
+  /** Keyed by lower-cased property name, like Obsidian. */
+  getAllProperties(): Record<string, PropertyInfo> {
+    const out: Record<string, PropertyInfo> = {};
+    const cache = this.cache();
+    for (const path of cache.getCachedFiles()) {
+      const fm = cache.getCache(path)?.frontmatter;
+      if (!fm) continue;
+      for (const [name, value] of Object.entries(fm)) {
+        if (name === "position") continue;
+        const key = name.toLowerCase();
+        const entry = (out[key] ??= {
+          name,
+          type: this.assigned.get(key) ?? inferType(value),
+          count: 0,
+        });
+        entry.count++;
+      }
+    }
+    return out;
+  }
+  getAllPropertyInfos(): Record<string, PropertyInfo> {
+    return this.getAllProperties();
+  }
+  getPropertyInfo(name: string): PropertyInfo | undefined {
+    return this.getAllProperties()[name.toLowerCase()];
+  }
+  getAssignedType(name: string): string | null {
+    return this.assigned.get(name.toLowerCase()) ?? null;
+  }
+  getAssignedWidget(name: string): string | null {
+    return this.getAssignedType(name);
+  }
+  setType(name: string, type: string): Promise<void> {
+    this.assigned.set(name.toLowerCase(), type);
+    return Promise.resolve();
+  }
+  getTypeInfo(): undefined {
+    return undefined;
+  }
 }

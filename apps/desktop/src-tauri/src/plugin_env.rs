@@ -289,7 +289,9 @@ pub struct OsInfo {
     pub env: BTreeMap<String, String>,
 }
 
-fn secret_looking(name: &str) -> bool {
+/// Env var names that look like secrets; shared with `agent::env`, which allows a short list of
+/// exceptions the claude CLI needs.
+pub fn secret_looking(name: &str) -> bool {
     let u = name.to_ascii_uppercase();
     ["KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"]
         .iter()

@@ -23,6 +23,8 @@ import {
   useActiveTabId,
   useCloseActiveTab,
   useCloseTab,
+  useHasClosedTabs,
+  useReopenClosedTab,
   useOpenFile,
   useOpenSettingsTab,
   useOpenTabs,
@@ -42,6 +44,7 @@ import { resolveCommands } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
 import { openStandaloneFile } from "@/hooks/use-open-drop";
+import { rankCandidates } from "@/lib/search-rank";
 import { getFileName, getFileStem, getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
 import type { RecentFile } from "@/lib/tauri";
@@ -54,6 +57,32 @@ function toCreatePath(root: string, rawName: string) {
 
 function matchesSearch(text: string, q: string) {
   return text.toLowerCase().includes(q.toLowerCase());
+}
+
+/**
+ * Compact windows have no index: rank the global recents (file name, path and title) with the
+ * shared TS scorer, boosted by when each was opened. An empty query keeps the recents order.
+ */
+function rankGlobalRecents(files: RecentFile[], query: string): RecentFile[] {
+  const recency = (f: RecentFile) => ({ openedMs: f.opened_at > 0 ? f.opened_at * 1000 : null });
+  const opts = { nowMs: Date.now(), recency: true };
+  const byPath = rankCandidates(
+    files.map((item) => ({ item, path: item.path, recency: recency(item) })),
+    query,
+    opts,
+  );
+  const byTitle = rankCandidates(
+    files
+      .filter((f) => f.title)
+      .map((item) => ({ item, path: `${item.title}.md`, recency: recency(item) })),
+    query,
+    opts,
+  );
+  const best = new Map<RecentFile, number>();
+  for (const { item, score } of [...byPath, ...byTitle]) {
+    best.set(item, Math.max(best.get(item) ?? -Infinity, score));
+  }
+  return files.filter((f) => best.has(f)).sort((a, b) => (best.get(b) ?? 0) - (best.get(a) ?? 0));
 }
 
 function HighlightedPath({ path, indices }: { path: string; indices: number[] }) {
@@ -91,6 +120,8 @@ function FilePalette() {
   const activeTabId = useActiveTabId();
   const activeFilePath = useActiveFilePath();
   const tabs = useOpenTabs();
+  const hasClosedTabs = useHasClosedTabs();
+  const reopenClosedTab = useReopenClosedTab();
   const { toggleTheme } = useTheme();
   const openSettingsTab = useOpenSettingsTab();
   const isCompactFileMode = useIsCompactFileMode();
@@ -104,7 +135,11 @@ function FilePalette() {
   const fileQuery = isCreateIntent ? "" : search;
   // Standalone compact windows have no workspace index — search filters the
   // global recents list client-side instead of hitting fuzzy_search.
-  const { results, error: searchError } = useFuzzySearch(isCompactFileMode ? "" : fileQuery);
+  const { results, error: searchError } = useFuzzySearch(
+    fileQuery,
+    20,
+    isOpen && !isCompactFileMode && !isCreateIntent,
+  );
   const { files: globalRecents } = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
   // In standalone mode new files are created next to the active file.
   const createBaseDir = root ?? (activeFilePath ? getParentDir(activeFilePath) : null);
@@ -153,6 +188,7 @@ function FilePalette() {
           activeFilePath,
           hasActiveTab: activeTabId !== null,
           tabCount: tabs.length,
+          hasClosedTabs,
           hasPluginLeaves: pluginLeaves.length > 0,
           close,
           toggleSidebar,
@@ -160,6 +196,7 @@ function FilePalette() {
           openSearchNotes: () => openCommandPalette("search-notes"),
           openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
           closeActiveTab,
+          reopenClosedTab: () => void reopenClosedTab(),
           closeAllTabs: () => {
             for (const tab of tabs) closeTab(tab.id);
           },
@@ -187,24 +224,50 @@ function FilePalette() {
         pluginCommands,
       );
 
-  const visibleFiles: SearchResult[] =
-    !isCreateIntent && trimmedSearch && !isCompactFileMode ? results : [];
+  // An empty query lists recent files (opened first, then modified) above the commands.
+  const visibleFiles: SearchResult[] = !isCreateIntent && !isCompactFileMode ? results : [];
   const visibleRecents: RecentFile[] =
-    !isCreateIntent && isCompactFileMode && trimmedSearch
-      ? globalRecents.filter(
-          (entry) =>
-            matchesSearch(entry.title ?? "", trimmedSearch) ||
-            matchesSearch(entry.name, trimmedSearch) ||
-            matchesSearch(entry.path, trimmedSearch),
-        )
+    !isCreateIntent && isCompactFileMode
+      ? trimmedSearch
+        ? rankGlobalRecents(globalRecents, trimmedSearch)
+        : globalRecents
       : [];
   const visibleCommands = isCreateIntent
     ? []
     : trimmedSearch
       ? commands.filter((c) => matchesSearch(c.label, trimmedSearch))
       : commands;
-  const firstValue =
-    visibleCommands[0]?.id ?? visibleFiles[0]?.path ?? visibleRecents[0]?.path ?? "";
+  // Typed query: commands match first; empty query: recent files come first.
+  const firstValue = trimmedSearch
+    ? (visibleCommands[0]?.id ?? visibleFiles[0]?.path ?? visibleRecents[0]?.path ?? "")
+    : (visibleFiles[0]?.path ?? visibleRecents[0]?.path ?? visibleCommands[0]?.id ?? "");
+
+  const commandItems = visibleCommands.map((c) => (
+    <CommandItem key={c.id} value={c.id} onSelect={c.run}>
+      <div className="flex flex-col">
+        <span>{c.label}</span>
+        <span className="text-[13px] text-text-muted">{c.description}</span>
+      </div>
+    </CommandItem>
+  ));
+  const fileItems = visibleFiles.map((r) => (
+    <CommandItem key={r.path} value={r.path} onSelect={() => handleSelect(r.path)}>
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate">{getFileName(r.path)}</span>
+        <span className="truncate text-[13px] text-text-muted">
+          <HighlightedPath path={r.relative_path} indices={r.match_indices} />
+        </span>
+      </div>
+    </CommandItem>
+  ));
+  const recentItems = visibleRecents.map((entry) => (
+    <CommandItem key={entry.path} value={entry.path} onSelect={() => handleSelect(entry.path)}>
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate">{entry.title || getFileStem(entry.name)}</span>
+        <span className="truncate text-[13px] text-text-muted">{getParentDir(entry.path)}</span>
+      </div>
+    </CommandItem>
+  ));
 
   const listRef = useRef<HTMLDivElement>(null);
   const [selectedValue, setSelectedValue] = useState(firstValue);
@@ -260,49 +323,28 @@ function FilePalette() {
                 </CommandEmpty>
               )}
 
-            {(visibleFiles.length > 0 ||
-              visibleRecents.length > 0 ||
-              visibleCommands.length > 0) && (
-              <CommandGroup
-                heading={
-                  trimmedSearch ? (isIndexing ? "Results (indexing...)" : "Results") : "Suggested"
-                }
-              >
-                {visibleCommands.map((c) => (
-                  <CommandItem key={c.id} value={c.id} onSelect={c.run}>
-                    <div className="flex flex-col">
-                      <span>{c.label}</span>
-                      <span className="text-[13px] text-text-muted">{c.description}</span>
-                    </div>
-                  </CommandItem>
-                ))}
-
-                {visibleFiles.map((r) => (
-                  <CommandItem key={r.path} value={r.path} onSelect={() => handleSelect(r.path)}>
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate">{getFileName(r.path)}</span>
-                      <span className="truncate text-[13px] text-text-muted">
-                        <HighlightedPath path={r.relative_path} indices={r.match_indices} />
-                      </span>
-                    </div>
-                  </CommandItem>
-                ))}
-
-                {visibleRecents.map((entry) => (
-                  <CommandItem
-                    key={entry.path}
-                    value={entry.path}
-                    onSelect={() => handleSelect(entry.path)}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate">{entry.title || getFileStem(entry.name)}</span>
-                      <span className="truncate text-[13px] text-text-muted">
-                        {getParentDir(entry.path)}
-                      </span>
-                    </div>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+            {trimmedSearch ? (
+              (visibleFiles.length > 0 ||
+                visibleRecents.length > 0 ||
+                visibleCommands.length > 0) && (
+                <CommandGroup heading={isIndexing ? "Results (indexing...)" : "Results"}>
+                  {commandItems}
+                  {fileItems}
+                  {recentItems}
+                </CommandGroup>
+              )
+            ) : (
+              <>
+                {(visibleFiles.length > 0 || visibleRecents.length > 0) && (
+                  <CommandGroup heading="Recent">
+                    {fileItems}
+                    {recentItems}
+                  </CommandGroup>
+                )}
+                {visibleCommands.length > 0 && (
+                  <CommandGroup heading="Suggested">{commandItems}</CommandGroup>
+                )}
+              </>
             )}
           </>
         )}

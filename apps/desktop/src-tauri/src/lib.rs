@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod bases;
 pub mod cli;
 mod commands;
@@ -10,6 +11,8 @@ pub mod index;
 pub mod logging;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+mod macos_mouse;
 pub mod managed_skills;
 pub mod open_target;
 mod plugin_consent;
@@ -361,6 +364,11 @@ fn install_app_menu(
         )),
     )));
 
+    // Agent projects: the runner resolves cwd and the appended system prompt through this port.
+    app.state::<agent::session::AgentSessions>()
+        .ports()
+        .set_project(std::sync::Arc::new(agent::project_context::ProjectLibrary));
+
     #[cfg(target_os = "macos")]
     {
         app.manage(CliMenuItem(cli_item));
@@ -539,6 +547,7 @@ pub fn run() {
         .manage(AppState::new())
         .manage(plugin_http::StreamRegistry::default())
         .manage(plugin_proc::ProcManager::default())
+        .manage(agent::session::AgentSessions::default())
         .manage(plugin_env::PluginEnv::default())
         .manage(commands::index::IndexRegistry::default())
         .setup(|app| {
@@ -593,6 +602,8 @@ pub fn run() {
                 install_app_menu(app.handle(), config_dir)?;
                 #[cfg(target_os = "macos")]
                 dock_menu::install(app.handle());
+                #[cfg(target_os = "macos")]
+                macos_mouse::install(app.handle());
 
                 // Kick off the launch check once the window is ready to show
                 // any follow-up dialogs on top of a visible app.
@@ -670,6 +681,30 @@ pub fn run() {
             commands::settings::set_setting,
             commands::settings::reset_setting,
             commands::skills::sync_managed_skills,
+            commands::agent::agent_detect_binary,
+            commands::agent::agent_start,
+            commands::agent::agent_send,
+            commands::agent::agent_cancel,
+            commands::agent::agent_permission,
+            commands::agent::agent_set_permission_mode,
+            commands::agent::agent_close,
+            commands::agent::agent_resume,
+            commands::agent::agent_snapshot,
+            commands::agent_chats::agent_list_chats,
+            commands::agent_chats::agent_load_chat,
+            commands::agent_chats::agent_save_chat,
+            commands::agent_chats::agent_chat_action,
+            commands::agent_chats::agent_chat_replay,
+            commands::agent_chats::agent_permission_rules,
+            commands::agent_chats::agent_remove_permission_rule,
+            commands::agent_projects::agent_list_projects,
+            commands::agent_projects::agent_read_project,
+            commands::agent_projects::agent_create_project,
+            commands::agent_projects::agent_make_project,
+            commands::agent_projects::agent_update_project,
+            commands::agent_projects::agent_archive_project,
+            commands::agent_projects::agent_inspect_folder,
+            commands::agent_projects::agent_project_manifest,
             telemetry::telemetry_should_prompt,
             telemetry::telemetry_mark_prompted,
             telemetry::telemetry_report_declined,
@@ -723,6 +758,7 @@ pub fn run() {
             if matches!(_event, tauri::RunEvent::Exit) {
                 logging::log_exit("exit", None);
                 _app.state::<plugin_proc::ProcManager>().kill_all();
+                _app.state::<agent::session::AgentSessions>().kill_all();
                 logging::shutdown();
             }
             // Dock click with every window hidden or closed: bring the main

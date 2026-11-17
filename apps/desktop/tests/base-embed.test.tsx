@@ -617,6 +617,33 @@ describe("embedded base: behaviour", () => {
     expect(host.querySelector("[data-base-notice]")?.textContent).toContain("read-only");
   });
 
+  it("double-click on a divider fits the column, persists columnSize to the .base and stays inside the widget", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      font: "",
+      measureText: (t: string) => ({ width: t.length * 10 }),
+    } as unknown as CanvasRenderingContext2D);
+    let text = "views:\n  - type: table\n    name: Table\n";
+    m.baseRead.mockImplementation(async () => ({ text, document: baseDocument(), error: null }));
+    m.baseWriteText.mockImplementation(async (_p, content) => {
+      text = content;
+    });
+    await mountEmbed(fileEmbed);
+    const leaked = vi.fn();
+    document.body.addEventListener("dblclick", leaked);
+    const handle = host.querySelector<HTMLElement>("[data-resize-handle]")!;
+    await act(async () => {
+      handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    });
+    await flush();
+    document.body.removeEventListener("dblclick", leaked);
+    expect(leaked).not.toHaveBeenCalled();
+    expect(m.baseWriteText).toHaveBeenCalledTimes(1);
+    expect(m.baseWriteText.mock.calls[0]![0]).toBe(BASE_PATH);
+    expect(m.baseWriteText.mock.calls[0]![1]).toContain("columnSize");
+    expect(m.baseWriteText.mock.calls[0]![1]).toContain("file.name: 67");
+    expect(m.notePropertySet).not.toHaveBeenCalled();
+  });
+
   it("Open base opens the file in a new tab with the chosen view", async () => {
     await mountEmbed(fileEmbed);
     await pickView(host, "Board");

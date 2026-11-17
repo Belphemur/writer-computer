@@ -376,6 +376,19 @@ export class WorkspaceItem extends Events {
 }
 export class WorkspaceParent extends WorkspaceItem {
   children: WorkspaceItem[] = [];
+  insertChild(index: number, child: WorkspaceItem, _resize?: boolean): void {
+    this.children.splice(index, 0, child);
+    child.parent = this;
+  }
+  removeChild(child: WorkspaceItem, _resize?: boolean): void {
+    const i = this.children.indexOf(child);
+    if (i >= 0) this.children.splice(i, 1);
+    if (child.parent === this) child.parent = null;
+  }
+  replaceChild(index: number, child: WorkspaceItem, _resize?: boolean): void {
+    this.children[index] = child;
+    child.parent = this;
+  }
 }
 export class WorkspaceSplit extends WorkspaceParent {
   direction: "vertical" | "horizontal" = "vertical";

@@ -1,0 +1,283 @@
+/**
+ * One registry for how a tool is named, grouped and summarised (docs/consolidation.md): the
+ * permission card's "Type" line, the timeline row label and the group header all read it.
+ */
+import type { PermissionPersist, PermissionSuggestion } from "./events";
+import type { PermissionView } from "./transcript";
+
+export type ToolKind = "execute" | "edit" | "read" | "fetch" | "agent" | "other";
+
+type ToolSpec = {
+  kind: ToolKind;
+  /** Past and present verb for the row label ("Ran" / "Running"). */
+  past: string;
+  present: string;
+  /** Input keys tried, in order, for the one-line primary argument. */
+  primary: string[];
+  /** Noun used by group headers ("Read 3 notes"). */
+  noun: [singular: string, plural: string];
+};
+
+const SPECS: Record<string, ToolSpec> = {
+  Bash: {
+    kind: "execute",
+    past: "Ran",
+    present: "Running",
+    primary: ["command"],
+    noun: ["command", "commands"],
+  },
+  BashOutput: {
+    kind: "execute",
+    past: "Read output of",
+    present: "Reading output of",
+    primary: ["bash_id"],
+    noun: ["command", "commands"],
+  },
+  KillShell: {
+    kind: "execute",
+    past: "Stopped",
+    present: "Stopping",
+    primary: ["shell_id"],
+    noun: ["command", "commands"],
+  },
+  Read: {
+    kind: "read",
+    past: "Read",
+    present: "Reading",
+    primary: ["file_path", "path"],
+    noun: ["note", "notes"],
+  },
+  Grep: {
+    kind: "read",
+    past: "Searched",
+    present: "Searching",
+    primary: ["pattern"],
+    noun: ["search", "searches"],
+  },
+  Glob: {
+    kind: "read",
+    past: "Listed",
+    present: "Listing",
+    primary: ["pattern"],
+    noun: ["search", "searches"],
+  },
+  LS: {
+    kind: "read",
+    past: "Listed",
+    present: "Listing",
+    primary: ["path"],
+    noun: ["folder", "folders"],
+  },
+  Write: {
+    kind: "edit",
+    past: "Wrote",
+    present: "Writing",
+    primary: ["file_path", "path"],
+    noun: ["note", "notes"],
+  },
+  Edit: {
+    kind: "edit",
+    past: "Edited",
+    present: "Editing",
+    primary: ["file_path", "path"],
+    noun: ["note", "notes"],
+  },
+  MultiEdit: {
+    kind: "edit",
+    past: "Edited",
+    present: "Editing",
+    primary: ["file_path", "path"],
+    noun: ["note", "notes"],
+  },
+  NotebookEdit: {
+    kind: "edit",
+    past: "Edited",
+    present: "Editing",
+    primary: ["notebook_path"],
+    noun: ["note", "notes"],
+  },
+  WebFetch: {
+    kind: "fetch",
+    past: "Fetched",
+    present: "Fetching",
+    primary: ["url"],
+    noun: ["page", "pages"],
+  },
+  WebSearch: {
+    kind: "fetch",
+    past: "Searched the web for",
+    present: "Searching the web for",
+    primary: ["query"],
+    noun: ["search", "searches"],
+  },
+  Task: {
+    kind: "agent",
+    past: "Ran subagent",
+    present: "Running subagent",
+    primary: ["description"],
+    noun: ["subagent", "subagents"],
+  },
+  Agent: {
+    kind: "agent",
+    past: "Ran subagent",
+    present: "Running subagent",
+    primary: ["description"],
+    noun: ["subagent", "subagents"],
+  },
+};
+
+const FALLBACK: ToolSpec = {
+  kind: "other",
+  past: "Used",
+  present: "Using",
+  primary: ["description", "query", "path", "file_path", "command", "url"],
+  noun: ["tool", "tools"],
+};
+
+export const toolSpec = (tool: string): ToolSpec => SPECS[tool] ?? FALLBACK;
+export const toolKind = (tool: string): ToolKind => toolSpec(tool).kind;
+
+export const KIND_LABEL: Record<ToolKind, string> = {
+  execute: "Run a command",
+  edit: "Edit a file",
+  read: "Read",
+  fetch: "Fetch from the web",
+  agent: "Run a subagent",
+  other: "Other",
+};
+
+export function asRecord(input: unknown): Record<string, unknown> | null {
+  if (typeof input === "object" && input !== null && !Array.isArray(input))
+    return input as Record<string, unknown>;
+  return null;
+}
+
+/** The one-line argument shown next to the verb: the command, path, pattern or URL. */
+export function primaryArg(tool: string, input: unknown): string {
+  const rec = asRecord(input);
+  if (!rec) return typeof input === "string" ? firstLine(input) : "";
+  for (const key of toolSpec(tool).primary) {
+    const v = rec[key];
+    if (typeof v === "string" && v) return firstLine(v);
+  }
+  return "";
+}
+
+export function firstLine(text: string): string {
+  return text.split("\n", 1)[0]!.trim();
+}
+
+export function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/** Last path segment, for tidy labels; the full path stays in the expanded input. */
+export function baseName(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+/** "Ran `ls`", "Reading notes.md": verb plus the primary argument. */
+export function toolLabel(tool: string, input: unknown, running: boolean): string {
+  const spec = toolSpec(tool);
+  const verb = running ? spec.present : spec.past;
+  const arg = primaryArg(tool, input);
+  const shown = spec.kind === "read" || spec.kind === "edit" ? baseName(arg) : arg;
+  if (spec.kind === "other") return `${verb} ${tool}${shown ? `: ${truncate(shown, 80)}` : ""}`;
+  return shown ? `${verb} ${truncate(shown, 80)}` : `${verb} ${tool}`;
+}
+
+/** "Ran 3 commands", "Read 2 notes", "Used 4 tools" for one run of consecutive tool calls. */
+export function groupTitle(tools: readonly string[], running: boolean): string {
+  if (tools.length === 0) return running ? "Working" : "Thought";
+  const kinds = new Set(tools.map((t) => toolSpec(t).noun[0]));
+  const specs = tools.map(toolSpec);
+  const first = specs[0]!;
+  if (kinds.size === 1) {
+    const [one, many] = first.noun;
+    const n = tools.length;
+    const verb = running ? first.present : first.past;
+    return `${verb} ${n} ${n === 1 ? one : many}`;
+  }
+  return `${running ? "Using" : "Used"} ${tools.length} tools`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Permission card
+
+export type PermissionChoice = {
+  persist: PermissionPersist;
+  label: string;
+  /** The rule text, when the choice adds one ("Bash(python3 -c 'print(1)')"). */
+  rule: string | null;
+};
+
+function ruleText(s: PermissionSuggestion): string[] {
+  return (s.rules ?? []).map((r) =>
+    r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName,
+  );
+}
+
+/**
+ * "Always allow" choices, a pure function of the suggestions the CLI sent (spec 6.2): none is
+ * invented. `addRules` offers project and chat scope; `setMode acceptEdits` offers auto-edit.
+ */
+export function permissionChoices(
+  suggestions: readonly PermissionSuggestion[],
+): PermissionChoice[] {
+  const out: PermissionChoice[] = [];
+  const add = suggestions.find((s) => s.type === "addRules" && s.behavior !== "deny");
+  if (add) {
+    const rule = ruleText(add).join(", ") || null;
+    out.push({ persist: "project", label: "In this project", rule });
+    out.push({ persist: "session", label: "For this chat", rule });
+  }
+  if (suggestions.some((s) => s.type === "setMode" && s.mode === "acceptEdits"))
+    out.push({ persist: "accept-edits", label: "Auto-edit files this chat", rule: null });
+  return out;
+}
+
+/** "The agent wants to run Bash: ls" for the card body (spec 6.2). */
+export function permissionSummary(req: PermissionView): string {
+  const name = req.displayName ?? req.tool;
+  const arg = primaryArg(req.tool, req.input);
+  switch (toolKind(req.tool)) {
+    case "execute":
+      return `The agent wants to run ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
+    case "edit": {
+      const verb = req.tool === "Write" ? "write" : "edit";
+      return `The agent wants to ${verb}${arg ? ` ${truncate(arg, 140)}` : ` with ${name}`}`;
+    }
+    default:
+      return `The agent wants to use ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
+  }
+}
+
+/** Content preview for Edit/Write in "Show details", capped at 200 lines. */
+export function editPreview(tool: string, input: unknown): string | null {
+  const rec = asRecord(input);
+  if (!rec) return null;
+  const cap = (s: string) => {
+    const lines = s.split("\n");
+    return lines.length > 200
+      ? `${lines.slice(0, 200).join("\n")}\n… ${lines.length - 200} more lines`
+      : s;
+  };
+  if (tool === "Write" && typeof rec.content === "string") return cap(rec.content);
+  if (typeof rec.old_string === "string" && typeof rec.new_string === "string")
+    return cap(
+      `- ${rec.old_string.split("\n").join("\n- ")}\n+ ${rec.new_string.split("\n").join("\n+ ")}`,
+    );
+  return null;
+}
+
+/** Pretty JSON of a tool input for the expanded row (or the raw partial text while streaming). */
+export function inputJson(input: unknown, partial: string): string {
+  if (input === undefined) return partial;
+  if (typeof input === "string") return input;
+  try {
+    return JSON.stringify(input, null, 2);
+  } catch {
+    return "(input cannot be shown)";
+  }
+}

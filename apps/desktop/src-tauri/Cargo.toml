@@ -71,7 +71,8 @@ unicode-normalization = "0.1.26"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6.4"
+objc2 = { version = "0.6.4", features = ["exception"] }
+block2 = "0.6.2"
 
 [features]
 # Embeds a W3C WebDriver server in the app for local E2E testing with

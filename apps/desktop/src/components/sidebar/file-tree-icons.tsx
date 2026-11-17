@@ -1,5 +1,5 @@
 import { HugeiconsIcon } from "@hugeicons/react";
-import { File02Icon } from "@hugeicons/core-free-icons";
+import { File02Icon, SparklesIcon } from "@hugeicons/core-free-icons";
 
 // Shared file/folder glyphs used by file-tree rows and the drag ghost so they
 // stay visually identical.
@@ -41,4 +41,19 @@ export function FolderIcon({ isExpanded }: { isExpanded: boolean }) {
 
 export function FileIcon() {
   return <HugeiconsIcon icon={File02Icon} size={16} color="currentColor" strokeWidth={1.8} />;
+}
+
+/** Marks a folder that holds an agent project (`project.md` with a project id). */
+export function ProjectBadge() {
+  return (
+    <span
+      role="img"
+      aria-label="Agent project"
+      title="Agent project"
+      data-testid="project-badge"
+      className="ml-auto flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70"
+    >
+      <HugeiconsIcon icon={SparklesIcon} size={12} color="currentColor" strokeWidth={1.8} />
+    </span>
+  );
 }

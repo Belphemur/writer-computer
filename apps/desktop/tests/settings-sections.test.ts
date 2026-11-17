@@ -44,6 +44,7 @@ describe("settings section registry", () => {
       "Editor",
       "Appearance",
       "Files & vault",
+      "Agent",
       "Privacy",
       "Secrets",
       "Logs",

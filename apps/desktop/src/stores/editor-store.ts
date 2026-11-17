@@ -43,6 +43,17 @@ export interface Tab {
   forward: Location[];
 }
 
+/** A closed tab with the position it had, so reopening puts it back where it was. */
+export interface ClosedTab {
+  tab: Tab;
+  index: number;
+  /** Cursor and scroll the file had when the tab closed (the open-file entry is pruned then). */
+  view: { cursorPos: number; scrollPos: number } | null;
+}
+
+/** How many closed tabs are remembered (Chrome keeps about this many per window). */
+export const MAX_CLOSED_TABS = 25;
+
 export type { Location, FileLocation } from "@/components/editor-area/page-kinds";
 
 export interface SessionTab {
@@ -54,6 +65,8 @@ export interface SessionTab {
 interface EditorState {
   openFiles: Map<string, OpenFile>;
   tabs: Tab[];
+  /** Recently closed tabs, newest last, capped at `MAX_CLOSED_TABS` (the reopen stack). */
+  closedTabs: ClosedTab[];
   activeTabId: string | null;
   activeFilePath: string | null;
 
@@ -66,9 +79,17 @@ interface EditorState {
   ensureLauncherTab: () => void;
   openOrFocus: (match: (tab: Tab) => boolean, factory: () => Tab) => void;
   replaceTabWithFile: (tabId: string, path: string) => Promise<void>;
+  /**
+   * Shows `location` in tab `tabId`, keeping the old one in the back history (a file switching
+   * between its text editor and its plugin view). A text (`file`) location loads the document.
+   */
+  replaceTabLocation: (tabId: string, location: Location) => Promise<void>;
   closeFile: (path: string) => void;
-  closeTab: (tabId: string) => void;
+  /** `remember: false` skips the reopen stack (failed opens, deleted files). */
+  closeTab: (tabId: string, options?: { remember?: boolean }) => void;
   closeActiveTab: () => void;
+  /** Reopens the most recently closed tab (browser-style Cmd+Shift+T), at its old position. */
+  reopenClosedTab: () => Promise<boolean>;
   setActiveFile: (path: string) => void;
   setActiveTab: (tabId: string) => void;
   navigateToFile: (path: string) => Promise<void>;
@@ -135,6 +156,14 @@ export function createPluginViewTab(
   id = createTabId(),
 ): Tab {
   return { id, location: { kind: "plugin-view", ...target }, back: [], forward: [] };
+}
+
+/** A tab for a file a plugin's view shows (a plugin-created leaf adopted as a tab). */
+export function createPluginFileTab(
+  target: { path: string; viewType: string },
+  id = createTabId(),
+): Tab {
+  return { id, location: { kind: "plugin-file", ...target }, back: [], forward: [] };
 }
 
 const EMPTY_STATS: DocumentStats = { words: 0, characters: 0, paragraphs: 0 };
@@ -296,6 +325,17 @@ function applyRewriteToTab(tab: Tab, rewrite: (loc: Location) => Location | null
   return { ...tab, location: newLocation, back, forward };
 }
 
+/** Follows a rename or delete into the reopen stack; an entry whose tab is gone is dropped. */
+function rewriteClosedTabs(
+  closedTabs: ClosedTab[],
+  rewrite: (loc: Location) => Location | null,
+): ClosedTab[] {
+  return closedTabs.flatMap((entry) => {
+    const tab = applyRewriteToTab(entry.tab, rewrite);
+    return tab ? [{ ...entry, tab }] : [];
+  });
+}
+
 /** Is `path` a document: opened as text by default, or held by a `file` location of some tab
  *  (a `.base` opened with "Edit YAML" is a text document in that tab). */
 function needsDocument(path: string, tabs: readonly Tab[]): boolean {
@@ -305,8 +345,14 @@ function needsDocument(path: string, tabs: readonly Tab[]): boolean {
   );
 }
 
-async function ensureFileLoaded(path: string, set: EditorStateSetter, get: () => EditorState) {
-  if (!needsDocument(path, get().tabs)) return;
+async function ensureFileLoaded(
+  path: string,
+  set: EditorStateSetter,
+  get: () => EditorState,
+  /** Tabs about to be added, so a path only they hold as text (a `.base` as YAML) still loads. */
+  pendingTabs: readonly Tab[] = [],
+) {
+  if (!needsDocument(path, [...get().tabs, ...pendingTabs])) return;
   const existing = get().openFiles.get(path);
   if (existing && !existing.isLoading) return;
 
@@ -370,6 +416,7 @@ async function ensureFileLoaded(path: string, set: EditorStateSetter, get: () =>
 export const useEditorStore = create<EditorState>((set, get) => ({
   openFiles: new Map(),
   tabs: [],
+  closedTabs: [],
   activeTabId: null,
   activeFilePath: null,
 
@@ -411,7 +458,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await loadPromise;
     } catch {
-      get().closeTab(nextTab.id);
+      get().closeTab(nextTab.id, { remember: false });
     }
   },
 
@@ -473,7 +520,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await loadPromise;
     } catch {
-      get().closeTab(nextTab.id);
+      get().closeTab(nextTab.id, { remember: false });
     }
   },
 
@@ -496,7 +543,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await ensureFileLoaded(path, set as EditorStateSetter, get);
     } catch {
-      get().closeTab(nextTab.id);
+      get().closeTab(nextTab.id, { remember: false });
       throw new Error(`Failed to open ${path}`);
     }
   },
@@ -527,7 +574,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     try {
       await ensureFileLoaded(path, set as EditorStateSetter, get);
     } catch {
-      get().closeTab(nextTab.id);
+      get().closeTab(nextTab.id, { remember: false });
       throw new Error(`Failed to open ${path}`);
     }
   },
@@ -645,20 +692,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { activeTabId, tabs } = get();
     const activeTab = activeTabId ? tabs.find((tab) => tab.id === activeTabId) : null;
     if (activeTab && locationPrimaryPath(activeTab.location) === path) {
-      get().closeTab(activeTab.id);
+      get().closeTab(activeTab.id, { remember: false });
       return;
     }
 
     const targetTab = tabs.find((tab) => locationPrimaryPath(tab.location) === path);
-    if (targetTab) get().closeTab(targetTab.id);
+    if (targetTab) get().closeTab(targetTab.id, { remember: false });
   },
 
-  closeTab: (tabId: string) => {
+  closeTab: (tabId: string, options?: { remember?: boolean }) => {
     set((state) => {
       const index = getTabIndex(state.tabs, tabId);
       if (index === -1) return state;
 
       const closedTab = state.tabs[index]!;
+      // Blank launcher tabs are not worth reopening (browsers skip empty new-tab pages too).
+      // A plugin view holds a live leaf that dies with the tab: nothing to reopen.
+      const remember =
+        options?.remember !== false &&
+        closedTab.location.kind !== "launcher" &&
+        closedTab.location.kind !== "plugin-view";
+      const primary = locationPrimaryPath(closedTab.location);
+      const openFile = primary ? state.openFiles.get(primary) : undefined;
+      const closedTabs = remember
+        ? [
+            ...state.closedTabs,
+            {
+              tab: closedTab,
+              index,
+              view: openFile
+                ? { cursorPos: openFile.cursorPos, scrollPos: openFile.scrollPos }
+                : null,
+            },
+          ].slice(-MAX_CLOSED_TABS)
+        : state.closedTabs;
       let tabs = state.tabs.filter((tab) => tab.id !== tabId);
 
       let activeTabId = state.activeTabId;
@@ -674,6 +741,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       return {
         tabs,
+        closedTabs,
         activeTabId,
         activeFilePath: deriveActiveFilePath(tabs, activeTabId),
         ...(files ? { openFiles: files } : {}),
@@ -681,6 +749,48 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
 
     pendingNavigationVersionByTabId.delete(tabId);
+  },
+
+  reopenClosedTab: async () => {
+    // Newest first; an entry whose file is gone is dropped and the next older one is tried.
+    for (;;) {
+      const stack = get().closedTabs;
+      const entry = stack[stack.length - 1];
+      if (!entry) return false;
+      set({ closedTabs: stack.slice(0, -1) });
+
+      const primary = locationPrimaryPath(entry.tab.location);
+      const wasOpen = primary !== null && get().openFiles.has(primary);
+      if (primary !== null) {
+        try {
+          await ensureFileLoaded(primary, set as EditorStateSetter, get, [entry.tab]);
+        } catch {
+          continue;
+        }
+      }
+
+      const reopened: Tab = { ...entry.tab, id: createTabId() };
+      set((state) => {
+        // A lone blank launcher tab is replaced rather than left next to the reopened tab.
+        const onlyLauncher = state.tabs.length === 1 && state.tabs[0]!.location.kind === "launcher";
+        const tabs = onlyLauncher ? [] : [...state.tabs];
+        tabs.splice(Math.min(entry.index, tabs.length), 0, reopened);
+        // Cursor and scroll come back unless another tab kept the file open meanwhile.
+        const file = primary !== null && !wasOpen ? state.openFiles.get(primary) : undefined;
+        let openFiles: Map<string, OpenFile> | undefined;
+        if (file && entry.view) {
+          openFiles = new Map(state.openFiles);
+          openFiles.set(primary!, { ...file, ...entry.view });
+        }
+        return {
+          ...(openFiles ? { openFiles } : {}),
+          tabs,
+          activeTabId: reopened.id,
+          activeFilePath: deriveActiveFilePath(tabs, reopened.id),
+        };
+      });
+      return true;
+    }
   },
 
   closeActiveTab: () => {
@@ -761,6 +871,52 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               ? locationPrimaryPath(previousTab.location)
               : currentState.activeFilePath,
           ...(files ? { openFiles: files } : {}),
+        };
+      });
+    }
+  },
+
+  replaceTabLocation: async (tabId: string, location: Location) => {
+    const tab = get().tabs.find((candidate) => candidate.id === tabId);
+    if (!tab) return;
+    const path = locationPrimaryPath(location);
+    const previousTab = cloneTab(tab);
+    const nextTab: Tab = {
+      ...cloneTab(tab),
+      location,
+      back: [...tab.back, tab.location],
+      forward: [],
+    };
+    const version = startNavigation(tabId);
+    set((state) => {
+      const index = getTabIndex(state.tabs, tabId);
+      if (index === -1) return state;
+      const tabs = [...state.tabs];
+      tabs[index] = nextTab;
+      const openFiles =
+        path && location.kind === "file" ? withLoadingEntry(state.openFiles, path, true) : null;
+      return {
+        tabs,
+        activeFilePath: state.activeTabId === tabId ? path : state.activeFilePath,
+        ...(openFiles ? { openFiles } : {}),
+      };
+    });
+    if (!path || location.kind !== "file") return;
+    try {
+      await ensureFileLoaded(path, set as EditorStateSetter, get);
+    } catch {
+      if (!isNavigationCurrent(tabId, version)) return;
+      set((state) => {
+        const index = getTabIndex(state.tabs, tabId);
+        if (index === -1) return state;
+        const tabs = [...state.tabs];
+        tabs[index] = previousTab;
+        return {
+          tabs,
+          activeFilePath:
+            state.activeTabId === tabId
+              ? locationPrimaryPath(previousTab.location)
+              : state.activeFilePath,
         };
       });
     }
@@ -878,7 +1034,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const file = state.openFiles.get(oldPath);
       // A tab can reference a path with no loaded document (a `.base`): still re-point it.
-      if (!file && !state.tabs.some((tab) => tabPaths(tab).includes(oldPath))) return state;
+      if (
+        !file &&
+        !state.tabs.some((tab) => tabPaths(tab).includes(oldPath)) &&
+        !state.closedTabs.some((entry) => tabPaths(entry.tab).includes(oldPath))
+      )
+        return state;
 
       shouldScheduleSave = file?.isDirty ?? false;
 
@@ -894,6 +1055,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         openFiles: files,
         tabs,
+        closedTabs: rewriteClosedTabs(state.closedTabs, rewrite),
         activeFilePath: state.activeFilePath === oldPath ? newPath : state.activeFilePath,
       };
     });
@@ -922,6 +1084,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       return {
         tabs,
+        closedTabs: rewriteClosedTabs(state.closedTabs, transform),
         activeTabId,
         activeFilePath: deriveActiveFilePath(tabs, activeTabId),
         ...(files ? { openFiles: files } : {}),
@@ -971,6 +1134,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       return {
         tabs,
+        closedTabs: rewriteClosedTabs(state.closedTabs, transform),
         activeTabId,
         activeFilePath: deriveActiveFilePath(tabs, activeTabId),
         openFiles: files,
@@ -1029,6 +1193,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       return {
         tabs,
+        closedTabs: rewriteClosedTabs(state.closedTabs, transform),
         openFiles: files,
         activeFilePath: state.activeFilePath ? rewritePath(state.activeFilePath) : null,
       };
@@ -1119,6 +1284,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         openFiles: files,
         tabs: restoredTabs,
+        closedTabs: [],
         activeTabId: activeTab?.id ?? null,
         activeFilePath: activePath,
       };

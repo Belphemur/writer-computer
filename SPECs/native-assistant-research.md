@@ -1,6 +1,6 @@
 # Native assistant research: how Obsidian Copilot does chat, Projects and context
 
-Status: research note (no app code changed). Date: 2026-11-16. Input for a future "Writer assistant" spec.
+Status: research note (no app code changed). Date: 2026-11-16. **Superseded as the plan by [`native-agent-spec.md`](native-agent-spec.md) (2026-11-17), the chosen direction: a first-party agent pane over the `claude` CLI, alongside the Copilot plugin.** Section 10's questions are answered below; sections 1 to 9 remain the research.
 
 > **License and clean-room notice.** Obsidian Copilot (`github.com/logancyang/obsidian-copilot`) is AGPL-3.0. Writer must not copy its code or prompts. This note describes behavior, data model and architecture in our own words, from the public repo (cloned read-only at `4.0.20`, and `3.3.3` for the pre-v4 pipeline; nothing executed), its `docs/` folder, releases and public issues. File paths are pointers only. No prompt text is reproduced; prompts are paraphrased by purpose. No installed Obsidian app, vault or installed copy of the plugin was read. Issue numbers are upstream (`logancyang/obsidian-copilot`) unless marked otherwise.
 
@@ -324,17 +324,17 @@ Each phase should land with a SPECs entry, an ADR where a decision is irreversib
 
 ## 10. Open questions for the user
 
-1. **Native vs hosted Copilot:** is the goal to replace hosting Copilot, or to ship a smaller first-party assistant next to it? (The note assumes the second; the plugin host stays.)
-2. **Backend scope:** claude CLI only for v1, or must Codex/OpenCode be day-one? (Affects whether we invest in a typed event layer now.)
-3. **Where chats live:** visible `Chats/` folder in the vault (searchable, syncable, noisy) vs a per-project subfolder vs hidden app data. Chat notes in the vault are Copilot's model and fit local-first; the cost is search pollution.
-4. **Project identity:** folder with `project.md`, or any note with a property, or both? Do projects need to be visible to Obsidian users who open the same vault (they will see the files)?
-5. **Read-only default:** is "ask before edit, read-only by default" acceptable, or should the assistant start in an auto-edit mode inside a project folder?
-6. **Pinned contents:** are always-included note bodies in a project worth the added complexity in v1, or is the manifest plus on-demand reads enough?
-7. **Token estimation:** accept `~chars/4` with calibration, or invest in a real tokenizer for Claude models (none ships offline for current models; estimates must stay labeled approximate)?
-8. **Context ledger scope:** is it acceptable that the ledger can only be exact for what Writer composes, and by-reference for what the CLI loads itself (its own `CLAUDE.md`, skills, auto memory)? We could disable some of those (settings sources) at the cost of surprising CLI behavior.
-9. **Telemetry:** may we add opt-in events for the assistant (docs/telemetry.md requires the disclosure update)? Default: none in v1.
-10. **Sync and mobile:** Writer is desktop only today; confirm the assistant has no mobile or cloud story.
-11. **Privacy of chats:** should chat notes be excluded from the shared vault index by default so that other agents (and `writer search`) do not read past chats? Copilot indexes them like any note.
+1. **[Decided: ship a first-party pane alongside the plugin, the plugin host stays.]** **Native vs hosted Copilot:** is the goal to replace hosting Copilot, or to ship a smaller first-party assistant next to it? (The note assumes the second; the plugin host stays.)
+2. **[Decided: claude CLI only for v1; the typed event layer (`events.ts`/`events.rs`) keeps Codex/OpenCode via ACP possible.]** **Backend scope:** claude CLI only for v1, or must Codex/OpenCode be day-one? (Affects whether we invest in a typed event layer now.)
+3. **[Decided: hidden `<project>/.chats/` (and `<vault>/.writer/chats/` without a project), markdown notes, so index, watcher, sidebar and search skip them with no index change; see ADR 2026-11-17 chats and spec section 9.]** **Where chats live:** visible `Chats/` folder in the vault (searchable, syncable, noisy) vs a per-project subfolder vs hidden app data. Chat notes in the vault are Copilot's model and fit local-first; the cost is search pollution.
+4. **[Decided: a folder with `project.md` (Copilot's `copilot-project-*` keys, interoperable) plus its own `AGENTS.md`; any folder can be converted with "Make project"; see the projects ADR and spec section 4.]** **Project identity:** folder with `project.md`, or any note with a property, or both? Do projects need to be visible to Obsidian users who open the same vault (they will see the files)?
+5. **[Recommended default adopted: `manual` ("ask before edit"); a project may opt into `acceptEdits` with a visible chip; spec 6.1.]** **Read-only default:** is "ask before edit, read-only by default" acceptable, or should the assistant start in an auto-edit mode inside a project folder?
+6. **[Recommended default adopted: manifest plus on-demand reads only; pinned bodies are out of v1; spec 4.3.]** **Pinned contents:** are always-included note bodies in a project worth the added complexity in v1, or is the manifest plus on-demand reads enough?
+7. **[Recommended default adopted: `~chars/4`, always labelled approximate, replaced by reported usage after each turn; spec 5.]** **Token estimation:** accept `~chars/4` with calibration, or invest in a real tokenizer for Claude models (none ships offline for current models; estimates must stay labeled approximate)?
+8. **[Recommended default adopted: exact for what Writer composes, by reference for what the CLI loads itself, labelled as such; spec 5.]** **Context ledger scope:** is it acceptable that the ledger can only be exact for what Writer composes, and by-reference for what the CLI loads itself (its own `CLAUDE.md`, skills, auto memory)? We could disable some of those (settings sources) at the cost of surprising CLI behavior.
+9. **[Recommended default adopted: none in v1; `docs/telemetry.md` unchanged.]** **Telemetry:** may we add opt-in events for the assistant (docs/telemetry.md requires the disclosure update)? Default: none in v1.
+10. **[Recommended default adopted: desktop only, no mobile or cloud story.]** **Sync and mobile:** Writer is desktop only today; confirm the assistant has no mobile or cloud story.
+11. **[Decided: yes, chats are excluded from the vault index and search by default (hidden folders).]** **Privacy of chats:** should chat notes be excluded from the shared vault index by default so that other agents (and `writer search`) do not read past chats? Copilot indexes them like any note.
 
 ## Appendix: upstream pointers
 

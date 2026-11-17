@@ -17,6 +17,10 @@ export interface PluginPane {
   detachLeaf(leaf: WorkspaceLeaf): void;
   /** The leaf whose editor tab is the active tab, or null. */
   activePluginLeaf(): WorkspaceLeaf | null;
+  /** The tab bound to `leaf` shows `path` (vault-relative) as text. */
+  showLeafAsText?(leaf: WorkspaceLeaf, path: string): Promise<void>;
+  /** The active tab shows `path` (vault-relative) through the view registered as `type`. */
+  showFileAsView?(path: string, type: string): Promise<void>;
 }
 
 /** What the bridge needs to know about the open workspace and its editors. */
@@ -47,6 +51,8 @@ export function createWorkspaceBridge(app: AppWorkspace, pane: PluginPane): Work
     leafChanged: (leaf) => pane.leafChanged(leaf),
     detachLeaf: (leaf) => pane.detachLeaf(leaf),
     getActivePluginLeaf: () => pane.activePluginLeaf(),
+    showLeafAsText: pane.showLeafAsText && ((leaf, path) => pane.showLeafAsText!(leaf, path)),
+    showFileAsView: pane.showFileAsView && ((path, type) => pane.showFileAsView!(path, type)),
     reapplyEditorOptions: reapplyPluginEditorExtensions,
     getActiveFilePath() {
       const root = app.getRoot();

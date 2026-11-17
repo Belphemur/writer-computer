@@ -47,11 +47,16 @@ export class Events {
   }
 
   tryTrigger(ref: EventRef, args: unknown[]): void {
-    try {
-      ref.fn.apply(ref.ctx, args);
-    } catch (e) {
+    const fail = (e: unknown) => {
       console.error(`[plugin] event handler "${ref.name}" threw:`, e);
       recordPluginError("(plugin)", `event:${ref.name}`, e);
+    };
+    try {
+      const out: unknown = ref.fn.apply(ref.ctx, args);
+      // An async handler's rejection must not surface as an unhandled rejection of the app.
+      if (out instanceof Promise) out.catch(fail);
+    } catch (e) {
+      fail(e);
     }
   }
 }
@@ -260,7 +265,8 @@ export interface KeymapEventHandler {
 }
 
 export class Scope {
-  handlers: KeymapEventHandler[] = [];
+  /** Registered handlers, first one wins (plugins reorder it: Excalidraw `keys.unshift(keys.pop())`). */
+  keys: KeymapEventHandler[] = [];
   constructor(public parent?: Scope) {}
 
   register(
@@ -274,18 +280,18 @@ export class Scope {
       key,
       func,
     };
-    this.handlers.push(handler);
+    this.keys.push(handler);
     return handler;
   }
 
   unregister(handler: KeymapEventHandler): void {
-    const i = this.handlers.indexOf(handler);
-    if (i >= 0) this.handlers.splice(i, 1);
+    const i = this.keys.indexOf(handler);
+    if (i >= 0) this.keys.splice(i, 1);
   }
 
   /** Returns true when a handler consumed the event. */
   handleKey(evt: KeyboardEvent): boolean {
-    for (const h of this.handlers) {
+    for (const h of this.keys) {
       if (h.key !== null && h.key.toLowerCase() !== evt.key.toLowerCase()) continue;
       if (!Keymap.matchesModifiers(evt, h.modifiers)) continue;
       if (h.func(evt, h) !== false) {
@@ -299,7 +305,13 @@ export class Scope {
 
 export class Keymap {
   private scopes: Scope[] = [];
+  private root: Scope | null = null;
   modifiers = "";
+
+  /** The app-wide scope (`app.scope`): hotkeys registered here apply wherever focus is. */
+  getRootScope(): Scope {
+    return (this.root ??= new Scope());
+  }
 
   pushScope(scope: Scope): void {
     this.scopes.push(scope);

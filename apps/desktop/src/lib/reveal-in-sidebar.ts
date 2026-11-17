@@ -5,6 +5,25 @@ interface RevealOptions {
   /** If the sidebar is currently hidden, flip the setting back on before
    *  scrolling. Used by the explicit "Reveal in sidebar" menu action. */
   showSidebar?: boolean;
+  /** Scroll only when the row is off-screen, and then center it (auto-reveal).
+   *  Default keeps the minimal `nearest` scroll of the explicit action. */
+  center?: boolean;
+}
+
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const overflowY = getComputedStyle(p).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return p;
+  }
+  return null;
+}
+
+function isRowVisible(row: HTMLElement): boolean {
+  const parent = scrollParent(row);
+  if (!parent) return false;
+  const r = row.getBoundingClientRect();
+  const c = parent.getBoundingClientRect();
+  return r.top >= c.top && r.bottom <= c.bottom;
 }
 
 const FRAME_BUDGET = 5;
@@ -78,5 +97,10 @@ export async function revealPathInSidebar(path: string, opts: RevealOptions = {}
 
   const row = await waitForRow(path);
   if (token !== latestToken) return;
-  row?.scrollIntoView({ behavior: "auto", block: "nearest" });
+  if (!row) return;
+  if (opts.center) {
+    if (!isRowVisible(row)) row.scrollIntoView({ behavior: "auto", block: "center" });
+    return;
+  }
+  row.scrollIntoView({ behavior: "auto", block: "nearest" });
 }

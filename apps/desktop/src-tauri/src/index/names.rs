@@ -18,6 +18,10 @@
 //! Tauri-free like the rest of `index/`; the per-window instance lives in
 //! `WorkspaceState` and is fed by `commands/index.rs`.
 
+use super::rank::{
+    combine, empty_query_key, match_path, original_indices, recency_boost, OpenedMap, Prepared,
+    PreparedQuery, Recency,
+};
 use super::{schema, ChangeBatch, Index, IndexError};
 use parking_lot::Mutex;
 use rusqlite::{params_from_iter, Connection, OptionalExtension};
@@ -50,6 +54,8 @@ struct NameEntry {
     /// Byte offset of the file name inside `lower`.
     name_start: usize,
     mtime_ms: i64,
+    /// Folded form for the fuzzy matcher (see `rank.rs`).
+    prepared: Prepared,
 }
 
 impl NameEntry {
@@ -60,8 +66,21 @@ impl NameEntry {
             lower,
             name_start,
             mtime_ms,
+            prepared: Prepared::new(path),
         }
     }
+}
+
+/// What ranking needs besides the query: the clock and the opened history.
+/// The default (no recency) ranks on text alone.
+#[derive(Debug, Default, Clone)]
+pub struct RankContext {
+    /// Unix milliseconds "now".
+    pub now_ms: i64,
+    /// Vault-relative path to last-opened unix milliseconds.
+    pub opened: OpenedMap,
+    /// Boost recently opened and modified files (`rank.rs`).
+    pub recency: bool,
 }
 
 /// Optional narrowing applied before matching.
@@ -272,6 +291,18 @@ impl NameCache {
         limit: usize,
         filter: &NameFilter,
     ) -> Result<NameSearch, IndexError> {
+        self.search_with(query, limit, filter, &RankContext::default())
+    }
+
+    /// [`Self::search`] with recency. An empty query lists files by recency
+    /// (recently opened first, then recently modified) instead of nothing.
+    pub fn search_with(
+        &self,
+        query: &str,
+        limit: usize,
+        filter: &NameFilter,
+        ctx: &RankContext,
+    ) -> Result<NameSearch, IndexError> {
         let building = self.sync()?;
         let g = self.inner.lock();
         let root = g
@@ -279,7 +310,7 @@ impl NameCache {
             .as_ref()
             .map(|b| b.root.clone())
             .ok_or_else(|| IndexError::Invalid("workspace index is not open".into()))?;
-        let matches = rank(g.entries.iter(), query, limit, filter);
+        let matches = rank(g.entries.iter(), query, limit, filter, ctx);
         Ok(NameSearch {
             root,
             matches,
@@ -396,29 +427,19 @@ fn install_all(g: &mut Inner, rows: Vec<NameRow>, complete: bool) {
     g.version += 1;
 }
 
-/// Rank `entries` for `query`: the same matcher the in-memory list used.
-///
-/// A file matches when the lowercased query, or the query with spaces turned
-/// into hyphens, or hyphens into spaces, is a substring of its lowercased
-/// vault-relative path. Higher scores first: a match inside the file name beats
-/// one in a folder name (+1,000,000), an earlier match beats a later one (up to
-/// +10,000), and shorter paths win ties (up to +1,000). Equal scores keep path
-/// order, which makes results deterministic.
+/// Rank `entries` for `query` with the fuzzy matcher and recency boost of
+/// `rank.rs` (formula: `SPECs/search-ranking-spec.md`). Higher scores first;
+/// equal scores keep path order, which makes results deterministic. An empty
+/// query lists by recency: opened files newest first, then newest modified.
 fn rank<'a>(
     entries: impl Iterator<Item = (&'a String, &'a NameEntry)>,
     query: &str,
     limit: usize,
     filter: &NameFilter,
+    ctx: &RankContext,
 ) -> Vec<NameMatch> {
-    if query.is_empty() || limit == 0 {
+    if limit == 0 {
         return Vec::new();
-    }
-    let normalized = query.to_lowercase();
-    let mut needles = vec![normalized.clone()];
-    for variant in [normalized.replace(' ', "-"), normalized.replace('-', " ")] {
-        if !needles.contains(&variant) {
-            needles.push(variant);
-        }
     }
     let folder_prefix = filter
         .folder
@@ -426,13 +447,18 @@ fn rank<'a>(
         .map(|f| f.trim_matches('/'))
         .filter(|f| !f.is_empty())
         .map(|f| format!("{}/", f.to_lowercase()));
+    let q = PreparedQuery::new(query);
+    let recency_of = |path: &str, entry: &NameEntry| Recency {
+        opened_ms: ctx.opened.get(path).copied(),
+        mtime_ms: entry.mtime_ms,
+    };
 
     struct Hit<'a> {
-        score: u32,
+        score: f64,
+        /// Empty-query sort key: (opened, modified).
+        key: (i64, i64),
         path: &'a str,
-        entry: &'a NameEntry,
-        byte_start: usize,
-        needle_chars: usize,
+        folded: Vec<usize>,
     }
     let mut hits: Vec<Hit> = Vec::new();
     for (path, entry) in entries {
@@ -450,41 +476,47 @@ fn rank<'a>(
                 continue;
             }
         }
-        let Some((byte_start, needle)) = needles
-            .iter()
-            .filter_map(|n| entry.lower.find(n.as_str()).map(|s| (s, n)))
-            .min_by_key(|(s, _)| *s)
-        else {
+        if q.is_empty() {
+            hits.push(Hit {
+                score: 0.0,
+                key: empty_query_key(recency_of(path, entry)),
+                path,
+                folded: Vec::new(),
+            });
+            continue;
+        }
+        let Some(m) = match_path(&q, &entry.prepared) else {
             continue;
         };
-        let mut score: u32 = 0;
-        if byte_start >= entry.name_start {
-            score += 1_000_000;
-        }
-        score += 10_000u32.saturating_sub(byte_start as u32);
-        score += 1_000u32.saturating_sub((path.chars().count() as u32).min(1_000));
+        let boost = if ctx.recency {
+            recency_boost(ctx.now_ms, recency_of(path, entry))
+        } else {
+            0.0
+        };
         hits.push(Hit {
-            score,
+            score: combine(m.score, boost),
+            key: (0, 0),
             path,
-            entry,
-            byte_start,
-            needle_chars: needle.chars().count(),
+            folded: m.folded,
         });
     }
-    // Stable: equal scores stay in path order.
-    hits.sort_by(|a, b| b.score.cmp(&a.score));
+    // Entries arrive in path order and the sort is stable: ties stay in path order.
+    if q.is_empty() {
+        hits.sort_by_key(|h| std::cmp::Reverse(h.key));
+    } else {
+        hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+    }
     hits.truncate(limit);
     hits.into_iter()
-        .map(|h| {
-            let char_start = h.entry.lower[..h.byte_start].chars().count();
-            NameMatch {
-                path: h.path.to_string(),
-                name: h.path[h.path.rfind('/').map(|i| i + 1).unwrap_or(0)..].to_string(),
-                score: h.score,
-                match_indices: (char_start..char_start + h.needle_chars)
-                    .map(|i| i as u32)
-                    .collect(),
-            }
+        .map(|h| NameMatch {
+            path: h.path.to_string(),
+            name: h.path[h.path.rfind('/').map(|i| i + 1).unwrap_or(0)..].to_string(),
+            score: if q.is_empty() {
+                0
+            } else {
+                (h.score * 10.0).round().clamp(0.0, u32::MAX as f64) as u32
+            },
+            match_indices: original_indices(h.path, &h.folded),
         })
         .collect()
 }
@@ -612,10 +644,16 @@ mod tests {
 
     fn top(paths: &[&str], query: &str) -> Vec<String> {
         let map = entries(paths);
-        rank(map.iter(), query, 50, &NameFilter::default())
-            .into_iter()
-            .map(|m| m.path)
-            .collect()
+        rank(
+            map.iter(),
+            query,
+            50,
+            &NameFilter::default(),
+            &RankContext::default(),
+        )
+        .into_iter()
+        .map(|m| m.path)
+        .collect()
     }
 
     #[test]
@@ -632,24 +670,56 @@ mod tests {
     }
 
     #[test]
-    fn earlier_match_and_shorter_path_win() {
-        // The match position counts from the start of the whole path, so a
-        // name-prefix in a nested folder ranks after an earlier match.
+    fn name_prefix_beats_inner_word_and_exact_name_wins() {
         let got = top(&["my-plan.md", "plan.md", "deep/plan-b.md"], "plan");
-        assert_eq!(got, ["plan.md", "my-plan.md", "deep/plan-b.md"]);
+        assert_eq!(got, ["plan.md", "deep/plan-b.md", "my-plan.md"]);
     }
 
     #[test]
-    fn word_boundary_and_camel_case_are_plain_substrings() {
-        // The matcher is a substring match, not a subsequence match: `wl` does
-        // not find WikiLink, `link` does.
+    fn fuzzy_boundary_camel_case_and_typos() {
+        // Short words are substrings, longer ones subsequences and typos.
         assert!(top(&["WikiLink.md"], "wl").is_empty());
         assert_eq!(
-            top(&["WikiLink.md", "unrelated.md"], "link"),
+            top(&["WikiLink.md", "unrelated.md"], "wlnk"),
             ["WikiLink.md"]
+        );
+        assert_eq!(
+            top(&["People/François Lamarre.md", "x.md"], "Francios Lamare"),
+            ["People/François Lamarre.md"]
         );
         assert_eq!(top(&["Wiki Link.md"], "wiki-link"), ["Wiki Link.md"]);
         assert_eq!(top(&["wiki-link.md"], "wiki link"), ["wiki-link.md"]);
+    }
+
+    #[test]
+    fn recency_reorders_equal_matches_and_empty_query_lists_by_recency() {
+        const NOW: i64 = 1_800_000_000_000;
+        const DAY: i64 = 86_400_000;
+        let mut map = entries(&["a/budget.md", "b/budget.md", "c/other.md"]);
+        map.get_mut("a/budget.md").unwrap().mtime_ms = NOW - 300 * DAY;
+        map.get_mut("b/budget.md").unwrap().mtime_ms = NOW - 300 * DAY;
+        map.get_mut("c/other.md").unwrap().mtime_ms = NOW - DAY;
+        let mut ctx = RankContext {
+            now_ms: NOW,
+            opened: OpenedMap::new(),
+            recency: true,
+        };
+        ctx.opened.insert("b/budget.md".into(), NOW - 1000);
+        let paths = |q: &str, ctx: &RankContext| -> Vec<String> {
+            rank(map.iter(), q, 9, &NameFilter::default(), ctx)
+                .into_iter()
+                .map(|m| m.path)
+                .collect()
+        };
+        assert_eq!(paths("budget", &ctx), ["b/budget.md", "a/budget.md"]);
+        // Opened files first, then newest modified.
+        assert_eq!(
+            paths("", &ctx),
+            ["b/budget.md", "c/other.md", "a/budget.md"]
+        );
+        // Off: path order.
+        ctx.recency = false;
+        assert_eq!(paths("budget", &ctx), ["a/budget.md", "b/budget.md"]);
     }
 
     #[test]
@@ -661,7 +731,13 @@ mod tests {
     #[test]
     fn query_is_case_insensitive_and_reports_char_indices() {
         let map = entries(&["Notes/Résumé.md"]);
-        let m = rank(map.iter(), "RÉSUMÉ", 50, &NameFilter::default());
+        let m = rank(
+            map.iter(),
+            "RÉSUMÉ",
+            50,
+            &NameFilter::default(),
+            &RankContext::default(),
+        );
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].name, "Résumé.md");
         // "Notes/" is 6 chars.
@@ -673,8 +749,28 @@ mod tests {
         let got = top(&["b/x.md", "a/x.md", "c/x.md"], "x.md");
         assert_eq!(got, ["a/x.md", "b/x.md", "c/x.md"]);
         let map = entries(&["b/x.md", "a/x.md", "c/x.md"]);
-        assert_eq!(rank(map.iter(), "x", 2, &NameFilter::default()).len(), 2);
-        assert!(rank(map.iter(), "", 5, &NameFilter::default()).is_empty());
+        assert_eq!(
+            rank(
+                map.iter(),
+                "x",
+                2,
+                &NameFilter::default(),
+                &RankContext::default()
+            )
+            .len(),
+            2
+        );
+        assert!(
+            rank(
+                map.iter(),
+                "",
+                5,
+                &NameFilter::default(),
+                &RankContext::default()
+            )
+            .len()
+                == 3
+        );
     }
 
     #[test]
@@ -690,7 +786,7 @@ mod tests {
             folder: Some("a".into()),
             exts: None,
         };
-        let got: Vec<_> = rank(map.iter(), ".", 50, &folder)
+        let got: Vec<_> = rank(map.iter(), ".", 50, &folder, &RankContext::default())
             .into_iter()
             .map(|m| m.path)
             .collect();
@@ -701,7 +797,7 @@ mod tests {
             folder: None,
             exts: Some(vec!["base".into()]),
         };
-        let got: Vec<_> = rank(map.iter(), "tasks", 50, &base_only)
+        let got: Vec<_> = rank(map.iter(), "tasks", 50, &base_only, &RankContext::default())
             .into_iter()
             .map(|m| m.path)
             .collect();
@@ -710,7 +806,7 @@ mod tests {
             folder: None,
             exts: Some(vec!["base".into()]),
         };
-        assert!(rank(map.iter(), "one", 50, &none).is_empty());
+        assert!(rank(map.iter(), "one", 50, &none, &RankContext::default()).is_empty());
     }
 
     #[test]

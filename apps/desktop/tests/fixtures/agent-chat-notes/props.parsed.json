@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "chatId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
+    "title": "Plan the Q4 review",
+    "titleRenamed": true,
+    "backend": "claude",
+    "sessionId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
+    "project": "Demo",
+    "projectPath": "Projects/Demo",
+    "cliVersion": "2.1.325",
+    "model": "claude-sonnet-5-5",
+    "createdAt": 1794906725123,
+    "updatedAt": 1794906785123,
+    "turns": 1,
+    "pinned": true,
+    "archivedAt": 1794906725128,
+    "usage": {
+      "inputTokens": 120,
+      "outputTokens": 45,
+      "costUsd": 0.0123
+    },
+    "preview": "Summarise the notes tagged #client."
+  },
+  "trimmed": 12,
+  "turns": [
+    {
+      "role": "user",
+      "id": "m-user-1",
+      "at": 1794906725123,
+      "text": "Summarise the notes tagged #client.",
+      "context": "[[Plan]], #client, project sources (4)"
+    },
+    {
+      "role": "assistant",
+      "id": "m-asst-1",
+      "at": 1794906785123,
+      "text": "Here is the summary.\n\n- one\n- two\n\n```ts\nconst a = 1;\n```",
+      "reason": "completed",
+      "tools": [
+        {
+          "id": "toolu_1",
+          "tool": "Bash",
+          "input": {
+            "command": "ls -la"
+          },
+          "outcome": "ok"
+        },
+        {
+          "id": "toolu_2",
+          "tool": "Write",
+          "input": {
+            "file_path": "a<b>.md"
+          },
+          "outcome": "rejected"
+        }
+      ]
+    }
+  ]
+}

@@ -65,7 +65,7 @@ impl Ctx {
     }
 }
 
-fn consent_store(app: &tauri::AppHandle) -> Result<ConsentStore, AppError> {
+pub(crate) fn consent_store(app: &tauri::AppHandle) -> Result<ConsentStore, AppError> {
     let dir = app
         .path()
         .app_data_dir()
@@ -161,6 +161,9 @@ pub async fn plugins_set_trust(
 pub fn stop_vault_work(app: &tauri::AppHandle, root: &Path) {
     app.state::<StreamRegistry>().cancel_root(root);
     app.state::<ProcManager>().kill_root(root);
+    if let Some(agents) = app.try_state::<crate::agent::session::AgentSessions>() {
+        agents.kill_root(root);
+    }
 }
 
 /// A window closed or left its vault: stop what its plugins started.
@@ -170,6 +173,9 @@ pub fn stop_window_work(app: &tauri::AppHandle, label: &str) {
     }
     if let Some(procs) = app.try_state::<ProcManager>() {
         procs.kill_window(label);
+    }
+    if let Some(agents) = app.try_state::<crate::agent::session::AgentSessions>() {
+        agents.kill_window(label);
     }
     if let Some(env) = app.try_state::<PluginEnv>() {
         env.forget_window(label);
@@ -361,6 +367,30 @@ pub async fn plugin_store_uninstall(
 
 /* --------------------------------------------------------- plugin HTTP */
 
+/// The agent pane's gate: the window's canonical vault root, or the restricted-mode refusal.
+pub(crate) fn trusted_root(
+    webview: &tauri::Webview,
+    app: &tauri::AppHandle,
+) -> Result<PathBuf, AppError> {
+    Ok(trusted_ctx(webview, app)?.root)
+}
+
+/// Same vault, still trusted (asked again after a consent dialog and before agent respawns).
+pub(crate) fn vault_still_trusted(app: &tauri::AppHandle, label: &str, root: &Path) -> bool {
+    let Some(st) = app.state::<AppState>().get(label) else {
+        return false;
+    };
+    match ctx_for(&st, app) {
+        Ok(c) => c.root == root && c.trusted(),
+        Err(_) => false,
+    }
+}
+
+/// The native consent dialog, for the agent pane's first spawn per vault.
+pub(crate) fn dialog_consent(app: tauri::AppHandle, window: Option<tauri::Window>) -> impl Consent {
+    DialogConsent { app, window }
+}
+
 /// A trusted vault's context, or the restricted-mode refusal.
 fn trusted_ctx(webview: &tauri::Webview, app: &tauri::AppHandle) -> Result<Ctx, AppError> {
     let ctx = window_ctx(webview, app)?;
@@ -423,6 +453,7 @@ struct DialogConsent {
 
 const BTN_ONCE: &str = "Run once";
 const BTN_ALWAYS: &str = "Always allow this plugin in this vault";
+const BTN_ALWAYS_AGENT: &str = "Always allow in this vault";
 const BTN_DENY: &str = "Deny";
 
 impl Consent for DialogConsent {
@@ -437,15 +468,21 @@ impl Consent for DialogConsent {
         }
         // one dialog at a time: a plugin spawning in a loop queues here
         let _turn = CONSENT_QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        let agent = req.plugin_id == crate::agent::consent::AGENT_PLUGIN_ID;
+        let (title, always) = if agent {
+            ("Writer: start Claude Code?", BTN_ALWAYS_AGENT)
+        } else {
+            ("Writer: run program?", BTN_ALWAYS)
+        };
         let mut d = self
             .app
             .dialog()
             .message(req.message())
-            .title("Writer: run program?")
+            .title(title)
             .kind(MessageDialogKind::Warning)
             .buttons(MessageDialogButtons::YesNoCancelCustom(
                 BTN_ONCE.to_string(),
-                BTN_ALWAYS.to_string(),
+                always.to_string(),
                 BTN_DENY.to_string(),
             ));
         if let Some(w) = &self.window {
@@ -457,7 +494,9 @@ impl Consent for DialogConsent {
             MessageDialogResult::Yes => Decision::Once,
             MessageDialogResult::No => Decision::Always,
             MessageDialogResult::Custom(s) if s == BTN_ONCE => Decision::Once,
-            MessageDialogResult::Custom(s) if s == BTN_ALWAYS => Decision::Always,
+            MessageDialogResult::Custom(s) if s == BTN_ALWAYS || s == BTN_ALWAYS_AGENT => {
+                Decision::Always
+            }
             _ => Decision::Deny,
         }
     }

@@ -7,6 +7,8 @@ import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
 import { useActivePluginLeaf, useIsPluginPaneOpen, usePluginPaneWidth } from "@/hooks/use-plugins";
 import { PluginViewPane } from "./plugins/plugin-view-pane";
+import { AgentPane } from "./agent/agent-pane";
+import { useAgentPaneDock, useAgentPaneWidth, useIsAgentPaneOpen } from "@/hooks/use-agent";
 import { PluginStatusBar } from "./plugins/plugin-strips";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useWorkspaceChromeMode, useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -31,7 +33,15 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
   const pluginPaneOpen = useIsPluginPaneOpen();
   const pluginPaneLeaf = useActivePluginLeaf();
   const pluginPaneWidth = usePluginPaneWidth();
-  const pluginPaneInset = pluginPaneOpen && pluginPaneLeaf ? pluginPaneWidth : 0;
+  const agentPaneOpen = useIsAgentPaneOpen();
+  const agentPaneWidth = useAgentPaneWidth();
+  useAgentPaneDock();
+  // One dock: the agent pane wins while open, otherwise the plugin pane.
+  const pluginPaneInset = agentPaneOpen
+    ? agentPaneWidth
+    : pluginPaneOpen && pluginPaneLeaf
+      ? pluginPaneWidth
+      : 0;
   const { isSidebarCollapsed, sidebarWidth, setSidebarWidth } = useSidebar();
   const viewportWidth = typeof window === "undefined" ? 1200 : window.innerWidth;
   const maxSidebarWidth = Math.max(280, Math.min(420, Math.floor(viewportWidth * 0.35)));
@@ -182,7 +192,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
             {showWelcome ? <WelcomeScreen /> : <EditorArea />}
             <PluginStatusBar />
           </div>
-          <PluginViewPane />
+          {agentPaneOpen ? <AgentPane /> : <PluginViewPane />}
         </div>
       </div>
     </div>

@@ -1,5 +1,11 @@
 import { useUIStore } from "@/stores/ui-store";
-import { createPluginViewTab, createSettingsTab, useEditorStore } from "@/stores/editor-store";
+import {
+  createPluginFileTab,
+  createPluginViewTab,
+  createSettingsTab,
+  useEditorStore,
+} from "@/stores/editor-store";
+import type { Location } from "@/components/editor-area/page-kinds";
 export type { OpenFile, Tab, SessionTab } from "@/stores/editor-store";
 
 export function getOpenFile(path: string) {
@@ -135,4 +141,28 @@ export function getPluginViewTabLeafIds(): { open: string[]; active: string | nu
     if (tab.id === activeTabId) active = tab.location.leafId;
   }
   return { open, active };
+}
+
+/** Closes the tab with this id (the view behind it closed itself). */
+export function closeTab(tabId: string) {
+  useEditorStore.getState().closeTab(tabId, { remember: false });
+}
+
+/** The tab with this id, if open. */
+export function getTabLocation(tabId: string) {
+  return useEditorStore.getState().tabs.find((tab) => tab.id === tabId)?.location ?? null;
+}
+
+/** Shows the file of a plugin-file tab as text, or a file as its plugin view, in the same tab. */
+export function replaceTabLocation(tabId: string, location: Location) {
+  return useEditorStore.getState().replaceTabLocation(tabId, location);
+}
+
+/** Opens a new tab for a file view a plugin created in its own leaf; returns the tab's id. */
+export function openPluginFileTab(target: { path: string; viewType: string }): string | null {
+  useEditorStore.getState().openOrFocus(
+    () => false,
+    () => createPluginFileTab(target),
+  );
+  return useEditorStore.getState().activeTabId;
 }

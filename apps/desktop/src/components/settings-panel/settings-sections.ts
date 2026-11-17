@@ -10,7 +10,8 @@ export type SectionBlock =
   | { type: "themes" }
   | { type: "community-plugins" }
   | { type: "secrets" }
-  | { type: "logs" };
+  | { type: "logs" }
+  | { type: "agent" };
 
 export const SETTINGS_GROUPS = ["General", "Community plugins"] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -44,6 +45,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "Files & vault",
     group: "General",
     blocks: [category("Files"), category("Workspace"), category("Window"), category("Search")],
+  },
+  {
+    id: "agent",
+    label: "Agent",
+    group: "General",
+    blocks: [category("Agent"), { type: "agent" }],
   },
   {
     id: "privacy",

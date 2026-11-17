@@ -146,6 +146,15 @@
       "default": true
     },
     {
+      "key": "sidebar.auto-reveal-active-file",
+      "label": "Auto-reveal current file",
+      "description": "Keep the active note highlighted in the file tree: expand its folders and scroll to it when you switch notes.",
+      "category": "Appearance",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "appearance.sidebar-show-search",
       "label": "Sidebar Search Button",
       "description": "Show the Search button at the top of the sidebar",
@@ -434,6 +443,118 @@
       "type": "boolean",
       "scope": "global",
       "default": true
+    },
+    {
+      "key": "agent.binary-path",
+      "label": "Claude binary",
+      "description": "Absolute path of the claude CLI to run. Leave blank to find it automatically (PATH, your login shell's PATH, common install folders).",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "Auto-detect",
+      "scope": "global",
+      "default": ""
+    },
+    {
+      "key": "agent.model",
+      "label": "Model",
+      "description": "Model alias or full name passed as --model (letters, digits and . _ : [ ] / - only). Leave blank for the CLI's default. The chat's own menu can change it per chat.",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "CLI default",
+      "scope": "global",
+      "default": ""
+    },
+    {
+      "key": "agent.effort",
+      "label": "Effort",
+      "description": "Reasoning effort passed as --effort. Default leaves it to the CLI.",
+      "category": "Agent",
+      "type": "enum",
+      "options": ["default", "low", "medium", "high", "xhigh", "max"],
+      "scope": "global",
+      "default": "default"
+    },
+    {
+      "key": "agent.permission-mode",
+      "label": "Permission mode",
+      "description": "What the agent may do without asking. manual asks before edits and commands (labelled Ask before edit in the pane), acceptEdits auto-edits files in the project, plan only plans, auto and dontAsk ask less. bypassPermissions is never offered.",
+      "category": "Agent",
+      "type": "enum",
+      "options": ["manual", "acceptEdits", "plan", "auto", "dontAsk"],
+      "scope": "global",
+      "default": "manual"
+    },
+    {
+      "key": "agent.allowed-tools",
+      "label": "Always-allowed tools",
+      "description": "Permission rules passed as --allowedTools, one per entry, in Claude Code's rule syntax, for example Bash(git status). Rules you chose with Always allow are stored by the CLI in the folder's .claude/settings.local.json and listed below.",
+      "category": "Agent",
+      "type": "list",
+      "scope": "global",
+      "default": []
+    },
+    {
+      "key": "agent.disallowed-tools",
+      "label": "Never-allowed tools",
+      "description": "Permission rules passed as --disallowedTools, one per entry, for example Bash(rm:*).",
+      "category": "Agent",
+      "type": "list",
+      "scope": "global",
+      "default": []
+    },
+    {
+      "key": "agent.attach-active-note",
+      "label": "Attach the open note",
+      "description": "Attach the note open in the editor to each message by default (as a path; the agent reads it itself). You can remove the chip per message.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
+      "key": "agent.inject-agents-md",
+      "label": "Inject AGENTS.md",
+      "description": "How a project's AGENTS.md reaches the agent. auto adds it only when Claude Code would ignore it (a CLAUDE.md sits next to it, or the CLI is older than 2.1.325); always always adds it; never relies on the CLI alone.",
+      "category": "Agent",
+      "type": "enum",
+      "options": ["auto", "always", "never"],
+      "scope": "global",
+      "default": "auto"
+    },
+    {
+      "key": "agent.max-concurrent-chats",
+      "label": "Chats running at once",
+      "description": "How many agent processes may run at the same time in a window. Extra chats wait until one finishes; an idle chat's process is stopped after 30 minutes and resumed on the next message.",
+      "category": "Agent",
+      "type": "range",
+      "min": 1,
+      "max": 8,
+      "step": 1,
+      "scope": "global",
+      "default": 4
+    },
+    {
+      "key": "agent.chats-keep-days",
+      "label": "Keep chat history for (days)",
+      "description": "Chat notes older than this many days are offered for clean-up in the history view. 0 keeps them forever. Nothing is deleted automatically.",
+      "category": "Agent",
+      "type": "number",
+      "scope": "global",
+      "default": 0
+    },
+    {
+      "key": "agent.pane-width",
+      "label": "Agent pane width",
+      "description": "Width of the agent pane in pixels. Dragging the pane edge changes it too.",
+      "category": "Agent",
+      "type": "range",
+      "min": 320,
+      "max": 900,
+      "step": 10,
+      "scope": "global",
+      "default": 420
     }
   ]
 }

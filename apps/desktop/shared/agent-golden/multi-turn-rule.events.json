@@ -1,0 +1,367 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_f2",
+    "messageId": "msg_f1",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f2",
+    "partialJson": "{\"command\": \"python3 -c"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f2",
+    "partialJson": " 'print(5)'"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f2",
+    "partialJson": "\", \"description\": \"Run python"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f2",
+    "partialJson": " print"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f2",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_f2",
+    "input": {
+      "command": "python3 -c 'print(5)'",
+      "description": "Run python print"
+    }
+  },
+  {
+    "type": "permission-request",
+    "requestId": "00000000-0000-4000-8000-000000000014",
+    "toolCallId": "toolu_f2",
+    "tool": "Bash",
+    "displayName": "Bash",
+    "input": {
+      "command": "python3 -c 'print(5)'",
+      "description": "Run python print"
+    },
+    "description": "Run python print",
+    "decisionReason": "This command requires approval",
+    "suggestions": [
+      {
+        "behavior": "allow",
+        "destination": "localSettings",
+        "rules": [
+          {
+            "ruleContent": "python3 -c 'print(5)'",
+            "toolName": "Bash"
+          }
+        ],
+        "type": "addRules"
+      }
+    ]
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 82,
+    "cacheReadTokens": 13855,
+    "cacheCreationTokens": 5672,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1800000000
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_f2",
+    "output": "5",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f4",
+    "blockIndex": 0,
+    "text": "done1"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_f4",
+    "blockIndex": 0,
+    "text": "done1"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 4,
+    "cacheReadTokens": 19527,
+    "cacheCreationTokens": 4292,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 86,
+    "cacheReadTokens": 33382,
+    "cacheCreationTokens": 9964,
+    "costUsd": 0.0440622,
+    "contextWindow": 1000000
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 3281,
+    "apiDurationMs": 2205,
+    "numTurns": 2,
+    "isError": false,
+    "result": "done1",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  },
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_f7",
+    "messageId": "msg_f6",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f7",
+    "partialJson": "{\"command\": \"python3 -c"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f7",
+    "partialJson": " 'print(5)'"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f7",
+    "partialJson": "\", \"description\": \"Run python"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f7",
+    "partialJson": " print"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_f7",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_f7",
+    "input": {
+      "command": "python3 -c 'print(5)'",
+      "description": "Run python print"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 82,
+    "cacheReadTokens": 23819,
+    "cacheCreationTokens": 14984,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_f7",
+    "output": "5",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "done2\n\nThe"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": " Datadog MCP server"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": " was"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": " reached over a deprecated"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": " endpoint ("
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "`/api/unstable/"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "mcp-server/mc"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "p`). You should update your"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": " Datadog MCP client config"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "uration to the `/v1"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "/mcp` endpo"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "int on the same host. Set"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "up instructions are"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": " at https://docs.datad"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "oghq.com/bits"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "_ai/mcp_"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "server/setup/"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_f9",
+    "blockIndex": 0,
+    "text": "done2\n\nThe Datadog MCP server was reached over a deprecated endpoint (`/api/unstable/mcp-server/mcp`). You should update your Datadog MCP client configuration to the `/v1/mcp` endpoint on the same host. Setup instructions are at https://docs.datadoghq.com/bits_ai/mcp_server/setup/"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 118,
+    "cacheReadTokens": 38803,
+    "cacheCreationTokens": 88,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 200,
+    "cacheReadTokens": 62622,
+    "cacheCreationTokens": 15072,
+    "costUsd": 0.1126204,
+    "contextWindow": 1000000
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 2997,
+    "apiDurationMs": 5145,
+    "numTurns": 2,
+    "isError": false,
+    "result": "done2\n\nThe Datadog MCP server was reached over a deprecated endpoint (`/api/unstable/mcp-server/mcp`). You should update your Datadog MCP client configuration to the `/v1/mcp` endpoint on the same host. Setup instructions are at https://docs.datadoghq.com/bits_ai/mcp_server/setup/",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

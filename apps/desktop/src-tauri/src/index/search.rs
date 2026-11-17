@@ -9,10 +9,14 @@ use super::fts::{
     FTS_TOKENIZE,
 };
 use super::note::content_hash;
+use super::rank::{
+    combine, match_path, recency_boost, OpenedMap, Prepared, PreparedQuery, Recency,
+};
 use super::search_query::{parse_query, Filter, ParsedQuery, Term};
 use super::{Index, IndexError, Job};
 use rusqlite::{params_from_iter, types::Value as SqlValue, Connection};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::mpsc::sync_channel;
 
 type Res<T> = Result<T, IndexError>;
@@ -25,6 +29,17 @@ const DEFAULT_SNIPPET_LEN: u32 = 160;
 /// most this many matches are examined (`SearchPage::truncated` says when more
 /// existed).
 pub const CASE_SCAN_CAP: usize = 5000;
+/// Recency re-ranking looks at this many best text matches (at least
+/// `offset + limit`), then reorders them by `rank::recency_boost`.
+const RERANK_POOL: usize = 200;
+/// The fuzzy fallback runs when fewer notes than this matched exactly.
+const FUZZY_FEW: i64 = 5;
+/// At most this many fuzzy (similar-name) hits are appended.
+const FUZZY_MAX: usize = 10;
+/// A fuzzy hit needs at least this much text score per query char.
+const FUZZY_MIN_PER_CHAR: f64 = 11.0;
+/// A heading or tag match counts this much of a file-name match.
+const FUZZY_SECONDARY_FACTOR: f64 = 0.6;
 const HL_OPEN: char = '\u{1}';
 const HL_CLOSE: char = '\u{2}';
 
@@ -49,6 +64,18 @@ pub struct SearchOptions {
     /// Search-as-you-type: a trailing bare word with no space after it also
     /// matches as a prefix (`harb` finds `harbour`).
     pub as_you_type: bool,
+    /// Rank recently modified and recently opened notes higher
+    /// (`SPECs/search-ranking-spec.md`). Off for the CLI, on for the palette.
+    pub recency: bool,
+    /// When few notes match exactly, append similar ones: typo-tolerant and
+    /// subsequence matches on file names, headings and tags.
+    pub fuzzy: bool,
+    /// Last-opened unix ms by vault-relative path; filled by the app, not IPC.
+    #[serde(skip)]
+    pub opened: OpenedMap,
+    /// Clock for recency; `0` reads the system clock. Tests pin it.
+    #[serde(skip)]
+    pub now_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -68,8 +95,12 @@ pub struct SearchHit {
     /// File name without extension.
     pub title: String,
     pub folder: String,
-    /// bm25 relevance, higher is better.
+    /// bm25 relevance (times the recency boost when enabled), higher is better.
+    /// Fuzzy hits carry a small rank value and always follow the exact ones.
     pub score: f64,
+    /// Found by the fuzzy fallback (similar name, heading or tag), not by the
+    /// full-text query: it has no snippets.
+    pub fuzzy: bool,
     pub snippets: Vec<Snippet>,
     /// The file differs from what was indexed (or vanished): the hit may be
     /// outdated and the watcher will refresh it. Only evaluated when snippets
@@ -93,6 +124,14 @@ struct RawHit {
     folder: String,
     hash: Option<i64>,
     score: f64,
+    mtime_ms: i64,
+}
+
+fn system_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 fn like_escape(s: &str) -> String {
@@ -169,12 +208,14 @@ impl Index {
             // after filtering; otherwise page in SQL.
             let (lim, off) = if case {
                 (CASE_SCAN_CAP, 0)
+            } else if opts.recency {
+                ((offset + limit).max(RERANK_POOL), 0)
             } else {
                 (limit, offset)
             };
             let sql = format!(
                 "SELECT f.path, f.basename, f.folder, f.body_hash, \
-                        -bm25(notes_fts, {BM25_WEIGHTS}) AS score \
+                        -bm25(notes_fts, {BM25_WEIGHTS}) AS score, f.mtime \
                  {from}{cond_sql} ORDER BY score DESC, f.path LIMIT {lim} OFFSET {off}"
             );
             let mut st = c.prepare(&sql)?;
@@ -185,11 +226,39 @@ impl Index {
                     folder: r.get(2)?,
                     hash: r.get(3)?,
                     score: r.get(4)?,
+                    mtime_ms: r.get(5)?,
                 })
             })?;
             let raw = rows.collect::<Result<Vec<_>, _>>()?;
             Ok((raw, total, case && total as usize > CASE_SCAN_CAP))
         })?;
+
+        let now_ms = if opts.now_ms > 0 {
+            opts.now_ms
+        } else {
+            system_now_ms()
+        };
+        let raw = if opts.recency && !case {
+            let mut raw = raw;
+            for r in &mut raw {
+                let boost = recency_boost(
+                    now_ms,
+                    Recency {
+                        opened_ms: opts.opened.get(&r.path).copied(),
+                        mtime_ms: r.mtime_ms,
+                    },
+                );
+                r.score = combine(r.score, boost);
+            }
+            raw.sort_by(|a, b| {
+                b.score
+                    .total_cmp(&a.score)
+                    .then_with(|| a.path.cmp(&b.path))
+            });
+            raw.into_iter().skip(offset).take(limit).collect()
+        } else {
+            raw
+        };
 
         let snippet_len = opts.snippet_len.unwrap_or(DEFAULT_SNIPPET_LEN) as usize;
         let max_snippets = opts.max_snippets.unwrap_or(DEFAULT_SNIPPETS) as usize;
@@ -222,6 +291,7 @@ impl Index {
                 title: r.title,
                 folder: r.folder,
                 score: r.score,
+                fuzzy: false,
                 snippets,
                 stale,
             });
@@ -232,11 +302,127 @@ impl Index {
         } else {
             (hits, total)
         };
+        let (mut hits, mut total) = (hits, total);
+        if opts.fuzzy && !case && offset == 0 && total < FUZZY_FEW {
+            let room = limit.saturating_sub(hits.len()).min(FUZZY_MAX);
+            if room > 0 {
+                let seen: std::collections::HashSet<String> =
+                    hits.iter().map(|h| h.path.clone()).collect();
+                let extra =
+                    self.fuzzy_hits(&parsed, opts, &cond_sql, &cond_args, &seen, room, now_ms)?;
+                total += extra.len() as i64;
+                hits.extend(extra);
+            }
+        }
         Ok(SearchPage {
             total,
             hits,
             truncated,
         })
+    }
+
+    /// Similar notes for a query that found (almost) nothing: the query's
+    /// words fuzzy-match (`rank.rs`: subsequence and typos) a note's file name,
+    /// or, at lower weight, one of its headings or tags.
+    #[allow(clippy::too_many_arguments)]
+    fn fuzzy_hits(
+        &self,
+        parsed: &ParsedQuery,
+        opts: &SearchOptions,
+        cond_sql: &str,
+        cond_args: &[SqlValue],
+        seen: &std::collections::HashSet<String>,
+        room: usize,
+        now_ms: i64,
+    ) -> Res<Vec<SearchHit>> {
+        let words: Vec<&str> = parsed
+            .positives
+            .iter()
+            .flat_map(|t| t.words.iter().map(String::as_str))
+            .collect();
+        let q = PreparedQuery::new(&words.join(" "));
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let min_score = FUZZY_MIN_PER_CHAR * q.char_count() as f64;
+        let (names, secondary) = self.read(|c| {
+            let sql = format!(
+                "SELECT f.id, f.path, f.basename, f.folder, f.mtime FROM files f \
+                 WHERE f.ext = 'md'{cond_sql}"
+            );
+            let mut st = c.prepare(&sql)?;
+            let names = st
+                .query_map(params_from_iter(cond_args.iter()), |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, i64>(4)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut secondary: HashMap<i64, Vec<String>> = HashMap::new();
+            for (sql, _) in [
+                ("SELECT file_id, text FROM headings", ()),
+                ("SELECT file_id, tag FROM tags", ()),
+            ] {
+                let mut st = c.prepare(sql)?;
+                let rows =
+                    st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+                for row in rows {
+                    let (id, text) = row?;
+                    secondary.entry(id).or_default().push(text);
+                }
+            }
+            Ok((names, secondary))
+        })?;
+        let mut scored: Vec<(f64, SearchHit)> = Vec::new();
+        for (id, path, basename, folder, mtime_ms) in names {
+            if seen.contains(&path) {
+                continue;
+            }
+            let mut best = match_path(&q, &Prepared::new(&basename)).map(|m| m.score);
+            if let Some(texts) = secondary.get(&id) {
+                for t in texts {
+                    if let Some(m) = match_path(&q, &Prepared::new(t)) {
+                        let s = m.score * FUZZY_SECONDARY_FACTOR;
+                        if best.is_none_or(|b| s > b) {
+                            best = Some(s);
+                        }
+                    }
+                }
+            }
+            let Some(text) = best.filter(|s| *s >= min_score) else {
+                continue;
+            };
+            let boost = if opts.recency {
+                recency_boost(
+                    now_ms,
+                    Recency {
+                        opened_ms: opts.opened.get(&path).copied(),
+                        mtime_ms,
+                    },
+                )
+            } else {
+                0.0
+            };
+            let rank_value = combine(text, boost);
+            scored.push((
+                rank_value,
+                SearchHit {
+                    path,
+                    title: basename,
+                    folder,
+                    score: rank_value / 1000.0,
+                    fuzzy: true,
+                    snippets: Vec::new(),
+                    stale: false,
+                },
+            ));
+        }
+        scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.path.cmp(&b.1.path)));
+        Ok(scored.into_iter().take(room).map(|(_, h)| h).collect())
     }
 
     /// Run an FTS maintenance command on the writer thread and wait.

@@ -2,6 +2,7 @@ import { FileBrowser } from "./file-browser";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { PluginRibbon } from "@/components/plugins/plugin-strips";
 import { useWorkspaceGeneration } from "@/hooks/use-workspace";
+import { useAutoRevealActiveFile } from "@/hooks/use-auto-reveal-active-file";
 import { useSidebarSurface } from "./use-sidebar-surface";
 
 export function Sidebar() {
@@ -12,6 +13,10 @@ export function Sidebar() {
 
 function SidebarSurface() {
   const surface = useSidebarSurface();
+  useAutoRevealActiveFile({
+    renamingPath: surface.tree.renamingPath,
+    everythingCollapsed: surface.tree.everythingCollapsed,
+  });
 
   return (
     <div

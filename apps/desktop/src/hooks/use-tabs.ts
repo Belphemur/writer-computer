@@ -54,6 +54,14 @@ export function useCloseActiveTab() {
   return useEditorStore((s) => s.closeActiveTab);
 }
 
+export function useHasClosedTabs() {
+  return useEditorStore((s) => s.closedTabs.length > 0);
+}
+
+export function useReopenClosedTab() {
+  return useEditorStore((s) => s.reopenClosedTab);
+}
+
 export function useSetActiveTab() {
   return useEditorStore((s) => s.setActiveTab);
 }

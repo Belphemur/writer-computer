@@ -21,6 +21,7 @@ mod note;
 pub mod patch;
 pub mod paths;
 mod query;
+pub mod rank;
 pub(crate) mod resolve;
 mod schema;
 mod search;

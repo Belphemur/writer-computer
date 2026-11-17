@@ -5,6 +5,7 @@ import { viewChoices, viewNames, viewOfResult } from "@/lib/bases/grid";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import type { BaseViewProps, ViewConfig } from "@/lib/bases/view-registry";
 import { BaseToolbar } from "./base-toolbar";
+import { useBaseConfig } from "./use-base-config";
 import { useBaseEdits } from "./use-base-edits";
 import { errorMessage, useBaseQuery, type BaseSource } from "./use-base-query";
 import { useCellActions } from "./use-cell-actions";
@@ -53,7 +54,7 @@ function Frame({ children, label }: { children: React.ReactNode; label: string }
   );
 }
 
-/** A note embed of a base: a `.base` file by link, or a fenced `base` block. Read-only (spec 7.13). */
+/** A note embed of a base: a `.base` file by link, or a fenced `base` block. Read-only except column widths (spec 7.13). */
 export function EmbeddedBase(props: EmbeddedBaseProps) {
   const { embed } = props;
   // A different embed (another file or view) starts with fresh state; typing in a block does not.
@@ -143,7 +144,7 @@ function Body({
   onEdit: () => void;
 }) {
   const [chosen, setChosen] = useState<string | undefined>(initialView);
-  const { state, refresh } = useBaseQuery({
+  const { state, refresh, reload } = useBaseQuery({
     source,
     thisPath: notePath,
     view: chosen,
@@ -154,11 +155,22 @@ function Body({
   const actions = useCellActions(edits.notify);
   const { notify } = edits;
 
-  // Header clicks and resizes would write the `.base`; embeds never write it.
+  // Header clicks never write the `.base` from an embed. Column resizes (drag or double-click fit)
+  // do, for a file embed, through the same write path as the Bases tab (`useBaseConfig`); a fenced
+  // block has no file, so its widths only last until the block's result reloads.
+  const filePathForConfig = source.kind === "file" ? source.path : null;
+  const configApi = useBaseConfig({ path: filePathForConfig ?? notePath, reload, notify });
+  const viewIndex = state.result?.view.index ?? null;
+  const viewOfState = viewOfResult(state.document, state.result);
   const config = useMemo<ViewConfig>(() => {
     const refuse = () => notify("info", EMBED_READ_ONLY);
-    return { cycleSort: refuse, setColumnWidth: refuse, setOption: refuse };
-  }, [notify]);
+    const persisting = filePathForConfig ? configApi.viewConfig(viewIndex, viewOfState) : null;
+    return {
+      cycleSort: refuse,
+      setColumnWidth: (id, px) => persisting?.setColumnWidth(id, px),
+      setOption: refuse,
+    };
+  }, [notify, configApi, filePathForConfig, viewIndex, viewOfState]);
 
   const { document, result } = state;
   const names = useMemo(

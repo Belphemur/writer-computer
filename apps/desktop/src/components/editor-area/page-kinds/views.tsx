@@ -2,12 +2,14 @@ import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
 import { BaseView } from "@/components/base-view";
+import { PluginFileTab } from "@/components/plugins/plugin-file-tab";
 import { PluginViewTab } from "@/components/plugins/plugin-view-tab";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { Location } from "./index";
 import type { BaseLocation } from "./base";
 import type { FileLocation } from "./file";
 import type { LauncherLocation } from "./launcher";
+import type { PluginFileLocation } from "./plugin-file";
 import type { PluginViewLocation } from "./plugin-view";
 import type { SettingsLocation } from "./settings";
 import type { PageKindView } from "./types";
@@ -48,6 +50,9 @@ const views = {
   "plugin-view": {
     Component: PluginViewTab,
   } satisfies PageKindView<PluginViewLocation>,
+  "plugin-file": {
+    Component: PluginFileTab,
+  } satisfies PageKindView<PluginFileLocation>,
 } as const;
 
 /** Resolve a location to its registered view. Throws on an unknown kind —

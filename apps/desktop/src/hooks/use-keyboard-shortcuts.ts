@@ -2,11 +2,11 @@ import { useEffect } from "react";
 import { useUIStore } from "@/stores/ui-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { toggleAgentPane } from "@/hooks/agent-api";
 import { toggleSidebar } from "@/hooks/use-sidebar";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
 import { getWorkspaceChromeMode } from "@/lib/compact-mode";
 import { closeWindow } from "@/lib/tauri";
-import { logger } from "@/lib/logger";
 
 function isEditableTargetFocused(): boolean {
   const active = document.activeElement;
@@ -36,6 +36,24 @@ export function useKeyboardShortcuts() {
       } = useEditorStore.getState();
       const isCompactFileMode = getWorkspaceChromeMode(root, chromeMode) === "compact-file";
 
+      // Cmd+Shift+T — reopen the last closed tab (repeat to walk back through closed tabs).
+      // Non-Latin layouts report another letter as `key`, so fall back to the physical key there.
+      const isKeyT = e.key.toLowerCase() === "t" || (!/^[a-z]$/i.test(e.key) && e.code === "KeyT");
+      if (mod && e.shiftKey && !e.altKey && isKeyT) {
+        e.preventDefault();
+        if (isCompactFileMode) return;
+        void useEditorStore.getState().reopenClosedTab();
+        return;
+      }
+
+      // Cmd+Shift+A — toggle the agent pane (focuses its composer when opening).
+      const isKeyA = e.key.toLowerCase() === "a" || (!/^[a-z]$/i.test(e.key) && e.code === "KeyA");
+      if (mod && e.shiftKey && !e.altKey && isKeyA) {
+        e.preventDefault();
+        if (root && !isCompactFileMode) toggleAgentPane();
+        return;
+      }
+
       // Alt+Arrow: history navigation when no editable target is focused;
       // inside the editor, let CodeMirror handle word-wise cursor motion.
       if (e.altKey && !e.shiftKey && e.key === "ArrowLeft" && !isEditableTargetFocused()) {
@@ -47,6 +65,22 @@ export function useKeyboardShortcuts() {
       if (e.altKey && !e.shiftKey && e.key === "ArrowRight" && !isEditableTargetFocused()) {
         e.preventDefault();
         void navigateForward();
+        return;
+      }
+
+      // Cmd+[ / Cmd+] (Safari/Finder convention, and what mouse drivers send for the side buttons):
+      // history navigation only when no editable target is focused. In the note CodeMirror owns them
+      // (indent less / more), and the agent pane's chat switcher stops them before they get here.
+      if (
+        e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === "[" || e.key === "]") &&
+        !isEditableTargetFocused()
+      ) {
+        e.preventDefault();
+        void (e.key === "[" ? navigateBack() : navigateForward());
         return;
       }
 
@@ -156,39 +190,9 @@ export function useKeyboardShortcuts() {
         return;
       }
     }
-    // Mouse side buttons: 3 = "back", 4 = "forward" (what browsers and most apps do). The webview
-    // has no page history of its own to walk, so they drive the editor's navigation history.
-    function handleMouseUp(e: MouseEvent) {
-      if (e.button !== 3 && e.button !== 4) return;
-      logger.log("info", "app", `mouse side button ${e.button} reached the page (mouseup)`);
-      e.preventDefault();
-      const { navigateBack, navigateForward } = useEditorStore.getState();
-      void (e.button === 3 ? navigateBack() : navigateForward());
-    }
-    // Some engines also synthesise `auxclick` for the side buttons; keep it from doing anything.
-    function swallowSideAuxClick(e: MouseEvent) {
-      if (e.button === 3 || e.button === 4) {
-        logger.log("info", "app", `mouse side button ${e.button} reached the page (auxclick)`);
-        e.preventDefault();
-      }
-    }
-    // Diagnostics: do side buttons reach the webview as pointer/mouse-down events at all?
-    function logSideDown(e: MouseEvent) {
-      if (e.button === 3 || e.button === 4) {
-        logger.log("info", "app", `mouse side button ${e.button} reached the page (${e.type})`);
-      }
-    }
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("auxclick", swallowSideAuxClick);
-    window.addEventListener("mousedown", logSideDown);
-    window.addEventListener("pointerdown", logSideDown);
     return () => {
-      window.removeEventListener("mousedown", logSideDown);
-      window.removeEventListener("pointerdown", logSideDown);
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("auxclick", swallowSideAuxClick);
     };
   }, []);
 }

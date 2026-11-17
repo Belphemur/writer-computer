@@ -4,6 +4,7 @@ import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
 import { buildEditorBodyMenuItemsSpec, showNativeContextMenu } from "./editor-context-menu";
 import { followLink, linkHrefAtPos } from "./link-navigation";
 import { runEditorCommand } from "./markdown-formatting";
+import { prepareTableContextMenu, runTableCommand } from "./table-editing";
 
 /** Right-click menu over the editor body: clipboard, the command submenus,
  *  and link actions when the click landed on a link. */
@@ -19,6 +20,7 @@ export function editorBodyContextMenuExtension(
       const linkHref = pos === null ? null : linkHrefAtPos(view, pos);
       const hasLink = linkHref !== null;
       const filePath = getFilePath();
+      const inTable = prepareTableContextMenu(view, event);
 
       void showNativeContextMenu(
         buildEditorBodyMenuItemsSpec(
@@ -53,6 +55,12 @@ export function editorBodyContextMenuExtension(
             onCopyLink: hasLink
               ? () => {
                   void writeText(linkHref);
+                }
+              : undefined,
+            onTableCommand: inTable
+              ? (id) => {
+                  view.focus();
+                  runTableCommand(view, id);
                 }
               : undefined,
             onRunCommand: (id) => {

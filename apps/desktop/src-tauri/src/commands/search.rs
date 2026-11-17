@@ -6,7 +6,7 @@ use crate::commands::blocking;
 use crate::commands::index::app_err;
 use crate::commands::index::window_index;
 use crate::error::AppError;
-use crate::index::names::NameFilter;
+use crate::index::names::{NameFilter, RankContext};
 use serde::Serialize;
 use std::path::Path;
 use tauri::Manager;
@@ -20,7 +20,16 @@ pub struct SearchResult {
     pub match_indices: Vec<u32>,
 }
 
-/// Quick-open / link-autocomplete search over notes and `.base` files.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Quick-open / link-autocomplete search over notes and `.base` files: fuzzy,
+/// typo-tolerant, boosted by recently opened/modified files (`index/rank.rs`).
+/// An empty query lists files by recency (opened first, then modified).
 ///
 /// While the cold index build is still running the result is built from the
 /// rows committed so far; the frontend's `isIndexing` flag (cleared by
@@ -33,18 +42,20 @@ pub async fn fuzzy_search(
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Vec<SearchResult>, AppError> {
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
     let limit = limit.unwrap_or(50) as usize;
     blocking(move || {
         let (state, index) = window_index(&app, &webview)?;
         if let Some(e) = index.last_error() {
             return Err(AppError::Io(format!("vault index failed: {e}")));
         }
+        let ctx = RankContext {
+            now_ms: now_ms(),
+            opened: crate::commands::recents::opened_under(&app, index.root()),
+            recency: true,
+        };
         let found = state
             .names
-            .search(&query, limit, &NameFilter::default())
+            .search_with(&query, limit, &NameFilter::default(), &ctx)
             .map_err(app_err)?;
         Ok(found
             .matches

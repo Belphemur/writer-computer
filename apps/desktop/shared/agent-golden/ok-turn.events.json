@@ -1,0 +1,68 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_a1",
+    "blockIndex": 0,
+    "text": "ok"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_a1",
+    "blockIndex": 0,
+    "text": "ok"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 4,
+    "cacheReadTokens": 11863,
+    "cacheCreationTokens": 6076,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1800000000
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 4,
+    "cacheReadTokens": 11863,
+    "cacheCreationTokens": 6076,
+    "costUsd": 0.0255343,
+    "contextWindow": 1000000
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 1614,
+    "apiDurationMs": 1363,
+    "numTurns": 1,
+    "isError": false,
+    "result": "ok",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

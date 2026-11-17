@@ -9,6 +9,7 @@ import { Events, callerPluginId, type EventRef } from "./core";
 import { logger } from "@/lib/logger";
 import { recordPluginMutation } from "./churn-guard";
 import { normalizePath, parseFrontMatterTags } from "./functions";
+import { parseNoteStructure, type ListItemCache, type SectionCache } from "./note-structure";
 
 // ---------------------------------------------------------------- IO boundary
 
@@ -630,6 +631,12 @@ export interface CachedMetadata {
   embeds?: LinkCache[];
   tags?: TagCache[];
   headings?: HeadingCache[];
+  /** One entry per top-level block (heading, paragraph, list, code, table, ...). */
+  sections?: SectionCache[];
+  /** Every bullet and task, with parent line, task character and block id. */
+  listItems?: ListItemCache[];
+  /** `[[links]]` found in string values of the frontmatter. */
+  frontmatterLinks?: { key: string; link: string; original: string; displayText?: string }[];
 }
 
 /** Replaces fenced and inline code with spaces (same length) so scanners skip it. */
@@ -731,7 +738,42 @@ export function parseNoteMetadata(raw: string): CachedMetadata {
     });
   }
   if (headings.length) out.headings = headings;
+
+  const fmLinks = out.frontmatter ? frontmatterLinks(out.frontmatter) : [];
+  if (fmLinks.length) out.frontmatterLinks = fmLinks;
+
+  const bodyStartLine = parsed.frontmatter !== null ? loc(bodyOffset).line : 0;
+  const yamlEnd = out.frontmatterPosition ? out.frontmatterPosition.end.line : null;
+  const structure = parseNoteStructure(
+    raw,
+    bodyStartLine,
+    parsed.frontmatter !== null ? yamlEnd : null,
+  );
+  if (structure.sections.length) out.sections = structure.sections;
+  if (structure.listItems.length) out.listItems = structure.listItems;
   return out;
+}
+
+function frontmatterLinks(
+  fm: Record<string, any>,
+): NonNullable<CachedMetadata["frontmatterLinks"]> {
+  const found: NonNullable<CachedMetadata["frontmatterLinks"]> = [];
+  const visit = (key: string, value: unknown, depth: number): void => {
+    if (depth > 6) return;
+    if (typeof value === "string") {
+      for (const m of value.matchAll(/\[\[([^\]\n]+?)\]\]/g)) {
+        const w = parseWikiLink(m[1]);
+        const link = w.fragment !== null ? `${w.path}#${w.fragment}` : w.path;
+        found.push({ key, link, original: m[0], displayText: w.alias ?? link });
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach((v, i) => visit(`${key}.${i}`, v, depth + 1));
+    } else if (value && typeof value === "object") {
+      for (const [k, v] of Object.entries(value)) visit(`${key}.${k}`, v, depth + 1);
+    }
+  };
+  for (const [k, v] of Object.entries(fm)) visit(k, v, 0);
+  return found;
 }
 
 export function getAllTags(cache: CachedMetadata): string[] | null {
@@ -809,6 +851,9 @@ export class MetadataCache extends Events {
     if (this.tickets.get(file.path) !== ticket) return this.cache.get(file.path) ?? meta;
     this.cache.set(file.path, meta);
     this.trigger("changed", file, content, meta);
+    // Obsidian follows `changed` with a per-file `resolve`. Dataview (and Tasks) skip a file that
+    // has no cache yet at startup and rely on this event to pick it up, so it is not optional.
+    this.trigger("resolve", file);
     return meta;
   }
 
@@ -880,6 +925,11 @@ export class MetadataCache extends Events {
       if (hits.length > 0) data.set(path, hits);
     }
     return { data, get: (p) => data.get(p), keys: () => [...data.keys()] };
+  }
+
+  /** Undocumented but used by plugins (Tasks, Meta Bind): every path with cached metadata. */
+  getCachedFiles(): string[] {
+    return [...this.cache.keys()];
   }
 
   getFileCache(file: TFile): CachedMetadata | null {

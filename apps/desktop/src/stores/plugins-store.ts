@@ -23,12 +23,14 @@ import { setPluginEditorExtensions, findEditorView } from "@/lib/obsidian-host/e
 import { recordPluginError } from "@/lib/obsidian-host/error-log";
 import {
   createWorkspaceBridge,
+  toAbsolutePath,
   toVaultPath,
   type AppWorkspace,
 } from "@/lib/obsidian-host/workspace-bridge";
 import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { getFileName } from "@/lib/paths";
+import { clearFileViewResolver, setFileViewResolver } from "@/lib/file-views";
 import { confirmAction } from "@/lib/tauri";
 import { defaultStoreClient, type StorePluginsState } from "@/lib/obsidian-host/store-client";
 import { useEditorStore } from "@/stores/editor-store";
@@ -126,6 +128,13 @@ interface PluginsState {
   /** Main-area leaves; each one that shows a view is an editor tab (page kind `plugin-view`). */
   mainLeaves: readonly WorkspaceLeaf[];
   activeLeaf: WorkspaceLeaf | null;
+  /**
+   * The plugin leaf behind each file-bound tab (page kind `plugin-file`), by tab id: created by
+   * the tab body (`ensureFileLeaf`), or adopted from a leaf a plugin opened itself.
+   */
+  fileLeaves: ReadonlyMap<string, FileLeafState>;
+  /** The host finished loading plugins (or there is none): a tab whose view is missing falls back. */
+  fileViewsReady: boolean;
   /** Bumped when a leaf's title or icon changes, so the pane header re-renders. */
   leafRevision: number;
   isPaneOpen: boolean;
@@ -147,10 +156,21 @@ interface PluginsState {
   closePane: () => void;
   setPaneWidth: (width: number) => void;
   selectLeaf: (leaf: WorkspaceLeaf) => void;
+  /** Gives a `plugin-file` tab its leaf: opens the file through the registered view (idempotent). */
+  ensureFileLeaf: (tabId: string, target: { path: string; viewType: string }) => Promise<void>;
   /** Mirrors a Settings > Secrets change into the running host (null = deleted). */
   syncSecret: (id: string, value: string | null) => void;
   /** Re-attempts the host's keychain read after a denial; no-op when it already succeeded. */
   retrySecrets: () => Promise<void>;
+}
+
+/** What a `plugin-file` tab shows: its leaf once open, or why there is none. */
+export interface FileLeafState {
+  path: string;
+  viewType: string;
+  status: "opening" | "ready" | "error" | "no-view";
+  leaf: WorkspaceLeaf | null;
+  error?: string;
 }
 
 interface Session {
@@ -173,6 +193,8 @@ const IDLE = {
   leaves: [],
   mainLeaves: [],
   activeLeaf: null,
+  fileLeaves: new Map<string, FileLeafState>(),
+  fileViewsReady: false,
   leafRevision: 0,
   isPaneOpen: false,
 } satisfies Partial<PluginsState>;
@@ -185,6 +207,22 @@ const appWorkspace: AppWorkspace = {
   openFile: (path, { newLeaf }) =>
     newLeaf ? editorApi.openFileInNewTab(path) : editorApi.navigateToFile(path),
 };
+
+/** The path a leaf's file view shows, for the views that are file views (`FileView.file`). */
+const leafFilePath = (leaf: WorkspaceLeaf): string | null => {
+  const file = (leaf.view as { file?: { path?: unknown } | null }).file;
+  return typeof file?.path === "string" ? file.path : null;
+};
+
+/** Waits (bounded) for the text of `path` to reach the disk before a plugin reads it. */
+async function waitForSaved(path: string): Promise<void> {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const file = useEditorStore.getState().openFiles.get(path);
+    if (!file || !file.isDirty) return;
+    await new Promise<void>((r) => setTimeout(r, 50));
+  }
+}
 
 /** An empty leaf (nothing opened in it yet) has no tab. */
 const hasView = (leaf: WorkspaceLeaf): boolean => {
@@ -241,6 +279,7 @@ async function drainExternalQueue(deliver: (e: ExternalEvent) => Promise<void>):
 }
 
 let session: Session | null = null;
+let tearingDown = false;
 let generation = 0;
 // attach/detach run strictly one after another; `generation` lets a superseded attach bail out.
 let lifecycle: Promise<unknown> = Promise.resolve();
@@ -260,12 +299,81 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
 
   // Ids of main-area leaves that currently have an editor tab (to notice tabs the user closed).
   const tabbed = new Set<string>();
+  const host = (): PluginHost | null => session?.host ?? null;
+  // Tab locations hold absolute paths, the plugins' vault speaks vault-relative ones.
+  const toAbs = (vaultPath: string): string => {
+    const root = get().root;
+    return root ? toAbsolutePath(root, vaultPath) : vaultPath;
+  };
+  const toRel = (absPath: string): string | null => {
+    const root = get().root;
+    return root ? toVaultPath(root, absPath) : null;
+  };
+
+  /** Sets or (with null) removes the file-leaf state of a `plugin-file` tab. */
+  function setFileLeaf(tabId: string, entry: FileLeafState | null): void {
+    set((s) => {
+      const next = new Map(s.fileLeaves);
+      if (entry) next.set(tabId, entry);
+      else next.delete(tabId);
+      return { fileLeaves: next };
+    });
+  }
+
+  /** Resolves when the tab's leaf finished opening (or failed), bounded so a hung view cannot stall. */
+  function waitForFileLeaf(tabId: string, timeoutMs = 10_000): Promise<void> {
+    const settled = () => {
+      const st = get().fileLeaves.get(tabId)?.status;
+      return st !== undefined && st !== "opening";
+    };
+    if (settled()) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        unsubscribe();
+        resolve();
+      };
+      const timer = setTimeout(done, timeoutMs);
+      const unsubscribe = usePluginsStore.subscribe(() => {
+        if (settled()) done();
+      });
+    });
+  }
+
+  /** An unbound leaf a plugin opened that already shows this file through this view type. */
+  function findAdoptable(target: { path: string; viewType: string }): WorkspaceLeaf | null {
+    const rel = toRel(target.path);
+    return (
+      get().mainLeaves.find(
+        (l) =>
+          l.tabId === null &&
+          !l.detached &&
+          l.view.getViewType() === target.viewType &&
+          leafFilePath(l) === rel,
+      ) ?? null
+    );
+  }
 
   function paneFor(gen: number) {
     const current = (fn: () => void) => ifCurrent(gen, fn)();
     /** Shows a main-area leaf as an editor tab once it has a view; re-titles an existing tab. */
     const syncMainTab = (leaf: WorkspaceLeaf, focus: boolean) => {
       if (!hasView(leaf) || !get().mainLeaves.includes(leaf)) return;
+      // A leaf bound to a tab already has it (the tab body made the leaf).
+      if (leaf.tabId !== null) return;
+      // A plugin opened a file view itself (`getLeaf("tab")` + `setViewState`): the tab shows the
+      // file like any other file tab (persisted, restored), not as a transient plugin view.
+      const vaultPath = leafFilePath(leaf);
+      if (vaultPath !== null && !tabbed.has(leaf.id)) {
+        const path = toAbs(vaultPath);
+        const tabId = editorApi.openPluginFileTab({ path, viewType: leaf.view.getViewType() });
+        if (tabId !== null && leaf.tabId === null) {
+          leaf.tabId = tabId;
+          setFileLeaf(tabId, { path, viewType: leaf.view.getViewType(), status: "ready", leaf });
+          if (focus) host()?.app.workspace.setActiveLeaf(leaf);
+          return;
+        }
+      }
       const title = leafTitle(leaf);
       if (tabbed.has(leaf.id)) {
         editorApi.updatePluginViewTab(leaf.id, title);
@@ -311,7 +419,18 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
         current(() => {
           if (leaf.placement === "main") {
             tabbed.delete(leaf.id);
-            editorApi.closePluginViewTab(leaf.id);
+            const tabId = leaf.tabId;
+            const entry = tabId === null ? undefined : get().fileLeaves.get(tabId);
+            if (tabId !== null && entry?.leaf === leaf) {
+              // The leaf went away under a live tab: its plugin was disabled (the file falls back to
+              // the text editor) or the view closed itself (the tab goes with it).
+              setFileLeaf(tabId, null);
+              if (!tearingDown && editorApi.getTabLocation(tabId)?.kind === "plugin-file") {
+                if (leaf.ownerRemoved)
+                  void editorApi.replaceTabLocation(tabId, { kind: "file", path: entry.path });
+                else editorApi.closeTab(tabId);
+              }
+            } else if (tabId === null) editorApi.closePluginViewTab(leaf.id);
             set((s) =>
               s.mainLeaves.includes(leaf)
                 ? { mainLeaves: s.mainLeaves.filter((l) => l !== leaf) }
@@ -333,8 +452,26 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
         });
       },
       activePluginLeaf(): WorkspaceLeaf | null {
+        const activeTabId = useEditorStore.getState().activeTabId;
+        if (activeTabId !== null && editorApi.getTabLocation(activeTabId)?.kind === "plugin-file")
+          return get().fileLeaves.get(activeTabId)?.leaf ?? null;
         const id = editorApi.getPluginViewTabLeafIds().active;
         return id === null ? null : (get().mainLeaves.find((l) => l.id === id) ?? null);
+      },
+      async showLeafAsText(leaf: WorkspaceLeaf, path: string) {
+        if (leaf.tabId === null) return;
+        await editorApi.replaceTabLocation(leaf.tabId, { kind: "file", path: toAbs(path) });
+      },
+      async showFileAsView(vaultPath: string, viewType: string) {
+        const tabId = useEditorStore.getState().activeTabId;
+        if (tabId === null) throw new Error("No tab to show the view in");
+        const path = toAbs(vaultPath);
+        // The text editor's pending save lands first: the plugin reads the file from disk.
+        await waitForSaved(path);
+        await editorApi.replaceTabLocation(tabId, { kind: "plugin-file", path, viewType });
+        // The tab body asks for the leaf too (idempotent); do not depend on it being mounted.
+        await get().ensureFileLeaf(tabId, { path, viewType });
+        await waitForFileLeaf(tabId);
       },
     };
   }
@@ -367,6 +504,11 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       }
       editorApi.openSettings(pluginSectionId(entry.owner, entry.tab.id));
     };
+    const resolver = (path: string) => {
+      const rel = toRel(path);
+      return rel === null ? null : host.app.workspace.resolveFileView(rel);
+    };
+    setFileViewResolver(resolver);
     const unsubs = [
       host.subscribe(sync(() => set({ snapshot: host.getSnapshot() }))),
       services.commands.subscribe(sync(() => set({ commands: services.commands.list() }))),
@@ -396,6 +538,19 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       useEditorStore.subscribe((state, prev) => {
         if (gen !== generation) return;
         if (state.tabs !== prev.tabs) {
+          // A file tab that closed, navigated to another file or turned into the text editor
+          // releases its plugin leaf (the view saves and closes).
+          for (const [tabId, entry] of get().fileLeaves) {
+            const loc = state.tabs.find((t) => t.id === tabId)?.location;
+            if (
+              loc?.kind === "plugin-file" &&
+              loc.path === entry.path &&
+              loc.viewType === entry.viewType
+            )
+              continue;
+            setFileLeaf(tabId, null);
+            entry.leaf?.detach();
+          }
           // A tab the user closed (or navigation replaced) takes its plugin leaf with it.
           const open = new Set(editorApi.getPluginViewTabLeafIds().open);
           for (const leaf of get().mainLeaves)
@@ -414,6 +569,7 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
     ];
     return () => {
       for (const u of unsubs) u();
+      clearFileViewResolver(resolver);
       cancelPendingOpen();
       host.app.setting.openRequested = null;
     };
@@ -423,10 +579,15 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
     const current = session;
     session = null;
     if (current) {
+      // The host going away is not "plugin disabled": file tabs keep their kind and reopen their
+      // views when the next host is up (see detachLeaf).
+      tearingDown = true;
       try {
         await current.host.shutdown();
       } catch (e) {
         console.error("[plugins] host shutdown failed:", e);
+      } finally {
+        tearingDown = false;
       }
       current.unsubscribe();
     }
@@ -482,7 +643,10 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
             if (gen !== generation) return;
             host.app.workspace.markLayoutReady();
           }
+          // Plugins are loaded (or none will be): file tabs can open their views or fall back.
+          set({ fileViewsReady: true });
         } catch (e) {
+          if (gen === generation) set({ fileViewsReady: true });
           console.error("[plugins] boot failed:", e);
           if (gen === generation) {
             recordPluginError("(host)", "boot", e);
@@ -581,5 +745,58 @@ export const usePluginsStore = create<PluginsState>((set, get) => {
       set((s) => (s.paneWidth === next ? s : { paneWidth: next }));
     },
     selectLeaf: (leaf) => set((s) => (s.activeLeaf === leaf ? s : { activeLeaf: leaf })),
+
+    ensureFileLeaf: async (tabId, target) => {
+      const current = session;
+      const existing = get().fileLeaves.get(tabId);
+      if (
+        existing &&
+        existing.path === target.path &&
+        existing.viewType === target.viewType &&
+        existing.status !== "no-view"
+      )
+        return;
+      if (!current || !get().fileViewsReady) return;
+      const workspace = current.host.app.workspace;
+      const entry = { path: target.path, viewType: target.viewType, leaf: null };
+      // A leaf a plugin opened itself for this very file (its tab was created just now).
+      const adopted = findAdoptable(target);
+      if (adopted) {
+        adopted.tabId = tabId;
+        setFileLeaf(tabId, { ...entry, status: "ready", leaf: adopted });
+        return;
+      }
+      if (!workspace.viewCreator(target.viewType)) {
+        setFileLeaf(tabId, { ...entry, status: "no-view" });
+        return;
+      }
+      setFileLeaf(tabId, { ...entry, status: "opening" });
+      const stale = () => {
+        const now = get().fileLeaves.get(tabId);
+        return session !== current || !now || now.path !== target.path || now.status !== "opening";
+      };
+      try {
+        const rel = toRel(target.path);
+        if (rel === null) throw new Error(`${target.path} is outside the workspace`);
+        // The plugin reads the file's frontmatter from the metadata cache while it loads it.
+        await current.host.app.vault.ensureIndexed(rel);
+        const file = current.host.app.vault.getFileByPath(rel);
+        if (file && file.extension === "md" && !current.host.app.metadataCache.getFileCache(file))
+          await current.host.app.metadataCache.indexFile(file);
+        const leaf = await workspace.openFileView(rel, target.viewType, tabId);
+        if (stale()) {
+          leaf.detach();
+          return;
+        }
+        setFileLeaf(tabId, { ...entry, status: "ready", leaf });
+        if (useEditorStore.getState().activeTabId === tabId) {
+          workspace.syncActiveDocument().catch((e) => recordPluginError("(host)", "file-view", e));
+        }
+      } catch (e) {
+        console.error("[plugins] opening a file view failed:", e);
+        recordPluginError(target.viewType, "open-file-view", e);
+        if (!stale()) setFileLeaf(tabId, { ...entry, status: "error", error: messageOf(e) });
+      }
+    },
   };
 });

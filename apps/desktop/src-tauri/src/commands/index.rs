@@ -311,9 +311,11 @@ pub async fn index_search(
         if index.status().map_err(app_err)?.state == IndexState::Building {
             return Err(AppError::Io(INDEX_BUILDING_MESSAGE.into()));
         }
-        index
-            .search(&request.query, &request.options)
-            .map_err(app_err)
+        let mut options = request.options;
+        if options.recency {
+            options.opened = crate::commands::recents::opened_under(&app, index.root());
+        }
+        index.search(&request.query, &options).map_err(app_err)
     })
     .await
 }

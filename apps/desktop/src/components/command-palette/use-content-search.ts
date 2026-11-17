@@ -55,6 +55,8 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
         snippetLen: 140,
         maxSnippets: 3,
         asYouType: true,
+        recency: true,
+        fuzzy: true,
       }).then(
         (page) => {
           if (mine === ticket.current) {

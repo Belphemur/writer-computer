@@ -1,0 +1,137 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_e2",
+    "messageId": "msg_e1",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_e2",
+    "partialJson": "{\"command\": \"python3 -c"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_e2",
+    "partialJson": " 'print(3)'"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_e2",
+    "partialJson": "\", \"description\": \"Run"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_e2",
+    "partialJson": " Python print statement"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_e2",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_e2",
+    "input": {
+      "command": "python3 -c 'print(3)'",
+      "description": "Run Python print statement"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 85,
+    "cacheReadTokens": 13855,
+    "cacheCreationTokens": 5669,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1800000000
+  },
+  {
+    "type": "permission-request",
+    "requestId": "00000000-0000-4000-8000-000000000017",
+    "toolCallId": "toolu_e2",
+    "tool": "Bash",
+    "displayName": "Bash",
+    "input": {
+      "command": "python3 -c 'print(3)'",
+      "description": "Run Python print statement"
+    },
+    "description": "Run Python print statement",
+    "decisionReason": "This command requires approval",
+    "suggestions": [
+      {
+        "behavior": "allow",
+        "destination": "localSettings",
+        "rules": [
+          {
+            "ruleContent": "python3 -c 'print(3)'",
+            "toolName": "Bash"
+          }
+        ],
+        "type": "addRules"
+      }
+    ]
+  },
+  {
+    "type": "permission-resolved",
+    "requestId": "00000000-0000-4000-8000-000000000017",
+    "resolution": "cancelled"
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_e2",
+    "output": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 85,
+    "cacheReadTokens": 13855,
+    "cacheCreationTokens": 5669,
+    "costUsd": 0.0249155,
+    "contextWindow": 1000000
+  },
+  {
+    "type": "turn-finished",
+    "reason": "interrupted",
+    "durationMs": 2022,
+    "apiDurationMs": 1843,
+    "numTurns": 3,
+    "isError": true,
+    "result": null,
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": [
+      "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"
+    ]
+  }
+]

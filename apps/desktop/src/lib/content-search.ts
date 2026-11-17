@@ -19,6 +19,8 @@ export interface ContentSearchHit {
   snippets: ContentSnippet[];
   /** The file changed since it was indexed; the line may have moved. */
   stale: boolean;
+  /** Similar name, heading or tag found by the fuzzy fallback; it has no snippets. */
+  fuzzy?: boolean;
 }
 
 export interface ContentSearchPage {
@@ -37,6 +39,10 @@ export interface ContentSearchRequest {
   maxSnippets?: number;
   /** Match the trailing word as a prefix while the user is still typing it. */
   asYouType?: boolean;
+  /** Rank recently opened and modified notes higher (default off in the backend). */
+  recency?: boolean;
+  /** Append similar names, headings and tags when few notes match exactly. */
+  fuzzy?: boolean;
 }
 
 export function indexSearch(request: ContentSearchRequest): Promise<ContentSearchPage> {

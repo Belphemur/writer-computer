@@ -14,6 +14,7 @@ import {
   type EditorCommand,
   type EditorCommandId,
 } from "./markdown-formatting";
+import { TABLE_MENU_LAYOUT, tableCommands, type TableCommandId } from "./table-editing";
 
 // -- Editor body menu --
 
@@ -33,6 +34,8 @@ export interface EditorBodyMenuHandlers {
   onOpenLink?: () => void;
   onCopyLink?: () => void;
   onRunCommand?: (id: EditorCommandId) => void;
+  /** Set when the click landed in a table: adds the "Table" submenu. */
+  onTableCommand?: (id: TableCommandId) => void;
 }
 
 // Menu ids stay stable for tests and telemetry; text and accelerator come from
@@ -111,6 +114,26 @@ export function buildEditorBodyMenuItemsSpec(
     { kind: "item", id: "copy", text: "Copy", action: handlers.onCopy },
     { kind: "item", id: "paste", text: "Paste", action: handlers.onPaste },
   ];
+
+  if (handlers.onTableCommand) {
+    const run = handlers.onTableCommand;
+    items.push({ kind: "separator" });
+    items.push({
+      kind: "submenu",
+      text: "Table",
+      items: TABLE_MENU_LAYOUT.map((entry): MenuItemSpec => {
+        if (entry === "---") return { kind: "separator" };
+        const command = tableCommands[entry];
+        return {
+          kind: "item",
+          id: entry,
+          text: command.label,
+          action: () => run(entry),
+          ...("chord" in command ? { accelerator: chordToAccelerator(command.chord) } : {}),
+        };
+      }),
+    });
+  }
 
   if (handlers.onRunCommand) {
     const run = handlers.onRunCommand;

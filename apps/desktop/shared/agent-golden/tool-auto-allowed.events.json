@@ -1,0 +1,167 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_b2",
+    "messageId": "msg_b1",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_b2",
+    "partialJson": "{\"command\": \"echo hi"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_b2",
+    "partialJson": "\", \"description\": \"Print"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_b2",
+    "partialJson": " hi"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_b2",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_b2",
+    "input": {
+      "command": "echo hi",
+      "description": "Print hi"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 74,
+    "cacheReadTokens": 13411,
+    "cacheCreationTokens": 6107,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1800000000
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_b2",
+    "output": "hi",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_b4",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_b4",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 50
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_b4",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 150
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_b4",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 338
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_b4",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_b4",
+    "blockIndex": 1,
+    "text": "Done. The command print"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_b4",
+    "blockIndex": 1,
+    "text": "ed `hi`."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_b4",
+    "blockIndex": 1,
+    "text": "Done. The command printed `hi`."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 237,
+    "cacheReadTokens": 19518,
+    "cacheCreationTokens": 18368,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 311,
+    "cacheReadTokens": 32929,
+    "cacheCreationTokens": 24475,
+    "costUsd": 0.1043109,
+    "contextWindow": 1000000
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 5796,
+    "apiDurationMs": 4710,
+    "numTurns": 2,
+    "isError": false,
+    "result": "Done. The command printed `hi`.",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

@@ -48,6 +48,8 @@ import {
 import { seedCopilotDataIfAbsent } from "./node/seed-plugin-data";
 import { getNodeIpc } from "./node/state";
 import { installGlobalFetch, pluginScopedFetch } from "./api/network";
+import { installInThreadWorkers } from "./api/worker-shim";
+import { setMarkdownProcessorHost } from "./markdown-processors";
 
 export type PluginState = "enabled" | "failed" | "disabled";
 
@@ -176,6 +178,7 @@ export class PluginHost {
   private uninstallNode: (() => void) | null = null;
   private uninstallExternalLinks: (() => void) | null = null;
   private uninstallMarkdown: (() => void) | null = null;
+  private uninstallWorkers: (() => void) | null = null;
   private nodeReady: Promise<void> | null = null;
   private readonly io: VaultIo;
   private readonly options: PluginHostOptions;
@@ -209,6 +212,15 @@ export class PluginHost {
         file: path ? this.app.vault.getFileByPath(path) : null,
         editor: new Editor(editorBackendFor(view)),
       };
+    });
+    setMarkdownProcessorHost({
+      services: this.services,
+      app: this.app,
+      toVaultPath: (absPath) => toVaultPath(base, absPath),
+      getFrontmatter: (path) => {
+        const file = this.app.vault.getFileByPath(path);
+        return file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
+      },
     });
     installDefineGlobal();
   }
@@ -353,6 +365,7 @@ export class PluginHost {
     );
     this.app.metadataCache.dispose();
     setEditorInfoResolver(null);
+    setMarkdownProcessorHost(null);
   }
 
   private ensureStarted(): Promise<void> {
@@ -423,6 +436,11 @@ export class PluginHost {
   /** Idempotent: removes everything the plugin put into the app. */
   private async teardown(id: string): Promise<void> {
     logger.warn("plugin", `unloading ${id}`, { plugin: id, phase: "lifecycle" });
+    // Views flush their pending saves while their plugin is still alive.
+    await this.app.workspace.closeViewsOf(id).catch((e) => {
+      console.error(`[plugin] ${id} closing views failed:`, e);
+      recordPluginError(id, "close-views", e);
+    });
     const record = this.records.get(id);
     this.records.delete(id);
     delete this.app.plugins.plugins[id];
@@ -502,6 +520,7 @@ export class PluginHost {
     this.uninstallPopupGuard ??= installPopupGuard();
     this.uninstallExternalLinks ??= installExternalLinks();
     this.uninstallMarkdown ??= setMarkdownRenderer(createMarkdownRenderer({ app: this.app }));
+    this.uninstallWorkers ??= installInThreadWorkers();
   }
 
   private removeDomWhenIdle(): void {
@@ -522,6 +541,8 @@ export class PluginHost {
     this.uninstallExternalLinks = null;
     this.uninstallMarkdown?.();
     this.uninstallMarkdown = null;
+    this.uninstallWorkers?.();
+    this.uninstallWorkers = null;
     this.uninstallNode?.();
     this.uninstallNode = null;
   }

@@ -123,6 +123,7 @@ export function ContentSearchPalette() {
                   <span className="truncate text-[13px] text-text-muted">
                     {hit.folder || "Vault root"}
                     {hit.stale ? " · changed since indexed" : ""}
+                    {hit.fuzzy ? " · similar name" : ""}
                   </span>
                   {hit.snippets.map((s) => (
                     <span key={s.line} className="truncate text-[13px] text-text-muted">

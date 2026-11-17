@@ -3,22 +3,26 @@ import * as tauri from "@/lib/tauri";
 import type { SearchResult } from "@/types/fs";
 
 interface FuzzySearchState {
+  /** The query these results answer; empty-ness is compared so recents never show under a typed query. */
+  query: string;
   results: SearchResult[];
   error: string | null;
 }
 
 /**
- * File-name search backed by the vault index. `error` is set when the index
+ * File-name search backed by the vault index: fuzzy, typo tolerant, boosted by recently opened
+ * and modified files. An empty query lists recent files (opened first). When `enabled` is false
+ * (standalone windows without an index) nothing is requested. `error` is set when the index
  * failed (not when the list is merely short); callers show it instead of
  * "No results".
  */
-export function useFuzzySearch(query: string, limit = 20) {
-  const [state, setState] = useState<FuzzySearchState>({ results: [], error: null });
+export function useFuzzySearch(query: string, limit = 20, enabled = true) {
+  const [state, setState] = useState<FuzzySearchState>({ query: "", results: [], error: null });
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const hasQuery = query.trim() !== "";
+  const hasQuery = enabled;
 
   useEffect(() => {
-    if (!hasQuery) {
+    if (!enabled) {
       return;
     }
 
@@ -31,12 +35,12 @@ export function useFuzzySearch(query: string, limit = 20) {
       tauri
         .fuzzySearch(query, limit)
         .then((results) => {
-          if (!stale) setState({ results, error: null });
+          if (!stale) setState({ query, results, error: null });
         })
         .catch((e: unknown) => {
           console.error("[palette] file search failed:", e);
           if (!stale) {
-            setState({ results: [], error: e instanceof Error ? e.message : String(e) });
+            setState({ query, results: [], error: e instanceof Error ? e.message : String(e) });
           }
         });
     }, 50);
@@ -47,9 +51,12 @@ export function useFuzzySearch(query: string, limit = 20) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, limit, hasQuery]);
+  }, [query, limit, enabled]);
 
-  // Empty queries have no results — derive this during render instead of
+  // Disabled hooks have no results — derive this during render instead of
   // clearing state in the effect, so callers never see a stale frame.
-  return hasQuery ? { results: state.results, error: state.error } : { results: [], error: null };
+  const sameKind = (state.query.trim() === "") === (query.trim() === "");
+  return hasQuery && sameKind
+    ? { results: state.results, error: state.error }
+    : { results: [], error: null };
 }

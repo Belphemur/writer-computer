@@ -3,6 +3,9 @@
 // one entry here, not another branch in the component.
 import type { RegisteredCommand } from "@/lib/obsidian-host/api/core";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
+import { AGENT_PALETTE_COMMANDS } from "./agent-commands";
+import { PROJECT_PALETTE_COMMANDS } from "./project-commands";
+import { TABLE_PALETTE_COMMANDS } from "./table-commands";
 
 /** Everything a built-in command may read or do. Supplied by the palette component. */
 export interface CommandContext {
@@ -11,6 +14,8 @@ export interface CommandContext {
   activeFilePath: string | null;
   hasActiveTab: boolean;
   tabCount: number;
+  /** Is there a closed tab to bring back (the reopen stack is not empty)? */
+  hasClosedTabs: boolean;
   hasPluginLeaves: boolean;
   /** Closes the palette. Built-ins close it after running unless `keepOpen`. */
   close: () => void;
@@ -20,6 +25,7 @@ export interface CommandContext {
   openFileInCompactWindow: (path: string) => void;
   closeActiveTab: () => void;
   closeAllTabs: () => void;
+  reopenClosedTab: () => void;
   openWorkspace: () => Promise<void>;
   closeWorkspace: () => void;
   toggleTheme: () => void;
@@ -91,6 +97,13 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     run: (c) => c.closeActiveTab(),
   },
   {
+    id: "reopen-closed-tab",
+    label: "Reopen Closed Tab",
+    description: COMMAND,
+    when: (c) => c.hasClosedTabs && !c.isCompactFileMode,
+    run: (c) => c.reopenClosedTab(),
+  },
+  {
     id: "close-all",
     label: "Close All Tabs",
     description: COMMAND,
@@ -153,6 +166,9 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     when: (c) => !c.isCompactFileMode,
     run: (c) => c.openSettings(),
   },
+  ...AGENT_PALETTE_COMMANDS,
+  ...PROJECT_PALETTE_COMMANDS,
+  ...TABLE_PALETTE_COMMANDS,
 ];
 
 /**

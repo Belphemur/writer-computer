@@ -6,6 +6,7 @@ import { detectPlatform, revealLabelForPlatform, type Platform } from "./context
 export type FolderMenuActionId =
   | "new-file"
   | "new-folder"
+  | "make-project"
   | "copy-relative-path"
   | "copy-absolute-path"
   | "open-terminal"
@@ -16,6 +17,7 @@ export type FolderMenuActionId =
 export interface FolderContextMenuHandlers {
   onNewFile: () => void;
   onNewFolder: () => void;
+  onMakeProject: () => void;
   onCopyRelativePath: () => void;
   onCopyAbsolutePath: () => void;
   onOpenInTerminal: () => void;
@@ -37,6 +39,8 @@ export function buildFolderMenuItemsSpec(
   return [
     { kind: "item", id: "new-file", text: "New File", action: handlers.onNewFile },
     { kind: "item", id: "new-folder", text: "New Folder", action: handlers.onNewFolder },
+    { kind: "separator" },
+    { kind: "item", id: "make-project", text: "Make project", action: handlers.onMakeProject },
     { kind: "separator" },
     {
       kind: "item",

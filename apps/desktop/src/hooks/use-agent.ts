@@ -1,0 +1,96 @@
+/**
+ * Domain hooks for the native agent pane. Components import these, never `stores/agent-store`
+ * (docs/react-guidelines.md). One selector per hook; imperative actions live in `agent-api.ts`.
+ */
+import { useEffect } from "react";
+import { useAgentStore } from "@/stores/agent-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { agentSettingsFrom } from "@/lib/agent/agent-settings";
+import type { AgentPermissionMode } from "@/lib/agent/events";
+import { useClosePluginPane, useIsPluginPaneOpen } from "@/hooks/use-plugins";
+import type { ChatId } from "@/lib/agent/events";
+
+export type { Draft, AgentView, AgentBackend, QueuedMessage } from "@/stores/agent-store";
+export type { Chat, Turn, Block, PermissionView } from "@/lib/agent/transcript";
+
+export function useIsAgentPaneOpen() {
+  return useAgentStore((s) => s.paneOpen);
+}
+export function useAgentPaneWidth() {
+  return useAgentStore((s) => s.paneWidth);
+}
+export function useHistoryError() {
+  return useAgentStore((s) => s.historyError);
+}
+export function useAgentView() {
+  return useAgentStore((s) => s.view);
+}
+export function useAgentBackend() {
+  return useAgentStore((s) => s.backend);
+}
+export function useAgentBinary() {
+  return useAgentStore((s) => s.binary);
+}
+export function useAgentChatIds() {
+  return useAgentStore((s) => s.order);
+}
+export function useActiveChatId() {
+  return useAgentStore((s) => s.activeChatId);
+}
+export function useAgentChat(chatId: ChatId | null) {
+  return useAgentStore((s) => (chatId ? (s.chats[chatId] ?? null) : null));
+}
+export function useChatTitle(chatId: ChatId) {
+  return useAgentStore((s) => s.chats[chatId]?.title ?? "");
+}
+export function useChatState(chatId: ChatId) {
+  return useAgentStore((s) => s.chats[chatId]?.state ?? "idle");
+}
+export function useAgentDraft(chatId: ChatId | null) {
+  return useAgentStore((s) => (chatId ? s.drafts[chatId] : undefined));
+}
+export function useQueuedMessage(chatId: ChatId | null) {
+  return useAgentStore((s) => (chatId ? s.queued[chatId] : undefined));
+}
+export function useFocusComposerTick() {
+  return useAgentStore((s) => s.focusComposerTick);
+}
+export function useAgentProjectPath() {
+  return useAgentStore((s) => s.currentProjectPath);
+}
+export function useNewProjectDialog() {
+  return useAgentStore((s) => s.newProjectDialog);
+}
+
+/** Mount once in the layout: restores the saved width, and keeps the dock to one view (the agent
+ *  pane and the plugin pane close each other, spec section 2). */
+export function useAgentPaneDock() {
+  const agentOpen = useIsAgentPaneOpen();
+  const pluginOpen = useIsPluginPaneOpen();
+  const closePluginPane = useClosePluginPane();
+  const syncWidth = useAgentStore((s) => s.syncPaneWidth);
+  const widthSetting = useSettingsStore((s) => s.settings["agent.pane-width"]);
+  const closeAgent = useAgentStore((s) => s.closePane);
+
+  // The setting is the saved width (also edited in Settings): adopt it at startup and on change.
+  useEffect(() => syncWidth(widthSetting), [syncWidth, widthSetting]);
+  // Whichever opened last wins: the effect that runs on a change closes the other pane.
+  useEffect(() => {
+    if (agentOpen) closePluginPane();
+  }, [agentOpen, closePluginPane]);
+  useEffect(() => {
+    if (pluginOpen) closeAgent();
+  }, [pluginOpen, closeAgent]);
+}
+
+/** The chat's permission mode: the composer choice, else the `agent.permission-mode` setting. */
+export function useChatPermissionMode(chatId: ChatId | null): AgentPermissionMode {
+  const override = useAgentStore((s) => (chatId ? s.modes[chatId] : undefined));
+  const fromSettings = useSettingsStore((s) => s.settings["agent.permission-mode"]);
+  return override ?? agentSettingsFrom({ "agent.permission-mode": fromSettings }).permissionMode;
+}
+
+/** Is the active-note chip allowed by `agent.attach-active-note` (default on)? */
+export function useAttachActiveNoteSetting(): boolean {
+  return useSettingsStore((s) => s.settings["agent.attach-active-note"]) !== false;
+}

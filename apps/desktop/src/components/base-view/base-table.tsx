@@ -14,6 +14,8 @@ import {
 import type { EditKind } from "@/lib/bases/cells";
 import type { BaseQueryResult, BaseView, Cell, Column } from "@/lib/bases/types";
 import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from "@/lib/bases/grid";
+import { fitColumnWidth } from "@/lib/bases/fit-width";
+import { createMeasure } from "./measure-text";
 import type { ViewConfig } from "@/lib/bases/view-registry";
 import { CellEditor } from "./cell-editor";
 import { CellView, type CellActions } from "./cell-view";
@@ -228,6 +230,40 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
     // Keyboard reveal must not park a row under the sticky column header or the pinned group header.
     scrollPaddingStart: HEADER_HEIGHT + (result.groups ? GROUP_HEADER_HEIGHT : 0),
   });
+
+  // ---- fit to content -----------------------------------------------------
+
+  /** Double-click on a divider: size the column to its widest header, cell or summary. */
+  const fitColumn = (c: number) => {
+    const grid_ = scrollRef.current;
+    const column = columns[c];
+    if (!grid_ || !column) return;
+    const values: string[] = [];
+    const addSummary = (cell: Cell | null | undefined) => {
+      if (cell) values.push(cell.type === "error" ? "Error" : cell.display);
+    };
+    if (showFooter) addSummary(result.summaries[c]);
+    for (const item of items) if (item.kind === "group-summary") addSummary(item.summaries[c]);
+    const indicator = markers.sort.get(column.key);
+    const width = fitColumnWidth({
+      header: column.displayName,
+      sortMarker: indicator
+        ? `${indicator.direction === "ASC" ? "↑" : "↓"}${indicator.of > 1 ? indicator.priority : ""}`
+        : undefined,
+      grouped: markers.groupBy === column.key,
+      cells: (function* () {
+        for (let r = 0; r < rows.length; r++) yield edits.cellAt(r, c);
+      })(),
+      summary: values.length > 0 ? { label: column.summary ?? "", values } : undefined,
+      measure: createMeasure(grid_),
+    });
+    if (width === widths[c]) return;
+    setDragged((d) => ({
+      view,
+      widths: new Map(d.view === view ? d.widths : []).set(column.key, width),
+    }));
+    config.setColumnWidth(column.id, width);
+  };
 
   // ---- selection ----------------------------------------------------------
 
@@ -594,6 +630,12 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
                     target.addEventListener("pointercancel", up);
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    fitColumn(c);
+                  }}
+                  title="Drag to resize, double-click to fit the content"
                   className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-[var(--focus-border)]"
                 />
               </div>

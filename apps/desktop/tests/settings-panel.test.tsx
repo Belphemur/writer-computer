@@ -9,6 +9,7 @@ vi.mock("../src/lib/preferences", () => ({
   setPreference: vi.fn(async () => {}),
 }));
 
+import { invoke } from "@tauri-apps/api/core";
 import { SettingsPanel } from "../src/components/settings-panel";
 import { pluginSectionId } from "../src/components/settings-panel/settings-sections";
 import { SETTINGS_SCHEMA } from "../src/lib/settings-schema";
@@ -63,6 +64,32 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   useWorkspaceStore.setState({ root: null });
+});
+
+describe("Auto-reveal current file row", () => {
+  it("renders in Appearance, on by default, and toggles off", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    useUIStore.setState({ settingsSection: "appearance" });
+    await mount();
+    const row = [...container.querySelectorAll("*")].find(
+      (el) => el.children.length > 0 && el.textContent?.startsWith("Auto-reveal current file"),
+    )!;
+    expect(container.textContent).toContain("expand its folders and scroll to it");
+    const toggle = [...container.querySelectorAll<HTMLElement>('[role="switch"]')].find((b) =>
+      b.closest("div")?.parentElement?.textContent?.includes("Auto-reveal current file"),
+    )!;
+    expect(row).toBeTruthy();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle.click());
+    expect(JSON.stringify(vi.mocked(invoke).mock.calls)).toContain(
+      '"key":"sidebar.auto-reveal-active-file","value":false',
+    );
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("SettingsPanel sidebar", () => {

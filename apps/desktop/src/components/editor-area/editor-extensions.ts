@@ -19,6 +19,7 @@ import {
   pluginExtensionCompartment,
 } from "@/lib/obsidian-host/editor-bridge";
 import { baseEmbedDecorations } from "./base-embed-decorations";
+import { pluginMarkdownDecorations } from "./plugin-markdown-decorations";
 import { calloutDecorations } from "./callout-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { editorBodyContextMenuExtension } from "./editor-body-menu";
@@ -33,6 +34,7 @@ import { markdownFormatting } from "./markdown-formatting";
 import { mathDecorations } from "./math-decorations";
 import { mermaidDecorations } from "./mermaid-decorations";
 import { tableDecorations } from "./table-decorations";
+import { tableEditing } from "./table-editing";
 import { viewportParsePlugin } from "./viewport-parse";
 import { wikiLinkExtension } from "./wiki-link-extension";
 
@@ -128,10 +130,12 @@ export function createEditorExtensions(
     headingWeightHighlight,
     viewportParsePlugin,
     tableDecorations(),
+    tableEditing(),
     calloutDecorations(getFilePath),
     htmlBlockDecorations(),
     mermaidDecorations(),
     baseEmbedDecorations(getFilePath),
+    pluginMarkdownDecorations(getFilePath),
     mathDecorations(),
     headingDecorations,
     imageSrcResolver(getFilePath),

@@ -14,6 +14,13 @@ import "@/lib/callouts/callouts.css";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 import { openExternalUrl } from "../node/external-links";
+import {
+  findCodeBlockProcessor,
+  fenceLanguage,
+  mountCodeBlock,
+  ProcessorContext,
+  runPostProcessors,
+} from "../markdown-processors";
 import type { App } from "./app";
 import { Notice, type Component } from "./core";
 import type { MarkdownRenderContext } from "./functions";
@@ -294,6 +301,14 @@ interface Pass {
   chain: readonly string[];
   current: () => boolean;
   resourceUrl: (file: TFile) => string;
+  /** Owns what the plugin processors attach (their components unload with it). */
+  component: Component;
+  /**
+   * Run the plugins' code block and post processors over the result. Only for content that is a
+   * vault note (a note preview, an embedded note): chat output and other generated markdown must
+   * never reach `dataviewjs`-style processors, which evaluate code.
+   */
+  processors: boolean;
 }
 
 function unresolvedEmbed(doc: Document, label: string): HTMLElement {
@@ -374,6 +389,7 @@ async function resolveEmbeds(root: HTMLElement, pass: Pass): Promise<void> {
           sourcePath: file.path,
           depth: pass.depth + 1,
           chain: [...pass.chain, file.path],
+          processors: true, // the embedded text is a vault note
         });
         replacement = box;
       }
@@ -410,6 +426,34 @@ async function fill(markdown: string, el: HTMLElement, pass: Pass): Promise<void
   linkTags(el);
   resolveLinks(el, pass.app, pass.sourcePath);
   await resolveEmbeds(el, pass);
+  if (pass.processors && pass.current()) await runProcessors(el, pass);
+}
+
+/** Plugin code block processors replace their `pre`; post processors then see the whole tree. */
+async function runProcessors(el: HTMLElement, pass: Pass): Promise<void> {
+  const pending: Promise<void>[] = [];
+  for (const code of Array.from(el.querySelectorAll<HTMLElement>("pre > code"))) {
+    const pre = code.parentElement;
+    const language = Array.from(code.classList)
+      .find((c) => c.startsWith("language-"))
+      ?.slice("language-".length);
+    const proc = language ? findCodeBlockProcessor(fenceLanguage(language)) : null;
+    if (!pre || !proc) continue;
+    const mount = mountCodeBlock(
+      proc,
+      code.textContent?.replace(/\n$/, "") ?? "",
+      pass.sourcePath,
+      null,
+    );
+    pass.component.register(() => mount.dispose());
+    pre.replaceWith(mount.el);
+    pending.push(mount.ready);
+  }
+  const ctx = new ProcessorContext(pass.sourcePath, el);
+  ctx.load();
+  pass.component.register(() => ctx.unload());
+  await runPostProcessors(el, ctx, pass.current);
+  await Promise.all(pending);
 }
 
 // Per-element state: one set of listeners however many times Copilot re-renders a streaming
@@ -479,6 +523,19 @@ function attach(el: HTMLElement, app: App, sourcePath: string, component: Compon
   return state;
 }
 
+/** True when `markdown` is the text of the vault note at `sourcePath` (with or without its frontmatter). */
+async function isNoteContent(app: App, sourcePath: string, markdown: string): Promise<boolean> {
+  const file = sourcePath ? app.vault.getFileByPath(sourcePath) : null;
+  if (!file || file.extension !== "md") return false;
+  try {
+    const raw = await app.vault.cachedRead(file);
+    const text = markdown.trim();
+    return raw.trim() === text || parseFrontmatter(raw).body.trim() === text;
+  } catch {
+    return false;
+  }
+}
+
 export interface MarkdownRendererOptions {
   /** The app used when the caller passes none (the deprecated `renderMarkdown`). */
   app: App;
@@ -495,6 +552,8 @@ export function createMarkdownRenderer(options: MarkdownRendererOptions) {
     const state = attach(el, app, ctx.sourcePath, ctx.component);
     const gen = ++state.gen;
     el.classList.add("markdown-rendered");
+    const processors = await isNoteContent(app, ctx.sourcePath, markdown);
+    if (states.get(el)?.gen !== gen) return;
     await fill(markdown, el, {
       app,
       sourcePath: ctx.sourcePath,
@@ -502,6 +561,8 @@ export function createMarkdownRenderer(options: MarkdownRendererOptions) {
       chain: ctx.sourcePath ? [ctx.sourcePath] : [],
       current: () => states.get(el)?.gen === gen,
       resourceUrl: (file) => resourceUrl(app, file),
+      component: ctx.component,
+      processors,
     });
   };
 }

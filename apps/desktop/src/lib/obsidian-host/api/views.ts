@@ -4,7 +4,7 @@
 // to render or answer goes through the `WorkspaceBridge` interface.
 import { Component, Events, type EditorContext, type EventRef } from "./core";
 import { createEl } from "./dom";
-import { setIcon } from "./functions";
+import { debounce, setIcon } from "./functions";
 import { recordPluginError } from "../error-log";
 import { TFile } from "./vault";
 import type { App } from "./app";
@@ -50,6 +50,17 @@ export interface WorkspaceBridge {
   openFile(path: string, opts: { newLeaf: boolean }): Promise<void>;
   /** `Workspace.updateOptions()`: re-apply the registered editor extensions to every editor. */
   reapplyEditorOptions(): void;
+  /**
+   * The leaf's file-bound view asked to become the markdown editor (`setViewState({type:
+   * "markdown"})`, "Open as Markdown"): the tab bound to `leaf` shows `path` as text.
+   */
+  showLeafAsText?(leaf: WorkspaceLeaf, path: string): Promise<void>;
+  /**
+   * The note editor of the active tab was asked to become a file view of `type`
+   * (`markdownLeaf.setViewState({type, state: {file}})`): the active tab shows `path` through the
+   * registered view (a file-bound plugin tab).
+   */
+  showFileAsView?(path: string, type: string): Promise<void>;
 }
 
 /** Bridge that keeps leaves in detached DOM. Used until the host is wired and in tests. */
@@ -277,17 +288,113 @@ export class ItemView extends View {
 export class FileView extends ItemView {
   file: TFile | null = null;
   allowNoFile = false;
+  private following = false;
+
   getDisplayText(): string {
     return this.file?.basename ?? "";
   }
+  canAcceptExtension(_extension: string): boolean {
+    return false;
+  }
+  getState(): Record<string, unknown> {
+    return this.file ? { file: this.file.path } : {};
+  }
+  /** `state.file` names the vault file to show; the base class loads it (public `FileView` contract). */
+  async setState(state: unknown, _result?: unknown): Promise<void> {
+    const path = (state as { file?: unknown } | null | undefined)?.file;
+    if (typeof path !== "string" || !path) {
+      if (this.file) await this.unloadFile();
+      if (!this.allowNoFile) return;
+      return;
+    }
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) throw new Error(`File "${path}" not found`);
+    if (this.file === file) return;
+    await this.loadFile(file);
+  }
+  /** Loads `file` into the view: unloads the previous one, then `onLoadFile`. */
+  async loadFile(file: TFile): Promise<void> {
+    if (this.file) await this.unloadFile();
+    this.file = file;
+    this.followFile();
+    await this.onLoadFile(file);
+    this.leaf.updateHeader();
+  }
+  /** Unloads the current file (`onUnloadFile` flushes pending saves) and forgets it. */
+  async unloadFile(): Promise<void> {
+    const file = this.file;
+    if (!file) return;
+    try {
+      await this.onUnloadFile(file);
+    } finally {
+      this.file = null;
+    }
+  }
   async onLoadFile(_file: TFile): Promise<void> {}
   async onUnloadFile(_file: TFile): Promise<void> {}
+  async onClose(): Promise<void> {
+    await this.unloadFile();
+  }
+  /** The vault renamed the file (the TFile object is updated in place). */
+  async onRename(_file: TFile): Promise<void> {
+    this.leaf.updateHeader();
+  }
+  /** Rename and delete of the shown file, for views that did not register their own. */
+  private followFile(): void {
+    if (this.following) return;
+    this.following = true;
+    const vault = this.app.vault;
+    // Registered on the view, so they go away with it even if a subclass's `onClose` skips super.
+    this.registerEvent(
+      vault.on("rename", (f: unknown) => {
+        if (f === this.file && this.file) void this.onRename(this.file);
+      }),
+    );
+    this.registerEvent(
+      vault.on("delete", (f: unknown) => {
+        if (f !== this.file) return;
+        // A deleted file must not be written back by the flush on close.
+        this.file = null;
+        this.leaf.detach();
+      }),
+    );
+  }
 }
 
 export class EditableFileView extends FileView {}
 
+/** How long `requestSave` waits before writing, like Obsidian. */
+export const TEXT_FILE_SAVE_DELAY_MS = 2000;
+
+/**
+ * A file view over a text file. The base class reads the file into `data` and calls
+ * `setViewData(data, true)`; edits call `requestSave()` (debounced write of `getViewData()`);
+ * unloading saves first; a change made outside the view (another editor, the file watcher) is read
+ * back through `setViewData(data, false)`. Writes go through `vault.modify`.
+ */
 export class TextFileView extends EditableFileView {
   data = "";
+  /** The text last read from or written to the file; a modify event with this text is our own. */
+  lastSavedData: string | null = null;
+  requestSave: () => void;
+  private followingContent = false;
+  private saving: Promise<void> = Promise.resolve();
+
+  constructor(leaf: WorkspaceLeaf) {
+    super(leaf);
+    // Resolved at construction through the prototype, so a subclass's `save` is the debounced one.
+    const save = debounce(() => {
+      this.save().catch((e) => {
+        console.error("[plugin] text file view save failed:", e);
+        recordPluginError("(view)", "view-save", e);
+      });
+    }, TEXT_FILE_SAVE_DELAY_MS);
+    this.requestSave = () => void save();
+    this.cancelRequestedSave = () => save.cancel();
+  }
+  /** Drops a pending `requestSave` (the save that runs now covers it). */
+  private cancelRequestedSave: () => void;
+
   getViewData(): string {
     return this.data;
   }
@@ -297,7 +404,73 @@ export class TextFileView extends EditableFileView {
   clear(): void {
     this.data = "";
   }
-  requestSave(): void {}
+
+  async save(clear = false): Promise<void> {
+    this.cancelRequestedSave();
+    // Serialized: two saves never write at once, the later one sees the earlier one's result.
+    const run = this.saving.catch(() => undefined).then(() => this.writeIfChanged());
+    this.saving = run;
+    await run;
+    if (clear) this.clear();
+  }
+  private async writeIfChanged(): Promise<void> {
+    const file = this.file;
+    if (!file) return;
+    const data = this.getViewData();
+    if (data === this.lastSavedData) return;
+    const previous = this.lastSavedData;
+    // Set first: the vault's modify event for this very write must read as our own.
+    this.lastSavedData = data;
+    try {
+      await this.app.vault.modify(file, data);
+      this.data = data;
+    } catch (e) {
+      this.lastSavedData = previous;
+      throw e;
+    }
+  }
+
+  async onLoadFile(file: TFile): Promise<void> {
+    const data = await this.app.vault.read(file);
+    // The file may have changed view while the read was pending.
+    if (this.file !== file) return;
+    this.data = data;
+    this.lastSavedData = data;
+    this.setViewData(data, true);
+    this.followContent();
+  }
+  async onUnloadFile(_file: TFile): Promise<void> {
+    await this.save();
+    this.clear();
+  }
+
+  /** Reads back a change made outside the view (the file watcher reports it as a modify). */
+  private followContent(): void {
+    if (this.followingContent) return;
+    this.followingContent = true;
+    this.registerEvent(
+      this.app.vault.on("modify", (f: unknown) => {
+        if (f !== this.file) return;
+        void this.reloadFromDisk();
+      }),
+    );
+  }
+  private async reloadFromDisk(): Promise<void> {
+    const file = this.file;
+    if (!file) return;
+    await this.saving.catch(() => undefined);
+    let data: string;
+    try {
+      data = await this.app.vault.read(file);
+    } catch (e) {
+      console.error("[plugin] text file view reload failed:", e);
+      return;
+    }
+    if (this.file !== file || data === this.lastSavedData) return;
+    this.lastSavedData = data;
+    this.data = data;
+    this.setViewData(data, false);
+  }
 }
 
 /** Facade over the host's active markdown editor; not a view the host mounts. */
@@ -324,6 +497,8 @@ export class MarkdownView extends TextFileView {
   setViewData(data: string): void {
     this.editor.setValue(data);
   }
+  /** Writer's editor owns the note's saving; the facade never writes the file itself. */
+  async save(): Promise<void> {}
   getIcon(): string {
     return "document";
   }
@@ -359,6 +534,13 @@ class EmptyView extends ItemView {
 
 let leafSeq = 0;
 
+/**
+ * The one leaf `resolveFileView` hands to the (possibly plugin-patched) `setViewState` to learn
+ * which view type a file would open in, without opening anything: while `probe` is set, a call on
+ * `probe.leaf` records the requested type and returns.
+ */
+let probe: { leaf: WorkspaceLeaf; type: string | null } | null = null;
+
 export class WorkspaceLeaf extends Component {
   id = `leaf-${++leafSeq}`;
   containerEl = createEl("div", { cls: "workspace-leaf" });
@@ -371,7 +553,16 @@ export class WorkspaceLeaf extends Component {
    * first document opened through it becomes a new editor tab instead of replacing the current one.
    */
   pendingNewTab = false;
+  /**
+   * The Writer tab this leaf is the body of, for a main-area leaf showing a file view (a plugin's
+   * `registerExtensions` view, or a note turned into one): closing the tab detaches the leaf, and
+   * the leaf asking for `markdown` turns the tab into the text editor.
+   */
+  tabId: string | null = null;
+  /** Set when the plugin that registered the view was disabled, so the tab falls back to text. */
+  ownerRemoved = false;
   private opening: Promise<void> = Promise.resolve();
+  private closedViews = new WeakSet<View>();
 
   constructor(
     public app: App,
@@ -389,6 +580,10 @@ export class WorkspaceLeaf extends Component {
 
   /** Replaces the leaf's view with the registered view for `viewState.type` and opens it. */
   setViewState(viewState: ViewState, eState?: unknown): Promise<void> {
+    if (probe && probe.leaf === this) {
+      probe.type = viewState.type;
+      return Promise.resolve();
+    }
     // Serialized so two quick setViewState calls cannot interleave open/close.
     const run = this.opening.catch(() => undefined).then(() => this.openView(viewState, eState));
     this.opening = run;
@@ -403,11 +598,40 @@ export class WorkspaceLeaf extends Component {
       const file = viewState.state?.file;
       if (typeof file !== "string" || !file)
         throw new Error('setViewState({type: "markdown"}) needs state.file');
-      await this.app.workspace.openFileInLeaf(this, file);
+      const ws = this.app.workspace;
+      if (this.tabId !== null && ws.bridge.showLeafAsText) {
+        // A file view turning into the note editor ("Open as Markdown"): the view is unloaded
+        // first (its pending save lands before the editor reads the file), then the tab shows text.
+        await this.closeView();
+        this.view = new EmptyView(this);
+        this.containerEl.replaceChildren(this.view.containerEl);
+        await ws.bridge.showLeafAsText(this, file);
+        return;
+      }
+      await ws.openFileInLeaf(this, file);
+      return;
+    }
+    if (viewState.type === "empty") {
+      // Obsidian's built-in empty view: plugins reset a leaf through it before showing another view.
+      await this.closeView();
+      this.view = new EmptyView(this);
+      this.view.containerEl.setAttribute("data-type", "empty");
+      this.containerEl.replaceChildren(this.view.containerEl);
+      this.app.workspace.bridge.leafChanged(this);
       return;
     }
     const entry = this.app.workspace.viewCreator(viewState.type);
     if (!entry) throw new Error(`Unknown view type "${viewState.type}"`);
+    const target = viewState.state?.file;
+    if (typeof target === "string" && target && this.app.workspace.isEditorLeaf(this)) {
+      // The note editor of the active tab turning into a file view: the tab shows the file through
+      // the registered view (this leaf stays the editor's facade).
+      const ws = this.app.workspace;
+      if (ws.bridge.showFileAsView) {
+        await ws.bridge.showFileAsView(target, viewState.type);
+        return;
+      }
+    }
     const next = entry.creator(this) as View;
     // Plugin stylesheets key on the view type (`.workspace-leaf-content[data-type="..."]`).
     next.containerEl.setAttribute("data-type", next.getViewType());
@@ -430,8 +654,12 @@ export class WorkspaceLeaf extends Component {
 
   private async closeView(): Promise<void> {
     const v = this.view;
+    if (this.closedViews.has(v)) return; // closed by an earlier step (e.g. "Open as Markdown")
+    this.closedViews.add(v);
     try {
       await v.onClose();
+      // A view whose onClose skipped `super.onClose()` still flushes and releases its file.
+      if (v instanceof FileView && v.file) await v.unloadFile();
     } catch (e) {
       console.error("[plugin] view onClose threw:", e);
       recordPluginError("(view)", "view-close", e);
@@ -456,6 +684,14 @@ export class WorkspaceLeaf extends Component {
    */
   async openFile(file: TFile, _openState?: unknown): Promise<void> {
     await this.app.workspace.openFileInLeaf(this, file.path);
+  }
+  /** Leaf identity of Obsidian's tab header (no tab strip of Obsidian's exists here). */
+  tabHeaderEl = createEl("div", { cls: "workspace-tab-header" });
+  tabHeaderInnerTitleEl = createEl("div", { cls: "workspace-tab-header-inner-title" });
+  tabHeaderInnerIconEl = createEl("div", { cls: "workspace-tab-header-inner-icon" });
+  /** Whether the leaf's view is on screen: a main-area view when its tab is active. */
+  isVisible(): boolean {
+    return !this.detached && (this.tabId === null || this.app.workspace.activeLeaf === this);
   }
 
   /** The workspace split this leaf lives in (Obsidian's `leaf.getRoot()`). */
@@ -507,7 +743,34 @@ export class WorkspaceLeaf extends Component {
 
 // ---------------------------------------------------------------- Workspace
 
+export interface ViewRegistry {
+  /** Extension (lower case, no dot) -> view type of every `registerExtensions` call. */
+  readonly typeByExtension: Record<string, string>;
+  getTypeByExtension(extension: string): string | undefined;
+  isExtensionRegistered(extension: string): boolean;
+}
+
+/** The registry over the plugins' recorded `fileExtensions` registrations (gone with the plugin). */
+export function createViewRegistry(
+  registrations: () => readonly { kind: string; key: string; value: unknown }[],
+): ViewRegistry {
+  const registry: ViewRegistry = {
+    get typeByExtension() {
+      const out: Record<string, string> = {};
+      for (const r of registrations())
+        if (r.kind === "fileExtensions") out[r.key.toLowerCase()] = String(r.value);
+      return out;
+    },
+    getTypeByExtension: (extension) => registry.typeByExtension[extension.toLowerCase()],
+    isExtensionRegistered: (extension) => registry.getTypeByExtension(extension) !== undefined,
+  };
+  return registry;
+}
+
 export type ViewCreator = (leaf: WorkspaceLeaf) => View;
+
+/** The method as shipped, to tell whether a plugin patched `WorkspaceLeaf.prototype.setViewState`. */
+let ORIGINAL_SET_VIEW_STATE: WorkspaceLeaf["setViewState"];
 
 export interface SplitLike {
   collapsed: boolean;
@@ -529,6 +792,11 @@ function makeSplit(): SplitLike {
 export class Workspace extends Events {
   layoutReady = false;
   activeLeaf: WorkspaceLeaf | null = null;
+  /** The workspace root element; Writer's real layout is React, so this stays detached. */
+  get containerEl(): HTMLElement {
+    return (this.rootEl ??= createEl("div", { cls: "workspace" }));
+  }
+  private rootEl: HTMLElement | null = null;
   leftSplit = makeSplit();
   rightSplit = makeSplit();
   /** The main editor area. */
@@ -541,6 +809,7 @@ export class Workspace extends Events {
   /** The one leaf standing for the host's markdown editor; its view follows the active note. */
   private markdownLeaf: WorkspaceLeaf | null = null;
   private syncSeq = 0;
+  private probeLeaf: WorkspaceLeaf | null = null;
   private emitted: { path: string | null; leaf: WorkspaceLeaf | null } | null = null;
 
   constructor(
@@ -580,7 +849,86 @@ export class Workspace extends Events {
       this.registry.delete(type);
     }
     for (const leaf of Array.from(this.leaves))
-      if (types.has(leaf.view.getViewType())) leaf.detach();
+      if (types.has(leaf.view.getViewType())) {
+        leaf.ownerRemoved = true;
+        leaf.detach();
+      }
+  }
+
+  /**
+   * Closes the views of `owner`'s types and waits for them: a view flushes its pending save in
+   * `onClose`, which needs its plugin still loaded, so this runs BEFORE the plugin unloads.
+   * Bounded, so a view that hangs cannot stall disabling its plugin.
+   */
+  async closeViewsOf(owner: string, timeoutMs = 5000): Promise<void> {
+    const types = new Set<string>();
+    for (const [type, e] of this.registry) if (e.owner === owner) types.add(type);
+    const closing = [...this.leaves].filter((l) => types.has(l.view.getViewType()));
+    for (const leaf of closing) {
+      leaf.ownerRemoved = true;
+      leaf.detach();
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    await Promise.race([Promise.all(closing.map((l) => l.settled())), timeout]);
+    clearTimeout(timer);
+  }
+
+  // -- file views (`registerExtensions`, notes a plugin shows in its own view)
+
+  /**
+   * The view type that opens `path`, or null when the text editor does. A registered extension
+   * (`registerExtensions(["excalidraw"], "excalidraw")`) opens in its view. A note (`.md`) asks the
+   * plugins: they redirect a note by patching `WorkspaceLeaf.prototype.setViewState` (Excalidraw
+   * turns a `markdown` request for a drawing note into its own view), so a probe leaf makes the
+   * same request and reads which type the (patched) call would open, without opening anything.
+   * Synchronous, so the page-kind registry can route a path.
+   */
+  resolveFileView(path: string): string | null {
+    const dot = path.lastIndexOf(".");
+    const ext = dot < 0 ? "" : path.slice(dot + 1).toLowerCase();
+    if (ext !== "md") {
+      const type = this.app.viewRegistry.getTypeByExtension(ext);
+      return type && this.registry.has(type) ? type : null;
+    }
+    if (WorkspaceLeaf.prototype.setViewState === ORIGINAL_SET_VIEW_STATE) return null;
+    if (!this.app.vault.getFileByPath(path)) return null;
+    const leaf = this.probeLeaf ?? (this.probeLeaf = new WorkspaceLeaf(this.app, "main"));
+    leaf.id = "probe-leaf";
+    probe = { leaf, type: null };
+    try {
+      // The patched method is what a plugin made of it; a throw means "not mine".
+      void leaf.setViewState({ type: "markdown", state: { file: path } }).catch(() => undefined);
+      const type = probe.type;
+      return type && type !== "markdown" && this.registry.has(type) ? type : null;
+    } catch {
+      return null;
+    } finally {
+      probe = null;
+    }
+  }
+
+  /**
+   * Opens `path` in a new main-area leaf bound to the Writer tab `tabId`, through the registered
+   * view `type` (the body of a file-bound plugin tab). Rejects with the view's error.
+   */
+  async openFileView(path: string, type: string, tabId: string): Promise<WorkspaceLeaf> {
+    const leaf = this.newLeaf("main");
+    leaf.tabId = tabId;
+    try {
+      await leaf.setViewState({ type, state: { file: path } });
+    } catch (e) {
+      leaf.detach();
+      throw e;
+    }
+    return leaf;
+  }
+
+  /** Is `leaf` the facade of the note editor of the active tab? */
+  isEditorLeaf(leaf: WorkspaceLeaf): boolean {
+    return leaf === this.markdownLeaf;
   }
 
   // -- leaves
@@ -610,6 +958,9 @@ export class Workspace extends Events {
    */
   getLeaf(newLeaf?: NewLeafTarget, _direction?: "vertical" | "horizontal"): WorkspaceLeaf {
     if (!newLeaf) {
+      // The active tab shows a file view: that leaf is the one a plugin means by "the current one".
+      const active = this.activeLeaf;
+      if (active && active.tabId !== null && !active.detached) return active;
       const md = this.markdownLeafForActive();
       if (md) return md;
     }
@@ -703,7 +1054,7 @@ export class Workspace extends Events {
    * note lives in the editor, not in the empty leaf).
    */
   async openFileInLeaf(leaf: WorkspaceLeaf, path: string): Promise<void> {
-    const reuse = leaf === this.markdownLeaf && !leaf.pendingNewTab;
+    const reuse = (leaf === this.markdownLeaf && !leaf.pendingNewTab) || leaf.tabId !== null;
     await this.bridge.openFile(path, { newLeaf: !reuse });
     leaf.pendingNewTab = false;
     if (leaf !== this.markdownLeaf && leaf.view instanceof EmptyView) leaf.detach();
@@ -758,6 +1109,8 @@ export class Workspace extends Events {
   }
 
   private markdownLeafForActive(): WorkspaceLeaf | null {
+    // A file view (a drawing) in the active tab is the active leaf: there is no note editor then.
+    if (this.bridge.getActivePluginLeaf()) return null;
     return this.markdownLeafFor(this.getActiveFile());
   }
 
@@ -789,6 +1142,13 @@ export class Workspace extends Events {
     if (!prev || prev.path !== this.emitted.path) this.trigger("file-open", file);
     this.trigger("active-leaf-change", leaf);
     this.trigger("layout-change");
+  }
+
+  /** The active leaf's view when it shows a file (a note editor or a plugin's file view). */
+  getActiveFileView(): FileView | null {
+    const v = this.activeLeaf?.view;
+    if (v instanceof FileView) return v;
+    return this.currentMarkdownView();
   }
 
   getActiveViewOfType<T extends View>(type: abstract new (...args: any[]) => T): T | null {
@@ -903,3 +1263,5 @@ export class Workspace extends Events {
     return super.on(name, cb, ctx);
   }
 }
+
+ORIGINAL_SET_VIEW_STATE = WorkspaceLeaf.prototype.setViewState;

@@ -1,0 +1,193 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_d2",
+    "messageId": "msg_d1",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_d2",
+    "partialJson": "{\"command\": \"python3 -c"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_d2",
+    "partialJson": " 'print(2)'"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_d2",
+    "partialJson": "\", \"description\": \"Print"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_d2",
+    "partialJson": " 2 with"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_d2",
+    "partialJson": " Python"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_d2",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_d2",
+    "input": {
+      "command": "python3 -c 'print(2)'",
+      "description": "Print 2 with Python"
+    }
+  },
+  {
+    "type": "permission-request",
+    "requestId": "00000000-0000-4000-8000-000000000015",
+    "toolCallId": "toolu_d2",
+    "tool": "Bash",
+    "displayName": "Bash",
+    "input": {
+      "command": "python3 -c 'print(2)'",
+      "description": "Print 2 with Python"
+    },
+    "description": "Print 2 with Python",
+    "decisionReason": "This command requires approval",
+    "suggestions": [
+      {
+        "behavior": "allow",
+        "destination": "localSettings",
+        "rules": [
+          {
+            "ruleContent": "python3 -c 'print(2)'",
+            "toolName": "Bash"
+          }
+        ],
+        "type": "addRules"
+      }
+    ]
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 86,
+    "cacheReadTokens": 13855,
+    "cacheCreationTokens": 5676,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1800000000
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_d2",
+    "output": "User denied",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": "Denied. The command `"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": "python3 -c 'print"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": "(2)'` was not run"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": ", because"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": " the"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": " Bash call"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": " was declined."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_d4",
+    "blockIndex": 0,
+    "text": "Denied. The command `python3 -c 'print(2)'` was not run, because the Bash call was declined."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 36,
+    "cacheReadTokens": 19531,
+    "cacheCreationTokens": 3427,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 122,
+    "cacheReadTokens": 33386,
+    "cacheCreationTokens": 9103,
+    "costUsd": 0.0409786,
+    "contextWindow": 1000000
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 4142,
+    "apiDurationMs": 4013,
+    "numTurns": 2,
+    "isError": false,
+    "result": "Denied. The command `python3 -c 'print(2)'` was not run, because the Bash call was declined.",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

@@ -1,3 +1,6 @@
+pub mod agent;
+pub mod agent_chats;
+pub mod agent_projects;
 pub mod bases;
 pub mod fonts;
 pub mod fs;

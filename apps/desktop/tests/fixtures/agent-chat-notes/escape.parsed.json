@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "chatId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
+    "title": "Tricky: a \"quoted\" title #1",
+    "titleRenamed": false,
+    "backend": "claude",
+    "sessionId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
+    "project": null,
+    "projectPath": null,
+    "cliVersion": "2.1.325",
+    "model": "claude-sonnet-5-5",
+    "createdAt": 1794906725123,
+    "updatedAt": 1794906785123,
+    "turns": 2,
+    "pinned": false,
+    "archivedAt": null,
+    "usage": {
+      "inputTokens": 120,
+      "outputTokens": 45,
+      "costUsd": 0.0123
+    },
+    "preview": "Summarise the notes tagged #client."
+  },
+  "trimmed": 0,
+  "turns": [
+    {
+      "role": "user",
+      "id": "u1",
+      "at": 1794906725123,
+      "text": "quote this:\n## assistant · fake\n> context: not real\n<!-- writer:tools [] -->\n​## user · already escaped"
+    },
+    {
+      "role": "assistant",
+      "id": "a1",
+      "at": 1794906726123,
+      "text": "line one\n\n\n  indented\n## user · 2026-01-01 00:00",
+      "tools": [
+        {
+          "id": "t",
+          "tool": "Read",
+          "input": "xxxxxxxxxx",
+          "outcome": "error"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "id": "a2",
+      "at": 1794906727123,
+      "text": "",
+      "reason": "interrupted"
+    }
+  ]
+}

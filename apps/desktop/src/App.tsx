@@ -1,4 +1,5 @@
 import { AppLayout } from "./components/app-layout";
+import { NewProjectDialog } from "./components/agent/new-project-dialog";
 import { CommandPalette } from "./components/command-palette";
 import { PluginBrowserDialog } from "./components/plugin-browser/plugin-browser-dialog";
 import { TelemetryConsentDialog } from "./components/telemetry-consent-dialog";
@@ -7,6 +8,7 @@ import { useIsStartupResolved } from "./hooks/use-workspace";
 import { useFileWatcher } from "./hooks/use-file-watcher";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useMenuEvents } from "./hooks/use-menu-events";
+import { useMouseNavigation } from "./hooks/use-mouse-navigation";
 import { useOpenDrop } from "./hooks/use-open-drop";
 import { usePluginHostLifecycle } from "./hooks/use-plugins";
 import "./lib/global-recents";
@@ -19,6 +21,7 @@ function App() {
   useFileWatcher();
   useKeyboardShortcuts();
   useMenuEvents();
+  useMouseNavigation();
   useOpenDrop();
   usePluginHostLifecycle();
 
@@ -32,6 +35,7 @@ function App() {
       <AppLayout />
       <CommandPalette />
       <PluginBrowserDialog />
+      <NewProjectDialog />
       <TelemetryConsentDialog />
     </>
   );

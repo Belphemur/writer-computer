@@ -646,3 +646,138 @@ fn file_name_match_outranks_heading_and_body_matches() {
     let index = v.index();
     assert_eq!(search(&index, "comet").hits[0].path, "a/Comet.md");
 }
+
+const NOW_MS: i64 = 1_800_000_000_000;
+const DAY_MS: i64 = 86_400_000;
+
+fn ranked(index: &Index, q: &str, opened: &[(&str, i64)]) -> SearchPage {
+    let mut opts = SearchOptions {
+        recency: true,
+        fuzzy: true,
+        now_ms: NOW_MS,
+        ..Default::default()
+    };
+    opts.opened = opened.iter().map(|(p, t)| (p.to_string(), *t)).collect();
+    index.search(q, &opts).unwrap()
+}
+
+fn set_mtime(v: &V, rel: &str, ms: i64) {
+    let f = fs::OpenOptions::new()
+        .write(true)
+        .open(v.vault.path().join(rel))
+        .unwrap();
+    f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64))
+        .unwrap();
+}
+
+#[test]
+fn recency_breaks_ties_between_equally_relevant_notes() {
+    let v = V::new();
+    // Identical text: bm25 ties, so only recency can order them.
+    for n in ["a", "b", "c"] {
+        v.write(
+            &format!("{n}.md"),
+            "# Quarterly review\nThe quarterly numbers.\n",
+        );
+        set_mtime(&v, &format!("{n}.md"), NOW_MS - 400 * DAY_MS);
+    }
+    set_mtime(&v, "b.md", NOW_MS - DAY_MS);
+    let index = v.index();
+    // No recency: path order.
+    assert_eq!(
+        paths(&search(&index, "quarterly")),
+        ["a.md", "b.md", "c.md"]
+    );
+    // Modified recently wins.
+    assert_eq!(
+        paths(&ranked(&index, "quarterly", &[])),
+        ["b.md", "a.md", "c.md"]
+    );
+    // Opened just now beats modified yesterday.
+    let page = ranked(&index, "quarterly", &[("c.md", NOW_MS - 1000)]);
+    assert_eq!(paths(&page)[0], "c.md");
+    assert_eq!(page.total, 3);
+}
+
+#[test]
+fn recency_does_not_beat_a_much_better_text_match() {
+    let v = V::new();
+    v.write("Dense.md", "# Harbour\nHarbour harbour harbour.\n");
+    v.write(
+        "Weak.md",
+        &format!("{} harbour once.\n", "filler words ".repeat(200)),
+    );
+    set_mtime(&v, "Dense.md", NOW_MS - 400 * DAY_MS);
+    set_mtime(&v, "Weak.md", NOW_MS);
+    let index = v.index();
+    let page = ranked(&index, "harbour", &[("Weak.md", NOW_MS)]);
+    assert_eq!(paths(&page)[0], "Dense.md");
+}
+
+#[test]
+fn fuzzy_fallback_finds_typos_in_names_headings_and_tags() {
+    let v = fixture();
+    v.write("People/François Lamarre.md", "Met at the conference.\n");
+    v.write("Ideas/x.md", "# Sailing regatta plans\nText.\n#boating\n");
+    let index = v.index();
+    // Exact search finds nothing for the misspelling...
+    assert!(search(&index, "francios lamare").hits.is_empty());
+    // ...the fuzzy fallback finds the person, flagged as fuzzy.
+    let page = ranked(&index, "francios lamare", &[]);
+    assert_eq!(paths(&page), ["People/François Lamarre.md"]);
+    assert!(page.hits[0].fuzzy && page.hits[0].snippets.is_empty());
+    assert_eq!(page.total, 1);
+    // Heading typo.
+    assert_eq!(paths(&ranked(&index, "regata", &[])), ["Ideas/x.md"]);
+    // Plenty of exact matches: no fuzzy extras.
+    let page = ranked(&index, "harbour", &[]);
+    assert!(page.hits.iter().all(|h| !h.fuzzy));
+    // Off by default.
+    assert!(index
+        .search(
+            "francios lamare",
+            &SearchOptions {
+                recency: true,
+                ..Default::default()
+            }
+        )
+        .unwrap()
+        .hits
+        .is_empty());
+}
+
+/// Fuzzy fallback and recency re-rank latency on 10k synthetic notes. Run with
+/// `cargo test --release perf_fuzzy_10k -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn perf_fuzzy_10k() {
+    let v = V::new();
+    for i in 0..10_000 {
+        v.write(
+            &format!(
+                "area-{}/Note {} {}.md",
+                i % 20,
+                i,
+                ["alpha", "budget", "retro", "Francois Lamarre"][i % 4]
+            ),
+            &format!(
+                "# Heading {i} planning\nbody text {i} harbour\n#tag{}\n",
+                i % 50
+            ),
+        );
+    }
+    let index = v.index();
+    for (q, label) in [
+        ("francios lamare", "fuzzy fallback"),
+        ("harbour", "recency re-rank"),
+        ("planing", "heading typo"),
+    ] {
+        let t = Instant::now();
+        let page = ranked(&index, q, &[]);
+        println!(
+            "PERF {label} {q:?}: {:?} ({} hits)",
+            t.elapsed(),
+            page.total
+        );
+    }
+}

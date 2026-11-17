@@ -135,6 +135,29 @@ fn record_recent_file_blocking(path: &str, app: &tauri::AppHandle) -> Result<(),
     save_recent_files(app, &recents)
 }
 
+/// Last-opened times (unix ms) of the recents that live under `root`, keyed by
+/// vault-relative path: the "recently viewed" input of search ranking
+/// (`index/rank.rs`). Entries with an unknown time (legacy, `0`) are skipped.
+pub(crate) fn opened_under(app: &tauri::AppHandle, root: &Path) -> crate::index::rank::OpenedMap {
+    let state = app.state::<AppState>();
+    let _guard = state.recent_files_lock.lock();
+    let canonical_root = root.canonicalize().ok();
+    load_recent_files(app)
+        .into_iter()
+        .filter(|e| e.opened_at > 0)
+        .filter_map(|e| {
+            let path = Path::new(&e.path);
+            let rel = path.strip_prefix(root).ok().or_else(|| {
+                canonical_root
+                    .as_deref()
+                    .and_then(|r| path.strip_prefix(r).ok())
+            })?;
+            let rel = crate::index::paths::rel_to_string(rel)?;
+            Some((rel, (e.opened_at as i64).saturating_mul(1000)))
+        })
+        .collect()
+}
+
 /// Drop a single path from the global recents list (the per-row delete in
 /// the compact picker). No-op if the path isn't present.
 #[tauri::command]

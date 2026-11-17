@@ -1,0 +1,97 @@
+[
+  {
+    "name": "recently opened beats stale with the same text quality",
+    "query": "meeting notes",
+    "entries": [
+      { "path": "old/Meeting Notes.md", "modified_days_ago": 200 },
+      { "path": "new/Meeting Notes.md", "opened_days_ago": 0.1, "modified_days_ago": 200 }
+    ],
+    "expect": ["new/Meeting Notes.md", "old/Meeting Notes.md"]
+  },
+  {
+    "name": "recently modified beats stale with the same text quality",
+    "query": "budget",
+    "entries": [
+      { "path": "a/budget.md", "modified_days_ago": 300 },
+      { "path": "b/budget.md", "modified_days_ago": 0.5 }
+    ],
+    "expect": ["b/budget.md", "a/budget.md"]
+  },
+  {
+    "name": "stale exact name beats a recent weak fuzzy match",
+    "query": "planning",
+    "entries": [
+      {
+        "path": "Project Lane Notes Interesting Gadgets.md",
+        "opened_days_ago": 0.01,
+        "modified_days_ago": 0.01
+      },
+      { "path": "Planning.md", "modified_days_ago": 400 }
+    ],
+    "expect": ["Planning.md", "Project Lane Notes Interesting Gadgets.md"]
+  },
+  {
+    "name": "recency can be switched off",
+    "query": "budget",
+    "entries": [
+      { "path": "a/budget.md", "modified_days_ago": 300 },
+      { "path": "b/budget.md", "opened_days_ago": 0.1 }
+    ],
+    "recency": false,
+    "expect": ["a/budget.md", "b/budget.md"]
+  },
+  {
+    "name": "subsequence finds a person by initials of the pieces",
+    "query": "frlam",
+    "entries": [{ "path": "People/François Lamarre.md" }, { "path": "People/Unrelated Person.md" }],
+    "expect": ["People/François Lamarre.md"]
+  },
+  {
+    "name": "typos in every word still find the note",
+    "query": "Francios Lamare",
+    "entries": [{ "path": "People/François Lamarre.md" }, { "path": "People/Francine Lamb.md" }],
+    "expect": ["People/François Lamarre.md"]
+  },
+  {
+    "name": "diacritics and Unicode normalization forms are ignored",
+    "query": "resume",
+    "entries": [{ "path": "Résumé.md" }, { "path": "Résumé draft.md" }, { "path": "Other.md" }],
+    "expect": ["Résumé.md", "Re\u0301sume\u0301 draft.md"]
+  },
+  {
+    "name": "camelCase boundaries are matched",
+    "query": "wlnk",
+    "entries": [{ "path": "WikiLink.md" }, { "path": "walking talk.md" }],
+    "expect": ["WikiLink.md", "walking talk.md"]
+  },
+  {
+    "name": "a file name match beats a folder name match",
+    "query": "alpha",
+    "entries": [{ "path": "alpha/readme.md" }, { "path": "notes/alpha.md" }],
+    "expect": ["notes/alpha.md", "alpha/readme.md"]
+  },
+  {
+    "name": "word order does not matter",
+    "query": "lamarre francois",
+    "entries": [{ "path": "People/François Lamarre.md" }],
+    "expect": ["People/François Lamarre.md"]
+  },
+  {
+    "name": "hyphens and spaces are interchangeable",
+    "query": "wiki-link",
+    "entries": [{ "path": "Wiki Link.md" }, { "path": "wiki_link.md" }],
+    "expect": ["Wiki Link.md", "wiki_link.md"]
+  },
+  {
+    "name": "equal scores keep path order",
+    "query": "x",
+    "entries": [{ "path": "c/x.md" }, { "path": "a/x.md" }, { "path": "b/x.md" }],
+    "expect": ["a/x.md", "b/x.md", "c/x.md"]
+  },
+  {
+    "name": "non matches are dropped",
+    "query": "zzzzqq",
+    "entries": [{ "path": "alpha.md" }],
+    "expect": []
+  }
+]

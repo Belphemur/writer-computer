@@ -105,6 +105,47 @@ export function createEl<K extends keyof HTMLElementTagNameMap>(
 
 const installed = new Map<object, () => void>();
 
+interface InsertionWatch {
+  el: HTMLElement;
+  cb: () => void;
+  once: boolean;
+  connected: boolean;
+}
+const insertionWatches = new Set<InsertionWatch>();
+const INSERTION_WATCHES_MAX = 5000;
+let insertionObserver: MutationObserver | null = null;
+
+function watchInsertion(win: Window, el: HTMLElement, cb: () => void, once: boolean): () => void {
+  const watch: InsertionWatch = { el, cb, once, connected: el.isConnected };
+  insertionWatches.add(watch);
+  if (insertionWatches.size > INSERTION_WATCHES_MAX)
+    insertionWatches.delete(insertionWatches.values().next().value as InsertionWatch);
+  if (!insertionObserver && typeof MutationObserver !== "undefined") {
+    insertionObserver = new MutationObserver(() => {
+      for (const w of Array.from(insertionWatches)) {
+        const now = w.el.isConnected;
+        if (now && !w.connected) {
+          if (w.once) insertionWatches.delete(w);
+          try {
+            w.cb();
+          } catch (e) {
+            console.error("[plugin] onNodeInserted callback threw:", e);
+          }
+        }
+        w.connected = now;
+      }
+    });
+    insertionObserver.observe(win.document, { childList: true, subtree: true });
+  }
+  return () => {
+    insertionWatches.delete(watch);
+    if (insertionWatches.size === 0) {
+      insertionObserver?.disconnect();
+      insertionObserver = null;
+    }
+  };
+}
+
 /**
  * Installs Obsidian's element helpers, `Node.doc/win/instanceOf` and the `createEl`/`activeDocument`
  * style globals on the given window. Idempotent per window. Returns an uninstaller that removes
@@ -251,6 +292,48 @@ export function installDomHelpers(win: Window & typeof globalThis = window): () 
   define(E, "findAll", function (this: Element, sel: string) {
     return Array.from(this.querySelectorAll(sel));
   });
+  // Obsidian's global prototype additions (obsidian.d.ts): `String#contains`, `Array#first` ...
+  // Non-enumerable and never overriding an existing member.
+  const S = win.String.prototype as unknown as Record<string, unknown>;
+  const A = win.Array.prototype as unknown as Record<string, unknown>;
+  define(S, "contains", function (this: string, target: string) {
+    return this.includes(target);
+  });
+  define(A, "contains", function (this: unknown[], target: unknown) {
+    return this.includes(target);
+  });
+  define(A, "first", function (this: unknown[]) {
+    return this[0];
+  });
+  define(A, "last", function (this: unknown[]) {
+    return this[this.length - 1];
+  });
+  define(A, "remove", function (this: unknown[], target: unknown) {
+    const i = this.indexOf(target);
+    if (i >= 0) this.splice(i, 1);
+  });
+  define(A, "unique", function (this: unknown[]) {
+    return Array.from(new Set(this));
+  });
+  define(A, "shuffle", function (this: unknown[]) {
+    for (let i = this.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this[i], this[j]] = [this[j], this[i]];
+    }
+    return this;
+  });
+  define(E, "findAllSelf", function (this: Element, sel: string) {
+    return [...(this.matches(sel) ? [this] : []), ...Array.from(this.querySelectorAll(sel))];
+  });
+  // Fires `cb` each time the element becomes part of the document (Dataview refreshes a block
+  // when it scrolls into view or its tab is shown). Returns the remover.
+  define(
+    E,
+    "onNodeInserted",
+    function (this: HTMLElement, cb: () => void, once?: boolean): () => void {
+      return watchInsertion(win, this, cb, once === true);
+    },
+  );
   define(E, "show", function (this: HTMLElement) {
     this.style.display = "";
   });

@@ -540,6 +540,34 @@ describe("column resize", () => {
   });
 });
 
+describe("column fit (double-click on the divider)", () => {
+  beforeEach(() => {
+    // jsdom has no canvas: 10px per character.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      font: "",
+      measureText: (t: string) => ({ width: t.length * 10 }),
+    } as unknown as CanvasRenderingContext2D);
+  });
+
+  it("writes the fitted width once, through the resize path, and does not sort", async () => {
+    await mount();
+    const handle = $$("[data-resize-handle]")[0]!;
+    await act(async () => {
+      for (let i = 0; i < 2; i++) {
+        handle.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+        handle.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+        handle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      }
+      handle.dispatchEvent(
+        new MouseEvent("dblclick", { bubbles: true, cancelable: true, altKey: true }),
+      );
+    });
+    await flush();
+    // Widest of "Name" (40) and "alpha"/"gamma" (50), plus 17 of chrome, replacing 300.
+    expect(written()).toEqual([BASE_TEXT.replace("file.name: 300", "file.name: 67")]);
+  });
+});
+
 describe("config menus write exact YAML", () => {
   it("sort menu: add, change direction, remove", async () => {
     await mount();
