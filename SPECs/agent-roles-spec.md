@@ -180,11 +180,11 @@ Worker prompt (proposal, neutral):
 4. OpenCode spike (separate spec): confirm config injection, permission patterns, sub-agent stream shape and parent ids, headless protocol; then the `opencode` feature with its adapter.
 5. Remove the deprecated `agent.subagent-model` key.
 
-## 10. Open questions for the user
+## 10. Decisions (user, 2026-11-17)
 
-1. Tier names: three tiers (cheap/standard/strong) enough, or also `inherit` (use the chat's model)? Proposed default for `strong` is the chat's own model.
-2. Should `worker` ship default on once Changes coverage is proven, or stay opt-in because delegated edits are less visible in the transcript?
-3. Should the title call (`agent.title-model`) move onto the same cheap tier setting, so one "cheap model" per backend exists? It would remove one more vendor-name setting.
-4. OpenCode placement: acceptable to write managed agent files under `.opencode/agents/` in the vault (like managed skills), or inline config only?
-5. Do you want user-defined roles (a vault `.writer/roles/*.json` over the built-ins) later, or are the built-ins fixed? Proposed: fixed now; the registry shape allows layering later.
-6. OpenCode versions: support only the current documented format, or also the older `agent`/`tools`/`permission` one?
+1. Tiers: `cheap`, `standard`, `strong`; `strong` defaults to the chat's own model.
+2. `worker` ships **on by default**, but only once the Changes-card prerequisites (answer A items 1-4: snapshot ordering test, turn kept open until every sub-agent finishes, per-role attribution, sub-agent permission cards) are implemented and tested. Until then it is not offered.
+3. The title call moves onto the cheap tier: one cheap model per backend (`agent.title-model` migrates like `agent.subagent-model`). Every tier model setting is a **dropdown** of the backend's known models (from the model catalog the composer's model picker already uses), with a "custom" entry for a free value, never a bare text field.
+4. OpenCode: Writer writes **managed agent files under `.opencode/agents/`** in the vault, installed and versioned like managed skills (marker, overwritten when stale, never touching user files there).
+5. Roles are built-in only for now; the registry shape keeps room for vault-defined roles (`.writer/roles/*.json`) later.
+6. OpenCode: support only the documented **V2 format and later** (`agents` key, `permissions` rules, `provider/model#variant`); the older `agent`/`tools`/`permission` format is not supported.
