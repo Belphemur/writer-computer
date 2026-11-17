@@ -13,6 +13,7 @@ import { defaultCalloutTitle, parseCalloutHeader } from "@/lib/callouts/syntax";
 import "@/lib/callouts/callouts.css";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
+import { bindLinkActivation } from "@/lib/link-activation";
 import { openExternalUrl } from "../node/external-links";
 import {
   findCodeBlockProcessor,
@@ -487,35 +488,35 @@ function attach(el: HTMLElement, app: App, sourcePath: string, component: Compon
     off: () => {},
     owners: new WeakSet([component]),
   };
-  const handler = (e: MouseEvent): void => {
-    if (e.button > 1) return;
-    if (e.type === "click" && e.button === 0 && toggleRenderedCallout(e.target as Element, el)) {
-      return;
-    }
-    const a = (e.target as Element | null)?.closest?.("a");
-    if (!a || !el.contains(a)) return;
-    if (e.type === "click" && e.button !== 0) return;
-    if (a.classList.contains("internal-link")) {
-      e.preventDefault();
-      const href = a.getAttribute("data-href") ?? "";
-      // Always a new main tab: the plugin's own view must stay where it is.
-      state.app.workspace.openLinkText(href, state.sourcePath, true).catch((err: unknown) => {
-        console.error("[plugin] openLinkText failed:", err);
-        new Notice(`Cannot open "${href}": no such note`);
-      });
-    } else if (a.classList.contains("external-link")) {
-      e.preventDefault();
-      openExternalUrl(a.getAttribute("href") ?? "");
-    } else {
-      // Tags and same-page anchors must never navigate the webview.
-      e.preventDefault();
-    }
+  const toggleCallout = (e: MouseEvent): void => {
+    if (e.button === 0) toggleRenderedCallout(e.target as Element, el);
   };
-  el.addEventListener("click", handler);
-  el.addEventListener("auxclick", handler);
+  // Links open through the shared activation (`lib/link-activation.ts`): left, middle and
+  // Cmd/Ctrl clicks. Internal links always go to a new main tab: the plugin's own view must stay.
+  const offLinks = bindLinkActivation(el, (target) => {
+    const a = target.closest("a");
+    if (!a || !el.contains(a)) return null;
+    if (a.classList.contains("internal-link")) {
+      const href = a.getAttribute("data-href") ?? "";
+      return {
+        kind: "custom",
+        open: () => {
+          state.app.workspace.openLinkText(href, state.sourcePath, true).catch((err: unknown) => {
+            console.error("[plugin] openLinkText failed:", err);
+            new Notice(`Cannot open "${href}": no such note`);
+          });
+        },
+      };
+    }
+    if (a.classList.contains("external-link"))
+      return { kind: "custom", open: () => void openExternalUrl(a.getAttribute("href") ?? "") };
+    // Tags and same-page anchors must never navigate the webview.
+    return { kind: "custom", open: () => {} };
+  });
+  el.addEventListener("click", toggleCallout);
   state.off = () => {
-    el.removeEventListener("click", handler);
-    el.removeEventListener("auxclick", handler);
+    el.removeEventListener("click", toggleCallout);
+    offLinks();
     states.delete(el);
   };
   states.set(el, state);

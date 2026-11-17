@@ -88,7 +88,7 @@ interface EditorState {
 
   openFile: (path: string) => Promise<void>;
   openCompactFile: (path: string, prefetched?: FileContent | null) => Promise<void>;
-  openFileInNewTab: (path: string) => Promise<void>;
+  openFileInNewTab: (path: string, options?: { activate?: boolean }) => Promise<void>;
   /** Open a path as plain text in a new tab even when its kind has its own view (`.base`). */
   openFileAsTextInNewTab: (path: string) => Promise<void>;
   openNewTab: () => void;
@@ -582,15 +582,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // Always create a fresh tab for `path`, even if another tab already shows it.
   // Used by the sidebar context menu's "Open in new tab" action so it never
   // collapses into the existing tab the way `openFile` does.
-  openFileInNewTab: async (path: string) => {
+  // `activate: false` adds the tab in the background (middle-click on a link): the active tab,
+  // and the focus with it, stay where they are.
+  openFileInNewTab: async (path: string, options?: { activate?: boolean }) => {
     const nextTab = createFileTab(path);
+    const activate = options?.activate ?? true;
 
     set((state) => {
       const openFiles = withLoadingEntry(state.openFiles, path);
       return {
         tabs: [...state.tabs, nextTab],
-        activeTabId: nextTab.id,
-        activeFilePath: path,
+        ...(activate ? { activeTabId: nextTab.id, activeFilePath: path } : {}),
         ...(openFiles ? { openFiles } : {}),
       };
     });

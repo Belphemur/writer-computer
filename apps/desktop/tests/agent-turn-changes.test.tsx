@@ -11,9 +11,15 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({ get: async () => undefined, set: async () => {} })),
 }));
-vi.mock("../src/components/agent/agent-links", () => ({
-  openVaultPath: (p: string) => hoisted.open(p),
-  handleMarkdownClick: vi.fn(),
+vi.mock("../src/hooks/workspace-api", async (orig) => ({
+  ...(await orig<object>()),
+  getWorkspaceRoot: () => "/v",
+}));
+vi.mock("../src/hooks/editor-api", async (orig) => ({
+  ...(await orig<object>()),
+  navigateToFile: (p: string) => hoisted.open(p.replace("/v/", "")),
+  openFileInNewTab: (p: string, o?: { activate?: boolean }) =>
+    hoisted.open(p.replace("/v/", ""), o?.activate === false ? "bg" : "tab"),
 }));
 
 import { TurnChangesCard } from "../src/components/agent/turn-changes-card";
@@ -387,6 +393,12 @@ describe("TurnChangesCard", () => {
     );
     await act(async () => button("Open Notes/a.md").click());
     expect(hoisted.open).toHaveBeenCalledWith("Notes/a.md");
+    await act(async () => {
+      button("Open Notes/a.md").dispatchEvent(
+        new MouseEvent("auxclick", { bubbles: true, button: 1 }),
+      );
+    });
+    expect(hoisted.open).toHaveBeenLastCalledWith("Notes/a.md", "bg"); // middle-click: background tab
     expect($$("button").some((b) => b.getAttribute("aria-label") === "Open gone.md")).toBe(false);
   });
 

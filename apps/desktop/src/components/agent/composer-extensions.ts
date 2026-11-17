@@ -23,6 +23,8 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import { imageFilesOfTransfer } from "@/lib/agent/chat-images";
+import { linkActivationExtension, linkIntent } from "@/lib/link-activation";
+import { vaultTarget } from "./agent-links";
 import { composerMarkdown } from "./composer-markdown";
 import {
   createPillElement,
@@ -91,30 +93,27 @@ export function pillAt(state: EditorState, pos: number): { from: number; to: num
   return found;
 }
 
-/** Cmd/Ctrl+click opens the note; a double click selects the whole pill. */
-export function pillMouse(open: (target: string) => void): Extension {
-  return EditorView.domEventHandlers({
-    mousedown(e, view) {
-      const el = pillElement(e.target);
-      if (!el || !(e.metaKey || e.ctrlKey)) return false;
-      const target = el.dataset.target;
-      if (!target) return false;
-      e.preventDefault();
-      open(target);
-      view.focus();
-      return true;
-    },
-    dblclick(e, view) {
-      const el = pillElement(e.target);
-      if (!el) return false;
-      const pos = view.posAtDOM(el);
-      const range = pillAt(view.state, pos);
-      if (!range) return false;
-      e.preventDefault();
-      view.dispatch({ selection: EditorSelection.range(range.from, range.to) });
-      return true;
-    },
-  });
+/** A pill opens its note on a middle or Cmd/Ctrl click (a plain click places the caret, so it is
+ *  not a link click here); a double click selects the whole pill. */
+export function pillMouse(): Extension {
+  return [
+    linkActivationExtension((e) => {
+      const target = pillElement(e.target)?.dataset.target;
+      return target && linkIntent(e) !== "current" ? vaultTarget(target) : null;
+    }),
+    EditorView.domEventHandlers({
+      dblclick(e, view) {
+        const el = pillElement(e.target);
+        if (!el) return false;
+        const pos = view.posAtDOM(el);
+        const range = pillAt(view.state, pos);
+        if (!range) return false;
+        e.preventDefault();
+        view.dispatch({ selection: EditorSelection.range(range.from, range.to) });
+        return true;
+      },
+    }),
+  ];
 }
 
 const pillElement = (t: EventTarget | null) =>
@@ -149,7 +148,6 @@ const editingKeymap = standardKeymap.filter((b) => b.key !== "Enter" && b.key !=
 
 export type ComposerExtras = {
   onKey: (e: KeyboardEvent) => boolean;
-  open: (target: string) => void;
   onChange: (text: string, caret: number, composing: boolean) => void;
   onCompositionStart: () => void;
   onCompositionEnd: () => void;
@@ -167,7 +165,7 @@ export function composerExtensions(extras: ComposerExtras): Extension[] {
     composerKeys(extras.onKey),
     composerMarkdown(),
     keymap.of([...editingKeymap, ...historyKeymap]),
-    pillMouse(extras.open),
+    pillMouse(),
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({ "data-agent-composer": "" }),
     imageTransfer(extras.onImageFiles),

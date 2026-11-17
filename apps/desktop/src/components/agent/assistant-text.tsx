@@ -1,7 +1,7 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useRef } from "react";
 import { renderAgentMarkdown } from "@/lib/agent/markdown";
 import type { TextBlock } from "@/lib/agent/transcript";
-import { handleMarkdownClick } from "./agent-links";
+import { useMarkdownLinks } from "./agent-links";
 
 const THROTTLE_MS = 120;
 /** Live blocks: last markdown pass per block id (spec 3.5: at most one pass per 120 ms). */
@@ -34,12 +34,14 @@ export function renderBlockHtml(block: Pick<TextBlock, "id" | "text">, final: bo
 /** Finished blocks render once and are memoised by (id, final text) through `memo`. */
 export const AssistantText = memo(function AssistantText({ block }: { block: TextBlock }) {
   const html = useMemo(() => renderBlockHtml(block, block.final), [block]);
+  const host = useRef<HTMLDivElement>(null);
+  useMarkdownLinks(host);
   return (
     <div
+      ref={host}
       data-agent-text
       data-streaming={!block.final || undefined}
       className="agent-markdown px-1 text-[14px] leading-relaxed text-text-primary"
-      onClick={handleMarkdownClick}
       // Sanitised by renderAgentMarkdown (shared strict DOMPurify allowlist).
       dangerouslySetInnerHTML={{ __html: html }}
     />

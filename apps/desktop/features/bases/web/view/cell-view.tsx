@@ -1,3 +1,4 @@
+import { linkHandlers, type LinkIntent } from "@/lib/link-activation";
 import { itemText } from "../lib/cells";
 import type { Cell, CellValue } from "../lib/types";
 import type { ViewActions } from "../lib/view-registry";
@@ -29,8 +30,9 @@ function Link({
 }: {
   label: string;
   unresolved: boolean;
-  onOpen: () => void;
+  onOpen: (intent: LinkIntent) => void;
 }) {
+  const link = linkHandlers({ kind: "custom", open: onOpen });
   return (
     <button
       type="button"
@@ -38,17 +40,11 @@ function Link({
       data-cell-link
       data-unresolved={unresolved || undefined}
       title={unresolved ? `${label} (not found in the vault)` : label}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
+      {...link}
+      // the cell must not start a selection or edit from a press on its link
+      onMouseDown={(e) => {
+        link.onMouseDown(e);
         e.stopPropagation();
-        onOpen();
-      }}
-      // middle-click opens it too (cell links always open in a new tab)
-      onAuxClick={(e) => {
-        if (e.button !== 1) return;
-        e.preventDefault();
-        e.stopPropagation();
-        onOpen();
       }}
       className={`${LINK_CLASS} ${unresolved ? "opacity-70" : ""} bg-transparent p-0 text-left`}
     >
@@ -75,7 +71,7 @@ function ListItem({ item, actions }: { item: CellValue; actions: CellActions }) 
         <Link
           label={item.value.display ?? item.value.target}
           unresolved={item.value.resolved === null}
-          onOpen={() => actions.openLink(item.value)}
+          onOpen={(intent) => actions.openLink(item.value, intent)}
         />
       </Chip>
     );
@@ -130,12 +126,16 @@ export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, on
         <Link
           label={cell.display}
           unresolved={cell.value.resolved === null}
-          onOpen={() => actions.openLink(cell.value)}
+          onOpen={(intent) => actions.openLink(cell.value, intent)}
         />
       );
     case "file":
       return (
-        <Link label={cell.display} unresolved={false} onOpen={() => actions.openFile(cell.value)} />
+        <Link
+          label={cell.display}
+          unresolved={false}
+          onOpen={(intent) => actions.openFile(cell.value, intent)}
+        />
       );
     case "list":
       return (
@@ -150,7 +150,11 @@ export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, on
     default:
       if (columnKey === "file.name")
         return (
-          <Link label={cell.display} unresolved={false} onOpen={() => actions.openFile(rowPath)} />
+          <Link
+            label={cell.display}
+            unresolved={false}
+            onOpen={(intent) => actions.openFile(rowPath, intent)}
+          />
         );
       return <span className="truncate">{cell.display}</span>;
   }

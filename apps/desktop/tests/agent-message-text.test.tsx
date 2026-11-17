@@ -4,9 +4,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const open = vi.hoisted(() => vi.fn());
-vi.mock("../src/components/agent/agent-links", () => ({
-  openVaultPath: open,
-  handleMarkdownClick: () => {},
+vi.mock("../src/hooks/workspace-api", async (orig) => ({
+  ...(await orig<object>()),
+  getWorkspaceRoot: () => "/v",
+}));
+vi.mock("../src/hooks/editor-api", async (orig) => ({
+  ...(await orig<object>()),
+  navigateToFile: (p: string) => open(p.replace("/v/", "")),
+  openFileInNewTab: (p: string, o?: { activate?: boolean }) =>
+    open(p.replace("/v/", ""), o?.activate === false ? "bg" : "tab"),
 }));
 
 import { renderUserMessage } from "../src/components/agent/message-text";

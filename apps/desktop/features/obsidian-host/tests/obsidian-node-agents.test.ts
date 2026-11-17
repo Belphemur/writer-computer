@@ -211,12 +211,16 @@ describe("external links from plugin UI", () => {
     click(mk("#section"));
     click(mk("/local/path"));
     click(mk("javascript:void(0)"));
-    click(mk("https://example.com/mid"), { button: 1 });
     const handled = mk("https://example.com/handled");
     handled.addEventListener("click", (e) => e.preventDefault());
     click(handled);
     await flush();
     expect(open).not.toHaveBeenCalled();
+    // a middle click on a web link goes to the system browser like a left click
+    const mid = mk("https://example.com/mid");
+    mid.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+    await flush();
+    expect(open).toHaveBeenCalledWith("https://example.com/mid");
     remove();
   });
 

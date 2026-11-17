@@ -686,7 +686,7 @@ describe("middle-click on a relationship link", () => {
       link.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
     });
     await act(async () => {});
-    expect(openNew).toHaveBeenCalledWith("/vault/Alpha.md");
+    expect(openNew).toHaveBeenCalledWith("/vault/Alpha.md", { activate: false });
     expect(navigate).not.toHaveBeenCalled();
     // other auxiliary buttons (right) do nothing; a left click still navigates in place
     await act(async () => {

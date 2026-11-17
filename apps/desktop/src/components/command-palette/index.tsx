@@ -7,6 +7,7 @@ import {
   CommandItem,
   CommandList,
 } from "cmdk";
+import { keyIntent, linkHandlers, openPath, type LinkIntent } from "@/lib/link-activation";
 import type { SearchResult } from "@/types/fs";
 import {
   useCloseCommandPalette,
@@ -138,9 +139,31 @@ function FilePalette() {
   const createPath =
     createBaseDir && trimmedSearch ? toCreatePath(createBaseDir, trimmedSearch) : null;
 
-  function handleSelect(path: string) {
-    void (isCompactFileMode ? openStandaloneFile(path) : openFile(path));
+  function handleSelect(path: string, how: LinkIntent = "current") {
+    void (isCompactFileMode
+      ? openStandaloneFile(path)
+      : how === "current"
+        ? openFile(path)
+        : openPath(path, how));
     close();
+  }
+
+  // A result row is a note link: middle click opens it in a background tab (not in compact mode,
+  // which has one file); Cmd/Ctrl+Enter is handled on the dialog.
+  const rowLink = (path: string) =>
+    isCompactFileMode
+      ? {}
+      : linkHandlers(
+          { kind: "custom", open: (how) => handleSelect(path, how) },
+          { middleOnly: true },
+        );
+  function onResultKeyDown(e: React.KeyboardEvent) {
+    const how = keyIntent(e);
+    if (!how || how === "current") return;
+    const path = [...visibleFiles, ...visibleRecents].find((r) => r.path === selectedValue)?.path;
+    if (!path) return;
+    e.preventDefault();
+    handleSelect(path, how);
   }
 
   function handleCreate() {
@@ -250,7 +273,12 @@ function FilePalette() {
     </CommandItem>
   ));
   const fileItems = visibleFiles.map((r) => (
-    <CommandItem key={r.path} value={r.path} onSelect={() => handleSelect(r.path)}>
+    <CommandItem
+      key={r.path}
+      value={r.path}
+      onSelect={() => handleSelect(r.path)}
+      {...rowLink(r.path)}
+    >
       <div className="flex min-w-0 flex-col">
         {/* An override leads (italic); the path below then carries the file name. */}
         <NoteResultTitle path={r.path} name={getFileName(r.path)} override={r.title} />
@@ -261,7 +289,12 @@ function FilePalette() {
     </CommandItem>
   ));
   const recentItems = visibleRecents.map((entry) => (
-    <CommandItem key={entry.path} value={entry.path} onSelect={() => handleSelect(entry.path)}>
+    <CommandItem
+      key={entry.path}
+      value={entry.path}
+      onSelect={() => handleSelect(entry.path)}
+      {...rowLink(entry.path)}
+    >
       <div className="flex min-w-0 flex-col">
         <NoteResultTitle
           path={entry.path}
@@ -296,6 +329,7 @@ function FilePalette() {
         if (!open) close();
       }}
       label="Command Palette"
+      onKeyDown={onResultKeyDown}
       shouldFilter={false}
       value={selectedValue}
       onValueChange={setSelectedValue}

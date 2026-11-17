@@ -9,6 +9,7 @@ import {
 import { useWorkspace } from "@/hooks/use-workspace";
 import { openFileAtLine } from "@/components/editor-area/reveal-line";
 import { splitByRanges, type ContentSearchHit } from "@/lib/content-search";
+import { keyIntent, linkHandlers, type LinkIntent } from "@/lib/link-activation";
 import { getFileName } from "@/lib/paths";
 import { NoteResultTitle } from "./note-result-title";
 import { CONTENT_SEARCH_MIN_CHARS, useContentSearch } from "./use-content-search";
@@ -56,21 +57,22 @@ export function ContentSearchPalette() {
   // Keep the cmdk selection on a visible hit: the first one unless the user moved.
   const value = hits.some((h) => hitValue(h) === selected) ? selected : (hits[0]?.path ?? "");
 
-  function open(hit: ContentSearchHit, newTab: boolean) {
+  function open(hit: ContentSearchHit, intent: LinkIntent) {
     if (!root) return;
     const line = hit.snippets[0]?.line ?? null;
     close();
-    void openFileAtLine(`${root}/${hit.path}`, line, { newTab }).catch((e: unknown) => {
+    void openFileAtLine(`${root}/${hit.path}`, line, { intent }).catch((e: unknown) => {
       console.error("[content-search] open failed:", e);
     });
   }
 
   // cmdk's Enter selects; Cmd/Ctrl+Enter is claimed here (cmdk skips defaultPrevented keys).
   function onKeyDown(e: KeyboardEvent) {
-    if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+    const intent = keyIntent(e);
+    if (!intent || intent === "current") return;
     e.preventDefault();
     const hit = hits.find((h) => hitValue(h) === value);
-    if (hit) open(hit, true);
+    if (hit) open(hit, intent);
   }
 
   const trimmed = search.trim();
@@ -119,7 +121,15 @@ export function ContentSearchPalette() {
             }
           >
             {hits.map((hit) => (
-              <CommandItem key={hit.path} value={hitValue(hit)} onSelect={() => open(hit, false)}>
+              <CommandItem
+                key={hit.path}
+                value={hitValue(hit)}
+                onSelect={() => open(hit, "current")}
+                {...linkHandlers(
+                  { kind: "custom", open: (intent) => open(hit, intent) },
+                  { middleOnly: true },
+                )}
+              >
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <NoteResultTitle
                     path={hit.path}

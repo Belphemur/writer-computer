@@ -3,7 +3,7 @@ import type { ContextRef } from "@/lib/agent/events";
 import { renderAgentMarkdown } from "@/lib/agent/markdown";
 import { pillFor, type PillModel } from "@/lib/agent/pill";
 import { tokenizeMessage } from "@/lib/agent/trigger";
-import { handleMarkdownClick, openVaultPath } from "./agent-links";
+import { useMarkdownLinks } from "./agent-links";
 import { mountPill } from "./pill-view";
 
 // Private-use characters carry a token through the Markdown pass (no Markdown meaning, not
@@ -60,14 +60,14 @@ export function MessageText({ text, context }: { text: string; context: readonly
   useLayoutEffect(() => {
     host.current?.querySelectorAll<HTMLElement>("[data-pill-slot]").forEach((slot) => {
       const model = pills[Number(slot.dataset.pillSlot)];
-      if (model) mountPill(slot, model, openVaultPath);
+      if (model) mountPill(slot, model, true);
     });
   }, [html, pills]);
+  useMarkdownLinks(host);
   return (
     <div
       ref={host}
       className="agent-markdown"
-      onClick={handleMarkdownClick}
       // Sanitised by renderAgentMarkdown; the only markup added after is the pill slots.
       dangerouslySetInnerHTML={{ __html: html }}
     />

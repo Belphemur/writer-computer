@@ -7,7 +7,7 @@ import { contextRefLabel } from "@/lib/agent/context-text";
 import { IMAGE_TOKEN_ESTIMATE } from "@/lib/agent/chat-images";
 import type { ChatId, ContextRef } from "@/lib/agent/events";
 import { Ico } from "./agent-icon";
-import { openVaultPath } from "./agent-links";
+import { vaultLinkHandlers } from "./agent-links";
 import { ChatImageThumb } from "./chat-image-thumb";
 
 function relativeTo(path: string | null, root: string | null): string | null {
@@ -21,7 +21,7 @@ function Chip({
   title,
   folder,
   imagePath,
-  onOpen,
+  openPath,
   onRemove,
 }: {
   label: string;
@@ -29,7 +29,8 @@ function Chip({
   folder?: boolean;
   /** An image chip: a thumbnail instead of the file icon. */
   imagePath?: string;
-  onOpen?: () => void;
+  /** Vault-relative path a click opens (a link: left, middle and modifier clicks). */
+  openPath?: string;
   onRemove: () => void;
 }) {
   return (
@@ -46,8 +47,8 @@ function Chip({
       <button
         type="button"
         title={title}
-        onClick={onOpen}
-        disabled={!onOpen}
+        {...(openPath ? vaultLinkHandlers(openPath) : {})}
+        disabled={!openPath}
         className="min-w-0 truncate hover:underline disabled:no-underline"
       >
         {label}
@@ -86,7 +87,7 @@ export function ContextChips({ chatId, draft }: { chatId: ChatId; draft: Draft }
         <Chip
           label={nameOf(activeRel)}
           title={`Active note: ${activeRel}`}
-          onOpen={() => openVaultPath(activeRel)}
+          openPath={activeRel}
           onRemove={() => setAgentDraft(chatId, { activeNote: false })}
         />
       )}
@@ -101,9 +102,7 @@ export function ContextChips({ chatId, draft }: { chatId: ChatId; draft: Draft }
           }
           folder={ref.kind === "folder"}
           imagePath={ref.kind === "image" ? ref.path : undefined}
-          onOpen={
-            ref.kind === "note" || ref.kind === "image" ? () => openVaultPath(ref.path) : undefined
-          }
+          openPath={ref.kind === "note" || ref.kind === "image" ? ref.path : undefined}
           onRemove={() => remove(ref)}
         />
       ))}

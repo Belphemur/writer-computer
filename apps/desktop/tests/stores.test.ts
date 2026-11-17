@@ -561,6 +561,22 @@ describe("editor-store", () => {
     expect(state.activeTabId).toBe(lastTab.id);
   });
 
+  test("openFileInNewTab with activate:false adds a background tab and keeps the active one", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce({ path: "/a.md", content: "a", modified_at: 1 })
+      .mockResolvedValueOnce({ path: "/b.md", content: "b", modified_at: 2 });
+
+    await useEditorStore.getState().openFile("/a.md");
+    const before = useEditorStore.getState();
+    await useEditorStore.getState().openFileInNewTab("/b.md", { activate: false });
+
+    const state = useEditorStore.getState();
+    expect(tabPaths()).toEqual(["/a.md", "/b.md"]);
+    expect(state.activeTabId).toBe(before.activeTabId);
+    expect(state.activeFilePath).toBe("/a.md");
+    expect(state.openFiles.get("/b.md")?.content).toBe("b"); // loaded, ready when selected
+  });
+
   test("openFileInNewTab removes the temporary tab when loading fails", async () => {
     mockedInvoke.mockRejectedValueOnce(new Error("read failed"));
 

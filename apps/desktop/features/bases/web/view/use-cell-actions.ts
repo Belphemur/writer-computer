@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { toAbsolutePath } from "../lib/paths";
+import type { LinkIntent } from "@/lib/link-activation";
 import * as tauri from "@/lib/tauri";
 import { resolveWikiLink } from "@/lib/wiki-links";
 import type { CellActions } from "./cell-view";
@@ -14,26 +15,30 @@ import { errorMessage } from "./use-base-query";
  */
 export function useCellActions(notify: (kind: "error", message: string) => void): CellActions {
   return useMemo<CellActions>(() => {
-    const openAbsolute = (absolute: string) =>
+    // Cells always open a new tab (never replacing the Bases view); a middle or Cmd/Ctrl click
+    // keeps the focus where it is.
+    const openAbsolute = (absolute: string, intent?: LinkIntent) =>
       editorApi
-        .openFileInNewTab(absolute)
+        .openFileInNewTab(absolute, {
+          activate: intent === undefined || intent !== "new-tab-background",
+        })
         .catch((e) => notify("error", `Could not open ${absolute}: ${errorMessage(e)}`));
     return {
-      openFile: (relativePath) => {
+      openFile: (relativePath, intent) => {
         const root = getWorkspaceRoot();
         if (!root) return notify("error", "No workspace is open");
-        void openAbsolute(toAbsolutePath(root, relativePath));
+        void openAbsolute(toAbsolutePath(root, relativePath), intent);
       },
-      openLink: ({ target, resolved }) => {
+      openLink: ({ target, resolved }, intent) => {
         const root = getWorkspaceRoot();
         if (!root) return notify("error", "No workspace is open");
         if (resolved) {
-          void openAbsolute(toAbsolutePath(root, resolved));
+          void openAbsolute(toAbsolutePath(root, resolved), intent);
           return;
         }
         resolveWikiLink(target, null, tauri.resolveWikiLinkTarget).then(
           (result) => {
-            if (result.kind === "internal") void openAbsolute(result.path);
+            if (result.kind === "internal") void openAbsolute(result.path, intent);
             else notify("error", `"${target}" was not found in the vault`);
           },
           (e) => notify("error", `Could not resolve "${target}": ${errorMessage(e)}`),

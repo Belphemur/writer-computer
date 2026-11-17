@@ -314,13 +314,13 @@ describe("markdown render: re-render", () => {
     expect(el.innerHTML).toBe(once);
     expect(el.querySelectorAll("p")).toHaveLength(1);
     expect(el.querySelectorAll("a")).toHaveLength(1);
-    expect(add).toHaveBeenCalledTimes(2); // click + auxclick, once
+    expect(add).toHaveBeenCalledTimes(4); // callout click + the link binding (click, auxclick, mousedown), once
     click(el.querySelector("a")!);
     await Promise.resolve();
     await Promise.resolve();
     expect(rig.tabs).toHaveLength(1);
     comp.unload();
-    expect(remove).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledTimes(4);
     click(el.querySelector("a")!);
     await Promise.resolve();
     expect(rig.tabs).toHaveLength(1);

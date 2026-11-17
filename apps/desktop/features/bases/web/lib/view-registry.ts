@@ -3,14 +3,16 @@
 // the plugin id as `owner`); the view tab dispatches on the view's `type`. An unregistered type
 // (kanban, map, anything unknown) gets the placeholder, never a guess.
 import type { ComponentType } from "react";
+import type { LinkIntent } from "@/lib/link-activation";
 import type { ViewOption } from "./view-options";
 import { propertyOptionValues } from "./view-options";
 import type { BaseDocument, BaseQueryResult, BaseView, Cell } from "./types";
 
-/** What opening something from a view does (links and file cells open in a new tab). */
+/** What opening something from a view does: links and file cells open in a new tab, in the
+ *  background for a middle or Cmd/Ctrl click (`LinkIntent`, `lib/link-activation.ts`). */
 export interface ViewActions {
-  openFile: (relativePath: string) => void;
-  openLink: (link: { target: string; resolved: string | null }) => void;
+  openFile: (relativePath: string, intent?: LinkIntent) => void;
+  openLink: (link: { target: string; resolved: string | null }, intent?: LinkIntent) => void;
 }
 
 /** The config edits a view can request; each writes the `.base` and reloads (one write path). */

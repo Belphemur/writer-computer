@@ -9,19 +9,13 @@ import {
   mergeSlashItems,
   type SlashItem,
 } from "@/lib/agent/slash-commands";
-import { openVaultPath } from "./agent-links";
+import { vaultLinkHandlers } from "./agent-links";
 
 /** What "loaded" means, in words (spec 3.2): the CLI lists it for this chat. */
 export function skillStatusText(item: SlashItem): string {
   if (item.loaded === null) return "On disk. The chat has not started yet.";
   if (item.loaded) return "Loaded: Claude lists it for this chat.";
   return "Found on disk but not in Claude's list for this chat. Type /reload-skills or start a new chat.";
-}
-
-function openSkill(item: SlashItem) {
-  if (!item.path) return;
-  if (item.source === "global") void revealItemInDir(item.path);
-  else openVaultPath(item.path);
 }
 
 /** "Skills (N)" next to the mode chip: every skill (project, vault, global, and what Claude
@@ -104,7 +98,10 @@ export function SkillsChip({ chat }: { chat: Chat }) {
                   {s.path && (
                     <button
                       type="button"
-                      onClick={() => openSkill(s)}
+                      // a global skill lives outside the vault: reveal it; the rest are note links
+                      {...(s.source === "global"
+                        ? { onClick: () => void revealItemInDir(s.path!) }
+                        : vaultLinkHandlers(s.path))}
                       className="mt-0.5 text-[11px] text-text-muted underline hover:text-text-primary"
                     >
                       {s.source === "global" ? "Show in Finder" : "Open SKILL.md"}

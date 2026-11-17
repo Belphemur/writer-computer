@@ -175,7 +175,7 @@ describe("ContentSearchPalette", () => {
       (rows[0] as HTMLElement).click();
     });
     expect(mockedOpen).toHaveBeenCalledWith("/ws/Bases/Projects/tasks.base", null, {
-      newTab: false,
+      intent: "current",
     });
   });
 
@@ -317,13 +317,15 @@ describe("ContentSearchPalette", () => {
     await type("harbour");
     await settle();
     await key("Enter");
-    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/A/First.md", 4, { newTab: false });
+    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/A/First.md", 4, { intent: "current" });
 
     useUIStore.setState({ isCommandPaletteOpen: true, commandPaletteSearch: "harbour" });
     await settle();
     await key("ArrowDown");
-    await key("Enter", { metaKey: true });
-    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/B/Second.md", 9, { newTab: true });
+    await key("Enter", { ctrlKey: true }); // jsdom is not macOS: Ctrl is the modifier
+    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/B/Second.md", 9, {
+      intent: "new-tab-background",
+    });
     expect(useUIStore.getState().isCommandPaletteOpen).toBe(false);
   });
 });

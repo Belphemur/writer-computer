@@ -12,7 +12,7 @@ import type { Turn } from "@/lib/agent/transcript";
 import { changesKey, useTurnChangesStore } from "@/stores/turn-changes-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { Ico } from "./agent-icon";
-import { openVaultPath } from "./agent-links";
+import { vaultLinkHandlers } from "./agent-links";
 import { DiffView } from "./diff-view";
 
 const MINUS = "−";
@@ -238,7 +238,7 @@ function FileName({ f }: { f: FileChangeSummary }) {
       type="button"
       title={f.path}
       aria-label={`Open ${f.path}`}
-      onClick={() => openVaultPath(f.path)}
+      {...vaultLinkHandlers(f.path)}
       className={`${cls} text-text-primary underline-offset-2 hover:underline`}
     >
       {text}

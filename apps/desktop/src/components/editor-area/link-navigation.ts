@@ -1,10 +1,11 @@
 import { EditorView } from "@codemirror/view";
 import { type Extension, Prec } from "@codemirror/state";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openPath as openWithOs, openUrl } from "@tauri-apps/plugin-opener";
 import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { buildSlugIndex, parseDocumentHeadings } from "@/hooks/use-document-headings";
 import type { DocumentHeading } from "@/hooks/use-document-headings";
+import { openPath, type LinkIntent, linkActivationExtension } from "@/lib/link-activation";
 import { resolveLinkTarget } from "@/lib/paths";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import { linkUrlAt, rawUrlAt } from "@/lib/prosemark-core/links";
@@ -32,7 +33,12 @@ function scrollSameDocAnchor(view: EditorView, filePath: string, anchor: string)
 /** Navigate to `href` as written in the document: same-document anchors
  *  scroll, workspace files open in the tab (with a pending anchor), external
  *  URLs and other paths hand off to the OS. */
-export async function followLink(href: string | null, view: EditorView, filePath: string) {
+export async function followLink(
+  href: string | null,
+  view: EditorView,
+  filePath: string,
+  intent: LinkIntent = "current",
+) {
   if (!href) return;
 
   const target = await resolveLinkTarget(href, filePath, getWorkspaceRoot(), (path) =>
@@ -51,7 +57,7 @@ export async function followLink(href: string | null, view: EditorView, filePath
       return;
     }
     if (target.anchor) setPendingAnchor(target.path, target.anchor);
-    await editorApi.navigateToFile(target.path);
+    await openPath(target.path, intent);
     return;
   }
 
@@ -60,7 +66,7 @@ export async function followLink(href: string | null, view: EditorView, filePath
     return;
   }
 
-  await openPath(target.path);
+  await openWithOs(target.path);
 }
 
 /** Link href under a document position, whether rendered or a bare URL. */
@@ -92,31 +98,24 @@ function linkHrefAt(event: MouseEvent, view: EditorView): string | null {
   return (isRenderedLink ? linkUrlAt(view.state, pos) : rawUrlAt(view.state, pos)) ?? null;
 }
 
+/** Left, middle and Cmd/Ctrl clicks on a link in the document (`lib/link-activation.ts`): the
+ *  press is claimed on mousedown so CodeMirror does not move the caret into the link (which would
+ *  unfold a rendered link); the navigation follows on click. */
 export function linkNavigationExtension(
   getFilePath: () => string,
   isDisposed: () => boolean,
 ): Extension {
   return Prec.highest(
-    EditorView.domEventHandlers({
-      // Claim the press on mousedown so CodeMirror doesn't move the caret
-      // into the link (which would unfold a rendered link), but defer the
-      // actual navigation to the click (mouseup) so it follows on release.
-      mousedown(event, view) {
-        if (linkHrefAt(event, view) === null) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        return true;
-      },
-      click(event, view) {
-        const href = linkHrefAt(event, view);
-        if (href === null) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        void followLink(href, view, getFilePath()).catch((error) => {
-          if (!isDisposed()) console.error("[editor] Failed to open link:", error);
-        });
-        return true;
-      },
+    linkActivationExtension((event, view) => {
+      const href = linkHrefAt(event, view);
+      if (href === null) return null;
+      return {
+        kind: "custom",
+        open: (intent) =>
+          void followLink(href, view, getFilePath(), intent).catch((error) => {
+            if (!isDisposed()) console.error("[editor] Failed to open link:", error);
+          }),
+      };
     }),
   );
 }

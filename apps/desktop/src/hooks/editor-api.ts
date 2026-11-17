@@ -67,8 +67,8 @@ export function renameOpenFile(oldPath: string, newPath: string) {
   useEditorStore.getState().renameOpenFile(oldPath, newPath);
 }
 
-export function openFileInNewTab(path: string) {
-  return useEditorStore.getState().openFileInNewTab(path);
+export function openFileInNewTab(path: string, options?: { activate?: boolean }) {
+  return useEditorStore.getState().openFileInNewTab(path, options);
 }
 
 /** Open a path as plain text in a new tab even when its kind has its own view (`.base` "Edit YAML"). */

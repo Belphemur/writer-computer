@@ -2,6 +2,7 @@
 // `<a href target="_blank">`; the Tauri webview ignores the first (returns null) and would navigate
 // the app window away for the second. While a plugin is loaded both go to the system browser
 // through the SAME implementation as `electron.shell.openExternal` (http, https, mailto only).
+import { bindLinkActivation } from "@/lib/link-activation";
 import { recordPluginError } from "../error-log";
 import { electronModule } from "./misc";
 
@@ -49,19 +50,14 @@ export function installExternalLinks(win: Window & typeof globalThis = window): 
   } as typeof win.open;
   win.open = patched;
 
-  const onClick = (e: MouseEvent): void => {
-    if (e.defaultPrevented || e.button !== 0) return;
-    const a = (e.target as Element | null)?.closest?.("a[href]");
-    if (!a) return;
-    const url = externalUrl(a.getAttribute("href"), doc.baseURI);
-    if (!url) return;
-    e.preventDefault();
-    open(url);
-  };
-  // Bubble phase: a plugin that handled the click itself (React, preventDefault) wins.
-  doc.addEventListener("click", onClick);
+  // Bubble phase (`bindLinkActivation` skips a handled event): a plugin that handled the click
+  // itself (React, preventDefault) wins. Middle and Cmd/Ctrl clicks reach the browser too.
+  const off = bindLinkActivation(doc.documentElement, (el) => {
+    const url = externalUrl(el.closest("a[href]")?.getAttribute("href"), doc.baseURI);
+    return url ? { kind: "custom", open: () => open(url) } : null;
+  });
   return () => {
-    doc.removeEventListener("click", onClick);
+    off();
     if (win.open === patched) win.open = originalOpen;
   };
 }

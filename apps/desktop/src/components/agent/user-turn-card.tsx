@@ -1,7 +1,7 @@
 import { formatRelativeTime } from "@/lib/relative-time";
 import { contextRefLabel } from "@/lib/agent/context-text";
 import type { UserMessage } from "@/lib/agent/transcript";
-import { openVaultPath } from "./agent-links";
+import { vaultLinkHandlers } from "./agent-links";
 import { ChatImageThumb } from "./chat-image-thumb";
 import { MessageText } from "./message-text";
 
@@ -23,7 +23,7 @@ export function UserTurnCard({ message }: { message: UserMessage }) {
               type="button"
               title={path}
               aria-label={`Open ${path.slice(path.lastIndexOf("/") + 1)}`}
-              onClick={() => openVaultPath(path)}
+              {...vaultLinkHandlers(path)}
               className="overflow-hidden rounded-lg border border-[var(--line-subtle)] hover:border-[var(--focus-border)]"
             >
               <ChatImageThumb path={path} className="size-16" />

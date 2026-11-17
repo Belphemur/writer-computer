@@ -19,6 +19,7 @@ import { createMeasure } from "./measure-text";
 import type { ViewConfig } from "../lib/view-registry";
 import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { CellEditor } from "./cell-editor";
+import { keyIntent } from "@/lib/link-activation";
 import { CellView, type CellActions } from "./cell-view";
 import type { CellRange, useBaseEdits } from "./use-base-edits";
 import { useGroupCollapse } from "./use-group-collapse";
@@ -445,11 +446,13 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
       case "F2": {
         if (!focus) return;
         e.preventDefault();
-        if (mod && e.key === "Enter") {
+        const intent = keyIntent(e);
+        if (intent && intent !== "current") {
           const cell = edits.cellAt(focus.row, focus.col);
-          if (cell?.type === "link") actions.openLink(cell.value);
-          else if (cell?.type === "file") actions.openFile(cell.value);
-          else if (columns[focus.col]?.key === "file.name") actions.openFile(rows[focus.row]!.path);
+          if (cell?.type === "link") actions.openLink(cell.value, intent);
+          else if (cell?.type === "file") actions.openFile(cell.value, intent);
+          else if (columns[focus.col]?.key === "file.name")
+            actions.openFile(rows[focus.row]!.path, intent);
           return;
         }
         void beginEdit(focus.row, focus.col);

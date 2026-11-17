@@ -395,7 +395,7 @@ describe("cards view", () => {
     expect($$("[data-group-header]")).toHaveLength(2);
     expect($$("[data-group-count]").map((c) => c.textContent)).toEqual(["2", "1"]);
     await click($("[data-card-path='Tasks/beta.md']"));
-    expect(openFileInNewTab).toHaveBeenCalledWith("/vault/Tasks/beta.md");
+    expect(openFileInNewTab).toHaveBeenCalledWith("/vault/Tasks/beta.md", { activate: true });
     await click(byLabel("Collapse group open"));
     expect(host.querySelector("[data-card-path='Tasks/alpha.md']")).toBeNull();
     expect(host.querySelector("[data-card-path='Tasks/gamma.md']")).not.toBeNull();
@@ -453,7 +453,7 @@ describe("list view", () => {
   it("a link click opens the file like the table", async () => {
     await mountList({});
     await click($("[data-list-row='Tasks/alpha.md'] [data-cell-link]"));
-    expect(openFileInNewTab).toHaveBeenCalledWith("/vault/Tasks/alpha.md");
+    expect(openFileInNewTab).toHaveBeenCalledWith("/vault/Tasks/alpha.md", { activate: true });
   });
 });
 

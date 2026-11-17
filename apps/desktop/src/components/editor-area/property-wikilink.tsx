@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { linkHandlers } from "@/lib/link-activation";
 import * as tauri from "@/lib/tauri";
 import { parseWikiLink, wikiSuggestions, type WikiSuggestion } from "@/lib/wiki-links";
 import { AnchoredPopover } from "./anchored-popover";
@@ -52,15 +53,11 @@ export function WikiLinkButton({ value }: { value: string }) {
   return (
     <button
       type="button"
+      {...linkHandlers({
+        kind: "custom",
+        open: (intent) => void openPropertyWikilink(value, intent),
+      })}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={() => void openPropertyWikilink(value)}
-      // middle-click opens a new tab, as on a wiki link in the editor
-      onAuxClick={(e) => {
-        if (e.button !== 1) return;
-        e.preventDefault();
-        e.stopPropagation();
-        void openPropertyWikilink(value, true);
-      }}
       title={ok === false ? `${value} (note not found)` : value}
       data-wikilink
       data-unresolved={ok === false ? "" : undefined}

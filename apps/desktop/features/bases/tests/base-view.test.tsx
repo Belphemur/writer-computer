@@ -910,9 +910,9 @@ describe("links", () => {
     useEditorStore.setState({ openFileInNewTab: open });
     await mount();
     await click(cell("Tasks/alpha.md", 4).querySelector("[data-cell-link]")!);
-    expect(open).toHaveBeenLastCalledWith("/vault/People/alpha.md");
+    expect(open).toHaveBeenLastCalledWith("/vault/People/alpha.md", { activate: true });
     await click(cell("Tasks/beta.md", 1).querySelector("[data-cell-link]")!);
-    expect(open).toHaveBeenLastCalledWith("/vault/Tasks/beta.md");
+    expect(open).toHaveBeenLastCalledWith("/vault/Tasks/beta.md", { activate: true });
   });
 });
 

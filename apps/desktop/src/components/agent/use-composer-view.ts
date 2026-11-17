@@ -57,7 +57,6 @@ export function useComposerView(o: ComposerViewOptions) {
       const d = dynamic(cur);
       const h = {
         onKey: (e: KeyboardEvent) => latest.current.handlers.onKey(e),
-        open: (t: string) => latest.current.handlers.open(t),
         onChange: (t: string, c: number, k: boolean) => latest.current.handlers.onChange(t, c, k),
         onCompositionStart: () => latest.current.handlers.onCompositionStart(),
         onCompositionEnd: () => latest.current.handlers.onCompositionEnd(),

@@ -19,7 +19,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import * as tauri from "@/lib/tauri";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
-import * as editorApi from "@/hooks/editor-api";
+import { linkActivationExtension, openPath } from "@/lib/link-activation";
 import {
   wikiSuggestions,
   parseWikiLink,
@@ -324,62 +324,29 @@ function wikiTargetAt(event: MouseEvent, view: EditorView): string | null {
   return extractWikiTarget(view.state.doc, pos);
 }
 
+/** Left, middle and Cmd/Ctrl clicks on a wiki link (`lib/link-activation.ts`): the press is
+ *  claimed on mousedown so CodeMirror does not move the caret into the link (which would unfold
+ *  the rendered widget), and the note opens on click. */
 function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boolean): Extension {
   return Prec.highest(
-    EditorView.domEventHandlers({
-      // Claim the press on mousedown so CodeMirror doesn't move the caret
-      // into the link (which would unfold the rendered widget), but defer
-      // navigation to the click (mouseup) so it follows on release.
-      mousedown(event, view) {
-        if (wikiTargetAt(event, view) === null) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        return true;
-      },
-      // Middle-click opens the linked note in a new tab, like a browser's middle-click on a link.
-      auxclick(event, view) {
-        if (event.button !== 1) return false;
-        const rawTarget = wikiTargetAt(event, view);
-        if (rawTarget === null) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        if (!getWorkspaceRoot()) return true;
-        void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
-          .then((result) => {
-            if (isDisposed() || result.kind !== "internal") return;
-            if (result.fragment) setPendingAnchor(result.path, result.fragment);
-            void editorApi.openFileInNewTab(result.path);
-          })
-          .catch((error) => {
-            if (!isDisposed())
-              console.error("[editor] Failed to open wiki link in new tab:", error);
-          });
-        return true;
-      },
-      click(event, view) {
-        const rawTarget = wikiTargetAt(event, view);
-        if (rawTarget === null) return false;
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const workspaceRoot = getWorkspaceRoot();
-        if (!workspaceRoot) return true;
-
-        void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
-          .then((result) => {
-            if (isDisposed()) return;
-            if (result.kind === "internal") {
+    linkActivationExtension((event, view) => {
+      const rawTarget = wikiTargetAt(event, view);
+      if (rawTarget === null) return null;
+      return {
+        kind: "custom",
+        open: (intent) => {
+          if (!getWorkspaceRoot()) return;
+          void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
+            .then((result) => {
+              if (isDisposed() || result.kind !== "internal") return;
               if (result.fragment) setPendingAnchor(result.path, result.fragment);
-              void editorApi.navigateToFile(result.path);
-            }
-          })
-          .catch((error) => {
-            if (!isDisposed()) console.error("[editor] Failed to follow wiki link:", error);
-          });
-
-        return true;
-      },
+              return openPath(result.path, intent);
+            })
+            .catch((error) => {
+              if (!isDisposed()) console.error("[editor] Failed to follow wiki link:", error);
+            });
+        },
+      };
     }),
   );
 }

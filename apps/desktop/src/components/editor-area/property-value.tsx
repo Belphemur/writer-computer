@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import { isWikilink, type PropertyRow } from "@/lib/frontmatter-properties";
+import { linkHandlers } from "@/lib/link-activation";
 import { openPropertyUrl } from "./property-links";
 import { CHIP, ChipRemove, FIELD } from "./property-chip";
 import { useWikiSuggest, WikiLinkButton } from "./property-wikilink";
@@ -170,8 +171,8 @@ function LinkField({ row, actions }: FieldProps) {
       {isUrl ? (
         <button
           type="button"
+          {...linkHandlers({ kind: "custom", open: () => void openPropertyUrl(value) })}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => void openPropertyUrl(value)}
           title={value}
           className="min-w-0 truncate text-left text-[13px] leading-[1.4] text-[var(--accent)] underline-offset-2 hover:underline"
         >

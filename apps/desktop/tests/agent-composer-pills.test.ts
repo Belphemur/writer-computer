@@ -5,6 +5,14 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { undo } from "@codemirror/commands";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+
+const { openFileInNewTab, navigateToFile } = vi.hoisted(() => ({
+  openFileInNewTab: vi.fn(),
+  navigateToFile: vi.fn(),
+}));
+vi.mock("../src/hooks/editor-api", () => ({ openFileInNewTab, navigateToFile }));
+vi.mock("../src/hooks/workspace-api", () => ({ getWorkspaceRoot: () => "/v" }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 import {
   composerExtensions,
   pillAt,
@@ -46,7 +54,6 @@ function make(
   const caret = marked.includes("|") ? marked.indexOf("|") : marked.replace("|", "").length;
   const parent = document.createElement("div");
   document.body.appendChild(parent);
-  const open = vi.fn();
   const changes: string[] = [];
   const view = new EditorView({
     parent,
@@ -55,7 +62,6 @@ function make(
       selection: EditorSelection.single(caret),
       extensions: composerExtensions({
         onKey,
-        open,
         onChange: (t) => changes.push(t),
         onCompositionStart: () => {},
         onCompositionEnd: () => {},
@@ -65,7 +71,7 @@ function make(
   });
   view.dispatch({ effects: setPillContext.of(ctx) });
   views.push(view);
-  return { view, open, changes };
+  return { view, changes };
 }
 const text = (v: EditorView) => v.state.doc.toString();
 const head = (v: EditorView) => v.state.selection.main.head;
@@ -209,20 +215,29 @@ describe("whole-pill editing", () => {
   });
 
   it("double click selects the whole pill; Cmd+click opens the note", () => {
-    const { view, open } = make(`go ${LONG} now`);
+    const { view } = make(`go ${LONG} now`);
     const pill = pillsIn(view)[0]!;
     pill.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
     const sel = view.state.selection.main;
     expect(text(view).slice(sel.from, sel.to)).toBe(LONG);
     expect(pillAt(view.state, 5)).toEqual({ from: 3, to: 3 + LONG.length });
-    pill.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, cancelable: true, metaKey: true }),
-    );
-    expect(open).toHaveBeenCalledWith(PLAN.path);
-    const plain = vi.fn();
-    pill.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    expect(plain).not.toHaveBeenCalled();
-    expect(open).toHaveBeenCalledTimes(1);
+    const fire = (type: string, init: MouseEventInit) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+      pill.dispatchEvent(e);
+      return e;
+    };
+    fire("click", { ctrlKey: true }); // jsdom is not macOS: Ctrl is the modifier
+    expect(openFileInNewTab).toHaveBeenLastCalledWith(`/v/${PLAN.path}`, { activate: false });
+    fire("click", { ctrlKey: true, shiftKey: true });
+    expect(openFileInNewTab).toHaveBeenLastCalledWith(`/v/${PLAN.path}`, { activate: true });
+    expect(fire("mousedown", { button: 1 }).defaultPrevented).toBe(true);
+    fire("auxclick", { button: 1 });
+    expect(openFileInNewTab).toHaveBeenLastCalledWith(`/v/${PLAN.path}`, { activate: false });
+    // a plain click only places the caret
+    openFileInNewTab.mockClear();
+    fire("click", {});
+    expect(openFileInNewTab).not.toHaveBeenCalled();
+    expect(navigateToFile).not.toHaveBeenCalled();
   });
 });
 

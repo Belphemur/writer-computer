@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const hoisted = vi.hoisted(() => ({
   saveImage: vi.fn(),
   importImageFile: vi.fn(),
-  opened: [] as string[],
+  opened: [] as (string | string[])[],
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -31,9 +31,15 @@ vi.mock("../src/lib/tauri", () => ({
   fileExists: vi.fn(async () => true),
   findFilesByExactName: vi.fn(async () => []),
 }));
-vi.mock("../src/components/agent/agent-links", () => ({
-  openVaultPath: (p: string) => void hoisted.opened.push(p),
-  handleMarkdownClick: vi.fn(),
+vi.mock("../src/hooks/workspace-api", async (orig) => ({
+  ...(await orig<object>()),
+  getWorkspaceRoot: () => "/v",
+}));
+vi.mock("../src/hooks/editor-api", async (orig) => ({
+  ...(await orig<object>()),
+  navigateToFile: (p: string) => void hoisted.opened.push(p.replace("/v/", "")),
+  openFileInNewTab: (p: string, o?: { activate?: boolean }) =>
+    void hoisted.opened.push([p.replace("/v/", ""), o?.activate === false ? "bg" : "tab"]),
 }));
 vi.mock("../src/lib/agent/chat-history-client", async (orig) => {
   const real = await orig<typeof import("../src/lib/agent/chat-history-client")>();
@@ -359,6 +365,10 @@ describe("the composer and the transcript", () => {
     expect(host.textContent).toContain("[[Plan]]"); // the label still shows next to the images
     act(() => (thumb as HTMLElement).click());
     expect(hoisted.opened).toEqual([".writer/chats/assets/a.png"]);
+    act(() => {
+      thumb.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    });
+    expect(hoisted.opened.at(-1)).toEqual([".writer/chats/assets/a.png", "bg"]);
     act(() => r.unmount());
     host.remove();
   });

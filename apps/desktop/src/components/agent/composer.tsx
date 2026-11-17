@@ -57,7 +57,6 @@ import { ComposerActions } from "./composer-actions";
 import { ContextChips } from "./context-chips";
 import { SuggestionMenu, type Suggestion } from "./suggestion-menu";
 import { pillRanges, type PillContext } from "@/lib/agent/pill";
-import { openVaultPath } from "./agent-links";
 import { useChatImageOsDrop } from "./use-chat-image-drop";
 import { useComposerView } from "./use-composer-view";
 import { useFocusOnTick } from "./use-focus-on-tick";
@@ -432,7 +431,6 @@ export function Composer({
     },
     handlers: {
       onKey,
-      open: openVaultPath,
       onChange: (value, caret, isComposing) => {
         setAgentDraft(chatId, { text: value });
         refresh(value, caret, isComposing);

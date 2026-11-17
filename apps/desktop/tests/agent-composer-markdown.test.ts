@@ -150,7 +150,6 @@ describe("markdown in the composer view", () => {
         doc,
         extensions: composerExtensions({
           onKey: () => false,
-          open: () => {},
           onChange: () => {},
           onCompositionStart: () => {},
           onCompositionEnd: () => {},

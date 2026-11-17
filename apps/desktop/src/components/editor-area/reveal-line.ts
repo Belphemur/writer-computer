@@ -1,6 +1,7 @@
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import * as editorApi from "@/hooks/editor-api";
+import { openPath, type LinkIntent } from "@/lib/link-activation";
 import { findEditorView } from "@/lib/editor-views";
 import { consumePendingLine, setPendingLine } from "@/lib/pending-anchor";
 import { findOuterScroller, scrollPosToSafeTop } from "./editor-scroll";
@@ -33,28 +34,28 @@ export function applyPendingLine(
 }
 
 /**
- * Open `path` (in the current tab, or a new one) and reveal `line`. A file that is already
+ * Open `path` for a gesture (`lib/link-activation.ts`) and reveal `line`. A file that is already
  * showing is revealed directly; otherwise the line is parked as a pending line and the editor
  * that loads the file consumes it, like heading anchors.
  */
 export async function openFileAtLine(
   path: string,
   line: number | null,
-  options: { newTab: boolean },
+  options: { intent: LinkIntent },
 ): Promise<void> {
   if (line === null) {
-    await (options.newTab ? editorApi.openFileInNewTab(path) : editorApi.navigateToFile(path));
+    await openPath(path, options.intent);
     return;
   }
   const view = findEditorView(path);
-  if (!options.newTab && view && editorApi.getActiveFilePath() === path) {
+  if (options.intent === "current" && view && editorApi.getActiveFilePath() === path) {
     revealLine(view, line, undefined, "smooth");
     view.focus();
     return;
   }
   setPendingLine(path, line);
   try {
-    await (options.newTab ? editorApi.openFileInNewTab(path) : editorApi.navigateToFile(path));
+    await openPath(path, options.intent);
   } catch (e) {
     consumePendingLine(path); // never leave a stale line for a later open
     throw e;

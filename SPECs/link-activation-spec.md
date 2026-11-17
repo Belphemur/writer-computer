@@ -1,6 +1,6 @@
 # Link activation: every link behaves like a browser link
 
-Status: **accepted rule (user, 2026-11-17)**; implementation in progress. Applies to every clickable reference to a note, file, folder, chat or URL anywhere in Writer, core and features alike.
+Status: **accepted rule (user, 2026-11-17)**; implemented 2026-11-17 for the surfaces below, with the exceptions listed under "Implementation notes". Applies to every clickable reference to a note, file, folder, chat or URL anywhere in Writer, core and features alike.
 
 ## 1. The rule
 
@@ -60,3 +60,12 @@ Today each of these handles the middle button on its own, or not at all:
 
 - Opening in a new window (`Shift`+click in browsers): Writer has one window per vault; `Shift`+click behaves like a left click until multi-window exists.
 - Drag-a-link-to-the-tab-bar.
+
+## 6. Implementation notes (2026-11-17)
+
+- `linkHandlers(target, { middleOnly })` is a plain function, not a `use*` hook (it uses no hook, and callers need it in conditionals and loops). There is no `onKeyDown`: `Enter` on a focused `<button>` or `<a>` is a native click that carries its modifiers, so it already behaves per the table. Rows that are not buttons use `keyIntent(event)` (Quick Open, Search in notes, Bases cells).
+- `middleOnly` rows: the file tree (Cmd/Shift+click select rows there) and the palette rows (cmdk selects on click) open only on the middle button.
+- Bases cells always open in a new tab (they must not replace the Bases view), so a left click there is a new active tab; middle and `Cmd`/`Ctrl` click are background tabs.
+- Obsidian plugin-rendered internal links keep their rule (always a new main tab through `openLinkText(..., true)`, active), so a middle click there does not stay in the background yet; the gesture detection and the external-link handling are the shared ones.
+- Not done: the editor context menu's "Open in new tab" entry, a chat as a link target (`kind: "chat"`; the chat list and tool rows have no note links today), the compact recents list and the sidebar's non-file-tree surfaces (they have no note links beyond the file tree), Prosemark embeds.
+- Guard: `tests/link-activation-inventory.test.ts`; behaviour: `tests/link-activation.test.ts`.
