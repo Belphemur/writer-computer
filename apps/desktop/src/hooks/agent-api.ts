@@ -28,13 +28,14 @@ export const setAgentBackend = (b: AgentBackend) => useAgentStore.getState().set
 export function startNewAgentChat(projectPath?: string | null) {
   const s = useAgentStore.getState();
   s.newChat(projectPath);
-  if (!s.paneOpen) useAgentStore.setState({ paneOpen: true });
+  s.setPaneOpen(true);
 }
 /** Opens the pane on the history view ("Agent: history"). Lane 4 renders the list. */
 export function openAgentHistory() {
   const s = useAgentStore.getState();
   if (s.order.length === 0) s.newChat();
-  useAgentStore.setState({ paneOpen: true, view: "history" });
+  s.setPaneOpen(true);
+  s.setView("history");
 }
 /** History "Regenerate title": any chat, open or not; an open chat updates live. */
 export const regenerateAgentChatTitle = regenerateChatTitle;

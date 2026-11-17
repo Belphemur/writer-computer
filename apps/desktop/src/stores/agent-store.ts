@@ -58,6 +58,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
 export const AGENT_PANE_WIDTH_SETTING = "agent.pane-width";
+export const AGENT_PANE_OPEN_SETTING = "agent.pane-open";
 export const AGENT_PANE_MIN_WIDTH = 320;
 /** The `agent.pane-width` setting's range (shared/settings.schema.json). */
 export const AGENT_PANE_MAX_WIDTH = 900;
@@ -124,6 +125,12 @@ interface AgentState {
 
   openPane: () => void;
   closePane: () => void;
+  /** The one write path of `paneOpen`: sets it and saves it in `agent.pane-open` (a no-op when
+   *  unchanged). Never starts the CLI. */
+  setPaneOpen: (open: boolean) => void;
+  /** Adopts the `agent.pane-open` setting (startup, and when Settings changes it): state only,
+   *  nothing is written back. */
+  syncPaneOpen: (value: unknown) => void;
   togglePane: () => void;
   /** `persist: false` while dragging; call `persistPaneWidth` when the drag ends. */
   setPaneWidth: (width: number, persist?: boolean) => void;
@@ -699,9 +706,24 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     openPane: () => {
       if (get().order.length === 0) get().newChat();
-      set((s) => ({ paneOpen: true, view: "chat", focusComposerTick: s.focusComposerTick + 1 }));
+      set((s) => ({ view: "chat", focusComposerTick: s.focusComposerTick + 1 }));
+      get().setPaneOpen(true);
     },
-    closePane: () => set({ paneOpen: false }),
+    closePane: () => get().setPaneOpen(false),
+    setPaneOpen: (open) => {
+      if (get().paneOpen === open) return;
+      set({ paneOpen: open });
+      void useSettingsStore
+        .getState()
+        .setSetting(AGENT_PANE_OPEN_SETTING, open)
+        .catch((e: unknown) => logger.warn("agent", `could not save the pane state: ${String(e)}`));
+    },
+    syncPaneOpen: (value) => {
+      if (typeof value !== "boolean" || value === get().paneOpen) return;
+      // Like `openPane`: an open pane always has a chat tab (restored chats make room for it).
+      if (value && get().order.length === 0) get().newChat();
+      set({ paneOpen: value });
+    },
     togglePane: () => (get().paneOpen ? get().closePane() : get().openPane()),
     setPaneWidth: (width, persist = true) => {
       const next = clampWidth(width);
@@ -1126,7 +1148,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     openSavedChat: async (chatId) => {
       if (get().chats[chatId]) {
-        set({ paneOpen: true });
+        get().setPaneOpen(true);
         get().selectChat(chatId);
         return;
       }
@@ -1157,12 +1179,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
               : s.chatModels,
             order: [...s.order.filter((id) => id !== drop), chatId],
             activeChatId: chatId,
-            paneOpen: true,
             view: "chat",
             historyError: null,
             focusComposerTick: s.focusComposerTick + 1,
           };
         });
+        get().setPaneOpen(true);
       } catch (e) {
         set({ historyError: `Could not open this chat: ${classifyStartError(e).message}` });
       }

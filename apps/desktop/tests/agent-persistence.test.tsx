@@ -42,6 +42,7 @@ import {
   configureChatPersistenceForTests,
   useAgentStore,
 } from "../src/stores/agent-store";
+import { closeAgentPane, openAgentHistory, startNewAgentChat } from "../src/hooks/agent-api";
 import { useSettingsStore } from "../src/stores/settings-store";
 import { goldens } from "./helpers/agent-goldens";
 
@@ -583,6 +584,59 @@ describe("pane width setting and defaults", () => {
     expect(setSetting).not.toHaveBeenCalled();
     get().persistPaneWidth();
     expect(setSetting).toHaveBeenCalledWith("agent.pane-width", 600);
+  });
+});
+
+describe("pane open/closed state", () => {
+  const spySetting = () => {
+    const setSetting = vi.fn(async () => undefined);
+    useSettingsStore.setState({ setSetting });
+    return setSetting;
+  };
+
+  it("persists on toggle, open and close, once per change", () => {
+    resetStore();
+    const setSetting = spySetting();
+    get().togglePane();
+    expect(setSetting).toHaveBeenLastCalledWith("agent.pane-open", true);
+    get().openPane();
+    expect(setSetting).toHaveBeenCalledTimes(1);
+    get().closePane();
+    expect(setSetting).toHaveBeenLastCalledWith("agent.pane-open", false);
+    get().togglePane();
+    get().togglePane();
+    expect(setSetting).toHaveBeenLastCalledWith("agent.pane-open", false);
+    expect(setSetting).toHaveBeenCalledTimes(4);
+  });
+
+  it("restores open (with a chat tab) and closed, without writing back or spawning", () => {
+    resetStore();
+    const setSetting = spySetting();
+    const start = vi.fn();
+    configureAgentRuntimeForTests({ ...createMockAgentClient({ goldens: g }), start });
+    get().syncPaneOpen(true);
+    expect(get().paneOpen).toBe(true);
+    expect(get().order).toHaveLength(1);
+    get().syncPaneOpen(false);
+    expect(get().paneOpen).toBe(false);
+    get().syncPaneOpen("yes");
+    expect(get().paneOpen).toBe(false);
+    expect(setSetting).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("the imperative API calls go through the same write path", () => {
+    resetStore();
+    const setSetting = spySetting();
+    startNewAgentChat();
+    expect(get().paneOpen).toBe(true);
+    expect(setSetting).toHaveBeenLastCalledWith("agent.pane-open", true);
+    closeAgentPane();
+    expect(setSetting).toHaveBeenLastCalledWith("agent.pane-open", false);
+    openAgentHistory();
+    expect(get()).toMatchObject({ paneOpen: true, view: "history" });
+    expect(setSetting).toHaveBeenLastCalledWith("agent.pane-open", true);
+    expect(setSetting).toHaveBeenCalledTimes(3);
   });
 });
 

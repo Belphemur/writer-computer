@@ -390,6 +390,7 @@ export function AgentSection() {
           "agent.restore-chats",
           "agent.title-model",
           "agent.pane-width",
+          "agent.pane-open",
         ]}
       />
       {configuring && (

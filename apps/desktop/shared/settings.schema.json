@@ -738,6 +738,15 @@
       "default": 420
     },
     {
+      "key": "agent.pane-open",
+      "label": "Agent pane open",
+      "description": "Whether the agent pane is open. Opening or closing the pane changes it, so the pane comes back the way you left it when you relaunch Writer. Restoring it open never starts the agent.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": false
+    },
+    {
       "key": "features.tables.enabled",
       "label": "Tables",
       "description": "Turns the Tables feature on or off.",

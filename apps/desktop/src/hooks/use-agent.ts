@@ -2,7 +2,7 @@
  * Domain hooks for the native agent pane. Components import these, never `stores/agent-store`
  * (docs/react-guidelines.md). One selector per hook; imperative actions live in `agent-api.ts`.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import { skillsKey, useAgentStore } from "@/stores/agent-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { agentSettingsFrom, type ChatModelChoice } from "@/lib/agent/agent-settings";
@@ -73,6 +73,8 @@ export function useAgentPaneDock() {
   const pluginOpen = useIsPluginPaneOpen();
   const closePluginPane = useClosePluginPane();
   const syncWidth = useAgentStore((s) => s.syncPaneWidth);
+  const syncOpen = useAgentStore((s) => s.syncPaneOpen);
+  const openSetting = useSettingsStore((s) => s.settings["agent.pane-open"]);
   const widthSetting = useSettingsStore((s) => s.settings["agent.pane-width"]);
   const closeAgent = useAgentStore((s) => s.closePane);
   const restoreChats = useAgentStore((s) => s.restoreChats);
@@ -85,6 +87,8 @@ export function useAgentPaneDock() {
 
   // The setting is the saved width (also edited in Settings): adopt it at startup and on change.
   useEffect(() => syncWidth(widthSetting), [syncWidth, widthSetting]);
+  // The saved open/closed state, applied before the first paint so the pane does not flash.
+  useLayoutEffect(() => syncOpen(openSetting), [syncOpen, openSetting]);
   // Whichever opened last wins: the effect that runs on a change closes the other pane.
   useEffect(() => {
     if (agentOpen) closePluginPane();

@@ -56,6 +56,7 @@ describe("agent.* settings contract", () => {
       "agent.title-model": "",
       "agent.restore-chats": true,
       "agent.pane-width": 420,
+      "agent.pane-open": false,
     });
   });
 
