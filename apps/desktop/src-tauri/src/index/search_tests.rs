@@ -834,3 +834,16 @@ fn fuzzy_fallback_matches_the_title_override_too() {
     let hit = page.hits.iter().find(|h| h.path == "a/x.md").unwrap();
     assert_eq!(hit.title_override.as_deref(), Some("Quarterly Planning"));
 }
+
+#[test]
+fn fuzzy_fallback_lists_base_files_by_stem_and_by_full_name() {
+    let v = V::new();
+    v.write("Bases/tasks.base", "views: []\n");
+    v.write("notes/other.md", "nothing\n");
+    let index = v.index();
+    for q in ["tasks", "tasks.base", "taks.base"] {
+        let page = ranked(&index, q, &[]);
+        assert_eq!(paths(&page), ["Bases/tasks.base"], "query {q}");
+        assert!(page.hits[0].fuzzy && page.hits[0].snippets.is_empty());
+    }
+}

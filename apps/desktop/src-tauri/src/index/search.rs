@@ -358,8 +358,8 @@ impl Index {
         let min_score = FUZZY_MIN_PER_CHAR * q.char_count() as f64;
         let (names, secondary) = self.read(|c| {
             let sql = format!(
-                "SELECT f.id, f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL} FROM files f \
-                 WHERE f.ext = 'md'{cond_sql}"
+                "SELECT f.id, f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL}, f.name FROM files f \
+                 WHERE f.ext IN ('md', 'base'){cond_sql}"
             );
             let mut st = c.prepare(&sql)?;
             let names = st
@@ -371,6 +371,7 @@ impl Index {
                         r.get::<_, String>(3)?,
                         r.get::<_, i64>(4)?,
                         r.get::<_, Option<String>>(5)?,
+                        r.get::<_, String>(6)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -390,7 +391,7 @@ impl Index {
             Ok((names, secondary))
         })?;
         let mut scored: Vec<(f64, SearchHit)> = Vec::new();
-        for (id, path, basename, folder, mtime_ms, title_override) in names {
+        for (id, path, basename, folder, mtime_ms, title_override, file_name) in names {
             if seen.contains(&path) {
                 continue;
             }
@@ -400,7 +401,7 @@ impl Index {
                 .filter(|t| !t.trim().is_empty())
                 .map(prepare_title);
             let mut best =
-                match_name_or_title(&q, &Prepared::new(&basename), title_prepared.as_ref())
+                match_name_or_title(&q, &Prepared::new(&file_name), title_prepared.as_ref())
                     .map(|m| m.score);
             if let Some(texts) = secondary.get(&id) {
                 for t in texts {

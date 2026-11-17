@@ -960,6 +960,7 @@ mod tests {
         h.index.refresh_blocking().unwrap();
         assert_eq!(names(&h, "readme"), ["readme.md"]);
         assert_eq!(names(&h, "tasks"), ["tasks.base"]);
+        assert_eq!(names(&h, "tasks.base"), ["tasks.base"]);
         // code files are listed with their extension; unknown kinds, dotfiles and secrets are not
         assert_eq!(names(&h, "data"), ["data.json"]);
         assert_eq!(names(&h, "run.py"), ["run.py"]);

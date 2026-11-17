@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Search: "Search in notes" now also finds `.base` files by name when the text search comes up short, whether you type `tasks` or `tasks.base` (typos work too). Quick Open already found them. A `.base` file's own contents are still not searched. Tested in Rust; not seen in a real window.
 - Agent: Writer's own slash commands in the composer, run by Writer instead of being sent to Claude. `/regenerate-title` writes a new title for the open chat and shows "Title regenerated: ..." in the transcript. The `/` menu lists them first, marked "Writer"; a skill with the same name is still listed, but sending the name runs the Writer command.
 - Plugins: the "run program?" dialog for a community plugin no longer grows taller than the screen. Long arguments are shortened (JSON shown as its size), at most 12 arguments and 8 environment variable names are listed (never values), the whole text is capped, and the full command is written to the log (Settings > Logs). What you approve is unchanged. Tested in Rust; the dialog itself was not seen in a real window.
 - Features: the Obsidian plugin host's code (the API shim, plugin pane, plugin browser, Settings pages and editor integration) now lives in `apps/desktop/features/obsidian-host/` and loads only with the feature, so it is out of the startup bundle (about 10% less JavaScript at startup: 2,467 kB to 2,226 kB, gzip 797 kB to 719 kB); behaviour is unchanged. Tested with the full web suite; not seen in a real window. Spec: [`SPECs/builtin-plugins-spec.md`](SPECs/builtin-plugins-spec.md) section 15.
