@@ -278,8 +278,15 @@ fn directory_is_sidebar_visible(
     state: Option<&WorkspaceState>,
 ) -> Result<bool, AppError> {
     if let Some(state) = state {
+        let root = state.workspace_root.read().clone();
+        let walk_root = root.as_deref();
+        // The name mirror holds REAL paths only (the index never follows links), so a followed
+        // symlink folder (`.agents/skills -> ../LLM-Agents/skills`) is asked by its canonical
+        // path: asked lexically it is absent, which read as "no listed file here" and, with the
+        // index ready, hid the folder as soon as it held a file.
+        let real = Walk::new(None, walk_root).real_of(path);
         // `Some` once the name mirror holds a finished index.
-        let has_listed = state.names.dir_has_listed(path);
+        let has_listed = state.names.dir_has_listed(&real);
         let index_ready = has_listed.is_some();
         if has_listed == Some(true) {
             return Ok(true);
@@ -290,9 +297,7 @@ fn directory_is_sidebar_visible(
         // concurrent workspace switch's `workspace_ignore.write()`).
         let ignore_arc: Option<Arc<WorkspaceIgnore>> =
             state.workspace_ignore.read().as_ref().map(Arc::clone);
-        let root = state.workspace_root.read().clone();
-        let walk = Walk::new(ignore_arc.as_deref(), root.as_deref());
-        let real = walk.real_of(path);
+        let walk = Walk::new(ignore_arc.as_deref(), walk_root);
         let mut visited = HashSet::from([real.clone()]);
         if index_ready {
             return directory_tree_is_empty(&walk, path, &real, &mut visited);
@@ -1292,6 +1297,80 @@ mod tests {
             .any(|entry| entry.name == "drafts" && entry.is_dir));
         assert!(!result.iter().any(|entry| entry.name == "empty"));
         assert!(result[0].is_dir);
+    }
+
+    /// The user's real layout, built under a symlinked parent (macOS `/var` -> `/private/var`):
+    /// `.agents/skills` and `.claude/skills` are relative links to `LLM-Agents/skills`.
+    #[cfg(unix)]
+    fn agents_vault() -> ((TempDir, TempDir), PathBuf, PathBuf) {
+        use std::os::unix::fs::symlink;
+        let real_parent = TempDir::new().unwrap();
+        let alias = TempDir::new().unwrap();
+        let link_parent = alias.path().join("via-link");
+        symlink(real_parent.path(), &link_parent).unwrap();
+        let raw_root = link_parent.join("PersonalVault");
+        let skill = raw_root.join("LLM-Agents/skills/pdf");
+        fs::create_dir_all(skill.join("scripts")).unwrap();
+        fs::write(skill.join("SKILL.md"), "# pdf").unwrap();
+        fs::write(skill.join("scripts/run.py"), "print(1)").unwrap();
+        fs::create_dir_all(raw_root.join(".agents")).unwrap();
+        fs::create_dir_all(raw_root.join(".claude")).unwrap();
+        fs::write(raw_root.join(".claude/settings.local.json"), "{}").unwrap();
+        symlink("../LLM-Agents/skills", raw_root.join(".agents/skills")).unwrap();
+        symlink("../LLM-Agents/skills", raw_root.join(".claude/skills")).unwrap();
+        fs::write(raw_root.join(".gitignore"), "ignored-thing/\n").unwrap();
+        fs::write(raw_root.join("note.md"), "# n").unwrap();
+        (
+            (alias, real_parent),
+            raw_root.clone(),
+            raw_root.canonicalize().unwrap(),
+        )
+    }
+
+    /// The names the sidebar lists for `dir` through the real command path: the path is
+    /// authorized lexically, then listed.
+    #[cfg(unix)]
+    fn listed(state: &WorkspaceState, dir: &Path) -> Vec<String> {
+        state.authorize_path(dir).unwrap();
+        read_directory_impl(&dir.to_string_lossy(), Some(state))
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect()
+    }
+
+    #[cfg(unix)]
+    fn assert_agents_vault_lists(state: &WorkspaceState, root: &Path) {
+        let top = listed(state, root);
+        assert!(top.contains(&".agents".to_string()), "{top:?}");
+        assert!(top.contains(&".claude".to_string()), "{top:?}");
+        for agent in [".agents", ".claude"] {
+            assert_eq!(listed(state, &root.join(agent)), ["skills"], "{agent}");
+            assert_eq!(
+                listed(state, &root.join(agent).join("skills")),
+                ["pdf"],
+                "{agent}"
+            );
+            let skill = root.join(agent).join("skills/pdf");
+            assert_eq!(listed(state, &skill), ["scripts", "SKILL.md"], "{agent}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_agent_skills_list_their_children_whatever_the_root_spelling_or_index() {
+        let (_keep, raw_root, canonical) = agents_vault();
+        for root in [&canonical, &raw_root] {
+            // index not ready
+            let state = WorkspaceState::default();
+            state.replace_workspace_root(root.clone());
+            assert_agents_vault_lists(&state, root);
+            // index ready
+            let state = state_with_names(&canonical, &[]);
+            state.replace_workspace_root(root.clone());
+            assert!(state.names.is_ready());
+            assert_agents_vault_lists(&state, root);
+        }
     }
 
     #[test]
