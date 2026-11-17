@@ -2,71 +2,29 @@
 // section 8.5), the per-vault view config (`.writer/graph.json`) and the two core reads the view
 // needs (note frontmatter for color rules and Group by, the index change event).
 //
-// The shapes below are the section 8.5 contract (plus `cardValue`, `cardProperties` and
-// `includeAttachments`), kept by hand without the `| null` the generated `bindings.ts` adds to
-// every Rust `Option` so the rest of the web half reads them as plain optional fields. The
-// generated file (tauri-specta, Rust half in `../rust/`) is the wire truth; `graph-ipc.test.ts`
-// ties it to the manifest. Tests mock this module, so nothing else reaches the backend.
+// The wire types come from the generated `bindings.ts` (tauri-specta, Rust half in `../rust/`),
+// so a field change in Rust is a type error here. `Plain` only drops the `| null` the generator
+// adds to every optional field (Rust never sends null for them: it skips `None`), so the rest of
+// the web half reads them as plain optional fields. `graph-ipc.test.ts` ties the bindings to the
+// manifest. Tests mock this module, so nothing else reaches the backend.
 import { invoke } from "@tauri-apps/api/core";
 import { featureInvoke } from "@/lib/features/ipc";
 import { onIndexChanged as onCoreIndexChanged } from "@/lib/content-search";
 import manifest from "../feature.json";
+import type * as wire from "./bindings";
 
-export type GraphNode = {
-  id: number;
-  /** Vault-relative path (graphology key). A missing note has its link text here. */
-  path: string;
-  name: string;
-  folder: string;
-  ext: string;
-  degreeIn: number;
-  degreeOut: number;
-  tags: string[];
-  unresolved?: boolean;
-  /** The value of the first of the requested `cardProperties` that this note has set (a `type`,
-   *  `status` or enum property), as text. Shown on the close-up card; absent when none is set. */
-  cardValue?: string | null;
-};
+type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never }[keyof T];
+type Plain<T> = { [K in keyof T]: K extends OptionalKeys<T> ? Exclude<T[K], null> : T[K] };
 
-export type GraphEdgeKind = "link" | "embed" | "property";
-
-export type GraphEdge = {
-  id: number;
-  src: number;
-  dst: number | null;
-  kind: GraphEdgeKind;
-  label?: string;
-  target: string;
-  ambiguous?: boolean;
-};
-
-export type GraphSlice = {
+export type GraphEdgeKind = wire.EdgeKind;
+export type GraphNode = Plain<wire.GraphNode>;
+export type GraphEdge = Plain<wire.GraphEdge>;
+export type GraphSlice = Omit<wire.GraphSlice, "nodes" | "edges"> & {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  truncated: boolean;
-  epoch: number;
 };
-
-export type GraphSliceArgs = {
-  /** Vault-relative path of the center note; none means the whole vault. */
-  center?: string;
-  depth?: 1 | 2 | 3;
-  kinds?: GraphEdgeKind[];
-  labels?: string[];
-  folders?: string[];
-  tags?: string[];
-  includeUnresolved?: boolean;
-  /** Reserved, changes nothing: tag nodes are built here from `GraphNode.tags`. */
-  includeTags?: boolean;
-  /** Also return non-markdown files (images, PDFs); off by default. */
-  includeAttachments?: boolean;
-  limit?: number;
-  /** Property names in priority order for `GraphNode.cardValue` (the setting
-   *  `graph.card-properties`, default `type`, `status`). */
-  cardProperties?: string[];
-};
-
-export type GraphStats = { notes: number; edges: number; unresolved: number; components: number };
+export type GraphSliceArgs = Plain<wire.GraphSliceRequest>;
+export type GraphStats = wire.GraphStats;
 
 export interface GraphCommands {
   graph_slice: { args: { request: GraphSliceArgs }; result: GraphSlice };

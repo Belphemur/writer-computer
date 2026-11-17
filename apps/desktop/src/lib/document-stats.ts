@@ -1,3 +1,5 @@
+import { wikiLinkScanner } from "./wiki-links";
+
 export interface DocumentStats {
   words: number;
   characters: number;
@@ -27,7 +29,7 @@ function normalizeDocumentContent(content: string) {
   return content
     .replace(/^[ \t]{0,3}(?:#{1,6}|[-*+]|\d+[.)]|>)[ \t]+/gm, "")
     .replace(/`+/g, "")
-    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(wikiLinkScanner(), (_m, embed: string, inner: string) => embed + inner)
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .trim();
 }

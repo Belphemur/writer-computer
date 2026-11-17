@@ -25,6 +25,7 @@ import {
 } from "../src/components/editor-area/editor-image-insert";
 import { createOsImageDropHandler } from "../src/components/editor-area/use-os-image-drop";
 import { useEditorNoticeStore } from "../src/components/editor-area/editor-notice-store";
+import { flushPromises } from "@tests/helpers/events";
 
 const NOTE = "/vault/notes/a.md";
 const views: EditorView[] = [];
@@ -64,8 +65,6 @@ function fire(view: EditorView, type: "paste" | "drop", data: Record<string, unk
   return event;
 }
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 beforeEach(() => {
   saveAttachment.mockReset();
   importAttachmentFile.mockReset();
@@ -85,7 +84,7 @@ describe("paste", () => {
       clipboardData: { files: [png()], items: [], getData: () => "" },
     });
     expect(event.defaultPrevented).toBe(true);
-    await flush();
+    await flushPromises();
 
     expect(saveAttachment).toHaveBeenCalledTimes(1);
     const [note, name, bytes] = saveAttachment.mock.calls[0];
@@ -107,7 +106,7 @@ describe("paste", () => {
         getData: () => "",
       },
     });
-    await flush();
+    await flushPromises();
     expect(saveAttachment.mock.calls[0][1]).toBe("Holiday.JPG");
     expect(view.state.doc.toString()).toBe("![[Holiday.JPG]]");
   });
@@ -130,7 +129,7 @@ describe("paste", () => {
         getData: () => "",
       },
     });
-    await flush();
+    await flushPromises();
     expect(view.state.doc.toString()).toBe("![[attachments/s.png]]");
   });
 
@@ -142,7 +141,7 @@ describe("paste", () => {
     fire(view, "paste", {
       clipboardData: { files: [png("a.png"), png("b.png")], items: [], getData: () => "" },
     });
-    await flush();
+    await flushPromises();
     expect(view.state.doc.toString()).toBe("start![[attachments/a.png]]\n![[attachments/b.png]]");
     undo(view);
     expect(view.state.doc.toString()).toBe("start");
@@ -153,7 +152,7 @@ describe("paste", () => {
     const big = png("big.png");
     Object.defineProperty(big, "size", { value: 60 * 1024 * 1024 });
     fire(view, "paste", { clipboardData: { files: [big], items: [], getData: () => "" } });
-    await flush();
+    await flushPromises();
     expect(saveAttachment).not.toHaveBeenCalled();
     expect(view.state.doc.toString()).toBe("x");
     expect(useEditorNoticeStore.getState().message).toMatch(/60\.0 MB is over the 50 MB limit/);
@@ -167,7 +166,7 @@ describe("paste", () => {
     fire(view, "paste", {
       clipboardData: { files: [png("big.png"), png("ok.png")], items: [], getData: () => "" },
     });
-    await flush();
+    await flushPromises();
     expect(view.state.doc.toString()).toBe("![[attachments/ok.png]]");
     expect(useEditorNoticeStore.getState().message).toBe(
       "Image not saved: 60.0 MB is over the 50 MB limit",
@@ -179,10 +178,10 @@ describe("paste", () => {
     saveAttachment.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     const view = makeView("ab", 1);
     fire(view, "paste", { clipboardData: { files: [png()], items: [], getData: () => "" } });
-    await flush();
+    await flushPromises();
     view.dispatch({ changes: { from: 0, insert: "XYZ" } }); // typed before the point
     finish({ relative_path: "attachments/p.png" });
-    await flush();
+    await flushPromises();
     expect(view.state.doc.toString()).toBe("XYZa![[attachments/p.png]]b");
   });
 
@@ -207,7 +206,7 @@ describe("paste", () => {
     const view = makeView("a", 1, () => disposed);
     fire(view, "paste", { clipboardData: { files: [png()], items: [], getData: () => "" } });
     disposed = true;
-    await flush();
+    await flushPromises();
     expect(view.state.doc.toString()).toBe("a");
   });
 });
@@ -231,7 +230,7 @@ describe("remote images (a drag or paste that carries only a link)", () => {
       clientY: 0,
     });
     expect(event.defaultPrevented).toBe(true);
-    await flush();
+    await flushPromises();
     expect(importAttachmentUrl).toHaveBeenCalledWith(
       NOTE,
       "https://example.com/cat.png",
@@ -246,7 +245,7 @@ describe("remote images (a drag or paste that carries only a link)", () => {
     fire(view, "paste", {
       clipboardData: transfer("", "https://example.com/a (1).png"),
     });
-    await flush();
+    await flushPromises();
     expect(view.state.doc.toString()).toBe("![](https://example.com/a%20%281%29.png)");
     expect(useEditorNoticeStore.getState().message).toBe(
       "Image not downloaded: the server answered 404. Inserted a link to the address instead.",
@@ -282,7 +281,7 @@ describe("drops", () => {
       clientY: 20,
     });
     expect(event.defaultPrevented).toBe(true);
-    await flush();
+    await flushPromises();
     expect(saveAttachment.mock.calls[0][1]).toBe("d.png");
     expect(view.state.doc.toString()).toBe("0123![[attachments/d.png]]456789");
   });
@@ -309,7 +308,7 @@ describe("drops", () => {
       paths: ["/Users/me/F.png", "/Users/me/n.txt"],
       position: { x: 40, y: 80 },
     } as never);
-    await flush();
+    await flushPromises();
 
     expect(importAttachmentFile).toHaveBeenCalledTimes(1);
     expect(importAttachmentFile).toHaveBeenCalledWith(NOTE, "/Users/me/F.png");
@@ -327,7 +326,7 @@ describe("drops", () => {
       paths: ["/Users/me/doc.pdf"],
       position: { x: 1, y: 1 },
     } as never);
-    await flush();
+    await flushPromises();
     expect(importAttachmentFile).not.toHaveBeenCalled();
     expect(view.state.doc.toString()).toBe("x");
   });
@@ -343,7 +342,7 @@ describe("drops", () => {
     ]);
     expect(sources).toHaveLength(1);
     expect(dropImagesAt(5, 5, sources)).toBe(true);
-    await flush();
+    await flushPromises();
     expect(saveAttachment).not.toHaveBeenCalled();
     expect(importAttachmentFile).not.toHaveBeenCalled();
     expect(view.state.doc.toString()).toBe("01![[attachments/logo.png]]23456789");

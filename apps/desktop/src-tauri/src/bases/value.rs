@@ -66,20 +66,9 @@ pub struct LinkValue {
 impl LinkValue {
     /// Parse `[[target#heading|alias]]` (or a bare `target|alias`).
     pub fn parse_wikilink(raw: &str) -> Option<(String, Option<String>)> {
-        let t = raw.trim();
-        let inner = t.strip_prefix("[[")?.strip_suffix("]]")?;
-        if inner.is_empty() || inner.contains("[[") || inner.contains("]]") {
-            return None;
-        }
-        let (target_part, display) = match inner.split_once('|') {
-            Some((a, b)) => (a, Some(b.trim().to_string())),
-            None => (inner, None),
-        };
-        let target = target_part.split('#').next().unwrap_or("").trim();
-        if target.is_empty() {
-            return None;
-        }
-        Some((target.to_string(), display))
+        let link = crate::index::markdown::parse_whole_wikilink(raw)?;
+        // A link to a heading of the same note (`[[#Heading]]`) has no target to resolve.
+        (!link.raw.is_empty()).then_some((link.raw, link.display))
     }
 }
 

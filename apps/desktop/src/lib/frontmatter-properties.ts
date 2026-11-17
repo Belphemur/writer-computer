@@ -15,6 +15,7 @@
 // such as an unquoted `{{date}}`, aliases, multi-line strings, unquoted `[[wikilink]]` lists)
 // become read-only rows that show their source text.
 import type { PropertyType } from "./property-types";
+import { isWikiLink } from "./wiki-links";
 import {
   isAlias,
   isMap,
@@ -79,7 +80,6 @@ export type EditResult = { ok: true; text: string } | { ok: false; error: string
 type ScalarValue = string | number | boolean | null;
 
 const PLACEHOLDER_RE = /\{\{.*?\}\}|<%.*?%>/;
-const WIKILINK_RE = /^\[\[[^\]]+\]\]$/;
 const URL_RE = /^https?:\/\/\S+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?$/;
@@ -233,7 +233,7 @@ function rowOf(text: string, pair: Pair): PropertyRow {
         return { ...row, kind: "multiline" };
       if (TAG_KEYS.has(key.toLowerCase()) && v.trim() !== "")
         return { ...row, kind: "tagString", editable: true, items: splitTagString(v), value: v };
-      const kind: PropertyKind = WIKILINK_RE.test(v.trim())
+      const kind: PropertyKind = isWikiLink(v)
         ? "link"
         : URL_RE.test(v)
           ? "url"
@@ -611,11 +611,6 @@ export function setList(text: string, key: string, items: readonly string[]): Ed
     rendered.length === 0 ? `${head} []` : `${head}\n${rendered.map((r) => `  - ${r}`).join("\n")}`;
   const [from, to] = pairLines(text, at.pair);
   return verified(at.doc, splice(text, from, to, body), (o) => ({ ...o, [key]: [...items] }));
-}
-
-/** Whether `value` is, whole, one `[[wikilink]]`. */
-export function isWikilink(value: string): boolean {
-  return WIKILINK_RE.test(value.trim());
 }
 
 /** Remove the item at `index` from a list property. */

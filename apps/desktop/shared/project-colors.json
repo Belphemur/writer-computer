@@ -1,3 +1,12 @@
 {
-  "colors": ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"]
+  "colors": [
+    { "name": "red", "dark": "#ff6b6b", "light": "#d63a3a" },
+    { "name": "orange", "dark": "#ff9f43", "light": "#d9730d" },
+    { "name": "yellow", "dark": "#f2c94c", "light": "#a87a00" },
+    { "name": "green", "dark": "#4cd68a", "light": "#1f9d57" },
+    { "name": "teal", "dark": "#2ec4b6", "light": "#0f8f84" },
+    { "name": "blue", "dark": "#5aa9ff", "light": "#1f6fd1" },
+    { "name": "purple", "dark": "#b48cff", "light": "#7b4dd6" },
+    { "name": "pink", "dark": "#ff7eb6", "light": "#cf3f86" }
+  ]
 }

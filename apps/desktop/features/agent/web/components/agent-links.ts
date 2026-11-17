@@ -2,14 +2,13 @@ import { useEffect, type RefObject } from "react";
 import { getActiveFilePath } from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { wikilinkTarget } from "@features/agent/web/lib/markdown";
+import { isExternalHref } from "@/lib/external-url";
 import {
   bindLinkActivation,
-  isExternalHref,
   linkHandlers,
-  openPath,
+  wikiLinkTarget,
   type LinkTarget,
 } from "@/lib/link-activation";
-import { resolveWikiLinkTarget } from "@/lib/tauri";
 
 /** The link target of a vault-relative path (tool rows, chips, pills, Changes card); null when
  *  there is no workspace or the path would leave it. */
@@ -35,14 +34,7 @@ function markdownLinkTarget(el: Element): LinkTarget | null {
   if (!anchor) return null;
   const href = anchor.getAttribute("href");
   const wiki = wikilinkTarget(href);
-  if (wiki)
-    return {
-      kind: "custom",
-      open: (intent) =>
-        void resolveWikiLinkTarget(wiki, getActiveFilePath()).then((path) => {
-          if (path) void openPath(path, intent);
-        }),
-    };
+  if (wiki) return wikiLinkTarget(wiki, getActiveFilePath);
   return isExternalHref(href) ? { kind: "url", href } : SWALLOW;
 }
 

@@ -2,16 +2,15 @@
 // `<a href target="_blank">`; the Tauri webview ignores the first (returns null) and would navigate
 // the app window away for the second. While a plugin is loaded both go to the system browser
 // through the SAME implementation as `electron.shell.openExternal` (http, https, mailto only).
+import { EXTERNAL_PROTOCOLS } from "@/lib/external-url";
 import { bindLinkActivation } from "@/lib/link-activation";
 import { recordPluginError } from "../error-log";
 import { electronModule } from "./misc";
 
-const OPENABLE = new Set(["http:", "https:", "mailto:"]);
-
 const externalUrl = (raw: unknown, base: string): string | null => {
   try {
     const u = new URL(String(raw), base);
-    return OPENABLE.has(u.protocol) &&
+    return EXTERNAL_PROTOCOLS.has(u.protocol) &&
       !(u.origin === new URL(base).origin && u.protocol !== "mailto:")
       ? u.href
       : null;

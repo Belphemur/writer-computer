@@ -43,6 +43,7 @@ export function smallSlice(): GraphSlice {
       edge(4, 1, 2),
     ],
     truncated: false,
+    limit: 10_000,
     epoch: 1,
   };
 }
@@ -62,5 +63,5 @@ export function bigSlice(n: number): GraphSlice {
     edges.push(edge(id++, i + 1, ((i * 7 + 3) % n) + 1));
     edges.push(edge(id++, i + 1, ((i * 13 + 5) % n) + 1, "embed"));
   }
-  return { nodes, edges, truncated: n >= 10_000, epoch: 1 };
+  return { nodes, edges, truncated: n >= 10_000, limit: 10_000, epoch: 1 };
 }

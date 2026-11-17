@@ -1,6 +1,12 @@
 import { describe, expect, test, vi } from "vite-plus/test";
 import {
   canonicalWikiTarget,
+  isWikiLink,
+  matchWikiLinkAtStart,
+  parseWikiLinkValue,
+  WIKI_SUGGEST_TRIGGER,
+  wikiLinkInner,
+  wikiLinkScanner,
   normalizeWikiTarget,
   parseWikiLink,
   parseWikiImageEmbedTarget,
@@ -393,5 +399,51 @@ describe("wiki-link suggestions and titles", () => {
       label: "Spec",
       detail: "People",
     });
+  });
+});
+
+describe("the [[ ]] grammar helpers", () => {
+  test("isWikiLink is true for exactly one bracketed link (trimmed)", () => {
+    expect(isWikiLink("[[Note]]")).toBe(true);
+    expect(isWikiLink("  [[Note|alias]] ")).toBe(true);
+    expect(isWikiLink("[[]]")).toBe(false);
+    expect(isWikiLink("[[a]] and [[b]]")).toBe(false);
+    expect(isWikiLink("Note")).toBe(false);
+  });
+
+  test("wikiLinkInner and parseWikiLinkValue strip the brackets", () => {
+    expect(wikiLinkInner(" [[A|b]] ")).toBe("A|b");
+    expect(wikiLinkInner("A")).toBe("A");
+    expect(parseWikiLinkValue("[[Folder/Note.md#H|shown]]")).toMatchObject({
+      path: "Folder/Note",
+      fragment: "H",
+      alias: "shown",
+    });
+  });
+
+  test("wikiLinkScanner finds links and embeds, a fresh regexp each call", () => {
+    const text = "a [[One]] b ![[img.png]] c [[Two|2]]";
+    expect([...text.matchAll(wikiLinkScanner())].map((m) => [m[1], m[2]])).toEqual([
+      ["", "One"],
+      ["!", "img.png"],
+      ["", "Two|2"],
+    ]);
+    expect(wikiLinkScanner()).not.toBe(wikiLinkScanner());
+  });
+
+  test("matchWikiLinkAtStart anchors at the start of the text", () => {
+    expect(matchWikiLinkAtStart("[[A#h]] tail")).toEqual({
+      raw: "[[A#h]]",
+      embed: false,
+      inner: "A#h",
+    });
+    expect(matchWikiLinkAtStart("![[A]]")?.embed).toBe(true);
+    expect(matchWikiLinkAtStart("x [[A]]")).toBeNull();
+  });
+
+  test("WIKI_SUGGEST_TRIGGER reads the query typed after [[", () => {
+    expect(WIKI_SUGGEST_TRIGGER.exec("see [[Pla")?.[1]).toBe("Pla");
+    expect(WIKI_SUGGEST_TRIGGER.exec("see [[Plan#")).toBeNull();
+    expect(WIKI_SUGGEST_TRIGGER.exec("see [[Plan]] x")).toBeNull();
   });
 });

@@ -115,12 +115,12 @@ describe("global graph tab", () => {
   const render = () =>
     act(() => root.render(<GraphView location={location} isActive tabId="t1" />));
 
-  it("requests at most 10,000 nodes and says so when the slice is truncated", async () => {
-    ipc.graphSlice.mockResolvedValue({ ...smallSlice(), truncated: true });
+  it("names the cap the backend applied when the slice is truncated, and sends none", async () => {
+    ipc.graphSlice.mockResolvedValue({ ...smallSlice(), truncated: true, limit: 10_000 });
     render();
     await flush();
     await flush();
-    expect(ipc.graphSlice).toHaveBeenCalledWith(expect.objectContaining({ limit: 10_000 }));
+    expect(ipc.graphSlice.mock.calls[0]![0]).not.toHaveProperty("limit");
     expect(el.textContent).toContain("Showing 10,000 of 25,000 notes, refine with filters");
     expect(el.querySelector("[data-testid=canvas]")?.getAttribute("data-nodes")).toBe("4");
   });

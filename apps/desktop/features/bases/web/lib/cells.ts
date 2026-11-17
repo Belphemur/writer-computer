@@ -1,5 +1,6 @@
 // Pure helpers for table cells: which editor a cell gets, how text maps to a
 // property value (and back), and why a cell may be read-only. No React, no IPC.
+import { isWikiLink, parseWikiLinkValue } from "@/lib/wiki-links";
 import type { Cell, CellValue, Column, PropertyJson, PropertyValueType, Row } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -177,7 +178,7 @@ export function parseListText(text: string): string[] {
 /** `[[x]]` as-is, anything else wrapped so the backend writes a link. */
 export function toWikiLinkText(text: string): string {
   const t = text.trim();
-  return t.startsWith("[[") && t.endsWith("]]") ? t : `[[${t}]]`;
+  return isWikiLink(t) ? t : `[[${t}]]`;
 }
 
 /**
@@ -281,7 +282,7 @@ export function valueTypeOfRaw(raw: unknown): EditKind | undefined {
   if (typeof raw === "boolean") return "checkbox";
   if (typeof raw === "number") return "number";
   if (Array.isArray(raw)) return "list";
-  if (typeof raw === "string") return /^\[\[.*\]\]$/.test(raw) ? "link" : undefined;
+  if (typeof raw === "string") return isWikiLink(raw) ? "link" : undefined;
   return undefined;
 }
 
@@ -316,13 +317,11 @@ export function itemText(item: CellValue): string {
 // Optimistic cells
 // ---------------------------------------------------------------------------
 
-const WIKILINK_RE = /^\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]$/;
-
 /** Split `[[target#heading|alias]]` into the link value fields, or `null` when it is not a wikilink. */
 export function parseWikiLinkText(text: string): { target: string; display: string | null } | null {
-  const m = WIKILINK_RE.exec(text.trim());
-  if (!m) return null;
-  return { target: m[1]!.trim(), display: m[2]?.trim() || null };
+  if (!isWikiLink(text)) return null;
+  const link = parseWikiLinkValue(text);
+  return { target: link.path, display: link.alias };
 }
 
 function rawItemToValue(item: string): CellValue {

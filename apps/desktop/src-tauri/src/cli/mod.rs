@@ -22,6 +22,8 @@ mod cmd_query;
 mod cmd_skills;
 pub mod format;
 pub mod registry;
+#[cfg(test)]
+mod skill_doc;
 pub mod vault;
 
 #[cfg(test)]

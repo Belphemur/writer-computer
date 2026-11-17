@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { linkHandlers } from "@/lib/link-activation";
 import * as tauri from "@/lib/tauri";
-import { parseWikiLink, wikiSuggestions, type WikiSuggestion } from "@/lib/wiki-links";
+import {
+  parseWikiLinkValue,
+  WIKI_SUGGEST_TRIGGER,
+  wikiSuggestions,
+  type WikiSuggestion,
+} from "@/lib/wiki-links";
 import { AnchoredPopover } from "./anchored-popover";
 import { openPropertyWikilink } from "./property-links";
 
@@ -25,7 +30,7 @@ function checkTarget(path: string): Promise<boolean> {
 
 /** Whether the link's note exists: null while unknown. `[[#Heading]]` links to the note itself. */
 function useLinkResolves(value: string): boolean | null {
-  const path = parseWikiLink(value.trim().replace(/^\[\[|\]\]$/g, "")).path;
+  const path = parseWikiLinkValue(value).path;
   const [state, setState] = useState<{ path: string; ok: boolean } | null>(null);
   useEffect(() => {
     if (path === "") return;
@@ -41,7 +46,7 @@ function useLinkResolves(value: string): boolean | null {
 
 /** The link text of `[[Note|Alias]]`: its alias, else the note (and `> heading`). */
 export function wikilinkLabel(value: string): string {
-  const link = parseWikiLink(value.trim().replace(/^\[\[|\]\]$/g, ""));
+  const link = parseWikiLinkValue(value);
   if (link.alias || !link.path || !link.fragment) return link.displayText;
   return `${link.path} > ${link.fragment}`;
 }
@@ -55,7 +60,7 @@ export function WikiLinkButton({ value }: { value: string }) {
       type="button"
       {...linkHandlers({
         kind: "custom",
-        open: (intent) => void openPropertyWikilink(value, intent),
+        open: (intent) => openPropertyWikilink(value, intent),
       })}
       onMouseDown={(e) => e.preventDefault()}
       title={ok === false ? `${value} (note not found)` : value}
@@ -100,7 +105,7 @@ export function useWikiSuggest(): {
   const onInput = (e: React.FormEvent<HTMLInputElement>) => {
     const el = e.currentTarget;
     const caret = el.selectionStart ?? el.value.length;
-    const m = /\[\[([^\]#^|]*)$/.exec(el.value.slice(0, caret));
+    const m = WIKI_SUGGEST_TRIGGER.exec(el.value.slice(0, caret));
     const id = ++seq.current;
     if (!m || m[1].trim() === "") {
       setOpen(null);

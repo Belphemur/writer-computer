@@ -301,11 +301,12 @@ const LINK_JOIN: &str = "edges e LEFT JOIN files d ON d.id = e.dst_id";
 
 fn link_entry(r: &rusqlite::Row, o: usize) -> rusqlite::Result<LinkEntry> {
     let (kind, syntax): (String, String) = (r.get(o + 2)?, r.get(o + 3)?);
+    let kind = edges::EdgeKind::from_column(&kind);
     Ok(LinkEntry {
         raw: r.get(o)?,
         target: r.get(o + 1)?,
-        kind: edges::legacy_link_kind(&kind, &syntax).to_string(),
-        in_fm: kind == edges::KIND_PROPERTY,
+        kind: edges::legacy_link_kind(kind, &syntax).to_string(),
+        in_fm: kind == edges::EdgeKind::Property,
         display: r.get(o + 4)?,
         subpath: r.get(o + 5)?,
     })

@@ -1,6 +1,6 @@
 //! Frontmatter extraction and typed property rows.
 
-use super::markdown::{self, LinkKind, ParsedLink};
+use super::markdown::{self, ParsedLink};
 use super::yaml::{self, YNode};
 
 pub struct Split<'a> {
@@ -220,24 +220,13 @@ pub fn vtype(node: &YNode) -> &'static str {
         YNode::Seq(_) => "list",
         YNode::Map(_) => "object",
         YNode::Str { s, .. } => {
-            if whole_wikilink(s).is_some() {
+            if markdown::parse_whole_wikilink(s).is_some() {
                 "link"
             } else {
                 "text"
             }
         }
     }
-}
-
-/// `[[target|display#sub]]` as the entire (trimmed) string.
-fn whole_wikilink(s: &str) -> Option<ParsedLink> {
-    let t = s.trim();
-    if !t.starts_with("[[") || !t.ends_with("]]") || t.len() < 5 {
-        return None;
-    }
-    let links = markdown::scan_links(t);
-    let link = links.into_iter().next()?;
-    (link.kind == LinkKind::Wikilink && link.span == (0, t.len())).then_some(link)
 }
 
 fn scalar_text(node: &YNode) -> Option<String> {
@@ -367,7 +356,7 @@ pub fn parse_frontmatter(text: &str) -> FrontmatterData {
                 for (idx, item) in items.iter().enumerate() {
                     let item_type = vtype(item);
                     let link_target = match item {
-                        YNode::Str { s, .. } => whole_wikilink(s).map(|l| l.raw),
+                        YNode::Str { s, .. } => markdown::parse_whole_wikilink(s).map(|l| l.raw),
                         _ => None,
                     };
                     let v_text = match item {

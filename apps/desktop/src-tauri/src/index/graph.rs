@@ -3,8 +3,9 @@
 //! commands and the graph view's commands; whole-graph questions run on the per-epoch
 //! [`GraphSnapshot`], neighbourhoods and listings run as SQL.
 
+pub use super::edges::EdgeKind;
 use super::snapshot::{GraphSnapshot, NodeRow};
-use super::{edges, Index, IndexError};
+use super::{Index, IndexError};
 use rusqlite::{params, params_from_iter, types::Value as SqlValue, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -72,31 +73,6 @@ pub struct GraphNode {
     pub card_value: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub enum EdgeKind {
-    Link,
-    Embed,
-    Property,
-}
-
-impl EdgeKind {
-    fn parse(s: &str) -> Self {
-        match s {
-            edges::KIND_EMBED => Self::Embed,
-            edges::KIND_PROPERTY => Self::Property,
-            _ => Self::Link,
-        }
-    }
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Link => edges::KIND_LINK,
-            Self::Embed => edges::KIND_EMBED,
-            Self::Property => edges::KIND_PROPERTY,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphEdge {
@@ -121,6 +97,9 @@ pub struct GraphSlice {
     pub edges: Vec<GraphEdge>,
     /// More nodes matched than `limit` allowed.
     pub truncated: bool,
+    /// The node cap that applied (the request's `limit`, clamped): the one place the number
+    /// lives, so the view never repeats it.
+    pub limit: u32,
     pub epoch: u64,
 }
 
@@ -145,7 +124,7 @@ pub struct GraphSliceRequest {
     /// With a center: 1 to 3 hops (default 1).
     pub depth: Option<u32>,
     /// `link`, `embed`, `property`; none means all.
-    pub kinds: Option<Vec<EdgeKindFilter>>,
+    pub kinds: Option<Vec<EdgeKind>>,
     /// Property names; none means all.
     pub labels: Option<Vec<String>>,
     /// Keep notes in these folders (and below).
@@ -160,24 +139,6 @@ pub struct GraphSliceRequest {
     /// Also nodes that are not markdown (images, PDFs...); off by default.
     pub include_attachments: Option<bool>,
     pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub enum EdgeKindFilter {
-    Link,
-    Embed,
-    Property,
-}
-
-impl EdgeKindFilter {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Link => edges::KIND_LINK,
-            Self::Embed => edges::KIND_EMBED,
-            Self::Property => edges::KIND_PROPERTY,
-        }
-    }
 }
 
 /// Which edges a traversal or listing may use.
@@ -545,7 +506,7 @@ fn edges_among(
                     id: r.get(0)?,
                     src,
                     dst,
-                    kind: EdgeKind::parse(&r.get::<_, String>(3)?),
+                    kind: EdgeKind::from_column(&r.get::<_, String>(3)?),
                     label: r.get(4)?,
                     target,
                     ambiguous: r.get::<_, bool>(6)?.then_some(true),
@@ -748,7 +709,7 @@ impl Index {
                 };
                 let mut found: Vec<(EdgeKind, Option<String>)> = st
                     .query_map([snap.id(src), snap.id(dst)], |r| {
-                        Ok((EdgeKind::parse(&r.get::<_, String>(0)?), r.get(1)?))
+                        Ok((EdgeKind::from_column(&r.get::<_, String>(0)?), r.get(1)?))
                     })?
                     .collect::<Result<_, _>>()?;
                 found.sort_by_key(|(k, _)| kind_rank(*k));
@@ -830,7 +791,7 @@ impl Index {
                 .query_map(params![id, limit as i64], |r| {
                     Ok(BacklinkDetail {
                         source: r.get(0)?,
-                        kind: EdgeKind::parse(&r.get::<_, String>(1)?),
+                        kind: EdgeKind::from_column(&r.get::<_, String>(1)?),
                         label: r.get(2)?,
                         line: r.get(3)?,
                         section: r.get(4)?,
@@ -1079,6 +1040,7 @@ impl Index {
                 nodes,
                 edges: edge_list,
                 truncated,
+                limit: limit as u32,
                 epoch: snap.epoch,
             })
         })

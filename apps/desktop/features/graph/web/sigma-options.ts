@@ -12,6 +12,7 @@ import {
   sdfSquare,
 } from "sigma/rendering";
 import type { Settings } from "sigma/settings";
+import { SOLID } from "./reducers";
 
 export const primitives = {
   nodes: {
@@ -21,13 +22,13 @@ export const primitives = {
     paths: [pathLine()],
     extremities: [extremityArrow()],
     variables: {
-      dash: { type: "number", default: 100000 },
-      gap: { type: "number", default: 1 },
+      dash: { type: "number", default: SOLID.dash },
+      gap: { type: "number", default: SOLID.gap },
     },
     layers: [
       layerDashed({
-        dashSize: { attribute: "dash", default: 100000, mode: "pixels" },
-        gapSize: { attribute: "gap", default: 1, mode: "pixels" },
+        dashSize: { attribute: "dash", default: SOLID.dash, mode: "pixels" },
+        gapSize: { attribute: "gap", default: SOLID.gap, mode: "pixels" },
       }),
     ],
     defaultHead: "none",

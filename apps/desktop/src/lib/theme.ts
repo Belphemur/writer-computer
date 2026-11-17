@@ -1,3 +1,4 @@
+import projectColors from "@shared/project-colors.json";
 import {
   getPrimaryDefs,
   SETTINGS_SCHEMA,
@@ -94,9 +95,20 @@ export function applyCssVarBindings(settings: Record<string, unknown>) {
   }
 }
 
+/** The agent's project accent colors (`shared/project-colors.json`, the one list of names and
+ *  their light and dark values): `--project-color-<name>` for the active mode. */
+export function applyProjectColors(mode: ThemeMode) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  for (const c of projectColors.colors) {
+    root.style.setProperty(`--project-color-${c.name}`, c[mode]);
+  }
+}
+
 function pushForMode(mode: ThemeMode, settings: Record<string, unknown>) {
   setThemeAttribute(mode === "dark");
   applyPrimaries(mode, settings);
+  applyProjectColors(mode);
 }
 
 /**

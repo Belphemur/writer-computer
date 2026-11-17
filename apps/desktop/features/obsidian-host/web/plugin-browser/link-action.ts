@@ -1,3 +1,5 @@
+import { DOC_LINK_ABSOLUTE } from "@/lib/external-url";
+
 /** What a click on a rendered README link does. Pure so it is testable. */
 export type LinkAction =
   | { kind: "open"; url: string }
@@ -15,5 +17,5 @@ export function classifyLink(href: string | null): LinkAction {
     }
     return id ? { kind: "anchor", id } : { kind: "ignore" };
   }
-  return /^(?:https?|mailto|tel):/i.test(href) ? { kind: "open", url: href } : { kind: "ignore" };
+  return DOC_LINK_ABSOLUTE.test(href) ? { kind: "open", url: href } : { kind: "ignore" };
 }

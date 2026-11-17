@@ -3,6 +3,8 @@
 // panel. Pure: shapes, defaults and `normalizeConfig`, which turns whatever the file held into a
 // valid config (a hand-edited or newer file never breaks the view).
 
+import type { GraphEdgeKind } from "./ipc";
+
 export type SurfaceId = "global" | "local";
 
 export type GraphFilters = {
@@ -21,6 +23,15 @@ export type GraphFilters = {
   includeFolders: string[];
   excludeFolders: string[];
 };
+
+/** The filter switch of each edge kind, and the one list of kinds (the generated `EdgeKind` makes
+ *  both exhaustive: a new Rust kind is a type error here). */
+export const KIND_FILTER: Record<GraphEdgeKind, "links" | "embeds" | "properties"> = {
+  link: "links",
+  embed: "embeds",
+  property: "properties",
+};
+export const EDGE_KINDS = Object.keys(KIND_FILTER) as GraphEdgeKind[];
 
 export type ColorRule = { id: string; query: string; color: string };
 

@@ -24,8 +24,9 @@ export const FALLBACK_THEME: GraphTheme = {
   background: "#ffffff",
 };
 
-/** Mid-lightness hues that read on light and dark backgrounds. */
-export const GROUP_PALETTE = [
+/** Mid-lightness hues that read on light and dark backgrounds: the one palette of group rules and
+ *  property labels. */
+export const PALETTE = [
   "#5b8def",
   "#e5734f",
   "#4fb286",
@@ -34,16 +35,6 @@ export const GROUP_PALETTE = [
   "#46b1c9",
   "#d9577e",
   "#8a9a3f",
-] as const;
-
-/** Property labels (`manager`, `reports-to`) get a color from here, by first appearance order. */
-export const LABEL_PALETTE = [
-  "#d9577e",
-  "#e0a93b",
-  "#46b1c9",
-  "#8a9a3f",
-  "#c065d9",
-  "#e5734f",
 ] as const;
 
 const VARS: Record<keyof GraphTheme, string> = {
@@ -77,13 +68,13 @@ export function readTheme(el: HTMLElement): GraphTheme {
 /** A stable color for a property label: the label's rank in `labels` (sorted), wrapping. */
 export function labelColor(label: string, labels: readonly string[]): string {
   const i = labels.indexOf(label);
-  return LABEL_PALETTE[(i === -1 ? hashString(label) : i) % LABEL_PALETTE.length]!;
+  return PALETTE[(i === -1 ? hashString(label) : i) % PALETTE.length]!;
 }
 
 /** A stable color for a group key: its rank among `keys` (sorted), wrapping. */
 export function groupColor(key: string, keys: readonly string[]): string {
   const i = keys.indexOf(key);
-  return GROUP_PALETTE[(i === -1 ? hashString(key) : i) % GROUP_PALETTE.length]!;
+  return PALETTE[(i === -1 ? hashString(key) : i) % PALETTE.length]!;
 }
 
 function hashString(s: string): number {

@@ -14,6 +14,7 @@ import {
 import { featurePaletteCommands } from "../src/lib/features/palette";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 import { keybindings } from "../src/lib/keybindings/registry";
+import { flushPromises } from "@tests/helpers/events";
 
 const errors: Array<[string, string]> = [];
 const listens: Array<{ name: string; un: ReturnType<typeof vi.fn> }> = [];
@@ -32,7 +33,6 @@ const ctx = new Proxy(
 ) as never;
 const key = (init: KeyboardEventInit) =>
   new KeyboardEvent("keydown", { cancelable: true, ...init });
-const flush = () => new Promise((r) => setTimeout(r, 0));
 const boom = () => {
   throw new Error("boom");
 };
@@ -96,7 +96,7 @@ describe("registration is cheap and lazy", () => {
     const cmd = resolveCommands(ctx).find((c) => c.id === "demo.run")!;
     cmd.run();
     cmd.run();
-    await flush();
+    await flushPromises();
     expect(activate).toHaveBeenCalledTimes(1);
     expect(ran.mock.calls).toEqual([
       ["cmd", "demo"],
@@ -111,7 +111,7 @@ describe("registration is cheap and lazy", () => {
     const b = keybindings.find(key({ key: "d", metaKey: true, altKey: true }), "bubble")!;
     expect(b.id).toBe("demo.key");
     b.run(key({ key: "d" }));
-    await flush();
+    await flushPromises();
     expect(activate).toHaveBeenCalledTimes(1);
     expect(ran).toHaveBeenCalledWith("key", "demo");
   });
@@ -143,7 +143,7 @@ describe("deactivation frees what activation created", () => {
     });
     host.register(def);
     await host.activate("demo");
-    await flush();
+    await flushPromises();
     expect(listens.map((l) => l.name)).toEqual(["demo:pinged"]);
     await host.deactivate("demo");
     expect(order).toEqual(["deactivate", "returned", "second", "first"]);
@@ -178,7 +178,7 @@ describe("failures are isolated", () => {
     host.register(demo({ activate: boom }).def);
     const b = keybindings.find(key({ key: "d", metaKey: true, altKey: true }), "bubble")!;
     expect(() => b.run(key({ key: "d" }))).not.toThrow();
-    await flush();
+    await flushPromises();
     expect(errors.map((e) => e[1])).toContain("activate");
   });
 

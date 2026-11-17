@@ -626,13 +626,37 @@ pub fn probe(paths: &[String], scope: &ProbeScope) -> Result<Vec<ProbeResult>, S
 
 /* ------------------------------------------------------------ open / reveal */
 
-/// Schemes `shell.openExternal` may hand to the system (same list as the TS shim).
+/// One entry of the shared list: `authority` schemes must be followed by `//`.
+#[derive(serde::Deserialize, Debug, PartialEq)]
+pub struct ExternalScheme {
+    pub scheme: String,
+    pub authority: bool,
+}
+
+/// The schemes Writer hands to the system browser: `shared/external-protocols.json`, the one
+/// list (`src/lib/external-url.ts` imports the same file).
+pub fn external_schemes() -> &'static [ExternalScheme] {
+    static SCHEMES: std::sync::OnceLock<Vec<ExternalScheme>> = std::sync::OnceLock::new();
+    SCHEMES.get_or_init(|| {
+        #[derive(serde::Deserialize)]
+        struct File {
+            schemes: Vec<ExternalScheme>,
+        }
+        serde_json::from_str::<File>(include_str!("../../shared/external-protocols.json"))
+            .expect("external-protocols.json is malformed")
+            .schemes
+    })
+}
+
+/// Schemes `shell.openExternal` may hand to the system (the shared list; the plugin path's
+/// extra checks below stay here).
 pub fn openable_url(url: &str) -> Result<&str, String> {
     let u = url.trim();
     let lower = u.to_ascii_lowercase();
-    let ok = ["http://", "https://", "mailto:"]
-        .iter()
-        .any(|p| lower.starts_with(p));
+    let ok = external_schemes().iter().any(|s| {
+        let prefix = format!("{}:{}", s.scheme, if s.authority { "//" } else { "" });
+        lower.starts_with(&prefix)
+    });
     if !ok || u.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err("EPERM: only http, https and mailto links can be opened".into());
     }
@@ -1005,6 +1029,20 @@ mod tests {
             !r[2].exists,
             "a bin dir itself is not stat-able, only its files"
         );
+    }
+
+    #[test]
+    fn the_shared_scheme_list_is_the_one_the_gate_reads() {
+        let names: Vec<_> = external_schemes()
+            .iter()
+            .map(|s| s.scheme.as_str())
+            .collect();
+        assert_eq!(names, ["http", "https", "mailto"]);
+        assert!(openable_url("tel:+1555").is_err());
+        assert!(openable_url("mailto:a@b").is_ok());
+        for bad in ["http:foo", "https:/x", "https:x"] {
+            assert!(openable_url(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

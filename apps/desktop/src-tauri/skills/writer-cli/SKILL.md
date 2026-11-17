@@ -34,21 +34,27 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 
 See [references/commands.md](references/commands.md) for every command with its parameters and flags.
 
+<!-- BEGIN GENERATED: groups (cargo test skill_doc) -->
+
 | Group      | Commands                                                                                                                                      |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Vault      | `vault`, `vaults`                                                                                                                             |
 | Files      | `files`, `file`, `folders`, `folder`                                                                                                          |
 | Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `title`, `delete`                                                                    |
-| Search     | `search`, `search:context` (see the `writer-search` skill)                                                                                    |
+| Search     | `search`, `search:context`                                                                                                                    |
 | Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases`                                                                   |
 | Tags       | `tags`, `tag`                                                                                                                                 |
 | Tasks      | `tasks`, `task`                                                                                                                               |
 | Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                                                                                     |
 | Graph      | `graph:neighbors`, `graph:path`, `graph:relationships`, `graph:backlinks`, `graph:related`, `graph:hubs`, `graph:components`, `graph:orphans` |
 | Structure  | `outline`, `wordcount`                                                                                                                        |
-| Bases      | `bases`, `base:views`, `base:create`, `base:query` (see `writer-bases`)                                                                       |
+| Skills     | `skills:sync`                                                                                                                                 |
 | Meta       | `help`, `version`                                                                                                                             |
-| Skills     | `skills:sync` (reinstall the managed agent skills in this vault)                                                                              |
+| Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                            |
+
+<!-- END GENERATED: groups -->
+
+Search commands: see the `writer-search` skill. Bases commands: see `writer-bases`. `skills:sync` reinstalls the managed agent skills in this vault.
 
 ## Typical tasks
 

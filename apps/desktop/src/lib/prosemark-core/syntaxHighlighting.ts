@@ -4,6 +4,7 @@ import { markdownTags } from "./markdown/tags";
 import { mathDelimiterTag, mathFormulaTag } from "./markdown/mathMarkdown";
 import { HighlightStyle, syntaxHighlighting, type TagStyle } from "@codemirror/language";
 import type { MarkdownConfig } from "@lezer/markdown";
+import { RENDERED_LINK_CLASS } from "@/lib/link-dom";
 
 const fallbackMonospaceCodeFont =
   "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
@@ -111,7 +112,7 @@ const baseThemeSpec = {
     backgroundColor: "transparent",
     border: "none",
   },
-  ".cm-rendered-link": {
+  [`.${RENDERED_LINK_CLASS}`]: {
     textDecoration: "underline",
     cursor: "pointer",
     color: "var(--pm-link-color)",

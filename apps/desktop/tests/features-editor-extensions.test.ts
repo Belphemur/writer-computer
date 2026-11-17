@@ -13,8 +13,8 @@ import {
 } from "../src/lib/features/editor-extensions";
 import { contributedMenuItems, menuContributions } from "../src/lib/features/menus";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
+import { flushPromises } from "@tests/helpers/events";
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
 const marker = (name: string): Extension =>
   StateField.define({ create: () => name, update: (v) => v });
 const field = marker("x");
@@ -46,7 +46,7 @@ describe("editor extension contributions", () => {
 
     const view = editor();
     expect(load).toHaveBeenCalledTimes(1);
-    await flush();
+    await flushPromises();
     expect(has(view, field as StateField<string>)).toBe(true);
 
     // a new editor gets it synchronously, without loading again
@@ -70,7 +70,7 @@ describe("editor extension contributions", () => {
       }),
     );
     const view = editor();
-    await flush();
+    await flushPromises();
     expect(has(view, f as StateField<string>)).toBe(false);
   });
 });

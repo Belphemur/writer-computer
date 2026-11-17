@@ -9,7 +9,11 @@ import { EditorView as CMEditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { navigateToFile, openFileInNewTab } from "@/hooks/editor-api";
+import { getWorkspaceRoot } from "@/hooks/workspace-api";
+import { setPendingAnchor } from "@/lib/pending-anchor";
 import { detectPlatform, type Platform } from "@/lib/platform";
+import * as tauri from "@/lib/tauri";
+import { resolveWikiLink, type WikiLinkTarget } from "@/lib/wiki-links";
 
 /** What a gesture asks for: the current tab, a new tab in the background, or a new active tab. */
 export type LinkIntent = "current" | "new-tab-background" | "new-tab-active";
@@ -60,14 +64,56 @@ export async function openPath(path: string, intent: LinkIntent): Promise<void> 
   else await openFileInNewTab(path, { activate: intent === "new-tab-active" });
 }
 
-/** An http(s)/mailto URL in the system browser, whatever the gesture. */
-export function openExternal(href: string): void {
-  void openUrl(href);
+/** A URL in the system browser, whatever the gesture: the one caller of the opener plugin's
+ *  `openUrl`. Core links are not filtered to `EXTERNAL_PROTOCOLS` here (a document may link to
+ *  `obsidian://` or `tel:`); the opener's capability scope is the gate. The Obsidian plugin host
+ *  deliberately does not use this: its commands are trust-gated and Rust-validated
+ *  (`plugin_open_url`, `lib/external-url.ts`). */
+export function openExternal(href: string): Promise<void> {
+  return openUrl(href);
 }
 
-const EXTERNAL = /^(https?:|mailto:)/i;
-export const isExternalHref = (href: string | null | undefined): href is string =>
-  !!href && EXTERNAL.test(href);
+/** Why a wiki link did not open: reported to the caller's UI (a notice, a log), never swallowed. */
+export type WikiLinkProblem = "no-workspace" | "unresolved" | "resolve-failed" | "open-failed";
+
+/** Where a problem goes: a notice, a log line. */
+export type WikiLinkReport = (problem: WikiLinkProblem, raw: string, error?: unknown) => void;
+
+/** Resolves a wiki link written in `sourcePath` (null: vault-wide) through the vault index; the
+ *  one binding of [`resolveWikiLink`] to the backend. */
+export function resolveVaultLink(raw: string, sourcePath: string | null): Promise<WikiLinkTarget> {
+  return resolveWikiLink(raw, sourcePath, tauri.resolveWikiLinkTarget);
+}
+
+/** The target of a wiki link written as `raw` (`Note`, `Note#Heading`, `[[`-less): it resolves
+ *  against the note, queues the heading for the opened note, then opens for the gesture. The one
+ *  path for the editor, rendered cells, the agent pane, property values and Bases cells. */
+export function wikiLinkTarget(
+  raw: string,
+  getSourcePath: () => string | null,
+  /** True once the surface that asked is gone (an editor view): nothing is opened or reported. */
+  isDisposed: () => boolean = () => false,
+  report?: WikiLinkReport,
+): LinkTarget {
+  const fail = (problem: WikiLinkProblem, error?: unknown) => {
+    if (!isDisposed()) report?.(problem, raw, error);
+  };
+  return {
+    kind: "custom",
+    open: (intent) => {
+      if (!getWorkspaceRoot()) return fail("no-workspace");
+      void resolveVaultLink(raw, getSourcePath()).then(
+        (result) => {
+          if (isDisposed()) return;
+          if (result.kind !== "internal") return fail("unresolved");
+          if (result.fragment) setPendingAnchor(result.path, result.fragment);
+          return openPath(result.path, intent).catch((e: unknown) => fail("open-failed", e));
+        },
+        (e: unknown) => fail("resolve-failed", e),
+      );
+    },
+  };
+}
 
 export function activateLink(target: LinkTarget, intent: LinkIntent): void {
   switch (target.kind) {
@@ -76,7 +122,7 @@ export function activateLink(target: LinkTarget, intent: LinkIntent): void {
       void openPath(target.path, intent);
       return;
     case "url":
-      openExternal(target.href);
+      void openExternal(target.href);
       return;
     case "custom":
       target.open(intent);

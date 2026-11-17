@@ -59,11 +59,17 @@ fn parse_kinds(args: &Args) -> Result<Vec<String>, CliError> {
         return Ok(Vec::new());
     };
     raw.split(',')
-        .map(|k| match k.trim() {
-            k @ ("link" | "embed" | "property") => Ok(k.to_string()),
-            other => Err(CliError::Usage(format!(
-                "kind= takes link, embed or property (comma separated), not \"{other}\""
-            ))),
+        .map(|k| match EdgeKind::parse(k.trim()) {
+            Some(kind) => Ok(kind.as_str().to_string()),
+            None => {
+                let all: Vec<&str> = EdgeKind::ALL.iter().map(|k| k.as_str()).collect();
+                let (last, init) = all.split_last().expect("EdgeKind::ALL is not empty");
+                Err(CliError::Usage(format!(
+                    "kind= takes {} or {last} (comma separated), not \"{}\"",
+                    init.join(", "),
+                    k.trim()
+                )))
+            }
         })
         .collect()
 }

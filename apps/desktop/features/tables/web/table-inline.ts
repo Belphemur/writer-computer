@@ -10,6 +10,7 @@ import {
 import * as emoji from "node-emoji";
 import { prosemarkMarkdownSyntaxExtensions } from "@/lib/prosemark-core/main";
 import { parseWikiLink } from "@/lib/wiki-links";
+import { RENDERED_LINK_CLASS, WIKI_LINK_CLASS } from "@/lib/link-dom";
 
 export type TableCellInlineNode =
   | { type: "text"; text: string }
@@ -168,7 +169,7 @@ function renderLink(markdown: string, node: SyntaxNode): TableCellInlineNode[] {
   if (children.length === 0 && href) {
     pushText(children, href);
   }
-  return markdownElement("span", children, { className: "cm-rendered-link", href });
+  return markdownElement("span", children, { className: RENDERED_LINK_CLASS, href });
 }
 
 function renderMarkdownNode(markdown: string, node: SyntaxNode): TableCellInlineNode[] {
@@ -195,14 +196,14 @@ function renderMarkdownNode(markdown: string, node: SyntaxNode): TableCellInline
         "span",
         [{ type: "text", text: parseWikiLink(rawTarget).displayText }],
         {
-          className: "cm-wiki-link",
+          className: WIKI_LINK_CLASS,
           wikiTarget: rawTarget,
         },
       );
     }
     case "URL":
       return markdownElement("span", [{ type: "text", text: markdown.slice(node.from, node.to) }], {
-        className: "cm-rendered-link",
+        className: RENDERED_LINK_CLASS,
         href: markdown.slice(node.from, node.to),
       });
     case "Image": {

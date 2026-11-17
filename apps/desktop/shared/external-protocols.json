@@ -1,0 +1,7 @@
+{
+  "schemes": [
+    { "scheme": "http", "authority": true },
+    { "scheme": "https", "authority": true },
+    { "scheme": "mailto", "authority": false }
+  ]
+}

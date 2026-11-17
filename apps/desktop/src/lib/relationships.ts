@@ -5,7 +5,6 @@
 // is kept: a single link stays single until a second one is added, then it becomes a list.
 import {
   appendListItem,
-  isWikilink,
   removeListItem,
   setList,
   setScalar,
@@ -13,7 +12,7 @@ import {
   type PropertyRow,
 } from "./frontmatter-properties";
 import { getFileStem } from "./paths";
-import { canonicalWikiTarget, parseWikiLink } from "./wiki-links";
+import { canonicalWikiTarget, isWikiLink, parseWikiLinkValue } from "./wiki-links";
 import type { SearchResult } from "@/types/fs";
 
 /** The links of a relationships row, in order: the single value, the list items, or none. */
@@ -42,7 +41,7 @@ const norm = (s: string) => s.normalize("NFC").toLowerCase();
 
 /** The note a link points to as a lower-case key: its path without extension (`folder/Note`). */
 function linkKey(link: string): string {
-  return norm(parseWikiLink(link.trim().replace(/^\[\[|\]\]$/g, "")).path);
+  return norm(parseWikiLinkValue(link).path);
 }
 
 /** Whether `file` is already one of `links`: by file name (`[[Note]]`, alias and heading forms
@@ -78,7 +77,7 @@ export async function resolveLinkNames(
   await Promise.all(
     items.map(async (item) => {
       const name = item.trim();
-      if (name === "" || isWikilink(name)) return;
+      if (name === "" || isWikiLink(name)) return;
       const path = await resolve(name).catch(() => null);
       if (path !== null) out[item] = getFileStem(path);
     }),

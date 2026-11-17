@@ -7,7 +7,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { SparklesIcon } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
-import colors from "@shared/project-colors.json";
+import projectColors from "@shared/project-colors.json";
 import {
   SHARD_LETTERS,
   loadShard,
@@ -16,7 +16,7 @@ import {
 } from "@features/agent/web/lib/project-icon-shards";
 import type { ProjectDetail } from "@features/agent/web/lib/project-client";
 
-export const PROJECT_COLORS: readonly string[] = colors.colors;
+export const PROJECT_COLORS: readonly string[] = projectColors.colors.map((c) => c.name);
 export const DEFAULT_PROJECT_ICON: IconSvgElement = SparklesIcon;
 
 export interface ProjectAppearance {

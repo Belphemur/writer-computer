@@ -16,7 +16,8 @@ import {
   TextIcon,
 } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
-import { isWikilink, type PropertyKind, type PropertyRow } from "./frontmatter-properties";
+import { type PropertyKind, type PropertyRow } from "./frontmatter-properties";
+import { isWikiLink } from "./wiki-links";
 
 /** Obsidian's names (`types.json` values), also the wire names with the backend, plus Writer's own
  *  `relationships` (a link or a list of links) and `enum` (one string of a recorded list).
@@ -145,7 +146,7 @@ export function typeOfRow(row: PropertyRow): PropertyType {
 
 /** A non-empty list whose every item is a `[[wikilink]]`. */
 function isLinkList(row: PropertyRow): boolean {
-  return row.kind === "list" && row.items.length > 0 && row.items.every(isWikilink);
+  return row.kind === "list" && row.items.length > 0 && row.items.every(isWikiLink);
 }
 
 const FITS: Record<PropertyType, readonly PropertyKind[]> = {
@@ -167,6 +168,6 @@ const FITS: Record<PropertyType, readonly PropertyKind[]> = {
  *  the panel cannot interpret (a nested map, an alias) fits none. */
 export function rowFitsType(row: PropertyRow, type: PropertyType): boolean {
   if (row.kind === "empty") return true;
-  if (type === "relationships" && row.kind === "list") return row.items.every(isWikilink);
+  if (type === "relationships" && row.kind === "list") return row.items.every(isWikiLink);
   return FITS[type].includes(row.kind);
 }

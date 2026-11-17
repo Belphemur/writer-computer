@@ -1,7 +1,7 @@
 import { setAgentDraft, detectAgentBinary } from "@features/agent/web/hooks/agent-api";
 import { useAgentBackend, useAgentBinary } from "@features/agent/web/hooks/use-agent";
 import type { ChatId } from "@features/agent/web/lib/events";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openExternal } from "@/lib/link-activation";
 import { Button, chooseBinary, INSTALL_URL } from "./error-card";
 
 /** Static, no AI: three starting points that only fill the composer. */
@@ -25,7 +25,7 @@ export function BinaryMissingCard() {
       </p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         <Button onClick={() => void chooseBinary()}>Choose binary…</Button>
-        <Button onClick={() => void openUrl(INSTALL_URL)}>Install Claude Code</Button>
+        <Button onClick={() => void openExternal(INSTALL_URL)}>Install Claude Code</Button>
         <Button onClick={() => void detectAgentBinary()}>Check again</Button>
       </div>
     </div>

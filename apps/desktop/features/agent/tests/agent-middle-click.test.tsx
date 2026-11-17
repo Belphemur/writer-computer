@@ -22,6 +22,8 @@ import { AssistantText } from "@features/agent/web/components/assistant-text";
 import { vaultLinkHandlers } from "@features/agent/web/components/agent-links";
 import { MessageText } from "@features/agent/web/components/message-text";
 import type { TextBlock } from "@features/agent/web/lib/transcript";
+import { consumePendingAnchor } from "@/lib/pending-anchor";
+import { dispatchMouse } from "@tests/helpers/events";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,8 +42,10 @@ describe("middle-click on agent pane links", () => {
   });
 
   const mouse = (el: Element, type: string, button: number) => {
-    const e = new MouseEvent(type, { bubbles: true, cancelable: true, button });
-    act(() => void el.dispatchEvent(e));
+    let e!: MouseEvent;
+    act(() => {
+      e = dispatchMouse(el, type, { button });
+    });
     return e;
   };
   const flush = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
@@ -64,6 +68,18 @@ describe("middle-click on agent pane links", () => {
     mouse(a, "click", 0);
     await flush();
     expect(h.navigate).toHaveBeenLastCalledWith("/v/Notes/Plan.md");
+  });
+
+  it("a link to a base view keeps its #fragment: the view is queued for the opened base", async () => {
+    h.resolve.mockResolvedValueOnce("/v/Tasks.base");
+    act(() => root.render(<AssistantText block={block("See [[Tasks.base#Board|the board]].")} />));
+    const a = container.querySelector("a")!;
+    expect(a.textContent).toBe("the board");
+    mouse(a, "click", 0);
+    await flush();
+    expect(h.resolve).toHaveBeenLastCalledWith("Tasks.base", "/v/Today.md");
+    expect(h.navigate).toHaveBeenLastCalledWith("/v/Tasks.base");
+    expect(consumePendingAnchor("/v/Tasks.base")).toBe("Board");
   });
 
   it("other buttons do nothing on auxclick", async () => {

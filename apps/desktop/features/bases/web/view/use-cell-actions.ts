@@ -1,28 +1,32 @@
 import { useMemo } from "react";
-import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { toAbsolutePath } from "../lib/paths";
-import type { LinkIntent } from "@/lib/link-activation";
-import * as tauri from "@/lib/tauri";
-import { resolveWikiLink } from "@/lib/wiki-links";
+import {
+  activateLink,
+  openPath,
+  wikiLinkTarget,
+  type LinkIntent,
+  type WikiLinkReport,
+} from "@/lib/link-activation";
 import type { CellActions } from "./cell-view";
 import { errorMessage } from "./use-base-query";
 
+/** Cells never replace the Bases view: a plain click opens (and shows) a new tab. */
+const tabIntent = (intent: LinkIntent | undefined): LinkIntent =>
+  intent === undefined || intent === "current" ? "new-tab-active" : intent;
+
 /**
- * What clicking a link or file cell does: open the target in a new main tab through the existing
- * navigation helpers. Failures (no workspace, a link that resolves to nothing) are reported with
+ * What clicking a link or file cell does: open the target in a new main tab through the link
+ * activation module. Failures (no workspace, a link that resolves to nothing) are reported with
  * `notify`, never ignored.
  */
 export function useCellActions(notify: (kind: "error", message: string) => void): CellActions {
   return useMemo<CellActions>(() => {
-    // Cells always open a new tab (never replacing the Bases view); a middle or Cmd/Ctrl click
-    // keeps the focus where it is.
+    // A middle or Cmd/Ctrl click keeps the focus where it is.
     const openAbsolute = (absolute: string, intent?: LinkIntent) =>
-      editorApi
-        .openFileInNewTab(absolute, {
-          activate: intent === undefined || intent !== "new-tab-background",
-        })
-        .catch((e) => notify("error", `Could not open ${absolute}: ${errorMessage(e)}`));
+      openPath(absolute, tabIntent(intent)).catch((e) =>
+        notify("error", `Could not open ${absolute}: ${errorMessage(e)}`),
+      );
     return {
       openFile: (relativePath, intent) => {
         const root = getWorkspaceRoot();
@@ -36,12 +40,15 @@ export function useCellActions(notify: (kind: "error", message: string) => void)
           void openAbsolute(toAbsolutePath(root, resolved), intent);
           return;
         }
-        resolveWikiLink(target, null, tauri.resolveWikiLinkTarget).then(
-          (result) => {
-            if (result.kind === "internal") void openAbsolute(result.path, intent);
-            else notify("error", `"${target}" was not found in the vault`);
-          },
-          (e) => notify("error", `Could not resolve "${target}": ${errorMessage(e)}`),
+        const report: WikiLinkReport = (problem, raw, error) => {
+          if (problem === "unresolved") notify("error", `"${raw}" was not found in the vault`);
+          else if (problem === "open-failed")
+            notify("error", `Could not open "${raw}": ${errorMessage(error)}`);
+          else notify("error", `Could not resolve "${raw}": ${errorMessage(error)}`);
+        };
+        activateLink(
+          wikiLinkTarget(target, () => null, undefined, report),
+          tabIntent(intent),
         );
       },
     };

@@ -25,13 +25,13 @@
 // And from it: relationships -> text joins a list with ", " (a single link is already text);
 // relationships -> list keeps the items as quoted link strings (a single link becomes one item).
 import {
-  isWikilink,
   setList,
   setScalar,
   type EditResult,
   type PropertyKind,
   type PropertyRow,
 } from "./frontmatter-properties";
+import { isWikiLink } from "./wiki-links";
 import { PROPERTY_TYPES, rowFitsType, type PropertyType } from "./property-types";
 
 const MONTHS = [
@@ -181,7 +181,7 @@ export function plainLinkCandidates(row: PropertyRow): string[] {
 }
 
 function plain(item: string): boolean {
-  return !isWikilink(item);
+  return !isWikiLink(item);
 }
 
 /** The relationships value of a text or list row: its items as `[[links]]`. Plain items take the
@@ -190,7 +190,7 @@ function toLinks(row: PropertyRow, linkNames: Readonly<Record<string, string>>):
   const items = LIST_KINDS.includes(row.kind) ? row.items : splitList(scalarText(row));
   const out: string[] = [];
   for (const item of items) {
-    if (isWikilink(item)) out.push(item.trim());
+    if (isWikiLink(item)) out.push(item.trim());
     else if (linkNames[item]) out.push(`[[${linkNames[item]}]]`);
     else return null;
   }

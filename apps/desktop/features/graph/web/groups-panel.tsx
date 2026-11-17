@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ColorRule, GroupBy, SurfaceId } from "./config";
 import { vaultPropertyNames } from "./ipc";
-import { GROUP_PALETTE } from "./theme";
+import { PALETTE } from "./theme";
 import { useGraphConfig } from "./store";
 
 const INPUT =
@@ -49,10 +49,7 @@ export function GroupsPanel({
     setRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const addRule = () => {
     const id = `rule-${Date.now().toString(36)}`;
-    setRules([
-      ...rules,
-      { id, query: "", color: GROUP_PALETTE[rules.length % GROUP_PALETTE.length]! },
-    ]);
+    setRules([...rules, { id, query: "", color: PALETTE[rules.length % PALETTE.length]! }]);
   };
   const options = ["tags", "folder", ...properties.filter((p) => p !== "tags")];
   const nested = groupBy.property === "tags" || groupBy.property === "folder";

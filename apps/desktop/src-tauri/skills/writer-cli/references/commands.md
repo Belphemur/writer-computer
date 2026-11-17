@@ -1,91 +1,95 @@
 # Writer CLI command reference
 
-One bullet per command: `required` parameters are marked, everything else is optional. Flags are bare words. `file=` and `path=` select the target note (one of them). Run `writer help <command>` for the authoritative text.
+One bullet per command: `required` parameters are marked, everything else is optional. Flags are bare words. `file=` and `path=` select the target note (one of them). Run `writer help <command>` for the authoritative text. This list is generated from the command registry.
+
+<!-- BEGIN GENERATED: commands (cargo test skill_doc) -->
 
 ## Vault
 
-- `vault` — show the current vault. Params: `info=` (name, path, files, folders or size; one value only).
-- `vaults` — list the vaults Writer knows (recent workspaces). Flags: `total`, `verbose`.
+- `vault` — Show the current vault (one value with info=). Params: `info=` (name | path | files | folders | size).
+- `vaults` — List the vaults Writer knows (recent workspaces). Flags: `total` (print only the count), `verbose` (include vault paths).
 
 ## Files
 
-- `files` — list files, one path per line. Params: `folder=`, `ext=`. Flags: `total`.
-- `file` — information about one file. Params: `file=`, `path=`.
-- `folders` — list folders that contain files. Params: `folder=`. Flags: `total`.
-- `folder` — information about a folder. Params: `path=` (required), `info=` (files, folders or size).
+- `files` — List files. Params: `folder=` (only files under this folder), `ext=` (only this extension). Flags: `total` (print only the count).
+- `file` — Show information about a file. Params: `file=`, `path=`.
+- `folders` — List folders. Params: `folder=` (only folders under this folder). Flags: `total` (print only the count).
+- `folder` — Show information about a folder. Params: `path=` (required; folder path), `info=` (files | folders | size (one value only)).
 
 ## Content
 
-- `read` — print a file's raw text. Params: `file=`, `path=`.
-- `create` — create a note (`.md` is appended; no name gives `Untitled`). Params: `name=`, `path=`, `content=`, `template=` (a note whose text is the starting content). Flags: `overwrite`, `open`, `newtab` (the last two are accepted and ignored).
-- `append` — add text at the end of a file, or of a section. Params: `file=`, `path=`, `content=` (required), `heading=`. Flags: `inline` (no newline between old and new text).
-- `prepend` — insert text after the frontmatter, or right after a heading. Params: `file=`, `path=`, `content=` (required), `heading=`. Flags: `inline`.
-- `move` — move (and optionally rename) a file and update links to it. Params: `file=`, `path=`, `to=` (required; destination folder or path), `format=` (text or json). Flags: `dry-run` (print the plan, change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
-- `rename` — rename a file and update links to it. Params: `file=`, `path=`, `name=` (required; the extension is kept if omitted), `format=` (text or json). Flags: `dry-run` (print the plan, change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
-- `title` — show, set or clear a note's display title (the title property); the file is not renamed. Params: `file=`, `path=`, `set=` (new display title (links showing the old title follow)), `format=` (text or json). Flags: `clear` (remove the title property (the note shows its file name)), `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links that show the old title as their alias).
-- `delete` — move a file to the trash. Params: `file=`, `path=`. Flags: `permanent`.
+- `read` — Print a file's contents. Params: `file=`, `path=`.
+- `create` — Create a note. Params: `name=` (note name (default Untitled)), `path=` (exact path), `content=` (initial text), `template=` (note whose text is the starting content). Flags: `overwrite` (replace an existing file), `open` (accepted, ignored (the app is not controlled)), `newtab` (accepted, ignored).
+- `append` — Append text to a file. Params: `file=`, `path=`, `content=` (required; text to add), `heading=` (append to the end of this section). Flags: `inline` (no newline between the existing text and the new text).
+- `prepend` — Insert text after the frontmatter. Params: `file=`, `path=`, `content=` (required; text to add), `heading=` (insert right after this heading). Flags: `inline` (no newline after the new text).
+- `move` — Move (and optionally rename) a file and update links to it. Params: `file=`, `path=`, `to=` (required; destination folder or path), `format=` (text | json). Flags: `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
+- `rename` — Rename a file and update links to it. Params: `file=`, `path=`, `name=` (required; new name (extension kept if omitted)), `format=` (text | json). Flags: `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
+- `title` — Show, set or clear a note's display title (the title property); the file is not renamed. Params: `file=`, `path=`, `set=` (new display title (links showing the old title follow)), `format=` (text | json). Flags: `clear` (remove the title property (the note shows its file name)), `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links that show the old title as their alias).
+- `delete` — Move a file to the trash. Params: `file=`, `path=`. Flags: `permanent` (delete for good instead of using the trash).
 
 ## Search
 
-- `search` — files whose text or name matches, best match first. Params: `query=` (required), `path=` (folder), `limit=`, `format=` (text or json). Flags: `total`, `case`.
-- `search:context` — matching lines as `path:line: text`. Params: `query=` (required), `path=` (folder), `limit=`, `format=` (text or json). Flags: `case`.
+- `search` — List files whose text or name matches a query, best match first. Params: `query=` (required; words, "phrase", -word, a OR b, pre*, tag:/path:/file:, or /regex/), `path=` (limit to this folder), `limit=` (maximum number of files), `format=` (text | json). Flags: `total` (print only the count), `case` (case sensitive).
+- `search:context` — Matching lines as path:line: text, best file first. Params: `query=` (required; words, "phrase", -word, a OR b, pre*, tag:/path:/file:, or /regex/), `path=` (limit to this folder), `limit=` (maximum number of lines), `format=` (text | json). Flags: `case` (case sensitive).
 
 ## Properties
 
-- `properties` — list properties of one file, or of the vault with counts. Params: `file=`, `path=`, `name=`, `sort=` (count), `format=` (yaml, json or tsv). Flags: `total`, `counts`, `types`.
-- `property:set` — set a frontmatter property. Params: `name=` (required), `value=` (required), `type=` (text, list, number, checkbox, date or datetime), `file=`, `path=`.
-- `property:read` — print a property value. Params: `name=` (required), `file=`, `path=`.
-- `property:remove` — remove a property. Params: `name=` (required), `file=`, `path=`.
-- `aliases` — list aliases. Params: `file=`, `path=`. Flags: `total`, `verbose`.
+- `properties` — List properties (of one file, or the vault with counts). Params: `file=`, `path=`, `name=` (only this property), `sort=` (count), `format=` (yaml | json | tsv). Flags: `total` (print only the count), `counts` (include occurrence counts), `types` (include each property's type).
+- `property:set` — Set a property in a note's frontmatter. Params: `name=` (required; property name), `value=` (required; value), `type=` (text | list | number | checkbox | date | datetime), `file=`, `path=`.
+- `property:read` — Print a property value. Params: `name=` (required; property name), `file=`, `path=`.
+- `property:remove` — Remove a property. Params: `name=` (required; property name), `file=`, `path=`.
+- `aliases` — List aliases. Params: `file=`, `path=`. Flags: `total` (print only the count), `verbose` (include file paths).
 
 ## Tags
 
-- `tags` — list tags (lowercase, `#tag`). Params: `file=`, `path=`, `sort=` (count), `format=` (json, tsv or csv). Flags: `total`, `counts`.
-- `tag` — show one tag. Params: `name=` (required; with or without `#`). Flags: `total`, `verbose` (adds the file list).
+- `tags` — List tags. Params: `file=`, `path=`, `sort=` (count), `format=` (json | tsv | csv). Flags: `total` (print only the count), `counts` (include counts).
+- `tag` — Show a tag. Params: `name=` (required; tag, with or without #). Flags: `total` (print only the file count), `verbose` (include the file list).
 
 ## Tasks
 
-- `tasks` — list tasks as `path:line: [status] text`. Params: `file=`, `path=`, `status=` (status character), `format=` (text, json, tsv or csv). Flags: `total`, `done`, `todo`, `verbose` (grouped by file).
-- `task` — show or change one task. Params: `ref=` (`path:line`), `file=`, `path=`, `line=`, `status=` (set this status character). Flags: `toggle`, `done`, `todo`.
+- `tasks` — List tasks. Params: `file=`, `path=`, `status=` (status character), `format=` (text | json | tsv | csv). Flags: `total` (print only the count), `done` (completed only), `todo` (not completed only), `verbose` (group by file with line numbers).
+- `task` — Show or change one task. Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number), `status=` (set this status character). Flags: `toggle` (flip done/not done), `done` (mark done), `todo` (mark not done).
 
 ## Links
 
-- `links` — outgoing links of a file. Params: `file=`, `path=`. Flags: `total`.
-- `backlinks` — files linking to a file. Params: `file=`, `path=`, `format=` (json, tsv or csv). Flags: `counts`, `total`.
-- `unresolved` — links that match no file. Params: `format=` (json, tsv or csv). Flags: `total`, `counts`, `verbose`.
-- `orphans` — files nothing links to. Flags: `total`.
-- `deadends` — files with no outgoing links. Flags: `total`.
+- `links` — Outgoing links of a file. Params: `file=`, `path=`. Flags: `total` (print only the count).
+- `backlinks` — Files linking to a file. Params: `file=`, `path=`, `format=` (json | tsv | csv). Flags: `counts` (include link counts), `total` (print only the count).
+- `unresolved` — Links that match no file. Params: `format=` (json | tsv | csv). Flags: `total` (print only the count), `counts` (include counts), `verbose` (include source files).
+- `orphans` — Files nothing links to. Flags: `total` (print only the count).
+- `deadends` — Files with no outgoing links. Flags: `total` (print only the count).
 
 ## Graph
 
-Every `graph:*` command takes `format=` (text, json or tsv; default text, use json from an agent) and prints errors as `writer: ...` on stderr. `file=` and `path=` work as elsewhere. Traversals are bounded (depth at most 4) and results are capped.
+Every `graph:*` command takes `format=` (text, json or tsv; default text, use json from an agent) and prints errors as `writer: ...` on stderr. `file=` and `path=` work as elsewhere. Traversals are bounded (depth at most 4) and results are capped. `graph:neighbors` JSON is `{center, nodes, edges, truncated}`; `graph:path` exits 1 with `no path within N hops` when there is none.
 
-- `graph:neighbors` — notes within a few links of a note, each with `depth`, degrees and `via` (the kind and property of the first link of the way), plus the edges among them; JSON is `{center, nodes, edges, truncated}`. Params: `file=`, `path=`, `depth=` (1 to 4, default 2), `kind=` (link, embed, property; comma separated), `label=` (property name), `direction=` (in, out or both), `limit=` (default 50), `format=`.
-- `graph:path` — the shortest chain of links between two notes, direction ignored, through notes only; exits 1 with `no path within N hops` otherwise. Params: `from=` (required), `to=` (required), `maxdepth=` (default 6), `format=`.
-- `graph:relationships` — property links as `source, label, target, resolved, line`, for a note (as source or target) and/or one property name; with neither, the property names in use with `edges` and `notes` counts. Params: `file=`, `path=`, `label=`, `format=`.
-- `graph:backlinks` — notes linking to a note with `kind`, property `label`, `line` and `section`; `context` adds the line holding each link (at most 240 characters, at most 50 links, read from the note). Params: `file=`, `path=`, `limit=` (default 20), `format=`. Flags: `context`.
-- `graph:related` — notes not linked to the note that share linked notes with it, ranked by `score` (rare shared notes count more), with `shared` and `via`. Params: `file=`, `path=`, `limit=` (default 10), `format=`.
-- `graph:hubs` — the most linked notes. Params: `limit=` (default 20), `format=`.
-- `graph:components` — groups of connected notes, largest first, with one example each. Params: `limit=` (default 20), `format=`.
-- `graph:orphans` — notes with no link in or out (`orphans` means no incoming link). Params: `limit=`, `format=`.
+- `graph:neighbors` — Notes within a few links of a note, with how each is reached. Params: `file=`, `path=`, `depth=` (1 to 4 (default 2)), `kind=` (link | embed | property (comma separated)), `label=` (only this property name), `direction=` (in | out | both (default both)), `limit=` (most notes (default 50)), `format=` (text | json | tsv).
+- `graph:path` — The shortest chain of links between two notes. Params: `from=` (required; start note, resolved like a wikilink), `to=` (required; end note), `maxdepth=` (most links to follow (default 6)), `format=` (text | json | tsv).
+- `graph:relationships` — Property links (manager: [[X]]); with no file or label, the property names in use. Params: `file=`, `path=`, `label=` (only this property name), `format=` (text | json | tsv).
+- `graph:backlinks` — Notes linking to a note, with kind, property, section and optionally the line. Params: `file=`, `path=`, `limit=` (most links (default 20, 50 with context)), `format=` (text | json | tsv). Flags: `context` (add the line holding each link (capped, read from the note)).
+- `graph:related` — Notes not linked to a note but sharing linked notes with it. Params: `file=`, `path=`, `limit=` (most notes (default 10)), `format=` (text | json | tsv).
+- `graph:hubs` — The most linked notes. Params: `limit=` (most notes (default 20)), `format=` (text | json | tsv).
+- `graph:components` — Groups of connected notes, largest first, with one example each. Params: `limit=` (most groups (default 20)), `format=` (text | json | tsv).
+- `graph:orphans` — Notes with no link in or out (orphans means no incoming link). Params: `limit=` (most notes), `format=` (text | json | tsv).
 
 ## Structure
 
-- `outline` — headings of a file. Params: `file=`, `path=`, `format=` (tree, md or json). Flags: `total`.
-- `wordcount` — words and characters of a file. Params: `file=`, `path=`. Flags: `words`, `characters`.
-
-## Bases
-
-- `bases` — list `.base` files.
-- `base:views` — list the views of a base. Params: `file=`, `path=`.
-- `base:create` — create a note in a base view. Params: `file=`, `path=`, `view=`, `name=`, `content=`. Flags: `open`, `newtab` (accepted and ignored).
-- `base:query` — run a base view. Params: `file=`, `path=`, `view=`, `format=` (json, csv, tsv, md or paths).
+- `outline` — Headings of a file. Params: `file=`, `path=`, `format=` (tree | md | json). Flags: `total` (print only the count).
+- `wordcount` — Words and characters of a file. Params: `file=`, `path=`. Flags: `words` (words only), `characters` (characters only).
 
 ## Skills
 
-- `skills:sync` — install or update the Writer-managed agent skills in this vault (`.agents/skills` and `.claude/skills`). Flags: `check` (report what would change, write nothing).
+- `skills:sync` — Install or update the Writer-managed agent skills in this vault. Flags: `check` (report what would change, write nothing).
 
 ## Meta
 
-- `help` — list commands, or show help for one (`writer help search`).
-- `version` — show the Writer version.
+- `help` — List commands, or show help for one.
+- `version` — Show the Writer version.
+
+## Bases
+
+- `bases` — List .base files.
+- `base:views` — List the views of a base. Params: `file=`, `path=`.
+- `base:create` — Create a note in a base view. Params: `file=`, `path=`, `view=` (view name), `name=` (note name), `content=` (initial text). Flags: `open` (accepted, ignored), `newtab` (accepted, ignored).
+- `base:query` — Run a base view. Params: `file=`, `path=`, `view=` (view name), `format=` (json | csv | tsv | md | paths).
+
+<!-- END GENERATED: commands -->

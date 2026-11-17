@@ -1,32 +1,34 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { getWorkspaceRoot } from "@/hooks/workspace-api";
-import { openPath, type LinkIntent } from "@/lib/link-activation";
-import * as tauri from "@/lib/tauri";
-import { resolveWikiLink } from "@/lib/wiki-links";
+import {
+  activateLink,
+  openExternal,
+  wikiLinkTarget,
+  type LinkIntent,
+  type WikiLinkReport,
+} from "@/lib/link-activation";
+import { wikiLinkInner } from "@/lib/wiki-links";
 import { showEditorNotice } from "./editor-notice-store";
 
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+const report: WikiLinkReport = (problem, target, error) => {
+  if (problem === "no-workspace") showEditorNotice("No workspace is open");
+  else if (problem === "unresolved") showEditorNotice(`"${target}" was not found in the vault`);
+  else showEditorNotice(`Could not open "${target}": ${message(error)}`);
+};
+
 /** Open a `[[wikilink]]` property value for a gesture (`lib/link-activation.ts`); report what
- *  could not be resolved. */
-export async function openPropertyWikilink(value: string, intent: LinkIntent): Promise<void> {
-  const root = getWorkspaceRoot();
-  if (!root) {
-    showEditorNotice("No workspace is open");
-    return;
-  }
-  const target = value.trim().replace(/^\[\[|\]\]$/g, "");
-  try {
-    const result = await resolveWikiLink(target, null, tauri.resolveWikiLinkTarget);
-    if (result.kind === "internal") await openPath(result.path, intent);
-    else showEditorNotice(`"${target}" was not found in the vault`);
-  } catch (e) {
-    showEditorNotice(`Could not open "${target}": ${e instanceof Error ? e.message : String(e)}`);
-  }
+ *  could not be resolved. A value has no source note: it resolves vault-wide. */
+export function openPropertyWikilink(value: string, intent: LinkIntent): void {
+  activateLink(
+    wikiLinkTarget(wikiLinkInner(value), () => null, undefined, report),
+    intent,
+  );
 }
 
 export async function openPropertyUrl(url: string): Promise<void> {
   try {
-    await openUrl(url);
+    await openExternal(url);
   } catch (e) {
-    showEditorNotice(`Could not open the link: ${e instanceof Error ? e.message : String(e)}`);
+    showEditorNotice(`Could not open the link: ${message(e)}`);
   }
 }

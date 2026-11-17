@@ -34,10 +34,10 @@ import {
   useFeatureHealth,
 } from "../src/stores/feature-health-store";
 import { useSettingsStore } from "../src/stores/settings-store";
+import { flushPromises } from "@tests/helpers/events";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
 const boom = () => {
   throw new Error("boom");
 };
@@ -110,7 +110,7 @@ describe("the feature host contains a throwing contribution", () => {
       "bubble",
     )!;
     expect(() => b.run(new KeyboardEvent("keydown"))).not.toThrow();
-    await flush();
+    await flushPromises();
     expect(health().failures.demo?.count).toBe(1);
     expect(health().failures.demo?.boundary).toBe("command");
   });
@@ -130,7 +130,7 @@ describe("the feature host contains a throwing contribution", () => {
     expect(host.list()).toEqual(["demo"]);
     for (let i = 0; i < FAILURE_LIMIT; i++) health().recordFailure("demo", "command");
     sync();
-    await flush(); // unregister is asynchronous
+    await flushPromises(); // unregister is asynchronous
     expect(host.list()).toEqual([]);
     expect(settings).toEqual({});
     health().clear("demo");
@@ -190,8 +190,8 @@ describe("a throwing menu item and editor extension", () => {
           update: (v) => v,
         }),
     });
-    await flush();
-    await flush();
+    await flushPromises();
+    await flushPromises();
     expect(health().failures.badload?.boundary).toBe("editor-extension");
     expect(health().failures.badstate?.boundary).toBe("editor-extension");
     editorExtensionContributions.removeOwner("builtin:badload");
@@ -315,7 +315,7 @@ describe("the Rust bridge", () => {
         failures: [],
       }),
     });
-    await flush();
+    await flushPromises();
     expect(listen).toHaveBeenCalledWith("features:failed", expect.any(Function));
     expect(health().crashDisabled).toHaveLength(1);
     handler!({ payload: { id: "demo", boundary: "thread:x" } });

@@ -4,11 +4,12 @@ import type { InlineContext, MarkdownConfig } from "@lezer/markdown";
 import { markdownTags } from "../markdown/tags";
 import { stateWORDAt } from "../utils";
 import { isCalloutMarkerLink } from "@/lib/callouts/tree";
+import { RENDERED_LINK_CLASS } from "@/lib/link-dom";
 
 export { hideExtension } from "./core";
 
 const renderedLinkDecoration = Decoration.mark({
-  class: "cm-rendered-link",
+  class: RENDERED_LINK_CLASS,
 });
 const inlineCodeDecoration = Decoration.mark({
   class: "cm-inline-code",

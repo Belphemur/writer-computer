@@ -23,6 +23,7 @@ import {
   type LinkIntent,
   type LinkTarget,
 } from "../src/lib/link-activation";
+import { dispatchMouse } from "@tests/helpers/events";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => {
@@ -90,31 +91,25 @@ describe("activateLink", () => {
 const NOTE: LinkTarget = { kind: "note", path: "/v/a.md" };
 const URL_T: LinkTarget = { kind: "url", href: "https://x.test" };
 
-function fire(el: Element, type: string, init: MouseEventInit = {}) {
-  const e = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-  el.dispatchEvent(e);
-  return e;
-}
-
 // jsdom reports a Linux user agent: Ctrl is the modifier. The platform split is covered above.
 function assertBinding(el: Element, expectsUrl = false, claimsLeftPress = false) {
   const sink = expectsUrl ? h.openUrl : h.newTab;
-  expect(fire(el, "mousedown", { button: 1 }).defaultPrevented).toBe(true);
-  expect(fire(el, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
+  expect(dispatchMouse(el, "mousedown", { button: 1 }).defaultPrevented).toBe(true);
+  expect(dispatchMouse(el, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
   if (!expectsUrl) expect(sink).toHaveBeenLastCalledWith("/v/a.md", { activate: false });
   sink.mockClear();
-  fire(el, "click", { button: 0, ctrlKey: true });
+  dispatchMouse(el, "click", { button: 0, ctrlKey: true });
   if (!expectsUrl) expect(sink).toHaveBeenLastCalledWith("/v/a.md", { activate: false });
   sink.mockClear();
-  fire(el, "click", { button: 0, ctrlKey: true, shiftKey: true });
+  dispatchMouse(el, "click", { button: 0, ctrlKey: true, shiftKey: true });
   if (!expectsUrl) expect(sink).toHaveBeenLastCalledWith("/v/a.md", { activate: true });
   else expect(sink).toHaveBeenCalledTimes(1);
   sink.mockClear();
-  fire(el, "click", { button: 0 });
+  dispatchMouse(el, "click", { button: 0 });
   if (expectsUrl) expect(h.openUrl).toHaveBeenCalledTimes(1);
   else expect(h.navigate).toHaveBeenLastCalledWith("/v/a.md");
-  fire(el, "auxclick", { button: 2 }); // other buttons do nothing
-  expect(fire(el, "mousedown", { button: 0 }).defaultPrevented).toBe(claimsLeftPress);
+  dispatchMouse(el, "auxclick", { button: 2 }); // other buttons do nothing
+  expect(dispatchMouse(el, "mousedown", { button: 0 }).defaultPrevented).toBe(claimsLeftPress);
 }
 
 describe("React binding: linkHandlers", () => {
@@ -147,11 +142,11 @@ describe("React binding: linkHandlers", () => {
       root.render(createElement("button", { ...linkHandlers(NOTE, { middleOnly: true }) })),
     );
     const b = host.querySelector("button")!;
-    fire(b, "click", { button: 0 });
-    fire(b, "click", { button: 0, ctrlKey: true });
+    dispatchMouse(b, "click", { button: 0 });
+    dispatchMouse(b, "click", { button: 0, ctrlKey: true });
     expect(h.navigate).not.toHaveBeenCalled();
     expect(h.newTab).not.toHaveBeenCalled();
-    fire(b, "auxclick", { button: 1 });
+    dispatchMouse(b, "auxclick", { button: 1 });
     expect(h.newTab).toHaveBeenCalledWith("/v/a.md", { activate: false });
     act(() => root.unmount());
   });
@@ -169,11 +164,11 @@ describe("DOM binding: bindLinkActivation", () => {
     h.navigate.mockClear();
     h.openUrl.mockClear();
     assertBinding(c.querySelector("#u")!, true);
-    const plain = fire(c.querySelector("#x")!, "auxclick", { button: 1 });
+    const plain = dispatchMouse(c.querySelector("#x")!, "auxclick", { button: 1 });
     expect(plain.defaultPrevented).toBe(false);
     off();
     h.newTab.mockClear();
-    fire(c.querySelector("#n")!, "auxclick", { button: 1 });
+    dispatchMouse(c.querySelector("#n")!, "auxclick", { button: 1 });
     expect(h.newTab).not.toHaveBeenCalled();
   });
 
@@ -183,7 +178,7 @@ describe("DOM binding: bindLinkActivation", () => {
     document.body.appendChild(c);
     bindLinkActivation(c, () => NOTE);
     c.querySelector("a")!.addEventListener("click", (e) => e.preventDefault());
-    fire(c.querySelector("a")!, "click", { button: 0 });
+    dispatchMouse(c.querySelector("a")!, "click", { button: 0 });
     expect(h.navigate).not.toHaveBeenCalled();
   });
 });
@@ -206,7 +201,7 @@ describe("CodeMirror binding: linkActivationExtension", () => {
     view.contentDOM.appendChild(link);
     assertBinding(link, false, true); // the editor also claims the left press (no caret move)
     h.newTab.mockClear();
-    fire(view.contentDOM, "auxclick", { button: 1 }); // not a link
+    dispatchMouse(view.contentDOM, "auxclick", { button: 1 }); // not a link
     expect(h.newTab).not.toHaveBeenCalled();
     view.destroy();
   });

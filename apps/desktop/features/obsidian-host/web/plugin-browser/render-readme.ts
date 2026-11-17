@@ -1,4 +1,5 @@
 import { Marked } from "marked";
+import { DOC_LINK_ABSOLUTE, DOC_LINK_SCHEMES } from "@/lib/external-url";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 
 /** READMEs above this many characters are cut before parsing. */
@@ -12,8 +13,11 @@ export const ALLOWED_ATTR = SAFE_ATTR;
 
 // DOMPurify's default URI allowlist narrowed to http(s), mailto and tel (relative URLs pass and
 // are resolved or dropped below). `javascript:`, `data:`, `vbscript:`, `blob:`, `file:` fail.
-const URI_REGEXP = /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i;
-const ABSOLUTE = /^(?:https?|mailto|tel):/i;
+const URI_REGEXP = new RegExp(
+  `^(?:(?:${DOC_LINK_SCHEMES}):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))`,
+  "i",
+);
+const ABSOLUTE = DOC_LINK_ABSOLUTE;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 
 function resolveRelative(value: string, repo: string | undefined, kind: "raw" | "blob") {

@@ -5,10 +5,12 @@
  * resolves through the vault index on click; `http(s)`/`mailto` links open in the system browser.
  */
 import { Marked } from "marked";
+import { externalOrAnchorUriRegExp } from "@/lib/external-url";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
+import { matchWikiLinkAtStart, parseWikiLink } from "@/lib/wiki-links";
 
 const MAX_CHARS = 200_000;
-const URI_REGEXP = /^(?:(?:https?|mailto):|#)/i;
+const URI_REGEXP = externalOrAnchorUriRegExp();
 export const WIKILINK_PREFIX = "#wikilink:";
 
 const escapeAttr = (s: string) =>
@@ -31,9 +33,11 @@ const marked = new Marked({
       level: "inline",
       start: (src: string) => src.indexOf("[["),
       tokenizer(src: string) {
-        const m = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/.exec(src);
+        // The target keeps its `#heading`: the pane opens it like the editor's link does.
+        const m = matchWikiLinkAtStart(src);
         if (!m) return undefined;
-        return { type: "wikilink", raw: m[0], target: m[1]!.trim(), label: (m[2] ?? m[1])!.trim() };
+        const { target, alias } = parseWikiLink(m.inner);
+        return { type: "wikilink", raw: m.raw, target, label: alias ?? target };
       },
       renderer(token) {
         const t = token as unknown as { target: string; label: string };

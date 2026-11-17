@@ -4,9 +4,6 @@ import { useSettingsStore } from "@/stores/settings-store";
 import fragment from "../settings.schema.json";
 import type { Forces } from "./layout";
 
-/** The global graph requests at most this many nodes, highest degree first (spec section 5). */
-export const GRAPH_LIMIT = 10_000;
-
 type Entry = { key: string; default: unknown };
 const DEFAULTS = Object.fromEntries(
   (fragment.settings as Entry[]).map((e) => [e.key, e.default]),

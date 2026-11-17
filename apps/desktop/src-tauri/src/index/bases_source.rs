@@ -252,7 +252,7 @@ impl IndexRow {
                     display: r.get(3)?,
                     resolved: r.get(1)?,
                 };
-                if kind == edges::KIND_EMBED {
+                if edges::EdgeKind::from_column(&kind) == edges::EdgeKind::Embed {
                     embeds.push(link);
                 } else {
                     links.push(link);

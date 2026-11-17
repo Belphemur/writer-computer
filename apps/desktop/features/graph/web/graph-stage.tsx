@@ -11,7 +11,7 @@ import { Legend } from "./legend";
 import type { NodeAttrs, NodeSpec } from "./model";
 import { NodeList } from "./node-list";
 import { FALLBACK_THEME } from "./theme";
-import { GRAPH_LIMIT, type GraphSettings } from "./settings";
+import { type GraphSettings } from "./settings";
 import type { GraphSurface } from "./use-graph-surface";
 
 export interface GraphStageProps {
@@ -61,6 +61,7 @@ export function GraphStage(p: GraphStageProps) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const truncated = surface.data.slice?.truncated ?? false;
+  const limit = surface.data.slice?.limit ?? 0;
   const stats = useTruncatedStats(truncated);
 
   const open = (node: NodeAttrs | NodeSpec, intent: LinkIntent) => {
@@ -139,8 +140,8 @@ export function GraphStage(p: GraphStageProps) {
           role="status"
           className="absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-[var(--line-subtle)] bg-[var(--surface-card)] px-3 py-1 text-[12px] text-[var(--text-secondary)]"
         >
-          Showing {GRAPH_LIMIT.toLocaleString()} of {(stats?.notes ?? GRAPH_LIMIT).toLocaleString()}{" "}
-          notes, refine with filters
+          Showing {limit.toLocaleString()} of {(stats?.notes ?? limit).toLocaleString()} notes,
+          refine with filters
         </div>
       )}
       {p.showLegend && !showList && (

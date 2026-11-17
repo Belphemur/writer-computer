@@ -4,9 +4,10 @@
 // those extensions use, so a link opens identically wherever the cell is shown.
 import type { EditorView } from "@codemirror/view";
 import { linkTargetFor, renderedLinkHrefOf } from "@/components/editor-area/link-navigation";
-import { wikiLinkTarget, wikiTargetOf } from "@/components/editor-area/wiki-link-extension";
+import { wikiTargetOf } from "@/components/editor-area/wiki-link-extension";
 import { editorNotePath } from "@/lib/editor-views";
-import { isExternalHref, type LinkTarget } from "@/lib/link-activation";
+import { isExternalHref } from "@/lib/external-url";
+import { wikiLinkTarget, type LinkTarget } from "@/lib/link-activation";
 
 export interface CellLink {
   target: LinkTarget;

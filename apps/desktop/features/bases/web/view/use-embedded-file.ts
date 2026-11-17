@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { onIndexChanged } from "../ipc";
-import * as tauri from "@/lib/tauri";
-import { resolveWikiLink } from "@/lib/wiki-links";
+import { resolveVaultLink } from "@/lib/link-activation";
 import { errorMessage } from "./use-base-query";
 
 export type EmbeddedFile =
@@ -28,7 +27,7 @@ export function useEmbeddedFile(target: string, notePath: string): EmbeddedFile 
       setState({ key, value: { status: "error", message: "No workspace is open" } });
       return;
     }
-    resolveWikiLink(target, notePath, tauri.resolveWikiLinkTarget).then(
+    resolveVaultLink(target, notePath).then(
       (result) => {
         if (!current) return;
         setState({

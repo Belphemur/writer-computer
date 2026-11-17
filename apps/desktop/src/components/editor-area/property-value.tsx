@@ -1,5 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from "react";
-import { isWikilink, type PropertyRow } from "@/lib/frontmatter-properties";
+import { type PropertyRow } from "@/lib/frontmatter-properties";
+import { isWikiLink } from "@/lib/wiki-links";
 import { linkHandlers } from "@/lib/link-activation";
 import { openPropertyUrl } from "./property-links";
 import { CHIP, ChipRemove, FIELD } from "./property-chip";
@@ -216,7 +217,7 @@ function ChipsField({ row, actions }: FieldProps) {
     <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
       {row.items.map((item, i) => (
         <span key={`${i}:${item}`} className={CHIP}>
-          {isWikilink(item) ? (
+          {isWikiLink(item) ? (
             <WikiLinkButton value={item} />
           ) : (
             <span className="min-w-0 break-words">{item}</span>

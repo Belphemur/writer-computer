@@ -1,6 +1,7 @@
 // Layout helpers shared by the cards and list views: sections (the groups of a result, or one
 // ungrouped section), collapse state, fixed item heights for windowing, image sources and the
 // documented semantics of the cards/list view options (spec "U6"). Pure: no React, no IPC.
+import { isWikiLink, parseWikiLinkValue } from "@/lib/wiki-links";
 import { groupKey, groupLabel } from "./grid";
 import type { BaseQueryResult, BaseView, CellValue } from "./types";
 
@@ -199,8 +200,8 @@ export function cardImage(cell: CellValue | undefined): CardImage {
       const raw = cell.value.trim();
       if (raw === "") return { kind: "none" };
       if (HEX_COLOR.test(raw)) return { kind: "color", color: raw };
-      const embed = /^!?\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(raw);
-      const target = embed ? embed[1]!.trim() : raw;
+      const link = raw.startsWith("!") ? raw.slice(1) : raw;
+      const target = (isWikiLink(link) && parseWikiLinkValue(link).path) || raw;
       if (/^https:\/\//i.test(target)) return { kind: "url", url: target };
       if (SCHEME.test(target) && !/^[a-z]:[\\/]/i.test(target))
         return {

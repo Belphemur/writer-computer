@@ -6,7 +6,7 @@
 // Everything the renderer needs per node and edge (kind, size, label) lives in attributes; style
 // is decided by the sigma reducers (`reducers.ts`), never here.
 import Graph from "graphology";
-import type { GraphFilters } from "./config";
+import { KIND_FILTER, type GraphFilters } from "./config";
 import type { GraphEdgeKind, GraphNode, GraphSlice } from "./ipc";
 import { matches, needsProps, parseQuery, type Matchable } from "./query";
 
@@ -122,11 +122,7 @@ function nodeAllowed(n: GraphNode, kind: NodeKind, f: GraphFilters): boolean {
 }
 
 const edgeKindAllowed = (kind: GraphEdgeKind, label: string | undefined, f: GraphFilters) =>
-  kind === "link"
-    ? f.links
-    : kind === "embed"
-      ? f.embeds
-      : f.properties && !f.hiddenLabels.includes(label ?? "");
+  f[KIND_FILTER[kind]] && (kind !== "property" || !f.hiddenLabels.includes(label ?? ""));
 
 /** The property labels present in the slice (for the Properties checkboxes and the legend). */
 export function propertyLabels(slice: GraphSlice): string[] {

@@ -2,7 +2,7 @@
 //! the layers land) the traversals over it. Fixture vaults only.
 
 use super::graph::{
-    Direction, EdgeFilter, EdgeKind, EdgeKindFilter, GraphSliceRequest, NeighborQuery,
+    Direction, EdgeFilter, EdgeKind, GraphSliceRequest, NeighborQuery, DEFAULT_SLICE_LIMIT,
 };
 use super::markdown::LinkKind;
 use super::resolve::{bucket_key, PathIndex};
@@ -678,6 +678,39 @@ fn hubs_components_and_stats_come_from_the_snapshot() {
 }
 
 #[test]
+fn edge_kind_text_parses_back_and_matches_the_wire_name() {
+    for k in EdgeKind::ALL {
+        assert_eq!(EdgeKind::parse(k.as_str()), Some(k));
+        assert_eq!(
+            serde_json::to_string(&k).unwrap(),
+            format!("\"{}\"", k.as_str())
+        );
+    }
+    assert_eq!(EdgeKind::parse("tag"), None);
+}
+
+#[test]
+fn graph_slice_reports_the_node_cap_it_applied() {
+    let (_fx, index) = graph_vault();
+    let applied = |limit: Option<u32>| {
+        index
+            .graph_slice(&GraphSliceRequest {
+                limit,
+                ..Default::default()
+            })
+            .unwrap()
+    };
+    assert_eq!(applied(None).limit, DEFAULT_SLICE_LIMIT as u32);
+    let few = applied(Some(3));
+    assert_eq!((few.limit, few.nodes.len(), few.truncated), (3, 3, true));
+    assert_eq!(applied(Some(0)).limit, 1);
+    assert_eq!(
+        applied(Some(u32::MAX)).limit,
+        DEFAULT_SLICE_LIMIT as u32 * 2
+    );
+}
+
+#[test]
 fn graph_slice_center_whole_ghosts_filters_and_wire_shape() {
     let (_fx, index) = graph_vault();
     let whole = index.graph_slice(&GraphSliceRequest::default()).unwrap();
@@ -733,7 +766,7 @@ fn graph_slice_center_whole_ghosts_filters_and_wire_shape() {
     let narrow = index
         .graph_slice(&GraphSliceRequest {
             folders: Some(vec!["People".into()]),
-            kinds: Some(vec![EdgeKindFilter::Property]),
+            kinds: Some(vec![EdgeKind::Property]),
             ..Default::default()
         })
         .unwrap();

@@ -7,6 +7,8 @@
 // parse -> format round trip never changes what a cell means. Only unescaped pipes split cells
 // (GFM rule: a pipe inside inline code or a wiki link also splits unless it is written `\|`).
 
+import { parseWikiLink, wikiLinkScanner } from "@/lib/wiki-links";
+
 export type Align = "left" | "center" | "right" | null;
 
 export interface MarkdownTable {
@@ -499,8 +501,8 @@ export function setCell(t: MarkdownTable, row: number, col: number, text: string
 export function plainCellText(cell: string): string {
   return cell
     .replace(
-      /!?\[\[([^\]|\\]*)(?:\\?\|([^\]]*))?\]\]/g,
-      (_m, target: string, alias?: string) => alias ?? target,
+      wikiLinkScanner(),
+      (_m, _embed: string, inner: string) => parseWikiLink(inner).displayText,
     )
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/<br\s*\/?>/gi, " ")

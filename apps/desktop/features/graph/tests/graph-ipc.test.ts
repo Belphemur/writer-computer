@@ -29,7 +29,7 @@ describe("the wrappers", () => {
     const seen: [string, unknown][] = [];
     mockIPC((cmd, args) => {
       seen.push([cmd, args]);
-      return { nodes: [], edges: [], truncated: false, epoch: 1 };
+      return { nodes: [], edges: [], truncated: false, limit: 10_000, epoch: 1 };
     });
     await ipc.graphSlice({ center: "a.md", depth: 2, includeUnresolved: true });
     expect(seen).toEqual([

@@ -17,6 +17,7 @@ import { PluginSettingTab, Setting, SettingPage } from "../web/host/api/ui";
 import { detachedBridge } from "../web/host/api/views";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
+import { flushPromises } from "@tests/helpers/events";
 
 beforeAll(() => installDomHelpers(window));
 afterEach(() => document.body.replaceChildren());
@@ -28,7 +29,6 @@ function makeApp(): App {
     bridge: { ...detachedBridge },
   });
 }
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 interface FxSettings {
   on: boolean;
@@ -122,11 +122,11 @@ describe("declarative settings tab", () => {
     const input = host.querySelector("input[type=text]") as HTMLInputElement;
     input.value = "world";
     input.dispatchEvent(new Event("input"));
-    await flush();
+    await flushPromises();
     expect((tab as DefTab).s.name).toBe("world");
     expect(saves.at(-1)).toMatchObject({ name: "world" });
     (host.querySelector(".checkbox-container") as HTMLElement).click();
-    await flush();
+    await flushPromises();
     expect((tab as DefTab).s.on).toBe(true);
   });
 
@@ -135,7 +135,7 @@ describe("declarative settings tab", () => {
     const mode = () => host.querySelector<HTMLElement>('[data-setting-key="mode"]')!;
     expect(mode().style.display).toBe("none");
     (host.querySelector(".checkbox-container") as HTMLElement).click();
-    await flush();
+    await flushPromises();
     expect(mode().style.display).toBe("");
     (tab as DefTab).s.on = false;
     tab.update();
@@ -147,12 +147,12 @@ describe("declarative settings tab", () => {
     const n = host.querySelector("input[type=number]") as HTMLInputElement;
     n.value = "0";
     n.dispatchEvent(new Event("input"));
-    await flush();
+    await flushPromises();
     expect(host.querySelector(".setting-item-error")?.textContent).toBe("Must be positive");
     expect((tab as DefTab).s.n).toBe(3);
     n.value = "7";
     n.dispatchEvent(new Event("input"));
-    await flush();
+    await flushPromises();
     expect(host.querySelector(".setting-item-error")).toBeNull();
     expect((tab as DefTab).s.n).toBe(7);
   });

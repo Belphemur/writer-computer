@@ -5,6 +5,7 @@
  */
 import { parseProperties, summaryTags, type PropertyRow } from "@/lib/frontmatter-properties";
 import { typeOfRow, type PropertyType } from "@/lib/property-types";
+import { isWikiLink, parseWikiLinkValue } from "@/lib/wiki-links";
 
 export const MAX_OPEN_TABS = 20;
 export const MAX_TAGS = 8;
@@ -36,9 +37,7 @@ const clip = (s: string) => {
 
 /** `[[Target|alias#heading]]` -> `Target`; anything else is not a link. */
 export function wikilinkTarget(value: string): string | null {
-  const m = /^\[\[([^\]]+)\]\]$/.exec(value.trim());
-  if (!m) return null;
-  return m[1]!.split("|")[0]!.split("#")[0]!.trim() || null;
+  return isWikiLink(value) ? parseWikiLinkValue(value).path || null : null;
 }
 
 const rowValues = (row: PropertyRow): string[] =>

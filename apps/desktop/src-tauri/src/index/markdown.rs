@@ -165,6 +165,9 @@ fn has_scheme(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
 }
 
+/// The one wiki-link reader: `inner` is the text between `[[` and `]]` (`target#heading|alias`).
+/// `scan_links` (anywhere in a line) and [`parse_whole_wikilink`] (a whole value: properties,
+/// Bases values, project sources) both end here.
 fn parse_wikilink(inner: &str, embed: bool, span: (usize, usize)) -> Option<ParsedLink> {
     // `\|` is how a pipe is written inside a table cell.
     let inner = inner.replace("\\|", "|");
@@ -191,6 +194,18 @@ fn parse_wikilink(inner: &str, embed: bool, span: (usize, usize)) -> Option<Pars
         subpath,
         span,
     })
+}
+
+/// `[[target#heading|alias]]` as the entire (trimmed) string: the target in `raw`, the heading in
+/// `subpath`, the alias in `display`. Not an embed (`![[..]]` is not whole-link syntax here), and
+/// `None` for anything around or between links.
+pub(crate) fn parse_whole_wikilink(s: &str) -> Option<ParsedLink> {
+    let t = s.trim();
+    let inner = t.strip_prefix("[[")?.strip_suffix("]]")?;
+    if inner.contains("[[") || inner.contains("]]") {
+        return None;
+    }
+    parse_wikilink(inner, false, (0, t.len()))
 }
 
 /// Find all wikilinks, embeds and markdown links in `text` (a line or a
@@ -577,6 +592,53 @@ pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `parse_whole_wikilink` answers for every caller: Bases values, project sources and
+    /// frontmatter strings (their former private parsers' cases) as one table.
+    #[test]
+    fn whole_wikilink_covers_what_each_caller_needs() {
+        let whole =
+            |s: &str| parse_whole_wikilink(s).map(|l| (l.raw, l.subpath, l.display, l.kind));
+        let w = LinkKind::Wikilink;
+        assert_eq!(
+            whole("[[A Note#Head|shown]]"),
+            Some((
+                "A Note".into(),
+                Some("Head".into()),
+                Some("shown".into()),
+                w
+            ))
+        );
+        assert_eq!(whole(" [[Plain]] "), Some(("Plain".into(), None, None, w)));
+        assert_eq!(
+            whole("[[a/b#h]]"),
+            Some(("a/b".into(), Some("h".into()), None, w))
+        );
+        // A heading of the same note: a link with an empty target.
+        assert_eq!(
+            whole("[[#H]]"),
+            Some((String::new(), Some("H".into()), None, w))
+        );
+        // An empty alias is no alias; `\|` is a pipe written inside a table cell.
+        assert_eq!(whole("[[a|]]"), Some(("a".into(), None, None, w)));
+        assert_eq!(
+            whole("[[a\\|b]]"),
+            Some(("a".into(), None, Some("b".into()), w))
+        );
+        for not_whole in [
+            "[[]]",
+            "[[#]]",
+            "x [[a]] y",
+            "[[a]] [[b]]",
+            "![[a]]",
+            "[[a",
+            "a]]",
+            "[a](b)",
+            "",
+        ] {
+            assert_eq!(whole(not_whole), None, "{not_whole}");
+        }
+    }
 
     fn raws(s: &str) -> Vec<(String, LinkKind, Option<String>, Option<String>)> {
         scan_links(s)

@@ -7,6 +7,7 @@
 // Input is untrusted (LLM output): the only way to get an element or attribute through is the
 // allowlist below; the post-pass only creates elements itself.
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { DOC_LINK_ABSOLUTE, DOC_LINK_SCHEMES } from "@/lib/external-url";
 import { Marked, type Token, type Tokens } from "marked";
 import { decorateRenderedCallouts, toggleRenderedCallout } from "@/lib/callouts/dom";
 import { defaultCalloutTitle, parseCalloutHeader } from "@/lib/callouts/syntax";
@@ -14,6 +15,7 @@ import "@/lib/callouts/callouts.css";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 import { bindLinkActivation } from "@/lib/link-activation";
+import { matchWikiLinkAtStart, parseWikiLink } from "@/lib/wiki-links";
 import { openExternalUrl } from "../node/external-links";
 import {
   findCodeBlockProcessor,
@@ -35,15 +37,6 @@ const escapeHtml = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // ---------------------------------------------------------------- marked
-
-const WIKI = /^(!?)\[\[([^\]\n]+?)\]\]/;
-
-/** Splits `target#heading|alias` (the editor's parser handles the escaped-pipe-in-table case). */
-function splitWiki(inner: string): { target: string; alias: string | null } {
-  const i = inner.indexOf("|");
-  const target = (i < 0 ? inner : inner.slice(0, i)).replace(/\\$/, "").trim();
-  return { target, alias: i < 0 ? null : inner.slice(i + 1).trim() || null };
-}
 
 /** Callout (`> [!type]+ Title`) as the documented DOM, or null for a plain quote. The header is
  *  read from the first paragraph's first line; the title renders as inline markdown and the
@@ -100,11 +93,11 @@ const marked = new Marked({
       level: "inline",
       start: (src: string) => src.indexOf("[["),
       tokenizer(src: string) {
-        const m = WIKI.exec(src);
-        return m ? { type: "wikilink", raw: m[0], embed: m[1] === "!", inner: m[2] } : undefined;
+        const m = matchWikiLinkAtStart(src);
+        return m ? { type: "wikilink", ...m } : undefined;
       },
       renderer(token: any) {
-        const { target, alias } = splitWiki(token.inner as string);
+        const { target, alias } = parseWikiLink(token.inner as string);
         const t = escapeHtml(target);
         if (token.embed)
           return `<span class="internal-embed" data-href="${t}" data-alias="${escapeHtml(alias ?? "")}"></span>`;
@@ -144,9 +137,11 @@ const marked = new Marked({
 
 // ---------------------------------------------------------------- sanitizer
 
-const SAFE_URI =
-  /^(?:(?:https?|mailto|tel):|data:image\/(?:png|jpe?g|gif|webp|avif);base64,|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i;
-const EXTERNAL = /^(?:https?|mailto|tel):/i;
+const SAFE_URI = new RegExp(
+  `^(?:(?:${DOC_LINK_SCHEMES}):|data:image\\/(?:png|jpe?g|gif|webp|avif);base64,|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))`,
+  "i",
+);
+const EXTERNAL = DOC_LINK_ABSOLUTE;
 const DATA_IMAGE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[a-z0-9+/=\s]*$/i;
 const CLASS_OK =
   /^(?:internal-link|internal-embed|is-unresolved|external-link|tag|callout|callout-title|callout-title-inner|callout-content|callout-icon|callout-fold|is-collapsible|is-collapsed|math|math-inline|math-block|task-list-item-checkbox|language-[\w+#.-]{1,40})$/;

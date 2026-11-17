@@ -23,6 +23,7 @@ import { reconcileRefs } from "@features/agent/web/lib/draft-refs";
 import type { ContextRef } from "@features/agent/web/lib/events";
 import { createPillElement, pillRanges, type PillContext } from "@features/agent/web/lib/pill";
 import "@features/agent/tests/helpers/agent-composer";
+import { dispatchMouse } from "@tests/helpers/events";
 
 const PLAN: ContextRef = {
   kind: "note",
@@ -221,11 +222,7 @@ describe("whole-pill editing", () => {
     const sel = view.state.selection.main;
     expect(text(view).slice(sel.from, sel.to)).toBe(LONG);
     expect(pillAt(view.state, 5)).toEqual({ from: 3, to: 3 + LONG.length });
-    const fire = (type: string, init: MouseEventInit) => {
-      const e = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-      pill.dispatchEvent(e);
-      return e;
-    };
+    const fire = (type: string, init: MouseEventInit) => dispatchMouse(pill, type, init);
     fire("click", { ctrlKey: true }); // jsdom is not macOS: Ctrl is the modifier
     expect(openFileInNewTab).toHaveBeenLastCalledWith(`/v/${PLAN.path}`, { activate: false });
     fire("click", { ctrlKey: true, shiftKey: true });

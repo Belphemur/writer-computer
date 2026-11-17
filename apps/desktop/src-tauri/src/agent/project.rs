@@ -38,17 +38,27 @@ pub const KEY_COLOR: &str = "writer-project-color";
 
 #[derive(Deserialize)]
 struct ProjectColors {
-    colors: Vec<String>,
+    /// Each also has a `dark` and a `light` value, read by the web theme applier only.
+    colors: Vec<ProjectColorName>,
+}
+
+#[derive(serde::Deserialize)]
+struct ProjectColorName {
+    name: String,
 }
 
 /// The accent colors a project can have: `shared/project-colors.json`, the one list (the TS side
-/// imports the same file; each name is a `--project-color-<name>` theme token).
+/// imports the same file and sets each `--project-color-<name>` token from its light/dark pair;
+/// Rust needs the names only).
 pub fn project_colors() -> &'static [String] {
     static COLORS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     COLORS.get_or_init(|| {
         serde_json::from_str::<ProjectColors>(include_str!("../../../shared/project-colors.json"))
             .expect("project-colors.json is malformed")
             .colors
+            .into_iter()
+            .map(|c| c.name)
+            .collect()
     })
 }
 
@@ -298,10 +308,9 @@ fn parse_source(entry: &str) -> Option<ProjectSource> {
             raw,
         });
     }
-    if let Some(inner) = entry.strip_prefix("[[").and_then(|e| e.strip_suffix("]]")) {
-        // `[[Note|alias]]`, `[[Note#Heading]]`: the target is the part before `|` and `#`.
-        let target = inner.split(['|', '#']).next().unwrap_or("").trim();
-        let target = safe_rel_path(target)?;
+    if let Some(link) = crate::index::markdown::parse_whole_wikilink(entry) {
+        // `[[Note|alias]]`, `[[Note#Heading]]`: the target is the note, never the alias or heading.
+        let target = safe_rel_path(&link.raw)?;
         let path = if target.to_ascii_lowercase().ends_with(".md") {
             target
         } else {

@@ -5,6 +5,7 @@ import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { buildTableDOM, inlineTableHost, syncTableDOM } from "./table-cells";
 import { openTableFullscreen } from "./table-fullscreen";
 import { isTableSource, tableSourceField } from "./table-state";
+import { LINK_SELECTOR } from "@/lib/link-dom";
 
 export { parseTableCellInlineMarkdown, type TableCellInlineNode } from "./table-inline";
 
@@ -150,9 +151,7 @@ class TableWidget extends WidgetType {
   // Cells and handles handle their own events. Links keep going to the editor so a click on one
   // still follows it.
   ignoreEvent(event: Event): boolean {
-    return !(
-      event.target instanceof Element && event.target.closest(".cm-rendered-link, .cm-wiki-link")
-    );
+    return !(event.target instanceof Element && event.target.closest(LINK_SELECTOR));
   }
 
   get estimatedHeight(): number {

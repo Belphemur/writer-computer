@@ -1,11 +1,12 @@
 import { EditorView } from "@codemirror/view";
 import { type Extension, Prec } from "@codemirror/state";
-import { openPath as openWithOs, openUrl } from "@tauri-apps/plugin-opener";
+import { openPath as openWithOs } from "@tauri-apps/plugin-opener";
 import * as editorApi from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { buildSlugIndex, parseDocumentHeadings } from "@/hooks/use-document-headings";
 import type { DocumentHeading } from "@/hooks/use-document-headings";
 import {
+  openExternal,
   openPath,
   type LinkIntent,
   type LinkTarget,
@@ -17,6 +18,7 @@ import { linkUrlAt, rawUrlAt } from "@/lib/prosemark-core/links";
 import * as tauri from "@/lib/tauri";
 import { findOuterScroller, scrollPosToSafeTop } from "./editor-scroll";
 import { showEditorNotice } from "./editor-notice-store";
+import { RENDERED_LINK_CLASS } from "@/lib/link-dom";
 
 export function findHeadingBySlug(content: string, slug: string): DocumentHeading | undefined {
   return buildSlugIndex(parseDocumentHeadings(content, { maxDepth: 6, slugDepth: 6 })).get(slug);
@@ -67,7 +69,7 @@ export async function followLink(
   }
 
   if (target.kind === "external-url") {
-    await openUrl(target.url);
+    await openExternal(target.url);
     return;
   }
 
@@ -82,7 +84,7 @@ export function linkHrefAtPos(view: EditorView, pos: number): string | null {
 /** The href a rendered link element carries (`data-href`, set by table cells and other widgets
  *  that cannot be mapped back to a source position), if the element is inside one. */
 export function renderedLinkHrefOf(el: Element): string | null {
-  return el.closest<HTMLElement>(".cm-rendered-link")?.dataset.href ?? null;
+  return el.closest<HTMLElement>(`.${RENDERED_LINK_CLASS}`)?.dataset.href ?? null;
 }
 
 /** Resolve the link href under a mouse event, or null if it isn't a link.
@@ -96,7 +98,7 @@ function linkHrefAt(event: MouseEvent, view: EditorView): string | null {
     return htmlAnchor.getAttribute("href");
   }
 
-  const renderedLink = target.closest(".cm-rendered-link");
+  const renderedLink = target.closest(`.${RENDERED_LINK_CLASS}`);
   const isRenderedLink = renderedLink !== null;
   const isRawUrl = target.closest(".cm-url") !== null;
   if (!isRenderedLink && !isRawUrl) return null;

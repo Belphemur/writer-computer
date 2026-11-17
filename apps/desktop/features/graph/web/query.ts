@@ -2,6 +2,8 @@
 // notes", SPECs/graph-view-spec.md 3.3 and 3.4): words, `path:`, `tag:` and `[property:value]`,
 // all of which must match. Pure; the frontmatter is passed in when a term needs it.
 
+import { isWikiLink, parseWikiLinkValue } from "@/lib/wiki-links";
+
 export type Term =
   | { kind: "word"; value: string }
   | { kind: "path"; value: string }
@@ -71,8 +73,7 @@ export function valuesOf(v: unknown): string[] {
   if (Array.isArray(v)) return v.flatMap(valuesOf);
   if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") return [];
   const s = String(v).trim();
-  const m = /^\[\[([^\]|#]+)/.exec(s);
-  const text = (m ? m[1]! : s).trim();
+  const text = isWikiLink(s) ? parseWikiLinkValue(s).path : s;
   return text ? [text] : [];
 }
 

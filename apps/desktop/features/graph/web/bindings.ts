@@ -22,9 +22,13 @@ export const commands = {
 };
 
 /* Types */
+/**
+ *  `edges.kind`: where the edge comes from. The one vocabulary: the column text, the graph's
+ *  `kind` filters (view and `writer graph:*`) and the wire type all come from here. (The
+ *  parser's `LinkKind` is a different fact: how a link was written, four syntaxes; it is mapped
+ *  to this and `SYNTAX_*` once, in [`kind_and_syntax`].)
+ */
 export type EdgeKind = "link" | "embed" | "property";
-
-export type EdgeKindFilter = "link" | "embed" | "property";
 
 export type GraphEdge = {
 	id: number,
@@ -61,6 +65,11 @@ export type GraphSlice = {
 	edges: GraphEdge[],
 	/**  More nodes matched than `limit` allowed. */
 	truncated: boolean,
+	/**
+	 *  The node cap that applied (the request's `limit`, clamped): the one place the number
+	 *  lives, so the view never repeats it.
+	 */
+	limit: number,
 	epoch: number,
 };
 
@@ -70,7 +79,7 @@ export type GraphSliceRequest = {
 	/**  With a center: 1 to 3 hops (default 1). */
 	depth?: number | null,
 	/**  `link`, `embed`, `property`; none means all. */
-	kinds?: EdgeKindFilter[] | null,
+	kinds?: EdgeKind[] | null,
 	/**  Property names; none means all. */
 	labels?: string[] | null,
 	/**  Keep notes in these folders (and below). */

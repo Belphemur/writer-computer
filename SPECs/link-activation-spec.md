@@ -34,6 +34,9 @@ Repeating this per component is forbidden (`docs/consolidation.md`, `.agents/ski
    - Plain DOM (rendered markdown HTML, plugin `MarkdownRenderer`, widgets): `bindLinkActivation(container, resolve)`, a delegated listener on `click`, `auxclick` and `mousedown` where `resolve(el)` maps a clicked element to a target or `null`; returns a disposer.
    - CodeMirror: one `EditorView.domEventHandlers` extension built on the same `linkIntent` and `activateLink` (the wiki-link extension, Prosemark link widgets, embeds).
 
+4. **Wiki-link target** (same module): `wikiLinkTarget(raw, getSourcePath, isDisposed?, report?)` is the one factory for a `[[link]]` written as `raw`: it resolves through the vault index (`resolveVaultLink`), queues the `#fragment` of a `.base` link as the pending anchor, then opens for the gesture. The editor, rendered table cells, the agent pane, property values and Bases cells all call it; what differs is only `report(problem, raw, error)` (a notice, a log line). The `[[...]]` grammar itself (`isWikiLink`, `wikiLinkInner`, `parseWikiLink`, `wikiLinkScanner`, `matchWikiLinkAtStart`, `WIKI_SUGGEST_TRIGGER`) lives in `src/lib/wiki-links.ts`.
+5. **External opener** (same module): `openExternal(href)` is the only caller of the opener plugin's `openUrl`. The allowed schemes (`http`, `https`, `mailto`) are `EXTERNAL_PROTOCOLS` in `src/lib/external-url.ts`, shared with the Obsidian host's `shell.openExternal`. Core links are not filtered by it at the call (the opener's capability scope gates them); the plugin host keeps its own trust-gated, Rust-validated opener (`plugin_open_url`). The class names of rendered links are `RENDERED_LINK_CLASS`, `WIKI_LINK_CLASS` and `LINK_SELECTOR` in `src/lib/link-dom.ts`.
+
 A new clickable reference must use one of the three bindings. Hand-written `onAuxClick`, `button === 1` or `metaKey` checks for a link are a review failure; a test enforces it (section 4).
 
 ## 3. Surfaces (inventory 2026-11-17, all must use the bindings)
@@ -54,6 +57,7 @@ Today each of these handles the middle button on its own, or not at all:
 - `link-activation.test.ts`: the full gesture table above, for both platforms, as data-driven cases.
 - One test per binding (React, DOM delegate, CodeMirror) dispatching `click`, `auxclick` (button 1), `mousedown` (button 1, default prevented), `Cmd`/`Ctrl`(+`Shift`)+click and `Enter`, asserting the action called and its `activate` flag.
 - An inventory guard (like `tests/import-boundaries.test.ts`): no file outside `src/lib/link-activation.ts` and the tab components contains `button === 1`, `onAuxClick` or `"auxclick"`.
+- The same guard also fails a direct `openUrl` import from the opener plugin, a hand-written scheme list (`mailto`) and a `[[` bracket regex outside `wiki-links.ts`, with a short allowlist of reasoned exceptions in the test.
 - Background open: `openFileInNewTab(path, { activate: false })` adds the tab without changing the active tab or focus.
 
 ## 5. Non-goals

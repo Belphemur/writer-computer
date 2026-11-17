@@ -17,15 +17,16 @@ import {
 } from "@codemirror/autocomplete";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as tauri from "@/lib/tauri";
-import { setPendingAnchor } from "@/lib/pending-anchor";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
-import { linkActivationExtension, openPath, type LinkTarget } from "@/lib/link-activation";
+import { linkActivationExtension, wikiLinkTarget } from "@/lib/link-activation";
+import { WIKI_LINK_CLASS } from "@/lib/link-dom";
 import {
   wikiSuggestions,
   parseWikiLink,
   parseWikiImageEmbedTarget,
   resolveWikiImage,
-  resolveWikiLink,
+  WIKI_SUGGEST_TRIGGER,
+  wikiLinkScanner,
 } from "@/lib/wiki-links";
 import { attachStableImageHeight } from "@/lib/prosemark-core/fold/image";
 import { getEffectiveSelectionRanges } from "./drag-selection-gate";
@@ -35,10 +36,9 @@ import { renderedRanges, renderedRangesChanged } from "@/lib/prosemark-core/util
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Group 1: optional `!` embed prefix (Obsidian image embeds). Group 2: inner
-// target. The prefix must be captured here — treating `![[img.png]]` as a
-// plain wiki link used to render a link widget with a stray literal `!`.
-const WIKI_LINK_RE = /(!?)\[\[([^\]]+)\]\]/g;
+// `wikiLinkScanner()` captures the optional `!` embed prefix (Obsidian image embeds) apart from
+// the inner target: treating `![[img.png]]` as a plain wiki link used to render a link widget
+// with a stray literal `!`.
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "InlineCode", "CodeBlock", "CodeText", "CodeInfo"]);
 
@@ -67,15 +67,12 @@ function extractWikiTarget(
   pos: number,
 ): string | null {
   const line = doc.lineAt(pos);
-  const text = line.text;
 
-  WIKI_LINK_RE.lastIndex = 0;
-  let match;
-  while ((match = WIKI_LINK_RE.exec(text)) !== null) {
+  for (const match of line.text.matchAll(wikiLinkScanner())) {
     const matchStart = line.from + match.index;
     const matchEnd = matchStart + match[0].length;
     if (pos >= matchStart && pos <= matchEnd) {
-      return match[2];
+      return match[2]!;
     }
   }
 
@@ -97,7 +94,7 @@ class WikiLinkWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
-    span.className = "cm-wiki-link";
+    span.className = WIKI_LINK_CLASS;
     span.textContent = parseWikiLink(this.target).displayText;
     return span;
   }
@@ -203,9 +200,7 @@ function buildDecorations(view: EditorView, getFilePath: () => string): Decorati
 
   for (const { from, to } of renderedRanges(view)) {
     const text = doc.sliceString(from, to);
-    WIKI_LINK_RE.lastIndex = 0;
-    let match;
-    while ((match = WIKI_LINK_RE.exec(text)) !== null) {
+    for (const match of text.matchAll(wikiLinkScanner())) {
       const inner = match[2]!;
       const embedTarget = match[1] ? parseWikiImageEmbedTarget(inner) : null;
       // Non-image embeds (note transclusions, PDFs) keep the plain link
@@ -261,7 +256,7 @@ function wikiLinkDecorations(getFilePath: () => string) {
 // ---------------------------------------------------------------------------
 
 async function wikiLinkCompletions(context: CompletionContext): Promise<CompletionResult | null> {
-  const match = context.matchBefore(/\[\[([^\]#^|]*)/);
+  const match = context.matchBefore(WIKI_SUGGEST_TRIGGER);
   if (!match) return null;
 
   const queryStart = match.from + 2;
@@ -310,7 +305,7 @@ async function wikiLinkCompletions(context: CompletionContext): Promise<Completi
 /** The raw target a rendered wiki link element carries (`data-wiki-target`, set by table cells),
  *  if the element is inside one. */
 export function wikiTargetOf(el: Element): string | null {
-  return el.closest<HTMLElement>(".cm-wiki-link")?.dataset.wikiTarget ?? null;
+  return el.closest<HTMLElement>(`.${WIKI_LINK_CLASS}`)?.dataset.wikiTarget ?? null;
 }
 
 /** Resolve the wiki-link target under a mouse event, or null if it isn't a
@@ -319,7 +314,7 @@ export function wikiTargetOf(el: Element): string | null {
 function wikiTargetAt(event: MouseEvent, view: EditorView): string | null {
   const target = event.target;
   if (!(target instanceof Element)) return null;
-  const wikiLink = target.closest(".cm-wiki-link");
+  const wikiLink = target.closest(`.${WIKI_LINK_CLASS}`);
   if (!wikiLink) return null;
 
   const carried = wikiTargetOf(target);
@@ -327,31 +322,6 @@ function wikiTargetAt(event: MouseEvent, view: EditorView): string | null {
   const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
   if (pos === null) return null;
   return extractWikiTarget(view.state.doc, pos);
-}
-
-/** The target of a wiki link written as `rawTarget`: it resolves against the note, then opens
- *  for the gesture. One path for the editor's click handler and for rendered cells outside it
- *  (the fullscreen table). */
-export function wikiLinkTarget(
-  rawTarget: string,
-  getFilePath: () => string,
-  isDisposed: () => boolean,
-): LinkTarget {
-  return {
-    kind: "custom",
-    open: (intent) => {
-      if (!getWorkspaceRoot()) return;
-      void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
-        .then((result) => {
-          if (isDisposed() || result.kind !== "internal") return;
-          if (result.fragment) setPendingAnchor(result.path, result.fragment);
-          return openPath(result.path, intent);
-        })
-        .catch((error) => {
-          if (!isDisposed()) console.error("[editor] Failed to follow wiki link:", error);
-        });
-    },
-  };
 }
 
 /** Left, middle and Cmd/Ctrl clicks on a wiki link (`lib/link-activation.ts`): the press is
@@ -362,7 +332,9 @@ function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boole
     linkActivationExtension((event, view) => {
       const rawTarget = wikiTargetAt(event, view);
       if (rawTarget === null) return null;
-      return wikiLinkTarget(rawTarget, getFilePath, isDisposed);
+      return wikiLinkTarget(rawTarget, getFilePath, isDisposed, (_problem, _raw, error) => {
+        if (error) console.error("[editor] Failed to follow wiki link:", error);
+      });
     }),
   );
 }
@@ -372,7 +344,7 @@ function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boole
 // ---------------------------------------------------------------------------
 
 const wikiLinkTheme = EditorView.baseTheme({
-  ".cm-wiki-link": {
+  [`.${WIKI_LINK_CLASS}`]: {
     color: "var(--pm-link-color, #7cacf8)",
     cursor: "pointer",
     textDecoration: "none",

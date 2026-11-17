@@ -68,6 +68,44 @@ export function parseWikiLink(raw: string): ParsedWikiLink {
   };
 }
 
+// -- The `[[...]]` grammar: the one place that knows its brackets --------------------------------
+
+const WIKI_LINK_VALUE_RE = /^\[\[[^\]]+\]\]$/;
+
+/** Whether `value` (trimmed) is exactly one `[[...]]` link: a property value, a cell. */
+export function isWikiLink(value: string): boolean {
+  return WIKI_LINK_VALUE_RE.test(value.trim());
+}
+
+/** The text between the brackets of a link value (`[[A|b]]` -> `A|b`); a value without brackets
+ *  comes back trimmed. */
+export function wikiLinkInner(value: string): string {
+  return value.trim().replace(/^\[\[|\]\]$/g, "");
+}
+
+/** [`parseWikiLink`] of a bracketed value. */
+export function parseWikiLinkValue(value: string): ParsedWikiLink {
+  return parseWikiLink(wikiLinkInner(value));
+}
+
+/** Every `[[...]]` and `![[...]]` in a text (single line each): group 1 is the `!` of an embed,
+ *  group 2 the inner text. A fresh global RegExp per call, so no `lastIndex` is shared. */
+export function wikiLinkScanner(): RegExp {
+  return /(!?)\[\[([^\]\n]+?)\]\]/g;
+}
+
+/** The link that starts `src` (a tokenizer's position), or null. */
+export function matchWikiLinkAtStart(
+  src: string,
+): { raw: string; embed: boolean; inner: string } | null {
+  const m = /^(!?)\[\[([^\]\n]+?)\]\]/.exec(src);
+  return m ? { raw: m[0], embed: m[1] === "!", inner: m[2]! } : null;
+}
+
+/** The `[[query` being typed right before the caret: group 1 is the query. The `[[` autocomplete
+ *  of the editor and of the property inputs share it. */
+export const WIKI_SUGGEST_TRIGGER = /\[\[([^\]#^|]*)$/;
+
 /**
  * Normalize a raw wiki-link target string for resolution:
  * trim whitespace, normalize backslashes, strip .md/.markdown extension.

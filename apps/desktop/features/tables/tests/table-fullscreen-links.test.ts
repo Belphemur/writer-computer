@@ -17,19 +17,25 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/link-activation", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/link-activation")>()),
   activateLink: mocks.activateLink,
+  wikiLinkTarget: mocks.wikiTarget,
 }));
 // The openers are the editor's (tested with it); here they are tagged stand-ins, and the element
 // readers are the real contract of the cell markup.
-vi.mock("@/components/editor-area/wiki-link-extension", () => ({
-  wikiLinkTarget: mocks.wikiTarget,
-  wikiTargetOf: (el: Element) =>
-    el.closest<HTMLElement>(".cm-wiki-link")?.dataset.wikiTarget ?? null,
-}));
-vi.mock("@/components/editor-area/link-navigation", () => ({
-  linkTargetFor: mocks.hrefTarget,
-  renderedLinkHrefOf: (el: Element) =>
-    el.closest<HTMLElement>(".cm-rendered-link")?.dataset.href ?? null,
-}));
+vi.mock("@/components/editor-area/wiki-link-extension", async () => {
+  const { WIKI_LINK_CLASS } = await import("@/lib/link-dom");
+  return {
+    wikiTargetOf: (el: Element) =>
+      el.closest<HTMLElement>(`.${WIKI_LINK_CLASS}`)?.dataset.wikiTarget ?? null,
+  };
+});
+vi.mock("@/components/editor-area/link-navigation", async () => {
+  const { RENDERED_LINK_CLASS } = await import("@/lib/link-dom");
+  return {
+    linkTargetFor: mocks.hrefTarget,
+    renderedLinkHrefOf: (el: Element) =>
+      el.closest<HTMLElement>(`.${RENDERED_LINK_CLASS}`)?.dataset.href ?? null,
+  };
+});
 
 if (!Range.prototype.getClientRects) {
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
@@ -39,7 +45,9 @@ if (!Range.prototype.getBoundingClientRect) {
     ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect;
 }
 
+import { dispatchMouse } from "@tests/helpers/events";
 import { editorNotePath } from "@/lib/editor-views";
+import { RENDERED_LINK_CLASS, WIKI_LINK_CLASS } from "@/lib/link-dom";
 import { setTableYieldProbe, tableEditing } from "../web/table-editing";
 import { tableDecorations } from "../web/table-decorations";
 import { closeTableFullscreen, openTableFullscreen } from "../web/table-fullscreen";
@@ -79,11 +87,6 @@ function make(doc = DOC, extra: Extension[] = []): EditorView {
 const overlay = () => document.querySelector<HTMLElement>(".cm-table-fullscreen");
 const cellText = (root: ParentNode, row: number, col: number) =>
   root.querySelector<HTMLElement>(`[data-row="${row}"][data-col="${col}"] .cm-table-cell-text`)!;
-const press = (el: Element, type: string, init: MouseEventInit = {}) => {
-  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-  el.dispatchEvent(ev);
-  return ev;
-};
 
 beforeEach(() => {
   setTableYieldProbe(() => false);
@@ -108,12 +111,16 @@ describe("links in the fullscreen table", () => {
     ]) {
       expect(cellText(overlay()!, row, col).innerHTML).toBe(cellText(inline, row, col).innerHTML);
     }
-    expect(cellText(overlay()!, 0, 0).querySelector(".cm-wiki-link")?.textContent).toBe(
+    expect(cellText(overlay()!, 0, 0).querySelector(`.${WIKI_LINK_CLASS}`)?.textContent).toBe(
       "Ada Lovelace",
     );
-    expect(cellText(overlay()!, 1, 0).querySelector(".cm-wiki-link")?.textContent).toBe("Grace");
-    expect(cellText(overlay()!, 0, 1).querySelector(".cm-rendered-link")?.textContent).toBe("site");
-    expect(cellText(overlay()!, 1, 1).querySelector(".cm-rendered-link")?.textContent).toBe(
+    expect(cellText(overlay()!, 1, 0).querySelector(`.${WIKI_LINK_CLASS}`)?.textContent).toBe(
+      "Grace",
+    );
+    expect(cellText(overlay()!, 0, 1).querySelector(`.${RENDERED_LINK_CLASS}`)?.textContent).toBe(
+      "site",
+    );
+    expect(cellText(overlay()!, 1, 1).querySelector(`.${RENDERED_LINK_CLASS}`)?.textContent).toBe(
       "https://example.com/b",
     );
   });
@@ -121,9 +128,9 @@ describe("links in the fullscreen table", () => {
   test("a click opens a wiki link through activateLink and closes the overlay", () => {
     const v = make();
     openTableFullscreen(v, tableFrom);
-    const link = cellText(overlay()!, 0, 0).querySelector(".cm-wiki-link")!;
-    expect(press(link, "mousedown").defaultPrevented).toBe(true); // the cell does not take the press
-    press(link, "click");
+    const link = cellText(overlay()!, 0, 0).querySelector(`.${WIKI_LINK_CLASS}`)!;
+    expect(dispatchMouse(link, "mousedown").defaultPrevented).toBe(true); // the cell does not take the press
+    dispatchMouse(link, "click");
     expect(mocks.wikiTarget).toHaveBeenCalledWith(
       "Ada Lovelace",
       expect.any(Function),
@@ -139,8 +146,8 @@ describe("links in the fullscreen table", () => {
   test("a middle click opens a background tab and keeps the overlay open", () => {
     const v = make();
     openTableFullscreen(v, tableFrom);
-    const link = cellText(overlay()!, 1, 0).querySelector(".cm-wiki-link")!;
-    press(link, "auxclick", { button: 1 });
+    const link = cellText(overlay()!, 1, 0).querySelector(`.${WIKI_LINK_CLASS}`)!;
+    dispatchMouse(link, "auxclick", { button: 1 });
     expect(mocks.activateLink).toHaveBeenCalledWith(
       expect.objectContaining({ tag: "wiki:Notes/Grace\\|Grace" }),
       "new-tab-background",
@@ -151,7 +158,7 @@ describe("links in the fullscreen table", () => {
   test("a URL opens without closing the overlay, a Markdown link to a note does close it", () => {
     const v = make();
     openTableFullscreen(v, tableFrom);
-    press(cellText(overlay()!, 0, 1).querySelector(".cm-rendered-link")!, "click");
+    dispatchMouse(cellText(overlay()!, 0, 1).querySelector(`.${RENDERED_LINK_CLASS}`)!, "click");
     expect(mocks.hrefTarget).toHaveBeenCalledWith(
       "https://example.com/a",
       v,
@@ -169,8 +176,8 @@ describe("links in the fullscreen table", () => {
     const v = make();
     openTableFullscreen(v, tableFrom);
     const text = cellText(overlay()!, 0, 0);
-    press(text, "mousedown"); // not on the link: the press is left alone
-    expect(press(text, "mousedown").defaultPrevented).toBe(false);
+    dispatchMouse(text, "mousedown"); // not on the link: the press is left alone
+    expect(dispatchMouse(text, "mousedown").defaultPrevented).toBe(false);
     // The note's document changes underneath: the cell re-renders and its link still opens.
     v.dispatch({
       changes: {
@@ -179,9 +186,9 @@ describe("links in the fullscreen table", () => {
         insert: "Eva",
       },
     });
-    const link = cellText(overlay()!, 0, 0).querySelector(".cm-wiki-link")!;
+    const link = cellText(overlay()!, 0, 0).querySelector(`.${WIKI_LINK_CLASS}`)!;
     expect(link.textContent).toBe("Eva Lovelace");
-    press(link, "click");
+    dispatchMouse(link, "click");
     expect(mocks.activateLink).toHaveBeenCalledWith(
       expect.objectContaining({ tag: "wiki:Eva Lovelace" }),
       "current",

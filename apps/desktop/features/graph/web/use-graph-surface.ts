@@ -2,13 +2,13 @@
 // config of the surface, the slice request it implies, the slice, the frontmatter the config needs,
 // and the spec and groups the canvas draws. The two surfaces differ only in the arguments.
 import { useEffect, useMemo } from "react";
-import type { GraphEdgeKind, GraphSliceArgs } from "./ipc";
-import type { SurfaceConfig, SurfaceId } from "./config";
+import type { GraphSliceArgs } from "./ipc";
+import { EDGE_KINDS, KIND_FILTER, type SurfaceConfig, type SurfaceId } from "./config";
 import { aggregate, type Overview } from "./aggregate";
 import { computeGroups, type GroupsResult } from "./groups";
 import { buildSpec, filtersNeedProps, propertyLabels, type GraphSpec } from "./model";
 import { needsProps, parseQuery } from "./query";
-import { GRAPH_LIMIT, useGraphSettings } from "./settings";
+import { useGraphSettings } from "./settings";
 import { useGraphConfig } from "./store";
 import { useGraphData, type GraphData } from "./use-graph-data";
 import { useNoteProps } from "./use-note-props";
@@ -38,12 +38,8 @@ export function sliceArgs(
   cardProperties: readonly string[] = [],
 ): GraphSliceArgs {
   const f = config.filters;
-  const kinds: GraphEdgeKind[] = [];
-  if (f.links) kinds.push("link");
-  if (f.embeds) kinds.push("embed");
-  if (f.properties) kinds.push("property");
   const args: GraphSliceArgs = {
-    kinds,
+    kinds: EDGE_KINDS.filter((k) => f[KIND_FILTER[k]]),
     includeUnresolved: f.missing,
     ...(cardProperties.length ? { cardProperties: [...cardProperties] } : {}),
     ...(f.includeFolders.length ? { folders: f.includeFolders } : {}),
@@ -52,7 +48,6 @@ export function sliceArgs(
     args.center = a.center;
     args.depth = a.depth;
   }
-  if (a.surface === "global" && args.center === undefined) args.limit = GRAPH_LIMIT;
   return args;
 }
 

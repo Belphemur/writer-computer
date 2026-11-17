@@ -4,7 +4,7 @@
 // model is testable without Tauri; `vault-io-tauri.ts` implements it on the app's commands.
 import { parse as yamlParse } from "yaml";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { parseWikiLink } from "@/lib/wiki-links";
+import { parseWikiLink, wikiLinkScanner } from "@/lib/wiki-links";
 import { Events, callerPluginId, type EventRef } from "./core";
 import { logger } from "@/lib/logger";
 import { recordPluginMutation } from "./churn-guard";
@@ -690,8 +690,8 @@ export function parseNoteMetadata(raw: string): CachedMetadata {
 
   const links: LinkCache[] = [];
   const embeds: LinkCache[] = [];
-  for (const m of text.matchAll(/(!?)\[\[([^\]\n]+?)\]\]/g)) {
-    const w = parseWikiLink(m[2]);
+  for (const m of text.matchAll(wikiLinkScanner())) {
+    const w = parseWikiLink(m[2]!);
     const link = w.fragment !== null ? `${w.path}#${w.fragment}` : w.path;
     const cache: LinkCache = {
       link,
@@ -761,10 +761,10 @@ function frontmatterLinks(
   const visit = (key: string, value: unknown, depth: number): void => {
     if (depth > 6) return;
     if (typeof value === "string") {
-      for (const m of value.matchAll(/\[\[([^\]\n]+?)\]\]/g)) {
-        const w = parseWikiLink(m[1]);
+      for (const m of value.matchAll(wikiLinkScanner())) {
+        const w = parseWikiLink(m[2]!);
         const link = w.fragment !== null ? `${w.path}#${w.fragment}` : w.path;
-        found.push({ key, link, original: m[0], displayText: w.alias ?? link });
+        found.push({ key, link, original: m[0].slice(m[1]!.length), displayText: w.alias ?? link });
       }
     } else if (Array.isArray(value)) {
       value.forEach((v, i) => visit(`${key}.${i}`, v, depth + 1));

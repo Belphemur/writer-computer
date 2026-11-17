@@ -1,4 +1,5 @@
 // Small modules: `net`, `zlib`, `electron`, `url`, `module`.
+import { EXTERNAL_PROTOCOLS } from "@/lib/external-url";
 import { recordPluginError } from "../error-log";
 import { messageOf, nodeError } from "./errors";
 import { Server } from "./http";
@@ -74,8 +75,6 @@ export function setOpenExternal(fn: OpenExternal | null): void {
   openExternalImpl = fn ?? defaultOpenExternal;
 }
 
-const OPENABLE = new Set(["http:", "https:", "mailto:"]);
-
 const notSupported = (what: string) => nodeError("ENOSYS", `${what} is not supported in Writer`);
 
 /**
@@ -119,7 +118,7 @@ export const electronModule = {
       } catch {
         throw nodeError("ERR_INVALID_URL", `Invalid URL: ${String(url)}`);
       }
-      if (!OPENABLE.has(protocol))
+      if (!EXTERNAL_PROTOCOLS.has(protocol))
         throw nodeError(
           "EPERM",
           `shell.openExternal: scheme ${protocol} is not allowed (http, https, mailto only)`,

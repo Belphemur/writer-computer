@@ -1,7 +1,7 @@
 // Pure model of a base embedded in a note: what `![[x.base#View|alias]]` and a fenced `base`
 // block mean. The editor widget (`web/embed-decorations.ts`) finds the ranges; this
 // file decides what they are, so the grammar lives in one place.
-import { parseWikiLink } from "@/lib/wiki-links";
+import { isWikiLink, parseWikiLink, wikiLinkInner } from "@/lib/wiki-links";
 import { isBasePath } from "@/lib/paths";
 
 export type BaseEmbed =
@@ -19,11 +19,10 @@ export function parseBaseEmbedTarget(inner: string): BaseEmbed | null {
 }
 
 /** A whole line that is exactly one `![[...]]` embed of a base (surrounding blanks allowed). */
-const EMBED_LINE = /^[ \t]*!\[\[([^\]\n]+)\]\][ \t]*$/;
-
 export function parseBaseEmbedLine(text: string): BaseEmbed | null {
-  const match = EMBED_LINE.exec(text);
-  return match ? parseBaseEmbedTarget(match[1]!) : null;
+  const line = text.trim();
+  if (!line.startsWith("!") || !isWikiLink(line.slice(1))) return null;
+  return parseBaseEmbedTarget(wikiLinkInner(line.slice(1)));
 }
 
 /** Does the fence info string name a base block (```base, case-insensitive, nothing else)? */
