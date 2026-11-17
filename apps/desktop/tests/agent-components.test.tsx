@@ -348,6 +348,13 @@ describe("PermissionCard", () => {
     expect(decided).toEqual([]);
   });
 
+  it("says which sub-agent asks, and nothing for the main agent", async () => {
+    await mount();
+    expect($("[data-agent-permission-by]")).toBeNull();
+    await mount({ ...REQ, by: "worker" });
+    expect($("[data-agent-permission-by]")!.textContent).toBe("asked by worker");
+  });
+
   it("Show details reveals the reason and the full input", async () => {
     await mount();
     expect($("pre")).toBeNull();

@@ -16,12 +16,23 @@ Writer is also a notebook for agents. A skill is a folder with a `SKILL.md` and 
 
 ### What is shown
 
-- **Code and text extensions**, setting `files.code-extensions` (list, global; default: py pyi ts tsx js jsx mjs cjs json jsonc yaml yml toml rs go java kt kts swift c h cpp cc cxx hpp hh cs rb php sh bash zsh fish sql css scss less html htm xml lua r scala dart ex exs tf tfvars ini conf cfg csv tsv log txt vue svelte graphql proto gradle ps1 bat dockerfile mk) plus the names `Dockerfile`, `Makefile`, `GNUmakefile`. `svg` stays an image, `.ipynb` is not listed. The default lives in `shared/settings.schema.json`; the other shared rules in `shared/code-files.json`; both Rust (`code_files.rs`) and TypeScript (`src/lib/code-files.ts`) read them.
+- **Code and text extensions**, setting `files.code-extensions` (list, global; default: py pyi ts tsx js jsx mjs cjs json jsonc yaml yml toml rs go java kt kts swift c h cpp cc cxx hpp hh cs rb php sh bash zsh fish sql css scss less html htm xml lua r scala dart ex exs tf tfvars ini conf cfg csv tsv log txt vue svelte graphql proto gradle ps1 bat dockerfile mk) plus the names `Dockerfile`, `Makefile`, `GNUmakefile`. `svg` is an image (see "Images"), `.ipynb` is not listed. The default lives in `shared/settings.schema.json`; the other shared rules in `shared/code-files.json`; both Rust (`code_files.rs`) and TypeScript (`src/lib/code-files.ts`) read them.
 - **Never shown, never opened as text, whatever the setting:** `.env`, `.env.*`, `*.env`, `.pem/.key/.p12/.pfx/.keystore`, `id_rsa*`/`id_ed25519*`/`id_ecdsa*`, and names whose stem contains `secret`, `credential`, `password`, `private-key`. Dotfiles are hidden anyway.
 - **Ignored folders**, setting `files.ignored-folders` (list, global; default `node_modules target dist build out .venv venv __pycache__ .next .nuxt .svelte-kit .turbo .cache .gradle .mypy_cache .pytest_cache .ruff_cache .tox coverage vendor Pods DerivedData`): a folder with such a name is hidden at any depth from the tree, quick open, the index and the watcher. Replacing the list replaces the default. A vault `.gitignore` is also respected (already true before this change; cheap and safe because the `ignore` crate matcher already existed). Note: a notes folder called `build` or `out` is hidden by default; edit the list to show it.
 - **Dot-folders stay hidden** (`.obsidian`, `.git`, `.chats`, `.writer`, any other), with one explicit exception, setting `files.show-agent-folders` (boolean, global, default on): the `skills` subtree of a top-level `.agents` and `.claude`. `.agents` or `.claude` appears only when it holds a `skills` folder; everything else inside them (`.claude/settings.json`, `settings.local.json`, credentials) stays hidden, as does any dotfile or `.git`/ignored folder inside a skill (`.agents/skills/x/.env`, `.../node_modules`). A `.agents` below the vault root is not special. A vault `.gitignore` that lists `.agents/` hides it.
 - **Symlinks** follow the rule in "Symlinks" below (a link to a folder or file of the same vault is shown; anything else is skipped).
 - The `index` setting change takes effect for the index at the next workspace open (the tree reads the filesystem live).
+
+### Images
+
+Setting `files.show-images` (boolean, global, default on) adds an `images` kind to the one policy (`code_files::Policy.show_images`, `is_image_name_with`). Images are the renderable image extensions of `shared/attachments.json` (`renderExtensions`: png jpg jpeg gif webp svg avif bmp; heic is not drawn by the webview, so it is not listed), read once there for the attachment feature and here; the list is not copied.
+
+- **One policy, no per-caller list.** The sidebar listing (`is_listed_file`, `markdown_file_entry`), `NameCache` (`listed_sql_predicate`, `is_listed_name`) and `is_listed_row` all go through it, so images follow the same folder rules as code: hidden folders, the ignored-folder list, `.gitignore`, symlinks (`rel_is_visible`). The watcher filters by folder, not by extension, so it needs no image rule. Turning the setting off hides images from the tree and quick open (`NameCache` reloads its rows at the next workspace open, like the extension list).
+- **Index:** it already stores a `files` row for every visible file, images included, so `![[x.png]]` resolves by file name through the usual resolver and `relocate` rewrites `![[old.png]]`, `![[dir/old.png]]` and `[a](dir/old.png)` when an image is renamed or moved. Image content is never read or indexed (metadata only).
+- **Size guard:** listing never reads the file. The size limits above (read-only, too large) apply to text; an image is drawn by the webview from the asset protocol, so no byte limit applies to opening it.
+- **Opening:** page kind `image` (`page-kinds/image.ts`, `forPath` for the renderable extensions, whatever the setting), read-only viewer `components/image-viewer/`: fit to width (never enlarged past its own size), zoom with Cmd+= / Cmd+- / Cmd+0 (while an image tab is active these chords go to the viewer through `lib/zoom-target.ts`, not to the editor text zoom) and pinch (ctrl+wheel and WebKit gesture events), checkerboard behind transparency, footer with the file name, pixel size and zoom. Tab, Quick Open and tree labels keep the extension (`noteLabel`). Rename, move, delete, duplicate and the context menu are the generic ones.
+- **Glyph:** hugeicons `ImageIcon` for every image name.
+- Not done: an open image tab does not reload when the file changes on disk; no rotate, no EXIF.
 
 ### Tree
 
@@ -78,6 +89,6 @@ Nothing is read outside the vault (unchanged `authorize_path`/`confine`); nothin
 ## Not done / known gaps
 
 - No full-text search over code contents; no "open at line" for code hits.
-- No `.ipynb`; `svg` stays an image; Terraform, Elixir, GraphQL, batch files, Makefile and `.conf` have no highlighting in the shared language data.
+- No `.ipynb`; `svg` is an image (listed by `files.show-images`, opened in the image viewer, never as text); Terraform, Elixir, GraphQL, batch files, Makefile and `.conf` have no highlighting in the shared language data.
 - Changing the ignore list or the agent-folder switch re-applies to the index at the next workspace open.
 - The code editor has no autocompletion or linting.

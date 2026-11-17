@@ -1,6 +1,6 @@
 // The one registry of Settings sections. The sidebar, the content pane, the "open Settings at
-// section X" entry points and the tests all derive from `SETTINGS_SECTIONS`; plugin sections
-// are appended at runtime by `buildSettingsNav`. No React here so stores and hooks can import it.
+// section X" entry points and the tests all derive from `SETTINGS_SECTIONS`; the pages features
+// contribute (the Obsidian host's plugin pages among them) are merged in by `buildSettingsNav`. No React here so stores and hooks can import it.
 import type { ComponentType } from "react";
 import { FEATURE_GROUP_LABEL } from "@/lib/features/origin";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
@@ -10,7 +10,6 @@ import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 export type SectionBlock =
   | { type: "category"; category: string }
   | { type: "themes" }
-  | { type: "community-plugins" }
   | { type: "secrets" }
   | { type: "logs" }
   /** Generated from the feature manifests: a toggle per feature, its info and failure state. */
@@ -28,8 +27,6 @@ export interface SettingsSection {
   blocks: readonly SectionBlock[];
   /** Sidebar position among all sections, features' ones included (`FeatureNavSection.order`). */
   order: number;
-  /** Hidden when no workspace is open (plugins belong to a vault). */
-  requiresWorkspace?: boolean;
 }
 
 const category = (name: string): SectionBlock => ({ type: "category", category: name });
@@ -84,14 +81,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     group: "General",
     blocks: [category("Logs"), { type: "logs" }],
   },
-  {
-    id: "community-plugins",
-    order: 200,
-    label: "Manage plugins",
-    group: "Community plugins",
-    blocks: [category("Community plugins"), { type: "community-plugins" }],
-    requiresWorkspace: true,
-  },
 ];
 
 export const DEFAULT_SETTINGS_SECTION = SETTINGS_SECTIONS[0].id;
@@ -101,6 +90,10 @@ export const THEME_CATEGORY = "Theme";
 
 /** Schema category rendered by the Agent feature's own section, not by the generic category renderer. */
 export const AGENT_CATEGORY = "Agent";
+
+/** Schema category of the community plugins' settings, rendered by the Obsidian host feature's
+ *  "Manage plugins" page (the Obsidian host feature). */
+export const COMMUNITY_PLUGINS_CATEGORY = "Community plugins";
 
 /** Schema category of the features' kill switches, rendered by `FeaturesSection`. */
 export const FEATURES_CATEGORY = "Features";
@@ -115,6 +108,7 @@ export function unassignedCategories(): string[] {
   claimed.add(THEME_CATEGORY);
   claimed.add(AGENT_CATEGORY);
   claimed.add(FEATURES_CATEGORY);
+  claimed.add(COMMUNITY_PLUGINS_CATEGORY);
   return [...new Set(SETTINGS_SCHEMA.map((d) => d.category))].filter((c) => !claimed.has(c));
 }
 
@@ -124,14 +118,6 @@ export function pluginSectionId(owner: string, tabId: string): string {
   return `plugin:${owner}:${tabId}`;
 }
 
-/** One plugin PluginSettingTab as the nav sees it. */
-export interface PluginTabInfo {
-  owner: string;
-  tabId: string;
-  /** Sidebar label: the tab's name, else the plugin's name. */
-  label: string;
-}
-
 /** A sidebar page a feature contributes (its own, or the generated one for a feature with
  *  settings or secrets and no page of its own). Shown only while the feature is on. */
 export interface FeatureNavSection {
@@ -139,18 +125,24 @@ export interface FeatureNavSection {
   label: string;
   order: number;
   load: () => Promise<{ default: ComponentType }>;
+  /** The sidebar group (`SettingsSectionContribution.group`), "Features" when absent. */
+  group?: SettingsGroup;
+  /** Hidden when no workspace is open. */
+  requiresWorkspace?: boolean;
+  /** Small count next to the label (plugin updates on "Manage plugins"). */
+  badge?: number;
+  /** A plain button after the last group while this page is in the sidebar. */
+  footer?: { label: string; run: () => void };
 }
 
 export interface NavItem {
   id: string;
   label: string;
   group: SettingsGroup;
-  /** Static section, or the plugin tab this entry mounts. */
+  /** Static section this entry mounts. */
   section?: SettingsSection;
-  plugin?: PluginTabInfo;
   /** The feature page this entry mounts. */
   feature?: FeatureNavSection;
-  /** Small count shown next to the label (plugin updates on "Manage plugins"). */
   badge?: number;
 }
 
@@ -161,51 +153,36 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** The sidebar: registry sections (minus the ones needing a workspace when none is open), the
- *  feature pages under their own "Features" group, then one entry per plugin settings tab, grouped
- *  in `SETTINGS_GROUPS` order (an empty group is not listed, so no feature page, no divider). */
+/** The sidebar: registry sections, the pages of the features that are on (merged by `order`; a
+ *  page sits in the "Features" group unless it names another, the Obsidian host's pages name
+ *  "Community plugins"), grouped in `SETTINGS_GROUPS` order (an empty group is not listed, so no
+ *  feature page, no divider). A page that needs a workspace is hidden without one. */
 export function buildSettingsNav(opts: {
   hasWorkspace: boolean;
-  pluginTabs: readonly PluginTabInfo[];
   /** Pages of the features that are on, merged with the core sections by `order`. A page whose id
    *  is a core section's id is ignored (the core page wins). */
   featureSections?: readonly FeatureNavSection[];
-  /** Plugins with an update available; badges the community-plugins entry. */
-  updateCount?: number;
 }): NavGroup[] {
   const coreIds = new Set(SETTINGS_SECTIONS.map((s) => s.id));
-  const sorted: (NavItem & { order: number })[] = [
-    ...SETTINGS_SECTIONS.filter((s) => opts.hasWorkspace || !s.requiresWorkspace).map(
-      (section) => ({
-        id: section.id,
-        label: section.label,
-        group: section.group,
-        order: section.order,
-        section,
-        ...(section.id === "community-plugins" && opts.updateCount
-          ? { badge: opts.updateCount }
-          : {}),
-      }),
-    ),
+  const items: NavItem[] = [
+    ...SETTINGS_SECTIONS.map((section) => ({
+      id: section.id,
+      label: section.label,
+      group: section.group,
+      order: section.order,
+      section,
+    })),
     ...(opts.featureSections ?? [])
-      .filter((f) => !coreIds.has(f.id))
+      .filter((f) => !coreIds.has(f.id) && (opts.hasWorkspace || !f.requiresWorkspace))
       .map((feature) => ({
         id: feature.id,
         label: feature.label,
-        group: FEATURE_GROUP_LABEL as SettingsGroup,
+        group: feature.group ?? (FEATURE_GROUP_LABEL as SettingsGroup),
         order: feature.order,
         feature,
+        ...(feature.badge ? { badge: feature.badge } : {}),
       })),
   ].sort((a, b) => a.order - b.order);
-  const items: NavItem[] = [
-    ...sorted,
-    ...(opts.hasWorkspace ? opts.pluginTabs : []).map((plugin) => ({
-      id: pluginSectionId(plugin.owner, plugin.tabId),
-      label: plugin.label,
-      group: "Community plugins" as const,
-      plugin,
-    })),
-  ];
   return SETTINGS_GROUPS.map((group) => ({
     group,
     isFeatureGroup: group === FEATURE_GROUP_LABEL,

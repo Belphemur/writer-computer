@@ -1,5 +1,5 @@
-//! The typed event contract of the agent pane, Rust side. The TypeScript mirror is
-//! `src/lib/agent/events.ts`; spec: `SPECs/native-agent-spec.md`.
+//! The typed event contract of the agent pane, Rust side. The TypeScript types are
+//! generated from it (`features/agent/web/bindings.ts`, re-exported by `src/lib/agent/events.ts`); spec: `SPECs/native-agent-spec.md`.
 //!
 //! JSON shape rules (pinned by the tests below and the golden files in
 //! `shared/agent-golden/`): a kebab-case `type` discriminant, camelCase field names, enums as
@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 pub type ChatId = String;
 pub type MessageId = String;
@@ -191,6 +192,10 @@ pub enum AgentEvent {
         decision_reason: Option<String>,
         #[specta(type = Vec<specta_typescript::Unknown>)]
         suggestions: Vec<Value>,
+        /// The sub-agent role asking (`worker`), set by the runner from the call's parent; absent:
+        /// the main agent. The card says who asks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
     },
     PermissionResolved {
         request_id: PermissionRequestId,
@@ -270,6 +275,11 @@ pub struct FileChangeSummary {
     /// Not shown as a diff: binary, too large, or not safely readable. Counts are 0.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_diff: bool,
+    /// The sub-agent role that made the edit (`worker`; another sub-agent type as it is named),
+    /// shown as a small label on the card. Absent: the main agent. The first edit of the file in
+    /// the turn decides (the card's first-snapshot-wins rule).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -437,6 +447,12 @@ pub enum ContextRef {
     ProjectSource {
         source: ProjectSource,
     },
+    /// An image attached to the message (vault-relative path): sent to the model as a native
+    /// image block and listed in the references footer. Pasted images live in the chat's hidden
+    /// `assets/` folder (`images.rs`), an image from the sidebar is referenced where it is.
+    Image {
+        path: String,
+    },
 }
 
 // -------------------------------------------------------------------------------------------
@@ -528,8 +544,10 @@ pub struct AgentSettings {
     pub disallowed_tools: Vec<String>,
     /// `agent.orchestrate`: the Writer block's orchestration paragraph and `--agents`.
     pub orchestrate: bool,
-    /// `agent.subagent-model`: the model of `writer-explorer`; `None` means the cheapest alias.
-    pub subagent_model: Option<String>,
+    /// The `agent.claude.model-<tier>` settings by tier id, as stored (the tiers are the ones of
+    /// `shared/agent-roles.json`); Rust resolves them in `subagents::tier_model`.
+    #[serde(default)]
+    pub tier_models: BTreeMap<String, Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -692,6 +710,7 @@ mod tests {
                 suggestions: vec![
                     json!({"type":"setMode","mode":"acceptEdits","destination":"session"}),
                 ],
+                by: None,
             },
             AgentEvent::Usage {
                 scope: UsageScope::Turn,
@@ -740,6 +759,7 @@ mod tests {
                     removed: 0,
                     old_path: Some("b.md".into()),
                     no_diff: false,
+                    by: None,
                 }],
                 bash: true,
             }),
@@ -767,12 +787,13 @@ mod tests {
                 removed: 1,
                 old_path: None,
                 no_diff: false,
+                by: Some("worker".into()),
             }],
             bash: false,
         });
         assert_eq!(
             round_trip(&ev),
-            json!({"type":"turn-changes","turnId":"t1","files":[{"path":"a.md","status":"modified","added":3,"removed":1}]})
+            json!({"type":"turn-changes","turnId":"t1","files":[{"path":"a.md","status":"modified","added":3,"removed":1,"by":"worker"}]})
         );
         let detail = TurnChanges {
             turn_id: "t1".into(),
@@ -784,6 +805,7 @@ mod tests {
                     removed: 0,
                     old_path: None,
                     no_diff: false,
+                    by: None,
                 },
                 rows: vec![DiffRow {
                     kind: DiffRowKind::Add,
@@ -913,7 +935,7 @@ mod tests {
                 allowed_tools: vec!["Read".into()],
                 disallowed_tools: vec![],
                 orchestrate: true,
-                subagent_model: Some("haiku".into()),
+                tier_models: BTreeMap::from([("cheap".to_string(), Some("haiku".to_string()))]),
             },
             append_system_prompt: None,
         });

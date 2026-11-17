@@ -904,6 +904,10 @@ pub fn handle_scheme(
     if request.method() != tauri::http::Method::GET {
         return refuse("method not allowed");
     }
+    // The `obsidian-host` feature is off, failed or in safe mode: serve nothing.
+    if !crate::features::obsidian_host::is_live(app) {
+        return refuse("plugin host is off");
+    }
     let Some(state) = app.state::<AppState>().get(label) else {
         return refuse("no window");
     };

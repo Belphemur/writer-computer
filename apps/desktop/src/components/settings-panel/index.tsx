@@ -1,27 +1,16 @@
 import { useEffect, useMemo } from "react";
 import { EditorScrollContainer } from "@/components/editor-area/editor-scroll-container";
-import {
-  useOpenPluginBrowser,
-  usePluginSettingTabs,
-  usePluginUpdateCount,
-  usePluginsSnapshot,
-} from "@/hooks/use-plugins";
 import { useFeatureSections, usePreloadFeatureSections } from "@/hooks/use-feature-sections";
 import { preloadSections } from "@/lib/features/section-loader";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useUIStore } from "@/stores/ui-store";
 import { FeatureSectionContent } from "./feature-section-content";
-import { PluginSectionContent } from "./plugin-section";
 import { SectionBlocks } from "./settings-blocks";
 import { SETTINGS_PANEL_ID, SettingsNav, settingsTabId } from "./settings-nav";
-import { buildSettingsNav, resolveNavItem, type PluginTabInfo } from "./settings-sections";
+import { buildSettingsNav, resolveNavItem } from "./settings-sections";
 
 export function SettingsPanel({ isActive }: { isActive: boolean }) {
   const root = useWorkspaceRoot();
-  const snapshot = usePluginsSnapshot();
-  const settingTabs = usePluginSettingTabs();
-  const openBrowser = useOpenPluginBrowser();
-  const updateCount = usePluginUpdateCount();
   const featureSections = useFeatureSections();
   usePreloadFeatureSections(featureSections, isActive);
   const selectedId = useUIStore((s) => s.settingsSection);
@@ -32,24 +21,14 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
     void hydrateSection();
   }, [hydrateSection]);
 
-  const groups = useMemo(() => {
-    const pluginTabs: PluginTabInfo[] = settingTabs.map((entry) => ({
-      owner: entry.owner,
-      tabId: entry.tab.id,
-      label:
-        entry.tab.name ||
-        snapshot?.installed.find((p) => p.id === entry.owner)?.name ||
-        entry.owner,
-    }));
-    return buildSettingsNav({ hasWorkspace: !!root, pluginTabs, featureSections, updateCount });
-  }, [root, settingTabs, snapshot, updateCount, featureSections]);
+  const groups = useMemo(
+    () => buildSettingsNav({ hasWorkspace: !!root, featureSections }),
+    [root, featureSections],
+  );
+  // A page's footer button ("Browse plugins...") shows while its page is in the sidebar.
+  const footer = groups.flatMap((g) => g.items).find((i) => i.feature?.footer)?.feature?.footer;
 
   const current = resolveNavItem(groups, selectedId);
-  const pluginEntry = current?.plugin
-    ? settingTabs.find(
-        (e) => e.owner === current.plugin?.owner && e.tab.id === current.plugin.tabId,
-      )
-    : undefined;
 
   return (
     <div
@@ -67,7 +46,7 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
           onIntent={(id) =>
             preloadSections(featureSections.filter((f) => f.id === id).map((f) => f.load))
           }
-          footer={root ? { label: "Browse plugins…", onClick: openBrowser } : undefined}
+          footer={footer ? { label: footer.label, onClick: footer.run } : undefined}
         />
         <div className="min-h-0 min-w-0 flex-1">
           <EditorScrollContainer>
@@ -85,7 +64,6 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
               )}
               {current?.section && <SectionBlocks section={current.section} />}
               {current?.feature && <FeatureSectionContent section={current.feature} />}
-              {pluginEntry && <PluginSectionContent key={current?.id} entry={pluginEntry} />}
             </div>
           </EditorScrollContainer>
         </div>

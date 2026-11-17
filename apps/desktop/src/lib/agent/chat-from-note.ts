@@ -4,6 +4,7 @@
  * output is never stored, so it is absent.
  */
 import type { ChatNoteDoc, ChatNoteMessage } from "./chat-note";
+import { imageRef } from "./chat-images";
 import type { ChatSummary } from "./events";
 import { createChat } from "./reduce";
 import type { Chat, ToolBlock, Turn } from "./transcript";
@@ -32,7 +33,8 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
     user: m && {
       messageId: m.id,
       text: m.text,
-      context: [],
+      // the images come back as refs (thumbnails); the other attachments only as the label
+      context: (m.images ?? []).map(imageRef),
       ...(m.context ? { contextLabel: m.context } : {}),
       ts: m.at,
     },

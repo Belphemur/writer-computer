@@ -2,35 +2,7 @@ import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import * as editorApi from "@/hooks/editor-api";
 import { parseDocument, parseFrontmatter } from "@/lib/frontmatter";
-import { formatMarkdownDestination } from "@/lib/paths";
-import * as tauri from "@/lib/tauri";
-import { showEditorNotice } from "./editor-notice-store";
-
-const MAX_IMAGE_SIZE_MB = 5;
-const MAX_IMAGE_SIZE = MAX_IMAGE_SIZE_MB * 1024 * 1024;
-
-async function handleImagePaste(
-  file: File,
-  view: EditorView,
-  filePath: string,
-  isDisposed: () => boolean,
-) {
-  const buffer = await file.arrayBuffer();
-  if (isDisposed()) return;
-  if (buffer.byteLength > MAX_IMAGE_SIZE) {
-    const sizeMb = (buffer.byteLength / (1024 * 1024)).toFixed(1);
-    showEditorNotice(`Image not pasted: ${sizeMb} MB is over the ${MAX_IMAGE_SIZE_MB} MB limit`);
-    return;
-  }
-
-  const imageData = Array.from(new Uint8Array(buffer));
-  const format = file.type.split("/")[1] || "png";
-  const result = await tauri.saveClipboardImage(filePath, imageData, format);
-  if (isDisposed()) return;
-  const imageMarkdown = `![${file.name}](${formatMarkdownDestination(result.relative_path)})`;
-  const cursor = view.state.selection.main.head;
-  view.dispatch({ changes: { from: cursor, insert: imageMarkdown } });
-}
+import { imageSourcesOfTransfer, insertImages } from "./editor-image-insert";
 
 // Pasting a whole document (frontmatter + body) into a file without
 // frontmatter adopts the frontmatter into the panel and inserts only the body.
@@ -77,32 +49,20 @@ function handleFrontmatterStart(event: KeyboardEvent, view: EditorView, filePath
   return true;
 }
 
-/** Paste and keyboard handling that touches files: image paste to disk,
+/** Paste and keyboard handling that touches files: image paste (see `editor-image-insert`),
  *  frontmatter adoption on paste, and the `---` frontmatter shortcut. */
-export function editorClipboardExtension(
-  getFilePath: () => string,
-  isDisposed: () => boolean,
-): Extension {
+export function editorClipboardExtension(getFilePath: () => string): Extension {
   return EditorView.domEventHandlers({
     paste(event, view) {
       if (handleFrontmatterPaste(event, view, getFilePath())) return true;
 
-      const items = event.clipboardData?.items;
-      if (!items) return false;
+      const data = event.clipboardData;
+      const sources = data ? imageSourcesOfTransfer(data) : [];
+      if (sources.length === 0) return false;
 
-      for (const item of items) {
-        if (!item.type.startsWith("image/")) continue;
-        const imageFile = item.getAsFile();
-        if (!imageFile) continue;
-
-        event.preventDefault();
-        void handleImagePaste(imageFile, view, getFilePath(), isDisposed).catch((error) => {
-          console.error("[editor] Failed to paste image:", error);
-        });
-        return true;
-      }
-
-      return false;
+      event.preventDefault();
+      void insertImages(view, sources);
+      return true;
     },
     keydown(event, view) {
       return handleFrontmatterStart(event, view, getFilePath());

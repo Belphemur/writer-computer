@@ -22,6 +22,7 @@ export function contextRefLabel(ref: ContextRef): string {
       return `#${ref.tag.replace(/^#/, "")}`;
     case "property":
       return ref.value === null ? ref.name : `${ref.name}: ${ref.value}`;
+    case "image":
     case "project-instructions":
       return ref.path;
     case "project-source":
@@ -109,6 +110,13 @@ export function buildPrompt({ text, refs, cwd, skills = [], openTabs = [] }: Pro
           `selection:${token}:${r.fromLine}-${r.toLine}`,
           [`- selection in ${token}, lines ${r.fromLine}-${r.toLine}:`, ...quoted].join("\n"),
         );
+        break;
+      }
+      case "image": {
+        // sent natively as an image block too; the line is how the model (and a later turn, which
+        // no longer carries the pixels) can name and re-read the file
+        const token = sentToken(r.path);
+        add(`image:${token}`, `- ${token} (image, also attached to this message)`);
         break;
       }
       case "tag": {

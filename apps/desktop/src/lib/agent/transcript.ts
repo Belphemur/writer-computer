@@ -114,6 +114,8 @@ export type PermissionView = {
   description: string | null;
   decisionReason: string | null;
   suggestions: PermissionSuggestion[];
+  /** The sub-agent role asking (`worker`); absent: the main agent. */
+  by?: string | null;
 };
 
 export type ChatError = {

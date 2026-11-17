@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod attachments;
 pub mod bases;
 pub mod cli;
 pub mod code_files;
@@ -650,7 +651,8 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        // The plugin host's commands are gated by the `obsidian-host` feature (switch, failure).
+        .invoke_handler(features::obsidian_host::gated(tauri::generate_handler![
             commands::logs::log_event,
             commands::logs::log_info,
             commands::logs::open_log_folder,
@@ -714,7 +716,9 @@ pub fn run() {
             commands::search::find_file_by_name,
             commands::search::find_files_by_exact_name,
             commands::search::resolve_wiki_link,
-            commands::images::save_clipboard_image,
+            commands::images::save_attachment,
+            commands::images::import_attachment_file,
+            commands::images::import_attachment_url,
             commands::settings::get_settings,
             commands::settings::get_setting,
             commands::settings::set_setting,
@@ -764,7 +768,7 @@ pub fn run() {
             commands::shell_install::install_cli,
             #[cfg(target_os = "macos")]
             commands::shell_install::uninstall_cli,
-        ])
+        ]))
         .build(context())
         .expect("error while building tauri application")
         .run(|_app, _event| {

@@ -46,7 +46,7 @@ fn all(root: &Path) -> Vec<ChatSummary> {
 
 #[test]
 fn golden_notes_parse_to_the_shared_json() {
-    for name in ["basic", "escape", "props", "changes"] {
+    for name in ["basic", "escape", "props", "changes", "images"] {
         let (meta, body) = parse_note(&fixture(&format!("{name}.md"))).unwrap();
         let golden: Value = serde_json::from_str(&fixture(&format!("{name}.parsed.json"))).unwrap();
         assert_eq!(
@@ -590,4 +590,34 @@ fn regenerate_rejects_an_empty_title_and_keeps_the_user_title() {
         (s.title.as_str(), s.title_source),
         ("Mine", TitleSource::User)
     );
+}
+
+#[test]
+fn a_user_message_with_images_keeps_their_paths_and_leaves_the_embeds_out_of_its_text() {
+    let body = "## user · 2026-11-17 09:12\n\
+<!-- writer:msg {\"id\":\"m1\",\"at\":1,\"images\":[\".writer/chats/assets/a b.png\",\"pics/c.png\"]} -->\n\n\
+![[.writer/chats/assets/a b.png]]\n![[pics/c.png]]\n\n\
+what is this?\n\n\
+> context: [[Plan]]\n\n\
+## assistant · 2026-11-17 09:13\n<!-- writer:msg {\"id\":\"m2\",\"at\":2} -->\n\nA chart.\n";
+    let parsed = parse_body(body);
+    let user = &parsed.turns[0];
+    assert_eq!(user.text, "what is this?");
+    assert_eq!(user.context.as_deref(), Some("[[Plan]]"));
+    assert_eq!(
+        user.images.as_deref(),
+        Some(
+            &[
+                ".writer/chats/assets/a b.png".to_string(),
+                "pics/c.png".to_string()
+            ][..]
+        )
+    );
+    assert_eq!(parsed.turns[1].images, None);
+    // a text line that looks like an embed stays text when the message has no images
+    let plain = parse_body(
+        "## user · 2026-11-17 09:12\n<!-- writer:msg {\"id\":\"m1\",\"at\":1} -->\n\n![[x.png]]\n",
+    );
+    assert_eq!(plain.turns[0].text, "![[x.png]]");
+    assert_eq!(plain.turns[0].images, None);
 }

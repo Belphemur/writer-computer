@@ -152,6 +152,9 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
       path: "/demo/claude",
       version: "demo",
       source: "override",
+      searched: [],
+      authenticated: null,
+      account: null,
     }),
     start: async ({ chatId }) => ({ chatId, sessionId: "00000000-0000-4000-8000-000000000001" }),
     send: async ({ chatId, text }) => {

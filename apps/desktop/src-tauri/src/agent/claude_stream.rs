@@ -18,6 +18,7 @@
 //! The mapper never keeps or logs content; it only keeps ids.
 
 use super::events::*;
+use super::images::ImagePart;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 
@@ -39,6 +40,16 @@ pub struct MapOutput {
     /// A `control_request` of a subtype Writer does not implement (hooks, MCP, elicitation).
     /// The runner MUST answer it with [`encode_control_error`], or the CLI waits forever.
     pub unsupported_control_request: Option<String>,
+    /// Sub-agent tasks that started or ended (`system` `task_*` lines). Not UI events: the runner
+    /// keeps its turn open while a task runs (`SPECs/agent-roles-spec.md`, section 2).
+    pub tasks: Vec<TaskSignal>,
+}
+
+/// A sub-agent task seen on the stream, by the CLI's task id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskSignal {
+    Started(String),
+    Ended(String),
 }
 
 #[derive(Default)]
@@ -138,6 +149,7 @@ impl ClaudeStreamMapper {
                     retryable: false,
                 }],
                 unsupported_control_request: None,
+                tasks: Vec::new(),
             },
         }
     }
@@ -199,6 +211,33 @@ impl ClaudeStreamMapper {
                     skills: names("skills"),
                     cli_version: str_of(v, "claude_code_version").map(String::from),
                 });
+            }
+            // `task_started` / `task_updated` (patch.status) / `task_notification`, verified with a
+            // real claude 2.1.326: a background task outlives the first `result`.
+            Some("task_started") => {
+                if let Some(id) = str_of(v, "task_id") {
+                    out.tasks.push(TaskSignal::Started(id.to_string()));
+                }
+            }
+            Some("task_updated") => {
+                let status = v
+                    .get("patch")
+                    .and_then(|p| str_of(p, "status"))
+                    .unwrap_or_default();
+                if let (Some(id), true) = (
+                    str_of(v, "task_id"),
+                    matches!(
+                        status,
+                        "completed" | "failed" | "killed" | "cancelled" | "stopped"
+                    ),
+                ) {
+                    out.tasks.push(TaskSignal::Ended(id.to_string()));
+                }
+            }
+            Some("task_notification") => {
+                if let Some(id) = str_of(v, "task_id") {
+                    out.tasks.push(TaskSignal::Ended(id.to_string()));
+                }
             }
             Some("thinking_tokens") => {
                 if let (Some((mid, idx)), Some(n)) = (
@@ -466,6 +505,7 @@ impl ClaudeStreamMapper {
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default(),
+            by: None,
         });
     }
 
@@ -556,8 +596,20 @@ impl ClaudeStreamMapper {
 // -------------------------------------------------------------------------------------------
 // stdin encoders. Each returns one JSON line WITHOUT the trailing newline.
 
-pub fn encode_user_message(text: &str) -> String {
-    json!({"type":"user","message":{"role":"user","content":text}}).to_string()
+/// A user turn. Plain text goes as a string; with images the content is an array of native
+/// `image` blocks (base64) followed by the text block (shape verified against the real CLI).
+pub fn encode_user_message(text: &str, images: &[ImagePart]) -> String {
+    if images.is_empty() {
+        return json!({"type":"user","message":{"role":"user","content":text}}).to_string();
+    }
+    let mut content: Vec<Value> = images
+        .iter()
+        .map(|i| {
+            json!({"type":"image","source":{"type":"base64","media_type":i.media_type,"data":i.data}})
+        })
+        .collect();
+    content.push(json!({"type":"text","text":text}));
+    json!({"type":"user","message":{"role":"user","content":content}}).to_string()
 }
 
 pub fn encode_interrupt(request_id: &str) -> String {
@@ -1315,8 +1367,33 @@ mod tests {
     }
 
     #[test]
+    fn a_message_with_images_is_a_content_array_of_image_blocks_then_the_text() {
+        let part = |m, d: &str| ImagePart {
+            media_type: m,
+            data: d.into(),
+        };
+        let line = encode_user_message(
+            "look",
+            &[part("image/png", "AAAA"), part("image/webp", "BBBB")],
+        );
+        assert!(!line.contains('\n'));
+        let v: Value = serde_json::from_str(&line).unwrap();
+        // Golden: the exact shape the real CLI accepted (images first, then the text block).
+        assert_eq!(
+            v,
+            json!({"type":"user","message":{"role":"user","content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}},
+                {"type":"image","source":{"type":"base64","media_type":"image/webp","data":"BBBB"}},
+                {"type":"text","text":"look"}
+            ]}})
+        );
+        let v: Value = serde_json::from_str(&encode_user_message("look", &[])).unwrap();
+        assert_eq!(v["message"]["content"], "look");
+    }
+
+    #[test]
     fn encoders_produce_the_verified_shapes() {
-        let v: Value = serde_json::from_str(&encode_user_message("hello")).unwrap();
+        let v: Value = serde_json::from_str(&encode_user_message("hello", &[])).unwrap();
         assert_eq!(
             v,
             json!({"type":"user","message":{"role":"user","content":"hello"}})
@@ -1368,7 +1445,7 @@ mod tests {
         let v: Value = serde_json::from_str(&encode_set_model("m", None)).unwrap();
         assert_eq!(v["request"], json!({"subtype":"set_model"}));
         // none of the encoders emit a newline (one JSON object per line)
-        assert!(!encode_user_message("a\nb").contains('\n'));
+        assert!(!encode_user_message("a\nb", &[]).contains('\n'));
     }
 
     /// The prompt is built in TypeScript (`src/lib/agent/context-text.ts`, which asserts these same
@@ -1384,7 +1461,7 @@ mod tests {
             let refs: Vec<ContextRef> = serde_json::from_value(c["refs"].clone()).unwrap();
             let prompt = c["prompt"].as_str().unwrap();
             let name = c["name"].as_str().unwrap();
-            let line = encode_user_message(prompt);
+            let line = encode_user_message(prompt, &[]);
             assert!(!line.contains('\n'), "{name}: one line");
             let v: Value = serde_json::from_str(&line).unwrap();
             assert_eq!(v["message"]["content"], prompt, "{name}");
@@ -1401,7 +1478,7 @@ mod tests {
             }
         }
         // the reference example, exactly as written to stdin
-        let first = encode_user_message(cases[0]["prompt"].as_str().unwrap());
+        let first = encode_user_message(cases[0]["prompt"].as_str().unwrap(), &[]);
         assert_eq!(
             first,
             r#"{"message":{"content":"compare @Projects/Plan.md with @Notes/Today.md and /summarize\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @Notes/Today.md (active note: the note open in Writer)\n- @Projects/Plan.md (note)\n- /summarize (skill, not expanded mid-message: invoke it with the Skill tool)\n</references>","role":"user"},"type":"user"}"#
@@ -1435,7 +1512,7 @@ mod tests {
             allowed_tools: vec![],
             disallowed_tools: vec![],
             orchestrate: true,
-            subagent_model: None,
+            tier_models: Default::default(),
         }
     }
 
@@ -1552,9 +1629,27 @@ mod tests {
     }
 
     #[test]
+    fn task_lines_map_to_started_and_ended_signals_and_no_events() {
+        let mut m = ClaudeStreamMapper::new();
+        let lines = [
+            r#"{"type":"system","subtype":"task_started","task_id":"t1","tool_use_id":"toolu_1","subagent_type":"writer-worker","is_backgrounded":false}"#,
+            r#"{"type":"system","subtype":"task_progress","task_id":"t1","tool_use_id":"toolu_1"}"#,
+            r#"{"type":"system","subtype":"task_updated","task_id":"t1","patch":{"status":"running"}}"#,
+            r#"{"type":"system","subtype":"task_updated","task_id":"t1","patch":{"status":"completed","end_time":1}}"#,
+            r#"{"type":"system","subtype":"task_notification","task_id":"t1","tool_use_id":"toolu_1","status":"completed"}"#,
+        ];
+        let out: Vec<_> = lines.iter().map(|l| m.map_line(l)).collect();
+        assert!(out.iter().all(|o| o.events.is_empty()));
+        assert_eq!(out[0].tasks, [TaskSignal::Started("t1".into())]);
+        assert!(out[1].tasks.is_empty() && out[2].tasks.is_empty());
+        assert_eq!(out[3].tasks, [TaskSignal::Ended("t1".into())]);
+        assert_eq!(out[4].tasks, [TaskSignal::Ended("t1".into())]);
+    }
+
+    #[test]
     fn agents_flag_follows_the_given_json_and_the_title_call_has_none() {
         let s = settings();
-        let json = crate::agent::subagents::agents_json(None, false);
+        let json = r#"{"writer-explorer":{"description":"d","tools":["Read"]}}"#.to_string();
         let argv = |agents| {
             build_args(&ClaudeSpawn {
                 session: SessionRef::New(UUID.into()),

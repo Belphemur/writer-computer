@@ -320,6 +320,8 @@ function fakeHistory(over: Partial<ChatHistoryClient> = {}) {
       turnsTotal: 2,
       estimatedTokens: 9,
     })),
+    saveImage: vi.fn(),
+    importImageFile: vi.fn(),
     permissionRules: vi.fn(async () => ({ allow: [], deny: [] })),
     removePermissionRule: vi.fn(async () => {}),
     ...over,

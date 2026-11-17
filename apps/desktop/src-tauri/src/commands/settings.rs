@@ -58,7 +58,7 @@ fn with_global_settings_mut<T>(
 }
 
 /// Push the code-file settings (`files.code-extensions`, `files.ignored-folders`,
-/// `files.show-agent-folders`) into the process-wide policy.
+/// `files.show-agent-folders`, `files.show-images`) into the process-wide policy.
 fn apply_code_files_policy(settings: &Settings) {
     use crate::code_files as cf;
     let list = |key: &str| match settings.get_global_or_default(key) {
@@ -74,6 +74,7 @@ fn apply_code_files_policy(settings: &Settings) {
         list(cf::SETTING_EXTENSIONS),
         list(cf::SETTING_IGNORED),
         flag(cf::SETTING_AGENT_FOLDERS),
+        flag(cf::SETTING_IMAGES),
     ));
 }
 
@@ -89,6 +90,14 @@ fn init_window_settings_at(
     Ok(())
 }
 
+fn string_setting(value: Option<ConfigValue>, key: &str) -> Result<String, AppError> {
+    let value = value.ok_or_else(|| AppError::Io(format!("Missing setting: {key}")))?;
+    value
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| AppError::Io(format!("Setting {key} must be a string")))
+}
+
 pub(crate) fn get_global_string_setting(
     app: &tauri::AppHandle,
     label: &str,
@@ -96,12 +105,18 @@ pub(crate) fn get_global_string_setting(
 ) -> Result<String, AppError> {
     let value = with_settings(app, label, |settings| {
         settings.get_global_or_default(key).cloned()
-    })?
-    .ok_or_else(|| AppError::Io(format!("Missing setting: {key}")))?;
-    value
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| AppError::Io(format!("Setting {key} must be a string")))
+    })?;
+    string_setting(value, key)
+}
+
+/// A string setting as this window sees it: defaults, global and the workspace override merged.
+pub(crate) fn get_merged_string_setting(
+    app: &tauri::AppHandle,
+    label: &str,
+    key: &str,
+) -> Result<String, AppError> {
+    let value = with_settings(app, label, |settings| settings.get(key).cloned())?;
+    string_setting(value, key)
 }
 
 /// Initialize a window's Settings layer. Called from the window setup path

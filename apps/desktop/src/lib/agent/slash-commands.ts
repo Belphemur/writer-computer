@@ -15,7 +15,9 @@
 import type { DiskSkill } from "./events";
 import { prepare, prepareQuery, matchPath } from "@/lib/search-rank";
 
-export type SlashSource = "project" | "vault" | "global" | "cli";
+/** Where a skill on disk lives (`DiskSkill.scope`, a plain string on the wire). */
+type DiskScope = "project" | "vault" | "global";
+export type SlashSource = DiskScope | "cli";
 
 export type SlashItem = {
   /** Without the leading slash. */
@@ -75,13 +77,16 @@ export function mergeSlashItems(
     out.push(item);
   };
   // Precedence project > vault > global (the list arrives in that order, then by name).
-  const rank = { project: 0, vault: 1, global: 2 } as const;
-  for (const s of [...disk].sort((a, b) => rank[a.scope] - rank[b.scope]))
+  const rank: Record<DiskScope, number> = { project: 0, vault: 1, global: 2 };
+  // The wire carries the scope as a plain string; an unknown one (a newer backend) is listed last as global.
+  const scopeOf = (s: DiskSkill): DiskScope =>
+    s.scope in rank ? (s.scope as DiskScope) : "global";
+  for (const s of [...disk].sort((a, b) => rank[scopeOf(a)] - rank[scopeOf(b)]))
     add({
       name: s.name,
       description: s.description,
       kind: "skill",
-      source: s.scope,
+      source: scopeOf(s),
       path: s.path,
       loaded: loaded(s.name),
     });

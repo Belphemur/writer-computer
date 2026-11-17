@@ -52,12 +52,14 @@ export function recordSend(
   msg: { messageId: string; text: string; context: ContextRef[]; ts: number },
 ): NoteState {
   const context = contextLine(msg.context);
+  const images = msg.context.flatMap((r) => (r.kind === "image" ? [r.path] : []));
   const user: ChatNoteMessage = {
     role: "user",
     id: msg.messageId,
     at: msg.ts,
     text: msg.text,
     ...(context ? { context } : {}),
+    ...(images.length > 0 ? { images } : {}),
   };
   return { ...note, messages: [...note.messages, user], pending: [] };
 }

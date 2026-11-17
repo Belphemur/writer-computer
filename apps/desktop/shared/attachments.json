@@ -1,0 +1,18 @@
+{
+  "$comment": "Shared by src-tauri/src/attachments.rs and src/lib/attachments.ts (spec: SPECs/image-insertion-spec.md). importExtensions are the image types dropped or pasted into a note and saved to the attachment folder; renderExtensions are the ones the webview can show inline as ![[name.ext]] (heic is kept as-is but does not render). mimeExtensions maps an image Content-Type to the extension it is saved under (clipboard and drag types in the webview, download responses in Rust).",
+  "maxBytes": 52428800,
+  "importExtensions": ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "heic"],
+  "renderExtensions": ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"],
+  "defaultFolder": "attachments",
+  "mimeExtensions": {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "image/avif": "avif",
+    "image/bmp": "bmp",
+    "image/heic": "heic"
+  }
+}

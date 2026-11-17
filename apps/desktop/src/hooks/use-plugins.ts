@@ -1,39 +1,8 @@
-import { useEffect } from "react";
 import { usePluginsStore } from "@/stores/plugins-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useUpdatesStore } from "@/stores/plugin-updates-store";
-import { useIsStartupResolved, useWorkspaceChromeMode, useWorkspaceRoot } from "./use-workspace";
 
 export { PANE_MAX_WIDTH, PANE_MIN_WIDTH } from "@/stores/plugins-store";
-
-/**
- * Owns the plugin host for this window: attaches when a workspace is open (never for the
- * standalone compact window or the welcome screen) and detaches on workspace change/unmount.
- * Mount once, at the app root.
- */
-export function usePluginHostLifecycle() {
-  const root = useWorkspaceRoot();
-  const chromeMode = useWorkspaceChromeMode();
-  const isStartupResolved = useIsStartupResolved();
-  const attach = usePluginsStore((s) => s.attach);
-  const detach = usePluginsStore((s) => s.detach);
-  const enabled = isStartupResolved && root !== null && chromeMode === "workspace";
-
-  useEffect(() => {
-    if (!enabled || root === null) return;
-    void attach(root);
-    // Update state is bound to the same vault; the scheduler checks shortly after start and
-    // then every few hours (throttled by the persisted timestamp, silent on failure).
-    const updates = useUpdatesStore.getState();
-    void updates.attachRoot(root);
-    const stopChecks = updates.startScheduler();
-    return () => {
-      stopChecks();
-      void updates.attachRoot(null);
-      void detach();
-    };
-  }, [enabled, root, attach, detach]);
-}
 
 export function usePluginsSnapshot() {
   return usePluginsStore((s) => s.snapshot);

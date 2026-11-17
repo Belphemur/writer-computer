@@ -363,6 +363,7 @@ impl Settings {
         settings.migrate_from_preferences(&global_config_dir)?;
         settings.migrate_theme_fonts()?;
         settings.migrate_editor_width()?;
+        settings.migrate_agent_cheap_tier()?;
 
         Ok(settings)
     }
@@ -448,6 +449,32 @@ impl Settings {
             }
         }
         self.reset_global(OLD_KEY)
+    }
+
+    /// One-time migration: the sub-agent model (`agent.subagent-model`) and the chat title model
+    /// (`agent.title-model`) are now one setting, the Claude cheap tier
+    /// (`agent.claude.model-cheap`; ADR "Define agent roles once ..."). Unless the new key is already
+    /// set, adopt the old sub-agent model, else the old title model (a blank or `auto` value says
+    /// "the default" and is not copied), then drop both old keys. Old keys are kept on a failed
+    /// write so a later launch can retry.
+    fn migrate_agent_cheap_tier(&mut self) -> std::io::Result<()> {
+        const NEW_KEY: &str = "agent.claude.model-cheap";
+        const OLD_KEYS: [&str; 2] = ["agent.subagent-model", "agent.title-model"];
+        let chosen = OLD_KEYS.iter().find_map(|key| {
+            let value = self.global.get(*key)?.as_str()?.trim();
+            (!value.is_empty() && !value.eq_ignore_ascii_case("auto")).then(|| value.to_string())
+        });
+        if let Some(model) = chosen {
+            if !self.global.contains_key(NEW_KEY) {
+                self.set_global(NEW_KEY, ConfigValue::String(model))?;
+            }
+        }
+        for key in OLD_KEYS {
+            if self.global.contains_key(key) {
+                self.reset_global(key)?;
+            }
+        }
+        Ok(())
     }
 
     /// One-time migration: read theme from old `preferences.json` (tauri-plugin-store format)
@@ -847,6 +874,61 @@ mod tests {
         );
         let raw = std::fs::read_to_string(&config_path).unwrap();
         assert!(!raw.contains("appearance.editor-width"));
+    }
+
+    #[test]
+    fn test_agent_cheap_tier_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config");
+        let cheap = |s: &Settings| s.get("agent.claude.model-cheap").cloned();
+        let raw = || std::fs::read_to_string(&config_path).unwrap();
+
+        // The sub-agent model is copied, both old keys are removed.
+        std::fs::write(
+            &config_path,
+            "agent.subagent-model = sonnet\nagent.title-model = claude-haiku-4-5\n",
+        )
+        .unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(cheap(&settings), Some(ConfigValue::String("sonnet".into())));
+        assert!(!raw().contains("agent.subagent-model"));
+        assert!(!raw().contains("agent.title-model"));
+        assert!(settings.get("agent.subagent-model").is_none());
+        assert!(settings.get("agent.title-model").is_none());
+
+        // Without a sub-agent model the title model is adopted.
+        std::fs::write(&config_path, "agent.title-model = claude-haiku-4-5\n").unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            cheap(&settings),
+            Some(ConfigValue::String("claude-haiku-4-5".into()))
+        );
+
+        // A blank or `auto` old value copies nothing: the tier default applies.
+        std::fs::write(
+            &config_path,
+            "agent.subagent-model = auto\nagent.title-model =\n",
+        )
+        .unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            settings.get("agent.claude.model-cheap"),
+            settings.defaults.get("agent.claude.model-cheap")
+        );
+        assert!(!raw().contains("agent.subagent-model"));
+        assert!(!raw().contains("agent.title-model"));
+
+        // An already-set tier wins; the old keys are still removed. Idempotent on the next start.
+        std::fs::write(
+            &config_path,
+            "agent.claude.model-cheap = opus\nagent.subagent-model = sonnet\n",
+        )
+        .unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(cheap(&settings), Some(ConfigValue::String("opus".into())));
+        assert!(!raw().contains("agent.subagent-model"));
+        let again = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(cheap(&again), Some(ConfigValue::String("opus".into())));
     }
 
     #[test]

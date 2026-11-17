@@ -5,7 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
 import { resolveCommands } from "../src/components/command-palette/commands";
-import { closeDocks, openDock, subscribeDocks } from "../src/lib/features/docks";
+import {
+  closeDocksOpenedBefore,
+  openDock,
+  openDockIds,
+  subscribeDocks,
+} from "../src/lib/features/docks";
 import { featurePaletteCommands } from "../src/lib/features/palette";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 import { keybindings } from "../src/lib/keybindings/registry";
@@ -250,7 +255,7 @@ describe("docks", () => {
     expect(openDock()).toBeNull();
   });
 
-  it("notifies on a dock's own change and on registration, and closeDocks closes the open ones", async () => {
+  it("notifies on a dock's own change and on registration, ", async () => {
     const d = dock("a.pane", 1);
     const seen = vi.fn();
     const un = subscribeDocks(seen);
@@ -258,12 +263,27 @@ describe("docks", () => {
     expect(seen).toHaveBeenCalledTimes(1);
     d.set(true);
     expect(seen).toHaveBeenCalledTimes(2);
-    closeDocks();
-    expect(openDock()).toBeNull();
     un();
-    d.set(true);
-    expect(seen).toHaveBeenCalledTimes(3); // closeDocks notified once more; nothing after unsubscribe
+    d.set(false);
+    expect(seen).toHaveBeenCalledTimes(2); // nothing after unsubscribe
     await host.unregister("a");
+  });
+
+  it("closes the other docks when one opens: one column, the last opened wins", async () => {
+    const a = dock("a.pane", 20);
+    const b = dock("b.pane", 10);
+    host.register({ id: "a", contributes: { docks: [a] } });
+    host.register({ id: "b", contributes: { docks: [b] } });
+    a.set(true);
+    const before = openDockIds();
+    b.set(true); // now both report open
+    closeDocksOpenedBefore(before, openDockIds());
+    expect(openDockIds()).toEqual(new Set(["b.pane"]));
+    // nothing newly opened: nothing is closed
+    closeDocksOpenedBefore(openDockIds(), openDockIds());
+    expect(openDockIds()).toEqual(new Set(["b.pane"]));
+    await host.unregister("a");
+    await host.unregister("b");
   });
 
   it("requires the feature id as the id prefix", () => {

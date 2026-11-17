@@ -15,6 +15,7 @@
 use super::events::{AgentPermissionMode, ProjectSource};
 use super::ports::{InjectAgentsMd, ProjectPort, SpawnContext};
 use super::project::{self, ProjectDetail, ProjectUpdate, AGENTS_FILE, CLAUDE_FILE};
+use super::roles::Rendered;
 use super::writer_prompt;
 use crate::index::{FileFilter, Index};
 use serde::{Deserialize, Serialize};
@@ -585,8 +586,9 @@ pub struct BundleInput<'a> {
     /// The managed `writer` skills are installed for the spawned CLI (selects the Writer block's
     /// variant).
     pub writer_cli: bool,
-    /// The Writer block carries the orchestration paragraph (`agent.orchestrate`).
-    pub orchestrate: bool,
+    /// The sub-agent roles the adapter produced (`None`: orchestration is off): the Writer block's
+    /// orchestration line is rendered from them.
+    pub orchestration: Option<&'a Rendered>,
 }
 
 /// Build the per-spawn context. Text only, no note bodies (a shadowed `AGENTS.md` is the one
@@ -636,7 +638,7 @@ pub fn build(input: &BundleInput) -> std::io::Result<ContextBundle> {
 
     // The Writer system block opens every prompt, before the instruction files and the project.
     let mut sections: Vec<String> =
-        vec![writer_prompt::render(input.writer_cli, input.orchestrate)];
+        vec![writer_prompt::render(input.writer_cli, input.orchestration)];
     let injected: Vec<&InstructionAudit> = instructions
         .iter()
         .filter(|a| matches!(a.status, InstructionStatus::Injected { .. }))
@@ -725,7 +727,7 @@ impl ProjectPort for ProjectLibrary {
             cli_version: ctx.cli_version,
             index: Some(&fs_index),
             writer_cli: ctx.writer_cli,
-            orchestrate: ctx.orchestrate,
+            orchestration: ctx.orchestration,
         })
         .map_err(|e| e.to_string())?;
         Ok(
@@ -907,7 +909,7 @@ mod tests {
             inject_agents_md: InjectAgentsMd::Auto,
             requested_prompt: Some("from ui"),
             writer_cli: false,
-            orchestrate: false,
+            orchestration: None,
         };
         let s = lib.append_system_prompt(&ctx).unwrap().unwrap();
         assert!(s.starts_with("from ui\n\n"));
@@ -945,7 +947,7 @@ mod tests {
         };
         assert_eq!(
             lib.append_system_prompt(&ctx2).unwrap(),
-            Some(writer_prompt::render(false, false))
+            Some(writer_prompt::render(false, None))
         );
     }
 
@@ -1064,7 +1066,7 @@ mod tests {
             cli_version: Some("2.1.325 (Claude Code)"),
             index: Some(&fake),
             writer_cli: true,
-            orchestrate: false,
+            orchestration: None,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
@@ -1087,13 +1089,13 @@ mod tests {
             cli_version: None,
             index: None,
             writer_cli,
-            orchestrate: false,
+            orchestration: None,
         };
         for cli in [false, true] {
             let b = build(&input(cli)).unwrap();
             assert_eq!(
                 b.append_system_prompt.unwrap(),
-                writer_prompt::render(cli, false)
+                writer_prompt::render(cli, None)
             );
         }
         // A project with a native-loaded AGENTS.md: the block, then the header, no instruction text.
@@ -1105,11 +1107,11 @@ mod tests {
             cli_version: Some("2.1.325"),
             index: None,
             writer_cli: false,
-            orchestrate: false,
+            orchestration: None,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
-        assert!(s.starts_with(&writer_prompt::render(false, false)));
+        assert!(s.starts_with(&writer_prompt::render(false, None)));
         assert!(s.contains("## Project: P") && !s.contains("Be brief."));
     }
 
@@ -1127,12 +1129,12 @@ mod tests {
             cli_version: Some("2.1.325"),
             index: None,
             writer_cli: true,
-            orchestrate: false,
+            orchestration: None,
         })
         .unwrap();
         let expected = format!(
             "{}\nThe following instruction files are not loaded automatically; follow them. Later instructions take precedence over earlier ones.\n\n### AGENTS.md\n\nvault rules\n\n## Project: P\nDesc\nProject folder: Projects/P\n",
-            writer_prompt::render(true, false)
+            writer_prompt::render(true, None)
         );
         assert_eq!(b.append_system_prompt.unwrap(), expected);
     }

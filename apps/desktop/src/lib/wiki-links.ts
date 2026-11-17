@@ -1,3 +1,4 @@
+import { RENDERABLE_IMAGE_EXTENSIONS } from "./attachments";
 import { isBasePath } from "./bases/paths";
 import { noteLabel } from "./note-title";
 import { getFileStem, getParentDir, normalizePath } from "./paths";
@@ -125,8 +126,7 @@ export async function resolveWikiLink(
 }
 
 // Image formats supported by Obsidian-style embeds (`![[image.png]]`),
-// per SPECs/obsidian-image-embed-spec.md.
-const WIKI_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+// per SPECs/obsidian-image-embed-spec.md: the renderable list of shared/attachments.json.
 
 /**
  * Parse the inner text of a `![[...]]` embed. Returns the normalized image
@@ -141,7 +141,7 @@ export function parseWikiImageEmbedTarget(raw: string): string | null {
   const dot = path.lastIndexOf(".");
   if (dot <= 0 || dot === path.length - 1) return null;
   const ext = path.slice(dot + 1).toLowerCase();
-  return WIKI_IMAGE_EXTENSIONS.has(ext) ? path : null;
+  return RENDERABLE_IMAGE_EXTENSIONS.has(ext) ? path : null;
 }
 
 /**

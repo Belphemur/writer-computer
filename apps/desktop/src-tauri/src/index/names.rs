@@ -965,13 +965,14 @@ mod tests {
         assert_eq!(names(&h, "run.py"), ["run.py"]);
         assert_eq!(names(&h, "Dockerfile"), ["Dockerfile"]);
         assert!(names(&h, "blob").is_empty());
-        assert!(names(&h, "pic").is_empty());
+        // renderable images are listed (setting `files.show-images`, default on)
+        assert_eq!(names(&h, "pic.png"), ["pic.png"]);
         assert!(names(&h, "env").is_empty());
         assert!(names(&h, "secret").is_empty());
         let s = h.cache.search("readme", 5, &NameFilter::default()).unwrap();
         assert!(!s.building);
         assert!(h.cache.is_ready());
-        assert_eq!(h.cache.len(), 5);
+        assert_eq!(h.cache.len(), 6);
     }
 
     #[test]

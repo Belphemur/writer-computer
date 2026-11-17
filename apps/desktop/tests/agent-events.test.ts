@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  AGENT_COMMANDS,
   AGENT_EVENT_TYPES,
   isAgentEvent,
-  type AgentCommand,
   type AgentEvent,
   type AgentEventEnvelope,
 } from "../src/lib/agent/events";
@@ -110,35 +108,13 @@ describe("agent event contract", () => {
     }
   });
 
-  it("builds envelopes and commands with the documented shapes", () => {
+  it("builds envelopes with the documented shape", () => {
     const env: AgentEventEnvelope = {
       chatId: "c",
       seq: 1,
       event: { type: "text", messageId: "m", blockIndex: 0, text: "x" },
     };
     expect(JSON.parse(JSON.stringify(env))).toEqual(env);
-    const cmds: AgentCommand[] = [
-      {
-        type: "send-message",
-        messageId: "m",
-        text: "hi",
-        context: [{ kind: "note", path: "a.md" }],
-      },
-      { type: "cancel" },
-      { type: "permission-decision", requestId: "r", decision: "allow", persist: "project" },
-      { type: "resume", sessionId: "s" },
-      { type: "set-permission-mode", mode: "acceptEdits" },
-      { type: "close" },
-    ];
-    expect(cmds.map((c) => c.type)).toEqual([
-      "send-message",
-      "cancel",
-      "permission-decision",
-      "resume",
-      "set-permission-mode",
-      "close",
-    ]);
-    expect(new Set(AGENT_COMMANDS).size).toBe(AGENT_COMMANDS.length);
   });
 
   it("rejects non-events", () => {

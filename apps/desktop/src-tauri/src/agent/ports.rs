@@ -11,6 +11,7 @@
 //! may log note contents (spec section 8).
 
 use super::events::AgentPermissionMode;
+use super::roles::Rendered;
 use parking_lot::RwLock;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -52,8 +53,9 @@ pub struct SpawnContext<'a> {
     /// The managed `writer` skills are installed for the spawned CLI (selects the Writer block's
     /// variant and whether sub-agents get Bash).
     pub writer_cli: bool,
-    /// `agent.orchestrate`: the Writer block carries the orchestration paragraph.
-    pub orchestrate: bool,
+    /// The sub-agent roles the backend adapter produced for this session (`None`: orchestration is
+    /// off); the Writer block's orchestration line is rendered from them.
+    pub orchestration: Option<&'a Rendered>,
 }
 
 /// Facts about a chat's CLI session, reported to the chat store.

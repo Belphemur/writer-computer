@@ -18,9 +18,34 @@ import {
 import { SETTINGS_SCHEMA } from "../src/lib/settings-schema";
 import { SETTINGS_SECTION_PREFERENCE, useUIStore } from "../src/stores/ui-store";
 
-const tabs = [
-  { owner: "copilot", tabId: "copilot", label: "Copilot" },
-  { owner: "other", tabId: "main", label: "Other" },
+const load = async () => ({ default: () => null });
+/** What the `obsidian-host` feature contributes: Manage plugins, then one page per plugin tab. */
+const hostPages = (badge?: number) => [
+  {
+    id: "community-plugins",
+    label: "Manage plugins",
+    order: 200,
+    group: "Community plugins" as const,
+    requiresWorkspace: true,
+    badge,
+    load,
+  },
+  {
+    id: pluginSectionId("copilot", "copilot"),
+    label: "Copilot",
+    order: 201,
+    group: "Community plugins" as const,
+    requiresWorkspace: true,
+    load,
+  },
+  {
+    id: pluginSectionId("other", "main"),
+    label: "Other",
+    order: 202,
+    group: "Community plugins" as const,
+    requiresWorkspace: true,
+    load,
+  },
 ];
 
 describe("settings section registry", () => {
@@ -48,44 +73,45 @@ describe("settings section registry", () => {
       "Privacy",
       "Secrets",
       "Logs",
-      "Manage plugins",
     ]);
   });
 });
 
 describe("buildSettingsNav", () => {
   it("hides workspace-only sections and plugin entries without a workspace", () => {
-    const groups = buildSettingsNav({ hasWorkspace: false, pluginTabs: tabs });
+    const groups = buildSettingsNav({ hasWorkspace: false, featureSections: hostPages() });
     expect(groups.map((g) => g.group)).toEqual(["General"]);
     expect(groups[0].items.map((i) => i.id)).not.toContain("community-plugins");
   });
 
   it("appends one entry per plugin tab under Community plugins", () => {
-    const groups = buildSettingsNav({ hasWorkspace: true, pluginTabs: tabs });
+    const groups = buildSettingsNav({ hasWorkspace: true, featureSections: hostPages() });
+    // The host's pages do not create a Features group: they sit in Community plugins, last.
+    expect(groups.map((g) => g.group)).toEqual(["General", "Community plugins"]);
+    expect(groups.some((g) => g.isFeatureGroup)).toBe(false);
     const plugins = groups.find((g) => g.group === "Community plugins")!;
     expect(plugins.items.map((i) => i.label)).toEqual(["Manage plugins", "Copilot", "Other"]);
     expect(plugins.items[1].id).toBe(pluginSectionId("copilot", "copilot"));
-    expect(plugins.items[1].plugin?.owner).toBe("copilot");
   });
 
   it("badges the manage entry with the number of updates", () => {
-    const groups = buildSettingsNav({ hasWorkspace: true, pluginTabs: [], updateCount: 2 });
+    const groups = buildSettingsNav({ hasWorkspace: true, featureSections: hostPages(2) });
     const manage = groups.flatMap((g) => g.items).find((i) => i.id === "community-plugins");
     expect(manage?.badge).toBe(2);
-    const none = buildSettingsNav({ hasWorkspace: true, pluginTabs: [], updateCount: 0 });
+    const none = buildSettingsNav({ hasWorkspace: true, featureSections: hostPages(0) });
     expect(none.flatMap((g) => g.items).find((i) => i.badge)).toBeUndefined();
   });
 
   it("groups feature pages after the core sections under a Features group, only when one exists", () => {
     const load = async () => ({ default: () => null });
-    const none = buildSettingsNav({ hasWorkspace: true, pluginTabs: [] });
+    const none = buildSettingsNav({ hasWorkspace: true });
     expect(none.some((g) => g.isFeatureGroup)).toBe(false);
     const groups = buildSettingsNav({
       hasWorkspace: true,
-      pluginTabs: [{ owner: "p", tabId: "t", label: "P" }],
       featureSections: [
         { id: "late", label: "Late", order: 50, load },
         { id: "agent", label: "Agent", order: 40, load },
+        ...hostPages(),
       ],
     });
     expect(groups.map((g) => g.group)).toEqual(["General", "Features", "Community plugins"]);
@@ -97,7 +123,7 @@ describe("buildSettingsNav", () => {
   it("merges feature pages with the core sections by order, and a core id wins", () => {
     const load = async () => ({ default: () => null });
     const items = (featureSections: Parameters<typeof buildSettingsNav>[0]["featureSections"]) =>
-      buildSettingsNav({ hasWorkspace: true, pluginTabs: [], featureSections })
+      buildSettingsNav({ hasWorkspace: true, featureSections })
         .flatMap((g) => g.items)
         .map((i) => i.id);
     const base = items([]);
@@ -110,7 +136,7 @@ describe("buildSettingsNav", () => {
   });
 
   it("falls back to the first item when the selection is gone", () => {
-    const groups = buildSettingsNav({ hasWorkspace: true, pluginTabs: [] });
+    const groups = buildSettingsNav({ hasWorkspace: true });
     expect(resolveNavItem(groups, "plugin:gone:x")?.id).toBe("editor");
     expect(resolveNavItem(groups, "privacy")?.id).toBe("privacy");
     expect(resolveNavItem([], "x")).toBeNull();

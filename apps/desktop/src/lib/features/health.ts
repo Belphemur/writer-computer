@@ -20,3 +20,8 @@ export function reportOwnerFailure(owner: string, boundary: string, error: unkno
   });
   if (id) recordFailure(id, boundary);
 }
+
+/** A failure that switches the feature off for the session at once (not three strikes). */
+export function failFeature(id: string, boundary: string): void {
+  useFeatureHealth.getState().failNow(id, boundary);
+}

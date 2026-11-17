@@ -140,6 +140,8 @@ function history(over: Partial<ChatHistoryClient> = {}) {
     })),
     regenerateTitle: vi.fn(),
     replay: vi.fn(),
+    saveImage: vi.fn(),
+    importImageFile: vi.fn(),
     permissionRules: vi.fn(async () => ({ allow: [], deny: [] })),
     removePermissionRule: vi.fn(async () => {}),
     ...over,
@@ -287,8 +289,8 @@ describe("auto title in the store", () => {
     expect(client.autoTitle).not.toHaveBeenCalled();
   });
 
-  it("passes the title model setting and the chat model", async () => {
-    useSettingsStore.setState({ settings: { "agent.title-model": "claude-haiku-4-5" } });
+  it("passes the cheap tier model setting and the chat model", async () => {
+    useSettingsStore.setState({ settings: { "agent.claude.model-cheap": "claude-haiku-4-5" } });
     const client = history();
     const { id } = await chatWithExchanges(client, 1);
     useAgentStore.setState((s) => ({

@@ -23,8 +23,10 @@ use super::claude_stream::{
 use super::consent::{self, Gate, Preconsented, AGENT_PLUGIN_ID};
 use super::env;
 use super::events::*;
+use super::images::Outgoing;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
+use super::sub_tracker::SubTracker;
 use crate::plugin_consent::ConsentStore;
 use crate::plugin_proc::{Consent, Emit, Prepared, ProcEvent, ProcManager, Sig};
 use base64::Engine as _;
@@ -183,10 +185,16 @@ struct Inner {
     mapper: ClaudeStreamMapper,
     /// Tool name by call id for the current turn: `tool-call-input` carries only the id.
     tool_names: HashMap<String, String>,
+    /// Who made each call and which sub-agents are still working (see `sub_tracker.rs`).
+    subs: SubTracker,
+    /// The first `turn-finished` came while a sub-agent still worked: the Changes card stays open
+    /// (late sub-agent edits join it) until a later `turn-finished` finds none working, or the
+    /// process ends.
+    changes_deferred: bool,
     pending: HashMap<String, PendingPerm>,
     turn_active: bool,
-    queue: VecDeque<String>,
-    inflight: Vec<String>,
+    queue: VecDeque<Outgoing>,
+    inflight: Vec<Outgoing>,
     seed: Option<String>,
     respawns: u8,
     fallback_used: bool,
@@ -370,6 +378,8 @@ impl Session {
                 state: AgentSessionState::Idle,
                 mapper: ClaudeStreamMapper::new(),
                 tool_names: HashMap::new(),
+                subs: SubTracker::default(),
+                changes_deferred: false,
                 pending: HashMap::new(),
                 turn_active: false,
                 queue: VecDeque::new(),
@@ -704,7 +714,7 @@ impl Session {
     fn on_line(self: &Arc<Self>, gen: u64, line: &str) {
         let mut started: Option<ChatSessionInfo> = None;
         // snapshots to take and the turn to finish happen after the lock is released (file IO)
-        let mut captures: Vec<(String, Value)> = Vec::new();
+        let mut captures: Vec<(String, Value, Option<String>)> = Vec::new();
         let mut closed: Option<ClosedTurn> = None;
         {
             let mut g = self.inner.lock();
@@ -721,38 +731,77 @@ impl Session {
                 log::info!(target: "agent", "agent: answered an unsupported control request with an error");
                 self.write(encode_control_error(&id, "unsupported"));
             }
-            for ev in out.events {
+            for signal in &out.tasks {
+                g.subs.on_task(signal);
+            }
+            for mut ev in out.events {
                 match &ev {
                     AgentEvent::ToolCallStarted {
-                        tool_call_id, tool, ..
+                        tool_call_id,
+                        tool,
+                        parent_tool_call_id,
+                        ..
                     } => {
                         g.tool_names.insert(tool_call_id.clone(), tool.clone());
+                        g.subs
+                            .on_started(tool_call_id, tool, parent_tool_call_id.as_deref());
                     }
                     AgentEvent::ToolCallInput {
                         tool_call_id,
                         input,
                     } => {
+                        g.subs.on_input(tool_call_id, input);
                         if let Some(tool) = g.tool_names.get(tool_call_id) {
-                            captures.push((tool.clone(), input.clone()));
+                            let by = g.subs.author_of(Some(tool_call_id));
+                            captures.push((tool.clone(), input.clone(), by));
                         }
                     }
-                    // the permission request may come first: the tool has not run yet either
-                    AgentEvent::PermissionRequest { tool, input, .. } => {
-                        captures.push((tool.clone(), input.clone()));
+                    AgentEvent::ToolCallFinished { tool_call_id, .. } => {
+                        g.subs.on_finished(tool_call_id);
                     }
-                    AgentEvent::TurnFinished { .. } => {
-                        g.tool_names.clear();
-                        // taken before `apply` flushes a queued message that starts the next turn
-                        closed = self.changes.close_turn(&self.chat_id);
+                    // the permission request may come first: the tool has not run yet either
+                    AgentEvent::PermissionRequest {
+                        tool,
+                        input,
+                        tool_call_id,
+                        ..
+                    } => {
+                        let by = g.subs.author_of(tool_call_id.as_deref());
+                        captures.push((tool.clone(), input.clone(), by));
+                    }
+                    AgentEvent::TurnFinished { reason, .. } => {
+                        // A sub-agent still working after a normal end (a background task, woken
+                        // later) keeps the card open for its late edits; any other end closes it.
+                        let keep_open = *reason == TurnFinishReason::Completed && g.subs.busy();
+                        g.changes_deferred = keep_open;
+                        if !keep_open {
+                            g.tool_names.clear();
+                            g.subs.clear();
+                            // taken before `apply` flushes a queued message that starts the next turn
+                            closed = self.changes.close_turn(&self.chat_id);
+                        }
                     }
                     _ => {}
+                }
+                // the card says which sub-agent asks
+                if let AgentEvent::PermissionRequest {
+                    tool_call_id, by, ..
+                } = &mut ev
+                {
+                    *by = g.subs.author_of(tool_call_id.as_deref());
                 }
                 self.apply(&mut g, ev, &mut started);
             }
         }
-        for (tool, input) in captures {
-            self.changes
-                .capture(&self.chat_id, &self.root, &self.cwd, &tool, &input);
+        for (tool, input, by) in captures {
+            self.changes.capture_by(
+                &self.chat_id,
+                &self.root,
+                &self.cwd,
+                &tool,
+                &input,
+                by.as_deref(),
+            );
         }
         if let Some(turn) = closed {
             if let Some(summary) = self.changes.finish(turn) {
@@ -918,11 +967,18 @@ impl Session {
     }
 
     fn on_exit(self: &Arc<Self>, gen: u64, code: Option<i32>, signal: Option<String>) {
-        let mut respawn: Option<(Vec<String>, Option<String>)> = None;
+        let mut respawn: Option<(Vec<Outgoing>, Option<String>)> = None;
+        let mut closed: Option<ClosedTurn> = None;
         {
             let mut g = self.inner.lock();
             if g.live_gen != Some(gen) {
                 return;
+            }
+            // a card kept open for a sub-agent ends with the process: nothing more can arrive
+            if std::mem::take(&mut g.changes_deferred) {
+                g.subs.clear();
+                g.tool_names.clear();
+                closed = self.changes.close_turn(&self.chat_id);
             }
             g.live_gen = None;
             g.ready = false;
@@ -1049,6 +1105,9 @@ impl Session {
                 }
             }
         }
+        if let Some(summary) = closed.and_then(|turn| self.changes.finish(turn)) {
+            self.log.push(AgentEvent::TurnChanges(summary));
+        }
         if let Some((replay, replaced_from)) = respawn {
             let me = Arc::clone(self);
             std::thread::Builder::new()
@@ -1058,7 +1117,7 @@ impl Session {
         }
     }
 
-    fn respawn(self: &Arc<Self>, replay: Vec<String>, replaced_from: Option<String>) {
+    fn respawn(self: &Arc<Self>, replay: Vec<Outgoing>, replaced_from: Option<String>) {
         if let Some(old) = replaced_from {
             let new = self.session_id();
             let chats = self.ports.chats();
@@ -1068,8 +1127,8 @@ impl Session {
         }
         {
             let mut g = self.inner.lock();
-            for text in replay.into_iter().rev() {
-                g.queue.push_front(text);
+            for out in replay.into_iter().rev() {
+                g.queue.push_front(out);
             }
         }
         match self.ensure_process(None) {
@@ -1142,7 +1201,7 @@ impl Session {
         if !g.ready || g.turn_active || g.terminal {
             return;
         }
-        let Some(text) = g.queue.pop_front() else {
+        let Some(out) = g.queue.pop_front() else {
             if matches!(
                 g.state,
                 AgentSessionState::Starting | AgentSessionState::Reconnecting
@@ -1151,31 +1210,31 @@ impl Session {
             }
             return;
         };
-        g.inflight.push(text.clone());
+        g.inflight.push(out.clone());
         let sent = match g.seed.take() {
-            Some(seed) => format!("{seed}\n\n{text}"),
-            None => text,
+            Some(seed) => format!("{seed}\n\n{}", out.text),
+            None => out.text,
         };
         g.turn_active = true;
         g.last_activity = Instant::now();
         if g.state == AgentSessionState::Idle || g.state == AgentSessionState::Reconnecting {
             g.state = AgentSessionState::Running;
         }
-        self.write(encode_user_message(&sent));
+        self.write(encode_user_message(&sent, &out.images));
     }
 
     // -------------------------------------------------------------- commands
 
     /// Queue the user's message; it is written now when idle, after the running turn
     /// otherwise, and the process is started first when there is none.
-    pub(crate) fn send(self: &Arc<Self>, text: String) -> Result<(), SpawnError> {
+    pub(crate) fn send(self: &Arc<Self>, out: Outgoing) -> Result<(), SpawnError> {
         let need_process = {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
             }
             g.respawns = 0;
-            g.queue.push_back(text);
+            g.queue.push_back(out);
             if g.live_gen.is_none() && !g.spawning {
                 true
             } else {

@@ -4,9 +4,11 @@ import { useActiveFilePath } from "@/hooks/use-tabs";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useAttachActiveNoteSetting, type Draft } from "@/hooks/use-agent";
 import { contextRefLabel } from "@/lib/agent/context-text";
+import { IMAGE_TOKEN_ESTIMATE } from "@/lib/agent/chat-images";
 import type { ChatId, ContextRef } from "@/lib/agent/events";
 import { Ico } from "./agent-icon";
 import { openVaultPath } from "./agent-links";
+import { ChatImageThumb } from "./chat-image-thumb";
 
 function relativeTo(path: string | null, root: string | null): string | null {
   if (!path || !root) return null;
@@ -18,21 +20,29 @@ function Chip({
   label,
   title,
   folder,
+  imagePath,
   onOpen,
   onRemove,
 }: {
   label: string;
   title: string;
   folder?: boolean;
+  /** An image chip: a thumbnail instead of the file icon. */
+  imagePath?: string;
   onOpen?: () => void;
   onRemove: () => void;
 }) {
   return (
     <span
       data-agent-chip
+      data-agent-chip-image={imagePath ? "" : undefined}
       className="inline-flex max-w-[14rem] items-center gap-1 rounded-md bg-[var(--surface-subtle)] py-0.5 pr-0.5 pl-1.5 text-[11.5px] text-text-secondary"
     >
-      <Ico icon={folder ? Folder01Icon : File02Icon} size={12} className="shrink-0" />
+      {imagePath ? (
+        <ChatImageThumb path={imagePath} className="size-5 shrink-0 rounded-[3px]" />
+      ) : (
+        <Ico icon={folder ? Folder01Icon : File02Icon} size={12} className="shrink-0" />
+      )}
       <button
         type="button"
         title={title}
@@ -84,9 +94,16 @@ export function ContextChips({ chatId, draft }: { chatId: ChatId; draft: Draft }
         <Chip
           key={`${ref.kind}:${contextRefLabel(ref)}:${i}`}
           label={"label" in ref && ref.label ? ref.label : nameOf(contextRefLabel(ref))}
-          title={contextRefLabel(ref)}
+          title={
+            ref.kind === "image"
+              ? `${ref.path} (image, about ${IMAGE_TOKEN_ESTIMATE.toLocaleString("en-US")} tokens)`
+              : contextRefLabel(ref)
+          }
           folder={ref.kind === "folder"}
-          onOpen={ref.kind === "note" ? () => openVaultPath(ref.path) : undefined}
+          imagePath={ref.kind === "image" ? ref.path : undefined}
+          onOpen={
+            ref.kind === "note" || ref.kind === "image" ? () => openVaultPath(ref.path) : undefined
+          }
           onRemove={() => remove(ref)}
         />
       ))}

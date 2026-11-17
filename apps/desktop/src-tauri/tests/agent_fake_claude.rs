@@ -76,7 +76,7 @@ impl Fake {
     }
 
     fn prompt(&mut self, text: &str) {
-        self.send(&encode_user_message(text));
+        self.send(&encode_user_message(text, &[]));
     }
 
     /// Read mapped events until one matches; returns it. Panics after 10 s of silence.

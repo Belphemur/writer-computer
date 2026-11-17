@@ -12,6 +12,7 @@ vi.mock("../src/lib/preferences", () => ({
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsPanel } from "../src/components/settings-panel";
 import { pluginSectionId } from "../src/components/settings-panel/settings-sections";
+import { syncSettingsPages } from "../features/obsidian-host/web/settings-pages";
 import { SETTINGS_SCHEMA } from "../src/lib/settings-schema";
 import { usePluginsStore } from "../src/stores/plugins-store";
 import { useSettingsStore } from "../src/stores/settings-store";
@@ -36,9 +37,16 @@ function fakeTab(id: string, name: string) {
   };
 }
 
+// The Obsidian host's pages are contributed by its feature while it is active.
+let stopHostPages: () => void;
+
 async function mount() {
   await act(async () => {
     root.render(<SettingsPanel isActive />);
+  });
+  // A contributed page's chunk is a dynamic import.
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
   });
 }
 
@@ -58,9 +66,11 @@ beforeEach(() => {
   useUIStore.setState({ settingsSection: "editor" });
   useWorkspaceStore.setState({ root: "/synthetic-vault" });
   usePluginsStore.setState({ settingTabs: [], snapshot: null });
+  stopHostPages = syncSettingsPages();
 });
 
 afterEach(async () => {
+  stopHostPages();
   await act(async () => root.unmount());
   container.remove();
   useWorkspaceStore.setState({ root: null });

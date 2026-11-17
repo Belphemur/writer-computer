@@ -1,5 +1,10 @@
-import { useSyncExternalStore } from "react";
-import { closeDocks, openDock, subscribeDocks } from "@/lib/features/docks";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import {
+  closeDocksOpenedBefore,
+  openDock,
+  openDockIds,
+  subscribeDocks,
+} from "@/lib/features/docks";
 
 /** Id of the open dock, or null. A primitive, so the snapshot is stable between changes. */
 export function useOpenDockId(): string | null {
@@ -11,4 +16,16 @@ export function useDockWidth(): number {
   return useSyncExternalStore(subscribeDocks, () => openDock()?.width() ?? 0);
 }
 
-export { closeDocks };
+/** One right-hand column: whichever dock opened last wins (mount once, in the layout). */
+export function useExclusiveDocks(): void {
+  const open = useRef<Set<string>>(openDockIds());
+  useEffect(
+    () =>
+      subscribeDocks(() => {
+        const now = openDockIds();
+        closeDocksOpenedBefore(open.current, now);
+        open.current = openDockIds();
+      }),
+    [],
+  );
+}

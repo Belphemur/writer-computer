@@ -29,8 +29,8 @@ pub enum BinarySource {
     KnownDir,
 }
 
-/// Mirror of `AgentBinaryInfo` in `events.ts`, plus `searched` (the directories tried when
-/// nothing was found; `[]` when found).
+/// Where `claude` is and what the CLI says about itself; `searched` holds the directories tried
+/// when nothing was found (`[]` when found).
 #[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentBinaryInfo {

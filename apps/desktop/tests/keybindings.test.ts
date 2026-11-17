@@ -185,7 +185,6 @@ describe("the palette shows the registry's shortcut", () => {
         unpinnedTabCount: 1,
         activeTabPin: "unpinned",
         hasClosedTabs: true,
-        hasPluginLeaves: true,
         close: noop,
       },
       { get: (t, k) => (k in t ? (t as never)[k] : noop) },

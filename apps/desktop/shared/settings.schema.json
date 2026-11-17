@@ -321,6 +321,14 @@
       "default": "utf-8"
     },
     {
+      "key": "files.attachment-folder",
+      "label": "Attachment Folder",
+      "description": "Where images dropped or pasted into a note are saved. A folder path from the vault root (\"attachments\"), \"./\" for next to the note, or \"./name\" for a subfolder of the note's folder. Empty uses the vault's Obsidian attachment setting (read-only) when it has one, otherwise \"attachments\" at the vault root.",
+      "category": "Files",
+      "type": "string",
+      "default": ""
+    },
+    {
       "key": "files.insert-final-newline",
       "label": "Insert Final Newline",
       "description": "Ensure files end with a newline when saving",
@@ -476,6 +484,15 @@
       "default": true
     },
     {
+      "key": "files.show-images",
+      "label": "Show Images in the Sidebar",
+      "description": "List image files (png, jpg, gif, webp, svg, avif, bmp) in the sidebar and quick open, so you can open them in a viewer and drag one into a note. Respects the ignored folders. Takes effect for quick open the next time the workspace opens.",
+      "category": "Files",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "workspace.managed-agent-skills",
       "label": "Install Agent Skills",
       "description": "Keep Writer's agent skills (writer-cli, writer-search, writer-bases) in .agents/skills and .claude/skills of every workspace you open, so Claude Code and other agents know how to use the writer command. Writer overwrites those skill files when it updates them and never touches skills it did not write. Commit them with your notes if you want to share them.",
@@ -562,6 +579,15 @@
       "key": "features.agent.enabled",
       "label": "Agent",
       "description": "Turns the Agent feature on or off. The Rust part takes effect after a restart.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
+      "key": "features.obsidian-host.enabled",
+      "label": "Obsidian plugins",
+      "description": "Turns the Obsidian plugins feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,

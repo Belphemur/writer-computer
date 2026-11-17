@@ -2,7 +2,7 @@
 //!
 //! This module currently holds the CONTRACT only:
 //!
-//! - `events` — the typed events/commands shared with the frontend (`src/lib/agent/events.ts`);
+//! - `events` — the typed events/commands shared with the frontend (generated into `features/agent/web/bindings.ts`);
 //! - `claude_stream` — pure mapping between the claude CLI's stream-json lines and those events,
 //!   plus the stdin encoders and the argument vector.
 //!
@@ -16,16 +16,19 @@ pub mod claude_stream;
 pub mod consent;
 pub mod env;
 pub mod events;
+pub mod images;
 pub mod line_diff;
 pub mod permission_rules;
 pub mod ports;
 pub mod project;
 pub mod project_context;
+pub mod roles;
 pub mod runner;
 #[cfg(all(test, unix))]
 mod runner_tests;
 pub mod session;
 pub mod skills;
+pub mod sub_tracker;
 pub mod subagents;
 pub mod title;
 pub mod writer_prompt;

@@ -1,20 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Sidebar } from "./sidebar";
 import { EditorArea } from "./editor-area";
 import { EditorTabs } from "./editor-area/editor-tabs";
 import { SidebarToggleButton } from "./sidebar/sidebar-toggle-button";
 import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
-import {
-  useActivePluginLeaf,
-  useClosePluginPane,
-  useIsPluginPaneOpen,
-  usePluginPaneWidth,
-} from "@/hooks/use-plugins";
-import { PluginViewPane } from "./plugins/plugin-view-pane";
 import { DockPane } from "./dock-pane";
 import { FeatureHealthNotices } from "./feature-health-notices";
-import { closeDocks, useDockWidth, useOpenDockId } from "@/hooks/use-docks";
+import { useDockWidth, useExclusiveDocks, useOpenDockId } from "@/hooks/use-docks";
 import { PluginStatusBar } from "./plugins/plugin-strips";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useWorkspaceChromeMode, useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -36,25 +29,11 @@ export function AppLayout() {
 }
 
 function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
-  const pluginPaneOpen = useIsPluginPaneOpen();
-  const pluginPaneLeaf = useActivePluginLeaf();
-  const pluginPaneWidth = usePluginPaneWidth();
   const dockId = useOpenDockId();
   const dockWidth = useDockWidth();
-  const closePluginPane = useClosePluginPane();
-  // One right-hand column: whichever pane opened last wins (the effect that runs on a change
-  // closes the other one), and an open dock beats the plugin pane while both exist.
-  useEffect(() => {
-    if (dockId) closePluginPane();
-  }, [dockId, closePluginPane]);
-  useEffect(() => {
-    if (pluginPaneOpen) closeDocks();
-  }, [pluginPaneOpen]);
-  const pluginPaneInset = dockId
-    ? dockWidth
-    : pluginPaneOpen && pluginPaneLeaf
-      ? pluginPaneWidth
-      : 0;
+  useExclusiveDocks();
+  // The right-hand column is the open dock (the agent pane, the plugin pane).
+  const dockInset = dockWidth;
   const { isSidebarCollapsed, sidebarWidth, setSidebarWidth } = useSidebar();
   const viewportWidth = typeof window === "undefined" ? 1200 : window.innerWidth;
   const maxSidebarWidth = Math.max(280, Math.min(420, Math.floor(viewportWidth * 0.35)));
@@ -151,7 +130,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
         style={{
           height: "var(--chrome-drag-height)",
           left: isSidebarCollapsed ? 0 : draftSidebarWidth,
-          right: pluginPaneInset,
+          right: dockInset,
         }}
       />
       <div
@@ -168,8 +147,8 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
           className="pointer-events-none absolute top-0 z-40"
           style={{
             left: tabChromeLeft,
-            // The plugin pane is a full-height column: the tab strip ends at its left edge.
-            right: pluginPaneInset + 12,
+            // A dock is a full-height column: the tab strip ends at its left edge.
+            right: dockInset + 12,
             transition: isSidebarDragging ? "none" : "left 140ms ease-out",
           }}
         >
@@ -205,7 +184,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
             {showWelcome ? <WelcomeScreen /> : <EditorArea />}
             <PluginStatusBar />
           </div>
-          {dockId ? <DockPane id={dockId} /> : <PluginViewPane />}
+          {dockId ? <DockPane id={dockId} /> : null}
         </div>
       </div>
       <FeatureHealthNotices />

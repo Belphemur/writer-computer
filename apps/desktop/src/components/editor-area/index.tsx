@@ -3,6 +3,7 @@ import { pageKind } from "./page-kinds";
 import { pageKindView } from "./page-kinds/views";
 import { EditorSearchOverlay } from "./editor-search-overlay";
 import { EditorNoticeBanner } from "./editor-notice-banner";
+import { useOsImageDrop } from "./use-os-image-drop";
 
 interface EditorAreaProps {
   showFooter?: boolean;
@@ -12,6 +13,7 @@ function EditorArea({ showFooter = true }: EditorAreaProps) {
   const activeTab = useActiveTab();
   const activeTabId = useActiveTabId();
   const tabs = useOpenTabs();
+  useOsImageDrop();
 
   return (
     <div className="relative h-full overflow-hidden">

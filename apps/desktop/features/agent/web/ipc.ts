@@ -4,21 +4,26 @@
 // `WRITER_UPDATE_BINDINGS=1 cargo test bindings`), and only for types, so the generated runtime
 // stays out of the app.
 //
-// `AgentCommands` is the argument object and result of each command as the pane uses them. The
-// commands of the hand-written contract in `lib/agent/events.ts` (`AgentCommandMap`) and the few
-// the clients type themselves keep their UI types; every other result is the generated one. Where
-// a UI type differs from the wire the difference is real and listed here, to be removed when the UI
-// types move onto the generated ones: `ChatSummary.preview` is nullable and `titleSource` optional
-// on the wire, `AgentBinaryInfo` has optional fields the UI treats as required, `ContextRef.label`
-// is UI-only. `tests/agent-ipc.test.ts` ties the command list of the manifest, the generated
-// bindings and this map together.
-import type { RegenerateOutcome } from "@/lib/agent/auto-title";
-import type { AgentCommandMap, AgentEventEnvelope, ChatSummary } from "@/lib/agent/events";
-import type { ManifestPreview } from "@/lib/agent/project-client";
+// `AgentCommands` is the argument object of each command as the pane uses them (argument names are
+// the one thing the generated functions do not keep as a type) and its result, which is always the
+// generated one (`Ret`): no wire result is described by hand. The pane's own types
+// (`lib/agent/events.ts`) re-export the generated ones and add the UI-only fields (`ContextRef.label`).
+// `tests/agent-ipc.test.ts` ties the command list of the manifest, the generated bindings and this
+// map together.
 import { featureEvents } from "@/lib/features/events";
 import { featureInvoke } from "@/lib/features/ipc";
 import manifest from "../feature.json";
-import type { ProjectUpdate, commands } from "./bindings";
+import type {
+  AgentEventEnvelope,
+  AgentSettings,
+  ChatActionName,
+  ContextRef,
+  Effort,
+  PermissionDecision,
+  PermissionPersist,
+  ProjectUpdate,
+  commands,
+} from "./bindings";
 
 export type * from "./bindings";
 
@@ -32,55 +37,116 @@ type Ret<K extends string> = Awaited<ReturnType<Gen[Camel<K> & keyof Gen]>>;
 /** A Rust `Option<T>` argument: may be left out or null. */
 type Opt<T> = T | null | undefined;
 
-type FromMap<K extends keyof AgentCommandMap> = {
-  args: AgentCommandMap[K][0];
-  result: AgentCommandMap[K][1];
-};
-/** A command the hand contract does not describe: the generated result. */
-type Generated<K extends string, A extends object> = { args: A; result: Ret<K> };
+type Command<K extends string, A extends object> = { args: A; result: Ret<K> };
 
 export interface AgentCommands {
-  agent_detect_binary: FromMap<"agent_detect_binary">;
-  agent_start: FromMap<"agent_start">;
-  agent_send: FromMap<"agent_send">;
-  agent_cancel: FromMap<"agent_cancel">;
-  agent_permission: FromMap<"agent_permission">;
-  agent_set_permission_mode: FromMap<"agent_set_permission_mode">;
-  agent_set_model: FromMap<"agent_set_model">;
-  agent_close: FromMap<"agent_close">;
-  agent_resume: Generated<"agent_resume", { chatId: string; sessionId: string }>;
-  agent_snapshot: FromMap<"agent_snapshot">;
-  agent_turn_changes: FromMap<"agent_turn_changes">;
-  agent_revert_changes: FromMap<"agent_revert_changes">;
-  agent_list_skills: FromMap<"agent_list_skills">;
-  agent_list_chats: FromMap<"agent_list_chats">;
-  agent_load_chat: FromMap<"agent_load_chat">;
-  agent_save_chat: FromMap<"agent_save_chat">;
-  agent_chat_action: FromMap<"agent_chat_action">;
-  agent_auto_title: {
-    args: { chatId: string; titleModel?: Opt<string>; chatModel?: Opt<string> };
-    result: ChatSummary | null;
-  };
-  agent_regenerate_title: {
-    args: { chatId: string; titleModel?: Opt<string> };
-    result: RegenerateOutcome;
-  };
-  agent_chat_replay: Generated<"agent_chat_replay", { chatId: string; maxTokens?: Opt<number> }>;
-  agent_permission_rules: FromMap<"agent_permission_rules">;
-  agent_remove_permission_rule: FromMap<"agent_remove_permission_rule">;
-  agent_list_projects: Generated<"agent_list_projects", { includeArchived?: Opt<boolean> }>;
-  agent_read_project: Generated<"agent_read_project", { path: string }>;
-  agent_create_project: Generated<
+  agent_detect_binary: Command<"agent_detect_binary", { binaryOverride?: Opt<string> }>;
+  agent_start: Command<
+    "agent_start",
+    {
+      chatId: string;
+      /** Vault-relative project folder, or null for the vault root. */
+      projectPath: string | null;
+      resumeSessionId: string | null;
+      settings: AgentSettings;
+      /** The project's `AGENTS.md` text is injected through this. */
+      appendSystemPrompt: string | null;
+    }
+  >;
+  agent_send: Command<
+    "agent_send",
+    { chatId: string; messageId: string; text: string; context: ContextRef[] }
+  >;
+  agent_cancel: Command<"agent_cancel", { chatId: string }>;
+  agent_permission: Command<
+    "agent_permission",
+    {
+      chatId: string;
+      requestId: string;
+      decision: PermissionDecision;
+      persist?: Opt<PermissionPersist>;
+      /** Shown to the model on deny. */
+      message?: Opt<string>;
+    }
+  >;
+  agent_set_permission_mode: Command<
+    "agent_set_permission_mode",
+    { chatId: string; mode: AgentSettings["permissionMode"] }
+  >;
+  agent_set_model: Command<
+    "agent_set_model",
+    { chatId: string; model: string | null; effort: Effort | null }
+  >;
+  agent_close: Command<"agent_close", { chatId: string }>;
+  agent_resume: Command<"agent_resume", { chatId: string; sessionId: string }>;
+  /** Events with seq > afterSeq still buffered (bounded ring), plus the current state. */
+  agent_snapshot: Command<"agent_snapshot", { chatId: string; afterSeq: number }>;
+  /** The diffs of a finished turn; `null` once the in-memory snapshot is gone (app restart). */
+  agent_turn_changes: Command<"agent_turn_changes", { chatId: string; turnId: string }>;
+  /** Undo: restore the pre-turn content; one outcome per path; `null` when the snapshot is gone. */
+  agent_revert_changes: Command<
+    "agent_revert_changes",
+    { chatId: string; turnId: string; paths: string[] }
+  >;
+  agent_list_skills: Command<"agent_list_skills", { projectPath: string | null }>;
+  /** `all: true` lists every project's chats; `query` filters by title and first user message. */
+  agent_list_chats: Command<
+    "agent_list_chats",
+    {
+      projectPath: string | null;
+      includeArchived?: Opt<boolean>;
+      all?: Opt<boolean>;
+      query?: Opt<string>;
+    }
+  >;
+  agent_load_chat: Command<"agent_load_chat", { chatId: string }>;
+  agent_save_chat: Command<
+    "agent_save_chat",
+    { chatId: string; markdown: string; titleHint?: Opt<string> }
+  >;
+  agent_chat_action: Command<
+    "agent_chat_action",
+    { chatId: string; action: ChatActionName; title?: Opt<string> }
+  >;
+  agent_auto_title: Command<
+    "agent_auto_title",
+    { chatId: string; titleModel?: Opt<string>; chatModel?: Opt<string> }
+  >;
+  agent_regenerate_title: Command<
+    "agent_regenerate_title",
+    { chatId: string; titleModel?: Opt<string> }
+  >;
+  agent_chat_replay: Command<"agent_chat_replay", { chatId: string; maxTokens?: Opt<number> }>;
+  /** A pasted or browser-dropped image (base64) into the chat's hidden `assets/` folder. */
+  agent_save_chat_image: Command<
+    "agent_save_chat_image",
+    { projectPath: string | null; name: string; dataBase64: string }
+  >;
+  /** A Finder-dropped image file (absolute path), copied into the chat's `assets/` folder. */
+  agent_import_chat_image_file: Command<
+    "agent_import_chat_image_file",
+    { projectPath: string | null; sourcePath: string }
+  >;
+  agent_permission_rules: Command<"agent_permission_rules", { projectPath: string | null }>;
+  agent_remove_permission_rule: Command<
+    "agent_remove_permission_rule",
+    { projectPath: string | null; rule: string }
+  >;
+  agent_list_projects: Command<"agent_list_projects", { includeArchived?: Opt<boolean> }>;
+  agent_read_project: Command<"agent_read_project", { path: string }>;
+  agent_create_project: Command<
     "agent_create_project",
     {
+      /** Folder name; created under `parent` (default: `Projects`). */
       name: string;
       parent?: Opt<string>;
       description: string;
       inclusions: string[];
+      /** Seeds `AGENTS.md`. Empty means the short template. */
       instructions: string;
     }
   >;
-  agent_make_project: Generated<
+  agent_make_project: Command<
     "agent_make_project",
     {
       path: string;
@@ -90,10 +156,10 @@ export interface AgentCommands {
       inclusions?: Opt<string[]>;
     }
   >;
-  agent_update_project: Generated<"agent_update_project", { path: string; update: ProjectUpdate }>;
-  agent_archive_project: Generated<"agent_archive_project", { path: string; archived: boolean }>;
-  agent_inspect_folder: Generated<"agent_inspect_folder", { path: string }>;
-  agent_project_manifest: { args: { path: string }; result: ManifestPreview };
+  agent_update_project: Command<"agent_update_project", { path: string; update: ProjectUpdate }>;
+  agent_archive_project: Command<"agent_archive_project", { path: string; archived: boolean }>;
+  agent_inspect_folder: Command<"agent_inspect_folder", { path: string }>;
+  agent_project_manifest: Command<"agent_project_manifest", { path: string }>;
 }
 
 /** `agentCommand("agent_start", { ... })` -> `invoke("plugin:agent|agent_start", ...)`. */

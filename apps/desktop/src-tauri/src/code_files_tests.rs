@@ -72,14 +72,14 @@ fn tree_lists_code_files_and_hides_unknown_secret_and_generated_ones() {
         "Dockerfile",
         "Makefile",
         "x.sh",
+        "logo.png",
+        "logo.svg",
         "web",
         "py",
     ] {
         assert!(top.contains(&want.to_string()), "{want} in {top:?}");
     }
     for no in [
-        "logo.png",
-        "logo.svg",
         "nb.ipynb",
         "blob.bin",
         ".env",
@@ -94,6 +94,86 @@ fn tree_lists_code_files_and_hides_unknown_secret_and_generated_ones() {
     assert_eq!(web, vec!["src".to_string()]);
     // `py` holds only a generated folder: visible as an empty folder, nothing inside.
     assert!(names(&root, "py").is_empty());
+}
+
+#[test]
+fn images_are_listed_in_the_tree_but_not_in_hidden_or_ignored_folders() {
+    let (_d, root) = vault();
+    for f in [
+        "attachments/shot.PNG",
+        "attachments/photo.jpg",
+        "attachments/scan.heic",
+        "web/dist/built.png",
+        "web/node_modules/dep/logo.png",
+        ".obsidian/icon.png",
+        ".git/x.png",
+    ] {
+        touch(&root, f, "x");
+    }
+    let mut listed = names(&root, "attachments");
+    listed.sort();
+    // heic does not render in the webview, so it is not a listed image
+    assert_eq!(listed, vec!["photo.jpg", "shot.PNG"]);
+    assert!(names(&root, "web").is_empty());
+    let top = names(&root, "");
+    assert!(!top.contains(&".obsidian".to_string()) && !top.contains(&".git".to_string()));
+}
+
+#[test]
+fn image_entries_have_no_title() {
+    let (_d, root) = vault();
+    touch(&root, "a.png", "x");
+    let state = state_for(&root);
+    let entries = read_directory_impl(&root.to_string_lossy(), Some(&state)).unwrap();
+    let image = entries.iter().find(|e| e.name == "a.png").unwrap();
+    assert!(!image.is_dir && image.title.is_none());
+}
+
+#[test]
+fn index_holds_image_rows_resolvable_by_name_without_indexing_their_content() {
+    use crate::index::Index;
+    let (_d, root) = vault();
+    let data = TempDir::new().unwrap();
+    touch(&root, "img/shot.png", "not really a png");
+    touch(&root, "Note.md", "![[shot.png]]\n");
+    let index = Index::open_for_cli(&root, Some(data.path())).unwrap();
+    let page = index
+        .query_files(&crate::index::FileFilter::default())
+        .unwrap();
+    let paths: Vec<String> = page.rows.into_iter().map(|r| r.path).collect();
+    assert!(paths.contains(&"img/shot.png".to_string()), "{paths:?}");
+    // the embed resolves to the image by file name
+    let found = index.find_files_by_exact_name("shot.png", 10).unwrap();
+    assert_eq!(found, vec!["img/shot.png".to_string()], "{found:?}");
+}
+
+#[test]
+fn relocating_an_image_rewrites_the_embeds_and_links_to_it() {
+    use crate::index::Index;
+    let (_d, root) = vault();
+    let data = TempDir::new().unwrap();
+    touch(&root, "attachments/old.png", "x");
+    touch(
+        &root,
+        "Note.md",
+        "![[old.png]] and ![[attachments/old.png]] and [a](attachments/old.png)\n",
+    );
+    let index = Index::open_for_cli(&root, Some(data.path())).unwrap();
+    let plan = crate::relocate::plan(
+        &root,
+        &index,
+        "attachments/old.png",
+        "attachments/new.png",
+        true,
+    )
+    .unwrap();
+    assert!(!plan.edits.is_empty());
+    crate::relocate::apply(&plan).unwrap();
+    assert!(root.join("attachments/new.png").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("Note.md")).unwrap(),
+        "![[new.png]] and ![[attachments/new.png]] and [a](attachments/new.png)\n"
+    );
 }
 
 #[test]

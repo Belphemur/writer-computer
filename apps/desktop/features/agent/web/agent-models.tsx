@@ -9,9 +9,7 @@ import {
   type ModelRow,
 } from "@/lib/agent/model-catalog";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
-
-const INPUT =
-  "h-9 w-full rounded-lg border border-transparent bg-[var(--surface-input)] px-3 text-[13px] text-[var(--text-secondary)] font-[inherit] outline-none focus:border-[var(--focus-border)] focus-visible:outline-none";
+import { INPUT } from "./agent-rows";
 
 function matches(row: ModelRow, query: string): boolean {
   const q = query.trim().toLowerCase();

@@ -115,11 +115,20 @@ function withChanges(): ChatNoteDoc {
   return d;
 }
 
+/** A user message with two attached images (one path with a space): the `![[...]]` lines follow the
+ *  message comment, the comment lists the paths, and the text and context line stay as typed. */
+function withImages(): ChatNoteDoc {
+  const d = base();
+  d.messages[0]!.images = [".writer/chats/assets/Pasted image 20261117091205.png", "pics/a b.png"];
+  return d;
+}
+
 const CASES: Record<string, () => ChatNoteDoc> = {
   basic: base,
   escape: escapes,
   props,
   changes: withChanges,
+  images: withImages,
 };
 
 describe("chat note golden files", () => {

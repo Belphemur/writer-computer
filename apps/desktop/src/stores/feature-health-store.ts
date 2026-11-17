@@ -42,13 +42,15 @@ interface FeatureHealthState {
   recordFailure: (id: string, boundary: string) => void;
   /** `features:failed` from Rust: its web half goes off at once. */
   markFailedByRust: (id: string, boundary: string) => void;
+  /** A failure that cannot be retried (the Obsidian host failed to boot): off for the session at once. */
+  failNow: (id: string, boundary: string) => void;
   applyStatus: (status: FeaturesStatus) => void;
   /** The user turned the feature back on: forget its failures (web half at once). */
   clear: (id: string) => void;
   dismiss: (key: string) => void;
 }
 
-export const useFeatureHealth = create<FeatureHealthState>()((set) => ({
+export const useFeatureHealth = create<FeatureHealthState>()((set, get) => ({
   failures: {},
   sessionOff: {},
   crashDisabled: [],
@@ -64,7 +66,9 @@ export const useFeatureHealth = create<FeatureHealthState>()((set) => ({
       };
     }),
 
-  markFailedByRust: (id, boundary) =>
+  markFailedByRust: (id, boundary) => get().failNow(id, boundary),
+
+  failNow: (id, boundary) =>
     set((s) => ({
       failures: { ...s.failures, [id]: { boundary, at: Date.now(), count: FAILURE_LIMIT } },
       sessionOff: { ...s.sessionOff, [id]: true },

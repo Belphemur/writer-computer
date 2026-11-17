@@ -18,6 +18,7 @@ import { recordFailure } from "./health";
 import { editorExtensionContributions } from "./editor-extensions";
 import { dockContributions } from "./docks";
 import { menuContributions, menuKey } from "./menus";
+import { overlayContributions } from "./overlays";
 import { featurePaletteCommands } from "./palette";
 import { settingsSectionContributions } from "./settings-sections";
 import { sidebarActionContributions, sidebarPanelContributions } from "./sidebar";
@@ -48,6 +49,7 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.sidebarPanels ?? []),
     ...(c.sidebarActions ?? []),
     ...(c.statusItems ?? []),
+    ...(c.overlays ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
@@ -139,6 +141,7 @@ export function createFeatureHost({
     sidebarPanelContributions.removeOwner(ownerOf(id));
     sidebarActionContributions.removeOwner(ownerOf(id));
     statusItemContributions.removeOwner(ownerOf(id));
+    overlayContributions.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -207,6 +210,9 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.statusItems ?? []) {
           statusItemContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.overlays ?? []) {
+          overlayContributions.add(x.id, { ...x, owner: o });
         }
         const section = def.contributes?.settingsSection;
         if (section) settingsSectionContributions.add(section.id, { ...section, owner: o });

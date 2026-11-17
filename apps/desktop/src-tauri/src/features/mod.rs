@@ -58,11 +58,13 @@ use crate::cli::registry::CommandSpec;
 use crate::config::Settings;
 use crate::error::AppError;
 use crate::managed_skills::BundledSkill;
+use crate::state::AppState;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
+use std::sync::Arc;
 use tauri::ipc::Invoke;
 use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
@@ -81,6 +83,10 @@ mod ipc_tests;
 
 #[path = "../../../features/agent/rust/mod.rs"]
 mod agent;
+// Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
+// registers (see the module), it has no plugin, setup or hook for the runner to run.
+#[path = "../../../features/obsidian-host/rust/mod.rs"]
+pub(crate) mod obsidian_host;
 
 /// The parts of `feature.json` Rust reads. `build.rs` reads the same file for the ACL, so the
 /// manifest is the only place a command name is declared.
@@ -119,6 +125,8 @@ pub struct Contributes {
     pub sidebar_actions: Vec<String>,
     #[serde(default)]
     pub status_items: Vec<String>,
+    #[serde(default)]
+    pub overlays: Vec<String>,
     /// Menu surface (`editor-body`, `sidebar-file`, ...) to contributed item ids.
     #[serde(default)]
     pub menus: BTreeMap<String, Vec<String>>,
@@ -132,6 +140,7 @@ impl Contributes {
             ("sidebarPanels".to_string(), &self.sidebar_panels),
             ("sidebarActions".to_string(), &self.sidebar_actions),
             ("statusItems".to_string(), &self.status_items),
+            ("overlays".to_string(), &self.overlays),
         ];
         lists.extend(
             self.menus
@@ -153,6 +162,11 @@ pub struct RustPart {
     /// `onExit`): documentation for the Features section, vocabulary checked by the contract test.
     #[serde(default)]
     pub hooks: Vec<String>,
+    /// Commands the app registers itself (they are not a plugin's, so a plugin name or ACL would
+    /// change their IPC names) that this feature's kill switch and failure state gate: [`gate`]
+    /// answers `FeatureUnavailable` for them while the feature is off. Not part of `has_rust`.
+    #[serde(default, rename = "gatedCommands")]
+    pub gated_commands: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -647,6 +661,61 @@ pub fn contain<R: Runtime>(
             }
         }
     }
+}
+
+/// Is the feature usable right now? Not in safe mode, not failed this session and its switch on.
+/// The switch is read live from the global settings (every window shares them), so turning it on
+/// or off applies at once; a feature with a plugin needs a restart instead, a gated one does not.
+pub fn is_live<R: Runtime>(app: &AppHandle<R>, manifest: &Manifest) -> bool {
+    if containment(app).is_some_and(|c| c.safe_mode || c.is_failed(&manifest.id)) {
+        return false;
+    }
+    let Some(state) = app
+        .try_state::<AppState>()
+        .and_then(|s| s.get(crate::MAIN_WINDOW_LABEL))
+    else {
+        return manifest.enabled_by_default;
+    };
+    let settings = state.settings.read();
+    settings
+        .as_ref()
+        .map_or(manifest.enabled_by_default, |s| is_enabled(s, manifest))
+}
+
+/// Wraps the app's invoke handler for a feature whose commands stay registered by the app: a
+/// command named in `manifest.rust.gated_commands` runs only while [`is_live`] and through
+/// [`contain`] (a failed feature answers `FeatureUnavailable`, a panic fails the feature); every
+/// other command goes straight to `handler`.
+pub fn gate<R: Runtime>(
+    manifest: Manifest,
+    handler: impl Fn(Invoke<R>) -> bool + Send + Sync + 'static,
+) -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'static {
+    let handler = Arc::new(handler);
+    let inner = handler.clone();
+    let contained = contain(manifest.id.clone(), Box::new(move |invoke| inner(invoke)));
+    move |invoke| {
+        if !manifest
+            .rust
+            .gated_commands
+            .iter()
+            .any(|c| c == invoke.message.command())
+        {
+            return handler(invoke);
+        }
+        let app = invoke.message.webview().app_handle().clone();
+        if !is_live(&app, &manifest) {
+            invoke
+                .resolver
+                .reject(AppError::FeatureUnavailable(manifest.id.clone()));
+            return true;
+        }
+        contained(invoke)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn fail_for_test<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    fail(app, id, "test", false);
 }
 
 /// The Tauri plugin of a feature's commands: named after the id, handler contained.

@@ -1,3 +1,8 @@
+/* The one cascade-layer order. Declared before Tailwind's own declaration so `plugins` sits
+   between components and utilities: Obsidian community plugin CSS (injected inside
+   `@layer plugins`, lib/obsidian-host/loader.ts) beats Writer's base and components but loses to
+   its utilities, so a plugin's generic `.hidden { display: none }` cannot override `md:block`. */
+@layer theme, base, components, plugins, utilities;
 @import "tailwindcss";
 
 @theme {

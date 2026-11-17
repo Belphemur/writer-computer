@@ -4,6 +4,11 @@
 //! never started here (spec 12). The script records what it was given in files next to it:
 //! `argv.log`, `cwd.log`, `pids.log`, `stdin.log`.
 //!
+//! A `{"type":"fake_pause"}` line in a fixture makes the script wait until the test creates `go`
+//! (`Harness::go`), so a test can act between two lines (a tool "running" after its call was
+//! announced). Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
+//! 2.1.326 run that delegated to a sub-agent (`system` `task_*` lines, `parent_tool_use_id`).
+//!
 //! Modes (read from `mode.txt` at every stdin line, and once at launch): `normal`,
 //! `crash-after-init`, `crash-before-init`, `hang`, `resume-missing`, `mode-error`,
 //! `unsupported`, `grandchild`.
@@ -47,6 +52,7 @@ play() { # fixture, max lines
     [ -n "$2" ] && [ "$n" -ge "$2" ] && break
     case "$l" in
       *'"type":"control_request"'*) read -r resp <&3 || exit 0; echo "$resp" >> "$D/stdin.log";;
+      *'"type":"fake_pause"'*) while [ ! -e "$D/go" ]; do sleep 0.05; done; rm -f "$D/go";;
     esac
   done
   exec 4<&-
@@ -218,7 +224,7 @@ impl Harness {
             allowed_tools: vec![],
             disallowed_tools: vec![],
             orchestrate: true,
-            subagent_model: None,
+            tier_models: Default::default(),
         }
     }
 
@@ -302,6 +308,24 @@ impl Harness {
         }
     }
 
+    /// Releases a `fake_pause` of the fixture.
+    fn go(&self) {
+        std::fs::write(self.fdir.join("go"), "").unwrap();
+    }
+
+    /// Points the harness at a fixture whose `__FILE__` is `file` (a path in the harness vault).
+    fn use_fixture_for(&self, name: &str, file: &Path) {
+        let derived = std::fs::read_to_string(fixture(name))
+            .unwrap()
+            .replace("__FILE__", &file.to_string_lossy());
+        std::fs::write(self.fdir.join("derived.jsonl"), derived).unwrap();
+        std::fs::write(
+            self.fdir.join("turns.txt"),
+            format!("{}\n", self.fdir.join("derived.jsonl").display()),
+        )
+        .unwrap();
+    }
+
     fn wait_until(&self, what: &str, cond: impl Fn() -> bool) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while !cond() {
@@ -322,6 +346,52 @@ fn alive(pid: i32) -> bool {
 }
 
 const CHAT: &str = "5328964b-5fe4-4e06-8843-5cf92bdc9e7c";
+
+#[test]
+fn an_attached_image_reaches_claude_as_a_native_image_block_before_the_text() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    h.start(CHAT);
+    let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    std::fs::create_dir_all(h.root.join("pics")).unwrap();
+    std::fs::write(h.root.join("pics/a.png"), png).unwrap();
+    let r = |p: &str| [ContextRef::Image { path: p.into() }];
+    // a gone image or an unreadable type fails the send and writes nothing to claude
+    assert!(h
+        .sessions
+        .send("w", CHAT, "x".into(), &r("pics/gone.png"))
+        .is_err());
+    std::fs::write(h.root.join("pics/a.svg"), "<svg/>").unwrap();
+    assert!(h
+        .sessions
+        .send("w", CHAT, "x".into(), &r("pics/a.svg"))
+        .is_err());
+    assert!(h.lines("stdin.log").is_empty());
+
+    h.sessions
+        .send("w", CHAT, "what is this? PICTEXT".into(), &r("pics/a.png"))
+        .expect("send");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let line = h
+        .lines("stdin.log")
+        .into_iter()
+        .find(|l| l.contains("PICTEXT"))
+        .expect("the user message");
+    let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+    let content = v["message"]["content"].as_array().expect("a content array");
+    assert_eq!(content.len(), 2);
+    assert_eq!(content[0]["type"], "image");
+    assert_eq!(content[0]["source"]["type"], "base64");
+    assert_eq!(content[0]["source"]["media_type"], "image/png");
+    use base64::Engine as _;
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .decode(content[0]["source"]["data"].as_str().unwrap())
+            .unwrap(),
+        png
+    );
+    assert_eq!(content[1]["type"], "text");
+    assert!(content[1]["text"].as_str().unwrap().contains("PICTEXT"));
+}
 
 #[test]
 fn plain_turn_flows_as_numbered_events_with_the_fixed_argv() {
@@ -1305,18 +1375,215 @@ fn a_read_only_turn_sends_no_turn_changes() {
 
 #[test]
 fn orchestration_passes_the_agents_flag_only_when_on() {
-    for (orchestrate, model) in [(true, Some("sonnet")), (false, None)] {
+    for (orchestrate, cheap) in [(true, Some("sonnet")), (false, None)] {
         let h = Harness::new(&["ok-turn"], "normal");
         let mut p = h.params(CHAT, "w", None);
         p.request.settings.orchestrate = orchestrate;
-        p.request.settings.subagent_model = model.map(String::from);
+        if let Some(m) = cheap {
+            p.request
+                .settings
+                .tier_models
+                .insert("cheap".into(), Some(m.into()));
+        }
         h.sessions.start(p, &Ask::new(Decision::Once)).unwrap();
         h.wait_until("process", || !h.lines("argv.log").is_empty());
         let argv = &h.lines("argv.log")[0];
         assert_eq!(argv.contains("--agents"), orchestrate, "{argv}");
         if orchestrate {
             assert!(argv.contains("writer-explorer"), "{argv}");
+            assert!(argv.contains("writer-worker"), "{argv}");
             assert!(argv.contains(r#""model":"sonnet""#), "{argv}");
         }
     }
+}
+
+// ---- sub-agent edits and the Changes card (ADR "Define agent roles once ...", item 5) ----
+
+fn turn_changes(h: &mut Harness) -> TurnChangesSummary {
+    match h.next(CHAT, "turn-changes", |e| {
+        matches!(e, AgentEvent::TurnChanges(_))
+    }) {
+        AgentEvent::TurnChanges(s) => s,
+        _ => unreachable!(),
+    }
+}
+
+/// Item 5a and 5c: a sub-agent's edit (`parentToolCallId` set, no permission request) is
+/// snapshotted when its input is seen, before the (fake) tool runs, and the card entry carries the
+/// role of the `Agent` call's `subagent_type`.
+#[test]
+fn a_sub_agent_edit_is_snapshotted_before_it_runs_and_attributed_to_its_role() {
+    let mut h = Harness::new(&["subagent-edit"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-edit", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "edit it");
+    let parent = match h.next(
+        CHAT,
+        "the sub-agent's Write",
+        |e| matches!(e, AgentEvent::ToolCallStarted { tool, .. } if tool == "Write"),
+    ) {
+        AgentEvent::ToolCallStarted {
+            parent_tool_call_id,
+            ..
+        } => parent_tool_call_id,
+        _ => unreachable!(),
+    };
+    assert_eq!(parent.as_deref(), Some("toolu_agent1"));
+    h.next(CHAT, "its complete input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_write1")
+    });
+    // the fake waits at its pause, as the CLI does while the tool runs: the pre-image is already
+    // taken. Only now does the "tool" change the file.
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\nadded\n").unwrap();
+    h.go();
+
+    let summary = turn_changes(&mut h);
+    assert_eq!(summary.files.len(), 1);
+    let f = &summary.files[0];
+    assert_eq!(f.status, ChangeStatus::Modified);
+    assert_eq!((f.added, f.removed), (2, 1), "diffed against the OLD text");
+    assert_eq!(f.by.as_deref(), Some("worker"));
+    let changes = h.sessions.changes();
+    let out = changes
+        .revert(CHAT, &summary.turn_id, &h.root, &["notes.txt".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Reverted);
+    assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\nline\n");
+}
+
+/// Item 5b: the first `result` arrives while a background sub-agent still works (its task is
+/// listed); the card stays open, the late edit joins it, and it is sent once the sub-agent's
+/// notification and the second `result` have come.
+#[test]
+fn the_card_stays_open_while_a_sub_agent_works_so_late_edits_land_on_it() {
+    let mut h = Harness::new(&["subagent-background"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-background", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "edit it in the background");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+    assert!(
+        !h.seen
+            .iter()
+            .any(|e| matches!(e.event, AgentEvent::TurnChanges(_))),
+        "no card yet: the sub-agent still works"
+    );
+    // the sub-agent's edit comes after the first result
+    h.go();
+    h.next(CHAT, "the late edit's input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_write1")
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\nadded\n").unwrap();
+    h.go();
+
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let summary = turn_changes(&mut h);
+    assert_eq!(summary.files.len(), 1);
+    assert_eq!(summary.files[0].path, "notes.txt");
+    assert_eq!(summary.files[0].by.as_deref(), Some("worker"));
+    assert_eq!((summary.files[0].added, summary.files[0].removed), (2, 1));
+    // exactly one card for the turn
+    h.drain();
+    assert_eq!(
+        h.seen
+            .iter()
+            .filter(|e| matches!(e.event, AgentEvent::TurnChanges(_)))
+            .count(),
+        1
+    );
+}
+
+/// Item 5d: in manual mode the sub-agent's edit raises a permission card that says who asks and
+/// that the user can answer; the answer reaches the CLI and the edit lands on the card.
+#[test]
+fn a_manual_mode_sub_agent_permission_card_is_attributed_and_answerable() {
+    let mut h = Harness::new(&["subagent-permission"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-permission", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "edit it");
+    let (request_id, tool_call_id, by) = match h.next(CHAT, "permission-request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    }) {
+        AgentEvent::PermissionRequest {
+            request_id,
+            tool_call_id,
+            by,
+            ..
+        } => (request_id, tool_call_id, by),
+        _ => unreachable!(),
+    };
+    assert_eq!(tool_call_id.as_deref(), Some("toolu_write1"));
+    assert_eq!(by.as_deref(), Some("worker"), "the card says who asks");
+    // nothing has run: the pre-image is taken as the request is seen
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\nadded\n").unwrap();
+    h.sessions
+        .permission(
+            "w",
+            CHAT,
+            &request_id,
+            PermissionDecision::Allow,
+            None,
+            None,
+        )
+        .unwrap();
+    wait_for_answer(&h);
+
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let summary = turn_changes(&mut h);
+    assert_eq!(summary.files[0].by.as_deref(), Some("worker"));
+    assert_eq!(summary.files[0].status, ChangeStatus::Modified);
+}
+
+/// The answer was written to the CLI's stdin: an allow response for the request.
+fn wait_for_answer(h: &Harness) {
+    h.wait_until("the permission answer reaches the CLI", || {
+        h.log("stdin.log").contains("\"behavior\":\"allow\"")
+    });
+}
+
+/// A main-agent edit has no role.
+#[test]
+fn a_main_agent_edit_carries_no_role() {
+    let mut h = Harness::new(&["permission-allow"], "normal");
+    let derived = std::fs::read_to_string(fixture("permission-allow"))
+        .unwrap()
+        .replace(
+            "/vault/Projects/Demo/notes.txt",
+            &h.root.join("notes.txt").to_string_lossy(),
+        );
+    std::fs::write(h.fdir.join("derived.jsonl"), derived).unwrap();
+    std::fs::write(
+        h.fdir.join("turns.txt"),
+        format!("{}\n", h.fdir.join("derived.jsonl").display()),
+    )
+    .unwrap();
+    std::fs::write(h.root.join("notes.txt"), "old\n").unwrap();
+    h.start(CHAT);
+    h.send(CHAT, "write it");
+    for _ in 0..2 {
+        let id = match h.next(CHAT, "permission-request", |e| {
+            matches!(e, AgentEvent::PermissionRequest { .. })
+        }) {
+            AgentEvent::PermissionRequest { request_id, by, .. } => {
+                assert_eq!(by, None);
+                request_id
+            }
+            _ => unreachable!(),
+        };
+        std::thread::sleep(Duration::from_millis(200));
+        std::fs::write(h.root.join("notes.txt"), "new\n").unwrap();
+        h.sessions
+            .permission("w", CHAT, &id, PermissionDecision::Allow, None, None)
+            .unwrap();
+    }
+    assert_eq!(turn_changes(&mut h).files[0].by, None);
 }

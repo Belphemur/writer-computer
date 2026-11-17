@@ -148,35 +148,46 @@
       "default": true
     },
     {
-      "key": "agent.title-model",
-      "label": "Chat title model",
-      "description": "Model alias or full name for automatic chat titles (letters, digits and . _ : [ ] / - only). Leave blank, or write auto, for the cheapest model (haiku); if it is unavailable the chat's own model is used.",
-      "category": "Agent",
-      "type": "string",
-      "normalize": "trim",
-      "placeholder": "auto = cheapest",
-      "scope": "global",
-      "default": ""
-    },
-    {
       "key": "agent.orchestrate",
       "label": "Orchestrate with sub-agents",
-      "description": "Tell the agent to split work into parts and run cheap sub-agents in parallel (the read-only writer-explorer) for exploring, searching and summarising, doing only very simple work itself. Adds a short paragraph to the Writer system block and defines the sub-agents with --agents. Their tool calls use the same permission prompts and allow rules. Turn off to chat with a single agent.",
+      "description": "Tell the agent to split work into parts and run sub-agents in parallel: the cheap read-only writer-explorer for exploring, searching and summarising, and the writer-worker for bounded edits (its edits appear on the Changes card, labelled with the sub-agent, and can be undone), doing only very simple work itself. Adds a short paragraph to the Writer system block and defines the sub-agents with --agents. Their tool calls use the same permission prompts and allow rules. Turn off to chat with a single agent.",
       "category": "Agent",
       "type": "boolean",
       "scope": "global",
       "default": true
     },
     {
-      "key": "agent.subagent-model",
-      "label": "Sub-agent model",
-      "description": "Model alias or full name for the writer-explorer sub-agent (letters, digits and . _ : [ ] / - only). Leave blank, or write auto, for the cheapest model (haiku). Used only when Orchestrate with sub-agents is on.",
+      "key": "agent.claude.model-cheap",
+      "label": "Cheap tier model",
+      "description": "Model for the cheap tier: the read-only writer-explorer sub-agent and automatic chat titles. Picked from the model list, or a custom alias or full name (letters, digits and . _ : [ ] / - only). Blank or auto means haiku; default means the chat's own model.",
       "category": "Agent",
       "type": "string",
       "normalize": "trim",
       "placeholder": "haiku",
       "scope": "global",
       "default": "haiku"
+    },
+    {
+      "key": "agent.claude.model-standard",
+      "label": "Standard tier model",
+      "description": "Model for the standard tier: the writer-worker sub-agent that makes delegated edits. Picked from the model list, or a custom alias or full name (letters, digits and . _ : [ ] / - only). Blank or auto means sonnet; default means the chat's own model.",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "sonnet",
+      "scope": "global",
+      "default": "sonnet"
+    },
+    {
+      "key": "agent.claude.model-strong",
+      "label": "Strong tier model",
+      "description": "Model for the strong tier, for sub-agents that need the most capable model (none uses it yet). default means the chat's own model. Picked from the model list, or a custom alias or full name (letters, digits and . _ : [ ] / - only).",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "default",
+      "scope": "global",
+      "default": "default"
     },
     {
       "key": "agent.restore-chats",

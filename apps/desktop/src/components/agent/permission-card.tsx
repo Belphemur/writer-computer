@@ -58,6 +58,14 @@ export function PermissionCard({ request, more }: { request: PermissionView; mor
       <div className="flex items-center gap-2 font-medium">
         <Ico icon={ShieldKeyIcon} size={15} className="text-[var(--agent-warn)]" />
         <span>Permission required</span>
+        {request.by && (
+          <span
+            data-agent-permission-by={request.by}
+            className="rounded-full bg-[var(--surface-subtle)] px-1.5 py-0.5 text-[11px] font-normal text-text-muted"
+          >
+            asked by {request.by}
+          </span>
+        )}
         {more > 0 && (
           <span className="ml-auto rounded-md bg-[var(--surface-subtle)] px-1.5 py-0.5 text-[11px] font-normal text-text-muted">
             +{more} more

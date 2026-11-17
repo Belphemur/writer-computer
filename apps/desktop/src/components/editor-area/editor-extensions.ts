@@ -25,6 +25,7 @@ import { calloutDecorations } from "./callout-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { editorBodyContextMenuExtension } from "./editor-body-menu";
 import { editorClipboardExtension } from "./editor-clipboard";
+import { imageInsertExtension } from "./editor-image-insert";
 import { editorSearchExtensions } from "./editor-search-extensions";
 import { useEditorSearchStore } from "./editor-search-store";
 import { headingDecorations } from "./heading-decorations";
@@ -141,7 +142,8 @@ export function createEditorExtensions(
     wikiLinkExtension(getFilePath, isDisposed),
     markdownFormatting,
     storeSyncExtension(getFilePath),
-    editorClipboardExtension(getFilePath, isDisposed),
+    editorClipboardExtension(getFilePath),
+    imageInsertExtension(getFilePath, isDisposed),
     focusOnRevealExtension(isDisposed),
     pluginConfigGuard,
     // Extensions community plugins registered; reconfigured on plugin enable/disable.

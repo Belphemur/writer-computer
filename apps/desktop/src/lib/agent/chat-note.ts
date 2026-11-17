@@ -8,6 +8,7 @@
  * attached paths per message and a capped tool trail; never tool output or note contents.
  */
 import { parse as parseYaml } from "yaml";
+import { embedLine } from "../attachments";
 import type {
   AgentEvent,
   ContextRef,
@@ -67,6 +68,9 @@ export type ChatNoteMessage = {
   text: string;
   /** What the user attached (paths and tags, never contents). */
   context?: string;
+  /** Vault-relative paths of the images attached to a user message; written as `![[...]]` lines
+   *  after the message comment (and listed in it), so a reopened chat shows them. */
+  images?: string[];
   tools?: ChatNoteTool[];
   /** The "Changes" card's summary (assistant only): paths and counts, never contents. */
   changes?: TurnChangesSummary;
@@ -215,7 +219,10 @@ export function capToolInput(input: unknown): unknown {
 function serializeMessage(m: ChatNoteMessage): string {
   const msg: Record<string, unknown> = { id: m.id, at: m.at };
   if (m.reason) msg.reason = m.reason;
+  const images = m.images ?? [];
+  if (images.length > 0) msg.images = images;
   const blocks = [`## ${m.role} · ${headerTime(m.at)}\n<!-- writer:msg ${commentJson(msg)} -->`];
+  if (images.length > 0) blocks.push(images.map((p) => embedLine(p, "")).join("\n"));
   const text = normalizeText(m.text);
   if (text) blocks.push(escapeText(text));
   if (m.context) blocks.push(`> context: ${m.context.replace(/\s+/g, " ").trim()}`);
@@ -319,14 +326,25 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
   let id = `m${index + 1}`;
   let at = parseHeaderTime(when);
   let reason: TurnFinishReason | undefined;
+  let images: string[] | undefined;
   const msg = rest.length > 0 ? jsonOr<Record<string, unknown>>(payload(rest[0], "msg")) : null;
   if (rest.length > 0 && payload(rest[0], "msg") !== null) {
     if (msg) {
       if (typeof msg.id === "string") id = msg.id;
       if (typeof msg.at === "number") at = msg.at;
       if (typeof msg.reason === "string") reason = msg.reason as TurnFinishReason;
+      if (Array.isArray(msg.images)) {
+        const paths = msg.images.filter((p): p is string => typeof p === "string");
+        if (paths.length > 0) images = paths;
+      }
     }
     rest = trimEdges(rest.slice(1));
+    // one embed line per image comes first; the message comment lists the paths (authoritative)
+    if (images) {
+      let embeds = 0;
+      while (embeds < images.length && rest[embeds]?.startsWith("![")) embeds++;
+      rest = trimEdges(rest.slice(embeds));
+    }
   }
   let changes: TurnChangesSummary | undefined;
   if (rest.length > 0) {
@@ -352,6 +370,7 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
   const message: ChatNoteMessage = { role, id, at, text: rest.map(unescapeLine).join("\n") };
   if (reason) message.reason = reason;
   if (context !== undefined) message.context = context;
+  if (images) message.images = images;
   if (tools) message.tools = tools;
   if (changes && Array.isArray(changes.files)) message.changes = changes;
   return message;
@@ -426,6 +445,7 @@ export function contextLine(refs: readonly ContextRef[]): string {
       case "property":
         items.push(r.value === null ? `property ${r.name}` : `${r.name}: ${r.value}`);
         break;
+      case "image": // shown as thumbnails (the message's images), not named here
       case "project-instructions":
         break;
       case "project-source":

@@ -239,6 +239,10 @@ A note's frontmatter is not in the CodeMirror document: `OpenFile.frontmatter` (
 - lezer parses `[!type]` as a shortcut-reference `Link`; the hide extension's Link spec skips it (`isCalloutMarkerLink`) or the raw header would show without brackets.
 - Nested constructs push line decorations outer first; for equal-position line decorations the later one wins non-class attributes, so the inner type wins.
 
+## Async insertions follow the document, and land as one transaction
+
+Anything that inserts after an await (saving a pasted image) must not trust the position it read before: the user keeps typing. `editor-image-insert.ts` registers the point in a `StateField` (mapped through every change, removed when used), then inserts the whole result in one `dispatch`, so one undo step undoes it. Drags the webview never sees as HTML5 events (Finder files while the window's OS drag-drop is on, the sidebar's pointer drag) reach the editor through `previewImageDropAt` / `dropImagesAt`, which find the view with `elementFromPoint` + `EditorView.findFromDOM`; a view opts in by carrying `imageInsertExtension` (the host facet). Spec: `SPECs/image-insertion-spec.md`.
+
 ## File map
 
 - `callout-decorations.ts` + `lib/callouts/` — callouts: line decorations on real quote lines, icon/chevron widgets, session fold state; the renderer for plugin markdown shares `lib/callouts/`.
@@ -252,5 +256,5 @@ A note's frontmatter is not in the CodeMirror document: `OpenFile.frontmatter` (
 - `prosemark-core/links.ts` — `linkUrlAt` / `rawUrlAt`, the one place that resolves a link destination from a document position.
 - `prosemark-core/imageSrc.ts` — `imageSrcResolverFacet` / `resolveImageSrc`; widgets resolve `<img src>` in `toDOM` (Writer provides the facet from `image-src-resolver.ts`), so no DOM observer rewrites images after insertion.
 - `editor-scroll.ts` — `findOuterScroller` / `scrollPosToSafeTop`, the one place that scrolls the ancestor container to a document position.
-- `editor-extensions.ts` — `createEditorExtensions`, the one place the extension list is assembled. Pieces: `editor-search-extensions.ts` (hidden search panel, `EditorView.scrollHandler` for the ancestor-scroller case, Mod-f / Mod-g / Escape), `link-navigation.ts` (click-to-follow, `followLink`), `editor-clipboard.ts` (image + frontmatter paste), `editor-body-menu.ts` (right-click menu), `viewport-parse.ts`. `use-prosemark-editor.ts` only mounts, swaps, and disposes the view.
+- `editor-extensions.ts` — `createEditorExtensions`, the one place the extension list is assembled. Pieces: `editor-search-extensions.ts` (hidden search panel, `EditorView.scrollHandler` for the ancestor-scroller case, Mod-f / Mod-g / Escape), `link-navigation.ts` (click-to-follow, `followLink`), `editor-clipboard.ts` (image paste + frontmatter paste), `editor-image-insert.ts` (every way an image enters a note: `insertImages`, drop caret, tracked insertion point), `editor-body-menu.ts` (right-click menu), `viewport-parse.ts`. `use-prosemark-editor.ts` only mounts, swaps, and disposes the view.
 - `node_modules/@prosemark/core/dist/main.js:30` — `selectionTouchesRange` semantics.

@@ -40,16 +40,19 @@ export interface AgentClient {
   subscribe(handler: (envelope: AgentEventEnvelope) => void): Promise<Unsubscribe>;
 }
 
+/** The wire answers `null` for a command without a result; the pane's interface says `void`. */
+const done = (p: Promise<unknown>): Promise<void> => p.then(() => undefined);
+
 export function createTauriAgentClient(): AgentClient {
   return {
     detectBinary: (a) => call("agent_detect_binary", a),
     start: (a) => call("agent_start", a),
-    send: (a) => call("agent_send", a),
-    cancel: (a) => call("agent_cancel", a),
-    permission: (a) => call("agent_permission", a),
-    setPermissionMode: (a) => call("agent_set_permission_mode", a),
-    setModel: (a) => call("agent_set_model", a),
-    close: (a) => call("agent_close", a),
+    send: (a) => done(call("agent_send", a)),
+    cancel: (a) => done(call("agent_cancel", a)),
+    permission: (a) => done(call("agent_permission", a)),
+    setPermissionMode: (a) => done(call("agent_set_permission_mode", a)),
+    setModel: (a) => done(call("agent_set_model", a)),
+    close: (a) => done(call("agent_close", a)),
     turnChanges: (a) => call("agent_turn_changes", a),
     revertChanges: (a) => call("agent_revert_changes", a),
     listSkills: (a) => call("agent_list_skills", a),

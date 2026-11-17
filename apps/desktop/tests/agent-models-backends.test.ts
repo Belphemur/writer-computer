@@ -6,6 +6,7 @@ import {
   deriveBackendStatus,
   parseVersion,
 } from "../src/lib/agent/backends";
+import type { AgentBinaryInfo } from "../src/lib/agent/events";
 import {
   CLAUDE_MODEL_CATALOG,
   DEFAULT_ENABLED_MODELS,
@@ -43,17 +44,26 @@ describe("backend registry", () => {
 
   it("derives the badge", () => {
     const claude = backendById("claude")!;
-    const found = {
+    // The wire always carries every field of `AgentBinaryInfo`; a probe says only what it varies.
+    const info = (over: Partial<AgentBinaryInfo>): AgentBinaryInfo => ({
       found: true,
       path: "/c",
       version: "2.1.325 (Claude Code)",
-      source: "path" as const,
-    };
+      source: "path",
+      searched: [],
+      authenticated: null,
+      account: null,
+      ...over,
+    });
+    const found = info({});
     expect(deriveBackendStatus(claude, null, null).kind).toBe("checking");
     expect(deriveBackendStatus(claude, null, "boom")).toEqual({ kind: "error", message: "boom" });
     expect(
-      deriveBackendStatus(claude, { found: false, path: null, version: null, source: null }, null)
-        .kind,
+      deriveBackendStatus(
+        claude,
+        info({ found: false, path: null, version: null, source: null }),
+        null,
+      ).kind,
     ).toBe("not-found");
     expect(deriveBackendStatus(claude, found, null).kind).toBe("ready");
     expect(deriveBackendStatus(claude, { ...found, version: "2.1.300" }, null).kind).toBe(

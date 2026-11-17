@@ -22,7 +22,6 @@ export interface CommandContext {
   activeTabPin: "pinned" | "unpinned" | null;
   /** Is there a closed tab to bring back (the reopen stack is not empty)? */
   hasClosedTabs: boolean;
-  hasPluginLeaves: boolean;
   /** Closes the palette. Built-ins close it after running unless `keepOpen`. */
   close: () => void;
   toggleSidebar: () => void;
@@ -41,8 +40,6 @@ export interface CommandContext {
   zoomOut: () => void;
   resetZoom: () => void;
   openSettings: () => void;
-  togglePluginPane: () => void;
-  openPluginBrowser: () => void;
   openLogFolder: () => void;
   copyRecentErrors: () => void;
 }
@@ -158,20 +155,6 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   { id: "zoom-in", label: "Zoom In", description: COMMAND, run: (c) => c.zoomIn() },
   { id: "zoom-out", label: "Zoom Out", description: COMMAND, run: (c) => c.zoomOut() },
   { id: "zoom-reset", label: "Reset Zoom", description: COMMAND, run: (c) => c.resetZoom() },
-  {
-    id: "toggle-plugin-pane",
-    label: "Toggle Plugin Side Pane",
-    description: COMMAND,
-    when: (c) => c.hasWorkspace && !c.isCompactFileMode && c.hasPluginLeaves,
-    run: (c) => c.togglePluginPane(),
-  },
-  {
-    id: "browse-community-plugins",
-    label: "Browse community plugins",
-    description: COMMAND,
-    when: (c) => c.hasWorkspace && !c.isCompactFileMode,
-    run: (c) => c.openPluginBrowser(),
-  },
   {
     id: "open-log-folder",
     label: "Open log folder",

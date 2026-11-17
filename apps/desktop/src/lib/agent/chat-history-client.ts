@@ -9,16 +9,11 @@ import {
   type AgentResult as Result,
 } from "../../../features/agent/web/ipc";
 import type { RegenerateOutcome } from "./auto-title";
-import type { ChatId, ChatSummary } from "./events";
+import type { ChatId, ChatSummary, ReplaySeed } from "./events";
+
+export type ChatImage = Result<"agent_save_chat_image">;
 
 export type ChatAction = Args<"agent_chat_action">["action"];
-
-export type ReplaySeed = {
-  text: string;
-  turnsIncluded: number;
-  turnsTotal: number;
-  estimatedTokens: number;
-};
 
 export type AutoTitleArgs = {
   chatId: ChatId;
@@ -41,6 +36,10 @@ export interface ChatHistoryClient {
   regenerateTitle(chatId: ChatId, titleModel: string | null): Promise<RegenerateOutcome>;
   /** Capped replay text for a new CLI session when the old one is gone. */
   replay(chatId: ChatId, maxTokens?: number): Promise<ReplaySeed>;
+  /** A pasted or browser-dropped image (base64) into the chat folder's hidden `assets/`. */
+  saveImage(projectPath: string | null, name: string, dataBase64: string): Promise<ChatImage>;
+  /** A Finder-dropped image file (absolute path), copied into the same folder. */
+  importImageFile(projectPath: string | null, sourcePath: string): Promise<ChatImage>;
   permissionRules(projectPath: string | null): Promise<Result<"agent_permission_rules">>;
   removePermissionRule(projectPath: string | null, rule: string): Promise<void>;
 }
@@ -53,7 +52,11 @@ export const chatHistoryClient: ChatHistoryClient = {
   autoTitle: (a) => call("agent_auto_title", a),
   regenerateTitle: (chatId, titleModel) => call("agent_regenerate_title", { chatId, titleModel }),
   replay: (chatId, maxTokens) => call("agent_chat_replay", { chatId, maxTokens }),
+  saveImage: (projectPath, name, dataBase64) =>
+    call("agent_save_chat_image", { projectPath, name, dataBase64 }),
+  importImageFile: (projectPath, sourcePath) =>
+    call("agent_import_chat_image_file", { projectPath, sourcePath }),
   permissionRules: (projectPath) => call("agent_permission_rules", { projectPath }),
   removePermissionRule: (projectPath, rule) =>
-    call("agent_remove_permission_rule", { projectPath, rule }),
+    call("agent_remove_permission_rule", { projectPath, rule }).then(() => undefined),
 };

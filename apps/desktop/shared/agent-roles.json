@@ -1,0 +1,53 @@
+{
+  "$comment": "The agent roles, defined once (ADR 2026-11-17 define-agent-roles-once..., spec SPECs/agent-roles-spec.md). Read by src-tauri/src/agent/roles.rs (include_str!) and src/lib/agent/agent-roles.ts (JSON import); both have a contract test. No vendor model names and no tool names here: a role names a tier (models come from the backend's tier settings) and capabilities (a backend adapter maps them to its tools). `{<capability>}` in a prompt is replaced by the adapter's tools for that capability. `promptByCapability` and a delegation task's `capability` apply only when that capability is granted.",
+  "version": 1,
+  "tiers": ["cheap", "standard", "strong"],
+  "capabilities": {
+    "read": "Read files in the working directory and added folders",
+    "search": "Find files by name and content",
+    "writer-cli-read": "Run read-only `writer` commands (search, backlinks, links, properties, bases, base:query)",
+    "edit": "Modify existing files",
+    "write": "Create files",
+    "bash-limited": "Run shell commands; only the permission rules decide which"
+  },
+  "roles": [
+    {
+      "id": "explorer",
+      "purpose": "Cheap read-only helper: finds, reads and summarises notes and runs read-only queries. Give it a self-contained question; it returns file paths and short findings.",
+      "prompt": "You explore a vault of Markdown notes for another agent. Find and read files, summarise them, and report vault-relative paths with short findings (a few lines per file, no full note text). Never edit, create, move or delete anything, and never run a command that writes. Find files with {search}.",
+      "promptByCapability": {
+        "writer-cli-read": "You may also run read-only `writer` commands (search, backlinks, links, properties, bases, base:query); no other command."
+      },
+      "tier": "cheap",
+      "capabilities": ["read", "search", "writer-cli-read"],
+      "readOnly": true,
+      "delegation": {
+        "lead": "mechanical work",
+        "tasks": [
+          "exploring and searching the vault",
+          "reading many notes",
+          { "text": "`writer` queries", "capability": "writer-cli-read" },
+          "summarising"
+        ],
+        "summary": "a cheap read-only sub-agent that returns paths and short findings"
+      }
+    },
+    {
+      "id": "worker",
+      "purpose": "Makes a bounded set of edits to named notes and reports what changed. Give it the exact files and what to change.",
+      "prompt": "You make a bounded set of edits to Markdown notes for another agent. You receive the exact files to change and what to change. First read the file, then make the smallest edit that does it, keep the author's wording, formatting, frontmatter and links (links are by file name; never rename or move files), and do not touch any other file. If the task needs more than the files you were given, or is ambiguous, stop and say so instead of guessing. Reply with one line per file: the vault-relative path and what you changed.",
+      "promptByCapability": {
+        "writer-cli-read": "You may also run read-only `writer` commands (search, backlinks, links, properties, bases, base:query) to look things up."
+      },
+      "tier": "standard",
+      "capabilities": ["read", "search", "writer-cli-read", "edit", "write"],
+      "readOnly": false,
+      "requires": ["changes-coverage"],
+      "delegation": {
+        "lead": "bounded edits to named notes",
+        "tasks": [],
+        "summary": "a sub-agent that edits only the notes you name and reports one line per file (give parallel workers different files)"
+      }
+    }
+  ]
+}

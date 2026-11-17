@@ -13,6 +13,7 @@ import type {
   ContextRef,
   MessageId,
   PermissionResolution,
+  PermissionSuggestion,
 } from "./events";
 import { contextTokensOf } from "./context-usage";
 import type {
@@ -353,7 +354,9 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
         input: event.input,
         description: event.description,
         decisionReason: event.decisionReason,
-        suggestions: event.suggestions,
+        // The wire type is `unknown[]` (opaque, as the CLI sent it); the view types what the label reads.
+        suggestions: event.suggestions as PermissionSuggestion[],
+        by: event.by,
       };
       let next = inTurn(active(chat), now, (t) => t);
       if (event.toolCallId)

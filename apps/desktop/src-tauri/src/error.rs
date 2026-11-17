@@ -10,6 +10,9 @@ pub enum AppError {
     AlreadyExists(String),
     #[error("Invalid path: {0}")]
     InvalidPath(String),
+    /// A user-facing refusal shown as is (an image of an unsupported type or over the size cap).
+    #[error("{0}")]
+    Refused(String),
     #[error("No workspace is open")]
     NoWorkspace,
     /// A built-in feature failed this session (see `features::guard`); its commands do not run.

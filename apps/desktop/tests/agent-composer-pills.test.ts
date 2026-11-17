@@ -59,6 +59,7 @@ function make(
         onChange: (t) => changes.push(t),
         onCompositionStart: () => {},
         onCompositionEnd: () => {},
+        onImageFiles: () => {},
       }),
     }),
   });

@@ -3,68 +3,20 @@
  * transport; the project commands are plain request/response calls with their own file so
  * lane 2 and lane 3 never edit the same one. Types extend the shared contract in `events.ts`.
  */
-import { callAgent as call } from "../../../features/agent/web/ipc";
-import type { NewProjectRequest, ProjectInfo } from "./events";
+import {
+  callAgent as call,
+  type AgentArgs,
+  type FolderInspection,
+  type ManifestEntry,
+  type ManifestPreview,
+  type ProjectDetail,
+  type ProjectUpdate,
+} from "../../../features/agent/web/ipc";
 
-/** `ProjectInfo` plus what the contract has no field for (a superset on the wire). */
-export type ProjectDetail = ProjectInfo & {
-  /** Entries of the inclusion/exclusion lists with an unrecognised shape (warning rows). */
-  unsupported: string[];
-  webUrls: string[];
-  youtubeUrls: string[];
-  /** `writer-agent-mode`: `manual` or `acceptEdits`. */
-  agentMode: string | null;
-  warnings: string[];
-};
+export type { FolderInspection, ManifestEntry, ManifestPreview, ProjectDetail, ProjectUpdate };
 
-export type ProjectUpdate = {
-  name?: string;
-  description?: string;
-  inclusions?: string[];
-  exclusions?: string[];
-  webUrls?: string[];
-  youtubeUrls?: string[];
-  /** Empty string removes the key. */
-  agentMode?: string;
-  touchLastUsed?: boolean;
-};
-
-export type FolderInspection = {
-  path: string;
-  name: string;
-  isProject: boolean;
-  hasProjectMd: boolean;
-  hasAgentsMd: boolean;
-  hasClaudeMd: boolean;
-};
-
-export type ManifestEntry = {
-  kind: "folder" | "note" | "tag" | "property" | "url";
-  label: string;
-  count: number | null;
-  samples: string[];
-  warning: string | null;
-};
-
-export type ManifestPreview = {
-  manifest: {
-    entries: ManifestEntry[];
-    more: number;
-    exclusions: string[];
-    unsupported: string[];
-    webUrls: string[];
-    youtubeUrls: string[];
-  };
-  text: string;
-};
-
-export type MakeProjectArgs = {
-  path: string;
-  createAgentsMd: boolean;
-  instructions?: string;
-  description?: string;
-  inclusions?: string[];
-};
+export type NewProjectRequest = AgentArgs<"agent_create_project">;
+export type MakeProjectArgs = AgentArgs<"agent_make_project">;
 
 export interface ProjectClient {
   list(includeArchived?: boolean): Promise<ProjectDetail[]>;

@@ -13,6 +13,7 @@ vi.mock("../src/lib/preferences", () => ({
 import agentFeature from "../features/agent/web/index";
 import { featureHost } from "../src/lib/features/registry";
 import { SettingsPanel } from "../src/components/settings-panel";
+import { AGENT_TIERS, claudeTierSettingKey } from "../src/lib/agent/agent-roles";
 import { agentSettingsFrom } from "../src/lib/agent/agent-settings";
 import { SETTINGS_SCHEMA } from "../src/lib/settings-schema";
 import { useSettingsStore } from "../src/stores/settings-store";
@@ -55,9 +56,10 @@ describe("agent.* settings contract", () => {
       "agent.max-concurrent-chats": 4,
       "agent.chats-keep-days": 0,
       "agent.auto-title-chats": true,
-      "agent.title-model": "",
       "agent.orchestrate": true,
-      "agent.subagent-model": "haiku",
+      "agent.claude.model-cheap": "haiku",
+      "agent.claude.model-standard": "sonnet",
+      "agent.claude.model-strong": "default",
       "agent.restore-chats": true,
       "agent.pane-width": 420,
       "agent.pane-open": false,
@@ -94,8 +96,9 @@ describe("agent.* settings contract", () => {
   it("trims the free-text keys", () => {
     expect(byKey("agent.binary-path").normalize).toBe("trim");
     expect(byKey("agent.model").normalize).toBe("trim");
-    expect(byKey("agent.title-model").normalize).toBe("trim");
-    expect(byKey("agent.subagent-model").normalize).toBe("trim");
+    for (const tier of AGENT_TIERS) {
+      expect(byKey(claudeTierSettingKey(tier)).normalize).toBe("trim");
+    }
   });
 
   it("maps to StartSessionRequest settings through agentSettingsFrom", () => {
@@ -108,13 +111,13 @@ describe("agent.* settings contract", () => {
       allowedTools: DEFAULT_ALLOWED,
       disallowedTools: [],
       orchestrate: true,
-      subagentModel: "haiku",
+      tierModels: { cheap: "haiku", standard: "sonnet", strong: "default" },
     });
     expect(
       agentSettingsFrom({
         ...defaults,
         "agent.orchestrate": false,
-        "agent.subagent-model": "  ",
+        "agent.claude.model-cheap": "  ",
         "agent.effort": "high",
         "agent.permission-mode": "acceptEdits",
         "agent.allowed-tools": ["Bash(git status)"],
@@ -124,7 +127,7 @@ describe("agent.* settings contract", () => {
       permissionMode: "acceptEdits",
       allowedTools: ["Bash(git status)"],
       orchestrate: false,
-      subagentModel: null,
+      tierModels: { cheap: null, standard: "sonnet", strong: "default" },
     });
   });
 });
@@ -352,6 +355,68 @@ describe("Settings > Agent", () => {
     expect(container.textContent).toContain("Always-allowed tools");
     expect(container.textContent).toContain("Never-allowed tools");
     expect(container.textContent).not.toContain("bypassPermissions (");
+  });
+
+  it("shows one dropdown per tier, fed by the model catalog, with a custom entry", async () => {
+    await mount();
+    const select = (tier: string) =>
+      q(`[data-agent-tier-model="${tier}"] select`) as HTMLSelectElement;
+    expect(AGENT_TIERS.map((t) => select(t).value)).toEqual(["haiku", "sonnet", "default"]);
+    const ids = [...select("cheap").options].map((o) => o.value);
+    expect(ids.slice(0, 4)).toEqual(["default", "opus", "sonnet", "haiku"]);
+    expect(ids).toContain("claude-haiku-5-5");
+    expect(ids.at(-1)).toBe("__custom__");
+    // no bare text field until "Custom..." is chosen
+    expect(q('[data-agent-tier-model="cheap"] input')).toBeNull();
+
+    const pick = async (el: HTMLSelectElement, value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(el, value);
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    await pick(select("cheap"), "claude-haiku-4-5");
+    expect(setCalls.at(-1)).toEqual(["agent.claude.model-cheap", "claude-haiku-4-5"]);
+
+    await pick(select("standard"), "__custom__");
+    const input = q('[data-agent-tier-model="standard"] input') as HTMLInputElement;
+    const type = async (v: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, v);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await type("--bad");
+    await act(async () =>
+      input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(q('[data-agent-tier-model="standard"] [role="alert"]')?.textContent).toMatch(
+      /letters, digits/,
+    );
+    await type("my-org/model:1");
+    await act(async () =>
+      input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(setCalls.at(-1)).toEqual(["agent.claude.model-standard", "my-org/model:1"]);
+  });
+
+  it("shows a stored custom model as the custom entry", async () => {
+    useSettingsStore.setState({
+      settings: {
+        ...useSettingsStore.getState().settings,
+        "agent.claude.model-cheap": "my-org/model:1",
+      },
+    });
+    await mount();
+    const cheap = q('[data-agent-tier-model="cheap"] select') as HTMLSelectElement;
+    expect(cheap.value).toBe("__custom__");
+    expect(cheap.selectedOptions[0]!.textContent).toBe("Custom: my-org/model:1");
+    expect((q('[data-agent-tier-model="cheap"] input') as HTMLInputElement).value).toBe(
+      "my-org/model:1",
+    );
+  });
+
+  it("no longer has the two old vendor-model settings", () => {
+    expect(SETTINGS_SCHEMA.some((d) => d.key === "agent.subagent-model")).toBe(false);
+    expect(SETTINGS_SCHEMA.some((d) => d.key === "agent.title-model")).toBe(false);
   });
 
   it("keeps the remaining agent rows (chats and context)", async () => {

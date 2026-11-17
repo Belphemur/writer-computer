@@ -62,6 +62,7 @@ pub fn read_only_bytes() -> u64 {
 pub const SETTING_EXTENSIONS: &str = "files.code-extensions";
 pub const SETTING_IGNORED: &str = "files.ignored-folders";
 pub const SETTING_AGENT_FOLDERS: &str = "files.show-agent-folders";
+pub const SETTING_IMAGES: &str = "files.show-images";
 
 /// Folders that are hidden whatever the setting says.
 const ALWAYS_HIDDEN: &[&str] = &["node_modules", ".DS_Store"];
@@ -71,6 +72,8 @@ pub struct Policy {
     pub extensions: HashSet<String>,
     pub ignored_folders: HashSet<String>,
     pub show_agent_folders: bool,
+    /// List the renderable image files (`shared/attachments.json`) in the tree and quick open.
+    pub show_images: bool,
 }
 
 impl Default for Policy {
@@ -81,6 +84,7 @@ impl Default for Policy {
                 .collect(),
             ignored_folders: schema_default_list(SETTING_IGNORED).into_iter().collect(),
             show_agent_folders: true,
+            show_images: true,
         }
     }
 }
@@ -100,6 +104,7 @@ pub fn policy_from_settings(
     extensions: Option<Vec<String>>,
     ignored: Option<Vec<String>>,
     show_agent_folders: Option<bool>,
+    show_images: Option<bool>,
 ) -> Policy {
     let mut p = Policy::default();
     if let Some(list) = extensions {
@@ -118,6 +123,9 @@ pub fn policy_from_settings(
     }
     if let Some(b) = show_agent_folders {
         p.show_agent_folders = b;
+    }
+    if let Some(b) = show_images {
+        p.show_images = b;
     }
     p
 }
@@ -181,19 +189,43 @@ pub fn is_code_path(path: &Path) -> bool {
         .is_some_and(is_code_name)
 }
 
-/// A listed file: a note, a `.base`, or a code file.
-pub fn is_listed_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".md") || lower.ends_with(".base") || is_code_name(name)
+/// Does `name` open in the image viewer under `policy`: a renderable image extension and
+/// `files.show-images` on. The extension list is `renderExtensions` of `shared/attachments.json`.
+pub fn is_image_name_with(policy: &Policy, name: &str) -> bool {
+    policy.show_images
+        && ext_of(name).is_some_and(|e| crate::attachments::render_extensions().contains(&e))
 }
 
-/// SQL predicate over `files.ext` / `files.name` selecting the listed rows (md, base, code).
+/// A listed file: a note, a `.base`, a code file, or (setting on) an image.
+pub fn is_listed_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".md")
+        || lower.ends_with(".base")
+        || is_code_name(name)
+        || is_image_name_with(&POLICY.read(), name)
+}
+
+/// [`is_listed_name`] for a path (its file name).
+pub fn is_listed_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(is_listed_name)
+}
+
+/// SQL predicate over `files.ext` / `files.name` selecting the listed rows (md, base, code, images).
 pub fn listed_sql_predicate() -> String {
-    let p = POLICY.read();
+    listed_sql_predicate_with(&POLICY.read())
+}
+
+/// [`listed_sql_predicate`] under an explicit policy.
+pub fn listed_sql_predicate_with(p: &Policy) -> String {
     let mut exts: Vec<String> = vec!["md".into(), "base".into()];
     let mut code: Vec<&String> = p.extensions.iter().collect();
     code.sort();
     exts.extend(code.into_iter().cloned());
+    if p.show_images {
+        exts.extend(crate::attachments::render_extensions().iter().cloned());
+    }
     let list = exts
         .iter()
         .map(|e| format!("'{}'", e.replace('\'', "''")))
@@ -211,13 +243,25 @@ pub fn listed_sql_predicate() -> String {
 /// True when the SQL row (`name`, lowercase `ext`) is listed. The Rust twin of
 /// [`listed_sql_predicate`], used by tests and in-memory filters.
 pub fn is_listed_row(name: &str, ext: &str) -> bool {
+    is_listed_row_with(&POLICY.read(), name, ext)
+}
+
+/// [`is_listed_row`] under an explicit policy.
+pub fn is_listed_row_with(p: &Policy, name: &str, ext: &str) -> bool {
     if ext == "md" || ext == "base" {
+        return true;
+    }
+    if p.show_images
+        && crate::attachments::render_extensions()
+            .iter()
+            .any(|e| e == ext)
+    {
         return true;
     }
     if is_secret_name(name) {
         return false;
     }
-    SHARED.file_names.iter().any(|n| n == name) || POLICY.read().extensions.contains(ext)
+    SHARED.file_names.iter().any(|n| n == name) || p.extensions.contains(ext)
 }
 
 /// Is a vault-relative path (`.agents/skills/x/run.py`) visible: no hidden segment except the
@@ -390,6 +434,7 @@ mod tests {
             Some(vec![".PEM".into(), "env".into(), "py".into(), "md".into()]),
             None,
             None,
+            None,
         );
         assert!(p.extensions.contains("py"));
         assert_eq!(p.extensions.len(), 1);
@@ -428,18 +473,18 @@ mod tests {
 
     #[test]
     fn agent_exception_follows_the_setting() {
-        let off = policy_from_settings(None, None, Some(false));
+        let off = policy_from_settings(None, None, Some(false), None);
         assert!(!rel_is_visible_with(
             &off,
             Path::new(".agents/skills/x/run.py")
         ));
-        let on = policy_from_settings(None, None, Some(true));
+        let on = policy_from_settings(None, None, Some(true), None);
         assert!(rel_is_visible_with(
             &on,
             Path::new(".agents/skills/x/run.py")
         ));
         // a custom ignore list replaces the default one
-        let custom = policy_from_settings(None, Some(vec!["gen".into()]), None);
+        let custom = policy_from_settings(None, Some(vec!["gen".into()]), None, None);
         assert!(!rel_is_visible_with(&custom, Path::new("a/gen/x.py")));
         assert!(rel_is_visible_with(&custom, Path::new("a/dist/x.py")));
     }
@@ -462,7 +507,9 @@ mod tests {
     fn sql_predicate_lists_code_and_names() {
         let sql = listed_sql_predicate();
         assert!(sql.contains("'py'") && sql.contains("'md'") && sql.contains("'Dockerfile'"));
-        assert!(!sql.contains("'svg'") && !sql.contains("'env'"));
+        // images are listed by default; never secrets, notebooks or unrenderable heic
+        assert!(sql.contains("'svg'") && sql.contains("'png'"));
+        assert!(!sql.contains("'env'") && !sql.contains("'ipynb'") && !sql.contains("'heic'"));
     }
 
     #[test]
@@ -474,5 +521,38 @@ mod tests {
         assert!(p.show_agent_folders);
         assert_eq!(max_read_bytes(), 20 * 1024 * 1024);
         assert_eq!(read_only_bytes(), 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn images_are_listed_only_while_the_setting_is_on() {
+        let on = policy_from_settings(None, None, None, Some(true));
+        let off = policy_from_settings(None, None, None, Some(false));
+        for n in [
+            "a.png", "B.JPG", "x.jpeg", "a.gif", "a.webp", "a.svg", "a.avif", "a.bmp",
+        ] {
+            assert!(is_image_name_with(&on, n), "{n}");
+            assert!(!is_image_name_with(&off, n), "{n}");
+        }
+        // heic does not render in the webview; other files are not images
+        for n in ["a.heic", "a.pdf", "png", ".png", "a.txt"] {
+            assert!(!is_image_name_with(&on, n), "{n}");
+        }
+        // the default is on, and the SQL predicate follows the same list
+        assert!(Policy::default().show_images);
+        assert!(listed_sql_predicate_with(&on).contains("'png'"));
+        assert!(is_listed_row_with(&on, "a.png", "png"));
+        assert!(!listed_sql_predicate_with(&off).contains("'png'"));
+        assert!(!is_listed_row_with(&off, "a.png", "png"));
+        assert!(!listed_sql_predicate_with(&on).contains("'heic'"));
+    }
+
+    #[test]
+    fn images_follow_the_folder_rules() {
+        // hidden and ignored folders hide images exactly as they hide code
+        let v = |s: &str| rel_is_visible(Path::new(s));
+        assert!(v("attachments/a.png"));
+        assert!(!v(".obsidian/a.png"));
+        assert!(!v("node_modules/x/a.png"));
+        assert!(!v("dist/a.png"));
     }
 }

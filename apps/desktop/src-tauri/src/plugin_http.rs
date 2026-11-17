@@ -151,7 +151,7 @@ pub fn check_url(u: &str) -> Result<url::Url, String> {
 }
 
 /// DNS results are filtered too, so a name cannot smuggle a metadata address.
-struct GuardedResolver;
+pub(crate) struct GuardedResolver;
 
 impl Resolve for GuardedResolver {
     fn resolve(&self, name: Name) -> Resolving {

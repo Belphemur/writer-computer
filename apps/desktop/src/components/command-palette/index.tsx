@@ -37,12 +37,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import * as logActions from "@/lib/log-actions";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
-import {
-  useOpenPluginBrowser,
-  usePluginCommands,
-  usePluginLeaves,
-  useTogglePluginPane,
-} from "@/hooks/use-plugins";
+import { usePluginCommands } from "@/hooks/use-plugins";
 import { ContentSearchPalette } from "./content-search-palette";
 import { resolveCommands } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
@@ -128,9 +123,6 @@ function FilePalette() {
   const openSettingsTab = useOpenSettingsTab();
   const isCompactFileMode = useIsCompactFileMode();
   const pluginCommands = usePluginCommands();
-  const pluginLeaves = usePluginLeaves();
-  const togglePluginPane = useTogglePluginPane();
-  const openPluginBrowser = useOpenPluginBrowser();
 
   const isCreateIntent = intent === "create-file";
   const trimmedSearch = search.trim();
@@ -193,7 +185,6 @@ function FilePalette() {
           unpinnedTabCount,
           activeTabPin,
           hasClosedTabs,
-          hasPluginLeaves: pluginLeaves.length > 0,
           close,
           toggleSidebar,
           openCreateFile: () => openCommandPalette("create-file"),
@@ -215,8 +206,6 @@ function FilePalette() {
           zoomOut,
           resetZoom,
           openSettings: openSettingsTab,
-          togglePluginPane,
-          openPluginBrowser,
           openLogFolder: () => {
             logActions
               .openLogFolder()

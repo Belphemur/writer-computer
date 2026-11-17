@@ -4,6 +4,7 @@ import { NewTabPage } from "../new-tab-page";
 import { BaseView } from "@/components/base-view";
 import { CodeEditorPane } from "@/components/code-editor/code-editor-pane";
 import { ManagedSkillBanner } from "@/components/code-editor/managed-skill-banner";
+import { ImageViewer, ImageViewerFooter } from "@/components/image-viewer/image-viewer";
 import { PluginFileTab } from "@/components/plugins/plugin-file-tab";
 import { PluginViewTab } from "@/components/plugins/plugin-view-tab";
 import { SettingsPanel } from "@/components/settings-panel";
@@ -11,6 +12,7 @@ import type { Location } from "./index";
 import type { BaseLocation } from "./base";
 import type { CodeLocation } from "./code";
 import type { FileLocation } from "./file";
+import type { ImageLocation } from "./image";
 import type { LauncherLocation } from "./launcher";
 import type { PluginFileLocation } from "./plugin-file";
 import type { PluginViewLocation } from "./plugin-view";
@@ -47,6 +49,10 @@ const views = {
   code: {
     Component: CodeEditorPane,
   } satisfies PageKindView<CodeLocation>,
+  image: {
+    Component: ImageViewer,
+    renderFooter: (l) => <ImageViewerFooter path={l.path} />,
+  } satisfies PageKindView<ImageLocation>,
   base: {
     Component: BaseView,
   } satisfies PageKindView<BaseLocation>,

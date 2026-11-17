@@ -1,7 +1,7 @@
 // Docks contributed by features: panes at the right edge. The layout (`components/app-layout.tsx`)
 // asks this registry which dock is open and how much room it takes, so it names no feature
-// (docs/consolidation.md: registry over per-case branches). The plugin pane stays core and is the
-// fallback when no dock is open.
+// (docs/consolidation.md: registry over per-case branches). The agent pane and the Obsidian
+// host's plugin pane are docks; there is one right-hand column, so the dock opened last wins.
 import { OwnedRegistry } from "@/lib/owned-registry";
 import type { DockContribution, Dispose } from "./types";
 
@@ -36,7 +36,25 @@ export function subscribeDocks(listener: () => void): Dispose {
   };
 }
 
-/** Closes every open dock (the plugin pane opened). */
-export function closeDocks(): void {
-  for (const d of dockContributions.list()) if (d.isOpen()) d.close();
+/** Ids of the docks that are open now. */
+export function openDockIds(): Set<string> {
+  return new Set(
+    dockContributions
+      .list()
+      .filter((d) => d.isOpen())
+      .map((d) => d.id),
+  );
+}
+
+/** One column: when a dock has just opened (it is in `now` but was not in `before`), every other
+ *  open dock is closed, so the one opened last wins whatever its priority. */
+export function closeDocksOpenedBefore(
+  before: ReadonlySet<string>,
+  now: ReadonlySet<string>,
+): void {
+  const opened = [...now].filter((id) => !before.has(id));
+  if (opened.length === 0) return;
+  for (const d of dockContributions.list()) {
+    if (d.isOpen() && !opened.includes(d.id)) d.close();
+  }
 }

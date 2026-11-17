@@ -6,12 +6,14 @@ import {
   DatabaseIcon,
   File02Icon,
   GlobeIcon,
+  ImageIcon,
   Link01Icon,
   RoboticIcon,
   Settings02Icon,
   SparklesIcon,
   Table01Icon,
 } from "@hugeicons/core-free-icons";
+import { isRenderableImageName } from "@/lib/attachments";
 import { codeIconFamily, isCodeName, type CodeIconFamily } from "@/lib/code-files";
 
 // Shared file/folder glyphs used by file-tree rows and the drag ghost so they
@@ -67,9 +69,11 @@ export function FileIcon({ name }: { name?: string }) {
   const isBase = !!name && name.toLowerCase().endsWith(".base");
   const icon = isBase
     ? Database02Icon
-    : name && isCodeName(name)
-      ? CODE_FAMILY_ICON[codeIconFamily(name)]
-      : File02Icon;
+    : name && isRenderableImageName(name)
+      ? ImageIcon
+      : name && isCodeName(name)
+        ? CODE_FAMILY_ICON[codeIconFamily(name)]
+        : File02Icon;
   return (
     <HugeiconsIcon
       icon={icon}

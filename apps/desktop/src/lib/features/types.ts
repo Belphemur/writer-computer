@@ -14,7 +14,12 @@ import type { FeatureSecrets } from "@/stores/feature-secrets-store";
 export type Dispose = () => void;
 
 /** The contribution points whose `feature.json` entry is a plain list of ids. */
-export type ContributionIdPoint = "docks" | "sidebarPanels" | "sidebarActions" | "statusItems";
+export type ContributionIdPoint =
+  | "docks"
+  | "sidebarPanels"
+  | "sidebarActions"
+  | "statusItems"
+  | "overlays";
 
 /** The static facts in `src-tauri/src/features/<id>/feature.json` that the web side may read. */
 export interface FeatureManifest {
@@ -132,6 +137,15 @@ export interface SettingsSectionContribution {
   /** Sidebar position among all sections (core ones have fixed orders, `settings-sections.ts`). */
   order: number;
   load: () => Promise<{ default: ComponentType }>;
+  /** The sidebar group: the feature's own "Features" group by default, or the "Community plugins"
+   *  group (the Obsidian host's pages, which keep their place after the Features group). */
+  group?: "Community plugins";
+  /** Hidden when no workspace is open (the page belongs to a vault). */
+  requiresWorkspace?: boolean;
+  /** A small count next to the label (plugin updates). Re-register the section to change it. */
+  badge?: number;
+  /** A plain button after the last group while this page is in the sidebar ("Browse plugins..."). */
+  footer?: { label: string; run: () => void };
 }
 
 /** A panel in the left sidebar next to Files (a feature's own list or tree). Shown only while the
@@ -173,6 +187,15 @@ export interface StatusItemContribution {
   load: () => Promise<ComponentType<StatusItemProps>>;
 }
 
+/** A component mounted once at the app root while the feature is on (a global dialog, such as the
+ *  plugin browser). It renders nothing until its own state opens it, inside the feature's error
+ *  boundary, and is unmounted with the feature. */
+export interface OverlayContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  load: () => Promise<ComponentType>;
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
@@ -183,6 +206,7 @@ export interface Contributions {
   sidebarPanels?: readonly SidebarPanelContribution[];
   sidebarActions?: readonly SidebarActionContribution[];
   statusItems?: readonly StatusItemContribution[];
+  overlays?: readonly OverlayContribution[];
   // Declared by the spec, no host registry yet (lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
 }

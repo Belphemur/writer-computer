@@ -6,6 +6,13 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import {
+  clearImageDropPreview,
+  dropImagesAt,
+  previewImageDropAt,
+  vaultImageSources,
+} from "@/components/editor-area/editor-image-insert";
+import { dropOnChatComposer } from "@/lib/agent/chat-image-target";
 import type { DirEntry } from "@/types/fs";
 import type { FlatTreeItem } from "./flatten-tree";
 import { canMoveInto, resolveDropDir, resolveDropRange } from "./tree-move";
@@ -297,6 +304,12 @@ export function useTreeDrag({
 
       positionGhost();
       updateDropTarget();
+      // A drag of vault images over the editor shows where the link would land.
+      if (vaultImageSources(pending.entries).length > 0 && dropTargetRef.current === null) {
+        previewImageDropAt(event.clientX, event.clientY);
+      } else {
+        clearImageDropPreview();
+      }
     },
     [positionGhost, tick, updateDropTarget],
   );
@@ -308,9 +321,25 @@ export function useTreeDrag({
       const { started, entries } = pending;
       const dest = dropTargetRef.current;
       endDrag();
+      clearImageDropPreview();
       if (!started) return; // A plain click — let it open/select normally.
       suppressNextClick();
-      if (dest) void performDrop(entries, dest);
+      if (dest) {
+        void performDrop(entries, dest);
+        return;
+      }
+      // Released over a note: link the dragged images there, copying nothing.
+      const images = vaultImageSources(entries);
+      if (images.length > 0 && !dropImagesAt(event.clientX, event.clientY, images)) {
+        // not over a note: the agent composer takes the images by reference
+        dropOnChatComposer(
+          event.clientX,
+          event.clientY,
+          images.flatMap((i) =>
+            i.kind === "vault" ? [{ kind: "vault" as const, path: i.path }] : [],
+          ),
+        );
+      }
     },
     [endDrag, performDrop],
   );

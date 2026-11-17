@@ -22,6 +22,7 @@ import {
   placeholder,
   type DecorationSet,
 } from "@codemirror/view";
+import { imageFilesOfTransfer } from "@/lib/agent/chat-images";
 import { composerMarkdown } from "./composer-markdown";
 import {
   createPillElement,
@@ -119,6 +120,20 @@ export function pillMouse(open: (target: string) => void): Extension {
 const pillElement = (t: EventTarget | null) =>
   t instanceof Element ? t.closest<HTMLElement>(".agent-pill") : null;
 
+/** A paste or drop that carries images attaches them instead of inserting anything; text-only
+ *  transfers fall through to the editor. */
+function imageTransfer(onImageFiles: (files: File[]) => void): Extension {
+  const take = (e: ClipboardEvent | DragEvent) => {
+    const data = "clipboardData" in e ? e.clipboardData : e.dataTransfer;
+    const files = data ? imageFilesOfTransfer(data) : [];
+    if (files.length === 0) return false;
+    e.preventDefault();
+    onImageFiles(files);
+    return true;
+  };
+  return EditorView.domEventHandlers({ paste: (e) => take(e), drop: (e) => take(e) });
+}
+
 /** Keys handled by the composer first (`onKey` returns true when it consumed the event); the rest
  *  fall through to the editing keymap below. */
 export function composerKeys(onKey: (e: KeyboardEvent) => boolean): Extension {
@@ -138,6 +153,8 @@ export type ComposerExtras = {
   onChange: (text: string, caret: number, composing: boolean) => void;
   onCompositionStart: () => void;
   onCompositionEnd: () => void;
+  /** Image files from a paste or an HTML5 drop (a browser drag); the composer attaches them. */
+  onImageFiles: (files: File[]) => void;
 };
 
 /** The fixed part of the composer editor; placeholder, editability and ARIA attributes live in
@@ -153,6 +170,7 @@ export function composerExtensions(extras: ComposerExtras): Extension[] {
     pillMouse(extras.open),
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({ "data-agent-composer": "" }),
+    imageTransfer(extras.onImageFiles),
     EditorView.domEventHandlers({
       compositionstart: () => extras.onCompositionStart(),
       compositionend: () => void setTimeout(extras.onCompositionEnd, 0),

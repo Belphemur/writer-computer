@@ -212,6 +212,10 @@ pub struct Turn {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
+    /// Vault-relative paths of the images attached to a user message (`images` of its
+    /// `writer:msg` comment); their `![[...]]` embed lines are not part of `text`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[specta(type = Option<specta_typescript::Unknown>)]
     pub tools: Option<Value>,
@@ -323,6 +327,7 @@ fn parse_section(index: usize, role: Role, when: &str, lines: &[&str]) -> Turn {
     let mut id = format!("m{}", index + 1);
     let mut at = parse_header_time(when).unwrap_or(0);
     let mut reason = None;
+    let mut images: Option<Vec<String>> = None;
     if let Some(first) = rest.first() {
         if let Some(p) = comment_payload(first, "msg") {
             if let Ok(v) = serde_json::from_str::<Value>(p) {
@@ -333,8 +338,27 @@ fn parse_section(index: usize, role: Role, when: &str, lines: &[&str]) -> Turn {
                     at = n;
                 }
                 reason = v.get("reason").and_then(Value::as_str).map(String::from);
+                images = v
+                    .get("images")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(String::from)
+                            .collect()
+                    })
+                    .filter(|a: &Vec<String>| !a.is_empty());
             }
             rest = trim_blank_edges(&rest[1..]);
+            // one embed line per image comes first (the note shows them above the text)
+            if let Some(n) = images.as_ref().map(Vec::len) {
+                let embeds = rest
+                    .iter()
+                    .take(n)
+                    .take_while(|l| l.starts_with("!["))
+                    .count();
+                rest = trim_blank_edges(&rest[embeds..]);
+            }
         }
     }
     // `writer:changes` is the last comment of a message, after `writer:tools`
@@ -371,6 +395,7 @@ fn parse_section(index: usize, role: Role, when: &str, lines: &[&str]) -> Turn {
         reason,
         text,
         context,
+        images,
         tools,
         changes,
     }

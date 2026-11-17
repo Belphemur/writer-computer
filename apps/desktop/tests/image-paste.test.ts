@@ -1,9 +1,5 @@
-import { describe, expect, test, vi } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 import { formatMarkdownDestination, getParentDir, resolveImagePath } from "../src/lib/paths";
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
 
 describe("resolveImagePath", () => {
   test("resolves relative path against markdown dir", () => {
@@ -58,25 +54,5 @@ describe("getParentDir", () => {
 
   test("handles backslashes", () => {
     expect(getParentDir("C:\\Users\\test\\file.md")).toBe("C:/Users/test");
-  });
-});
-
-describe("saveClipboardImage IPC", () => {
-  test("calls correct command", async () => {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const mockedInvoke = vi.mocked(invoke);
-    mockedInvoke.mockResolvedValue({
-      relative_path: "note-assets/img.png",
-      absolute_path: "/ws/note-assets/img.png",
-    });
-
-    const { saveClipboardImage } = await import("../src/lib/tauri");
-    await saveClipboardImage("/ws/note.md", [1, 2, 3], "png");
-
-    expect(mockedInvoke).toHaveBeenCalledWith("save_clipboard_image", {
-      markdownFilePath: "/ws/note.md",
-      imageData: [1, 2, 3],
-      format: "png",
-    });
   });
 });

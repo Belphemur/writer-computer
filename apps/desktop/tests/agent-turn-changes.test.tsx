@@ -162,6 +162,24 @@ describe("persistence of the summary", () => {
     expect(chat.turns[0]!.changes!.files.map((f) => f.path)).toEqual(["Notes/a.md", "b.md"]);
   });
 
+  it("keeps the sub-agent role of an entry through the note", () => {
+    let note = newNoteState("c1", null, 0);
+    note = recordSend(note, { messageId: "m1", text: "edit", context: [], ts: 1 });
+    const done = recordEvents(note, goldens["ok-turn"]!, 2);
+    const withChanges = recordEvents(
+      done.note,
+      [changesEvent(summaryOf([{ ...FILE_A, by: "worker" }]))],
+      3,
+    );
+    const { markdown } = buildNote(
+      { chatId: "c1", title: "t", projectPath: null, session: null, resumeSessionId: null },
+      withChanges.note,
+      5,
+    );
+    const chat = chatFromNote(parseChatNote(markdown), { projectPath: null });
+    expect(chat.turns[0]!.changes!.files[0]!.by).toBe("worker");
+  });
+
   it("a read-only turn writes no changes comment", () => {
     let note = newNoteState("c1", null, 0);
     note = recordSend(note, { messageId: "m1", text: "hi", context: [], ts: 1 });
@@ -308,6 +326,25 @@ describe("TurnChangesCard", () => {
     expect(container.textContent).not.toContain("tail 5");
     await act(async () => button("Show 9 lines").click());
     expect(container.textContent).toContain("tail 5");
+  });
+
+  it("labels a file a sub-agent edited with its role, and none the main agent edited", async () => {
+    await mount(
+      turn(
+        summaryOf([
+          { ...FILE_A, by: "worker" },
+          { ...FILE_A, path: "b.md" },
+        ]),
+      ),
+    );
+    const labels = [...container.querySelectorAll<HTMLElement>("[data-agent-change-by]")];
+    expect(labels.map((l) => l.textContent)).toEqual(["worker"]);
+    expect(
+      container.querySelector('[data-agent-change-file="Notes/a.md"] [data-agent-change-by]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-agent-change-file="b.md"] [data-agent-change-by]'),
+    ).toBeNull();
   });
 
   it("more than five files start collapsed and the header toggles them", async () => {

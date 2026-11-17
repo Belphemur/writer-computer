@@ -12,9 +12,11 @@
 use super::binary;
 use super::changes::ChangeStore;
 use super::events::*;
+use super::images::{self, Outgoing};
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
+use super::roles::{Flags, RenderInput, RoleAdapter};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
-use super::subagents;
+use super::subagents::ClaudeAdapter;
 use crate::plugin_consent::ConsentStore;
 use crate::plugin_proc::{Consent, ProcManager};
 use parking_lot::{Condvar, Mutex};
@@ -355,6 +357,15 @@ impl AgentSessions {
             Vec::new()
         };
         let writer_cli = crate::managed_skills::claude_skills_installed(&p.root);
+        // The roles the Claude adapter produces for this session: the `--agents` JSON and, from
+        // the same output, the orchestration line of the system block.
+        let rendered = settings.orchestrate.then(|| {
+            ClaudeAdapter.render(&RenderInput {
+                writer_cli,
+                tier_models: &settings.tier_models,
+                flags: &Flags::current(),
+            })
+        });
         let system_prompt = project.append_system_prompt(&SpawnContext {
             root: &p.root,
             cwd,
@@ -363,11 +374,9 @@ impl AgentSessions {
             inject_agents_md: p.inject_agents_md,
             requested_prompt: req.append_system_prompt.as_deref(),
             writer_cli,
-            orchestrate: settings.orchestrate,
+            orchestration: rendered.as_ref(),
         })?;
-        let agents = settings
-            .orchestrate
-            .then(|| subagents::agents_json(settings.subagent_model.as_deref(), writer_cli));
+        let agents = rendered.and_then(|r| r.config);
         let program = info.path.as_deref().map(PathBuf::from);
         let missing = (!info.found).then_some(SpawnError::NotFound);
         Ok((
@@ -503,7 +512,8 @@ impl AgentSessions {
     ) -> Result<(), Rejected> {
         let s = self.get(label, chat_id)?;
         validate_context(&s.root, context).map_err(Rejected)?;
-        s.send(text)
+        let images = images::load_parts(&s.root, context).map_err(Rejected)?;
+        s.send(Outgoing { text, images })
             .map_err(|e| Rejected(format!("cannot send: {e:?}")))
     }
 
@@ -636,6 +646,7 @@ pub fn validate_context(root: &Path, refs: &[ContextRef]) -> Result<(), String> 
             | ContextRef::Selection { path, .. }
             | ContextRef::Note { path }
             | ContextRef::Folder { path }
+            | ContextRef::Image { path }
             | ContextRef::ProjectInstructions { path } => Some(path.as_str()),
             ContextRef::ProjectSource {
                 source: ProjectSource::Folder { path, .. } | ProjectSource::Note { path, .. },

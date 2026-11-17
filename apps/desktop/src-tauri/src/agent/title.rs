@@ -1,9 +1,9 @@
 //! Automatic chat titles (spec "Automatic chat titles"): ONE small separate `claude -p` call that
 //! turns the first messages of a chat into a 3 to 6 word title. Tauri-free.
 //!
-//! - [`cheapest_model`] is the one place that decides which model writes titles (the `haiku`
-//!   alias unless the user set `agent.title-model`); [`model_candidates`] adds the chat's own
-//!   model as the fallback when the cheap one is refused or unavailable.
+//! - The title call uses the cheap tier (`subagents::tier_model`, the user's
+//!   `agent.claude.model-cheap`, the same model as the `explorer` role); [`model_candidates`] adds
+//!   the chat's own model as the fallback when the cheap one is refused or unavailable.
 //! - [`build_prompt`] is the one place that decides what text leaves the app: the first two user
 //!   messages and the first assistant reply, each cut to [`MAX_SNIPPET_CHARS`]. Never tool
 //!   output, never file contents, never context attachments.
@@ -21,15 +21,16 @@
 
 use super::binary::run_capture_in;
 use super::chat_store::{self, ChatAction, ChatStoreError, Role};
-use super::claude_stream::{build_title_args, is_safe_value};
+use super::claude_stream::build_title_args;
 use super::events::ChatSummary;
+use super::subagents::tier_model;
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::Path;
 use std::time::Duration;
 
-/// The CLI alias of the cheapest model family (see `model-catalog.ts`).
-pub const CHEAP_MODEL_ALIAS: &str = "haiku";
+/// The model tier of the title call (`shared/agent-roles.json` tiers).
+const CHEAP_TIER: &str = "cheap";
 /// Longest accepted title, in characters.
 pub const MAX_TITLE_CHARS: usize = 60;
 /// A reply with more words than this is a sentence, not a title.
@@ -122,24 +123,18 @@ pub fn title_chat(
     }
 }
 
-/// The model that writes titles: the user's `agent.title-model` when it is a safe value, else
-/// the cheapest family alias.
-pub fn cheapest_model(setting: Option<&str>) -> String {
-    setting
-        .map(str::trim)
-        .filter(|m| !m.is_empty() && !m.eq_ignore_ascii_case("auto") && is_safe_value(m))
-        .unwrap_or(CHEAP_MODEL_ALIAS)
-        .to_string()
-}
-
-/// Models to try in order: the cheapest, then the chat's own model (`None` entry = the CLI's
-/// default) when it differs.
+/// Models to try in order: the cheap tier's model (`setting` is the user's
+/// `agent.claude.model-cheap`, see [`tier_model`]), then the chat's own model (`None` entry = the
+/// CLI's default) when it differs.
 pub fn model_candidates(setting: Option<&str>, chat_model: Option<&str>) -> Vec<Option<String>> {
-    let cheap = cheapest_model(setting);
-    let chat = chat_model.map(str::trim).filter(|m| !m.is_empty());
-    let mut out = vec![Some(cheap.clone())];
-    if chat != Some(cheap.as_str()) {
-        out.push(chat.map(str::to_string));
+    let cheap = tier_model(CHEAP_TIER, setting);
+    let chat = chat_model
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    let mut out = vec![cheap.clone()];
+    if chat != cheap {
+        out.push(chat);
     }
     out
 }
@@ -286,12 +281,21 @@ mod tests {
     }
 
     #[test]
-    fn cheapest_model_prefers_the_haiku_alias_and_validates_the_override() {
-        assert_eq!(cheapest_model(None), "haiku");
-        assert_eq!(cheapest_model(Some("")), "haiku");
-        assert_eq!(cheapest_model(Some(" auto ")), "haiku");
-        assert_eq!(cheapest_model(Some("claude-haiku-4-5")), "claude-haiku-4-5");
-        assert_eq!(cheapest_model(Some("--dangerous")), "haiku");
+    fn the_title_call_uses_the_cheap_tier_and_validates_it() {
+        let first = |setting| model_candidates(setting, None).remove(0);
+        assert_eq!(first(None).as_deref(), Some("haiku"));
+        assert_eq!(first(Some("")).as_deref(), Some("haiku"));
+        assert_eq!(first(Some(" auto ")).as_deref(), Some("haiku"));
+        assert_eq!(
+            first(Some("claude-haiku-4-5")).as_deref(),
+            Some("claude-haiku-4-5")
+        );
+        assert_eq!(first(Some("--dangerous")).as_deref(), Some("haiku"));
+        // the cheap tier set to "default": the CLI's own model, no `--model`
+        assert_eq!(
+            model_candidates(Some("default"), Some("sonnet")),
+            vec![None, Some("sonnet".to_string())]
+        );
     }
 
     #[test]

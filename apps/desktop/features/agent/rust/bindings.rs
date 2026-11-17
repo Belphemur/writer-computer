@@ -41,6 +41,8 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             chats::agent_auto_title::<Wry>,
             chats::agent_regenerate_title::<Wry>,
             chats::agent_chat_replay::<Wry>,
+            chats::agent_save_chat_image::<Wry>,
+            chats::agent_import_chat_image_file::<Wry>,
             chats::agent_permission_rules::<Wry>,
             chats::agent_remove_permission_rule::<Wry>,
             projects::agent_list_projects::<Wry>,

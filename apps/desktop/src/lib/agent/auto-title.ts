@@ -5,7 +5,7 @@
  * cuts and the sanitising.
  */
 import { type ChatNoteMessage, type ChatNoteMeta, titleSourceOf } from "./chat-note";
-import type { ChatSummary, TitleSource } from "./events";
+import type { ChatSummary, RegenerateOutcome, RegenerateRefusal, TitleSource } from "./events";
 import type { NoteState } from "./chat-persist";
 import type { Chat } from "./transcript";
 
@@ -51,7 +51,9 @@ export function applyTitleSummary(
   note: NoteState | undefined,
   summary: Pick<ChatSummary, "title" | "titleSource">,
 ): { chat: Chat; note: NoteState | undefined } | null {
-  if (summary.titleSource === "none" || summary.title === "") return null;
+  // An absent `titleSource` is the wire's way of saying nobody chose a title (`none`).
+  const source = summary.titleSource ?? "none";
+  if (source === "none" || summary.title === "") return null;
   return {
     chat: chat.title === summary.title ? chat : { ...chat, title: summary.title },
     note: note && {
@@ -59,19 +61,14 @@ export function applyTitleSummary(
       meta: {
         ...note.meta,
         title: summary.title,
-        titleAuto: summary.titleSource === "auto",
-        titleRenamed: summary.titleSource === "user",
+        titleAuto: source === "auto",
+        titleRenamed: source === "user",
       },
     },
   };
 }
 
-/** Why "Regenerate title" changed nothing (`RegenerateRefusal` in `commands/agent_chats.rs`). */
-export type RegenerateRefusal = "not-consented" | "no-binary" | "no-reply" | "failed";
-
-export type RegenerateOutcome =
-  | { status: "done"; summary: ChatSummary }
-  | { status: "refused"; reason: RegenerateRefusal };
+export type { RegenerateOutcome, RegenerateRefusal };
 
 /** The inline sentence for each refusal: the one place that words them. */
 export const REGENERATE_REFUSAL_TEXT: Record<RegenerateRefusal, string> = {

@@ -1,0 +1,64 @@
+{
+  "id": "obsidian-host",
+  "name": "Obsidian plugins",
+  "version": "1.0.0",
+  "description": "Run Obsidian community plugins in a trusted vault: the plugin host, its Settings pages, the plugin browser and the plugin side pane.",
+  "enabledByDefault": true,
+  "activation": ["onWorkspaceOpen"],
+  "memory": {
+    "level": "high",
+    "note": "Nothing runs until a vault is open and trusted. Then the plugin host and every enabled community plugin load in this window, and a plugin may start its own processes. Switched off, no plugin code loads and the vault's .obsidian folder is left untouched."
+  },
+  "rust": {
+    "gatedCommands": [
+      "plugins_state",
+      "plugins_set_trust",
+      "plugins_set_enabled",
+      "plugin_read_asset",
+      "plugin_data_read",
+      "plugin_data_write",
+      "plugin_secrets_load",
+      "plugin_secret_set",
+      "plugin_secret_delete",
+      "plugin_store_list",
+      "plugin_store_detail",
+      "plugin_store_install",
+      "plugin_store_uninstall",
+      "plugin_http_request",
+      "plugin_http_stream_start",
+      "plugin_http_stream_cancel",
+      "plugin_proc_spawn",
+      "plugin_proc_write",
+      "plugin_proc_close_stdin",
+      "plugin_proc_kill",
+      "plugins_consent_list",
+      "plugins_consent_revoke",
+      "plugin_which",
+      "plugin_resolve_login_path",
+      "plugin_os_info",
+      "plugin_fs_probe",
+      "plugin_home_file_read",
+      "plugin_home_file_write",
+      "plugin_open_path",
+      "plugin_open_url"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "obsidian-host.toggle-pane",
+        "label": "Toggle Plugin Side Pane",
+        "description": "Command",
+        "when": "has-plugin-leaves"
+      },
+      {
+        "id": "obsidian-host.browse-plugins",
+        "label": "Browse community plugins",
+        "description": "Command",
+        "when": "workspace-window"
+      }
+    ],
+    "docks": ["obsidian-host.pane"],
+    "overlays": ["obsidian-host.plugin-browser"]
+  }
+}

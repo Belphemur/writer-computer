@@ -61,6 +61,7 @@ export function useComposerView(o: ComposerViewOptions) {
         onChange: (t: string, c: number, k: boolean) => latest.current.handlers.onChange(t, c, k),
         onCompositionStart: () => latest.current.handlers.onCompositionStart(),
         onCompositionEnd: () => latest.current.handlers.onCompositionEnd(),
+        onImageFiles: (files: File[]) => latest.current.handlers.onImageFiles(files),
       };
       const v = new EditorView({
         parent: el,

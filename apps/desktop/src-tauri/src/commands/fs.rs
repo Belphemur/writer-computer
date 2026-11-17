@@ -102,14 +102,11 @@ pub(crate) fn created_time(path: &std::path::Path) -> u64 {
         .unwrap_or(0)
 }
 
-/// Files the sidebar, quick open and the file index surface: Markdown notes
-/// and `.base` files (Obsidian Bases). `DirEntry::is_markdown` is the
+/// Files the sidebar, quick open and the file index surface: Markdown notes,
+/// `.base` files (Obsidian Bases), code files and images (`code_files`). `DirEntry::is_markdown` is the
 /// "listed file" flag for both; a `.base` has no title.
 pub(crate) fn is_listed_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|e| e.to_str()),
-        Some("md") | Some("base")
-    ) || crate::code_files::is_code_path(path)
+    crate::code_files::is_listed_path(path)
 }
 
 fn is_base_file(path: &Path) -> bool {
@@ -535,7 +532,7 @@ pub(crate) fn markdown_file_entry(path: &Path) -> Option<DirEntry> {
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("md"))
             || is_base_file(path)
-            || crate::code_files::is_code_path(path))
+            || crate::code_files::is_listed_path(path))
     {
         return None;
     }

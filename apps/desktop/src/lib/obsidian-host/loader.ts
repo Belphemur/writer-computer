@@ -133,12 +133,39 @@ export const domScriptLoader: ScriptLoader = (url) =>
     document.head.appendChild(s);
   });
 
-/** Default style sink: one `<style data-writer-plugin>` tag per plugin. */
+/** The cascade layer every plugin stylesheet lives in (order declared once in `App.css`). */
+export const PLUGIN_STYLE_LAYER = "plugins";
+
+const LEADING_IMPORT =
+  /^(\s*(?:\/\*[\s\S]*?\*\/\s*)*)@import\s+(url\([^)]*\)|"[^"]*"|'[^']*')([^;]*);/;
+
+/**
+ * Wraps a plugin's CSS in `@layer plugins { ... }` so unlayered plugin rules (a generic `.hidden`)
+ * cannot beat Writer's Tailwind utilities, which unlayered CSS otherwise always does. `@import`
+ * is only valid at the top and cannot sit inside a block, so leading imports are hoisted in front
+ * of the block and put into the same layer (`@import url(x) layer(plugins);`); an import further
+ * down is invalid CSS anyway and stays where it was (the browser ignores it, as before).
+ */
+export function layerPluginCss(css: string): string {
+  let rest = css;
+  let imports = "";
+  for (;;) {
+    const m = LEADING_IMPORT.exec(rest);
+    if (!m) break;
+    const [whole, lead, target, tail] = m;
+    const layered = /\blayer\b/.test(tail) ? tail : ` layer(${PLUGIN_STYLE_LAYER})${tail}`;
+    imports += `@import ${target}${layered};\n`;
+    rest = lead + rest.slice(whole.length);
+  }
+  return `${imports}@layer ${PLUGIN_STYLE_LAYER} {\n${rest}\n}`;
+}
+
+/** Default style sink: one `<style data-writer-plugin>` tag per plugin, inside the plugins layer. */
 export const domStyleSink: StyleSink = {
   add(pluginId, css) {
     const el = document.createElement("style");
     el.dataset.writerPlugin = pluginId;
-    el.textContent = css;
+    el.textContent = layerPluginCss(css);
     document.head.appendChild(el);
     return () => el.remove();
   },

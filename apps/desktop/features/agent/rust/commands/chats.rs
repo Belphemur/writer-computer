@@ -9,6 +9,7 @@ use crate::agent::chat_store::{
 };
 use crate::agent::consent;
 use crate::agent::events::ChatSummary;
+use crate::agent::images::{self, ChatImage};
 use crate::agent::permission_rules::{self, PermissionRules};
 use crate::agent::session::AgentSessions;
 use crate::agent::title;
@@ -307,6 +308,52 @@ pub async fn agent_chat_replay<R: Runtime>(
             &markdown,
             max_tokens.unwrap_or(chat_store::DEFAULT_REPLAY_TOKENS),
         ))
+    })
+    .await
+}
+
+/// Saves a pasted or browser-dropped image (bytes as base64) into the chat's hidden `assets/`
+/// folder; the composer then attaches the returned path (spec "Images in the composer").
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_save_chat_image<R: Runtime>(
+    project_path: Option<String>,
+    name: String,
+    data_base64: String,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<ChatImage, AppError> {
+    use base64::Engine as _;
+    let root = root_of(&app, &webview)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|_| AppError::InvalidPath("the image data is not valid base64".into()))?;
+    blocking(move || {
+        images::save_bytes(&root, project_path.as_deref(), &name, &bytes)
+            .map(ChatImage::from)
+            .map_err(AppError::InvalidPath)
+    })
+    .await
+}
+
+/// Copies an image file dropped from Finder (absolute path) into the chat's `assets/` folder.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_import_chat_image_file<R: Runtime>(
+    project_path: Option<String>,
+    source_path: String,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<ChatImage, AppError> {
+    let root = root_of(&app, &webview)?;
+    blocking(move || {
+        images::import_file(
+            &root,
+            project_path.as_deref(),
+            std::path::Path::new(&source_path),
+        )
+        .map(ChatImage::from)
+        .map_err(AppError::InvalidPath)
     })
     .await
 }

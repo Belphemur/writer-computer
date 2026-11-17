@@ -10,7 +10,12 @@ import {
   type Draft,
 } from "@/stores/agent-store";
 import type { ChatModelChoice } from "@/lib/agent/agent-settings";
-import type { AgentPermissionMode, ChatId, PermissionPersist } from "@/lib/agent/events";
+import type {
+  AgentPermissionMode,
+  ChatId,
+  ContextRef,
+  PermissionPersist,
+} from "@/lib/agent/events";
 import { useSettingsStore } from "@/stores/settings-store";
 
 export const toggleAgentPane = () => useAgentStore.getState().togglePane();
@@ -44,6 +49,8 @@ export const selectAgentChat = (id: ChatId) => useAgentStore.getState().selectCh
 export const cycleAgentChat = (d: 1 | -1) => useAgentStore.getState().cycleChat(d);
 export const setAgentDraft = (id: ChatId, patch: Partial<Draft>) =>
   useAgentStore.getState().setDraft(id, patch);
+export const addAgentDraftImages = (id: ChatId, refs: readonly ContextRef[]) =>
+  useAgentStore.getState().addDraftImages(id, refs);
 export const sendAgentMessage = (text: string) => useAgentStore.getState().sendMessage(text);
 export const stopAgent = () => useAgentStore.getState().stop();
 export const removeQueuedMessage = (id: ChatId) => useAgentStore.getState().removeQueued(id);

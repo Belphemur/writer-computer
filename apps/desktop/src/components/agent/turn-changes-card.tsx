@@ -181,6 +181,15 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
                       <span className="text-[11px]">{STATUS_LABEL[f.status]}</span>
                     </button>
                     <FileName f={f} />
+                    {f.by && (
+                      <span
+                        data-agent-change-by={f.by}
+                        title={`Edited by the ${f.by} sub-agent`}
+                        className="shrink-0 rounded-full bg-[var(--surface-subtle)] px-1.5 text-[10.5px] leading-4 text-text-muted"
+                      >
+                        {f.by}
+                      </span>
+                    )}
                     {!f.noDiff && <Counts added={f.added} removed={f.removed} />}
                     <span className="ml-auto flex items-center gap-2">{undoControl(f)}</span>
                   </div>

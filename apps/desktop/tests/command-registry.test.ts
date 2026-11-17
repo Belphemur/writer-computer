@@ -19,7 +19,6 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     unpinnedTabCount: 2,
     activeTabPin: "unpinned",
     hasClosedTabs: false,
-    hasPluginLeaves: false,
     close: fn(),
     toggleSidebar: fn(),
     openCreateFile: fn(),
@@ -37,8 +36,6 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
     zoomOut: fn(),
     resetZoom: fn(),
     openSettings: fn(),
-    togglePluginPane: fn(),
-    openPluginBrowser: fn(),
     openLogFolder: fn(),
     copyRecentErrors: fn(),
     ...over,
@@ -68,7 +65,6 @@ describe("palette built-in commands", () => {
       "zoom-in",
       "zoom-out",
       "zoom-reset",
-      "browse-community-plugins",
       "open-log-folder",
       "copy-recent-errors",
       "open-settings",
@@ -159,26 +155,6 @@ describe("palette built-in commands", () => {
     list.find((x) => x.id === "copy-recent-errors")!.run();
     expect(c.openLogFolder).toHaveBeenCalledTimes(1);
     expect(c.copyRecentErrors).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows the plugin pane toggle only when a plugin opened a leaf", () => {
-    expect(ids(resolveCommands(ctx({ hasPluginLeaves: true }), []))).toContain(
-      "toggle-plugin-pane",
-    );
-    expect(ids(resolveCommands(ctx(), []))).not.toContain("toggle-plugin-pane");
-  });
-
-  it("offers Browse community plugins only in a workspace window and opens the marketplace", () => {
-    const c = ctx();
-    const list = resolveCommands(c, []);
-    const cmd = list.find((x) => x.id === "browse-community-plugins")!;
-    expect(cmd.label).toBe("Browse community plugins");
-    cmd.run();
-    expect(c.openPluginBrowser).toHaveBeenCalledTimes(1);
-    expect(c.close).toHaveBeenCalledTimes(1);
-    for (const over of [{ hasWorkspace: false }, { isCompactFileMode: true }]) {
-      expect(ids(resolveCommands(ctx(over), []))).not.toContain("browse-community-plugins");
-    }
   });
 
   it("closes the palette after a command unless the command owns closing", () => {

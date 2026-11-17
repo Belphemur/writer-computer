@@ -90,6 +90,8 @@ fn read_snap(abs: &Path, keep_text: bool) -> Snap {
 }
 
 struct FileRec {
+    /// The sub-agent role that made the first edit of this file in the turn (`None`: the main agent).
+    by: Option<String>,
     rel: String,
     abs: PathBuf,
     pre: Snap,
@@ -254,6 +256,7 @@ fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
         removed,
         old_path: e.from.map(|i| files[i].rel.clone()),
         no_diff,
+        by: f.by.clone(),
     }
 }
 
@@ -335,6 +338,20 @@ impl ChangeStore {
     /// command ran). Call it as soon as the call's input is complete. Idempotent per file and
     /// turn: the first snapshot wins, so a permission request after the input changes nothing.
     pub fn capture(&self, chat_id: &str, root: &Path, cwd: &Path, tool: &str, input: &Value) {
+        self.capture_by(chat_id, root, cwd, tool, input, None);
+    }
+
+    /// [`ChangeStore::capture`] for a call made by a sub-agent: `by` is its role label, kept on
+    /// the file's record (the first snapshot wins, so the first author does too).
+    pub fn capture_by(
+        &self,
+        chat_id: &str,
+        root: &Path,
+        cwd: &Path,
+        tool: &str,
+        input: &Value,
+        by: Option<&str>,
+    ) {
         let shell = tool == SHELL_TOOL;
         if !shell && !EDIT_TOOLS.contains(&tool) {
             return;
@@ -393,6 +410,7 @@ impl ChangeStore {
             }
             add_bytes += snap.bytes();
             kept.push(FileRec {
+                by: by.map(String::from),
                 rel: c.rel.clone(),
                 abs: c.abs.clone(),
                 pre: snap,

@@ -1,8 +1,9 @@
 import { isolateHistory } from "@codemirror/commands";
-import { useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   decideAgentPermission,
   hasPendingAgentPermission,
+  addAgentDraftImages,
   loadAgentSkills,
   removeQueuedMessage,
   sendAgentMessage,
@@ -29,6 +30,14 @@ import {
   toContextRef,
   type MentionCandidate,
 } from "@/lib/agent/mentions";
+import {
+  attachChatImages,
+  fileToBase64,
+  isChatImageRef,
+  type ChatImageSource,
+} from "@/lib/agent/chat-images";
+import { registerChatImageTarget } from "@/lib/agent/chat-image-target";
+import { chatHistoryClient } from "@/lib/agent/chat-history-client";
 import { isBusy, isComposerDisabled } from "@/lib/agent/reduce";
 import {
   SLASH_EMPTY_TEXT,
@@ -38,6 +47,8 @@ import {
   mergeSlashItems,
 } from "@/lib/agent/slash-commands";
 import { applyTrigger, findTrigger, type Trigger } from "@/lib/agent/trigger";
+import { getWorkspaceRoot } from "@/hooks/workspace-api";
+import { getRelativePath } from "@/lib/paths";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { fuzzySearch } from "@/lib/tauri";
@@ -46,6 +57,7 @@ import { ContextChips } from "./context-chips";
 import { SuggestionMenu, type Suggestion } from "./suggestion-menu";
 import { pillRanges, type PillContext } from "@/lib/agent/pill";
 import { openVaultPath } from "./agent-links";
+import { useChatImageOsDrop } from "./use-chat-image-drop";
 import { useComposerView } from "./use-composer-view";
 import { useFocusOnTick } from "./use-focus-on-tick";
 import { useLoadSkillsOnMount } from "./use-load-skills";
@@ -122,6 +134,53 @@ export function Composer({
       : disk?.status === "loading"
         ? "Loading skills…"
         : SLASH_EMPTY_TEXT;
+
+  // Images: paste, a browser drag, Finder files (OS drop) and vault files (sidebar drag) become
+  // image chips; one that is refused (type, size) shows a notice that goes away by itself.
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+  const projectPath = chat.projectPath;
+  const attachImages = useCallback(
+    async (sources: readonly ChatImageSource[]) => {
+      const root = getWorkspaceRoot();
+      const resolved = sources.map((s) =>
+        s.kind === "vault" && root ? { ...s, path: getRelativePath(s.path, root) } : s,
+      );
+      const { refs, notices } = await attachChatImages(resolved, {
+        projectPath,
+        saveImage: chatHistoryClient.saveImage,
+        importImageFile: chatHistoryClient.importImageFile,
+        readBase64: fileToBase64,
+      });
+      if (refs.length > 0) addAgentDraftImages(chatId, refs);
+      if (notices.length > 0) {
+        setNotice(notices.join("\n"));
+        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+        noticeTimer.current = window.setTimeout(() => setNotice(null), 6000);
+      }
+    },
+    [chatId, projectPath],
+  );
+  const latestAttach = useRef(attachImages);
+  latestAttach.current = attachImages;
+  useEffect(
+    () =>
+      registerChatImageTarget({
+        contains: (x, y) => {
+          const r = wrapRef.current?.getBoundingClientRect();
+          return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        },
+        attach: (sources) => void latestAttach.current(sources),
+      }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
+  const dropOver = useChatImageOsDrop(true);
 
   const disabled = isComposerDisabled(chat);
   const busy = isBusy(chat);
@@ -330,6 +389,19 @@ export function Composer({
       return true;
     }
 
+    // Backspace at the very start removes the last image chip, like a pill.
+    if (e.key === "Backspace" && !mod) {
+      const sel = view.current?.state.selection.main;
+      if (sel && sel.empty && sel.head === 0) {
+        const last = [...draft.mentions].reverse().find(isChatImageRef);
+        if (last) {
+          e.preventDefault();
+          setAgentDraft(chatId, { mentions: draft.mentions.filter((m) => m !== last) });
+          return true;
+        }
+      }
+    }
+
     if (e.key === "ArrowUp" && text === "" && !mod) {
       const last = [...chat.turns].reverse().find((t) => t.user)?.user;
       if (last) {
@@ -361,6 +433,8 @@ export function Composer({
         setAgentDraft(chatId, { text: value });
         refresh(value, caret, isComposing);
       },
+      onImageFiles: (files) =>
+        void attachImages(files.map((file) => ({ kind: "file" as const, file }))),
       onCompositionStart: () => {
         composing.current = true;
         closeMenu();
@@ -416,7 +490,11 @@ export function Composer({
           }}
         />
       )}
-      <div className="m-3 mt-2 rounded-xl border border-[var(--line-subtle)] bg-[var(--surface-input)] focus-within:border-[var(--focus-border)]">
+      <div
+        data-agent-composer-box
+        data-drop-active={dropOver || undefined}
+        className="m-3 mt-2 rounded-xl border border-[var(--line-subtle)] bg-[var(--surface-input)] focus-within:border-[var(--focus-border)] data-[drop-active]:border-[var(--focus-border)]"
+      >
         <ContextChips chatId={chatId} draft={draft} />
         <div
           ref={host}
@@ -433,6 +511,23 @@ export function Composer({
           onSend={send}
         />
       </div>
+      {notice && (
+        <p
+          role="status"
+          data-agent-image-notice
+          className="mx-3 -mt-1 mb-2 flex items-start gap-2 whitespace-pre-line text-[11.5px] text-text-muted"
+        >
+          <span className="min-w-0 flex-1">{notice}</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="shrink-0 rounded px-1 hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
+            onClick={() => setNotice(null)}
+          >
+            ×
+          </button>
+        </p>
+      )}
       {unattached.length > 0 && (
         <p
           role="status"

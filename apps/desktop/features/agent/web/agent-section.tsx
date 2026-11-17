@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
 import { createTauriAgentClient } from "@/lib/agent/client";
@@ -23,17 +23,16 @@ import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
 import { AgentModels } from "./agent-models";
+import { ROW, SELECT, SelectRow } from "./agent-rows";
+import { TierModels } from "./tier-models";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
 
 const text = (v: unknown, fallback: string): string => (typeof v === "string" ? v : fallback);
 
-const ROW = "flex items-center justify-between gap-4 px-4 py-3.5";
 const CARD =
   "overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]";
 const BUTTON =
   "shrink-0 rounded-lg border border-[var(--line-subtle)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle-strong)] disabled:opacity-50";
-const SELECT =
-  "h-9 min-w-[160px] appearance-none rounded-lg border border-transparent bg-[var(--surface-input)] bg-[image:var(--select-chevron)] bg-[length:12px_12px] bg-[position:right_10px_center] bg-no-repeat pl-3 pr-8 text-[13px] text-[var(--text-secondary)] font-[inherit] outline-none focus:border-[var(--focus-border)] focus-visible:outline-none disabled:opacity-50";
 const COMING_SOON_NOTE =
   'Coming soon. See "Other backends" in the agent spec; Claude is the only backend today.';
 
@@ -179,26 +178,6 @@ function statusDetail(status: BackendStatus): string {
     case "checking":
       return "Looking for the claude program…";
   }
-}
-
-function SelectRow({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`${ROW} border-t border-[var(--line-subtler)]`}>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-[var(--text-primary)]">{title}</div>
-        <div className="mt-0.5 text-[13px] text-[var(--text-muted)]">{description}</div>
-      </div>
-      {children}
-    </div>
-  );
 }
 
 /** Settings rows of the generic kind, rendered with the shared `SettingRows`. */
@@ -367,13 +346,20 @@ export function AgentSection() {
           "agent.chats-keep-days",
           "agent.auto-title-chats",
           "agent.restore-chats",
-          "agent.title-model",
           "agent.orchestrate",
-          "agent.subagent-model",
           "agent.pane-width",
           "agent.pane-open",
         ]}
       />
+
+      <h2 className="mt-8 mb-1 text-[13px] font-medium text-[var(--text-muted)]">
+        Sub-agent models
+      </h2>
+      <p className="mb-3 text-[13px] text-[var(--text-muted)]">
+        Each sub-agent role runs on a model tier, and each tier has one model for this agent. The
+        cheap tier also writes automatic chat titles.
+      </p>
+      <TierModels />
       {configuring && (
         <AgentConfigureDialog
           onClose={() => setConfiguring(false)}

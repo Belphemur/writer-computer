@@ -6,6 +6,7 @@ import {
   type EventPump,
   type Unsubscribe,
 } from "@/lib/agent/client";
+import { claudeTierSettingKey } from "@/lib/agent/agent-roles";
 import { agentSettingsFrom, type ChatModelChoice } from "@/lib/agent/agent-settings";
 import type {
   AgentBinaryInfo,
@@ -154,6 +155,9 @@ interface AgentState {
   selectChat: (chatId: ChatId) => void;
   cycleChat: (delta: 1 | -1) => void;
   setDraft: (chatId: ChatId, patch: Partial<Draft>) => void;
+  /** Adds image refs to the draft (read at call time, so a save that finished after more typing
+   *  never overwrites it); an image already attached is not added twice. */
+  addDraftImages: (chatId: ChatId, refs: readonly ContextRef[]) => void;
   sendMessage: (text: string) => Promise<void>;
   removeQueued: (chatId: ChatId) => void;
   stop: () => Promise<void>;
@@ -541,9 +545,10 @@ async function maybeAutoTitle(chatId: ChatId) {
   }
 }
 
-/** `agent.title-model`, `null` when unset (Rust then picks the cheapest model). */
+/** The title call runs on the cheap tier: `agent.claude.model-cheap`, `null` when blank (Rust then
+ *  uses the tier's default). */
 function titleModelSetting(): string | null {
-  const m = useSettingsStore.getState().settings["agent.title-model"];
+  const m = useSettingsStore.getState().settings[claudeTierSettingKey("cheap")];
   return typeof m === "string" ? m : null;
 }
 
@@ -858,6 +863,20 @@ export const useAgentStore = create<AgentState>((set, get) => {
           next.parked = refs.parked;
         }
         return { drafts: { ...s.drafts, [chatId]: next } };
+      }),
+
+    addDraftImages: (chatId, refs) =>
+      set((s) => {
+        const draft = s.drafts[chatId] ?? EMPTY_DRAFT;
+        const has = (r: ContextRef) =>
+          draft.mentions.some(
+            (m) => m.kind === r.kind && "path" in m && "path" in r && m.path === r.path,
+          );
+        const fresh = refs.filter((r) => !has(r));
+        if (fresh.length === 0) return s;
+        return {
+          drafts: { ...s.drafts, [chatId]: { ...draft, mentions: [...draft.mentions, ...fresh] } },
+        };
       }),
 
     sendMessage: async (rawText) => {

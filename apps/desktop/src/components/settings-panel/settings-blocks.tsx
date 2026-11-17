@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
-import { CommunityPluginsSection } from "@/components/plugins/community-plugins-section";
 import type { SectionBlock, SettingsSection } from "./settings-sections";
 import { SettingRows } from "./setting-rows";
 import { FeaturesSection } from "./features-section";
@@ -10,7 +9,13 @@ import { ThemesSection } from "./themes-section";
 
 type BlockOf<T extends SectionBlock["type"]> = Extract<SectionBlock, { type: T }>;
 
-function CategoryBlock({ block, hideTitle }: { block: BlockOf<"category">; hideTitle: boolean }) {
+export function CategoryBlock({
+  block,
+  hideTitle,
+}: {
+  block: BlockOf<"category">;
+  hideTitle: boolean;
+}) {
   const defs = SETTINGS_SCHEMA.filter((def) => def.category === block.category);
   if (defs.length === 0) return null;
   return (
@@ -29,7 +34,6 @@ const BLOCK_RENDERERS: {
 } = {
   category: CategoryBlock,
   themes: () => <ThemesSection />,
-  "community-plugins": () => <CommunityPluginsSection />,
   secrets: () => <SecretsSection />,
   logs: () => <LogsSection />,
   features: () => <FeaturesSection />,

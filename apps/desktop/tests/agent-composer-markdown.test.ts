@@ -154,6 +154,7 @@ describe("markdown in the composer view", () => {
           onChange: () => {},
           onCompositionStart: () => {},
           onCompositionEnd: () => {},
+          onImageFiles: () => {},
         }),
       }),
     });

@@ -366,13 +366,47 @@ export function closeWindow(): Promise<void> {
   return getCurrentWindow().close();
 }
 
-// Image commands
-export function saveClipboardImage(
-  markdownFilePath: string,
-  imageData: number[],
-  format: string,
-): Promise<{ relative_path: string; absolute_path: string }> {
-  return invoke("save_clipboard_image", { markdownFilePath, imageData, format });
+// Image commands (spec: SPECs/image-insertion-spec.md)
+export interface AttachmentSaved {
+  /** Vault-relative (note-relative in a standalone window). */
+  relative_path: string;
+  absolute_path: string;
+  file_name: string;
+}
+
+function utf8ToBase64(text: string): string {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/** Save pasted or browser-dropped image bytes next to the vault's attachments. The bytes travel
+ *  as the raw request body; the note and the wanted name ride in a header. */
+export function saveAttachment(
+  notePath: string,
+  name: string,
+  bytes: Uint8Array,
+): Promise<AttachmentSaved> {
+  const meta = utf8ToBase64(JSON.stringify({ note_path: notePath, name }));
+  return invoke("save_attachment", bytes, { headers: { "x-writer-meta": meta } });
+}
+
+/** Copy a dropped file (Finder) into the attachment folder by path. */
+export function importAttachmentFile(
+  notePath: string,
+  sourcePath: string,
+): Promise<AttachmentSaved> {
+  return invoke("import_attachment_file", { notePath, sourcePath });
+}
+
+/** Download an image a browser drag or paste carried only as a link (http and https), save it
+ *  to the attachment folder. Rejects with a short sentence saying why it was refused. */
+export function importAttachmentUrl(
+  notePath: string,
+  url: string,
+  fallbackStem: string,
+): Promise<AttachmentSaved> {
+  return invoke("import_attachment_url", { notePath, url, fallbackStem });
 }
 
 /** Native yes/no confirmation. Resolves to whether the user accepted. */
