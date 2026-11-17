@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { usePluginsStore } from "@/stores/plugins-store";
 import * as editorApi from "./editor-api";
 import * as tauri from "@/lib/tauri";
+import { syncImageFromDisk } from "@/lib/image-disk-sync";
 import { cancelSave, isSaveInFlight } from "@/lib/save";
 import { isWorkspaceEventCurrent, type WorkspaceIdentity } from "@/lib/workspace-events";
 import { getWorkspaceEventIdentity } from "./workspace-api";
@@ -39,6 +40,7 @@ export function useFileWatcher() {
       if (WATCHER_DEBUG) console.debug("[watcher] fs:file-changed", kind, path);
       useWorkspaceStore.getState().bumpSidebarMetadataVersion();
       void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
+      syncImageFromDisk(path, kind);
       const openFiles = editorApi.getOpenFiles();
       const file = openFiles.get(path);
 

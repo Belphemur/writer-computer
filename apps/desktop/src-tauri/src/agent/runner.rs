@@ -8,8 +8,8 @@
 //! Everything that mutates a chat goes through `Session::inner` (one lock). Lines for the CLI
 //! go through one channel to one writer thread so JSON lines never interleave and a slow pipe
 //! never blocks the reader. Events go to the [`EventLog`], which numbers, rings and emits them.
-//! No lock of `inner` is ever held across a call into a port, the consent dialog, the login
-//! shell or `ProcManager::spawn_with_consent`.
+//! No lock of `inner` is ever held across a call into a port, the login shell or
+//! `ProcManager::spawn`.
 //!
 //! Never logged: user text, assistant text, tool input/output, note paths, the system prompt,
 //! environment values (spec section 8).
@@ -20,15 +20,13 @@ use super::claude_stream::{
     encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_user_message,
     updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
 };
-use super::consent::{self, Gate, Preconsented, AGENT_PLUGIN_ID};
 use super::env;
 use super::events::*;
 use super::images::Outgoing;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::SubTracker;
-use crate::plugin_consent::ConsentStore;
-use crate::plugin_proc::{Consent, Emit, Prepared, ProcEvent, ProcManager, Sig};
+use crate::plugin_proc::{Emit, Prepared, ProcEvent, ProcManager, Sig};
 use base64::Engine as _;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -53,14 +51,9 @@ const DENY_MESSAGE: &str = "The user denied this action";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpawnError {
     NotFound,
-    Denied,
-    /// Trust or vault changed while the consent dialog was open.
-    Changed,
     /// The window already has `MAX_LIVE_PER_WINDOW` live processes.
     Busy,
     Invalid(String),
-    /// A respawn was needed but the vault never consented in this session (call `agent_start`).
-    NotConsented,
     Ended,
 }
 
@@ -72,16 +65,6 @@ impl SpawnError {
                 "The claude program was not found".to_string(),
                 false,
             ),
-            Self::Denied => (
-                AgentErrorKind::SpawnDenied,
-                "Starting Claude Code was not allowed".to_string(),
-                true,
-            ),
-            Self::Changed => (
-                AgentErrorKind::SpawnDenied,
-                "The vault or its trust changed while asking".to_string(),
-                true,
-            ),
             Self::Busy => (
                 AgentErrorKind::SpawnFailed,
                 format!(
@@ -90,11 +73,6 @@ impl SpawnError {
                 true,
             ),
             Self::Invalid(m) => (AgentErrorKind::SpawnFailed, m.clone(), false),
-            Self::NotConsented => (
-                AgentErrorKind::SpawnDenied,
-                "Starting Claude Code needs your permission: start the chat again".to_string(),
-                true,
-            ),
             Self::Ended => (
                 AgentErrorKind::Unknown,
                 "This chat was closed".to_string(),
@@ -130,8 +108,6 @@ pub(crate) struct SessionInit {
     /// The first spawn resumes `session_id` instead of creating it.
     pub resume: bool,
     pub shared: Weak<Shared>,
-    pub store: ConsentStore,
-    pub still_ok: Arc<dyn Fn() -> bool + Send + Sync>,
     pub sink: Sink,
 }
 
@@ -166,7 +142,6 @@ struct Inner {
     session_id: String,
     /// A later spawn must `--resume` (init seen, or the request asked to resume).
     resume_next: bool,
-    consented: bool,
     terminal: bool,
     closing: Option<Closing>,
 
@@ -218,8 +193,6 @@ pub struct Session {
     procs: Arc<ProcManager>,
     ports: Arc<AgentPorts>,
     changes: Arc<ChangeStore>,
-    store: ConsentStore,
-    still_ok: Arc<dyn Fn() -> bool + Send + Sync>,
     timing: Timing,
     pub(crate) log: Arc<EventLog>,
     /// Counted toward the per-window cap (set under `Shared::gate`).
@@ -348,8 +321,6 @@ impl Session {
             procs,
             ports: Arc::clone(&shared.ports),
             changes: Arc::clone(&shared.changes),
-            store: init.store,
-            still_ok: init.still_ok,
             timing: shared.timing,
             log,
             live: AtomicBool::new(false),
@@ -364,7 +335,6 @@ impl Session {
                 settings: config.settings,
                 session_id: init.session_id,
                 resume_next: init.resume,
-                consented: false,
                 terminal: false,
                 closing: None,
                 gen: 0,
@@ -420,10 +390,10 @@ impl Session {
     }
 
     /// What a one-shot helper call (the chat title) may run: the program and the confined cwd of
-    /// a chat whose spawn the user already consented to. `None` before that, or once ended.
+    /// a chat that has one. `None` before that, or once ended.
     pub fn helper_target(&self) -> Option<(PathBuf, PathBuf)> {
         let g = self.inner.lock();
-        if !g.consented || g.terminal {
+        if g.terminal {
             return None;
         }
         Some((g.program.clone()?, self.cwd.clone()))

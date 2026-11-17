@@ -166,7 +166,7 @@ describe("the viewer", () => {
     useSettingsStore.setState({ setSetting } as never);
     render(false);
     act(() => zoomIn());
-    expect(useImageViewerStore.getState().views[path]).toBeUndefined();
+    expect(useImageViewerStore.getState().views[path]?.zoom).toBe(IMAGE_ZOOM_FIT);
     expect(setSetting).toHaveBeenCalled();
   });
 

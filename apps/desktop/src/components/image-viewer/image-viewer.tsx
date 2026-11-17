@@ -18,10 +18,16 @@ interface GestureEvent extends Event {
   scale: number;
 }
 
+/** The asset URL; version 0 is the plain URL, later versions add a cache-busting query. */
+export function imageSrc(path: string, version: number): string {
+  const src = convertFileSrc(path);
+  return version > 0 ? `${src}?v=${version}` : src;
+}
+
 /**
  * Read-only image viewer (page kind `image`): fit to width, zoom with Cmd+= / Cmd+- / Cmd+0 (via
  * `lib/zoom-target`) and pinch, transparency on a checkerboard. The size and zoom go to the
- * store for the footer.
+ * store for the footer. It reloads when the file changes on disk (`lib/image-disk-sync.ts`).
  */
 export function ImageViewer({
   location,
@@ -41,9 +47,16 @@ export function ImageViewer({
   zoomRef.current = zoom;
 
   useEffect(() => {
-    setFailed(false);
+    useImageViewerStore.getState().track(path);
     return () => useImageViewerStore.getState().forget(path);
   }, [path]);
+
+  const version = view?.version ?? 0;
+  const deleted = view?.deleted ?? false;
+  // A new path or a new disk version gets a fresh chance to load.
+  useEffect(() => {
+    setFailed(false);
+  }, [path, version]);
 
   // Cmd+= / Cmd+- / Cmd+0 zoom this image while its tab is the active one.
   useEffect(() => {
@@ -90,6 +103,14 @@ export function ImageViewer({
     };
   }, [path, setZoom]);
 
+  if (deleted) {
+    return (
+      <div className="writer-image-viewer__error" data-testid="image-viewer-deleted">
+        This file was deleted
+      </div>
+    );
+  }
+
   if (failed) {
     return <div className="writer-image-viewer__error">Can't show this image</div>;
   }
@@ -103,13 +124,15 @@ export function ImageViewer({
     <div ref={paneRef} className="writer-image-viewer" data-testid="image-viewer">
       <img
         className="writer-image-viewer__image"
-        src={convertFileSrc(path)}
+        src={imageSrc(path, version)}
         alt={getFileName(path)}
         draggable={false}
         style={{ width }}
         onLoad={(event) => {
           const img = event.currentTarget;
-          setSize(path, img.naturalWidth, img.naturalHeight);
+          if (setSize(path, img.naturalWidth, img.naturalHeight)) {
+            if (paneRef.current) paneRef.current.scrollTop = paneRef.current.scrollLeft = 0;
+          }
         }}
         onError={() => setFailed(true)}
       />
