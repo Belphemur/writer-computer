@@ -77,530 +77,556 @@ macro_rules! cmd {
     };
 }
 
-pub static COMMANDS: &[CommandSpec] = &[
-    // Vault
-    cmd!(
-        "vault",
-        "Vault",
-        "Show the current vault (one value with info=)",
-        &[p("info", "name | path | files | folders | size")],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_files::vault
-    ),
-    cmd!(
-        "vaults",
-        "Vault",
-        "List the vaults Writer knows (recent workspaces)",
-        NO_PARAMS,
-        &[
-            ("total", "print only the count"),
-            ("verbose", "include vault paths")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_files::vaults
-    ),
-    // Files and folders
-    cmd!(
-        "files",
-        "Files",
-        "List files",
-        &[
-            p("folder", "only files under this folder"),
-            p("ext", "only this extension")
-        ],
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_files::files
-    ),
-    cmd!(
-        "file",
-        "Files",
-        "Show information about a file",
-        &[FILE, PATH],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_files::file
-    ),
-    cmd!(
-        "folders",
-        "Files",
-        "List folders",
-        &[p("folder", "only folders under this folder")],
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_files::folders
-    ),
-    cmd!(
-        "folder",
-        "Files",
-        "Show information about a folder",
-        &[
-            req("path", "folder path"),
-            p("info", "files | folders | size (one value only)")
-        ],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_files::folder
-    ),
-    // Content
-    cmd!(
-        "read",
+pub static COMMANDS: &[CommandSpec] =
+    &[
+        // Vault
+        cmd!(
+            "vault",
+            "Vault",
+            "Show the current vault (one value with info=)",
+            &[p("info", "name | path | files | folders | size")],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_files::vault
+        ),
+        cmd!(
+            "vaults",
+            "Vault",
+            "List the vaults Writer knows (recent workspaces)",
+            NO_PARAMS,
+            &[
+                ("total", "print only the count"),
+                ("verbose", "include vault paths")
+            ],
+            NO_FORMATS,
+            None,
+            cmd_files::vaults
+        ),
+        // Files and folders
+        cmd!(
+            "files",
+            "Files",
+            "List files",
+            &[
+                p("folder", "only files under this folder"),
+                p("ext", "only this extension")
+            ],
+            &[("total", "print only the count")],
+            NO_FORMATS,
+            None,
+            cmd_files::files
+        ),
+        cmd!(
+            "file",
+            "Files",
+            "Show information about a file",
+            &[FILE, PATH],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_files::file
+        ),
+        cmd!(
+            "folders",
+            "Files",
+            "List folders",
+            &[p("folder", "only folders under this folder")],
+            &[("total", "print only the count")],
+            NO_FORMATS,
+            None,
+            cmd_files::folders
+        ),
+        cmd!(
+            "folder",
+            "Files",
+            "Show information about a folder",
+            &[
+                req("path", "folder path"),
+                p("info", "files | folders | size (one value only)")
+            ],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_files::folder
+        ),
+        // Content
+        cmd!(
+            "read",
+            "Content",
+            "Print a file's contents",
+            &[FILE, PATH],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_notes::read
+        ),
+        cmd!(
+            "create",
+            "Content",
+            "Create a note",
+            &[
+                p("name", "note name (default Untitled)"),
+                p("path", "exact path"),
+                p("content", "initial text"),
+                p("template", "note whose text is the starting content")
+            ],
+            &[
+                ("overwrite", "replace an existing file"),
+                ("open", "accepted, ignored (the app is not controlled)"),
+                ("newtab", "accepted, ignored")
+            ],
+            NO_FORMATS,
+            None,
+            cmd_notes::create
+        ),
+        cmd!(
+            "append",
+            "Content",
+            "Append text to a file",
+            &[
+                FILE,
+                PATH,
+                req("content", "text to add"),
+                p("heading", "append to the end of this section")
+            ],
+            &[(
+                "inline",
+                "no newline between the existing text and the new text"
+            )],
+            NO_FORMATS,
+            None,
+            cmd_notes::append
+        ),
+        cmd!(
+            "prepend",
+            "Content",
+            "Insert text after the frontmatter",
+            &[
+                FILE,
+                PATH,
+                req("content", "text to add"),
+                p("heading", "insert right after this heading")
+            ],
+            &[("inline", "no newline after the new text")],
+            NO_FORMATS,
+            None,
+            cmd_notes::prepend
+        ),
+        cmd!(
+            "move",
+            "Content",
+            "Move (and optionally rename) a file and update links to it",
+            &[
+                FILE,
+                PATH,
+                req("to", "destination folder or path"),
+                p("format", "text | json")
+            ],
+            RELOCATE_FLAGS,
+            &["text", "json"],
+            Some("text"),
+            cmd_notes::mv
+        ),
+        cmd!(
+            "rename",
+            "Content",
+            "Rename a file and update links to it",
+            &[
+                FILE,
+                PATH,
+                req("name", "new name (extension kept if omitted)"),
+                p("format", "text | json")
+            ],
+            RELOCATE_FLAGS,
+            &["text", "json"],
+            Some("text"),
+            cmd_notes::rename
+        ),
+        cmd!(
+        "title",
         "Content",
-        "Print a file's contents",
-        &[FILE, PATH],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_notes::read
-    ),
-    cmd!(
-        "create",
-        "Content",
-        "Create a note",
-        &[
-            p("name", "note name (default Untitled)"),
-            p("path", "exact path"),
-            p("content", "initial text"),
-            p("template", "note whose text is the starting content")
-        ],
-        &[
-            ("overwrite", "replace an existing file"),
-            ("open", "accepted, ignored (the app is not controlled)"),
-            ("newtab", "accepted, ignored")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_notes::create
-    ),
-    cmd!(
-        "append",
-        "Content",
-        "Append text to a file",
+        "Show, set or clear a note's display title (the title property); the file is not renamed",
         &[
             FILE,
             PATH,
-            req("content", "text to add"),
-            p("heading", "append to the end of this section")
-        ],
-        &[(
-            "inline",
-            "no newline between the existing text and the new text"
-        )],
-        NO_FORMATS,
-        None,
-        cmd_notes::append
-    ),
-    cmd!(
-        "prepend",
-        "Content",
-        "Insert text after the frontmatter",
-        &[
-            FILE,
-            PATH,
-            req("content", "text to add"),
-            p("heading", "insert right after this heading")
-        ],
-        &[("inline", "no newline after the new text")],
-        NO_FORMATS,
-        None,
-        cmd_notes::prepend
-    ),
-    cmd!(
-        "move",
-        "Content",
-        "Move (and optionally rename) a file and update links to it",
-        &[
-            FILE,
-            PATH,
-            req("to", "destination folder or path"),
+            p("set", "new display title (links showing the old title follow)"),
             p("format", "text | json")
         ],
-        RELOCATE_FLAGS,
-        &["text", "json"],
-        Some("text"),
-        cmd_notes::mv
-    ),
-    cmd!(
-        "rename",
-        "Content",
-        "Rename a file and update links to it",
         &[
-            FILE,
-            PATH,
-            req("name", "new name (extension kept if omitted)"),
-            p("format", "text | json")
-        ],
-        RELOCATE_FLAGS,
-        &["text", "json"],
-        Some("text"),
-        cmd_notes::rename
-    ),
-    cmd!(
-        "delete",
-        "Content",
-        "Move a file to the trash",
-        &[FILE, PATH],
-        &[("permanent", "delete for good instead of using the trash")],
-        NO_FORMATS,
-        None,
-        cmd_notes::delete
-    ),
-    // Search
-    cmd!(
-        "search",
-        "Search",
-        "List files whose text or name matches a query, best match first",
-        &[
-            req(
-                "query",
-                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+            ("clear", "remove the title property (the note shows its file name)"),
+            (
+                "dry-run",
+                "print the plan (files and link counts) and change nothing",
             ),
-            p("path", "limit to this folder"),
-            p("limit", "maximum number of files"),
-            p("format", "text | json")
-        ],
-        &[
-            ("total", "print only the count"),
-            ("case", "case sensitive")
-        ],
-        &["text", "json"],
-        Some("text"),
-        cmd_query::search
-    ),
-    cmd!(
-        "search:context",
-        "Search",
-        "Matching lines as path:line: text, best file first",
-        &[
-            req(
-                "query",
-                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+            (
+                "no-update-links",
+                "do not rewrite links that show the old title as their alias",
             ),
-            p("path", "limit to this folder"),
-            p("limit", "maximum number of lines"),
-            p("format", "text | json")
         ],
-        &[("case", "case sensitive")],
         &["text", "json"],
         Some("text"),
-        cmd_query::search_context
+        cmd_notes::title
     ),
-    // Properties
-    cmd!(
-        "properties",
-        "Properties",
-        "List properties (of one file, or the vault with counts)",
-        &[
-            FILE,
-            PATH,
-            p("name", "only this property"),
-            p("sort", "count"),
-            p("format", "yaml | json | tsv")
-        ],
-        &[
-            ("total", "print only the count"),
-            ("counts", "include occurrence counts")
-        ],
-        &["yaml", "json", "tsv"],
-        Some("yaml"),
-        cmd_query::properties
-    ),
-    cmd!(
-        "property:set",
-        "Properties",
-        "Set a property in a note's frontmatter",
-        &[
-            req("name", "property name"),
-            req("value", "value"),
-            p("type", "text | list | number | checkbox | date | datetime"),
-            FILE,
-            PATH
-        ],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_query::property_set
-    ),
-    cmd!(
-        "property:read",
-        "Properties",
-        "Print a property value",
-        &[req("name", "property name"), FILE, PATH],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_query::property_read
-    ),
-    cmd!(
-        "property:remove",
-        "Properties",
-        "Remove a property",
-        &[req("name", "property name"), FILE, PATH],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_query::property_remove
-    ),
-    cmd!(
-        "aliases",
-        "Properties",
-        "List aliases",
-        &[FILE, PATH],
-        &[
-            ("total", "print only the count"),
-            ("verbose", "include file paths")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_query::aliases
-    ),
-    // Tags
-    cmd!(
-        "tags",
-        "Tags",
-        "List tags",
-        &[
-            FILE,
-            PATH,
-            p("sort", "count"),
-            p("format", "json | tsv | csv")
-        ],
-        &[
-            ("total", "print only the count"),
-            ("counts", "include counts")
-        ],
-        &["json", "tsv", "csv"],
-        Some("tsv"),
-        cmd_query::tags
-    ),
-    cmd!(
-        "tag",
-        "Tags",
-        "Show a tag",
-        &[req("name", "tag, with or without #")],
-        &[
-            ("total", "print only the file count"),
-            ("verbose", "include the file list")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_query::tag
-    ),
-    // Tasks
-    cmd!(
-        "tasks",
-        "Tasks",
-        "List tasks",
-        &[
-            FILE,
-            PATH,
-            p("status", "status character"),
-            p("format", "text | json | tsv | csv")
-        ],
-        &[
-            ("total", "print only the count"),
-            ("done", "completed only"),
-            ("todo", "not completed only"),
-            ("verbose", "group by file with line numbers")
-        ],
-        &["text", "json", "tsv", "csv"],
-        Some("text"),
-        cmd_query::tasks
-    ),
-    cmd!(
-        "task",
-        "Tasks",
-        "Show or change one task",
-        &[
-            p("ref", "path:line"),
-            FILE,
-            PATH,
-            p("line", "line number"),
-            p("status", "set this status character")
-        ],
-        &[
-            ("toggle", "flip done/not done"),
-            ("done", "mark done"),
-            ("todo", "mark not done")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_notes::task
-    ),
-    // Links
-    cmd!(
-        "links",
-        "Links",
-        "Outgoing links of a file",
-        &[FILE, PATH],
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_query::links
-    ),
-    cmd!(
-        "backlinks",
-        "Links",
-        "Files linking to a file",
-        &[FILE, PATH, p("format", "json | tsv | csv")],
-        &[
-            ("counts", "include link counts"),
-            ("total", "print only the count")
-        ],
-        &["json", "tsv", "csv"],
-        Some("tsv"),
-        cmd_query::backlinks
-    ),
-    cmd!(
-        "unresolved",
-        "Links",
-        "Links that match no file",
-        &[p("format", "json | tsv | csv")],
-        &[
-            ("total", "print only the count"),
-            ("counts", "include counts"),
-            ("verbose", "include source files")
-        ],
-        &["json", "tsv", "csv"],
-        Some("tsv"),
-        cmd_query::unresolved
-    ),
-    cmd!(
-        "orphans",
-        "Links",
-        "Files nothing links to",
-        NO_PARAMS,
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_query::orphans
-    ),
-    cmd!(
-        "deadends",
-        "Links",
-        "Files with no outgoing links",
-        NO_PARAMS,
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_query::deadends
-    ),
-    // Structure
-    cmd!(
-        "outline",
-        "Structure",
-        "Headings of a file",
-        &[FILE, PATH, p("format", "tree | md | json")],
-        &[("total", "print only the count")],
-        &["tree", "md", "json"],
-        Some("tree"),
-        cmd_query::outline
-    ),
-    cmd!(
-        "wordcount",
-        "Structure",
-        "Words and characters of a file",
-        &[FILE, PATH],
-        &[("words", "words only"), ("characters", "characters only")],
-        NO_FORMATS,
-        None,
-        cmd_query::wordcount
-    ),
-    // Bases
-    cmd!(
-        "bases",
-        "Bases",
-        "List .base files",
-        NO_PARAMS,
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_bases::bases
-    ),
-    cmd!(
-        "base:views",
-        "Bases",
-        "List the views of a base",
-        &[FILE, PATH],
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        cmd_bases::base_views
-    ),
-    cmd!(
-        "base:create",
-        "Bases",
-        "Create a note in a base view",
-        &[
-            FILE,
-            PATH,
-            p("view", "view name"),
-            p("name", "note name"),
-            p("content", "initial text")
-        ],
-        &[
-            ("open", "accepted, ignored"),
-            ("newtab", "accepted, ignored")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_bases::base_create
-    ),
-    cmd!(
-        "base:query",
-        "Bases",
-        "Run a base view",
-        &[
-            FILE,
-            PATH,
-            p("view", "view name"),
-            p("format", "json | csv | tsv | md | paths")
-        ],
-        NO_FLAGS,
-        &["json", "csv", "tsv", "md", "paths"],
-        Some("json"),
-        cmd_bases::base_query
-    ),
-    // Skills
-    cmd!(
-        "skills:sync",
-        "Skills",
-        "Install or update the Writer-managed agent skills in this vault",
-        NO_PARAMS,
-        &[("check", "report what would change, write nothing")],
-        NO_FORMATS,
-        None,
-        cmd_skills::skills_sync
-    ),
-    // Meta
-    cmd!(
-        "help",
-        "Meta",
-        "List commands, or show help for one",
-        NO_PARAMS,
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        help
-    ),
-    cmd!(
-        "version",
-        "Meta",
-        "Show the Writer version",
-        NO_PARAMS,
-        NO_FLAGS,
-        NO_FORMATS,
-        None,
-        version
-    ),
-];
+        cmd!(
+            "delete",
+            "Content",
+            "Move a file to the trash",
+            &[FILE, PATH],
+            &[("permanent", "delete for good instead of using the trash")],
+            NO_FORMATS,
+            None,
+            cmd_notes::delete
+        ),
+        // Search
+        cmd!(
+            "search",
+            "Search",
+            "List files whose text or name matches a query, best match first",
+            &[
+                req(
+                    "query",
+                    "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+                ),
+                p("path", "limit to this folder"),
+                p("limit", "maximum number of files"),
+                p("format", "text | json")
+            ],
+            &[
+                ("total", "print only the count"),
+                ("case", "case sensitive")
+            ],
+            &["text", "json"],
+            Some("text"),
+            cmd_query::search
+        ),
+        cmd!(
+            "search:context",
+            "Search",
+            "Matching lines as path:line: text, best file first",
+            &[
+                req(
+                    "query",
+                    "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+                ),
+                p("path", "limit to this folder"),
+                p("limit", "maximum number of lines"),
+                p("format", "text | json")
+            ],
+            &[("case", "case sensitive")],
+            &["text", "json"],
+            Some("text"),
+            cmd_query::search_context
+        ),
+        // Properties
+        cmd!(
+            "properties",
+            "Properties",
+            "List properties (of one file, or the vault with counts)",
+            &[
+                FILE,
+                PATH,
+                p("name", "only this property"),
+                p("sort", "count"),
+                p("format", "yaml | json | tsv")
+            ],
+            &[
+                ("total", "print only the count"),
+                ("counts", "include occurrence counts")
+            ],
+            &["yaml", "json", "tsv"],
+            Some("yaml"),
+            cmd_query::properties
+        ),
+        cmd!(
+            "property:set",
+            "Properties",
+            "Set a property in a note's frontmatter",
+            &[
+                req("name", "property name"),
+                req("value", "value"),
+                p("type", "text | list | number | checkbox | date | datetime"),
+                FILE,
+                PATH
+            ],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_query::property_set
+        ),
+        cmd!(
+            "property:read",
+            "Properties",
+            "Print a property value",
+            &[req("name", "property name"), FILE, PATH],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_query::property_read
+        ),
+        cmd!(
+            "property:remove",
+            "Properties",
+            "Remove a property",
+            &[req("name", "property name"), FILE, PATH],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_query::property_remove
+        ),
+        cmd!(
+            "aliases",
+            "Properties",
+            "List aliases",
+            &[FILE, PATH],
+            &[
+                ("total", "print only the count"),
+                ("verbose", "include file paths")
+            ],
+            NO_FORMATS,
+            None,
+            cmd_query::aliases
+        ),
+        // Tags
+        cmd!(
+            "tags",
+            "Tags",
+            "List tags",
+            &[
+                FILE,
+                PATH,
+                p("sort", "count"),
+                p("format", "json | tsv | csv")
+            ],
+            &[
+                ("total", "print only the count"),
+                ("counts", "include counts")
+            ],
+            &["json", "tsv", "csv"],
+            Some("tsv"),
+            cmd_query::tags
+        ),
+        cmd!(
+            "tag",
+            "Tags",
+            "Show a tag",
+            &[req("name", "tag, with or without #")],
+            &[
+                ("total", "print only the file count"),
+                ("verbose", "include the file list")
+            ],
+            NO_FORMATS,
+            None,
+            cmd_query::tag
+        ),
+        // Tasks
+        cmd!(
+            "tasks",
+            "Tasks",
+            "List tasks",
+            &[
+                FILE,
+                PATH,
+                p("status", "status character"),
+                p("format", "text | json | tsv | csv")
+            ],
+            &[
+                ("total", "print only the count"),
+                ("done", "completed only"),
+                ("todo", "not completed only"),
+                ("verbose", "group by file with line numbers")
+            ],
+            &["text", "json", "tsv", "csv"],
+            Some("text"),
+            cmd_query::tasks
+        ),
+        cmd!(
+            "task",
+            "Tasks",
+            "Show or change one task",
+            &[
+                p("ref", "path:line"),
+                FILE,
+                PATH,
+                p("line", "line number"),
+                p("status", "set this status character")
+            ],
+            &[
+                ("toggle", "flip done/not done"),
+                ("done", "mark done"),
+                ("todo", "mark not done")
+            ],
+            NO_FORMATS,
+            None,
+            cmd_notes::task
+        ),
+        // Links
+        cmd!(
+            "links",
+            "Links",
+            "Outgoing links of a file",
+            &[FILE, PATH],
+            &[("total", "print only the count")],
+            NO_FORMATS,
+            None,
+            cmd_query::links
+        ),
+        cmd!(
+            "backlinks",
+            "Links",
+            "Files linking to a file",
+            &[FILE, PATH, p("format", "json | tsv | csv")],
+            &[
+                ("counts", "include link counts"),
+                ("total", "print only the count")
+            ],
+            &["json", "tsv", "csv"],
+            Some("tsv"),
+            cmd_query::backlinks
+        ),
+        cmd!(
+            "unresolved",
+            "Links",
+            "Links that match no file",
+            &[p("format", "json | tsv | csv")],
+            &[
+                ("total", "print only the count"),
+                ("counts", "include counts"),
+                ("verbose", "include source files")
+            ],
+            &["json", "tsv", "csv"],
+            Some("tsv"),
+            cmd_query::unresolved
+        ),
+        cmd!(
+            "orphans",
+            "Links",
+            "Files nothing links to",
+            NO_PARAMS,
+            &[("total", "print only the count")],
+            NO_FORMATS,
+            None,
+            cmd_query::orphans
+        ),
+        cmd!(
+            "deadends",
+            "Links",
+            "Files with no outgoing links",
+            NO_PARAMS,
+            &[("total", "print only the count")],
+            NO_FORMATS,
+            None,
+            cmd_query::deadends
+        ),
+        // Structure
+        cmd!(
+            "outline",
+            "Structure",
+            "Headings of a file",
+            &[FILE, PATH, p("format", "tree | md | json")],
+            &[("total", "print only the count")],
+            &["tree", "md", "json"],
+            Some("tree"),
+            cmd_query::outline
+        ),
+        cmd!(
+            "wordcount",
+            "Structure",
+            "Words and characters of a file",
+            &[FILE, PATH],
+            &[("words", "words only"), ("characters", "characters only")],
+            NO_FORMATS,
+            None,
+            cmd_query::wordcount
+        ),
+        // Bases
+        cmd!(
+            "bases",
+            "Bases",
+            "List .base files",
+            NO_PARAMS,
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_bases::bases
+        ),
+        cmd!(
+            "base:views",
+            "Bases",
+            "List the views of a base",
+            &[FILE, PATH],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            cmd_bases::base_views
+        ),
+        cmd!(
+            "base:create",
+            "Bases",
+            "Create a note in a base view",
+            &[
+                FILE,
+                PATH,
+                p("view", "view name"),
+                p("name", "note name"),
+                p("content", "initial text")
+            ],
+            &[
+                ("open", "accepted, ignored"),
+                ("newtab", "accepted, ignored")
+            ],
+            NO_FORMATS,
+            None,
+            cmd_bases::base_create
+        ),
+        cmd!(
+            "base:query",
+            "Bases",
+            "Run a base view",
+            &[
+                FILE,
+                PATH,
+                p("view", "view name"),
+                p("format", "json | csv | tsv | md | paths")
+            ],
+            NO_FLAGS,
+            &["json", "csv", "tsv", "md", "paths"],
+            Some("json"),
+            cmd_bases::base_query
+        ),
+        // Skills
+        cmd!(
+            "skills:sync",
+            "Skills",
+            "Install or update the Writer-managed agent skills in this vault",
+            NO_PARAMS,
+            &[("check", "report what would change, write nothing")],
+            NO_FORMATS,
+            None,
+            cmd_skills::skills_sync
+        ),
+        // Meta
+        cmd!(
+            "help",
+            "Meta",
+            "List commands, or show help for one",
+            NO_PARAMS,
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            help
+        ),
+        cmd!(
+            "version",
+            "Meta",
+            "Show the Writer version",
+            NO_PARAMS,
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            version
+        ),
+    ];
 
 pub fn find(name: &str) -> Option<&'static CommandSpec> {
     COMMANDS.iter().find(|c| c.name == name)

@@ -33,6 +33,8 @@ export interface SearchResult {
   relative_path: string;
   score: number;
   match_indices: number[];
+  /** Display-title override (frontmatter `title`); matched like the file name. */
+  title?: string | null;
 }
 
 export interface ContentSearchResult {

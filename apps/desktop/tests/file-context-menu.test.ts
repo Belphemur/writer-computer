@@ -115,9 +115,24 @@ describe("buildFileMenuItemsSpec", () => {
       "---",
       "reveal:Reveal in Finder",
       "---",
-      "rename:Rename...",
+      "rename:Rename file...",
       "delete:Delete",
     ]);
+  });
+
+  test("Set display title appears for notes only, next to Rename file", () => {
+    const calls: string[] = [];
+    const spec = buildFileMenuItemsSpec(
+      { ...makeHandlers(), onSetDisplayTitle: () => calls.push("title") },
+      "macos",
+    );
+    const ids = spec.flatMap((e) => (e.kind === "item" ? [e.id] : []));
+    expect(ids.slice(-3)).toEqual(["rename", "set-display-title", "delete"]);
+    expect(
+      buildFileMenuItemsSpec(makeHandlers(), "macos").some(
+        (e) => e.kind === "item" && e.id === "set-display-title",
+      ),
+    ).toBe(false);
   });
 
   test("uses platform-specific reveal label", () => {

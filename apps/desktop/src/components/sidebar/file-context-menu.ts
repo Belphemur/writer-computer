@@ -14,6 +14,7 @@ export type FileMenuActionId =
   | "copy-absolute-path"
   | "reveal"
   | "rename"
+  | "set-display-title"
   | "delete";
 
 export interface FileContextMenuHandlers {
@@ -26,6 +27,8 @@ export interface FileContextMenuHandlers {
   onCopyAbsolutePath: () => void;
   onReveal: () => void;
   onRename: () => void;
+  /** Markdown notes only: opens the display-title dialog (the frontmatter `title`). */
+  onSetDisplayTitle?: () => void;
   onDelete: () => void;
 }
 
@@ -77,7 +80,18 @@ export function buildFileMenuItemsSpec(
       action: handlers.onReveal,
     },
     { kind: "separator" },
-    { kind: "item", id: "rename", text: "Rename...", action: handlers.onRename },
+    // Renames the file itself and rewrites the links to it; the display title is separate.
+    { kind: "item", id: "rename", text: "Rename file...", action: handlers.onRename },
+    ...(handlers.onSetDisplayTitle
+      ? [
+          {
+            kind: "item" as const,
+            id: "set-display-title" as const,
+            text: "Set display title...",
+            action: handlers.onSetDisplayTitle,
+          },
+        ]
+      : []),
     { kind: "item", id: "delete", text: "Delete", action: handlers.onDelete },
   ];
 }

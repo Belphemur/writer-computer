@@ -66,19 +66,17 @@ function compareByMode(mode: string | undefined, a: KeyedEntry, b: KeyedEntry): 
  * Order a directory's entries the way the tree displays them. With
  * `foldersFirst` (the default): folders first, A–Z by name, then files by
  * `sortMode`. Without it: folders and files together by `sortMode`. "Name"
- * means the visible label (title or filename stem per `fileLabelMode`). The
- * backend sorts by raw filename, which drifts from the label once titles are
- * shown, so the tree re-sorts by the same label function it renders with.
+ * means the visible label (the file name stem, or a frontmatter `title` override). The
+ * backend sorts by raw filename, which drifts from the label for an override, so the tree re-sorts by the same label function it renders with.
  * Returns a new array; the cached array from the store is never mutated.
  */
 export function sortTreeEntries(
   items: DirEntry[],
-  fileLabelMode?: string,
   sortMode?: string,
   foldersFirst = true,
 ): DirEntry[] {
   return items
-    .map((entry) => ({ entry, label: fileTreeLabel(entry, fileLabelMode) }))
+    .map((entry) => ({ entry, label: fileTreeLabel(entry).text }))
     .sort((a, b) => {
       if (!foldersFirst) return compareByMode(sortMode, a, b);
       const folderFirst = Number(b.entry.is_dir) - Number(a.entry.is_dir);

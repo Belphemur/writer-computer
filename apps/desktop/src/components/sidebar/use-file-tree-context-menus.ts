@@ -1,3 +1,4 @@
+import { isMarkdownPath, openNoteTitleDialog } from "@/stores/note-title-dialog-store";
 import { useCallback } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
@@ -116,6 +117,9 @@ export function useFileTreeContextMenus({
         onRename: () => {
           setRenamingPath(entry.path);
         },
+        ...(isMarkdownPath(entry.path)
+          ? { onSetDisplayTitle: () => openNoteTitleDialog(entry.path) }
+          : {}),
         onDelete: () => {
           void (async () => {
             const openFileState = getOpenFile(entry.path);

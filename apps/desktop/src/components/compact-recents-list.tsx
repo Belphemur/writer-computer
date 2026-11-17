@@ -3,7 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, File02Icon } from "@hugeicons/core-free-icons";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
 import { useActiveFilePath } from "@/hooks/use-tabs";
-import { getFileStem } from "@/lib/paths";
+import { noteLabel } from "@/lib/note-title";
 import type { RecentFile } from "@/lib/tauri";
 import { SIDEBAR_SECTION_LABEL_CLASS } from "./sidebar/sidebar-section";
 
@@ -14,7 +14,7 @@ interface CompactRecentsListProps {
 }
 
 function recentLabel(entry: RecentFile) {
-  return entry.title || getFileStem(entry.name);
+  return noteLabel(entry.path, entry.title).text;
 }
 
 /** Picker content for standalone compact windows: a global recents list, with

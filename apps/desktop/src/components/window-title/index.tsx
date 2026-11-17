@@ -1,6 +1,6 @@
 import { useActiveFilePath, useActiveTab, useOpenFiles } from "@/hooks/use-tabs";
 import { pageKind } from "@/components/editor-area/page-kinds";
-import { getFileName } from "@/lib/paths";
+import { noteLabel } from "@/lib/note-title";
 import { useWindowTitle } from "./use-window-title";
 
 export function WindowTitle() {
@@ -15,7 +15,7 @@ export function WindowTitle() {
       return `${label} - Writer`;
     }
     const file = openFiles.get(activeFilePath);
-    const name = getFileName(activeFilePath);
+    const name = noteLabel(activeFilePath, file?.title).text;
     return file?.isDirty ? `${name} (unsaved) - Writer` : `${name} - Writer`;
   })();
 

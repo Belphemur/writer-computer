@@ -11,6 +11,7 @@
 //! (`linkfix.rs`).
 
 pub mod linkfix;
+pub mod retitle;
 
 use crate::index::resolve::PathIndex;
 use crate::index::Index;
@@ -164,7 +165,8 @@ pub fn plan(
         skipped: 0,
         unreadable: Vec::new(),
     };
-    if !update_links {
+    // Code files are not link targets: renaming `run.py` rewrites no note.
+    if !update_links || crate::code_files::is_code_path(std::path::Path::new(&src.rel)) {
         return Ok(plan);
     }
 
@@ -345,9 +347,10 @@ pub fn apply(plan: &Plan) -> Result<(), ApplyError> {
             before: e.before.clone(),
         });
     }
-    // 3. Move the file.
+    // 3. Move the file (a retitle plan, `from == to`, only rewrites text).
+    let moves = plan.from != plan.to;
     let mut created_dir: Option<PathBuf> = None;
-    if let Some(parent) = plan.to_abs.parent() {
+    if let Some(parent) = plan.to_abs.parent().filter(|_| moves) {
         if !parent.exists() {
             if let Err(err) = std::fs::create_dir_all(parent) {
                 cleanup(&staged);
@@ -360,7 +363,10 @@ pub fn apply(plan: &Plan) -> Result<(), ApplyError> {
             created_dir = Some(parent.to_path_buf());
         }
     }
-    if let Err(err) = rename_atomic(&plan.from_abs, &plan.to_abs, plan.case_only) {
+    if let Err(err) = moves
+        .then(|| rename_atomic(&plan.from_abs, &plan.to_abs, plan.case_only))
+        .unwrap_or(Ok(()))
+    {
         cleanup(&staged);
         if let Some(d) = &created_dir {
             let _ = std::fs::remove_dir(d);
@@ -401,7 +407,7 @@ pub fn apply(plan: &Plan) -> Result<(), ApplyError> {
             still_changed.push(s.rel.clone());
         }
     }
-    let moved_back = rename_atomic(&plan.to_abs, &plan.from_abs, plan.case_only).is_ok();
+    let moved_back = !moves || rename_atomic(&plan.to_abs, &plan.from_abs, plan.case_only).is_ok();
     if moved_back {
         if let Some(d) = &created_dir {
             let _ = std::fs::remove_dir(d);

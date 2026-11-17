@@ -352,6 +352,66 @@ pub fn rewrite_text(
     apply_found(text, found, src_before, src_after, mv, before, after)
 }
 
+/// Retitle: in a note's wikilinks and embeds that resolve to `target`, replace the alias text
+/// `old` with `new` (`None` drops the alias: `[[File|Old]]` becomes `[[File]]`). Links without an
+/// alias, with another alias, to other files or inside code are untouched; the target, heading
+/// and brackets are never rewritten. Byte-minimal like the move rewrite.
+pub fn rewrite_alias_text(
+    text: &str,
+    src: &str,
+    target: &str,
+    old: &str,
+    new: Option<&str>,
+    paths: &PathIndex,
+) -> Rewrite {
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    for link in collect_links(text) {
+        if !matches!(link.kind, LinkKind::Wikilink | LinkKind::Embed) || link.raw.is_empty() {
+            continue;
+        }
+        if link.display.as_deref().map(str::trim) != Some(old.trim()) {
+            continue;
+        }
+        if paths.resolve(src, &link.raw, link.kind).as_deref() != Some(target) {
+            continue;
+        }
+        let (s, e) = link.span;
+        let Some(t) = text.get(s..e) else { continue };
+        let prefix = if t.starts_with("![[") { 3 } else { 2 };
+        let Some(inner) = t.get(prefix..t.len().saturating_sub(2)) else {
+            continue;
+        };
+        let Some(pipe) = inner.find('|') else {
+            continue;
+        };
+        let alias_start = s + prefix + pipe + 1;
+        let alias_end = e - 2;
+        match new {
+            Some(n) => edits.push((alias_start, alias_end, n.to_string())),
+            None => {
+                // `\|` inside a table cell: drop the escape with the pipe.
+                let escaped = pipe > 0 && inner.as_bytes()[pipe - 1] == b'\\';
+                edits.push((
+                    alias_start - 1 - usize::from(escaped),
+                    alias_end,
+                    String::new(),
+                ));
+            }
+        }
+    }
+    edits.sort_by_key(|e| e.0);
+    let changed = edits.len();
+    let mut out = text.to_string();
+    for (s, e, r) in edits.into_iter().rev() {
+        out.replace_range(s..e, &r);
+    }
+    Rewrite {
+        text: out,
+        changed,
+        skipped: 0,
+    }
+}
+
 /// Rewrite the references of a `.base` file: `[[wikilinks]]` anywhere in its
 /// YAML and the string literal of `link("x")` / `file("x")` calls. Markdown
 /// links are not a thing in bases and are left alone.

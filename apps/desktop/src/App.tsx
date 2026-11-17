@@ -1,4 +1,5 @@
 import { AppLayout } from "./components/app-layout";
+import { NoteTitleDialog } from "./components/note-title-dialog";
 import { NewProjectDialog } from "./components/agent/new-project-dialog";
 import { CommandPalette } from "./components/command-palette";
 import { PluginBrowserDialog } from "./components/plugin-browser/plugin-browser-dialog";
@@ -36,6 +37,7 @@ function App() {
       <CommandPalette />
       <PluginBrowserDialog />
       <NewProjectDialog />
+      <NoteTitleDialog />
       <TelemetryConsentDialog />
     </>
   );

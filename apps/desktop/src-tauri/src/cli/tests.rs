@@ -1103,3 +1103,60 @@ fn move_dry_run_and_rename_unresolved_target() {
     );
     assert!(t.exists("Projects/Beta.md"));
 }
+
+#[test]
+fn title_sets_clears_and_rewrites_alias_links_without_renaming() {
+    let t = T::new();
+    t.write("Spec.md", "---\ntitle: Old\n---\n# Heading\n");
+    t.write("Ref.md", "[[Spec|Old]] [[Spec|Other]] [[Spec]]\n");
+    // show: the override, then the file name when none
+    assert_eq!(t.ok(&["title", "file=Spec"]), "Old\n");
+    assert_eq!(t.ok(&["title", "file=Beta"]), "Beta\n");
+    // dry run writes nothing
+    let out = t.ok(&["title", "file=Spec", "set=New", "dry-run"]);
+    assert!(
+        out.starts_with("Would set title of Spec.md to \"New\" (would update 1 link in 1 file"),
+        "{out}"
+    );
+    assert!(out.contains("  Ref.md (1 link)"), "{out}");
+    assert!(t.read("Spec.md").contains("title: Old"));
+    let json = t.ok(&["title", "file=Spec", "set=New", "dry-run", "format=json"]);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        (v["old"].as_str(), v["new"].as_str(), v["links"].as_u64()),
+        (Some("Old"), Some("New"), Some(1))
+    );
+    // apply
+    t.ok(&["title", "file=Spec", "set=New"]);
+    assert_eq!(t.read("Ref.md"), "[[Spec|New]] [[Spec|Other]] [[Spec]]\n");
+    assert_eq!(t.read("Spec.md"), "---\ntitle: New\n---\n# Heading\n");
+    assert!(t.exists("Spec.md"));
+    // opt out of link updates, then clear (drops the alias)
+    t.ok(&["title", "file=Spec", "set=Third", "no-update-links"]);
+    assert_eq!(t.read("Ref.md"), "[[Spec|New]] [[Spec|Other]] [[Spec]]\n");
+    t.ok(&["title", "file=Spec", "set=New", "no-update-links"]);
+    t.ok(&["title", "file=Spec", "clear"]);
+    assert_eq!(t.read("Ref.md"), "[[Spec]] [[Spec|Other]] [[Spec]]\n");
+    assert!(!t.read("Spec.md").contains("title"));
+    // usage
+    assert_eq!(t.code(&["title", "file=Spec", "set=x", "clear"]).0, 2);
+    assert_eq!(t.code(&["title", "file=Spec", "set="]).0, 2);
+}
+
+#[test]
+fn search_finds_a_note_by_its_title_override_and_prints_only_paths() {
+    let t = T::new();
+    t.write(
+        "Spec.md",
+        "---\ntitle: Zephyrine Quartz\n---\n# Heading\nbody\n",
+    );
+    // the override word is nowhere else in the note; output stays a plain path list
+    assert_eq!(t.ok(&["search", "query=Zephyrine"]), "Spec.md\n");
+    assert_eq!(
+        t.ok(&["search", "query=Zephyrine", "format=json"]).trim(),
+        "[\n  \"Spec.md\"\n]"
+    );
+    // clearing the override removes it from search too
+    t.ok(&["title", "file=Spec", "clear"]);
+    assert_eq!(t.ok(&["search", "query=Zephyrine"]), "");
+}

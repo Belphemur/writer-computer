@@ -20,7 +20,7 @@ import {
   useOpenFiles,
 } from "@/hooks/use-tabs";
 import { openStandaloneFile } from "@/hooks/use-open-drop";
-import { getFileName } from "@/lib/paths";
+import { noteLabel } from "@/lib/note-title";
 
 const PICKER_POPUP_ID = "compact-file-picker-popup";
 const PICKER_ANIMATION_MS = 260;
@@ -70,7 +70,7 @@ export function CompactFileLayout() {
   const pickerAnimationFrameRef = useRef<number | null>(null);
   const currentPickerGeometryRef = useRef<PickerFrameGeometry | null>(null);
   const activeFile = activeFilePath ? openFiles.get(activeFilePath) : null;
-  const title = activeFilePath ? activeFile?.title || getFileName(activeFilePath) : "Choose file";
+  const title = activeFilePath ? noteLabel(activeFilePath, activeFile?.title).text : "Choose file";
 
   const measurePickerMetrics = useCallback(() => {
     const triggerRect = triggerRef.current?.getBoundingClientRect();

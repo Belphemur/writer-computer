@@ -1,7 +1,7 @@
 import { useCallback, useState, type MouseEvent } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useWorkspace } from "@/hooks/use-workspace";
-import { useBooleanSetting, useSetting } from "@/hooks/use-settings";
+import { useBooleanSetting } from "@/hooks/use-settings";
 import {
   usePinnedFiles,
   useRefreshDirectory,
@@ -61,7 +61,6 @@ export function SidebarNavigator({
   const defaultOpenFile = useOpenFile();
   const openFile = openFileOverride ?? defaultOpenFile;
   const refreshDirectory = useRefreshDirectory();
-  const fileLabelMode = useSetting("appearance.sidebar-file-label");
   const showRecents = useBooleanSetting("appearance.sidebar-show-recents");
   const pinnedPaths = usePinnedFiles();
   const togglePinnedFile = useTogglePinnedFile();
@@ -217,7 +216,6 @@ export function SidebarNavigator({
                 onToggleDir={noopToggleDirectory}
                 onOpenFile={openFileAndComplete}
                 onContextMenu={enableContextMenus ? handleFileContextMenu : undefined}
-                fileLabelMode={fileLabelMode}
               />
             ))}
             {pinnedEntries.hasMore && (
@@ -243,7 +241,6 @@ export function SidebarNavigator({
                 onToggleDir={noopToggleDirectory}
                 onOpenFile={openFileAndComplete}
                 onContextMenu={enableContextMenus ? handleFileContextMenu : undefined}
-                fileLabelMode={fileLabelMode}
               />
             ))}
             {recentFiles.hasMore && (

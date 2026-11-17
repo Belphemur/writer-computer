@@ -2,7 +2,8 @@ import { parse } from "yaml";
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?\n)?---(?:\n|$)/;
 
-export type TitleSource = "frontmatter" | "h1" | "none";
+/** A note's title is its file name; only a non-empty frontmatter `title` overrides it (never the H1). */
+export type TitleSource = "frontmatter" | "none";
 
 export interface ParsedFile {
   frontmatter: string | null;
@@ -29,7 +30,7 @@ export function serializeFile(frontmatter: string | null, body: string): string 
 
 export function parseDocument(raw: string): ParsedDocument {
   const parsed = parseFrontmatter(raw);
-  const { title, titleSource } = inferTitle(parsed.body, parsed.frontmatter);
+  const { title, titleSource } = inferTitle(parsed.frontmatter);
 
   return {
     frontmatter: parsed.frontmatter,
@@ -39,20 +40,18 @@ export function parseDocument(raw: string): ParsedDocument {
   };
 }
 
-export function inferTitle(
-  body: string,
-  frontmatter: string | null,
-): { title: string; titleSource: TitleSource } {
+/**
+ * The explicit display-title override (frontmatter `title`), or `""` when the note has none and
+ * shows its file name. The first heading is never a title.
+ */
+export function inferTitle(frontmatter: string | null): {
+  title: string;
+  titleSource: TitleSource;
+} {
   const frontmatterTitle = getFrontmatterTitle(frontmatter);
   if (frontmatterTitle !== null) {
     return { title: frontmatterTitle, titleSource: "frontmatter" };
   }
-
-  const leadingHeading = getLeadingHeadingTitle(body);
-  if (leadingHeading !== null) {
-    return { title: leadingHeading, titleSource: "h1" };
-  }
-
   return { title: "", titleSource: "none" };
 }
 
@@ -109,18 +108,6 @@ function getFrontmatterTitle(frontmatter: string | null): string | null {
 
   const normalized = title.trim();
   return normalized === "" ? null : normalized;
-}
-
-function getLeadingHeadingTitle(body: string): string | null {
-  const afterBlankLines = body.replace(/^(?:[ \t]*\n)*/, "");
-  const newlineIndex = afterBlankLines.indexOf("\n");
-  const firstLine = newlineIndex === -1 ? afterBlankLines : afterBlankLines.slice(0, newlineIndex);
-
-  const match = firstLine.match(/^#\s+(.*)$/);
-  if (!match) return null;
-
-  const title = (match[1] ?? "").replace(/\s+#+\s*$/, "").trim();
-  return title === "" ? null : title;
 }
 
 function formatFrontmatterDateValue(value: unknown): string | null {

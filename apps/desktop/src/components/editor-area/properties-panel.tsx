@@ -1,3 +1,4 @@
+import { getFileStem } from "@/lib/paths";
 import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import { useFrontmatter } from "@/hooks/use-frontmatter";
 import { usePropertiesPanel } from "@/hooks/use-properties-panel";
@@ -280,6 +281,12 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                   </li>
                 ))}
               </ul>
+              {rows.some((row) => row.key === "title") && (
+                <p className="pt-1 text-[12px] leading-[1.4] text-[var(--text-muted)]">
+                  title overrides the displayed name of this note. The file name stays{" "}
+                  {getFileStem(filePath)}.
+                </p>
+              )}
               {adding || rows.length === 0 ? (
                 <AddPropertyRow
                   autoFocus

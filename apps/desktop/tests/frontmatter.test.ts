@@ -105,11 +105,11 @@ describe("parseDocument", () => {
     expect(result.body).toBe("\n# Hello #\n\nBody");
   });
 
-  test("leading H1 becomes the title when frontmatter title is absent", () => {
+  test("a leading H1 is never the title", () => {
     const result = parseDocument("\n# Project Plan\n\nBody text.");
 
-    expect(result.title).toBe("Project Plan");
-    expect(result.titleSource).toBe("h1");
+    expect(result.title).toBe("");
+    expect(result.titleSource).toBe("none");
     expect(result.body).toBe("\n# Project Plan\n\nBody text.");
   });
 

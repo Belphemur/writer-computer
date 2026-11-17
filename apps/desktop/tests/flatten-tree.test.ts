@@ -35,7 +35,7 @@ function dir(name: string, times: { modified?: number; created?: number } = {}):
 const names = (entries: DirEntry[]) => entries.map((e) => e.name);
 
 describe("sortTreeEntries", () => {
-  test("orders files by their title, falling back to the filename stem", () => {
+  test("orders files by their frontmatter title override, falling back to the file name stem", () => {
     const entries = [
       file("zebra.md", "Apples"),
       file("alpha.md", "Zucchini"),
@@ -43,7 +43,7 @@ describe("sortTreeEntries", () => {
       file("beta.md", "Bananas"),
     ];
 
-    expect(names(sortTreeEntries(entries, "title"))).toEqual([
+    expect(names(sortTreeEntries(entries))).toEqual([
       "zebra.md",
       "beta.md",
       "middle.md",
@@ -51,16 +51,16 @@ describe("sortTreeEntries", () => {
     ]);
   });
 
-  test("orders by filename stem in filename mode", () => {
-    const entries = [file("zebra.md", "Apples"), file("alpha.md", "Zucchini")];
+  test("a note with no title override sorts by file name, never by its heading", () => {
+    const entries = [file("zebra.md"), file("alpha.md")];
 
-    expect(names(sortTreeEntries(entries, "filename"))).toEqual(["alpha.md", "zebra.md"]);
+    expect(names(sortTreeEntries(entries))).toEqual(["alpha.md", "zebra.md"]);
   });
 
   test("keeps folders first, sorted by name, regardless of file titles", () => {
     const entries = [file("a.md", "Aardvark"), dir("zoo"), dir("Barn"), file("b.md")];
 
-    expect(names(sortTreeEntries(entries, "title"))).toEqual(["Barn", "zoo", "a.md", "b.md"]);
+    expect(names(sortTreeEntries(entries))).toEqual(["Barn", "zoo", "a.md", "b.md"]);
   });
 
   test("sorts naturally and ignores case and accents", () => {
@@ -71,24 +71,19 @@ describe("sortTreeEntries", () => {
       file("d.md", "dessert"),
     ];
 
-    expect(names(sortTreeEntries(entries, "title"))).toEqual(["b.md", "c.md", "d.md", "a.md"]);
+    expect(names(sortTreeEntries(entries))).toEqual(["b.md", "c.md", "d.md", "a.md"]);
   });
 
   test("breaks label ties by filename so the order is stable", () => {
     const entries = [file("second.md", "Notes"), file("first.md", "Notes")];
 
-    expect(names(sortTreeEntries(entries, "title"))).toEqual(["first.md", "second.md"]);
+    expect(names(sortTreeEntries(entries))).toEqual(["first.md", "second.md"]);
   });
 
   test("name-desc reverses the label order and keeps folders first A–Z", () => {
     const entries = [file("a.md", "Apples"), dir("zoo"), file("b.md", "Bananas"), dir("Barn")];
 
-    expect(names(sortTreeEntries(entries, "title", "name-desc"))).toEqual([
-      "Barn",
-      "zoo",
-      "b.md",
-      "a.md",
-    ]);
+    expect(names(sortTreeEntries(entries, "name-desc"))).toEqual(["Barn", "zoo", "b.md", "a.md"]);
   });
 
   test("modified modes order files by modified time and leave folders alphabetical", () => {
@@ -100,14 +95,14 @@ describe("sortTreeEntries", () => {
       file("mid.md", "Mid", { modified: 20 }),
     ];
 
-    expect(names(sortTreeEntries(entries, "title", "modified-desc"))).toEqual([
+    expect(names(sortTreeEntries(entries, "modified-desc"))).toEqual([
       "early",
       "later",
       "new.md",
       "mid.md",
       "old.md",
     ]);
-    expect(names(sortTreeEntries(entries, "title", "modified-asc"))).toEqual([
+    expect(names(sortTreeEntries(entries, "modified-asc"))).toEqual([
       "early",
       "later",
       "old.md",
@@ -122,33 +117,33 @@ describe("sortTreeEntries", () => {
       file("a.md", "A", { created: 9, modified: 10 }),
     ];
 
-    expect(names(sortTreeEntries(entries, "title", "created-desc"))).toEqual(["a.md", "b.md"]);
-    expect(names(sortTreeEntries(entries, "title", "created-asc"))).toEqual(["b.md", "a.md"]);
+    expect(names(sortTreeEntries(entries, "created-desc"))).toEqual(["a.md", "b.md"]);
+    expect(names(sortTreeEntries(entries, "created-asc"))).toEqual(["b.md", "a.md"]);
   });
 
   test("time modes fall back to the label order on equal timestamps", () => {
     const entries = [file("b.md", "Beta", { modified: 7 }), file("a.md", "Alpha", { modified: 7 })];
 
-    expect(names(sortTreeEntries(entries, "title", "modified-desc"))).toEqual(["a.md", "b.md"]);
+    expect(names(sortTreeEntries(entries, "modified-desc"))).toEqual(["a.md", "b.md"]);
   });
 
   test("an unknown or missing sort mode sorts by name", () => {
     const entries = [file("b.md", "Beta", { modified: 1 }), file("a.md", "Alpha", { modified: 9 })];
 
-    expect(names(sortTreeEntries(entries, "title"))).toEqual(["a.md", "b.md"]);
-    expect(names(sortTreeEntries(entries, "title", "bogus"))).toEqual(["a.md", "b.md"]);
+    expect(names(sortTreeEntries(entries))).toEqual(["a.md", "b.md"]);
+    expect(names(sortTreeEntries(entries, "bogus"))).toEqual(["a.md", "b.md"]);
   });
 
   test("with folders first off, name mode interleaves folders and files by label", () => {
     const entries = [file("a.md", "Zebra"), dir("Middle"), file("b.md", "Apple"), dir("banana")];
 
-    expect(names(sortTreeEntries(entries, "title", "name-asc", false))).toEqual([
+    expect(names(sortTreeEntries(entries, "name-asc", false))).toEqual([
       "b.md",
       "banana",
       "Middle",
       "a.md",
     ]);
-    expect(names(sortTreeEntries(entries, "title", "name-desc", false))).toEqual([
+    expect(names(sortTreeEntries(entries, "name-desc", false))).toEqual([
       "a.md",
       "Middle",
       "banana",
@@ -163,12 +158,12 @@ describe("sortTreeEntries", () => {
       file("new.md", null, { modified: 20, created: 20 }),
     ];
 
-    expect(names(sortTreeEntries(entries, "title", "modified-desc", false))).toEqual([
+    expect(names(sortTreeEntries(entries, "modified-desc", false))).toEqual([
       "recent",
       "new.md",
       "old.md",
     ]);
-    expect(names(sortTreeEntries(entries, "title", "created-asc", false))).toEqual([
+    expect(names(sortTreeEntries(entries, "created-asc", false))).toEqual([
       "recent",
       "old.md",
       "new.md",
@@ -180,8 +175,8 @@ describe("sortTreeEntries", () => {
     const setting = SETTINGS_SCHEMA.find((def) => def.key === "appearance.sidebar-folders-first");
 
     expect(setting?.default).toBe(true);
-    expect(names(sortTreeEntries(entries, "title", "name-asc"))).toEqual(["zoo", "a.md"]);
-    expect(names(sortTreeEntries(entries, "title", "name-asc", true))).toEqual(["zoo", "a.md"]);
+    expect(names(sortTreeEntries(entries, "name-asc"))).toEqual(["zoo", "a.md"]);
+    expect(names(sortTreeEntries(entries, "name-asc", true))).toEqual(["zoo", "a.md"]);
   });
 
   test("the sort registry matches the setting's schema options", () => {
@@ -195,7 +190,7 @@ describe("sortTreeEntries", () => {
     const entries = [file("b.md"), file("a.md")];
     const before = [...entries];
 
-    sortTreeEntries(entries, "title");
+    sortTreeEntries(entries);
 
     expect(entries).toEqual(before);
   });
@@ -214,7 +209,7 @@ describe("flattenTree", () => {
       ],
     ]);
 
-    const flat = flattenTree(root, 0, cache, new Set(["/ws/notes"]), "title");
+    const flat = flattenTree(root, 0, cache, new Set(["/ws/notes"]));
 
     expect(flat.map((item) => [item.entry.name, item.depth])).toEqual([
       ["notes", 0],

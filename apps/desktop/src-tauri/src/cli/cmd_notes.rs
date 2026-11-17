@@ -364,6 +364,107 @@ pub fn rename(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
     relocate(ctx, args, &t, &new_rel, "Renamed")
 }
 
+/// `title file=|path= [set=<new>|clear]`: show, set or clear the display title (the frontmatter
+/// `title` property; the file keeps its name and every link keeps pointing to it). Links that
+/// show the old title as their alias (`[[File|Old]]`) follow unless `no-update-links`; `dry-run`
+/// prints the plan and writes nothing.
+pub fn title(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let t = ctx.target(args)?;
+    let json = match args.get("format") {
+        None | Some("text") => false,
+        Some("json") => true,
+        Some(f) => {
+            return Err(CliError::Usage(format!(
+                "format= must be text or json, not {f}"
+            )))
+        }
+    };
+    let set = args.get("set");
+    if set.is_some() && args.flag("clear") {
+        return Err(CliError::Usage("use set= or clear, not both".into()));
+    }
+    if set.is_some_and(|s| s.trim().is_empty()) {
+        return Err(CliError::Usage(
+            "set= needs a title (use clear to remove it)".into(),
+        ));
+    }
+    if set.is_none() && !args.flag("clear") {
+        let current = vault_ops::read_text(&t.abs)
+            .ok()
+            .and_then(|text| crate::relocate::retitle::read_title(&text));
+        let shown = current.clone().unwrap_or_else(|| {
+            let n = name_of(&t.rel);
+            n.strip_suffix(".md").unwrap_or(n).to_string()
+        });
+        return Ok(if json {
+            format!(
+                "{}\n",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({"path": t.rel, "title": shown, "override": current})
+                )
+                .unwrap_or_default()
+            )
+        } else {
+            format!("{shown}\n")
+        });
+    }
+    let root = ctx.root()?.to_path_buf();
+    let dry = args.flag("dry-run");
+    let r = crate::relocate::retitle::plan(
+        &root,
+        ctx.index()?,
+        &t.rel,
+        set,
+        !args.flag("no-update-links"),
+    )?;
+    for u in &r.plan.unreadable {
+        ctx.warn(format!("{u} is not UTF-8 text; its links were not checked"));
+    }
+    if !dry && !r.plan.edits.is_empty() {
+        crate::relocate::apply(&r.plan).map_err(|e| CliError::fail(e.to_string()))?;
+    }
+    let (links, notes) = r.link_counts();
+    if json {
+        let v = serde_json::json!({
+            "path": r.plan.from, "old": r.old, "new": r.new, "dryRun": dry,
+            "links": links, "files": notes,
+            "edits": r.plan.edits.iter().filter(|e| e.links > 0)
+                .map(|e| serde_json::json!({"path": e.rel, "links": e.links})).collect::<Vec<_>>(),
+        });
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&v).unwrap_or_default()
+        ));
+    }
+    let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+    let what = match &r.new {
+        Some(n) => format!("title of {} to \"{n}\"", r.plan.from),
+        None => format!("the title of {}", r.plan.from),
+    };
+    let verb = match (&r.new, dry) {
+        (Some(_), false) => "Set",
+        (Some(_), true) => "Would set",
+        (None, false) => "Cleared",
+        (None, true) => "Would clear",
+    };
+    let mut out = if r.plan.edits.is_empty() {
+        format!("{} unchanged\n", r.plan.from)
+    } else {
+        format!(
+            "{verb} {what} ({} {} in {}; the file is not renamed)\n",
+            if dry { "would update" } else { "updated" },
+            plural(links, "link"),
+            plural(notes, "file"),
+        )
+    };
+    if dry {
+        for e in r.plan.edits.iter().filter(|e| e.links > 0) {
+            out.push_str(&format!("  {} ({})\n", e.rel, plural(e.links, "link")));
+        }
+    }
+    Ok(out)
+}
+
 pub fn delete(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
     let t = ctx.target(args)?;
     if args.flag("permanent") {

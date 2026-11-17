@@ -67,7 +67,6 @@ export function FileTree({
   const pinnedFiles = usePinnedFiles();
   const togglePinnedFile = useTogglePinnedFile();
   const workspaceRoot = useWorkspaceRoot();
-  const fileLabelMode = useSetting("appearance.sidebar-file-label");
   const sortMode = useSetting("appearance.sidebar-sort");
   const foldersFirst = useBooleanSetting("appearance.sidebar-folders-first");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -83,9 +82,8 @@ export function FileTree({
   useAutoRefresh(rootPath, entries.length === 0);
 
   const flatItems = useMemo(
-    () =>
-      flattenTree(entries, 0, directoryCache, expandedDirs, fileLabelMode, sortMode, foldersFirst),
-    [directoryCache, entries, expandedDirs, fileLabelMode, sortMode, foldersFirst],
+    () => flattenTree(entries, 0, directoryCache, expandedDirs, sortMode, foldersFirst),
+    [directoryCache, entries, expandedDirs, sortMode, foldersFirst],
   );
 
   const entryByPath = useMemo(() => {
@@ -312,7 +310,6 @@ export function FileTree({
           onPointerDown={onRowPointerDown}
           onRenameSubmit={handleRenameSubmit}
           onRenameCancel={handleRenameCancel}
-          fileLabelMode={fileLabelMode}
         />
       ))}
       {dragGhost &&
@@ -332,7 +329,6 @@ export function FileTree({
               width={dragGhost.width}
               paddingLeft={dragGhost.paddingLeft}
               isExpanded={dragGhost.isExpanded}
-              fileLabelMode={fileLabelMode}
             />
           </div>,
           document.body,
