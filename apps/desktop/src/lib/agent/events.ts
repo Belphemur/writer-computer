@@ -346,6 +346,10 @@ export type AgentSettings = {
   /** Extra `--allowedTools` entries (Claude permission rule syntax). */
   allowedTools: string[];
   disallowedTools: string[];
+  /** `agent.orchestrate`: orchestration paragraph and `--agents` sub-agents. */
+  orchestrate: boolean;
+  /** `agent.subagent-model`; null means the cheapest alias. */
+  subagentModel: string | null;
 };
 
 export type StartSessionRequest = {

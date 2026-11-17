@@ -47,6 +47,8 @@ export function agentSettingsFrom(settings: Record<string, unknown>): AgentSetti
       : "manual",
     allowedTools: list(read(settings, "agent.allowed-tools")),
     disallowedTools: list(read(settings, "agent.disallowed-tools")),
+    orchestrate: read(settings, "agent.orchestrate") !== false,
+    subagentModel: str(read(settings, "agent.subagent-model")),
   };
 }
 

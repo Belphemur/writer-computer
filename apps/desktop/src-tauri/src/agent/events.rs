@@ -523,6 +523,10 @@ pub struct AgentSettings {
     pub permission_mode: AgentPermissionMode,
     pub allowed_tools: Vec<String>,
     pub disallowed_tools: Vec<String>,
+    /// `agent.orchestrate`: the Writer block's orchestration paragraph and `--agents`.
+    pub orchestrate: bool,
+    /// `agent.subagent-model`: the model of `writer-explorer`; `None` means the cheapest alias.
+    pub subagent_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -905,6 +909,8 @@ mod tests {
                 permission_mode: AgentPermissionMode::Manual,
                 allowed_tools: vec!["Read".into()],
                 disallowed_tools: vec![],
+                orchestrate: true,
+                subagent_model: Some("haiku".into()),
             },
             append_system_prompt: None,
         });

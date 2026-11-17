@@ -217,6 +217,8 @@ impl Harness {
             permission_mode: AgentPermissionMode::Manual,
             allowed_tools: vec![],
             disallowed_tools: vec![],
+            orchestrate: true,
+            subagent_model: None,
         }
     }
 
@@ -1299,4 +1301,22 @@ fn a_read_only_turn_sends_no_turn_changes() {
         .seen
         .iter()
         .any(|e| matches!(e.event, AgentEvent::TurnChanges(_))));
+}
+
+#[test]
+fn orchestration_passes_the_agents_flag_only_when_on() {
+    for (orchestrate, model) in [(true, Some("sonnet")), (false, None)] {
+        let h = Harness::new(&["ok-turn"], "normal");
+        let mut p = h.params(CHAT, "w", None);
+        p.request.settings.orchestrate = orchestrate;
+        p.request.settings.subagent_model = model.map(String::from);
+        h.sessions.start(p, &Ask::new(Decision::Once)).unwrap();
+        h.wait_until("process", || !h.lines("argv.log").is_empty());
+        let argv = &h.lines("argv.log")[0];
+        assert_eq!(argv.contains("--agents"), orchestrate, "{argv}");
+        if orchestrate {
+            assert!(argv.contains("writer-explorer"), "{argv}");
+            assert!(argv.contains(r#""model":"sonnet""#), "{argv}");
+        }
+    }
 }

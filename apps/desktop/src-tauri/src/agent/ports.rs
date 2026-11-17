@@ -49,6 +49,11 @@ pub struct SpawnContext<'a> {
     pub inject_agents_md: InjectAgentsMd,
     /// `StartSessionRequest.append_system_prompt` as the UI sent it.
     pub requested_prompt: Option<&'a str>,
+    /// The managed `writer` skills are installed for the spawned CLI (selects the Writer block's
+    /// variant and whether sub-agents get Bash).
+    pub writer_cli: bool,
+    /// `agent.orchestrate`: the Writer block carries the orchestration paragraph.
+    pub orchestrate: bool,
 }
 
 /// Facts about a chat's CLI session, reported to the chat store.

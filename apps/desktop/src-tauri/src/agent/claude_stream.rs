@@ -664,6 +664,8 @@ pub struct ClaudeSpawn<'a> {
     pub append_system_prompt: Option<&'a str>,
     /// Extra directories the CLI may read (absolute, inside the vault).
     pub add_dirs: &'a [String],
+    /// The `--agents` JSON, `None` when orchestration is off.
+    pub agents: Option<&'a str>,
 }
 
 fn is_uuid(s: &str) -> bool {
@@ -783,6 +785,11 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
         }
         a.push(flag.into());
         a.extend(rules.iter().cloned());
+    }
+    if let Some(agents) = spawn.agents {
+        // The sub-agent definitions (`subagents::agents_json`); never given to the title call.
+        a.push("--agents".into());
+        a.push(agents.into());
     }
     for dir in spawn.add_dirs {
         if !is_safe_value(dir) {
@@ -1427,6 +1434,8 @@ mod tests {
             permission_mode: AgentPermissionMode::Manual,
             allowed_tools: vec![],
             disallowed_tools: vec![],
+            orchestrate: true,
+            subagent_model: None,
         }
     }
 
@@ -1440,6 +1449,7 @@ mod tests {
             settings: &s,
             append_system_prompt: None,
             add_dirs: &[],
+            agents: None,
         })
         .unwrap();
         assert_eq!(&args[..3], ["-p", "--input-format", "stream-json"]);
@@ -1468,6 +1478,7 @@ mod tests {
             settings: &s,
             append_system_prompt: None,
             add_dirs: &[],
+            agents: None,
         })
         .unwrap();
         assert!(resumed.contains(&"--resume".to_string()));
@@ -1496,6 +1507,7 @@ mod tests {
             settings: &s,
             append_system_prompt: Some("Project rules"),
             add_dirs: &dirs,
+            agents: None,
         })
         .unwrap();
         let pos = |f: &str| args.iter().position(|a| a == f).unwrap();
@@ -1518,6 +1530,7 @@ mod tests {
                 settings: &s,
                 append_system_prompt: None,
                 add_dirs: &[],
+                agents: None,
             })
         };
         assert!(bad(&|_| {}, SessionRef::New("not-a-uuid".into())).is_err());
@@ -1536,5 +1549,28 @@ mod tests {
             SessionRef::New(UUID.into())
         )
         .is_err());
+    }
+
+    #[test]
+    fn agents_flag_follows_the_given_json_and_the_title_call_has_none() {
+        let s = settings();
+        let json = crate::agent::subagents::agents_json(None, false);
+        let argv = |agents| {
+            build_args(&ClaudeSpawn {
+                session: SessionRef::New(UUID.into()),
+                settings: &s,
+                append_system_prompt: None,
+                add_dirs: &[],
+                agents,
+            })
+            .unwrap()
+        };
+        let on = argv(Some(&json));
+        let pos = on.iter().position(|a| a == "--agents").unwrap();
+        assert_eq!(on[pos + 1], json);
+        assert!(!argv(None).contains(&"--agents".to_string()));
+        assert!(!build_title_args(None, "t")
+            .unwrap()
+            .contains(&"--agents".to_string()));
     }
 }

@@ -892,7 +892,7 @@ mod tests {
             .iter()
             .filter(|d| d.key.starts_with("agent."))
             .collect();
-        assert_eq!(agent.len(), 18);
+        assert_eq!(agent.len(), 20);
         assert_eq!(
             defaults.get("agent.enabled-models"),
             Some(&ConfigValue::List(vec![

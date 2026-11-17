@@ -14,6 +14,7 @@ use super::changes::ChangeStore;
 use super::events::*;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
+use super::subagents;
 use crate::plugin_consent::ConsentStore;
 use crate::plugin_proc::{Consent, ProcManager};
 use parking_lot::{Condvar, Mutex};
@@ -337,6 +338,7 @@ impl AgentSessions {
         } else {
             Vec::new()
         };
+        let writer_cli = crate::managed_skills::claude_skills_installed(&p.root);
         let system_prompt = project.append_system_prompt(&SpawnContext {
             root: &p.root,
             cwd,
@@ -344,7 +346,12 @@ impl AgentSessions {
             cli_version: info.version.as_deref(),
             inject_agents_md: p.inject_agents_md,
             requested_prompt: req.append_system_prompt.as_deref(),
+            writer_cli,
+            orchestrate: settings.orchestrate,
         })?;
+        let agents = settings
+            .orchestrate
+            .then(|| subagents::agents_json(settings.subagent_model.as_deref(), writer_cli));
         let program = info.path.as_deref().map(PathBuf::from);
         let missing = (!info.found).then_some(SpawnError::NotFound);
         Ok((
@@ -353,6 +360,7 @@ impl AgentSessions {
                 cli_version: info.version,
                 system_prompt,
                 add_dirs,
+                agents,
                 settings,
             },
             missing,
@@ -435,6 +443,7 @@ impl AgentSessions {
             cli_version: None,
             system_prompt: None,
             add_dirs: Vec::new(),
+            agents: None,
             settings: req.settings.clone(),
         });
         let session = Session::new(

@@ -585,6 +585,8 @@ pub struct BundleInput<'a> {
     /// The managed `writer` skills are installed for the spawned CLI (selects the Writer block's
     /// variant).
     pub writer_cli: bool,
+    /// The Writer block carries the orchestration paragraph (`agent.orchestrate`).
+    pub orchestrate: bool,
 }
 
 /// Build the per-spawn context. Text only, no note bodies (a shadowed `AGENTS.md` is the one
@@ -633,7 +635,8 @@ pub fn build(input: &BundleInput) -> std::io::Result<ContextBundle> {
         .filter(|t| !t.is_empty());
 
     // The Writer system block opens every prompt, before the instruction files and the project.
-    let mut sections: Vec<String> = vec![writer_prompt::render(input.writer_cli)];
+    let mut sections: Vec<String> =
+        vec![writer_prompt::render(input.writer_cli, input.orchestrate)];
     let injected: Vec<&InstructionAudit> = instructions
         .iter()
         .filter(|a| matches!(a.status, InstructionStatus::Injected { .. }))
@@ -721,7 +724,8 @@ impl ProjectPort for ProjectLibrary {
             mode: inject_mode(ctx.inject_agents_md),
             cli_version: ctx.cli_version,
             index: Some(&fs_index),
-            writer_cli: crate::managed_skills::claude_skills_installed(ctx.root),
+            writer_cli: ctx.writer_cli,
+            orchestrate: ctx.orchestrate,
         })
         .map_err(|e| e.to_string())?;
         Ok(
@@ -902,6 +906,8 @@ mod tests {
             cli_version: Some("2.1.325"),
             inject_agents_md: InjectAgentsMd::Auto,
             requested_prompt: Some("from ui"),
+            writer_cli: false,
+            orchestrate: false,
         };
         let s = lib.append_system_prompt(&ctx).unwrap().unwrap();
         assert!(s.starts_with("from ui\n\n"));
@@ -939,7 +945,7 @@ mod tests {
         };
         assert_eq!(
             lib.append_system_prompt(&ctx2).unwrap(),
-            Some(writer_prompt::render(false))
+            Some(writer_prompt::render(false, false))
         );
     }
 
@@ -1058,6 +1064,7 @@ mod tests {
             cli_version: Some("2.1.325 (Claude Code)"),
             index: Some(&fake),
             writer_cli: true,
+            orchestrate: false,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
@@ -1080,10 +1087,14 @@ mod tests {
             cli_version: None,
             index: None,
             writer_cli,
+            orchestrate: false,
         };
         for cli in [false, true] {
             let b = build(&input(cli)).unwrap();
-            assert_eq!(b.append_system_prompt.unwrap(), writer_prompt::render(cli));
+            assert_eq!(
+                b.append_system_prompt.unwrap(),
+                writer_prompt::render(cli, false)
+            );
         }
         // A project with a native-loaded AGENTS.md: the block, then the header, no instruction text.
         let (_d2, root2, p) = project_with(&[], &[]);
@@ -1094,10 +1105,11 @@ mod tests {
             cli_version: Some("2.1.325"),
             index: None,
             writer_cli: false,
+            orchestrate: false,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
-        assert!(s.starts_with(&writer_prompt::render(false)));
+        assert!(s.starts_with(&writer_prompt::render(false, false)));
         assert!(s.contains("## Project: P") && !s.contains("Be brief."));
     }
 
@@ -1115,11 +1127,12 @@ mod tests {
             cli_version: Some("2.1.325"),
             index: None,
             writer_cli: true,
+            orchestrate: false,
         })
         .unwrap();
         let expected = format!(
             "{}\nThe following instruction files are not loaded automatically; follow them. Later instructions take precedence over earlier ones.\n\n### AGENTS.md\n\nvault rules\n\n## Project: P\nDesc\nProject folder: Projects/P\n",
-            writer_prompt::render(true)
+            writer_prompt::render(true, false)
         );
         assert_eq!(b.append_system_prompt.unwrap(), expected);
     }

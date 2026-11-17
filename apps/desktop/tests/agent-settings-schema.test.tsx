@@ -54,6 +54,8 @@ describe("agent.* settings contract", () => {
       "agent.chats-keep-days": 0,
       "agent.auto-title-chats": true,
       "agent.title-model": "",
+      "agent.orchestrate": true,
+      "agent.subagent-model": "haiku",
       "agent.restore-chats": true,
       "agent.pane-width": 420,
       "agent.pane-open": false,
@@ -91,6 +93,7 @@ describe("agent.* settings contract", () => {
     expect(byKey("agent.binary-path").normalize).toBe("trim");
     expect(byKey("agent.model").normalize).toBe("trim");
     expect(byKey("agent.title-model").normalize).toBe("trim");
+    expect(byKey("agent.subagent-model").normalize).toBe("trim");
   });
 
   it("maps to StartSessionRequest settings through agentSettingsFrom", () => {
@@ -102,10 +105,14 @@ describe("agent.* settings contract", () => {
       permissionMode: "manual",
       allowedTools: DEFAULT_ALLOWED,
       disallowedTools: [],
+      orchestrate: true,
+      subagentModel: "haiku",
     });
     expect(
       agentSettingsFrom({
         ...defaults,
+        "agent.orchestrate": false,
+        "agent.subagent-model": "  ",
         "agent.effort": "high",
         "agent.permission-mode": "acceptEdits",
         "agent.allowed-tools": ["Bash(git status)"],
@@ -114,6 +121,8 @@ describe("agent.* settings contract", () => {
       effort: "high",
       permissionMode: "acceptEdits",
       allowedTools: ["Bash(git status)"],
+      orchestrate: false,
+      subagentModel: null,
     });
   });
 });

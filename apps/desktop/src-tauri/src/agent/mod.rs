@@ -26,5 +26,6 @@ pub mod runner;
 mod runner_tests;
 pub mod session;
 pub mod skills;
+pub mod subagents;
 pub mod title;
 pub mod writer_prompt;

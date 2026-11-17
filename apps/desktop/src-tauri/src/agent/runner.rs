@@ -113,6 +113,8 @@ pub(crate) struct LaunchConfig {
     pub cli_version: Option<String>,
     pub system_prompt: Option<String>,
     pub add_dirs: Vec<String>,
+    /// The `--agents` JSON (`subagents::agents_json`), `None` when orchestration is off.
+    pub agents: Option<String>,
     pub settings: AgentSettings,
 }
 
@@ -156,6 +158,7 @@ struct Inner {
     cli_version: Option<String>,
     system_prompt: Option<String>,
     add_dirs: Vec<String>,
+    agents: Option<String>,
     settings: AgentSettings,
 
     session_id: String,
@@ -349,6 +352,7 @@ impl Session {
                 cli_version: config.cli_version,
                 system_prompt: config.system_prompt,
                 add_dirs: config.add_dirs,
+                agents: config.agents,
                 settings: config.settings,
                 session_id: init.session_id,
                 resume_next: init.resume,
@@ -427,6 +431,7 @@ impl Session {
         g.cli_version = config.cli_version;
         g.system_prompt = config.system_prompt;
         g.add_dirs = config.add_dirs;
+        g.agents = config.agents;
         g.settings = config.settings;
     }
 
@@ -474,6 +479,7 @@ impl Session {
                 settings: &g.settings,
                 append_system_prompt: g.system_prompt.as_deref(),
                 add_dirs: &g.add_dirs,
+                agents: g.agents.as_deref(),
             })
             .map_err(SpawnError::Invalid)?;
             g.spawning = true;

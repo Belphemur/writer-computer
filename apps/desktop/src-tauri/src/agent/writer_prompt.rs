@@ -8,9 +8,9 @@
 //! installed for the spawned CLI ([`crate::managed_skills::claude_skills_installed`]), so the
 //! prompt never names a tool that is not there.
 
-/// The block's size budget in characters (about 350 tokens at 4 characters per token). A test
+/// The block's size budget in characters (about 500 tokens at 4 characters per token). A test
 /// fails above it: grow the block only by replacing text.
-pub const MAX_CHARS: usize = 1500;
+pub const MAX_CHARS: usize = 2000;
 
 const HEADER: &str = "## Writer environment";
 
@@ -32,8 +32,13 @@ const MOVE_CLI: &str = "Rename or move notes only with `writer rename` and `writ
 const PROPERTIES_CLI: &str = "Change properties with `writer property:set`, not by editing YAML.";
 const SEARCH_CLI: &str = "Before grepping the whole vault, try `writer search`, `writer backlinks`, `writer links`, `writer bases` and `writer base:query` (skills writer-cli, writer-search, writer-bases).";
 
-/// The block for a chat whose CLI sees the managed `writer` skills (`writer_cli`) or not.
-pub fn render(writer_cli: bool) -> String {
+/// Orchestration (setting `agent.orchestrate`; `--agents` defines `writer-explorer`, see
+/// `subagents.rs`). The `writer` queries are named only with the CLI.
+const ORCHESTRATE: &str = "Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, QUERIES summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.";
+
+/// The block for a chat whose CLI sees the managed `writer` skills (`writer_cli`) or not, with
+/// the orchestration paragraph when `orchestrate`.
+pub fn render(writer_cli: bool, orchestrate: bool) -> String {
     let mut lines = vec![INTRO, READ_EDIT, FRONTMATTER];
     if writer_cli {
         lines.push(PROPERTIES_CLI);
@@ -46,6 +51,13 @@ pub fn render(writer_cli: bool) -> String {
         lines.push(SEARCH_CLI);
     }
     lines.push(if writer_cli { BASH_CLI } else { BASH_PLAIN });
+    let orchestrate_line = ORCHESTRATE.replace(
+        "QUERIES ",
+        if writer_cli { "`writer` queries, " } else { "" },
+    );
+    if orchestrate {
+        lines.push(&orchestrate_line);
+    }
     let mut out = String::from(HEADER);
     out.push('\n');
     out.push_str(lines[0]);
@@ -92,26 +104,43 @@ The working directory is a vault of Markdown notes, with optional code and skill
 - Use Bash only when no dedicated tool or `writer` command fits.
 ";
 
+    const ORCHESTRATE_PLAIN: &str = "- Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.\n";
+    const ORCHESTRATE_CLI: &str = "- Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, `writer` queries, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.\n";
+
     #[test]
     fn golden_text_of_both_variants() {
-        assert_eq!(render(false), GOLDEN_PLAIN);
-        assert_eq!(render(true), GOLDEN_CLI);
+        assert_eq!(render(false, false), GOLDEN_PLAIN);
+        assert_eq!(render(true, false), GOLDEN_CLI);
+        assert_eq!(
+            render(false, true),
+            format!("{GOLDEN_PLAIN}{ORCHESTRATE_PLAIN}")
+        );
+        assert_eq!(render(true, true), format!("{GOLDEN_CLI}{ORCHESTRATE_CLI}"));
+    }
+
+    #[test]
+    fn orchestration_names_the_defined_subagent() {
+        assert!(render(false, true).contains(&format!("`{}`", crate::agent::subagents::EXPLORER)));
     }
 
     #[test]
     fn stays_within_the_budget() {
-        for cli in [false, true] {
-            let n = render(cli).chars().count();
+        for (cli, orchestrate) in [(false, false), (true, false), (false, true), (true, true)] {
+            let n = render(cli, orchestrate).chars().count();
             assert!(
                 n <= MAX_CHARS,
-                "block (cli={cli}) is {n} chars, budget {MAX_CHARS}"
+                "block (cli={cli}, orchestrate={orchestrate}) is {n} chars, budget {MAX_CHARS}"
             );
         }
     }
 
     #[test]
     fn plain_variant_names_no_writer_command() {
-        assert!(!render(false).contains("`writer"));
+        assert!(!render(false, false).contains("`writer"));
+        // `writer-explorer` is a sub-agent, not the CLI
+        assert!(!render(false, true)
+            .replace("`writer-explorer`", "")
+            .contains("`writer"));
     }
 
     /// Every `writer <name>` in backticks is a registered command that a bundled skill documents.
@@ -122,7 +151,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
             .flat_map(|s| s.files.iter().map(|f| f.content))
             .collect::<Vec<_>>()
             .join("\n");
-        let text = render(true);
+        let text = render(true, true);
         let mut seen = 0;
         for chunk in text.split("`writer ").skip(1) {
             let name = chunk.split('`').next().unwrap();

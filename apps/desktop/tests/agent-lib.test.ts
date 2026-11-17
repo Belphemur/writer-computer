@@ -143,6 +143,8 @@ describe("settings", () => {
       permissionMode: "manual",
       allowedTools: expect.arrayContaining(["Bash(writer search *)"]),
       disallowedTools: [],
+      orchestrate: true,
+      subagentModel: "haiku",
     });
     expect(
       agentSettingsFrom({

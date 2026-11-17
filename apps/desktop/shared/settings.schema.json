@@ -717,6 +717,26 @@
       "default": ""
     },
     {
+      "key": "agent.orchestrate",
+      "label": "Orchestrate with sub-agents",
+      "description": "Tell the agent to split work into parts and run cheap sub-agents in parallel (the read-only writer-explorer) for exploring, searching and summarising, doing only very simple work itself. Adds a short paragraph to the Writer system block and defines the sub-agents with --agents. Their tool calls use the same permission prompts and allow rules. Turn off to chat with a single agent.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
+      "key": "agent.subagent-model",
+      "label": "Sub-agent model",
+      "description": "Model alias or full name for the writer-explorer sub-agent (letters, digits and . _ : [ ] / - only). Leave blank, or write auto, for the cheapest model (haiku). Used only when Orchestrate with sub-agents is on.",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "haiku",
+      "scope": "global",
+      "default": "haiku"
+    },
+    {
       "key": "agent.restore-chats",
       "label": "Restore open chats",
       "description": "Bring back the chats that were open in the agent pane, with the same active chat, when you reopen the vault. Transcripts come from the saved chat notes; nothing runs until you send a message.",
