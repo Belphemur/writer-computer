@@ -13,10 +13,12 @@ use super::binary;
 use super::changes::ChangeStore;
 use super::events::*;
 use super::images::{self, Outgoing};
+use super::memory;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
 use super::roles::{Flags, RenderInput, RoleAdapter};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
 use super::subagents::ClaudeAdapter;
+use super::writer_prompt::MemoryNote;
 use crate::plugin_proc::ProcManager;
 use parking_lot::{Condvar, Mutex};
 use serde::Serialize;
@@ -357,6 +359,34 @@ impl AgentSessions {
                 flags: &Flags::current(),
             })
         });
+        // `vault` mode: the folder is built here from the confined root and project (never from
+        // model input), created before the spawn; the block's memory line names where it is.
+        let (memory_dir, vault_index) = if settings.memory == AgentMemory::Vault {
+            let project_path = req.project_path.as_deref().filter(|p| !p.is_empty());
+            let prepare = |project| {
+                memory::prepare_dir(&p.root, project).map_err(|e| format!("the memory folder: {e}"))
+            };
+            let dir = prepare(project_path)?;
+            let vault_index = project_path
+                .map(|_| {
+                    let vault = prepare(None)?;
+                    Ok::<_, String>(
+                        vault
+                            .join(memory::INDEX_FILE)
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                })
+                .transpose()?;
+            (Some(dir), vault_index)
+        } else {
+            (None, None)
+        };
+        let memory_note = match (&memory_dir, &vault_index) {
+            (None, _) => None,
+            (Some(_), None) => Some(MemoryNote::Vault),
+            (Some(_), Some(i)) => Some(MemoryNote::Project { vault_index: i }),
+        };
         let system_prompt = project.append_system_prompt(&SpawnContext {
             root: &p.root,
             cwd,
@@ -366,6 +396,7 @@ impl AgentSessions {
             requested_prompt: req.append_system_prompt.as_deref(),
             writer_cli,
             orchestration: rendered.as_ref(),
+            memory: memory_note,
         })?;
         let agents = rendered.and_then(|r| r.config);
         let program = info.path.as_deref().map(PathBuf::from);
@@ -378,6 +409,7 @@ impl AgentSessions {
                 add_dirs,
                 agents,
                 cli_dir: p.cli_dir.clone(),
+                memory_dir,
                 settings,
             },
             missing,
@@ -462,6 +494,7 @@ impl AgentSessions {
             add_dirs: Vec::new(),
             agents: None,
             cli_dir: None,
+            memory_dir: None,
             settings: req.settings.clone(),
         });
         let session = Session::new(

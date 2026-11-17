@@ -86,6 +86,8 @@ impl RoleAdapter for ClaudeAdapter {
             "edit" => CapabilitySupport::Tools(&["Edit", "MultiEdit"]),
             "write" => CapabilitySupport::Tools(&["Write"]),
             "bash-limited" => CapabilitySupport::Tools(&["Bash"]),
+            // not a tool: the spawn's `--settings` JSON (`claude_stream::memory_settings_json`)
+            "memory-directory" => CapabilitySupport::Setting("autoMemoryDirectory"),
             _ => CapabilitySupport::Unsupported {
                 fallback: "not granted: the role prompt and the permission rules apply",
             },

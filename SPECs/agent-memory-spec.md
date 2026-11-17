@@ -1,6 +1,6 @@
 # Agent memory (cross-chat memory for the native agent)
 
-Status: investigation and proposal. No code changed. Owners of related text: [native-agent-spec.md](native-agent-spec.md) (4.5 instruction layers, 4.5.1 Writer system block, 9 chats), [agent-roles-spec.md](agent-roles-spec.md), ADRs on [projects](../docs/decisions/2026-11-17-projects-are-vault-folders-with-project-md-and-agents-md-compatible-with-copilots-format.md), [chats](../docs/decisions/2026-11-17-store-agent-chats-as-markdown-notes-in-a-hidden-chats-folder-under-the-project.md), [agent roles](../docs/decisions/2026-11-17-define-agent-roles-once-and-map-them-to-each-agent-backend-through-adapters.md).
+Status: implemented (2026-11-17), see "Implementation status" at the end; sections 1 to 8 are the investigation and proposal as written before the decisions. Owners of related text: [native-agent-spec.md](native-agent-spec.md) (4.5 instruction layers, 4.5.1 Writer system block, 9 chats), [agent-roles-spec.md](agent-roles-spec.md), ADRs on [projects](../docs/decisions/2026-11-17-projects-are-vault-folders-with-project-md-and-agents-md-compatible-with-copilots-format.md), [chats](../docs/decisions/2026-11-17-store-agent-chats-as-markdown-notes-in-a-hidden-chats-folder-under-the-project.md), [agent roles](../docs/decisions/2026-11-17-define-agent-roles-once-and-map-them-to-each-agent-backend-through-adapters.md).
 
 ## 1. Question
 
@@ -110,3 +110,24 @@ Manual checks only a real window and the real CLI can give: that haiku and sonne
 6. Import: Writer offers a one-time, user-initiated import of the existing Claude Code memory for this vault (and its projects) from the user's home Claude folder into the vault memory. Writer reads only the matching project memory directories, never anything else under the Claude folder, and only when the user clicks Import.
 
 ADR: [Keep agent memory in the vault through the backend's own memory tool](../docs/decisions/2026-11-17-keep-agent-memory-in-the-vault-through-the-backends-own-memory-tool.md).
+
+## Implementation status (2026-11-17)
+
+All phases of section 8 are done, with the decisions above applied (so phase 1 defaults to `vault`, phase 5 is built in the same change, and import was added). Where it lives: [`SPECs/native-agent-spec.md`](native-agent-spec.md) 4.5.1 "Memory" paragraph and setting row.
+
+| Phase | Done                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Memory paragraph in the native-agent spec (now the description of the shipped behaviour).                                                                                                                                                                                                                                                                                 |
+| 1     | `agent.memory` (`vault` default, `default`, `off`) in `features/agent/settings.schema.json`; `AgentSettings.memory` (`events.rs`, `agent-settings.ts`, generated bindings); `claude_stream::memory_settings_json` and `ClaudeSpawn.memory_dir`; `env::with_auto_memory_off`; `agent/memory.rs::memory_dir` / `prepare_dir` (vault `.writer/memory/`, project `.memory/`). |
+| 2     | `writer_prompt::render(.., memory)` with `MemoryNote::{Vault, Project}`, FORBIDDEN reworded for every mode; goldens per scope, budget and neutral-text tests.                                                                                                                                                                                                             |
+| 3     | `changes.rs` skips `memory::is_memory_rel` paths (`changes_tests.rs`).                                                                                                                                                                                                                                                                                                    |
+| 4     | Commands `agent_memory_list`, `agent_memory_delete`, `agent_memory_forget_all`, `agent_memory_import_claude` and the Settings > Agent "Memory" section (`features/agent/web/agent-memory.tsx`).                                                                                                                                                                           |
+| 5     | Per-project memory; capability `memory-directory` in `shared/agent-roles.json`, `CapabilitySupport::Setting("autoMemoryDirectory")` in the Claude adapter.                                                                                                                                                                                                                |
+
+Notes that differ from the proposal text above:
+
+- The ADR's sentence "one short note each" was dropped from the memory line to stay within the 2000-character budget (the worst case, a project chat with the CLI skills and orchestration, would not fit); the CLI's own memory tool already writes one note per fact.
+- The session never writes a settings file; the `--settings` JSON is a spawn argument and is redacted in the spawn log like the prompt.
+- If the user's own environment sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY`, it still applies in `vault` and `default` modes (Writer only sets it for `off`).
+- Import derives Claude's project key from the canonical path (`/tmp` appears as `/private/tmp`, as in the observed `-private-tmp-...-memtest2`); paths over about 200 characters, which the CLI shortens with a hash, are not matched; `CLAUDE_CONFIG_DIR` is not consulted (the ADR says `<home>/.claude`).
+- Memory file names are not logged; the commands log counts only.

@@ -8,6 +8,7 @@
 //! installed for the spawned CLI ([`crate::managed_skills::claude_skills_installed`]), so the
 //! prompt never names a tool that is not there.
 
+use super::memory;
 use super::roles::Rendered;
 
 /// The block's size budget in characters (about 500 tokens at 4 characters per token). A test
@@ -21,7 +22,7 @@ const INTRO: &str = "The working directory is a vault of Markdown notes, with op
 const READ_EDIT: &str = "Read a note with Read before editing it. Make minimal, targeted Edit changes; use Write only to create files.";
 const FRONTMATTER: &str = "Preserve YAML frontmatter: keys, order, quoting, comments.";
 const LINKS: &str = "Wikilinks resolve by file name, never by title. Attached `@` references are authoritative paths; read them first.";
-const FORBIDDEN: &str = "Never touch .obsidian/, .git/, .writer/ or secret files. If a requested path is outside the vault, say so instead of working around it.";
+const FORBIDDEN: &str = "Never touch .obsidian/, .git/, other .writer/ files or secret files. If a requested path is outside the vault, say so instead of working around it.";
 const FINDING: &str = "Find files with Glob and Grep, not Bash find or grep.";
 
 /// Without the CLI the generic rule stands alone.
@@ -41,6 +42,37 @@ const SEARCH_CLI: &str = "Before grepping the whole vault, try `writer search`, 
 const ORCHESTRATE_OPEN: &str = "Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several {launch} in one message).";
 const ORCHESTRATE_CLOSE: &str = "Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.";
 
+/// Memory (setting `agent.memory` = `vault`, `memory.rs`): one neutral line naming the folder, no
+/// vendor or tool name; how the backend stores it is the adapter's business. Only sent in
+/// `vault` mode, so `default` and `off` chats never hear of a folder.
+const MEMORY_SAVE: &str = "save only stable facts or preferences the user asks you to remember or corrects you on, never note contents or secrets.";
+
+/// Where this chat's memory is, for the block's memory line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryNote<'a> {
+    /// A vault chat: the working directory is the vault root, so the folder is named relative to
+    /// it ([`crate::agent::memory::VAULT_MEMORY_REL`]).
+    Vault,
+    /// A project chat: new facts go to the project's memory (the backend is pointed at it);
+    /// `vault_index` is the absolute path of the vault memory's `MEMORY.md`, which the agent also
+    /// reads.
+    Project { vault_index: &'a str },
+}
+
+fn memory_line(note: MemoryNote<'_>) -> String {
+    match note {
+        MemoryNote::Vault => format!(
+            "Durable memory for this vault is the Markdown folder `{}/`: read `{}` first; {MEMORY_SAVE}",
+            memory::VAULT_MEMORY_REL,
+            memory::INDEX_FILE,
+        ),
+        MemoryNote::Project { vault_index } => format!(
+            "Memory: save in this project's `{}/` folder and also read the vault memory `{vault_index}`; {MEMORY_SAVE}",
+            memory::PROJECT_MEMORY_DIR,
+        ),
+    }
+}
+
 /// The orchestration line for the roles an adapter produced; `None` when it produced none.
 fn orchestration_line(rendered: &Rendered) -> Option<String> {
     if rendered.roles.is_empty() {
@@ -53,8 +85,13 @@ fn orchestration_line(rendered: &Rendered) -> Option<String> {
 }
 
 /// The block for a chat whose CLI sees the managed `writer` skills (`writer_cli`) or not, with
-/// the orchestration line when the adapter produced `orchestration` roles.
-pub fn render(writer_cli: bool, orchestration: Option<&Rendered>) -> String {
+/// the orchestration line when the adapter produced `orchestration` roles and the memory line
+/// when `memory` says where the chat's memory is.
+pub fn render(
+    writer_cli: bool,
+    orchestration: Option<&Rendered>,
+    memory: Option<MemoryNote<'_>>,
+) -> String {
     let mut lines = vec![INTRO, READ_EDIT, FRONTMATTER];
     if writer_cli {
         lines.push(PROPERTIES_CLI);
@@ -69,6 +106,10 @@ pub fn render(writer_cli: bool, orchestration: Option<&Rendered>) -> String {
     lines.push(if writer_cli { BASH_CLI } else { BASH_PLAIN });
     let orchestrate_line = orchestration.and_then(orchestration_line);
     if let Some(line) = &orchestrate_line {
+        lines.push(line);
+    }
+    let memory_text = memory.map(memory_line);
+    if let Some(line) = &memory_text {
         lines.push(line);
     }
     let mut out = String::from(HEADER);
@@ -109,7 +150,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
 - Preserve YAML frontmatter: keys, order, quoting, comments.
 - Wikilinks resolve by file name, never by title. Attached `@` references are authoritative paths; read them first.
 - Never rename or move notes with mv or Bash (links would break); ask the user to rename them in Writer.
-- Never touch .obsidian/, .git/, .writer/ or secret files. If a requested path is outside the vault, say so instead of working around it.
+- Never touch .obsidian/, .git/, other .writer/ files or secret files. If a requested path is outside the vault, say so instead of working around it.
 - Find files with Glob and Grep, not Bash find or grep.
 - Use Bash only when no dedicated tool fits.
 ";
@@ -122,7 +163,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
 - Change properties with `writer property:set`, not by editing YAML.
 - Wikilinks resolve by file name, never by title. Attached `@` references are authoritative paths; read them first.
 - Rename or move notes only with `writer rename` and `writer move`, which rewrite every link; never mv.
-- Never touch .obsidian/, .git/, .writer/ or secret files. If a requested path is outside the vault, say so instead of working around it.
+- Never touch .obsidian/, .git/, other .writer/ files or secret files. If a requested path is outside the vault, say so instead of working around it.
 - Find files with Glob and Grep, not Bash find or grep.
 - Before grepping the whole vault, try `writer search`, `writer backlinks`, `writer links`, `writer bases` and `writer base:query` (skills writer-cli, writer-search, writer-bases).
 - Use Bash only when no dedicated tool or `writer` command fits.
@@ -133,15 +174,15 @@ The working directory is a vault of Markdown notes, with optional code and skill
 
     #[test]
     fn golden_text_of_both_variants() {
-        assert_eq!(render(false, None), GOLDEN_PLAIN);
-        assert_eq!(render(true, None), GOLDEN_CLI);
+        assert_eq!(render(false, None, None), GOLDEN_PLAIN);
+        assert_eq!(render(true, None, None), GOLDEN_CLI);
         // the explorer-only rendering reproduces the line as it was before the roles registry
         assert_eq!(
-            render(false, Some(&roles(false, false))),
+            render(false, Some(&roles(false, false)), None),
             format!("{GOLDEN_PLAIN}{ORCHESTRATE_PLAIN}")
         );
         assert_eq!(
-            render(true, Some(&roles(true, false))),
+            render(true, Some(&roles(true, false)), None),
             format!("{GOLDEN_CLI}{ORCHESTRATE_CLI}")
         );
     }
@@ -152,7 +193,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
     #[test]
     fn golden_orchestration_line_with_the_worker() {
         assert_eq!(
-            render(true, Some(&roles(true, true))),
+            render(true, Some(&roles(true, true)), None),
             format!("{GOLDEN_CLI}{ORCHESTRATE_CLI_WORKER}")
         );
     }
@@ -160,8 +201,8 @@ The working directory is a vault of Markdown notes, with optional code and skill
     /// With the worker offered the line gains exactly its delegation sentence.
     #[test]
     fn the_worker_sentence_is_present_only_when_the_worker_is_rendered() {
-        let with = render(true, Some(&roles(true, true)));
-        let without = render(true, Some(&roles(true, false)));
+        let with = render(true, Some(&roles(true, true)), None);
+        let without = render(true, Some(&roles(true, false)), None);
         assert!(with.contains("Delegate bounded edits to named notes to `writer-worker`"));
         assert!(!without.contains("writer-worker"));
         assert!(with.contains("`writer-explorer`"));
@@ -169,8 +210,8 @@ The working directory is a vault of Markdown notes, with optional code and skill
 
     #[test]
     fn no_roles_means_no_orchestration_line() {
-        assert_eq!(render(false, Some(&Rendered::none())), GOLDEN_PLAIN);
-        assert_eq!(render(true, None), GOLDEN_CLI);
+        assert_eq!(render(false, Some(&Rendered::none()), None), GOLDEN_PLAIN);
+        assert_eq!(render(true, None, None), GOLDEN_CLI);
     }
 
     /// The fixed sentences name no vendor and no tool; the backend and the roles supply those.
@@ -205,22 +246,98 @@ The working directory is a vault of Markdown notes, with optional code and skill
             for worker in [false, true] {
                 let r = roles(cli, worker);
                 for o in [None, Some(&r)] {
-                    let n = render(cli, o).chars().count();
-                    assert!(
-                        n <= MAX_CHARS,
-                        "block (cli={cli}, worker={worker}, orchestrated={}) is {n} chars, budget {MAX_CHARS}",
-                        o.is_some()
-                    );
+                    for m in [None, Some(VAULT), Some(PROJECT)] {
+                        let n = render(cli, o, m).chars().count();
+                        assert!(
+                            n <= MAX_CHARS,
+                            "block (cli={cli}, worker={worker}, orchestrated={}, memory={m:?}) is {n} chars, budget {MAX_CHARS}",
+                            o.is_some()
+                        );
+                    }
                 }
             }
         }
     }
 
+    const VAULT: MemoryNote<'static> = MemoryNote::Vault;
+    /// A realistic absolute path of 60 characters; each character beyond that counts against the
+    /// budget in the worst case (project chat, CLI skills, orchestration).
+    const PROJECT: MemoryNote<'static> = MemoryNote::Project {
+        vault_index: "/Users/someone/Documents/Notes/.writer/memory/MEMORY.md",
+    };
+
+    const MEMORY_VAULT_LINE: &str = "- Durable memory for this vault is the Markdown folder `.writer/memory/`: read `MEMORY.md` first; save only stable facts or preferences the user asks you to remember or corrects you on, never note contents or secrets.\n";
+    const MEMORY_PROJECT_LINE: &str = "- Memory: save in this project's `.memory/` folder and also read the vault memory `/v/.writer/memory/MEMORY.md`; save only stable facts or preferences the user asks you to remember or corrects you on, never note contents or secrets.\n";
+
+    /// One line per scope, after everything else; no line at all without a memory note.
+    #[test]
+    fn golden_memory_line_per_scope() {
+        let project = MemoryNote::Project {
+            vault_index: "/v/.writer/memory/MEMORY.md",
+        };
+        for cli in [false, true] {
+            let base = render(cli, None, None);
+            assert!(!base.contains("memory"), "no memory line without a note");
+            assert_eq!(
+                render(cli, None, Some(MemoryNote::Vault)),
+                format!("{base}{MEMORY_VAULT_LINE}")
+            );
+            assert_eq!(
+                render(cli, None, Some(project)),
+                format!("{base}{MEMORY_PROJECT_LINE}")
+            );
+        }
+        // after the orchestration line
+        let r = roles(true, true);
+        let with_both = render(true, Some(&r), Some(MemoryNote::Vault));
+        assert!(with_both.ends_with(MEMORY_VAULT_LINE));
+        assert!(with_both.contains("Orchestrate by default"));
+    }
+
+    /// The memory text names no vendor and no tool: how a backend stores it is its adapter's job.
+    #[test]
+    fn the_memory_lines_are_neutral() {
+        for note in [VAULT, PROJECT] {
+            let line = memory_line(note);
+            for word in [
+                "Claude",
+                "Anthropic",
+                "Agent",
+                "Task",
+                "Read",
+                "Write",
+                "Edit",
+                "Bash",
+                "Glob",
+                "Grep",
+                "autoMemoryDirectory",
+                "settings",
+                "CLAUDE",
+            ] {
+                assert!(
+                    !line
+                        .split(|c: char| !c.is_alphanumeric())
+                        .any(|w| w == word),
+                    "the memory line names {word}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_block_no_longer_forbids_the_memory_folder() {
+        for cli in [false, true] {
+            let text = render(cli, None, Some(VAULT));
+            assert!(!text.contains("Never touch .obsidian/, .git/, .writer/"));
+            assert!(text.contains("other .writer/ files"));
+        }
+    }
+
     #[test]
     fn plain_variant_names_no_writer_command() {
-        assert!(!render(false, None).contains("`writer"));
+        assert!(!render(false, None, None).contains("`writer"));
         // `writer-explorer` and `writer-worker` are sub-agents, not the CLI
-        assert!(!render(false, Some(&roles(false, true)))
+        assert!(!render(false, Some(&roles(false, true)), None)
             .replace("`writer-explorer`", "")
             .replace("`writer-worker`", "")
             .contains("`writer"));
@@ -233,7 +350,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
             .flat_map(|s| s.files.iter().map(|f| f.content))
             .collect::<Vec<_>>()
             .join("\n");
-        let text = render(true, Some(&roles(true, true)));
+        let text = render(true, Some(&roles(true, true)), None);
         let mut seen = 0;
         for chunk in text.split("`writer ").skip(1) {
             let name = chunk.split('`').next().unwrap();

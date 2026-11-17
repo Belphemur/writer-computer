@@ -22,6 +22,7 @@ import {
 import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
+import { AgentMemory } from "./agent-memory";
 import { AgentModels } from "./agent-models";
 import { ROW, SELECT, SelectRow } from "./agent-rows";
 import { TierModels } from "./tier-models";
@@ -352,6 +353,8 @@ export function AgentSection() {
           "agent.pane-open",
         ]}
       />
+
+      <AgentMemory />
 
       <h2 className="mt-8 mb-1 text-[13px] font-medium text-[var(--text-muted)]">
         Sub-agent models

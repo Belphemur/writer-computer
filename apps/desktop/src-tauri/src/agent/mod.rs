@@ -18,6 +18,7 @@ pub mod env;
 pub mod events;
 pub mod images;
 pub mod line_diff;
+pub mod memory;
 pub mod permission_rules;
 pub mod ports;
 pub mod project;

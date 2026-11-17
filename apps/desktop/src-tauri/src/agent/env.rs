@@ -83,6 +83,18 @@ pub fn child_env(
     out
 }
 
+/// The CLI's own off-switch for auto memory, set for `agent.memory` = `off`.
+pub const DISABLE_AUTO_MEMORY: &str = "CLAUDE_CODE_DISABLE_AUTO_MEMORY";
+
+/// `env` with auto memory switched off (replacing any value the app's environment carried).
+/// The one place Writer sets it; `default` and `vault` leave the variable as the user has it.
+pub fn with_auto_memory_off(mut env: Vec<(String, String)>) -> Vec<(String, String)> {
+    env.retain(|(k, _)| k != DISABLE_AUTO_MEMORY);
+    env.push((DISABLE_AUTO_MEMORY.into(), "1".into()));
+    env.sort();
+    env
+}
+
 /// The running app's environment, with the user's login PATH (cached, blocks up to 10 s the
 /// first time: call from a blocking thread).
 pub fn current(launcher_dir: Option<&Path>) -> Vec<(String, String)> {
@@ -157,6 +169,33 @@ mod tests {
             assert!(n.contains(&kept), "{kept} missing");
         }
         assert_eq!(e.iter().find(|(k, _)| k == "TERM").unwrap().1, "dumb");
+    }
+
+    #[test]
+    fn auto_memory_off_sets_the_cli_switch_once_and_keeps_the_rest() {
+        let base = env(&[("HOME", "/h"), (DISABLE_AUTO_MEMORY, "0")]);
+        let off = with_auto_memory_off(base.clone());
+        assert_eq!(
+            off.iter().filter(|(k, _)| k == DISABLE_AUTO_MEMORY).count(),
+            1
+        );
+        assert_eq!(
+            off.iter()
+                .find(|(k, _)| k == DISABLE_AUTO_MEMORY)
+                .unwrap()
+                .1,
+            "1"
+        );
+        let others = |e: &[(String, String)]| {
+            e.iter()
+                .filter(|(k, _)| k != DISABLE_AUTO_MEMORY)
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(others(&off), others(&base));
+        let mut sorted = off.clone();
+        sorted.sort();
+        assert_eq!(off, sorted);
     }
 
     #[test]

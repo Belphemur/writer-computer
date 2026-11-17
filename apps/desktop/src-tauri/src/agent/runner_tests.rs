@@ -33,6 +33,7 @@ for a in "$@"; do case "$prev" in --session-id|--resume) SID="$a";; esac; prev="
 echo "$@" >> "$D/argv.log"
 echo "$$" >> "$D/pids.log"
 echo "$PATH" >> "$D/path.log"
+echo "${CLAUDE_CODE_DISABLE_AUTO_MEMORY-unset}" >> "$D/memenv.log"
 pwd >> "$D/cwd.log"
 if [ "$MODE" = resume-missing ]; then
   case " $* " in *" --resume "*) echo "No conversation found with session ID: $SID" >&2; exit 1;; esac
@@ -194,6 +195,7 @@ impl Harness {
             disallowed_tools: vec![],
             orchestrate: true,
             show_thinking: false,
+            memory: AgentMemory::Default,
             tier_models: Default::default(),
         }
     }
@@ -1308,6 +1310,83 @@ fn show_thinking_passes_the_display_flag_only_when_on() {
             "{argv}"
         );
     }
+}
+
+// ---- agent memory (ADR "Keep agent memory in the vault ...") ----
+
+/// The spawned argv and env per `agent.memory` mode, for a vault chat and a project chat.
+#[test]
+fn memory_modes_set_the_spawn_argv_env_and_prompt() {
+    let inherited = std::env::var("CLAUDE_CODE_DISABLE_AUTO_MEMORY").unwrap_or("unset".into());
+    for (mode, project) in [
+        (AgentMemory::Vault, None),
+        (AgentMemory::Vault, Some("Projects/P")),
+        (AgentMemory::Default, None),
+        (AgentMemory::Default, Some("Projects/P")),
+        (AgentMemory::Off, None),
+    ] {
+        let h = Harness::new(&["ok-turn"], "normal");
+        std::fs::create_dir_all(h.root.join("Projects/P")).unwrap();
+        // the real library, which renders the Writer block (the default port sends no prompt)
+        h.sessions
+            .ports()
+            .set_project(Arc::new(super::project_context::ProjectLibrary));
+        let mut p = h.params(CHAT, "w", project);
+        p.request.settings.memory = mode;
+        h.sessions.start(p).unwrap();
+        h.wait_until("process", || !h.lines("memenv.log").is_empty());
+        let argv = h.log("argv.log");
+        let flag = argv.contains("--settings");
+        let want_dir = match (mode, project) {
+            (AgentMemory::Vault, None) => Some(h.root.join(".writer/memory")),
+            (AgentMemory::Vault, Some(p)) => Some(h.root.join(p).join(".memory")),
+            _ => None,
+        };
+        assert_eq!(flag, want_dir.is_some(), "{mode:?} {project:?}: {argv}");
+        if let Some(dir) = &want_dir {
+            let json = format!(r#"{{"autoMemoryDirectory":"{}"}}"#, dir.display());
+            assert!(argv.contains(&format!("--settings {json}")), "{argv}");
+            assert!(dir.is_dir(), "the folder exists before the spawn");
+        }
+        // the memory line of the Writer block only in `vault` mode, naming the right folder
+        assert_eq!(
+            argv.contains("Durable memory for this vault"),
+            mode == AgentMemory::Vault && project.is_none()
+        );
+        assert_eq!(
+            argv.contains("save in this project's `.memory/` folder"),
+            mode == AgentMemory::Vault && project.is_some()
+        );
+        // the env: only `off` sets the CLI's switch; the others keep what the app had
+        let env = h.lines("memenv.log");
+        let want = if mode == AgentMemory::Off {
+            "1".to_string()
+        } else {
+            inherited.clone()
+        };
+        assert_eq!(env[0], want, "{mode:?}");
+    }
+}
+
+/// A memory folder that cannot be made (here: `.writer` is a file) fails the chat with a message
+/// and starts no process, instead of silently running without the memory the user asked for.
+#[test]
+fn an_unusable_memory_folder_fails_the_chat_before_any_spawn() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    std::fs::write(h.root.join(".writer"), "not a folder").unwrap();
+    h.sessions
+        .ports()
+        .set_project(Arc::new(super::project_context::ProjectLibrary));
+    let mut p = h.params(CHAT, "w", None);
+    p.request.settings.memory = AgentMemory::Vault;
+    h.sessions.start(p).unwrap();
+    let AgentEvent::Error { message, .. } =
+        h.next(CHAT, "error", |e| matches!(e, AgentEvent::Error { .. }))
+    else {
+        unreachable!()
+    };
+    assert!(message.contains("memory folder"), "{message}");
+    assert!(h.lines("argv.log").is_empty());
 }
 
 // ---- sub-agent edits and the Changes card (ADR "Define agent roles once ...", item 5) ----

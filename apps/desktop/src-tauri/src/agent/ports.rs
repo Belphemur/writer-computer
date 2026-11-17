@@ -12,6 +12,7 @@
 
 use super::events::AgentPermissionMode;
 use super::roles::Rendered;
+use super::writer_prompt::MemoryNote;
 use parking_lot::RwLock;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -56,6 +57,8 @@ pub struct SpawnContext<'a> {
     /// The sub-agent roles the backend adapter produced for this session (`None`: orchestration is
     /// off); the Writer block's orchestration line is rendered from them.
     pub orchestration: Option<&'a Rendered>,
+    /// Where this chat's memory is (`agent.memory` = `vault`); the Writer block's memory line.
+    pub memory: Option<MemoryNote<'a>>,
 }
 
 /// Facts about a chat's CLI session, reported to the chat store.

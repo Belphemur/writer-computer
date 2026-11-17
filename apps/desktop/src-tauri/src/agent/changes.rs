@@ -18,10 +18,12 @@
 //! logged. A file over [`MAX_FILE_BYTES`], a binary one or one that no longer fits in
 //! [`MAX_TOTAL_BYTES`] keeps only a fingerprint: it is listed but has no diff and no Undo. When
 //! the total is exceeded the oldest turn is dropped first. Paths are confined to the vault root
-//! (`vault_ops::confine`: no `..`, no symlink out, no `.git`/`.obsidian`).
+//! (`vault_ops::confine`: no `..`, no symlink out, no `.git`/`.obsidian`). The agent's memory
+//! folders (`memory::is_memory_rel`) are never tracked: not in the card, not undoable.
 
 use super::events::*;
 use super::line_diff::{counts, diff_lines, split_lines, Edit};
+use super::memory;
 use crate::vault_ops;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -371,9 +373,12 @@ impl ChangeStore {
                 } else {
                     cwd.join(p).to_string_lossy().into_owned()
                 };
-                // outside the vault, through a link out, `..`, a protected folder: not tracked
+                // outside the vault, through a link out, `..`, a protected folder: not tracked;
+                // nor is the agent's own memory (`memory.rs`): saving a fact is not a note edit
                 if let Ok(c) = vault_ops::confine(&root, &joined) {
-                    targets.push(c);
+                    if !memory::is_memory_rel(&c.rel) {
+                        targets.push(c);
+                    }
                 }
                 break;
             }

@@ -21,6 +21,7 @@ use super::events::*;
 use super::images::ImagePart;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 /// Tool output carried by `tool-call-finished` is cut here (on a char boundary). The full output
 /// stays in the CLI's own transcript.
@@ -718,6 +719,28 @@ pub struct ClaudeSpawn<'a> {
     pub add_dirs: &'a [String],
     /// The `--agents` JSON, `None` when orchestration is off.
     pub agents: Option<&'a str>,
+    /// The memory folder (`agent.memory` = `vault`, built by `memory::prepare_dir`), `None`
+    /// otherwise: becomes `--settings {"autoMemoryDirectory": ...}`. Never from model input.
+    pub memory_dir: Option<&'a Path>,
+}
+
+/// The `--settings` JSON that points the CLI's auto memory at `dir` (the `memory_directory`
+/// capability of the Claude adapter). Verified with claude 2.1.326: no settings file is written,
+/// the CLI saves `MEMORY.md` plus one note per fact there and a new session recalls them
+/// (`SPECs/agent-memory-spec.md` check 3). `dir` must be an absolute, plain UTF-8 path.
+pub fn memory_settings_json(dir: &Path) -> Result<String, String> {
+    let text = dir
+        .to_str()
+        .filter(|d| is_safe_value(d))
+        .ok_or("invalid memory folder")?;
+    if !dir.is_absolute()
+        || dir
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("the memory folder must be an absolute path".into());
+    }
+    Ok(serde_json::json!({ "autoMemoryDirectory": text }).to_string())
 }
 
 fn is_uuid(s: &str) -> bool {
@@ -822,6 +845,10 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
         // with 2.1.326, spec A.3. A fixed value, never user-supplied.
         a.push("--thinking-display".into());
         a.push("summarized".into());
+    }
+    if let Some(dir) = spawn.memory_dir {
+        a.push("--settings".into());
+        a.push(memory_settings_json(dir)?);
     }
     if let Some(prompt) = spawn.append_system_prompt.filter(|p| !p.is_empty()) {
         // A value after its flag is never parsed as a flag by the CLI, but keep NULs out.
@@ -1575,6 +1602,7 @@ mod tests {
             disallowed_tools: vec![],
             orchestrate: true,
             show_thinking: false,
+            memory: AgentMemory::Default,
             tier_models: Default::default(),
         }
     }
@@ -1590,6 +1618,7 @@ mod tests {
             append_system_prompt: None,
             add_dirs: &[],
             agents: None,
+            memory_dir: None,
         })
         .unwrap();
         assert_eq!(&args[..3], ["-p", "--input-format", "stream-json"]);
@@ -1619,6 +1648,7 @@ mod tests {
             append_system_prompt: None,
             add_dirs: &[],
             agents: None,
+            memory_dir: None,
         })
         .unwrap();
         assert!(resumed.contains(&"--resume".to_string()));
@@ -1644,6 +1674,7 @@ mod tests {
                 append_system_prompt: None,
                 add_dirs: &[],
                 agents: None,
+                memory_dir: None,
             })
             .unwrap();
             let at = args.iter().position(|a| a == "--thinking-display");
@@ -1666,6 +1697,7 @@ mod tests {
             append_system_prompt: Some("Project rules"),
             add_dirs: &dirs,
             agents: None,
+            memory_dir: None,
         })
         .unwrap();
         let pos = |f: &str| args.iter().position(|a| a == f).unwrap();
@@ -1689,6 +1721,7 @@ mod tests {
                 append_system_prompt: None,
                 add_dirs: &[],
                 agents: None,
+                memory_dir: None,
             })
         };
         assert!(bad(&|_| {}, SessionRef::New("not-a-uuid".into())).is_err());
@@ -1738,6 +1771,7 @@ mod tests {
                 append_system_prompt: None,
                 add_dirs: &[],
                 agents,
+                memory_dir: None,
             })
             .unwrap()
         };
@@ -1748,5 +1782,54 @@ mod tests {
         assert!(!build_title_args(None, "t")
             .unwrap()
             .contains(&"--agents".to_string()));
+    }
+
+    /// The memory flag: `--settings` carries `autoMemoryDirectory` only when a memory folder is
+    /// given (`agent.memory` = `vault`); without one the argv is exactly what it was before, and
+    /// the title call never has it.
+    #[test]
+    fn memory_folder_is_the_settings_flag_and_nothing_else_changes() {
+        let s = settings();
+        let argv = |memory_dir: Option<&Path>| {
+            build_args(&ClaudeSpawn {
+                session: SessionRef::New(UUID.into()),
+                settings: &s,
+                append_system_prompt: Some("block"),
+                add_dirs: &[],
+                agents: None,
+                memory_dir,
+            })
+            .unwrap()
+        };
+        let none = argv(None);
+        assert!(!none.contains(&"--settings".to_string()));
+        let dir = Path::new("/vault/.writer/memory");
+        let on = argv(Some(dir));
+        let pos = on.iter().position(|a| a == "--settings").unwrap();
+        assert_eq!(
+            on[pos + 1],
+            r#"{"autoMemoryDirectory":"/vault/.writer/memory"}"#
+        );
+        // everything else is the same, in the same order
+        let mut without = on.clone();
+        without.drain(pos..pos + 2);
+        assert_eq!(without, none);
+        let project = argv(Some(Path::new("/vault/Projects/P/.memory")));
+        assert!(project[pos + 1].contains("/vault/Projects/P/.memory"));
+        assert!(!build_title_args(None, "t")
+            .unwrap()
+            .contains(&"--settings".to_string()));
+    }
+
+    #[test]
+    fn memory_settings_json_refuses_unsafe_folders() {
+        assert!(memory_settings_json(Path::new("/v/.writer/memory")).is_ok());
+        for bad in ["", "relative/memory", "/v/../etc", "/v/a\nb", "/v/a\0b"] {
+            assert!(memory_settings_json(Path::new(bad)).is_err(), "{bad:?}");
+        }
+        // quotes and backslashes are escaped by the JSON encoder, never concatenated
+        let json = memory_settings_json(Path::new("/v/a\"b\\c")).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(back["autoMemoryDirectory"], "/v/a\"b\\c");
     }
 }

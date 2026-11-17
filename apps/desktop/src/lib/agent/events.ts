@@ -26,6 +26,7 @@ export type {
   AgentErrorKind,
   AgentEvent,
   AgentEventEnvelope,
+  AgentMemory,
   AgentPermissionMode,
   AgentSessionState,
   AgentSettings,

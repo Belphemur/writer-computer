@@ -152,6 +152,9 @@ impl Role {
 pub enum CapabilitySupport {
     /// The backend's tool names for it, in a stable order.
     Tools(&'static [&'static str]),
+    /// Not a tool but a backend setting, by its name there (Claude: `autoMemoryDirectory`, passed
+    /// as `--settings` JSON by `claude_stream::memory_settings_json`).
+    Setting(&'static str),
     /// The backend cannot grant it; what happens instead (the permission model, the prompt).
     Unsupported { fallback: &'static str },
 }
@@ -229,7 +232,9 @@ pub fn role_prompt(adapter: &dyn RoleAdapter, role: &Role, writer_cli: bool) -> 
         if prompt.contains(&token) {
             let names = match adapter.capability(cap) {
                 CapabilitySupport::Tools(names) => names.join(" and "),
-                CapabilitySupport::Unsupported { .. } => String::new(),
+                CapabilitySupport::Setting(_) | CapabilitySupport::Unsupported { .. } => {
+                    String::new()
+                }
             };
             prompt = prompt.replace(&token, &names);
         }
@@ -425,6 +430,7 @@ mod tests {
         for cap in registry().capabilities.keys() {
             match ClaudeAdapter.capability(cap) {
                 CapabilitySupport::Tools(t) => assert!(!t.is_empty(), "{cap}: no tools"),
+                CapabilitySupport::Setting(key) => assert!(!key.is_empty(), "{cap}: no setting"),
                 CapabilitySupport::Unsupported { fallback } => {
                     assert!(!fallback.is_empty(), "{cap}: no documented fallback")
                 }

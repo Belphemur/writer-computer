@@ -45,6 +45,17 @@ export const commands = {
 	 *  counts only.
 	 */
 	agentListSkills: (projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<DiskSkill[]>("plugin:agent|agent_list_skills", { projectPath }, options),
+	/**  The vault memory and, with `project_path` (vault-relative), that project's. */
+	agentMemoryList: (projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<MemoryOverview>("plugin:agent|agent_memory_list", { projectPath }, options),
+	/**  Deletes one memory file (a name, not a path) of the vault or the project memory. */
+	agentMemoryDelete: (scope: MemoryScope, projectPath: string | null, name: string, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_memory_delete", { scope, projectPath, name }, options),
+	/**  Empties the vault memory or the project memory; returns how many entries went. */
+	agentMemoryForgetAll: (scope: MemoryScope, projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<number>("plugin:agent|agent_memory_forget_all", { scope, projectPath }, options),
+	/**
+	 *  The user-clicked import of Claude Code's own memory for this vault and its projects (the only
+	 *  place the home folder is read, and only the matching `projects/<key>/memory/` folders).
+	 */
+	agentMemoryImportClaude: (options?: InvokeOptions) => __TAURI_INVOKE<ImportReport>("plugin:agent|agent_memory_import_claude", undefined, options),
 	agentListChats: (projectPath: string | null, includeArchived: boolean | null, all: boolean | null, query: string | null, options?: InvokeOptions) => __TAURI_INVOKE<ChatSummary[]>("plugin:agent|agent_list_chats", { projectPath, includeArchived, all, query }, options),
 	agentLoadChat: (chatId: string, options?: InvokeOptions) => __TAURI_INVOKE<LoadedChat>("plugin:agent|agent_load_chat", { chatId }, options),
 	agentSaveChat: (chatId: string, markdown: string, titleHint: string | null, options?: InvokeOptions) => __TAURI_INVOKE<ChatSummary>("plugin:agent|agent_save_chat", { chatId, markdown, titleHint }, options),
@@ -147,6 +158,13 @@ export type AgentEventEnvelope = {
 };
 
 /**
+ *  `agent.memory`: where the CLI keeps what it remembers across chats (ADR "Keep agent memory in
+ *  the vault ..."). `Vault` redirects it into the vault (`memory.rs`), `Default` leaves the CLI's
+ *  own home location (argv and env untouched), `Off` turns it off.
+ */
+export type AgentMemory = "vault" | "default" | "off";
+
+/**
  *  The CLI's `--permission-mode` choices minus `bypassPermissions`, which Writer never offers.
  *  (Wire names are the CLI's own camelCase, not kebab-case.)
  */
@@ -168,6 +186,8 @@ export type AgentSettings = {
 	 *  reasoning summary text (without it every thinking block is empty, spec A.3).
 	 */
 	showThinking: boolean,
+	/**  `agent.memory`. */
+	memory: AgentMemory,
 	/**
 	 *  The `agent.claude.model-<tier>` settings by tier id, as stored (the tiers are the ones of
 	 *  `shared/agent-roles.json`); Rust resolves them in `subagents::tier_model`.
@@ -277,6 +297,14 @@ export type FolderInspection = {
 	hasClaudeMd: boolean,
 };
 
+export type ImportReport = {
+	/**  Memory folders of Claude Code found for this vault and its projects. */
+	foldersFound: number,
+	imported: number,
+	/**  Already there (same name and text) or not importable (too large, not text, link). */
+	skipped: number,
+};
+
 export type LoadedChat = {
 	summary: ChatSummary,
 	markdown: string,
@@ -311,6 +339,34 @@ export type ManifestPreview = {
 	manifest: Manifest,
 	text: string,
 };
+
+/**  One file of a memory folder. */
+export type MemoryFile = {
+	name: string,
+	/**  Absolute path, to open it as a note. */
+	path: string,
+	bytes: number,
+	/**  Milliseconds since the epoch, 0 when unknown. */
+	modifiedMs: number,
+};
+
+export type MemoryFolder = {
+	scope: MemoryScope,
+	/**  Absolute path of the folder (it may not exist yet). */
+	path: string,
+	exists: boolean,
+	/**  Top-level regular files, the index first, then by name. */
+	files: MemoryFile[],
+};
+
+export type MemoryOverview = {
+	vault: MemoryFolder,
+	/**  `None` outside a project. */
+	project: MemoryFolder | null,
+};
+
+/**  Which memory folder a command acts on. */
+export type MemoryScope = "vault" | "project";
 
 export type PermissionDecision = "allow" | "deny";
 

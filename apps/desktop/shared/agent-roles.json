@@ -8,7 +8,8 @@
     "writer-cli-read": "Run read-only `writer` commands (search, backlinks, links, properties, bases, base:query)",
     "edit": "Modify existing files",
     "write": "Create files",
-    "bash-limited": "Run shell commands; only the permission rules decide which"
+    "bash-limited": "Run shell commands; only the permission rules decide which",
+    "memory-directory": "Keep what the agent remembers across chats in a given folder (a session setting, never granted to a role)"
   },
   "roles": [
     {

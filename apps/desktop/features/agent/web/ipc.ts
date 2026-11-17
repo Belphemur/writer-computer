@@ -19,6 +19,7 @@ import type {
   ChatActionName,
   ContextRef,
   Effort,
+  MemoryScope,
   PermissionDecision,
   PermissionPersist,
   ProjectUpdate,
@@ -89,6 +90,18 @@ export interface AgentCommands {
     { chatId: string; turnId: string; paths: string[] }
   >;
   agent_list_skills: Command<"agent_list_skills", { projectPath: string | null }>;
+  /** The vault memory and, with a project, that project's (`.writer/memory/`, `<project>/.memory/`). */
+  agent_memory_list: Command<"agent_memory_list", { projectPath: string | null }>;
+  agent_memory_delete: Command<
+    "agent_memory_delete",
+    { scope: MemoryScope; projectPath: string | null; name: string }
+  >;
+  agent_memory_forget_all: Command<
+    "agent_memory_forget_all",
+    { scope: MemoryScope; projectPath: string | null }
+  >;
+  /** The user-clicked import of Claude Code's own memory for this vault and its projects. */
+  agent_memory_import_claude: Command<"agent_memory_import_claude", Record<string, never>>;
   /** `all: true` lists every project's chats; `query` filters by title and first user message. */
   agent_list_chats: Command<
     "agent_list_chats",

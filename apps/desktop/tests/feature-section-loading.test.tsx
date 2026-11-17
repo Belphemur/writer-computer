@@ -5,6 +5,7 @@
 import { act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { memoryOverview } from "@features/agent/tests/memory-fixture";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -134,6 +135,7 @@ describe("Settings > Agent before detection resolves", () => {
     invokeMock.mockReset();
     invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === "plugin:agent|agent_detect_binary") return new Promise((r) => (finish = r));
+      if (cmd === "plugin:agent|agent_memory_list") return memoryOverview({ vaultFiles: [] });
       return [];
     });
     featureHost.register(agentFeature);

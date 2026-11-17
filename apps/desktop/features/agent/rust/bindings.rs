@@ -4,7 +4,7 @@
 //! `collect_commands!` needs the concrete runtime in each `::<Wry>`: it cannot see the generic
 //! parameter of an enclosing function, and the metadata it collects does not depend on the runtime
 //! (the handler itself stays generic, so the same list serves the mock runtime in tests).
-use super::commands::{chats, projects, session, skills};
+use super::commands::{chats, memory, projects, session, skills};
 use crate::agent::events::AgentEventEnvelope;
 use tauri::{Runtime, Wry};
 use tauri_specta::{collect_commands, Builder};
@@ -34,6 +34,10 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             session::agent_turn_changes::<Wry>,
             session::agent_revert_changes::<Wry>,
             skills::agent_list_skills::<Wry>,
+            memory::agent_memory_list::<Wry>,
+            memory::agent_memory_delete::<Wry>,
+            memory::agent_memory_forget_all::<Wry>,
+            memory::agent_memory_import_claude::<Wry>,
             chats::agent_list_chats::<Wry>,
             chats::agent_load_chat::<Wry>,
             chats::agent_save_chat::<Wry>,

@@ -157,6 +157,16 @@
       "default": true
     },
     {
+      "key": "agent.memory",
+      "label": "Agent memory",
+      "description": "Where the agent keeps what it remembers across chats. Vault: plain Markdown files in the vault (.writer/memory/ for the whole vault, <project>/.memory/ for a project), readable and editable by anyone with the vault. Default: Claude Code's own folder in your home directory. Off: no memory. Applies to chats started or resumed after the change.",
+      "category": "Agent",
+      "type": "enum",
+      "options": ["vault", "default", "off"],
+      "scope": "global",
+      "default": "vault"
+    },
+    {
       "key": "agent.orchestrate",
       "label": "Orchestrate with sub-agents",
       "description": "Tell the agent to split work into parts and run sub-agents in parallel: the cheap read-only writer-explorer for exploring, searching and summarising, and the writer-worker for bounded edits (its edits appear on the Changes card, labelled with the sub-agent, and can be undone), doing only very simple work itself. Adds a short paragraph to the Writer system block and defines the sub-agents with --agents. Their tool calls use the same permission prompts and allow rules. Turn off to chat with a single agent.",

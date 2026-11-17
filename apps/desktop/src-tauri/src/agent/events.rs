@@ -108,6 +108,17 @@ impl AgentPermissionMode {
     }
 }
 
+/// `agent.memory`: where the CLI keeps what it remembers across chats (ADR "Keep agent memory in
+/// the vault ..."). `Vault` redirects it into the vault (`memory.rs`), `Default` leaves the CLI's
+/// own home location (argv and env untouched), `Off` turns it off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentMemory {
+    Vault,
+    Default,
+    Off,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionPersist {
@@ -547,6 +558,8 @@ pub struct AgentSettings {
     /// `agent.show-thinking`: spawn with `--thinking-display summarized` so the CLI sends the
     /// reasoning summary text (without it every thinking block is empty, spec A.3).
     pub show_thinking: bool,
+    /// `agent.memory`.
+    pub memory: AgentMemory,
     /// The `agent.claude.model-<tier>` settings by tier id, as stored (the tiers are the ones of
     /// `shared/agent-roles.json`); Rust resolves them in `subagents::tier_model`.
     #[serde(default)]
@@ -939,6 +952,7 @@ mod tests {
                 disallowed_tools: vec![],
                 orchestrate: true,
                 show_thinking: true,
+                memory: AgentMemory::Vault,
                 tier_models: BTreeMap::from([("cheap".to_string(), Some("haiku".to_string()))]),
             },
             append_system_prompt: None,

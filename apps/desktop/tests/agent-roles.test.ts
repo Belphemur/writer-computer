@@ -43,6 +43,7 @@ describe("agent roles registry", () => {
       "edit",
       "write",
       "bash-limited",
+      "memory-directory",
     ]);
   });
 
@@ -55,6 +56,11 @@ describe("agent roles registry", () => {
       for (const cap of role.capabilities)
         expect(capabilities, `${role.id}: ${cap}`).toContain(cap);
     }
+  });
+
+  it("grants no role the memory-directory capability (it is a session setting)", () => {
+    for (const role of AGENT_ROLES)
+      expect(role.capabilities, role.id).not.toContain("memory-directory");
   });
 
   it("keeps read-only roles away from every writing capability", () => {

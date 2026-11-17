@@ -417,3 +417,32 @@ fn turn_ids_differ_and_a_new_turn_starts_after_finish() {
         .unwrap();
     assert_eq!(out[0].result, RevertResult::ChangedSince);
 }
+
+#[test]
+fn memory_writes_are_not_changes_but_note_edits_in_the_same_turn_are() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::create_dir_all(root.join("Projects/P")).unwrap();
+    std::fs::write(root.join("a.md"), "one\n").unwrap();
+    // a turn that only saves memory (vault and project) leaves no card
+    for rel in [
+        ".writer/memory/MEMORY.md",
+        ".writer/memory/user-cat.md",
+        "Projects/P/.memory/MEMORY.md",
+    ] {
+        cap(&store, &root, "Write", rel);
+        std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
+        std::fs::write(root.join(rel), "m\n").unwrap();
+    }
+    assert!(finish(&store).is_none());
+    // the same writes next to a note edit: only the note is listed (and undoable)
+    for rel in [".writer/memory/MEMORY.md", "Projects/P/.memory/MEMORY.md"] {
+        cap(&store, &root, "Edit", rel);
+        std::fs::write(root.join(rel), "m2\n").unwrap();
+    }
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "one\ntwo\n").unwrap();
+    let s = finish(&store).unwrap();
+    assert_eq!(s.files.len(), 1);
+    assert_eq!(file(&s, "a.md").status, ChangeStatus::Modified);
+}

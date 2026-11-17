@@ -99,6 +99,8 @@ pub(crate) struct LaunchConfig {
     /// Directory holding the `writer` launcher, put first on the child's PATH (`cli_launcher`);
     /// `None` when there is none.
     pub cli_dir: Option<PathBuf>,
+    /// The memory folder of this chat (`agent.memory` = `vault`), created already.
+    pub memory_dir: Option<PathBuf>,
     pub settings: AgentSettings,
 }
 
@@ -142,6 +144,7 @@ struct Inner {
     add_dirs: Vec<String>,
     agents: Option<String>,
     cli_dir: Option<PathBuf>,
+    memory_dir: Option<PathBuf>,
     settings: AgentSettings,
 
     session_id: String,
@@ -294,7 +297,8 @@ pub(crate) fn redact_prompt(args: &[String]) -> Vec<String> {
             out.push(format!("<{} bytes>", a.len()));
             redact = false;
         } else {
-            redact = a == "--append-system-prompt";
+            // the prompt and the memory folder's path stay out of the log (spec section 8)
+            redact = a == "--append-system-prompt" || a == "--settings";
             out.push(a.clone());
         }
     }
@@ -338,6 +342,7 @@ impl Session {
                 add_dirs: config.add_dirs,
                 agents: config.agents,
                 cli_dir: config.cli_dir,
+                memory_dir: config.memory_dir,
                 settings: config.settings,
                 session_id: init.session_id,
                 resume_next: init.resume,
@@ -419,6 +424,7 @@ impl Session {
         g.add_dirs = config.add_dirs;
         g.agents = config.agents;
         g.cli_dir = config.cli_dir;
+        g.memory_dir = config.memory_dir;
         g.settings = config.settings;
     }
 
@@ -444,7 +450,7 @@ impl Session {
     }
 
     fn ensure_inner(self: &Arc<Self>) -> Result<(), SpawnError> {
-        let (program, args, used_resume, cli_dir) = {
+        let (program, args, used_resume, cli_dir, memory_off) = {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
@@ -469,16 +475,26 @@ impl Session {
                 append_system_prompt: g.system_prompt.as_deref(),
                 add_dirs: &g.add_dirs,
                 agents: g.agents.as_deref(),
+                memory_dir: g.memory_dir.as_deref(),
             })
             .map_err(SpawnError::Invalid)?;
             g.spawning = true;
             if g.state != AgentSessionState::Reconnecting {
                 g.state = AgentSessionState::Starting;
             }
-            (program, args, used_resume, g.cli_dir.clone())
+            (
+                program,
+                args,
+                used_resume,
+                g.cli_dir.clone(),
+                g.settings.memory == AgentMemory::Off,
+            )
         };
 
-        let env = env::current(cli_dir.as_deref());
+        let mut env = env::current(cli_dir.as_deref());
+        if memory_off {
+            env = env::with_auto_memory_off(env);
+        }
         let display = redact_prompt(&args);
         self.launch(program, args, display, env, used_resume)
     }
@@ -1477,6 +1493,20 @@ mod tests {
         let r = redact_prompt(&args);
         assert_eq!(r[2], "<16 bytes>");
         assert!(!r.join(" ").contains("secret"));
+        assert_eq!(r[4], "x");
+    }
+
+    /// The memory folder is a vault path: it stays out of the spawn log like the prompt.
+    #[test]
+    fn the_settings_value_is_redacted_in_logs() {
+        let json = r#"{"autoMemoryDirectory":"/Users/me/Vault/.writer/memory"}"#;
+        let args: Vec<String> = ["-p", "--settings", json, "--model", "x"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let r = redact_prompt(&args);
+        assert_eq!(r[2], format!("<{} bytes>", json.len()));
+        assert!(!r.join(" ").contains("/Users"));
         assert_eq!(r[4], "x");
     }
 }

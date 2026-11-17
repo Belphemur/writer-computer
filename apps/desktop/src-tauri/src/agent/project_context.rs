@@ -16,7 +16,7 @@ use super::events::{AgentPermissionMode, ProjectSource};
 use super::ports::{InjectAgentsMd, ProjectPort, SpawnContext};
 use super::project::{self, ProjectDetail, ProjectUpdate, AGENTS_FILE, CLAUDE_FILE};
 use super::roles::Rendered;
-use super::writer_prompt;
+use super::writer_prompt::{self, MemoryNote};
 use crate::index::{FileFilter, Index};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -589,6 +589,8 @@ pub struct BundleInput<'a> {
     /// The sub-agent roles the adapter produced (`None`: orchestration is off): the Writer block's
     /// orchestration line is rendered from them.
     pub orchestration: Option<&'a Rendered>,
+    /// The Writer block's memory line (`None`: no memory line).
+    pub memory: Option<MemoryNote<'a>>,
 }
 
 /// Build the per-spawn context. Text only, no note bodies (a shadowed `AGENTS.md` is the one
@@ -637,8 +639,11 @@ pub fn build(input: &BundleInput) -> std::io::Result<ContextBundle> {
         .filter(|t| !t.is_empty());
 
     // The Writer system block opens every prompt, before the instruction files and the project.
-    let mut sections: Vec<String> =
-        vec![writer_prompt::render(input.writer_cli, input.orchestration)];
+    let mut sections: Vec<String> = vec![writer_prompt::render(
+        input.writer_cli,
+        input.orchestration,
+        input.memory,
+    )];
     let injected: Vec<&InstructionAudit> = instructions
         .iter()
         .filter(|a| matches!(a.status, InstructionStatus::Injected { .. }))
@@ -728,6 +733,7 @@ impl ProjectPort for ProjectLibrary {
             index: Some(&fs_index),
             writer_cli: ctx.writer_cli,
             orchestration: ctx.orchestration,
+            memory: ctx.memory,
         })
         .map_err(|e| e.to_string())?;
         Ok(
@@ -910,6 +916,7 @@ mod tests {
             requested_prompt: Some("from ui"),
             writer_cli: false,
             orchestration: None,
+            memory: None,
         };
         let s = lib.append_system_prompt(&ctx).unwrap().unwrap();
         assert!(s.starts_with("from ui\n\n"));
@@ -947,7 +954,7 @@ mod tests {
         };
         assert_eq!(
             lib.append_system_prompt(&ctx2).unwrap(),
-            Some(writer_prompt::render(false, None))
+            Some(writer_prompt::render(false, None, None))
         );
     }
 
@@ -1067,6 +1074,7 @@ mod tests {
             index: Some(&fake),
             writer_cli: true,
             orchestration: None,
+            memory: None,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
@@ -1090,12 +1098,13 @@ mod tests {
             index: None,
             writer_cli,
             orchestration: None,
+            memory: None,
         };
         for cli in [false, true] {
             let b = build(&input(cli)).unwrap();
             assert_eq!(
                 b.append_system_prompt.unwrap(),
-                writer_prompt::render(cli, None)
+                writer_prompt::render(cli, None, None)
             );
         }
         // A project with a native-loaded AGENTS.md: the block, then the header, no instruction text.
@@ -1108,10 +1117,11 @@ mod tests {
             index: None,
             writer_cli: false,
             orchestration: None,
+            memory: None,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
-        assert!(s.starts_with(&writer_prompt::render(false, None)));
+        assert!(s.starts_with(&writer_prompt::render(false, None, None)));
         assert!(s.contains("## Project: P") && !s.contains("Be brief."));
     }
 
@@ -1130,11 +1140,12 @@ mod tests {
             index: None,
             writer_cli: true,
             orchestration: None,
+            memory: None,
         })
         .unwrap();
         let expected = format!(
             "{}\nThe following instruction files are not loaded automatically; follow them. Later instructions take precedence over earlier ones.\n\n### AGENTS.md\n\nvault rules\n\n## Project: P\nDesc\nProject folder: Projects/P\n",
-            writer_prompt::render(true, None)
+            writer_prompt::render(true, None, None)
         );
         assert_eq!(b.append_system_prompt.unwrap(), expected);
     }

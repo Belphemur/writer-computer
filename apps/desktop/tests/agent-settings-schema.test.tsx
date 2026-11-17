@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { memoryOverview } from "@features/agent/tests/memory-fixture";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -57,6 +58,7 @@ describe("agent.* settings contract", () => {
       "agent.chats-keep-days": 0,
       "agent.auto-title-chats": true,
       "agent.show-thinking": true,
+      "agent.memory": "vault",
       "agent.orchestrate": true,
       "agent.claude.model-cheap": "haiku",
       "agent.claude.model-standard": "sonnet",
@@ -92,6 +94,12 @@ describe("agent.* settings contract", () => {
       "max",
     ]);
     expect(byKey("agent.permission-mode").options).not.toContain("bypassPermissions");
+    expect(byKey("agent.memory").options).toEqual(["vault", "default", "off"]);
+  });
+
+  it("reads agent.memory, and a value that is not an option falls back to the schema default", () => {
+    expect(agentSettingsFrom({ "agent.memory": "default" }).memory).toBe("default");
+    expect(agentSettingsFrom({ "agent.memory": "elsewhere" }).memory).toBe("vault");
   });
 
   it("trims the free-text keys", () => {
@@ -113,6 +121,7 @@ describe("agent.* settings contract", () => {
       disallowedTools: [],
       orchestrate: true,
       showThinking: true,
+      memory: "vault",
       tierModels: { cheap: "haiku", standard: "sonnet", strong: "default" },
     });
     expect(
@@ -120,6 +129,7 @@ describe("agent.* settings contract", () => {
         ...defaults,
         "agent.orchestrate": false,
         "agent.show-thinking": false,
+        "agent.memory": "off",
         "agent.claude.model-cheap": "  ",
         "agent.effort": "high",
         "agent.permission-mode": "acceptEdits",
@@ -131,6 +141,7 @@ describe("agent.* settings contract", () => {
       allowedTools: ["Bash(git status)"],
       orchestrate: false,
       showThinking: false,
+      memory: "off",
       tierModels: { cheap: null, standard: "sonnet", strong: "default" },
     });
   });
@@ -171,6 +182,7 @@ describe("Settings > Agent", () => {
     invokeMock.mockReset();
     invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
       if (cmd === "plugin:agent|agent_detect_binary") return detect;
+      if (cmd === "plugin:agent|agent_memory_list") return memoryOverview({ vaultFiles: [] });
       if (cmd === "plugin:agent|agent_permission_rules")
         return { allow: ["Bash(ls)"], deny: ["Bash(rm)"] };
       if (cmd === "set_setting") {

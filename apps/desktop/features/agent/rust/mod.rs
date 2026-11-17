@@ -43,7 +43,7 @@ impl<R: Runtime> Feature<R> for Agent {
         Some(include_str!("../settings.schema.json"))
     }
 
-    /// The 30 `plugin:agent|agent_*` commands; the list is `bindings::builder`.
+    /// The `plugin:agent|agent_*` commands; the list is `bindings::builder`.
     fn invoke_handler(&self) -> Option<InvokeHandler<R>> {
         Some(Box::new(bindings::builder::<R>().invoke_handler()))
     }
@@ -217,6 +217,76 @@ mod tests {
             json!({ "chatId": chat, "turnId": "t1", "paths": [] }),
         );
         assert_eq!(r, Ok(serde_json::Value::Null));
+    }
+
+    /// The memory commands on a fixture vault: list, delete and forget-all act on the memory
+    /// folders only and a path is refused as a name. The import is tested in `agent/memory_tests.rs`
+    /// against a fake home; no test here calls it, so the real home is never read.
+    #[test]
+    fn the_memory_commands_work_on_a_fixture_vault_and_stay_in_the_memory_folders() {
+        let app = app_with(agent());
+        app.manage(AppState::new());
+        let vault = tempfile::tempdir().unwrap();
+        let root = vault.path().canonicalize().unwrap();
+        let mem = root.join(".writer/memory");
+        std::fs::create_dir_all(&mem).unwrap();
+        std::fs::write(mem.join("MEMORY.md"), "i").unwrap();
+        std::fs::write(mem.join("user-cat.md"), "Miso").unwrap();
+        std::fs::write(root.join("note.md"), "keep").unwrap();
+        app.state::<AppState>()
+            .get_or_create("main")
+            .replace_workspace_root(root.clone());
+
+        let listed = call_with(
+            &app,
+            "main",
+            "agent_memory_list",
+            json!({ "projectPath": null }),
+        )
+        .unwrap();
+        let names: Vec<_> = listed["vault"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["name"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(names, ["MEMORY.md", "user-cat.md"]);
+        assert_eq!(listed["project"], serde_json::Value::Null);
+
+        let del = |name: &str| {
+            call_with(
+                &app,
+                "main",
+                "agent_memory_delete",
+                json!({ "scope": "vault", "projectPath": null, "name": name }),
+            )
+        };
+        assert!(del("../note.md").is_err());
+        assert!(root.join("note.md").exists());
+        del("user-cat.md").unwrap();
+        assert!(!mem.join("user-cat.md").exists());
+
+        // a project path outside the vault is refused
+        assert!(call_with(
+            &app,
+            "main",
+            "agent_memory_forget_all",
+            json!({ "scope": "project", "projectPath": "../x" }),
+        )
+        .is_err());
+        let n = call_with(
+            &app,
+            "main",
+            "agent_memory_forget_all",
+            json!({ "scope": "vault", "projectPath": null }),
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert!(mem.is_dir() && std::fs::read_dir(&mem).unwrap().count() == 0);
+        assert_eq!(
+            std::fs::read_to_string(root.join("note.md")).unwrap(),
+            "keep"
+        );
     }
 
     #[test]

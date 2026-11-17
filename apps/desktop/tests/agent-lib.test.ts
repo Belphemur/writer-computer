@@ -145,6 +145,7 @@ describe("settings", () => {
       disallowedTools: [],
       orchestrate: true,
       showThinking: true,
+      memory: "vault",
       tierModels: { cheap: "haiku", standard: "sonnet", strong: "default" },
     });
     expect(
