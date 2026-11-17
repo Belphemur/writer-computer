@@ -154,8 +154,20 @@
         "when": "in-table"
       },
       {
+        "id": "tables.toggleSource",
+        "label": "Table: Edit source / Done",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
         "id": "tables.delete",
         "label": "Table: Delete table",
+        "description": "Command",
+        "when": "in-table"
+      },
+      {
+        "id": "tables.expand",
+        "label": "Table: Expand table",
         "description": "Command",
         "when": "in-table"
       }

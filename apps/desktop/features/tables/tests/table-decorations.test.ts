@@ -5,6 +5,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
 import { foldExtension } from "../../../src/lib/prosemark-core/main";
 import { parseTableCellInlineMarkdown, tableDecorations } from "../web/table-decorations";
+import { toggleTableSource } from "../web/table-state";
 
 const before = "before\n";
 const table = ["| Name | Count |", "| --- | ---: |", "| Tea | 2 |"].join("\n");
@@ -159,8 +160,27 @@ describe("tableDecorations", () => {
     expect(foldedTableEstimate(longTable)).toBeGreaterThan(foldedTableEstimate(shortTable));
   });
 
-  test("unfolds a touched table as codeblock-styled source lines", () => {
-    const decorations = collectFoldDecorations(makeState(tableFrom + 2));
+  test("keeps a touched table rendered: clicking or entering it never unfolds it", () => {
+    for (const state of [
+      makeState(tableFrom + 2),
+      makeState(tableTo, tableFrom),
+      makeState(tableFrom),
+    ]) {
+      const decorations = collectFoldDecorations(state);
+      expect(decorations).toContainEqual(
+        expect.objectContaining({ from: tableFrom, to: tableTo, hasWidget: true }),
+      );
+      expect(decorations.some((d) => d.className.includes("cm-table-source-line"))).toBe(false);
+    }
+  });
+
+  test("shows a table as codeblock-styled source lines only after the Edit source toggle", () => {
+    const state = makeState(tableFrom + 2);
+    const toggled = state.update({
+      effects: toggleTableSource.of(tableFrom),
+      selection: state.selection,
+    }).state;
+    const decorations = collectFoldDecorations(toggled);
     const sourceLines = decorations.filter((d) => d.className.includes("cm-table-source-line"));
 
     expect(sourceLines).toHaveLength(3);
@@ -176,13 +196,12 @@ describe("tableDecorations", () => {
     expect(decorations.some((d) => d.from === tableFrom && d.to === tableTo && d.hasWidget)).toBe(
       false,
     );
-  });
 
-  test("range-selecting the whole table keeps source decorations instead of dropping the fold", () => {
-    const decorations = collectFoldDecorations(makeState(tableTo, tableFrom));
-
-    expect(decorations.length).toBeGreaterThan(0);
-    expect(decorations.every((d) => !d.hasWidget)).toBe(true);
-    expect(decorations.filter((d) => d.className.includes("cm-table-source-line"))).toHaveLength(3);
+    // Done: the second toggle renders it again.
+    const back = toggled.update({
+      effects: toggleTableSource.of(tableFrom),
+      selection: toggled.selection,
+    }).state;
+    expect(collectFoldDecorations(back).some((d) => d.hasWidget)).toBe(true);
   });
 });

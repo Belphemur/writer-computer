@@ -46,6 +46,13 @@ import {
 } from "./markdown-table";
 import { usePluginsStore } from "@/stores/plugins-store";
 import { getTableEditorView, setTableContextProbe, setTableEditorView } from "./active";
+import {
+  focusInlineCell,
+  tableSourceField as tableSourceFieldRef,
+  getFullscreenHooks,
+  isTableSource,
+  toggleTableSource,
+} from "./table-state";
 
 // ---------------------------------------------------------------------------
 // Yielding to the Obsidian Advanced Tables plugin
@@ -149,7 +156,7 @@ export function tableContextAt(state: EditorState): TableContext | null {
 
 type Place = number | "end";
 
-function replaceTable(
+export function replaceTable(
   state: EditorState,
   ctx: TableContext,
   next: MarkdownTable,
@@ -197,6 +204,17 @@ function tableCommand(
     );
     return true;
   };
+}
+
+/** Applies a table edit made from the rendered table: one transaction, canonical markdown. */
+export function applyTableEdit(
+  view: EditorView,
+  ctx: TableContext,
+  table: MarkdownTable,
+  cursor: TableCursor,
+  userEvent: string,
+): void {
+  view.dispatch(view.state.update(replaceTable(view.state, ctx, table, cursor, "end", userEvent)));
 }
 
 const effectiveRow = (ctx: TableContext): number =>
@@ -329,9 +347,47 @@ const deleteTableCommand: StateCommand = ({ state, dispatch }) => {
   return true;
 };
 
+/** Edit source / Done: shows the table under the caret as markdown (or back as the rendered table). */
+export const toggleSourceCommand: StateCommand = ({ state, dispatch }) => {
+  const ctx = tableContextAt(state);
+  if (!ctx) return false;
+  dispatch(
+    state.update({
+      effects: toggleTableSource.of(ctx.from),
+      selection: state.selection,
+      scrollIntoView: true,
+    }),
+  );
+  return true;
+};
+
+/**
+ * The same toggle for a table that is not under the caret (its "Edit source" button): the caret goes
+ * into the table first, in its header's first cell unless it is already there.
+ */
+export function toggleTableSourceAt(view: EditorView, from: number): void {
+  const ctx = tableContextAtPos(view.state, from);
+  if (!ctx) return;
+  getFullscreenHooks()?.close(view);
+  const current = tableContextAt(view.state);
+  const caret =
+    current && current.from === ctx.from
+      ? view.state.selection.main.head
+      : ctx.from + layoutTable(ctx.table).cellRange(HEADER_ROW, 0).to;
+  view.dispatch({
+    effects: toggleTableSource.of(ctx.from),
+    selection: EditorSelection.cursor(caret),
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
 // -- Navigation --------------------------------------------------------------
 
-function nextCursor(ctx: TableContext, dir: 1 | -1): { cursor: TableCursor; grow: boolean } {
+export function nextCursor(
+  ctx: Pick<TableContext, "table" | "cursor">,
+  dir: 1 | -1,
+): { cursor: TableCursor; grow: boolean } {
   const n = columnCount(ctx.table);
   const { row, col } = ctx.cursor;
   const last = ctx.table.rows.length - 1;
@@ -359,7 +415,7 @@ export const nextCell = (dir: 1 | -1): StateCommand =>
     return { table: grow ? insertRow(ctx.table, ctx.table.rows.length) : ctx.table, cursor };
   }, "select.table.cell");
 
-const isBlankRow = (cells: readonly string[]) => cells.every((c) => c === "");
+export const isBlankRow = (cells: readonly string[]) => cells.every((c) => c === "");
 
 /** Where the caret goes to leave a table that ends at `end`, and the text it takes to get there. */
 function exitBelow(
@@ -377,7 +433,11 @@ function exitBelow(
   return { changes: { from: l1.to, insert: "\n" }, caret: l1.to + 1 };
 }
 
-function exitTable(state: EditorState, ctx: TableContext, table: MarkdownTable): TransactionSpec {
+export function exitTable(
+  state: EditorState,
+  ctx: TableContext,
+  table: MarkdownTable,
+): TransactionSpec {
   const text = layoutTable(table).lines.join("\n");
   const old = state.sliceDoc(ctx.from, ctx.to);
   // Format, then step out below. Build one change list against the old document.
@@ -576,6 +636,7 @@ export const tableCommands = {
   "table.transpose": { label: "Transpose table", run: transposeCommand },
   "table.clearCell": { label: "Clear cell", run: clearCellCommand },
   "table.delete": { label: "Delete table", run: deleteTableCommand },
+  "table.toggleSource": { label: "Edit source / Done", run: toggleSourceCommand },
 } as const satisfies Record<string, TableCommandDef>;
 
 export type TableCommandId = keyof typeof tableCommands;
@@ -607,6 +668,7 @@ export const TABLE_MENU_LAYOUT: ReadonlyArray<"---" | TableCommandId> = [
   "table.transpose",
   "---",
   "table.format",
+  "table.toggleSource",
   "table.delete",
 ];
 
@@ -621,9 +683,56 @@ export function runTableCommand(view: EditorView, id: TableCommandId): boolean {
 function guarded(run: StateCommand): (view: EditorView) => boolean {
   return (view) => {
     if (yieldProbe()) return false;
+    // A rendered table is edited in its cells; these keys belong to the source view.
+    const ctx = tableContextAt(view.state);
+    if (ctx && !isTableSource(view.state, ctx.from)) return false;
     return run({ state: view.state, dispatch: (tr) => view.dispatch(tr) });
   };
 }
+
+// -- Arrow keys into a rendered table ---------------------------------------
+
+/**
+ * An arrow key that would step into a rendered table lands in its first cell (moving down or
+ * right) or its last cell (moving up or left) instead of unfolding it.
+ */
+export function enterAdjacentTable(
+  view: EditorView,
+  dir: "up" | "down" | "left" | "right",
+): boolean {
+  const { state } = view;
+  const sel = state.selection.main;
+  if (!sel.empty) return false;
+  const { doc } = state;
+  const line = doc.lineAt(sel.head);
+  const forward = dir === "down" || dir === "right";
+  if (dir === "right" && sel.head !== line.to) return false;
+  if (dir === "left" && sel.head !== line.from) return false;
+  if ((dir === "down" || dir === "up") && line.text.trim() !== "") {
+    // Only when the move would leave this line (a wrapped line keeps its own visual rows).
+    const moved = view.moveVertically(sel, forward);
+    if (doc.lineAt(moved.head).number === line.number) return false;
+  }
+  let n = line.number + (forward ? 1 : -1);
+  while (n >= 1 && n <= doc.lines && doc.line(n).text.trim() === "") n += forward ? 1 : -1;
+  if (n < 1 || n > doc.lines) return false;
+  const edge = doc.line(n);
+  const ctx = tableContextAtPos(state, edge.from);
+  if (!ctx || isTableSource(state, ctx.from)) return false;
+  if (forward ? ctx.from !== edge.from : ctx.to !== edge.to) return false;
+  const cursor = forward
+    ? { row: HEADER_ROW, col: 0 }
+    : {
+        row: ctx.table.rows.length > 0 ? ctx.table.rows.length - 1 : HEADER_ROW,
+        col: columnCount(ctx.table) - 1,
+      };
+  return focusInlineCell(view, ctx.from, cursor.row, cursor.col);
+}
+
+const arrowKeymap: KeyBinding[] = (["up", "down", "left", "right"] as const).map((dir) => ({
+  key: `Arrow${dir[0].toUpperCase()}${dir.slice(1)}`,
+  run: (view: EditorView) => enterAdjacentTable(view, dir),
+}));
 
 const tableKeymap: KeyBinding[] = [
   { key: "Tab", run: guarded(nextCell(1)) },
@@ -642,7 +751,7 @@ const tableKeymap: KeyBinding[] = [
 // Paste
 // ---------------------------------------------------------------------------
 
-function gridFromClipboard(data: DataTransfer | null): string[][] | null {
+export function gridFromClipboard(data: DataTransfer | null): string[][] | null {
   if (!data) return null;
   const html = data.getData("text/html");
   const fromHtml = html ? rowsFromHtmlTable(html) : null;
@@ -653,9 +762,13 @@ function gridFromClipboard(data: DataTransfer | null): string[][] | null {
   return rows.length > 0 ? rows : null;
 }
 
-const isMultiCell = (grid: string[][]) => grid.length > 1 || grid[0].length > 1;
+export const isMultiCell = (grid: string[][]) => grid.length > 1 || grid[0].length > 1;
 
-function pasteIntoTable(state: EditorState, ctx: TableContext, grid: string[][]): TransactionSpec {
+export function pasteIntoTable(
+  state: EditorState,
+  ctx: TableContext,
+  grid: string[][],
+): TransactionSpec {
   let table = ctx.table;
   const startRow =
     ctx.cursor.row === HEADER_ROW ? 0 : ctx.cursor.row === DELIMITER_ROW ? 1 : ctx.cursor.row + 1;
@@ -687,6 +800,7 @@ const pasteHandler = EditorView.domEventHandlers({
     const { state } = view;
     const ctx = tableContextAt(state);
     const grid = gridFromClipboard(event.clipboardData);
+    if (ctx && !isTableSource(state, ctx.from)) return false;
     if (ctx) {
       if (grid && isMultiCell(grid)) {
         event.preventDefault();
@@ -745,6 +859,8 @@ export { getTableEditorView };
 setTableContextProbe((state) => tableContextAt(state) !== null);
 
 const TOOLBAR: ReadonlyArray<readonly [TableCommandId, string, string] | "---"> = [
+  ["table.toggleSource", "Done", "Back to the rendered table"],
+  "---",
   ["table.addRowBelow", "+ Row", "Add row below"],
   ["table.addColumnRight", "+ Col", "Add column right"],
   "---",
@@ -770,6 +886,7 @@ class TableEditingPlugin {
   /** The table the caret was last in, and whether it was edited during the visit. */
   private visit: { from: number; to: number; edited: boolean } | null = null;
   private pending: number | null = null;
+  private redirecting = false;
 
   constructor(private view: EditorView) {
     this.toolbar = document.createElement("div");
@@ -825,6 +942,8 @@ class TableEditingPlugin {
     if (u.selectionSet || u.docChanged) {
       if (this.visit && !(ctx && ctx.from === this.visit.from)) {
         if (this.visit.edited && !yieldProbe()) this.scheduleFormat(this.visit.from);
+        if (u.state.field(tableSourceFieldRef, false)?.includes(this.visit.from))
+          this.scheduleLeaveSource(this.visit.from);
         this.visit = null;
       }
       if (ctx) {
@@ -833,6 +952,37 @@ class TableEditingPlugin {
       }
     }
     this.refresh(ctx);
+    getFullscreenHooks()?.update(u);
+    if ((u.focusChanged || u.selectionSet || u.docChanged) && u.view.hasFocus)
+      this.redirectToCell(ctx);
+  }
+
+  /** The caret may not rest in a rendered table (it would be typing into hidden source): move it to the cell. */
+  private redirectToCell(ctx: TableContext | null) {
+    if (!ctx || isTableSource(this.view.state, ctx.from) || this.redirecting) return;
+    if (getFullscreenHooks()?.isOpenFor(this.view)) return;
+    this.redirecting = true;
+    const { from, cursor } = ctx;
+    queueMicrotask(() => {
+      this.redirecting = false;
+      if (!this.view.dom.isConnected || !this.view.hasFocus) return;
+      const row = cursor.row === DELIMITER_ROW ? HEADER_ROW : cursor.row;
+      focusInlineCell(this.view, from, row, cursor.col);
+    });
+  }
+
+  /** The caret left a table that was shown as source: show it rendered again. */
+  private scheduleLeaveSource(from: number) {
+    queueMicrotask(() => {
+      if (!this.view.dom.isConnected) return;
+      const state = this.view.state;
+      const pos = Math.min(from, state.doc.length);
+      const ctx = tableContextAtPos(state, pos);
+      if (!ctx || !isTableSource(state, ctx.from)) return;
+      const { head } = state.selection.main;
+      if (head >= ctx.from && head <= ctx.to) return;
+      this.view.dispatch({ effects: toggleTableSource.of(ctx.from), selection: state.selection });
+    });
   }
 
   /** After the caret leaves an edited table: align its pipes (a separate, undoable step). */
@@ -858,7 +1008,7 @@ class TableEditingPlugin {
   }
 
   private refresh(ctx: TableContext | null) {
-    const show = ctx !== null && this.view.hasFocus;
+    const show = ctx !== null && this.view.hasFocus && isTableSource(this.view.state, ctx.from);
     this.toolbar.hidden = !show;
     if (!show || !ctx) return;
     const { view, toolbar } = this;
@@ -880,6 +1030,7 @@ class TableEditingPlugin {
 
   destroy() {
     this.view.dom.removeEventListener("focusin", this.onFocus);
+    getFullscreenHooks()?.close(this.view);
     this.toolbar.remove();
     if (getTableEditorView() === this.view) setTableEditorView(null);
   }
@@ -941,15 +1092,11 @@ export function prepareTableContextMenu(view: EditorView, event: MouseEvent): bo
   const target = event.target instanceof Element ? event.target.closest("td, th") : null;
   if (target) {
     // Rendered widget: pick the cell from the DOM and move the caret into its source.
-    const tr = target.closest("tr");
-    const bodyRows = target.closest("table")?.querySelectorAll("tbody tr");
-    const row =
-      target.tagName === "TH"
-        ? HEADER_ROW
-        : bodyRows
-          ? Array.from(bodyRows).indexOf(tr as Element)
-          : 0;
-    const col = Math.min((target as HTMLTableCellElement).cellIndex, columnCount(ctx.table) - 1);
+    const dataRow = (target as HTMLElement).dataset.row;
+    const dataCol = (target as HTMLElement).dataset.col;
+    if (dataRow === undefined || dataCol === undefined) return true; // gutter / handle cell
+    const row = Number(dataRow);
+    const col = Math.min(Number(dataCol), columnCount(ctx.table) - 1);
     const range = layoutTable(ctx.table).cellRange(Math.max(row, HEADER_ROW), col);
     view.dispatch({ selection: EditorSelection.cursor(ctx.from + range.to) });
     return true;
@@ -965,5 +1112,11 @@ export function prepareTableContextMenu(view: EditorView, event: MouseEvent): bo
 
 /** Everything the editor needs for table editing; add once to `createEditorExtensions`. */
 export function tableEditing(): Extension {
-  return [Prec.high(keymap.of(tableKeymap)), Prec.high(pasteHandler), tablePlugin, toolbarTheme];
+  return [
+    Prec.highest(keymap.of(arrowKeymap)),
+    Prec.high(keymap.of(tableKeymap)),
+    Prec.high(pasteHandler),
+    tablePlugin,
+    toolbarTheme,
+  ];
 }

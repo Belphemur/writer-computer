@@ -107,9 +107,9 @@ These apply while you are typing in a note.
 
 ## Tables
 
-These apply while your caret is inside a markdown table (the table shows its source while you edit it).
+A rendered table is edited in place: click a cell and type. Tab, Shift+Tab, Enter, Shift+Enter, Alt+Enter and Escape work in the cell as listed below, the arrow keys move to the next cell at the edge of a cell's text, and Cmd+Z undoes typing in the cell first. Arrow keys from the lines around a table land in its first or last cell. The other keys below (move row or column, format) apply in the table's source view: use the `</>` button on the table or "Table: Edit source / Done" in the command palette.
 
-<!-- Implemented in `apps/desktop/features/tables/web/table-editing.ts` (high-precedence keymap, active only when the selection is inside a table, never inside a code block). They all yield when the Obsidian "Advanced Tables" plugin (`table-editor-obsidian`) is enabled through the plugin host, so a key is not handled twice; the palette commands and the toolbar stay. Alt+ArrowUp/Down replace "Move line" and Cmd+Enter replaces "Insert line below" inside a table only. Spec: SPECs/table-editing-spec.md. -->
+<!-- Implemented in `apps/desktop/features/tables/web/table-editing.ts` (high-precedence keymap, active only when the selection is inside a table shown as source, never inside a code block; the rendered table's cell keys are in `table-cells.ts`). They all yield when the Obsidian "Advanced Tables" plugin (`table-editor-obsidian`) is enabled through the plugin host, so a key is not handled twice; the palette commands and the toolbar stay. Alt+ArrowUp/Down replace "Move line" and Cmd+Enter replaces "Insert line below" inside a table only. Spec: SPECs/table-editing-spec.md. -->
 
 | Shortcut                  | Action                                                                 |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -125,7 +125,7 @@ These apply while your caret is inside a markdown table (the table shows its sou
 | Cmd+Alt+Enter             | Add a row below                                                        |
 | Cmd+Alt+F                 | Format table (align the pipes)                                         |
 
-Every other table action (add or delete rows and columns, sort, align, transpose, duplicate row, clear cell, delete table, insert table, convert a selection or the clipboard to a table) is in the command palette as "Table: ...", in the right-click menu inside a table, and on the toolbar that floats above the table.
+Every other table action (add or delete rows and columns, sort, align, transpose, duplicate row, clear cell, delete table, insert table, convert a selection or the clipboard to a table) is in the command palette as "Table: ...", in the right-click menu inside a table, on the row and column menus of the rendered table, and (in source view) on the toolbar that floats above the table. "Table: Expand table" opens a table fullscreen.
 
 ## Editing
 

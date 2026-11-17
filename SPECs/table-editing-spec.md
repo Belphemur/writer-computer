@@ -17,13 +17,58 @@ those below.
 
 ## Existing editor behaviour (before this change)
 
-- `features/tables/web/table-decorations.ts` folds a GFM `Table` node into a read-only rendered `TableWidget`; when the
-  selection touches the table the widget goes away and the raw lines show as a monospace code-like
-  block (`cm-table-source-line`). Caret in a table therefore always means "editing source".
+- `features/tables/web/table-decorations.ts` folded a GFM `Table` node into a read-only rendered `TableWidget`; when the
+  selection touched the table the widget went away and the raw lines showed as a monospace code-like
+  block (`cm-table-source-line`). Caret in a table therefore always meant "editing source". (Replaced, see "Rendered tables" below.)
 - No cell navigation: Tab indented or did nothing, Enter split the line, pipes were never aligned.
 - `insert.table` (Insert menu) inserts a 3 column skeleton.
 
-## Design
+## Rendered tables (live cells)
+
+User feedback from real use: a wide table was clipped with no scroll bar, and clicking a table
+turned it into markdown source. The rendered table is now the editing surface.
+
+- Layout: `.cm-table-scroll` (`overflow-x: auto`, thin themed scrollbar, `max-width: 100%`) wraps the
+  table, so a table wider than the column scrolls inside itself (trackpad or Shift+wheel) and the
+  last column is never clipped. Columns are at least 7rem and at most 28rem wide, long cells wrap.
+  Styles are `web/table-ui.css` (plain CSS, light and dark through the app tokens).
+- Never unfolds: a selection or caret in a table does not change its decoration. The markdown shows
+  only through the explicit "Edit source" toggle (`</>` button, top right on hover/focus; palette
+  "Table: Edit source / Done"), kept per table in the `tableSourceField` state (line start, mapped
+  through edits). In source mode the old behaviour (source lines, toolbar with a Done button, keys)
+  applies; moving the caret out of the table renders it again. Without that field (an editor that has
+  only the editing extension) tables count as source, which keeps the source-mode tests as they were.
+- Cells are edited in place (`web/table-cells.ts`): a cell shows its rendered inline markdown, turns
+  into its raw markdown text (`contenteditable="plaintext-only"`) when focused, and is written back
+  as one transaction (`input.table.cell`) when you leave it. The caret lands at the end of the text
+  (not under the click). The editor selection follows into that cell's source so the palette commands
+  and the context menu act on it. Keys in a cell: Tab / Shift+Tab (Tab in the last cell appends a
+  row), Enter (down; adds a row at the end; on an empty last row removes it and leaves), Shift/Alt+Enter
+  (`<br>`), Escape / Cmd+Enter (leave below, adding the blank line GFM needs), ArrowLeft/Right at the
+  cell ends and ArrowUp/Down on the first/last visual line move to the neighbour cell (below the last
+  row or above the header they leave the table), Cmd+Z / Shift+Cmd+Z / Cmd+Y: undo of unsaved typing
+  in the cell, else the editor's history. Paste of tab-separated text, an HTML table or several lines
+  fills cells from the edited one; a single line is inserted escaped.
+- Arrow keys outside a table that would step into it (Up/Down from the adjacent line, Left/Right at
+  the line edge) focus its first cell (going down or right) or last cell (going up or left).
+  Whenever the editor itself has the caret in a rendered table (a restored selection, "Done"), it is
+  moved into the matching cell.
+- Handles: hover shows `+` on the bottom border of every row gutter (insert row below; the header's
+  inserts at the top), `+` on the right border of every column header (insert column after), a
+  dashed `+` row below and a `+` column after the table (append), a chevron on each column header and
+  a grip on each row gutter opening a menu (insert before/after, move, duplicate, delete, align
+  left/center/right, sort A to Z / Z to A). Everything runs the same `tableCommands`, so output is the
+  canonical `layoutTable` format and each action is one undo step. The menus live in `document.body`.
+- Fullscreen (`web/table-fullscreen.ts`, pattern of `mermaid-fullscreen.ts`): the expand button or
+  palette "Table: Expand table" open the table in a near-full-window panel over a dimmed backdrop,
+  scrolling both ways, with the same cells and handles. It edits the note's document through the same
+  view (one undo history) and mirrors every document change. Escape, Close or a backdrop click close
+  it and return focus to the note; one at a time; destroying the editor closes it.
+- Events: the widget ignores editor events except on links (so a click on a link still follows it).
+  While the Advanced Tables plugin is active the built-in source-mode keys yield; the in-cell keys do
+  not (they belong to the rendered DOM).
+
+## Design (source mode and commands)
 
 Source stays the single source of truth. Editing happens in the source lines that already show
 while the caret is in a table; commands rewrite only the changed span of the table in one
@@ -63,9 +108,8 @@ Tab stops indenting inside a table (also in a list item).
 ## Deferred
 
 - Formulas (`<!-- TBLFM -->`): later phase, not built.
-- Row / column grips, drag reorder and edge "+" affordances (would need a live-preview grid;
-  the source-as-truth model makes it a larger change). Selecting a whole cell on Tab (today the
-  caret goes to the end of the cell).
+- Drag reorder of rows and columns, a sticky first column, the caret under the click when a cell
+  starts editing, and selecting a whole cell on Tab (today the caret goes to the end of the cell).
 - Multi-cell selection operations, a size-picker for Insert table, CSV export, wrapping a bare
   `[[a|b]]` pipe automatically (type `[[a\|b]]` in tables).
 - Real-window verification.

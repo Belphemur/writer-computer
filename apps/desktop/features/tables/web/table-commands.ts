@@ -5,12 +5,14 @@
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import { getTableEditorView } from "./active";
+import { openTableFullscreen } from "./table-fullscreen";
 import {
   convertSelectionToTable,
   insertTableCommand,
   insertTableFromText,
   runTableCommand,
   tableCommands,
+  tableContextAt,
   type TableCommandId,
 } from "./table-editing";
 
@@ -44,6 +46,15 @@ const SPECIAL: Record<string, () => void> = {
       });
       if (!ok) showEditorNotice("The selection is not CSV, TSV or pipe-separated text");
     }),
+  "tables.expand": () => {
+    const view = getTableEditorView();
+    if (!view) return;
+    // After the palette released focus, like `onEditor`, so the overlay can give it back on close.
+    setTimeout(() => {
+      const ctx = tableContextAt(view.state);
+      if (ctx) openTableFullscreen(view, ctx.from);
+    }, 0);
+  },
   "tables.paste-as-table": () => {
     const view = getTableEditorView();
     if (!view) return;
