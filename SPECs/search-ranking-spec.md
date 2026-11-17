@@ -57,7 +57,7 @@ rank  = text * (1 + boost)
 ## Full-text search
 
 - `SearchOptions.recency`: fetch the best `max(offset + limit, 200)` bm25 hits, multiply each score by `1 + boost`, re-sort (ties by path), then page. bm25 is scale-free, so a hit with much better bm25 outranks a recent weak one.
-- `SearchOptions.fuzzy`: only on the first page and only when fewer than 5 notes match exactly. The query's words are matched with the same scorer against each note's file name and, at weight 0.6, its headings and tags; hits need at least `11` text score per query char, exclude notes already found, rank with the recency boost, and are appended (at most 10), flagged `fuzzy: true` with no snippets. The palette labels them "similar name".
+- `SearchOptions.fuzzy`: only on the first page. `.base` files (no text row) are name-matched on every search and lead the page (see `search-spec.md`); notes are appended only when fewer than 5 notes match exactly. The query's words are matched with the same scorer against each note's file name and, at weight 0.6, its headings and tags; hits need at least `11` text score per query char, exclude notes already found, rank with the recency boost, and are appended (at most 10), flagged `fuzzy: true` with no snippets. The palette labels them "similar name".
 - The palette sets both flags; the CLI does not.
 
 ## Tests

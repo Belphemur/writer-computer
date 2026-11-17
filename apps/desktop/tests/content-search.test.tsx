@@ -147,6 +147,38 @@ describe("ContentSearchPalette", () => {
 
   const text = () => document.body.textContent ?? "";
 
+  it("lists a name-only .base hit with its extension, ahead of the text hits, and opens it", async () => {
+    const base = {
+      path: "Bases/Projects/tasks.base",
+      title: "tasks",
+      folder: "Bases/Projects",
+      score: 1,
+      snippets: [],
+      stale: false,
+      fuzzy: true,
+    } satisfies ContentSearchHit;
+    mockedInvoke.mockResolvedValue(
+      page(
+        base,
+        hit("Notes/Plan.md", 2, "open tasks", [[5, 10]]),
+        hit("Notes/B.md", 1, "tasks", [[0, 5]]),
+      ),
+    );
+    await mount();
+    await type("tasks");
+    await settle();
+    const rows = [...document.querySelectorAll("[cmdk-item]")];
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain("tasks.base");
+    expect(rows[0].textContent).toContain("Bases/Projects");
+    await act(async () => {
+      (rows[0] as HTMLElement).click();
+    });
+    expect(mockedOpen).toHaveBeenCalledWith("/ws/Bases/Projects/tasks.base", null, {
+      newTab: false,
+    });
+  });
+
   it("asks for at least two characters and does not search before that", async () => {
     await mount();
     expect(text()).toContain("Type at least 2 characters");

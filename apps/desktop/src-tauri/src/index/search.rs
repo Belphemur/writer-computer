@@ -33,6 +33,23 @@ pub const CASE_SCAN_CAP: usize = 5000;
 /// Recency re-ranking looks at this many best text matches (at least
 /// `offset + limit`), then reorders them by `rank::recency_boost`.
 const RERANK_POOL: usize = 200;
+/// Which listed files a name pass looks at: notes (the few-hits fallback) or `.base` files
+/// (always, since they have no text row).
+#[derive(Clone, Copy)]
+enum FuzzyKind {
+    Notes,
+    Bases,
+}
+
+impl FuzzyKind {
+    fn ext(self) -> &'static str {
+        match self {
+            FuzzyKind::Notes => "md",
+            FuzzyKind::Bases => "base",
+        }
+    }
+}
+
 /// The fuzzy fallback runs when fewer notes than this matched exactly.
 const FUZZY_FEW: i64 = 5;
 /// At most this many fuzzy (similar-name) hits are appended.
@@ -314,15 +331,37 @@ impl Index {
             (hits, total)
         };
         let (mut hits, mut total) = (hits, total);
-        if opts.fuzzy && !case && offset == 0 && total < FUZZY_FEW {
-            let room = limit.saturating_sub(hits.len()).min(FUZZY_MAX);
-            if room > 0 {
-                let seen: std::collections::HashSet<String> =
-                    hits.iter().map(|h| h.path.clone()).collect();
-                let extra =
-                    self.fuzzy_hits(&parsed, opts, &cond_sql, &cond_args, &seen, room, now_ms)?;
-                total += extra.len() as i64;
-                hits.extend(extra);
+        if opts.fuzzy && !case && offset == 0 {
+            // A `.base` has no full-text row, so its name is the only way to it: always list
+            // it, ahead of the body matches, however many notes matched the text.
+            let bases = self.fuzzy_hits(
+                &parsed,
+                opts,
+                (&cond_sql, &cond_args),
+                FuzzyKind::Bases,
+                &std::collections::HashSet::new(),
+                FUZZY_MAX,
+                now_ms,
+            )?;
+            total += bases.len() as i64;
+            hits.splice(0..0, bases);
+            if total < FUZZY_FEW {
+                let room = limit.saturating_sub(hits.len()).min(FUZZY_MAX);
+                if room > 0 {
+                    let seen: std::collections::HashSet<String> =
+                        hits.iter().map(|h| h.path.clone()).collect();
+                    let extra = self.fuzzy_hits(
+                        &parsed,
+                        opts,
+                        (&cond_sql, &cond_args),
+                        FuzzyKind::Notes,
+                        &seen,
+                        room,
+                        now_ms,
+                    )?;
+                    total += extra.len() as i64;
+                    hits.extend(extra);
+                }
             }
         }
         Ok(SearchPage {
@@ -340,8 +379,8 @@ impl Index {
         &self,
         parsed: &ParsedQuery,
         opts: &SearchOptions,
-        cond_sql: &str,
-        cond_args: &[SqlValue],
+        (cond_sql, cond_args): (&str, &[SqlValue]),
+        kind: FuzzyKind,
         seen: &std::collections::HashSet<String>,
         room: usize,
         now_ms: i64,
@@ -359,7 +398,8 @@ impl Index {
         let (names, secondary) = self.read(|c| {
             let sql = format!(
                 "SELECT f.id, f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL}, f.name FROM files f \
-                 WHERE f.ext IN ('md', 'base'){cond_sql}"
+                 WHERE f.ext = '{}'{cond_sql}",
+                kind.ext()
             );
             let mut st = c.prepare(&sql)?;
             let names = st

@@ -847,3 +847,35 @@ fn fuzzy_fallback_lists_base_files_by_stem_and_by_full_name() {
         assert!(page.hits[0].fuzzy && page.hits[0].snippets.is_empty());
     }
 }
+
+#[test]
+fn base_files_are_listed_by_name_even_when_many_notes_match_the_text() {
+    // A `.base` has no full-text row, so it can only surface through its name. A query that
+    // many notes mention (>= FUZZY_FEW) must still list it, ahead of the body matches.
+    let v = V::new();
+    v.write("Bases/Projects/tasks.base", "views: []\n");
+    for i in 0..8 {
+        v.write(
+            &format!("notes/n{i}.md"),
+            "open tasks and the base plan for the week\n",
+        );
+    }
+    let index = v.index();
+    for q in ["tasks", "tasks.base"] {
+        let page = ranked(&index, q, &[]);
+        let base = page
+            .hits
+            .iter()
+            .position(|h| h.path == "Bases/Projects/tasks.base")
+            .unwrap_or_else(|| panic!("query {q}: base missing from {:?}", paths(&page)));
+        assert_eq!(base, 0, "query {q}: a name match leads the body matches");
+        assert!(page.hits[base].fuzzy && page.hits[base].snippets.is_empty());
+        if q == "tasks" {
+            assert!(page.hits.len() > 8, "the body matches still follow");
+        }
+    }
+    // not for a query the name does not match, and not when fuzzy is off
+    assert!(!paths(&ranked(&index, "plan", &[])).contains(&"Bases/Projects/tasks.base"));
+    let plain = index.search("tasks", &SearchOptions::default()).unwrap();
+    assert!(!paths(&plain).contains(&"Bases/Projects/tasks.base"));
+}

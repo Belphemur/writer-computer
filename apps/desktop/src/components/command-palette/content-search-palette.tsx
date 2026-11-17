@@ -9,6 +9,7 @@ import {
 import { useWorkspace } from "@/hooks/use-workspace";
 import { openFileAtLine } from "@/components/editor-area/reveal-line";
 import { splitByRanges, type ContentSearchHit } from "@/lib/content-search";
+import { getFileName } from "@/lib/paths";
 import { NoteResultTitle } from "./note-result-title";
 import { CONTENT_SEARCH_MIN_CHARS, useContentSearch } from "./use-content-search";
 
@@ -120,7 +121,11 @@ export function ContentSearchPalette() {
             {hits.map((hit) => (
               <CommandItem key={hit.path} value={hitValue(hit)} onSelect={() => open(hit, false)}>
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <NoteResultTitle path={hit.path} name={hit.title} override={hit.titleOverride} />
+                  <NoteResultTitle
+                    path={hit.path}
+                    name={hit.path.endsWith(".md") ? hit.title : getFileName(hit.path)}
+                    override={hit.titleOverride}
+                  />
                   <span className="truncate text-[13px] text-text-muted">
                     {hit.folder || "Vault root"}
                     {hit.stale ? " · changed since indexed" : ""}
