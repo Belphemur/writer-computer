@@ -340,6 +340,26 @@ function wikiLinkClickHandler(getFilePath: () => string, isDisposed: () => boole
         event.stopPropagation();
         return true;
       },
+      // Middle-click opens the linked note in a new tab, like a browser's middle-click on a link.
+      auxclick(event, view) {
+        if (event.button !== 1) return false;
+        const rawTarget = wikiTargetAt(event, view);
+        if (rawTarget === null) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!getWorkspaceRoot()) return true;
+        void resolveWikiLink(rawTarget, getFilePath(), tauri.resolveWikiLinkTarget)
+          .then((result) => {
+            if (isDisposed() || result.kind !== "internal") return;
+            if (result.fragment) setPendingAnchor(result.path, result.fragment);
+            void editorApi.openFileInNewTab(result.path);
+          })
+          .catch((error) => {
+            if (!isDisposed())
+              console.error("[editor] Failed to open wiki link in new tab:", error);
+          });
+        return true;
+      },
       click(event, view) {
         const rawTarget = wikiTargetAt(event, view);
         if (rawTarget === null) return false;

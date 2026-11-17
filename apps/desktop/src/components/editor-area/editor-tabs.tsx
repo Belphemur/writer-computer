@@ -53,6 +53,15 @@ function EditorTabButton({
       role="button"
       tabIndex={0}
       onClick={() => onSelect(tab.id)}
+      // Middle-click closes the tab (as in browsers); preventDefault stops middle-button autoscroll.
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault();
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        onClose(tab.id);
+      }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();

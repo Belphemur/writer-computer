@@ -155,7 +155,25 @@ export function useKeyboardShortcuts() {
         return;
       }
     }
+    // Mouse side buttons: 3 = "back", 4 = "forward" (what browsers and most apps do). The webview
+    // has no page history of its own to walk, so they drive the editor's navigation history.
+    function handleMouseUp(e: MouseEvent) {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      const { navigateBack, navigateForward } = useEditorStore.getState();
+      void (e.button === 3 ? navigateBack() : navigateForward());
+    }
+    // Some engines also synthesise `auxclick` for the side buttons; keep it from doing anything.
+    function swallowSideAuxClick(e: MouseEvent) {
+      if (e.button === 3 || e.button === 4) e.preventDefault();
+    }
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("auxclick", swallowSideAuxClick);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("auxclick", swallowSideAuxClick);
+    };
   }, []);
 }
