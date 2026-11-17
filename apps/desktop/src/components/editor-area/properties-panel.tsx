@@ -1,5 +1,5 @@
 import { getFileStem } from "@/lib/paths";
-import { useId, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useFrontmatter } from "@/hooks/use-frontmatter";
 import { usePropertiesPanel } from "@/hooks/use-properties-panel";
 import {
@@ -7,9 +7,6 @@ import {
   appendListItem,
   initialValue,
   isBlank,
-  NEW_PROPERTY_LABELS,
-  NEW_PROPERTY_TYPES,
-  newTypeFromIndex,
   parseProperties,
   removeListItem,
   removeProperty,
@@ -18,10 +15,27 @@ import {
   setTagString,
   summaryTags,
   type EditResult,
-  type NewPropertyType,
+  type PropertyRow,
 } from "@/lib/frontmatter-properties";
+import { convertProperty, plainLinkCandidates } from "@/lib/property-conversion";
+import {
+  addRelationship,
+  linkForNote,
+  removeRelationship,
+  resolveLinkNames,
+} from "@/lib/relationships";
+import * as tauri from "@/lib/tauri";
+import {
+  PROPERTY_TYPES,
+  rowFitsType,
+  typeKey,
+  typeOfRow,
+  type PropertyType,
+} from "@/lib/property-types";
+import { usePropertyTypesStore } from "@/stores/property-types-store";
+import { AddPropertyRow } from "./add-property-row";
+import { PropertyTypeControl } from "./property-type-control";
 import { PropertyKey, PropertyValue, type PropertyActions } from "./property-value";
-import { useVaultPropertyKeys } from "./use-vault-property-keys";
 
 interface PropertiesPanelProps {
   filePath: string;
@@ -52,82 +66,6 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function focusOnMount(el: HTMLInputElement | null) {
-  el?.focus();
-}
-
-interface AddRowProps {
-  onAdd: (key: string, type: NewPropertyType) => boolean;
-  onClose?: () => void;
-  autoFocus: boolean;
-}
-
-/** Name (with the vault's known names as suggestions) and type of a new property. */
-function AddPropertyRow({ onAdd, onClose, autoFocus }: AddRowProps) {
-  const listId = useId();
-  const vaultKeys = useVaultPropertyKeys();
-  const [key, setKey] = useState("");
-  const [picked, setPicked] = useState<NewPropertyType | null>(null);
-  const known = vaultKeys.find((p) => p.key === key.trim());
-  const type = picked ?? (known ? newTypeFromIndex(known.types, known.key) : "text");
-
-  const submit = () => {
-    if (key.trim() === "") return;
-    if (onAdd(key, type)) {
-      setKey("");
-      setPicked(null);
-      onClose?.();
-    }
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    e.stopPropagation();
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setKey("");
-      onClose?.();
-    }
-  };
-  return (
-    <div className="flex items-center gap-2 pt-1">
-      <input
-        ref={autoFocus ? focusOnMount : undefined}
-        type="text"
-        list={listId}
-        aria-label="New property name"
-        placeholder="Property name"
-        value={key}
-        spellCheck={false}
-        onChange={(e) => setKey(e.target.value)}
-        onKeyDown={onKeyDown}
-        className="min-w-0 flex-1 rounded bg-transparent px-1 -mx-1 text-[13px] leading-[1.4] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] placeholder:opacity-70 focus-visible:bg-[var(--surface-subtle)]"
-      />
-      <datalist id={listId}>
-        {vaultKeys.slice(0, 200).map((p) => (
-          <option key={p.key} value={p.key} />
-        ))}
-      </datalist>
-      <select
-        aria-label="New property type"
-        value={type}
-        onChange={(e) => setPicked(e.target.value as NewPropertyType)}
-        className="rounded bg-transparent text-[12px] text-[var(--text-muted)] outline-none focus-visible:bg-[var(--surface-subtle)]"
-      >
-        {NEW_PROPERTY_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {NEW_PROPERTY_LABELS[t]}
-          </option>
-        ))}
-      </select>
-      <button type="button" onClick={submit} disabled={key.trim() === ""} className={BUTTON}>
-        Add
-      </button>
-    </div>
-  );
-}
-
 /**
  * The note's properties as a collapsible panel above the editor. The frontmatter text in the
  * store is the source of truth: every edit is a byte-minimal splice of it
@@ -146,6 +84,12 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const bodyId = useId();
+  const typeInfo = usePropertyTypesStore((s) => s.byKey);
+  const loadTypes = usePropertyTypesStore((s) => s.load);
+  const setType = usePropertyTypesStore((s) => s.setType);
+  useEffect(() => {
+    if (hasFrontmatter) void loadTypes().catch(() => {}); // no index yet: types are inferred per row
+  }, [hasFrontmatter, loadTypes]);
 
   if (!hasFrontmatter) return null;
 
@@ -174,6 +118,41 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
     appendItem: (key, item) => apply(appendListItem(frontmatter, key, item)),
     removeItem: (key, index) => apply(removeListItem(frontmatter, key, index)),
     setTags: (key, tags) => apply(setTagString(frontmatter, key, tags)),
+    addLink: async (row, file) => {
+      const link = await linkForNote(file, tauri.fuzzySearch);
+      return apply(addRelationship(frontmatter, row, link));
+    },
+    removeLink: (row, index) => apply(removeRelationship(frontmatter, row, index)),
+  };
+
+  /** The row's type: the declared one (Writer's or Obsidian's record), else what its own value is;
+   *  `mixed` counts the other notes that use a different type. */
+  const typeOf = (row: PropertyRow): { type: PropertyType; mixed: number } => {
+    const info = typeInfo[typeKey(row.key)];
+    if (info && info.source !== "inferred") return { type: info.type, mixed: info.mismatched };
+    return { type: typeOfRow(row), mixed: info?.mismatched ?? 0 };
+  };
+
+  /** Record the type vault-wide, and convert THIS note's value as one frontmatter update (one undo
+   *  step). A value that cannot be converted is left as it is and shows as not fitting the type. */
+  const changeType = async (row: PropertyRow, to: PropertyType) => {
+    // plain text becomes a link only when it resolves by file name (the one async step)
+    const linkNames =
+      to === "relationships"
+        ? await resolveLinkNames(plainLinkCandidates(row), (t) =>
+            tauri.resolveWikiLinkTarget(t, null),
+          )
+        : undefined;
+    const result = convertProperty(frontmatter, row, to, linkNames);
+    if (result.ok) {
+      setError(null);
+      if (result.text !== frontmatter) updateFrontmatter(result.text);
+    }
+    setType(row.key, to).catch((e) =>
+      setError(
+        `Could not save the type of "${row.key}": ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
   };
 
   const rows = parsed.ok ? parsed.rows : [];
@@ -249,37 +228,58 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
           ) : (
             <>
               <ul className="flex flex-col">
-                {rows.map((row) => (
-                  <li
-                    key={row.key}
-                    className="group -mx-3 flex items-baseline gap-4 rounded-lg px-3 py-1 focus-within:bg-[var(--surface-subtle)]"
-                  >
-                    <PropertyKey row={row} actions={actions} />
-                    <PropertyValue row={row} actions={actions} />
-                    <button
-                      type="button"
-                      aria-label={`Remove property ${row.key}`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => actions.remove(row.key)}
-                      className="flex h-5 w-5 shrink-0 items-center justify-center self-center rounded text-[var(--text-icon-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                {rows.map((row) => {
+                  const { type, mixed } = typeOf(row);
+                  const fits = rowFitsType(row, type);
+                  return (
+                    <li
+                      key={row.key}
+                      className="group -mx-3 flex items-baseline gap-4 rounded-lg px-3 py-1 focus-within:bg-[var(--surface-subtle)]"
                     >
-                      <svg
-                        width="10"
-                        height="10"
-                        viewBox="0 0 10 10"
-                        fill="none"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M2 2l6 6M8 2l-6 6"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
+                      <span className="-mr-2.5 flex self-center">
+                        <PropertyTypeControl
+                          name={row.key}
+                          type={type}
+                          fits={fits}
+                          mismatched={mixed}
+                          onChange={(t) => void changeType(row, t)}
                         />
-                      </svg>
-                    </button>
-                  </li>
-                ))}
+                      </span>
+                      <PropertyKey row={row} actions={actions} />
+                      <PropertyValue row={row} actions={actions} type={type} />
+                      {!fits && (
+                        <span
+                          role="status"
+                          className="shrink-0 self-center text-[12px] leading-[1.3] text-[var(--warning)]"
+                        >
+                          {PROPERTY_TYPES[type].warning}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Remove property ${row.key}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => actions.remove(row.key)}
+                        className="flex h-5 w-5 shrink-0 items-center justify-center self-center rounded text-[var(--text-icon-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                      >
+                        <svg
+                          width="10"
+                          height="10"
+                          viewBox="0 0 10 10"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M2 2l6 6M8 2l-6 6"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
               {rows.some((row) => row.key === "title") && (
                 <p className="pt-1 text-[12px] leading-[1.4] text-[var(--text-muted)]">
@@ -291,7 +291,11 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                 <AddPropertyRow
                   autoFocus
                   onClose={rows.length === 0 ? undefined : () => setAdding(false)}
-                  onAdd={(key, type) => apply(addProperty(frontmatter, key, initialValue(type)))}
+                  onAdd={(key, type, picked) => {
+                    const added = apply(addProperty(frontmatter, key, initialValue(type)));
+                    if (added && picked) void setType(key, type).catch(() => {});
+                    return added;
+                  }}
                 />
               ) : (
                 <button type="button" onClick={() => setAdding(true)} className={`${BUTTON} mt-1`}>

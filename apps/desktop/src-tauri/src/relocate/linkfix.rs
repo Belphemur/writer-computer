@@ -554,6 +554,43 @@ mod tests {
     }
 
     #[test]
+    fn unquoted_frontmatter_wikilinks_are_updated_too() {
+        let text = "---\nrel: [[Old]]\nlist:\n  - [[Old#Top|x]]\n---\nbody\n";
+        let r = run(
+            text,
+            "Home.md",
+            "Home.md",
+            &["Home.md", "Old.md"],
+            "Old.md",
+            "New.md",
+        );
+        assert_eq!(
+            r.text,
+            "---\nrel: [[New]]\nlist:\n  - [[New#Top|x]]\n---\nbody\n"
+        );
+    }
+
+    #[test]
+    fn relationships_properties_are_rewritten_in_every_shape() {
+        // single, flow list, block list; alias, heading, heading+alias and folder forms; CRLF;
+        // links to other notes stay as they are
+        let text = "---\r\nmanager: \"[[Old]]\"\r\nteam: [\"[[Old|Boss]]\", \"[[Other]]\"]\r\nboard:\r\n  - \"[[Old#Goals]]\"\r\n  - \"[[people/Old#Goals|G]]\"\r\n  - \"[[Other|Old]]\"\r\n---\r\nbody\r\n";
+        let r = run(
+            text,
+            "Home.md",
+            "Home.md",
+            &["Home.md", "people/Old.md", "Other.md"],
+            "people/Old.md",
+            "people/New.md",
+        );
+        assert_eq!(
+            r.text,
+            "---\r\nmanager: \"[[New]]\"\r\nteam: [\"[[New|Boss]]\", \"[[Other]]\"]\r\nboard:\r\n  - \"[[New#Goals]]\"\r\n  - \"[[people/New#Goals|G]]\"\r\n  - \"[[Other|Old]]\"\r\n---\r\nbody\r\n"
+        );
+        assert_eq!(r.changed, 4);
+    }
+
+    #[test]
     fn the_moved_note_keeps_its_own_relative_links_valid() {
         // Src moves from notes/ to deep/er/; it links to docs/spec.md with a
         // markdown link (relative) and to a sibling with ./

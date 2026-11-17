@@ -223,6 +223,45 @@ fn split_tag_string(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// `[[Note]]` written without quotes is a flow list holding a flow list holding `Note`. Obsidian
+/// reads that shape as the link, so the index does too: such a value, or such a list item (the
+/// `- [[x]]` line), becomes the string `[[x]]`. Writer itself always writes the quoted form.
+fn fold_unquoted_links(node: YNode) -> YNode {
+    fn as_link(node: &YNode) -> Option<YNode> {
+        let YNode::Seq(outer) = node else { return None };
+        let [YNode::Seq(inner)] = outer.as_slice() else {
+            return None;
+        };
+        let [YNode::Str { s, .. }] = inner.as_slice() else {
+            return None;
+        };
+        Some(YNode::Str {
+            s: format!("[[{s}]]"),
+            quoted: false,
+        })
+    }
+    fn fold_value(value: YNode) -> YNode {
+        if let Some(link) = as_link(&value) {
+            return link;
+        }
+        match value {
+            YNode::Seq(items) => YNode::Seq(
+                items
+                    .into_iter()
+                    .map(|i| as_link(&i).unwrap_or(i))
+                    .collect(),
+            ),
+            other => other,
+        }
+    }
+    match node {
+        YNode::Map(pairs) => {
+            YNode::Map(pairs.into_iter().map(|(k, v)| (k, fold_value(v))).collect())
+        }
+        other => other,
+    }
+}
+
 pub fn parse_frontmatter(text: &str) -> FrontmatterData {
     let mut data = FrontmatterData::default();
     let node = match yaml::parse(text) {
@@ -235,6 +274,7 @@ pub fn parse_frontmatter(text: &str) -> FrontmatterData {
             return data;
         }
     };
+    let node = fold_unquoted_links(node);
     let YNode::Map(pairs) = &node else {
         data.error = Some("frontmatter is not a mapping".to_string());
         return data;
@@ -292,6 +332,23 @@ pub fn parse_frontmatter(text: &str) -> FrontmatterData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unquoted_wikilinks_are_read_as_links_like_obsidian() {
+        let d = parse_frontmatter(
+            "one: [[A]]\nmany:\n  - [[B]]\n  - \"[[C|c]]\"\n  - plain\nreal: [[a, b], x]\n",
+        );
+        let ty = |k: &str| d.props.iter().find(|p| p.key == k).unwrap().vtype;
+        assert_eq!(ty("one"), "link");
+        assert_eq!(ty("many"), "list");
+        let items: Vec<_> = d.items.iter().filter(|i| i.key == "many").collect();
+        assert_eq!(items[0].vtype, "link");
+        assert_eq!(items[0].link_target.as_deref(), Some("B"));
+        assert_eq!(items[1].vtype, "link");
+        assert_eq!(items[2].vtype, "text");
+        assert_eq!(ty("real"), "list", "a real nested list stays a list");
+        assert!(d.links.iter().any(|l| l.raw == "A"));
+    }
 
     #[test]
     fn split_handles_bom_crlf_and_missing_close() {

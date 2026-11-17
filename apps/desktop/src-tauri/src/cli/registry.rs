@@ -332,7 +332,8 @@ pub static COMMANDS: &[CommandSpec] =
             ],
             &[
                 ("total", "print only the count"),
-                ("counts", "include occurrence counts")
+                ("counts", "include occurrence counts"),
+                ("types", "include each property's type")
             ],
             &["yaml", "json", "tsv"],
             Some("yaml"),

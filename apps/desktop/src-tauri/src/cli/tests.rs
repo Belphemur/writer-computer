@@ -534,6 +534,36 @@ fn properties_commands() {
 }
 
 #[test]
+fn properties_types_flag_shows_relationships() {
+    let t = T::new();
+    t.write(
+        "People/Ann.md",
+        "---\nmanager: \"[[Home]]\"\nteam:\n  - \"[[Home]]\"\n  - \"[[Beta|B]]\"\n---\n",
+    );
+    t.write(
+        "People/Bob.md",
+        "---\nmanager: \"[[Ann]]\"\nteam: []\n---\n",
+    );
+    let out = t.ok(&["properties", "types", "format=tsv"]);
+    assert!(out.contains("manager\trelationships\n"), "{out}");
+    assert!(out.contains("team\trelationships\n"), "{out}");
+    assert!(
+        out.contains("status\ttext\n") && out.contains("priority\tnumber\n"),
+        "{out}"
+    );
+    assert!(out.contains("tags\ttags\n"), "{out}");
+    let j: serde_json::Value =
+        serde_json::from_str(&t.ok(&["properties", "types", "counts", "name=team", "format=json"]))
+            .unwrap();
+    assert_eq!(
+        j[0],
+        serde_json::json!({"name": "team", "count": 2, "type": "relationships"})
+    );
+    // without the flag nothing changes
+    assert!(!t.ok(&["properties"]).contains("relationships"));
+}
+
+#[test]
 fn property_set_read_remove_round_trips() {
     let t = T::new();
     let original = t.read("Projects/Beta.md");

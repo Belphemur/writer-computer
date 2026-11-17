@@ -21,8 +21,7 @@ import { setPendingAnchor } from "@/lib/pending-anchor";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import * as editorApi from "@/hooks/editor-api";
 import {
-  canonicalWikiTarget,
-  wikiCompletionDisplay,
+  wikiSuggestions,
   parseWikiLink,
   parseWikiImageEmbedTarget,
   resolveWikiImage,
@@ -276,29 +275,24 @@ async function wikiLinkCompletions(context: CompletionContext): Promise<Completi
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) return null;
 
-  const results = await tauri.fuzzySearch(query, 20);
-  if (results.length === 0) return null;
+  const suggestions = await wikiSuggestions(query, tauri.fuzzySearch);
+  if (suggestions.length === 0) return null;
 
-  const options: Completion[] = results.map((r) => {
-    const insertText = canonicalWikiTarget(r, results);
-    // The inserted link target stays the file name (`insertText`): a title is never a target.
-    const { label, detail } = wikiCompletionDisplay(r);
-
-    return {
-      label,
-      detail,
-      apply(view: EditorView, _completion: Completion, from: number, to: number) {
-        // Consume a trailing ]] if it immediately follows the cursor
-        const afterCursor = view.state.doc.sliceString(to, to + 2);
-        const endPos = afterCursor === "]]" ? to + 2 : to;
-        const insert = `${insertText}]]`;
-        view.dispatch({
-          changes: { from, to: endPos, insert },
-          selection: { anchor: from + insert.length },
-        });
-      },
-    };
-  });
+  const options: Completion[] = suggestions.map(({ label, detail, insertText }) => ({
+    label,
+    detail,
+    apply(view: EditorView, _completion: Completion, from: number, to: number) {
+      // Consume a trailing ]] if it immediately follows the cursor
+      const afterCursor = view.state.doc.sliceString(to, to + 2);
+      const endPos = afterCursor === "]]" ? to + 2 : to;
+      // The inserted link target stays the file name (`insertText`): a title is never a target.
+      const insert = `${insertText}]]`;
+      view.dispatch({
+        changes: { from, to: endPos, insert },
+        selection: { anchor: from + insert.length },
+      });
+    },
+  }));
 
   return {
     from: queryStart,

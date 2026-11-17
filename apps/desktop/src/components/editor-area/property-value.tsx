@@ -1,6 +1,11 @@
 import { useRef, useState, type KeyboardEvent } from "react";
-import type { PropertyRow } from "@/lib/frontmatter-properties";
-import { openPropertyUrl, openPropertyWikilink } from "./property-links";
+import { isWikilink, type PropertyRow } from "@/lib/frontmatter-properties";
+import { openPropertyUrl } from "./property-links";
+import { CHIP, ChipRemove, FIELD } from "./property-chip";
+import { useWikiSuggest, WikiLinkButton } from "./property-wikilink";
+import { RelationshipsField } from "./relationships-field";
+import type { SearchResult } from "@/types/fs";
+import type { PropertyType } from "@/lib/property-types";
 
 /** What a row can do to the frontmatter text. Each returns whether the edit was applied. */
 export interface PropertyActions {
@@ -10,12 +15,10 @@ export interface PropertyActions {
   appendItem: (key: string, item: string) => boolean;
   removeItem: (key: string, index: number) => boolean;
   setTags: (key: string, tags: string[]) => boolean;
+  /** Relationships: add the picked note as a link (single stays single, a second makes a list). */
+  addLink: (row: PropertyRow, file: SearchResult) => Promise<boolean>;
+  removeLink: (row: PropertyRow, index: number) => boolean;
 }
-
-const FIELD =
-  "min-w-0 flex-1 rounded bg-transparent px-1 -mx-1 text-[13px] leading-[1.4] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] placeholder:opacity-70 focus-visible:bg-[var(--surface-subtle)]";
-const CHIP =
-  "inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--surface-subtle)] px-2 py-0.5 text-[12px] leading-[1.3] text-[var(--text-primary)]";
 
 /** Enter commits, Escape reverts, and neither reaches the editor's key handlers. */
 function commitKeys(commit: (el: HTMLInputElement) => void) {
@@ -61,19 +64,25 @@ function TextField({
     const value = el.value === "" ? null : el.value;
     if (!actions.setValue(row.key, value)) el.value = el.defaultValue;
   };
+  const suggest = useWikiSuggest();
+  const keys = commitKeys(commit);
   return (
-    <input
-      key={stored}
-      type={type}
-      step={step}
-      aria-label={`${row.key} value`}
-      defaultValue={stored}
-      placeholder="empty"
-      spellCheck={false}
-      onBlur={(e) => commit(e.currentTarget)}
-      onKeyDown={commitKeys(commit)}
-      className={`${FIELD} ${row.placeholder ? "font-mono" : ""}`}
-    />
+    <>
+      <input
+        key={stored}
+        type={type}
+        step={step}
+        aria-label={`${row.key} value`}
+        defaultValue={stored}
+        placeholder="empty"
+        spellCheck={false}
+        onInput={type === "text" ? suggest.onInput : undefined}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => !suggest.onKeyDown(e) && keys(e)}
+        className={`${FIELD} ${row.placeholder ? "font-mono" : ""}`}
+      />
+      {suggest.menu}
+    </>
   );
 }
 
@@ -119,49 +128,57 @@ function focusOnMount(el: HTMLInputElement | null) {
 
 function LinkField({ row, actions }: FieldProps) {
   const [editing, setEditing] = useState(false);
+  const suggest = useWikiSuggest();
   const value = String(row.value ?? "");
-  const label =
-    value
-      .replace(/^\[\[|\]\]$/g, "")
-      .split("|")
-      .pop() ?? value;
   const isUrl = row.kind === "url";
   if (editing) {
     return (
-      <input
-        ref={focusOnMount}
-        type="text"
-        aria-label={`${row.key} value`}
-        defaultValue={value}
-        spellCheck={false}
-        onBlur={(e) => {
-          if (e.currentTarget.value !== value)
-            actions.setValue(row.key, e.currentTarget.value === "" ? null : e.currentTarget.value);
-          setEditing(false);
-        }}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Enter") e.currentTarget.blur();
-          else if (e.key === "Escape") {
-            e.currentTarget.value = value;
-            e.currentTarget.blur();
-          }
-        }}
-        className={FIELD}
-      />
+      <>
+        <input
+          ref={focusOnMount}
+          type="text"
+          aria-label={`${row.key} value`}
+          defaultValue={value}
+          spellCheck={false}
+          onInput={suggest.onInput}
+          onBlur={(e) => {
+            if (e.currentTarget.value !== value)
+              actions.setValue(
+                row.key,
+                e.currentTarget.value === "" ? null : e.currentTarget.value,
+              );
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (suggest.onKeyDown(e)) return;
+            e.stopPropagation();
+            if (e.key === "Enter") e.currentTarget.blur();
+            else if (e.key === "Escape") {
+              e.currentTarget.value = value;
+              e.currentTarget.blur();
+            }
+          }}
+          className={FIELD}
+        />
+        {suggest.menu}
+      </>
     );
   }
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
-      <button
-        type="button"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => void (isUrl ? openPropertyUrl(value) : openPropertyWikilink(value))}
-        title={value}
-        className="min-w-0 truncate text-left text-[13px] leading-[1.4] text-[var(--accent)] underline-offset-2 hover:underline"
-      >
-        {label}
-      </button>
+      {isUrl ? (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => void openPropertyUrl(value)}
+          title={value}
+          className="min-w-0 truncate text-left text-[13px] leading-[1.4] text-[var(--accent)] underline-offset-2 hover:underline"
+        >
+          {value}
+        </button>
+      ) : (
+        <WikiLinkButton value={value} />
+      )}
       <button
         type="button"
         aria-label={`Edit ${row.key}`}
@@ -174,24 +191,9 @@ function LinkField({ row, actions }: FieldProps) {
   );
 }
 
-function ChipRemove({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label={`Remove ${label}`}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onRemove}
-      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[var(--text-icon-muted)] hover:text-[var(--text-primary)]"
-    >
-      <svg width="8" height="8" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-        <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    </button>
-  );
-}
-
 function ChipsField({ row, actions }: FieldProps) {
   const input = useRef<HTMLInputElement>(null);
+  const suggest = useWikiSuggest();
   const tagString = row.kind === "tagString";
   const add = (el: HTMLInputElement) => {
     const raw = el.value.trim();
@@ -212,7 +214,11 @@ function ChipsField({ row, actions }: FieldProps) {
     <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
       {row.items.map((item, i) => (
         <span key={`${i}:${item}`} className={CHIP}>
-          <span className="min-w-0 break-words">{item}</span>
+          {isWikilink(item) ? (
+            <WikiLinkButton value={item} />
+          ) : (
+            <span className="min-w-0 break-words">{item}</span>
+          )}
           <ChipRemove label={item} onRemove={() => remove(i)} />
         </span>
       ))}
@@ -222,8 +228,10 @@ function ChipsField({ row, actions }: FieldProps) {
         aria-label={`Add to ${row.key}`}
         placeholder={row.items.length === 0 ? "add" : "+"}
         spellCheck={false}
+        onInput={suggest.onInput}
         onBlur={(e) => add(e.currentTarget)}
         onKeyDown={(e) => {
+          if (suggest.onKeyDown(e)) return;
           e.stopPropagation();
           if (e.key === "Enter" || e.key === ",") {
             e.preventDefault();
@@ -238,6 +246,7 @@ function ChipsField({ row, actions }: FieldProps) {
         }}
         className={`${FIELD} min-w-[3.5rem] flex-none`}
       />
+      {suggest.menu}
     </span>
   );
 }
@@ -269,7 +278,12 @@ function ReadOnlyField({ row }: { row: PropertyRow }) {
 }
 
 /** The value cell of one row, chosen by the row's kind. */
-export function PropertyValue({ row, actions }: FieldProps) {
+export function PropertyValue({ row, actions, type }: FieldProps & { type?: PropertyType }) {
+  if (
+    type === "relationships" &&
+    (row.kind === "link" || row.kind === "empty" || (row.kind === "list" && row.editable))
+  )
+    return <RelationshipsField row={row} actions={actions} />;
   switch (row.kind) {
     case "checkbox":
       return <CheckboxField row={row} actions={actions} />;

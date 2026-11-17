@@ -805,6 +805,83 @@ fn linked_note_lookups() {
     );
 }
 
+/// `Employee Overview.base`-style filters over relationships properties: a single link and a list
+/// of links both work with `list(x).contains(list(this.x)[0])`, and alias / heading / folder forms
+/// compare by the note they point to.
+#[test]
+fn relationships_properties_work_as_link_and_list_of_links() {
+    let mut env = Env::new();
+    let mut notes = env.store.notes.clone();
+    notes.push(Note::new("People/Daniel Wierdsma.md"));
+    notes.push(Note::new("People/Eve.md"));
+    notes.push(Note::new("Hub/This.md").p("employee", s("[[Daniel Wierdsma]]")));
+    notes.push(Note::new("Hub/ThisList.md").p(
+        "employee",
+        list(vec![s("[[Daniel Wierdsma|Dan]]"), s("[[Eve]]")]),
+    ));
+    notes.push(Note::new("Rows/Single.md").p("employee", s("[[Daniel Wierdsma]]")));
+    notes.push(Note::new("Rows/SingleAlias.md").p("employee", s("[[Daniel Wierdsma|Dan]]")));
+    notes.push(Note::new("Rows/SingleHeading.md").p("employee", s("[[Daniel Wierdsma#Goals]]")));
+    notes.push(Note::new("Rows/SinglePath.md").p("employee", s("[[People/Daniel Wierdsma]]")));
+    notes.push(Note::new("Rows/List.md").p(
+        "employee",
+        list(vec![s("[[Eve]]"), s("[[People/Daniel Wierdsma#Goals|D]]")]),
+    ));
+    notes.push(Note::new("Rows/Other.md").p("employee", s("[[Eve]]")));
+    notes.push(Note::new("Rows/OtherList.md").p("employee", list(vec![s("[[Eve]]")])));
+    notes.push(Note::new("Rows/None.md"));
+    env.store = Store::new(notes);
+    let filter = "list(employee).contains(list(this.employee)[0])";
+    for this in ["Hub/This.md", "Hub/ThisList.md"] {
+        for (row, want) in [
+            ("Rows/Single.md", true),
+            ("Rows/SingleAlias.md", true),
+            ("Rows/SingleHeading.md", true),
+            ("Rows/SinglePath.md", true),
+            ("Rows/List.md", true),
+            ("Rows/Other.md", false),
+            ("Rows/OtherList.md", false),
+            ("Rows/None.md", false),
+        ] {
+            assert_eq!(
+                env.at(row, Some(this), filter),
+                Value::Bool(want),
+                "{row} against {this}"
+            );
+        }
+    }
+    // link(), isType and linksTo see a single link and every list item as links
+    assert_eq!(
+        env.at("Rows/List.md", None, "employee.map(value.isType(\"link\"))")
+            .display(),
+        "true, true"
+    );
+    assert_eq!(
+        env.at(
+            "Rows/SingleAlias.md",
+            None,
+            "employee == link(\"Daniel Wierdsma\")"
+        ),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        env.at(
+            "Rows/List.md",
+            None,
+            "employee.contains(link(\"Daniel Wierdsma\"))"
+        ),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        env.at(
+            "Rows/List.md",
+            None,
+            "employee[1].linksTo(file(\"People/Daniel Wierdsma\"))"
+        ),
+        Value::Bool(true)
+    );
+}
+
 #[test]
 fn duplicate_basenames_resolve_deterministically() {
     // Two notes called Plan.md: the in-memory resolver (stand-in for the index,

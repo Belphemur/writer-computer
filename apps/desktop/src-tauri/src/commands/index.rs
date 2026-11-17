@@ -247,6 +247,41 @@ pub async fn index_properties(
     .await
 }
 
+/// Every vault property with its effective type (recorded in Writer's or Obsidian's file, else
+/// inferred) and how many notes hold a value that does not fit it.
+#[tauri::command]
+pub async fn property_types(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::property_types::PropertyTypeInfo>, AppError> {
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        let mut counts = index.properties().map_err(app_err)?;
+        let shapes = index.list_shapes().map_err(app_err)?;
+        crate::property_types::refine_list_shapes(&mut counts, &shapes);
+        Ok(crate::property_types::report(index.root(), counts))
+    })
+    .await
+}
+
+/// Record a property's type vault-wide in `.writer/property-types.json` (never `.obsidian`).
+#[tauri::command]
+pub async fn property_type_set(
+    name: String,
+    ty: crate::property_types::PropertyType,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        crate::property_types::set_type(index.root(), &name, ty).map_err(|e| match e {
+            crate::property_types::PropertyTypeError::Invalid(m) => AppError::InvalidPath(m),
+            other => AppError::Io(other.to_string()),
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn index_query_files(
     filter: FileFilter,

@@ -3,6 +3,8 @@
 // workspace and the host services; it is created once per PluginHost.
 import { SecretStorage } from "./secret-storage";
 import { parseFrontmatter, serializeFile } from "@/lib/frontmatter";
+import { PROPERTY_TYPE_IDS, typeKey, type PropertyType } from "@/lib/property-types";
+import { usePropertyTypesStore } from "@/stores/property-types-store";
 import {
   type CommandRegistry,
   Keymap,
@@ -157,11 +159,11 @@ export class App {
   };
 
   /**
-   * Undocumented `metadataTypeManager` (Tasks, Meta Bind, Dataview-adjacent plugins): property
-   * names and types derived from the frontmatter of every indexed note. `setType` keeps a local
-   * assignment for the session (Writer has no `types.json`).
+   * Undocumented `metadataTypeManager` (Tasks, Meta Bind, Dataview-adjacent plugins): the vault's
+   * property types from Writer's one source (see `MetadataTypeManager`); `setType` records the
+   * type in `.writer/property-types.json`.
    */
-  metadataTypeManager = new MetadataTypeManager(() => this.metadataCache);
+  metadataTypeManager = new MetadataTypeManager();
 
   private readonly basePath: string;
 
@@ -194,6 +196,7 @@ export class App {
 
   /** Builds the vault index and starts the metadata cache. Idempotent per call. */
   async start(): Promise<void> {
+    await this.metadataTypeManager.load().catch(() => {}); // no index yet: types stay empty
     await this.vault.load();
     this.metadataCache.start();
     void this.metadataCache
@@ -250,37 +253,21 @@ export interface PropertyInfo {
   count: number;
 }
 
-function inferType(value: unknown): string {
-  if (typeof value === "boolean") return "checkbox";
-  if (typeof value === "number") return "number";
-  if (Array.isArray(value)) return "multitext";
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return "datetime";
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return "date";
-  return "text";
-}
-
-/** Property registry over the metadata cache (`app.metadataTypeManager`). */
+/** Property registry over Writer's one property-type source (`app.metadataTypeManager`): the
+ *  vault's recorded types (`.writer/property-types.json` over a read-only `.obsidian/types.json`),
+ *  else inferred, as served by the backend and held in `usePropertyTypesStore`. `setType` writes
+ *  Writer's record, never `.obsidian`. */
 export class MetadataTypeManager {
-  private assigned = new Map<string, string>();
-  constructor(private cache: () => MetadataCache) {}
+  /** Loads the types; the host calls it before plugins start so the sync getters have data. */
+  load(): Promise<void> {
+    return usePropertyTypesStore.getState().load(true);
+  }
 
   /** Keyed by lower-cased property name, like Obsidian. */
   getAllProperties(): Record<string, PropertyInfo> {
     const out: Record<string, PropertyInfo> = {};
-    const cache = this.cache();
-    for (const path of cache.getCachedFiles()) {
-      const fm = cache.getCache(path)?.frontmatter;
-      if (!fm) continue;
-      for (const [name, value] of Object.entries(fm)) {
-        if (name === "position") continue;
-        const key = name.toLowerCase();
-        const entry = (out[key] ??= {
-          name,
-          type: this.assigned.get(key) ?? inferType(value),
-          count: 0,
-        });
-        entry.count++;
-      }
+    for (const [key, info] of Object.entries(usePropertyTypesStore.getState().byKey)) {
+      out[key] = { name: info.key, type: info.obsidianType, count: info.count };
     }
     return out;
   }
@@ -288,17 +275,20 @@ export class MetadataTypeManager {
     return this.getAllProperties();
   }
   getPropertyInfo(name: string): PropertyInfo | undefined {
-    return this.getAllProperties()[name.toLowerCase()];
+    return this.getAllProperties()[typeKey(name)];
   }
   getAssignedType(name: string): string | null {
-    return this.assigned.get(name.toLowerCase()) ?? null;
+    const info = usePropertyTypesStore.getState().byKey[typeKey(name)];
+    return info && info.source !== "inferred" ? info.obsidianType : null;
   }
   getAssignedWidget(name: string): string | null {
     return this.getAssignedType(name);
   }
-  setType(name: string, type: string): Promise<void> {
-    this.assigned.set(name.toLowerCase(), type);
-    return Promise.resolve();
+  async setType(name: string, type: string): Promise<void> {
+    // `relationships` is Writer's own type: a plugin sees it as multitext / text and cannot assign it.
+    if (!(PROPERTY_TYPE_IDS as string[]).includes(type) || type === "relationships")
+      throw new Error(`Unknown property type "${type}"`);
+    await usePropertyTypesStore.getState().setType(name, type as PropertyType);
   }
   getTypeInfo(): undefined {
     return undefined;

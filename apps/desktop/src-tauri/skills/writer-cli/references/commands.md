@@ -32,7 +32,7 @@ One bullet per command: `required` parameters are marked, everything else is opt
 
 ## Properties
 
-- `properties` — list properties of one file, or of the vault with counts. Params: `file=`, `path=`, `name=`, `sort=` (count), `format=` (yaml, json or tsv). Flags: `total`, `counts`.
+- `properties` — list properties of one file, or of the vault with counts. Params: `file=`, `path=`, `name=`, `sort=` (count), `format=` (yaml, json or tsv). Flags: `total`, `counts`, `types`.
 - `property:set` — set a frontmatter property. Params: `name=` (required), `value=` (required), `type=` (text, list, number, checkbox, date or datetime), `file=`, `path=`.
 - `property:read` — print a property value. Params: `name=` (required), `file=`, `path=`.
 - `property:remove` — remove a property. Params: `name=` (required), `file=`, `path=`.

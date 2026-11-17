@@ -13,18 +13,42 @@ vi.mock("../src/lib/save", () => ({
   cancelSave: vi.fn(),
   registerSaveStore: vi.fn(),
 }));
-vi.mock("../src/lib/bases/ipc", () => ({
-  indexProperties: vi.fn(async () => [
-    { key: "status", count: 4, types: { text: 4 } },
-    { key: "due", count: 2, types: { date: 2 } },
+const ipc = vi.hoisted(() => ({
+  propertyTypes: vi.fn(),
+  propertyTypeSet: vi.fn(async (_name: string, _ty: string) => {}),
+}));
+// The fake backend keeps what was recorded, as the real one does, for the refetch after a write.
+const recorded = vi.hoisted(() => new Map<string, string>());
+vi.mock("../src/lib/property-types-ipc", () => ipc);
+const VAULT_TYPES = [
+  { key: "status", count: 4, types: { text: 4 }, type: "text", source: "inferred", mismatched: 0 },
+  { key: "due", count: 2, types: { date: 2 }, type: "date", source: "writer", mismatched: 0 },
+  { key: "dueDate", count: 1, types: { date: 1 }, type: "date", source: "writer", mismatched: 0 },
+  {
+    key: "rating",
+    count: 3,
+    types: { number: 3 },
+    type: "number",
+    source: "obsidian",
+    mismatched: 1,
+  },
+];
+vi.mock("../src/lib/tauri", async (orig) => ({
+  ...(await orig<object>()),
+  resolveWikiLinkTarget: vi.fn(async (t: string) => (t === "Missing" ? null : `/vault/${t}.md`)),
+  fuzzySearch: vi.fn(async () => [
+    { path: "/vault/Alpha.md", filename: "Alpha.md", relative_path: "Alpha.md", title: null },
   ]),
 }));
 vi.mock("@/lib/theme", () => ({ applyTheme: vi.fn(), applyCssVarBindings: vi.fn() }));
 
+import { scheduleSave } from "../src/lib/save";
+import * as tauri from "../src/lib/tauri";
 import { PropertiesPanel } from "../src/components/editor-area/properties-panel";
 import { useEditorStore } from "../src/stores/editor-store";
 import { usePropertiesPanelStore } from "../src/stores/properties-panel-store";
 import { useSettingsStore } from "../src/stores/settings-store";
+import { usePropertyTypesStore } from "../src/stores/property-types-store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -66,6 +90,22 @@ beforeEach(() => {
   document.body.append(host);
   root = createRoot(host);
   usePropertiesPanelStore.setState({ notes: new Map() });
+  usePropertyTypesStore.setState({ byKey: {}, loadedAt: 0 });
+  recorded.clear();
+  ipc.propertyTypes.mockReset().mockImplementation(async () => [
+    ...VAULT_TYPES.filter((p) => !recorded.has(p.key.toLowerCase())),
+    ...[...recorded].map(([key, type]) => ({
+      key,
+      count: 1,
+      types: {},
+      type,
+      source: "writer",
+      mismatched: 0,
+    })),
+  ]);
+  ipc.propertyTypeSet.mockReset().mockImplementation(async (name: string, ty: string) => {
+    recorded.set(name.toLowerCase(), ty);
+  });
   useSettingsStore.setState({ settings: {} });
 });
 afterEach(async () => {
@@ -186,8 +226,8 @@ describe("PropertiesPanel", () => {
     );
     const name = q('input[aria-label="New property name"]') as HTMLInputElement;
     await type(name, "due", "blur");
-    // The vault knows `due` as a date, so the type picker follows it.
-    expect((q('select[aria-label="New property type"]') as HTMLSelectElement).value).toBe("date");
+    // The vault knows `due` as a date, so the type icon follows it.
+    expect(q('button[aria-label="New property: Date. Change type"]')).not.toBeNull();
     await act(async () => {
       name.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
@@ -230,5 +270,403 @@ describe("PropertiesPanel", () => {
     await act(async () => (q("button[aria-pressed]") as HTMLButtonElement).click());
     expect((q("textarea") as HTMLTextAreaElement).value).toBe("a: 1");
     expect(q("button[aria-pressed]")?.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+const doc = (sel: string) => document.querySelector<HTMLElement>(sel);
+const typeButton = (key: string, label: string) =>
+  q(`button[aria-label="${key}: ${label}. Change type"]`) as HTMLButtonElement;
+const press = (el: Element, key: string) =>
+  act(async () => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+  });
+const menuItem = (label: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((b) =>
+    b.textContent?.startsWith(label),
+  ) as HTMLButtonElement;
+async function mountAndLoad(fm: string) {
+  setFrontmatter(fm);
+  await mount();
+  await act(async () => {}); // the vault's property types arrive
+}
+
+describe("property type icon and menu", () => {
+  it("shows a type icon per row, the declared type for a recorded name and the unknown state for a value that does not fit", async () => {
+    await mountAndLoad("title: Hi\ndone: true\nn: 3\ndue: 2026-01-02\nrating: high\ntags: [a]");
+    expect(typeButton("title", "Text").dataset.type).toBe("text");
+    expect(typeButton("done", "Checkbox").dataset.type).toBe("checkbox");
+    expect(typeButton("n", "Number")).not.toBeNull();
+    expect(typeButton("due", "Date")).not.toBeNull();
+    expect(typeButton("tags", "Tags")).not.toBeNull();
+    // `rating` is a Number in the vault's record (Obsidian's file), this note says "high".
+    const rating = typeButton("rating", "Number");
+    expect(rating.dataset.mismatch).toBeDefined();
+    expect(rating.title).toContain("not a number");
+    expect(rating.title).toContain("Click to change type");
+    expect(rating.title).toContain("1 note has a value that does not fit");
+    expect(q('[role="status"]')?.textContent).toBe("Not a number");
+  });
+
+  it("opens a menu of the types with a check on the current one; Esc closes it and returns focus", async () => {
+    await mountAndLoad("title: Hi");
+    const icon = typeButton("title", "Text");
+    await act(async () => icon.click());
+    const items = [...document.querySelectorAll('[role="menuitemradio"]')];
+    expect(items.map((i) => i.textContent)).toEqual([
+      "Text",
+      "List",
+      "Relationships",
+      "Number",
+      "Checkbox",
+      "Date",
+      "Date & time",
+    ]);
+    expect(menuItem("Text").getAttribute("aria-checked")).toBe("true");
+    expect(menuItem("Number").getAttribute("aria-checked")).toBe("false");
+    expect(document.activeElement).toBe(menuItem("Text"));
+    await press(menuItem("Text"), "ArrowDown");
+    expect(document.activeElement).toBe(menuItem("List"));
+    await press(menuItem("List"), "ArrowUp");
+    await press(menuItem("Text"), "ArrowUp"); // wraps
+    expect(document.activeElement).toBe(menuItem("Date & time"));
+    await press(menuItem("Date & time"), "Escape");
+    expect(doc('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(icon);
+  });
+
+  it("closes on a click outside without moving focus", async () => {
+    await mountAndLoad("title: Hi");
+    await act(async () => typeButton("title", "Text").click());
+    expect(doc('[role="menu"]')).not.toBeNull();
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    expect(doc('[role="menu"]')).toBeNull();
+  });
+
+  it("choosing a type records it vault-wide and converts this note's value as ONE update", async () => {
+    await mountAndLoad("# keep\nz: 1\nn: '42'\nt: a, b");
+    vi.mocked(scheduleSave).mockClear();
+    await act(async () => typeButton("n", "Text").click());
+    await act(async () => menuItem("Number").click());
+    expect(stored()).toBe("# keep\nz: 1\nn: 42\nt: a, b");
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("n", "number");
+    expect(vi.mocked(scheduleSave)).toHaveBeenCalledTimes(1);
+    expect(doc('[role="menu"]')).toBeNull();
+    expect(typeButton("n", "Number")).not.toBeNull();
+    // text -> list splits on commas
+    await act(async () => typeButton("t", "Text").click());
+    await act(async () => menuItem("List").click());
+    expect(stored()).toBe("# keep\nz: 1\nn: 42\nt:\n  - a\n  - b");
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("t", "multitext");
+  });
+
+  it("a value that cannot convert is kept, the type is still recorded, and the row warns", async () => {
+    await mountAndLoad("a: abc");
+    vi.mocked(scheduleSave).mockClear();
+    await act(async () => typeButton("a", "Text").click());
+    await act(async () => menuItem("Number").click());
+    expect(stored()).toBe("a: abc");
+    expect(vi.mocked(scheduleSave)).not.toHaveBeenCalled();
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("a", "number");
+    expect(q('[role="status"]')?.textContent).toBe("Not a number");
+    expect(typeButton("a", "Number").dataset.mismatch).toBeDefined();
+  });
+
+  it("reports a failed type save", async () => {
+    await mountAndLoad("a: 1");
+    ipc.propertyTypeSet.mockRejectedValueOnce(new Error("disk full"));
+    await act(async () => typeButton("a", "Number").click());
+    await act(async () => menuItem("Text").click());
+    expect(q('[role="alert"]')?.textContent).toContain("disk full");
+  });
+});
+
+describe("add property flow", () => {
+  const openAdd = async () => {
+    await act(async () =>
+      (
+        [...host.querySelectorAll("button")].find(
+          (b) => b.textContent === "+ Add property",
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    return q('input[aria-label="New property name"]') as HTMLInputElement;
+  };
+
+  it("picks the type up front from the same menu and records it", async () => {
+    await mountAndLoad("a: 1");
+    const name = await openAdd();
+    await act(async () => typeButton("New property", "Text").click());
+    await act(async () => menuItem("Checkbox").click());
+    await type(name, "flag", "blur");
+    await act(async () => {
+      name.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(stored()).toBe("a: 1\nflag: false");
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("flag", "checkbox");
+  });
+
+  it("suggests existing names with their type icons and defaults to a known name's type", async () => {
+    await mountAndLoad("a: 1");
+    const name = await openAdd();
+    await type(name, "du", "blur");
+    const options = [...document.querySelectorAll('[role="option"]')];
+    expect(options.map((o) => o.textContent)).toEqual(["dueDate", "dueDateDate"]);
+    await press(name, "ArrowDown");
+    await press(name, "Enter");
+    expect(name.value).toBe("due");
+    expect(typeButton("New property", "Date")).not.toBeNull();
+    await press(name, "Enter");
+    expect(stored()).toMatch(/^a: 1\ndue: \d{4}-\d{2}-\d{2}$/);
+    // a known name keeps its recorded type: nothing to write
+    expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
+  });
+});
+
+describe("wikilink properties", () => {
+  it("renders links in text and list properties as chips, dimming a missing note", async () => {
+    await mountAndLoad(
+      'rel: "[[Alpha|The Alpha]]"\nrefs:\n  - "[[Alpha#Intro]]"\n  - "[[Missing]]"\n  - plain\nun: [[Alpha]]',
+    );
+    const links = [...host.querySelectorAll<HTMLElement>("[data-wikilink]")];
+    expect(links.map((l) => l.textContent)).toEqual([
+      "The Alpha",
+      "Alpha > Intro",
+      "Missing",
+      "Alpha",
+    ]);
+    expect(links.map((l) => l.dataset.unresolved !== undefined)).toEqual([
+      false,
+      false,
+      true,
+      false,
+    ]);
+    expect(host.textContent).toContain("plain");
+  });
+
+  it("typing [[ in a property input suggests notes and keeps the raw [[...]] text", async () => {
+    await mountAndLoad("refs:\n  - a");
+    const input = q('input[aria-label="Add to refs"]') as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "[[Al");
+      input.setSelectionRange(4, 4);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const option = doc('[role="option"]');
+    expect(option?.textContent).toContain("Alpha");
+    await press(input, "Enter"); // accepts the suggestion, not the add
+    expect(input.value).toBe("[[Alpha]]");
+    expect(stored()).toBe("refs:\n  - a");
+    await press(input, "Enter");
+    expect(stored()).toMatch(/^refs:\n {2}- a\n {2}- ["']\[\[Alpha\]\]["']$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// relationships: a link or a list of links
+// ---------------------------------------------------------------------------
+
+const FILES = [
+  { path: "/vault/Alpha.md", filename: "Alpha.md", relative_path: "Alpha.md", title: null },
+  { path: "/vault/Gamma.md", filename: "Gamma.md", relative_path: "Gamma.md", title: null },
+  {
+    path: "/vault/Projects/Beta.md",
+    filename: "Beta.md",
+    relative_path: "Projects/Beta.md",
+    title: null,
+  },
+  {
+    path: "/vault/Archive/Beta.md",
+    filename: "Beta.md",
+    relative_path: "Archive/Beta.md",
+    title: null,
+  },
+];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function settle() {
+  await act(async () => {
+    await sleep(80); // the picker's search debounce
+  });
+}
+const plus = (key: string) => q(`button[aria-label="Add to ${key}"]`) as HTMLButtonElement;
+const picker = () => doc('[role="dialog"][aria-label="Add a link"]');
+const options = () =>
+  [...document.querySelectorAll<HTMLElement>('[role="option"]')].map((o) => o.textContent);
+async function search(text: string) {
+  const input = doc('input[aria-label="Search notes"]') as HTMLInputElement;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await settle();
+  return input;
+}
+
+describe("relationships properties", () => {
+  beforeEach(() => {
+    vi.mocked(tauri.fuzzySearch).mockImplementation(async (query: string) =>
+      FILES.filter((f) => f.filename.toLowerCase().includes(query.toLowerCase())).map((f) => ({
+        ...f,
+        score: 1,
+        match_indices: [],
+      })),
+    );
+  });
+
+  it("a link or a list of links is inferred as relationships; a mixed list stays a list", async () => {
+    await mountAndLoad(
+      'manager: "[[Alpha]]"\nteam:\n  - "[[Alpha|A]]"\n  - "[[Projects/Beta#Top]]"\nmixed:\n  - "[[Alpha]]"\n  - plain\nnote: hello',
+    );
+    expect(typeButton("manager", "Relationships").dataset.type).toBe("relationships");
+    expect(typeButton("team", "Relationships")).not.toBeNull();
+    expect(typeButton("mixed", "List").dataset.type).toBe("multitext");
+    expect(typeButton("note", "Text")).not.toBeNull();
+    expect(q('[role="status"]')).toBeNull();
+  });
+
+  it("a recorded type wins over inference", async () => {
+    ipc.propertyTypes.mockResolvedValue([
+      {
+        key: "manager",
+        count: 1,
+        types: { link: 1 },
+        type: "text",
+        source: "writer",
+        mismatched: 0,
+        obsidianType: "text",
+      },
+    ]);
+    await mountAndLoad('manager: "[[Alpha]]"');
+    expect(typeButton("manager", "Text")).not.toBeNull();
+  });
+
+  it("chips show each link, dim a missing note and remove one link from a list", async () => {
+    await mountAndLoad('team:\n  - "[[Alpha]]"\n  - "[[Missing]]"\n  - "[[Gamma|G]]"');
+    const links = [...host.querySelectorAll<HTMLElement>("[data-relationship] [data-wikilink]")];
+    expect(links.map((l) => l.textContent)).toEqual(["Alpha", "Missing", "G"]);
+    await act(async () => {});
+    expect(links.map((l) => l.dataset.unresolved !== undefined)).toEqual([false, true, false]);
+    await act(async () => q('button[aria-label="Remove [[Missing]]"]')!.click());
+    expect(stored()).toBe('team:\n  - "[[Alpha]]"\n  - "[[Gamma|G]]"');
+  });
+
+  it("removing the only link of a single value empties the property", async () => {
+    recorded.set("manager", "relationships"); // the vault's record keeps the type of an empty value
+    await mountAndLoad('manager: "[[Alpha]]"');
+    await act(async () => q('button[aria-label="Remove [[Alpha]]"]')!.click());
+    expect(stored()).toBe("manager:");
+    expect(plus("manager")).not.toBeNull(); // still a relationships property, ready for a link
+  });
+
+  it("+ opens a search over the vault's ranked file search and filters as you type", async () => {
+    await mountAndLoad('team:\n  - "[[Gamma]]"');
+    await act(async () => plus("team").click());
+    await settle();
+    expect(picker()).not.toBeNull();
+    expect(document.activeElement).toBe(doc('input[aria-label="Search notes"]'));
+    // note name with a folder hint; Gamma is already linked, so it is not offered
+    expect(options()).toEqual(["Alpha", "BetaProjects", "BetaArchive"]);
+    await search("bet");
+    expect(tauri.fuzzySearch).toHaveBeenCalledWith("bet", expect.any(Number));
+    expect(options()).toEqual(["BetaProjects", "BetaArchive"]);
+    await search("zzz");
+    expect(options()).toEqual([]);
+    expect(doc('[role="status"]')?.textContent).toBe("No notes to link");
+  });
+
+  it("picking writes a quoted link by file name; a single stays single, a second makes a list", async () => {
+    recorded.set("manager", "relationships");
+    await mountAndLoad("manager:");
+    vi.mocked(scheduleSave).mockClear();
+    await act(async () => plus("manager").click());
+    await settle();
+    await act(async () => doc('[role="option"]')!.click()); // Alpha
+    expect(stored()).toBe('manager: "[[Alpha]]"');
+    expect(vi.mocked(scheduleSave)).toHaveBeenCalledTimes(1); // one undo step
+    expect(picker()).toBeNull();
+    expect(document.activeElement).toBe(plus("manager"));
+    // a second link turns the single value into a list
+    await act(async () => plus("manager").click());
+    await settle();
+    expect(options()).not.toContain("Alpha"); // already linked
+    await act(async () => doc('[role="option"]')!.click()); // Gamma
+    expect(stored()).toBe('manager:\n  - "[[Alpha]]"\n  - "[[Gamma]]"');
+    expect(vi.mocked(scheduleSave)).toHaveBeenCalledTimes(2);
+  });
+
+  it("an ambiguous file name is written with its folder path", async () => {
+    await mountAndLoad('team: ["[[Alpha]]"]');
+    await act(async () => plus("team").click());
+    await settle();
+    const beta = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) =>
+      o.textContent?.includes("Archive"),
+    )!;
+    await act(async () => beta.click());
+    expect(stored()).toBe('team: ["[[Alpha]]", "[[Archive/Beta]]"]');
+  });
+
+  it("notes linked with alias, heading or path forms are hidden from the picker", async () => {
+    await mountAndLoad('team:\n  - "[[Alpha|A]]"\n  - "[[Projects/Beta#Top]]"');
+    await act(async () => plus("team").click());
+    await settle();
+    expect(options()).toEqual(["Gamma", "BetaArchive"]);
+  });
+
+  it("the keyboard drives the picker: arrows move, Enter picks, Esc closes and refocuses +", async () => {
+    recorded.set("team", "relationships");
+    await mountAndLoad("team: []");
+    await act(async () => plus("team").click());
+    await settle();
+    const input = doc('input[aria-label="Search notes"]') as HTMLInputElement;
+    expect(doc('[role="option"][aria-selected="true"]')?.textContent).toBe("Alpha");
+    await press(input, "ArrowDown");
+    expect(doc('[role="option"][aria-selected="true"]')?.textContent).toBe("Gamma");
+    await press(input, "ArrowUp");
+    await press(input, "ArrowUp"); // wraps
+    expect(doc('[role="option"][aria-selected="true"]')?.textContent).toContain("Beta");
+    await press(input, "Escape");
+    expect(picker()).toBeNull();
+    expect(document.activeElement).toBe(plus("team"));
+    expect(stored()).toBe("team: []");
+    await act(async () => plus("team").click());
+    await settle();
+    await press(doc('input[aria-label="Search notes"]')!, "ArrowDown");
+    await press(doc('input[aria-label="Search notes"]')!, "Enter");
+    expect(stored()).toBe('team:\n  - "[[Gamma]]"');
+  });
+
+  it("a click outside closes the picker without adding anything", async () => {
+    recorded.set("team", "relationships");
+    await mountAndLoad("team: []");
+    await act(async () => plus("team").click());
+    await settle();
+    expect(picker()).not.toBeNull();
+    await act(async () => {
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    expect(picker()).toBeNull();
+    expect(stored()).toBe("team: []");
+  });
+
+  it("converting text: [[a]], [[b]] splits, plain text resolves by file name or is refused", async () => {
+    await mountAndLoad('many: "[[Alpha]], [[Gamma|G]]"\nplain: Alpha\nnope: Missing');
+    vi.mocked(scheduleSave).mockClear();
+    await act(async () => typeButton("many", "Text").click());
+    await act(async () => menuItem("Relationships").click());
+    expect(stored()).toContain('many:\n  - "[[Alpha]]"\n  - "[[Gamma|G]]"');
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("many", "relationships");
+    await act(async () => typeButton("plain", "Text").click());
+    await act(async () => menuItem("Relationships").click());
+    expect(stored()).toContain('plain: "[[Alpha]]"');
+    expect(vi.mocked(scheduleSave)).toHaveBeenCalledTimes(2); // one update per conversion
+    await act(async () => typeButton("nope", "Text").click());
+    await act(async () => menuItem("Relationships").click());
+    expect(stored()).toContain("nope: Missing"); // refused, kept
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("nope", "relationships");
+    expect(q('[role="status"]')?.textContent).toBe("Not a link");
   });
 });

@@ -3,6 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+// Real plugins call `app.metadataTypeManager.setType`, which records in the backend.
+vi.mock("../src/lib/property-types-ipc", () => ({
+  propertyTypes: vi.fn(async () => []),
+  propertyTypeSet: vi.fn(async () => {}),
+}));
 import { mountSettingTab } from "../src/components/plugins/mount-setting-tab";
 import { createApp, type App } from "../src/lib/obsidian-host/api/app";
 import { createHostServices, Plugin } from "../src/lib/obsidian-host/api/core";

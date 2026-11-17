@@ -14,6 +14,7 @@
 // the panel then offers the raw text only. Single values it cannot edit (nested maps, flow maps
 // such as an unquoted `{{date}}`, aliases, multi-line strings, unquoted `[[wikilink]]` lists)
 // become read-only rows that show their source text.
+import type { PropertyType } from "./property-types";
 import {
   isAlias,
   isMap,
@@ -166,9 +167,24 @@ function scalarText(value: unknown): string {
   return JSON.stringify(value) ?? "";
 }
 
+/** `[[Note]]` written without quotes is a flow list holding a flow list holding `Note`; Obsidian
+ *  (and the vault index) read it as the link. Returns `[[Note]]` for that shape, else null. */
+function unquotedLink(node: unknown): string | null {
+  if (!isSeq(node) || node.items.length !== 1) return null;
+  const inner = node.items[0];
+  if (!isSeq(inner) || inner.items.length !== 1) return null;
+  const leaf = inner.items[0];
+  return isScalar(leaf) && typeof leaf.value === "string" ? `[[${leaf.value}]]` : null;
+}
+
 function scalarItems(seq: YAMLSeq): string[] | null {
   const out: string[] = [];
   for (const item of seq.items) {
+    const link = unquotedLink(item);
+    if (link !== null) {
+      out.push(link);
+      continue;
+    }
     if (!isScalar(item) || item.type === "BLOCK_LITERAL" || item.type === "BLOCK_FOLDED")
       return null;
     out.push(scalarText(item.value));
@@ -232,6 +248,8 @@ function rowOf(text: string, pair: Pair): PropertyRow {
   }
 
   if (isSeq(node)) {
+    const link = unquotedLink(node);
+    if (link !== null) return { ...row, kind: "link", editable: true, value: link };
     const items = scalarItems(node);
     if (items === null) return row;
     const kind: PropertyKind = TAG_KEYS.has(key.toLowerCase()) ? "tags" : "list";
@@ -438,13 +456,20 @@ function failure(error: string): EditResult {
   return { ok: false, error };
 }
 
-/** Replace a property's whole value with `value` (one line), keeping the key line's neighbours. */
-export function setScalar(text: string, key: string, value: ScalarValue): EditResult {
+/** Replace a property's whole value with `value` (one line), keeping the key line's neighbours.
+ *  A string keeps the quote style of the value it replaces unless `restyle` is set (a conversion
+ *  to a date, whose ISO text must be plain). */
+export function setScalar(
+  text: string,
+  key: string,
+  value: ScalarValue,
+  restyle = false,
+): EditResult {
   const at = locate(text, key);
   if ("error" in at) return failure(at.error);
   if (!at.pair) return failure(`The property "${key}" does not exist.`);
   const node = at.pair.value as Node | null;
-  const rendered = renderScalar(value, node);
+  const rendered = renderScalar(value, restyle ? null : node);
   if (rendered === null) return failure("That value cannot be written on one line.");
 
   let next: string;
@@ -570,6 +595,29 @@ export function appendListItem(text: string, key: string, item: string): EditRes
   return verified(at.doc, next, (o) => ({ ...o, [key]: [...current, item] }));
 }
 
+/** Replace a property's whole value with the block list `items` (`key: []` when empty). */
+export function setList(text: string, key: string, items: readonly string[]): EditResult {
+  const at = locate(text, key);
+  if ("error" in at) return failure(at.error);
+  if (!at.pair) return failure(`The property "${key}" does not exist.`);
+  const rendered: string[] = [];
+  for (const item of items) {
+    const r = renderScalar(item);
+    if (r === null) return failure("That value cannot be written on one line.");
+    rendered.push(r);
+  }
+  const head = `${renderKey(key)}:`;
+  const body =
+    rendered.length === 0 ? `${head} []` : `${head}\n${rendered.map((r) => `  - ${r}`).join("\n")}`;
+  const [from, to] = pairLines(text, at.pair);
+  return verified(at.doc, splice(text, from, to, body), (o) => ({ ...o, [key]: [...items] }));
+}
+
+/** Whether `value` is, whole, one `[[wikilink]]`. */
+export function isWikilink(value: string): boolean {
+  return WIKILINK_RE.test(value.trim());
+}
+
 /** Remove the item at `index` from a list property. */
 export function removeListItem(text: string, key: string, index: number): EditResult {
   const at = locate(text, key);
@@ -611,42 +659,19 @@ export function isBlank(text: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// New-property types
+// New properties
 // ---------------------------------------------------------------------------
-
-export const NEW_PROPERTY_TYPES = [
-  "text",
-  "number",
-  "checkbox",
-  "date",
-  "datetime",
-  "list",
-  "tags",
-] as const;
-export type NewPropertyType = (typeof NEW_PROPERTY_TYPES)[number];
-
-export const NEW_PROPERTY_LABELS: Record<NewPropertyType, string> = {
-  text: "Text",
-  number: "Number",
-  checkbox: "Checkbox",
-  date: "Date",
-  datetime: "Date & time",
-  list: "List",
-  tags: "Tags",
-};
 
 function two(n: number): string {
   return String(n).padStart(2, "0");
 }
 
 /** The starting value written for a new property of `type`. */
-export function initialValue(
-  type: NewPropertyType,
-  now: Date = new Date(),
-): ScalarValue | string[] {
+export function initialValue(type: PropertyType, now: Date = new Date()): ScalarValue | string[] {
   const date = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   switch (type) {
     case "text":
+    case "relationships": // no link yet: the first one written is a single value
       return null;
     case "number":
       return 0;
@@ -656,37 +681,9 @@ export function initialValue(
       return date;
     case "datetime":
       return `${date}T${two(now.getHours())}:${two(now.getMinutes())}`;
-    case "list":
+    case "multitext":
     case "tags":
+    case "aliases":
       return [];
-  }
-}
-
-/** Map a vault index type (`index_properties`) to the picker's type. */
-export function newTypeFromIndex(types: Record<string, number>, key: string): NewPropertyType {
-  if (TAG_KEYS.has(key.toLowerCase())) return "tags";
-  let best = "";
-  let bestCount = -1;
-  for (const [type, count] of Object.entries(types)) {
-    if (count > bestCount) {
-      best = type;
-      bestCount = count;
-    }
-  }
-  switch (best) {
-    case "number":
-      return "number";
-    case "checkbox":
-    case "bool":
-    case "boolean":
-      return "checkbox";
-    case "date":
-      return "date";
-    case "datetime":
-      return "datetime";
-    case "list":
-      return "list";
-    default:
-      return "text";
   }
 }

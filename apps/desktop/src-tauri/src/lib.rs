@@ -27,6 +27,7 @@ mod plugin_proc;
 mod plugin_secrets;
 mod plugin_store;
 mod plugins;
+pub mod property_types;
 pub mod relocate;
 mod state;
 mod telemetry;
@@ -674,6 +675,8 @@ pub fn run() {
             commands::index::index_status,
             commands::index::index_query_files,
             commands::index::index_properties,
+            commands::index::property_types,
+            commands::index::property_type_set,
             commands::index::index_get_metadata,
             commands::index::index_search,
             commands::bases::base_list,

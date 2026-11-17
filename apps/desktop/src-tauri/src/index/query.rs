@@ -220,6 +220,16 @@ pub struct PropertyCount {
     pub types: BTreeMap<String, i64>,
 }
 
+/// How many notes hold a list value of one property that is empty, or made only of wikilinks.
+/// Read from `prop_items` without any schema change; `property_types::refine_list_shapes` uses it
+/// so an empty list is neutral and a list of links infers as relationships.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListShape {
+    pub key: String,
+    pub empty: i64,
+    pub links_only: i64,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TaskFilter {
@@ -566,6 +576,26 @@ impl Index {
                 }
             }
             Ok(out)
+        })
+    }
+
+    /// Per property name: the list values that are empty and those made only of wikilinks.
+    pub fn list_shapes(&self) -> Res<Vec<ListShape>> {
+        self.read(|c| {
+            let mut st = c.prepare(
+                "SELECT key, SUM(total = 0), SUM(total > 0 AND non_link = 0) FROM ( \
+                   SELECT p.key AS key, \
+                     (SELECT COUNT(*) FROM prop_items i WHERE i.file_id = p.file_id AND i.key = p.key) AS total, \
+                     (SELECT COUNT(*) FROM prop_items i WHERE i.file_id = p.file_id AND i.key = p.key AND i.vtype != 'link') AS non_link \
+                   FROM props p WHERE p.vtype = 'list') \
+                 GROUP BY key ORDER BY key",
+            )?;
+            let rows = st
+                .query_map([], |r| {
+                    Ok(ListShape { key: r.get(0)?, empty: r.get(1)?, links_only: r.get(2)? })
+                })?
+                .collect::<Result<_, _>>()?;
+            Ok(rows)
         })
     }
 

@@ -4,13 +4,13 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   addProperty,
   appendListItem,
-  newTypeFromIndex,
   parseProperties,
   propertyStats,
   removeListItem,
   removeProperty,
   renameProperty,
   resolveCollapsed,
+  setList,
   setScalar,
   setTagString,
   summaryTags,
@@ -77,7 +77,7 @@ describe("parseProperties kinds", () => {
     });
   });
 
-  test("nested maps, multi-line strings, unquoted wikilink lists are read-only", () => {
+  test("nested maps, multi-line strings, an unquoted wikilink reads as an editable link", () => {
     const t = "meta:\n  a: 1\n  b: two\nnote: |\n  l1\n  l2\nrel: [[Page]]";
     const r = rows(t);
     expect(r[0]).toMatchObject({ kind: "map", editable: false });
@@ -86,7 +86,7 @@ describe("parseProperties kinds", () => {
       { key: "b", text: "two" },
     ]);
     expect(r[1]).toMatchObject({ kind: "multiline", editable: false });
-    expect(r[2]).toMatchObject({ kind: "raw", editable: false });
+    expect(r[2]).toMatchObject({ kind: "link", editable: true });
   });
 
   test("an empty block and a comment-only block have no rows", () => {
@@ -252,10 +252,42 @@ describe("collapsed state", () => {
     expect(propertyStats("")).toEqual({ count: 0, lines: 0 });
     expect(summaryTags(rows("t: 1\ntags: [x, y]"))).toEqual(["x", "y"]);
   });
-  test("new-property type follows the vault's dominant type", () => {
-    expect(newTypeFromIndex({ date: 5, text: 1 }, "when")).toBe("date");
-    expect(newTypeFromIndex({}, "Tags")).toBe("tags");
-    expect(newTypeFromIndex({ checkbox: 2 }, "x")).toBe("checkbox");
-    expect(newTypeFromIndex({ link: 2 }, "x")).toBe("text");
+});
+
+describe("wikilink properties", () => {
+  test("quoted and unquoted forms both read back as links", () => {
+    expect(rows('a: "[[Note|Alias]]"')[0]).toMatchObject({ kind: "link", value: "[[Note|Alias]]" });
+    expect(rows("a: [[Note]]")[0]).toMatchObject({
+      kind: "link",
+      value: "[[Note]]",
+      editable: true,
+    });
+    expect(rows('l:\n  - "[[A]]"\n  - [[B#H]]\n  - plain')[0]).toMatchObject({
+      kind: "list",
+      items: ["[[A]]", "[[B#H]]", "plain"],
+    });
+  });
+  test("writing a link quotes it so the YAML stays valid", () => {
+    const out = text(setScalar("a: x", "a", "[[Note]]"));
+    expect(out).toMatch(/^a: ["']\[\[Note\]\]["']$/);
+    expect(kinds(out).a).toBe("link");
+    const list = text(appendListItem("l:\n  - a", "l", "[[Note]]"));
+    expect(list).toMatch(/\n  - ["']\[\[Note\]\]["']$/);
+  });
+  test("an unquoted link is rewritten quoted when edited, and nothing else moves", () => {
+    const out = text(setScalar("# c\na: [[Old]]\nb: 1", "a", "[[New]]"));
+    expect(out).toMatch(/^# c\na: ["']\[\[New\]\]["']\nb: 1$/);
+  });
+});
+
+describe("setList", () => {
+  test("replaces a scalar with a block list, keeping neighbours and CRLF-free text", () => {
+    expect(text(setList("# c\na: x, y\nb: 1", "a", ["x", "y"]))).toBe(
+      "# c\na:\n  - x\n  - y\nb: 1",
+    );
+    expect(text(setList("a: x\nb: 1", "a", []))).toBe("a: []\nb: 1");
+  });
+  test("refuses a missing property", () => {
+    expect(setList("a: 1", "z", ["x"]).ok).toBe(false);
   });
 });

@@ -227,6 +227,27 @@ export function wikiCompletionDisplay(file: SearchResult): {
   };
 }
 
+export interface WikiSuggestion {
+  label: string;
+  detail: string | undefined;
+  /** What goes between `[[` and `]]`: the file name (path when ambiguous), never a title. */
+  insertText: string;
+}
+
+/** The `[[` suggestions for `query`: the ranked fuzzy matches of the vault's notes, shared by the
+ *  editor's autocomplete and the property inputs. */
+export async function wikiSuggestions(
+  query: string,
+  search: (query: string, limit: number) => Promise<SearchResult[]>,
+  limit = 20,
+): Promise<WikiSuggestion[]> {
+  const results = await search(query, limit);
+  return results.map((r) => ({
+    ...wikiCompletionDisplay(r),
+    insertText: canonicalWikiTarget(r, results),
+  }));
+}
+
 function stripMdExtension(path: string): string {
   const lower = path.toLowerCase();
   if (lower.endsWith(".md")) return path.slice(0, -3);

@@ -269,7 +269,20 @@ pub fn properties(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, 
             }
         });
     }
-    let mut list = ctx.index()?.properties()?;
+    let index = ctx.index()?;
+    let mut list = index.properties()?;
+    // `types`: each name with its effective type (`relationships` included), the app's own report
+    let types: std::collections::HashMap<String, String> = if args.flag("types") {
+        let mut counts = list.clone();
+        crate::property_types::refine_list_shapes(&mut counts, &index.list_shapes()?);
+        crate::property_types::report(index.root(), counts)
+            .into_iter()
+            .map(|p| (p.key, p.ty.wire_name().to_string()))
+            .collect()
+    } else {
+        Default::default()
+    };
+    let ty = |k: &str| types.get(k).cloned();
     if let Some(n) = name {
         list.retain(|p| p.key == n);
     }
@@ -285,27 +298,38 @@ pub fn properties(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, 
             let v: Vec<Json> = list
                 .iter()
                 .map(|p| {
+                    let mut o = json!({"name": p.key});
                     if counts {
-                        json!({"name": p.key, "count": p.count})
-                    } else {
-                        json!({"name": p.key})
+                        o["count"] = json!(p.count);
                     }
+                    if let Some(t) = ty(&p.key) {
+                        o["type"] = json!(t);
+                    }
+                    o
                 })
                 .collect();
             format!("{}\n", json_pretty(&Json::Array(v)))
         }
         "tsv" => list_lines(list.iter().map(|p| {
+            let mut cols = vec![p.key.clone()];
             if counts {
-                format!("{}\t{}", p.key, p.count)
-            } else {
-                p.key.clone()
+                cols.push(p.count.to_string());
             }
+            cols.extend(ty(&p.key));
+            cols.join("\t")
         })),
         _ => list_lines(list.iter().map(|p| {
+            let mut tail = Vec::new();
             if counts {
-                format!("{}: {}", yaml_key(&p.key), p.count)
-            } else {
+                tail.push(p.count.to_string());
+            }
+            tail.extend(ty(&p.key));
+            if tail.is_empty() {
                 format!("- {}", yaml_key(&p.key))
+            } else if counts {
+                format!("{}: {}", yaml_key(&p.key), tail.join(", "))
+            } else {
+                format!("- {}: {}", yaml_key(&p.key), tail.join(", "))
             }
         })),
     })
