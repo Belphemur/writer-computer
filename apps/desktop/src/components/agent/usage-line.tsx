@@ -1,7 +1,6 @@
 import type { Chat } from "@/hooks/use-agent";
-import { formatCost } from "@/lib/agent/timeline";
 
-/** Footer under the composer: the chat's total cost (the context fill is the ring, `context-ring.tsx`). */
+/** Footer under the composer: only a save error. The cost shows once per turn in the timeline; the context fill is the ring. */
 export function UsageLine({ chat }: { chat: Chat }) {
   if (chat.saveError)
     return (
@@ -13,10 +12,5 @@ export function UsageLine({ chat }: { chat: Chat }) {
         This chat could not be saved: {chat.saveError}
       </p>
     );
-  if (chat.totalCostUsd <= 0) return null;
-  return (
-    <p data-agent-usage className="px-4 pb-2 text-[11px] text-text-muted">
-      {formatCost(chat.totalCostUsd)} this chat
-    </p>
-  );
+  return null;
 }
