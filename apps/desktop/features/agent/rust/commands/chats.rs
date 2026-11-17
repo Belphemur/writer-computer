@@ -18,7 +18,7 @@ use crate::error::AppError;
 use crate::state::AppState;
 use crate::vault_ops::VaultOpError;
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 fn store_err(e: ChatStoreError) -> AppError {
     match e {
@@ -287,6 +287,15 @@ pub async fn agent_chat_replay<R: Runtime>(
     .await
 }
 
+/// A saved chat image, with the folder it sits in granted to the asset protocol first, so the
+/// thumbnail and the image tab can load it (the folder is hidden).
+fn served<R: Runtime>(app: &AppHandle<R>, saved: crate::attachments::Saved) -> ChatImage {
+    if let Some(dir) = saved.abs_path.parent() {
+        crate::commands::workspace::allow_chat_assets_dir(app, dir);
+    }
+    ChatImage::from(saved)
+}
+
 /// Saves a pasted or browser-dropped image (bytes as base64) into the chat's hidden `assets/`
 /// folder; the composer then attaches the returned path (spec "Images in the composer").
 #[tauri::command]
@@ -305,7 +314,7 @@ pub async fn agent_save_chat_image<R: Runtime>(
         .map_err(|_| AppError::InvalidPath("the image data is not valid base64".into()))?;
     blocking(move || {
         images::save_bytes(&root, project_path.as_deref(), &name, &bytes)
-            .map(ChatImage::from)
+            .map(|saved| served(&app, saved))
             .map_err(AppError::InvalidPath)
     })
     .await
@@ -327,7 +336,7 @@ pub async fn agent_import_chat_image_file<R: Runtime>(
             project_path.as_deref(),
             std::path::Path::new(&source_path),
         )
-        .map(ChatImage::from)
+        .map(|saved| served(&app, saved))
         .map_err(AppError::InvalidPath)
     })
     .await

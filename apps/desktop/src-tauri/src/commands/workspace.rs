@@ -431,9 +431,33 @@ pub(crate) fn canonicalize_workspace_root(path: &str) -> Result<PathBuf, AppErro
 /// is permanent and wins over a later allow, which would break reopening the
 /// same folder), so access is granted for the rest of the session to folders
 /// the user has opened, never to the whole disk.
-fn allow_asset_dir(app: &tauri::AppHandle, dir: &Path, recursive: bool) {
+fn allow_asset_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>, dir: &Path, recursive: bool) {
     if let Err(e) = app.asset_protocol_scope().allow_directory(dir, recursive) {
         log::warn!("asset scope: could not allow {}: {e}", dir.display());
+    }
+}
+
+/// The one place a hidden chat-images folder is granted to the asset protocol (Tauri hides
+/// dot-folders from the vault-wide grant on unix, and only this folder, not its parent, may be
+/// served). Flat: images sit directly in `assets/`.
+pub(crate) fn allow_chat_assets_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>, assets: &Path) {
+    allow_asset_dir(app, assets, false);
+}
+
+/// Grants the chat images folder of the vault itself and of every project that has chats, at
+/// workspace open. A project or folder first used later is granted by the save that creates it
+/// (`agent_save_chat_image`, `agent_import_chat_image_file`).
+pub(crate) fn allow_chat_assets_in_vault<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    root: &Path,
+) {
+    use crate::agent::{chat_store, images::ASSETS_DIR};
+    allow_chat_assets_dir(
+        app,
+        &root.join(chat_store::VAULT_CHATS_DIR).join(ASSETS_DIR),
+    );
+    for dir in chat_store::all_chat_dirs(root) {
+        allow_chat_assets_dir(app, &dir.join(ASSETS_DIR));
     }
 }
 
@@ -468,6 +492,7 @@ fn prepare_workspace_state(
     // Plugin streams/processes belong to the vault being left.
     crate::commands::plugins::stop_window_work(app, label);
     allow_asset_dir(app, &root, true);
+    allow_chat_assets_in_vault(app, &root);
     let (new_epoch, new_cancel, old_runtime) = state.transition_to_workspace(root.clone());
     drop_workspace_runtime_off_thread(old_runtime);
 
@@ -1067,6 +1092,74 @@ pub async fn load_session(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// The scope as `tauri.conf.json` declares it, applied to a mock app (the one place the
+    /// shipped config meets Tauri's glob rules).
+    fn app_with_shipped_asset_scope() -> tauri::App<tauri::test::MockRuntime> {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let asset = serde_json::from_value(conf["app"]["security"]["assetProtocol"].clone())
+            .expect("assetProtocol config");
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().app.security.asset_protocol = asset;
+        tauri::test::mock_builder().build(context).unwrap()
+    }
+
+    /// Pasted chat images live in hidden folders (`.writer/chats/assets`, `<project>/.chats/assets`)
+    /// that Tauri's asset scope hides from the vault-wide grant on unix. Only those folders are
+    /// granted, never the rest of a dot-folder.
+    #[test]
+    fn only_the_chat_image_folders_are_served_from_hidden_folders() {
+        let app = app_with_shipped_asset_scope();
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("Projects/Demo/.chats")).unwrap();
+        allow_asset_dir(app.handle(), &root, true);
+        let scope = app.asset_protocol_scope();
+        let served = |rel: &str| scope.is_allowed(root.join(rel));
+        assert!(served("pics/a.png"));
+        assert!(
+            !served(".writer/chats/assets/x.png"),
+            "hidden before the grant"
+        );
+
+        allow_chat_assets_in_vault(app.handle(), &root);
+        assert!(served(".writer/chats/assets/x.png"));
+        assert!(served("Projects/Demo/.chats/assets/x.png"));
+        for rel in [
+            ".git/config",
+            ".env",
+            ".obsidian/x.png",
+            ".writer/other.json",
+            ".writer/chats/other.json",
+            "Projects/Demo/.chats/chat.md",
+            "Projects/Demo/.hidden/x.png",
+        ] {
+            assert!(!served(rel), "{rel} must stay hidden");
+        }
+        let outside = TempDir::new().unwrap();
+        assert!(!scope.is_allowed(outside.path().canonicalize().unwrap().join("x.png")));
+    }
+
+    /// A project made after the vault opened gets its folder served when its first image is
+    /// saved (the save grants the folder it wrote into, before the path reaches the webview).
+    #[test]
+    fn a_project_created_after_open_gets_its_assets_folder_on_first_save() {
+        let app = app_with_shipped_asset_scope();
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        allow_asset_dir(app.handle(), &root, true);
+        allow_chat_assets_in_vault(app.handle(), &root);
+        std::fs::create_dir_all(root.join("New project")).unwrap();
+        let scope = app.asset_protocol_scope();
+        let img = root.join("New project/.chats/assets/x.png");
+        assert!(!scope.is_allowed(&img));
+        let saved =
+            crate::agent::images::save_bytes(&root, Some("New project"), "x.png", &[1, 2]).unwrap();
+        allow_chat_assets_dir(app.handle(), saved.abs_path.parent().unwrap());
+        assert!(scope.is_allowed(&img));
+        assert!(!scope.is_allowed(root.join("New project/.chats/chat.md")));
+    }
 
     #[test]
     fn agent_chats_and_editor_tabs_do_not_clobber_each_other() {

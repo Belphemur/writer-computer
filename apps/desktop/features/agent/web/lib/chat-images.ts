@@ -15,6 +15,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENT_MB,
   extensionForMime,
+  isGenericClipboardName,
   pastedImageName,
 } from "@/lib/attachments";
 import { getFileName } from "@/lib/paths";
@@ -112,7 +113,7 @@ export async function attachChatImages(
  *  blob is `image.png`) or its type says what it is. */
 function pastedName(file: File, ext: string | null, now: Date): string {
   const own = file.name;
-  if (own && !/^image\.[a-z0-9]+$/i.test(own) && extensionOf(own) !== "") return own;
+  if (!isGenericClipboardName(own) && extensionOf(own) !== "") return own;
   return pastedImageName(ext ?? (extensionOf(own) || "png"), now);
 }
 

@@ -286,6 +286,33 @@ describe("the composer and the transcript", () => {
     expect($("[data-agent-chip-image]")).toBeNull();
   });
 
+  it("a screenshot on the clipboard (an item, no entry in files) is saved and attached", async () => {
+    const shot = file("image.png", "image/png");
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.assign(event, {
+      clipboardData: {
+        files: [],
+        items: [{ kind: "file", type: "image/png", getAsFile: () => shot }],
+        getData: () => "",
+      },
+    });
+    composerView(container).contentDOM.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    await flush(5);
+    expect(hoisted.saveImage).toHaveBeenCalledOnce();
+    expect(hoisted.saveImage.mock.calls[0]![1]).toMatch(/^Pasted image \d{14}\.png$/);
+    expect($("[data-agent-chip-image] [data-agent-image-thumb]")).not.toBeNull();
+  });
+
+  it("clicking an image chip opens the image tab through link activation", async () => {
+    paste([file("image.png", "image/png")]);
+    await flush(5);
+    const open = $("[data-agent-chip-image] button[title]") as HTMLElement;
+    act(() => open.click());
+    expect(hoisted.opened).toHaveLength(1);
+    expect(hoisted.opened[0]).toMatch(/^\.writer\/chats\/assets\/Pasted image \d{14}\.png$/);
+  });
+
   it("several images attach; Backspace at the start removes the last one", async () => {
     paste([file("a.png", "image/png"), file("b.jpg", "image/jpeg")]);
     await flush(5);
