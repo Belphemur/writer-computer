@@ -15,9 +15,9 @@ import {
   usePluginsStore,
   type PluginsDeps,
 } from "../web/stores/plugins-store";
-import { useEditorStore } from "../../../src/stores/editor-store";
-import { useUIStore } from "../../../src/stores/ui-store";
-import { pluginSectionId } from "../../../src/components/settings-panel/settings-sections";
+import { useEditorStore } from "@/stores/editor-store";
+import { useUIStore } from "@/stores/ui-store";
+import { pluginSectionId } from "@/components/settings-panel/settings-sections";
 
 const errorLog = () => ((window as any).__writerPluginErrors ?? []) as { phase: string }[];
 

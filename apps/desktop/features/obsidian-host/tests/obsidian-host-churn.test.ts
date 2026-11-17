@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   }),
 }));
 
-import { logger } from "../../../src/lib/logger";
+import { logger } from "@/lib/logger";
 import {
   CHURN_LONG_MAX,
   CHURN_SHORT_MAX,

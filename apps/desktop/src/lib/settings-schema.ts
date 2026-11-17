@@ -69,7 +69,7 @@ export type SettingDef = {
  *  renders a feature's entries under it. */
 export const FEATURE_SETTINGS: Readonly<Record<string, readonly SettingDef[]>> = Object.fromEntries(
   Object.entries(
-    import.meta.glob<{ settings: SettingDef[] }>("../../features/*/settings.schema.json", {
+    import.meta.glob<{ settings: SettingDef[] }>("@features/*/settings.schema.json", {
       eager: true,
       import: "default",
     }),

@@ -6,7 +6,7 @@ import { installDomHelpers } from "../web/host/api/dom";
 import { AbstractInputSuggest, EditorSuggest, Menu } from "../web/host/api/ui";
 import { detachedBridge } from "../web/host/api/views";
 import { installPopupGuard, NO_CLAMP_ATTR } from "../web/host/popup-guard";
-import { POPUP_LAYER_ID } from "../../../src/lib/popup-layer";
+import { POPUP_LAYER_ID } from "@/lib/popup-layer";
 import { createMemoryVaultIo } from "../web/host/testing";
 
 beforeAll(() => {

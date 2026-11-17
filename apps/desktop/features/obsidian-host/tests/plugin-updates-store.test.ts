@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("../../../src/lib/preferences", () => ({
+vi.mock("@/lib/preferences", () => ({
   getPreference: vi.fn(async (_k: string, f: unknown) => f),
   setPreference: vi.fn(async () => {}),
 }));
@@ -13,7 +13,7 @@ import {
   useUpdatesStore,
   type UpdatesDeps,
 } from "../web/stores/plugin-updates-store";
-import { useSettingsStore } from "../../../src/stores/settings-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 const HOURS = 60 * 60 * 1000;
 type Versions = Record<string, { installed: string; latest: string | null; fail?: boolean }>;

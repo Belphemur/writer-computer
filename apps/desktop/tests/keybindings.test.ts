@@ -135,7 +135,7 @@ function documentedGlobalChords(): string[] {
   const md = readFileSync(join(import.meta.dirname, "../../../docs/keyboard-shortcuts.md"), "utf8");
   const section = md.split("\n## ")[1]!; // "Global" is the first section
   expect(section.startsWith("Global")).toBe(true);
-  const rows = section.split("\n").filter((l) => /^\| (Cmd|Ctrl|Alt)/.test(l));
+  const rows = section.split("\n").filter((l: string) => /^\| (Cmd|Ctrl|Alt)/.test(l));
   const chords: string[] = [];
   for (const row of rows) {
     const cell = row.split("|")[1]!.trim().replace(/\\\\/g, "\\");

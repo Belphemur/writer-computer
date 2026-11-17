@@ -12,8 +12,8 @@ vi.mock("@tauri-apps/api/core", () => ({
   }),
 }));
 
-vi.mock("../../../src/hooks/workspace-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/hooks/workspace-api")>()),
+vi.mock("@/hooks/workspace-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/workspace-api")>()),
   getWorkspaceRoot: () => "/ws",
 }));
 
@@ -21,13 +21,13 @@ import {
   deserializeLocation,
   locationForPath,
   serializeLocation,
-} from "../../../src/components/editor-area/page-kinds";
-import { resolveFileView } from "../../../src/lib/file-views";
+} from "@/components/editor-area/page-kinds";
+import { resolveFileView } from "@/lib/file-views";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
 import { TextFileView, WorkspaceLeaf } from "../web/host/api/views";
 import { usePluginsStore, type PluginsDeps } from "../web/stores/plugins-store";
-import { useEditorStore } from "../../../src/stores/editor-store";
+import { useEditorStore } from "@/stores/editor-store";
 
 type Factory = (module: { exports: any }, exports: any, require: (n: string) => any) => void;
 const g = globalThis as unknown as { __writerPluginDefine: (id: string, factory: unknown) => void };

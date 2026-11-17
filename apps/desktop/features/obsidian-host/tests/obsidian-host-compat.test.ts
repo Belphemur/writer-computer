@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import process from "node:process";
+import bases from "@features/bases/web";
+import { createFeatureHost } from "@/lib/features/registry";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { createApp, type App } from "../web/host/api/app";
 import { createHostServices, Plugin } from "../web/host/api/core";
@@ -359,13 +362,16 @@ describe("undocumented members plugins feature-detect", () => {
     expect(editor.cm).toBe(fake);
   });
 
-  it("registerBasesView registers a valid view once and rejects a malformed one", () => {
+  it("registerBasesView registers a valid view once and rejects a malformed one", async () => {
+    const featureHost = createFeatureHost({ onError: () => {}, onFailure: () => {} });
+    featureHost.register(bases);
     const plugin = new Plugin(makeApp(), { id: "demo", name: "Demo", version: "1.0.0" });
     const registration = { name: "x", icon: "star", factory: () => ({}) };
     expect(plugin.registerBasesView("compat-view", registration)).toBe(true);
     expect(plugin.registerBasesView("compat-view", registration)).toBe(false);
     expect(() => plugin.registerBasesView("other-view", { name: "x" })).toThrow(TypeError);
     plugin.app.services.sweep("demo");
+    for (const id of featureHost.list()) await featureHost.unregister(id);
   });
 });
 

@@ -12,7 +12,7 @@ import {
   setEditorInfoResolver,
   setPluginEditorExtensions,
 } from "../web/host/editor-bridge";
-import { registerEditorView } from "../../../src/lib/editor-views";
+import { registerEditorView } from "@/lib/editor-views";
 import { createObsidianModule } from "../web/host/obsidian-module";
 import { wrapAppForDiagnostics } from "../web/host/missing-api-log";
 import { createMemoryVaultIo } from "../web/host/testing";

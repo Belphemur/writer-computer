@@ -731,7 +731,7 @@ pub static FUNCTIONS: &[FnDef] = &[
 
 /// One registry entry as shown by the formula editor's completion. Derived
 /// from [`FUNCTIONS`] so the editor can never list a function the engine lacks.
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FunctionInfo {
     pub name: String,

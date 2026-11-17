@@ -85,6 +85,9 @@ pub enum Action {
     /// The skill folder, or a folder above it, is a symlink inside the vault (a skills folder the
     /// user linked elsewhere); Writer never installs or removes anything through it.
     SkippedSymlink,
+    /// The skill belongs to a built-in feature that is switched off: nothing is installed or
+    /// updated, and what is already there stays untouched.
+    SkippedFeatureOff,
     Error,
 }
 
@@ -99,6 +102,7 @@ impl Action {
             Action::SkippedNewer => "skipped-newer",
             Action::SkippedUserOwned => "skipped-user-owned",
             Action::SkippedSymlink => "skipped-symlink",
+            Action::SkippedFeatureOff => "skipped-feature-off",
             Action::Error => "error",
         }
     }
@@ -644,6 +648,13 @@ fn remove_obsolete(v: &Vault, base: &str, out: &mut Vec<SkillOutcome>) {
 /// Errors are per skill, in the report; the function itself only fails when
 /// `root` is not an openable directory.
 pub fn sync(root: &Path, mode: Mode) -> Result<SyncReport, String> {
+    sync_except(root, mode, &[])
+}
+
+/// [`sync`] that leaves the skills named in `held` alone (their feature is off, see
+/// `features::held_skills`): reported as [`Action::SkippedFeatureOff`], never installed, updated
+/// or removed.
+pub fn sync_except(root: &Path, mode: Mode, held: &[&str]) -> Result<SyncReport, String> {
     let root = root
         .canonicalize()
         .map_err(|e| format!("cannot open vault {}: {e}", root.display()))?;
@@ -655,7 +666,15 @@ pub fn sync(root: &Path, mode: Mode) -> Result<SyncReport, String> {
     let mut outcomes = Vec::new();
     for base in SKILL_ROOTS {
         for skill in all_skills() {
-            outcomes.push(sync_skill(&v, base, skill));
+            outcomes.push(if held.contains(&skill.name) {
+                outcome(
+                    &format!("{base}/{}", skill.name),
+                    Action::SkippedFeatureOff,
+                    "its feature is turned off",
+                )
+            } else {
+                sync_skill(&v, base, skill)
+            });
         }
         remove_obsolete(&v, base, &mut outcomes);
     }

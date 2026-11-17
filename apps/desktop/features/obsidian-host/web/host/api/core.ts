@@ -4,12 +4,12 @@
 //
 // Teardown model (one write path): everything a plugin registers goes into an OwnedRegistry
 // keyed by the plugin id, so disabling a plugin is `services.sweep(id)` and nothing else.
-import { OwnedRegistry } from "../../../../../src/lib/owned-registry";
+import { OwnedRegistry } from "@/lib/owned-registry";
 import { createEl } from "./dom";
 import { setIcon } from "./functions";
 import { recordPluginError } from "../error-log";
 import type { App } from "./app";
-import { unregisterBaseViewsOwnedBy } from "@/lib/bases/view-registry";
+import { basesViews } from "./bases-service";
 
 // ---------------------------------------------------------------- Events
 
@@ -560,7 +560,7 @@ export function createHostServices(data: PluginDataStore): HostServices {
       statusBar.removeOwner(owner);
       settingTabs.removeOwner(owner);
       registrations.removeOwner(owner);
-      unregisterBaseViewsOwnedBy(owner);
+      basesViews()?.unregisterOwned(owner);
       for (const fn of sweepers) {
         try {
           fn(owner);

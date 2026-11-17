@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-bases",
+  "description": "Grants the bases feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["bases:default"]
+}

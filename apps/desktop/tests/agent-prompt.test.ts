@@ -1,3 +1,4 @@
+import process from "node:process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { buildPrompt, relativeToCwd, type PromptInput } from "../src/lib/agent/context-text";

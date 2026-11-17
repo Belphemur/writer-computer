@@ -19,7 +19,7 @@
  * Tauri transport: the backend emits `agent:event` with an {@link AgentEventEnvelope}; the UI
  * calls the commands of `features/agent/web/ipc.ts`.
  */
-import type { AgentEvent, ContextRef as WireContextRef } from "../../../features/agent/web/ipc";
+import type { AgentEvent, ContextRef as WireContextRef } from "@features/agent/web/ipc";
 
 export type {
   AgentBinaryInfo,
@@ -52,7 +52,7 @@ export type {
   TurnFinishReason,
   UndoState,
   UsageScope,
-} from "../../../features/agent/web/ipc";
+} from "@features/agent/web/ipc";
 
 // ---------------------------------------------------------------------------------------------
 // Identifiers (all plain strings on the wire; the names say which one)

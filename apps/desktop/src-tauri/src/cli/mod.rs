@@ -14,7 +14,7 @@
 
 pub mod args;
 mod clipboard;
-mod cmd_bases;
+pub(crate) mod cmd_bases;
 mod cmd_files;
 mod cmd_notes;
 mod cmd_query;
@@ -269,6 +269,22 @@ pub fn is_parity_invocation(args: &[String]) -> bool {
     first.starts_with("vault=") || registry::find(first).is_some() || registry::app_control(first)
 }
 
+/// Why a command of a built-in feature cannot run: the feature's switch (`features.<id>.enabled`
+/// in the app's global settings) is off. `None` for core commands and for a feature that is on.
+/// The one gate for every feature's CLI commands (`CommandSpec::feature`).
+fn feature_off(spec: &registry::CommandSpec, env: &Env) -> Option<String> {
+    let id = spec.feature?;
+    let on = env
+        .data_dir()
+        .map_or(true, |dir| crate::features::cli_enabled(&dir, id));
+    (!on).then(|| {
+        format!(
+            "{}: the {id} feature is turned off (features.{id}.enabled); turn it on in Writer's Settings > Features",
+            spec.name
+        )
+    })
+}
+
 /// Run one invocation. `argv` excludes the program name.
 pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
     let inv = match args::parse(argv) {
@@ -307,6 +323,13 @@ pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
             return usage_outcome(&m, Some(spec.name))
         }
     };
+    if let Some(message) = feature_off(spec, env) {
+        return Outcome {
+            code: EXIT_FAIL,
+            stdout: String::new(),
+            stderr: format!("writer: {message}\n"),
+        };
+    }
     let ctx = Ctx::new(env, cwd, inv.vault.clone());
     let result = (spec.run)(&ctx, &parsed, spec);
     let mut stderr: String = ctx

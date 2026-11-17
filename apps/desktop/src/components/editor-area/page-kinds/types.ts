@@ -57,6 +57,10 @@ export interface PageKindInput<K extends string, L extends { kind: K }> {
    *  store (`openFiles`)? Default: `true`. Kinds that render a path another way
    *  (a `.base` table) set `false`, so the store never reads it as text. */
   loadsDocument?: boolean;
+  /** The built-in feature that supplies this kind's view (`feature.json` id). While it is not
+   *  running the kind claims no path (`locationForPath` leaves the file to the text kinds) and an
+   *  already open tab shows the "turned off" page instead of the view. Default: core's own. */
+  feature?: string;
 }
 
 /** A registered page kind — what you actually dispatch through at runtime
@@ -79,6 +83,7 @@ export interface PageKind<K extends string = string, L extends { kind: K } = { k
   serialize: (location: L) => object | null;
   forPath: (path: string) => L | null;
   loadsDocument: boolean;
+  feature: string | undefined;
 }
 
 /** Widest `PageKind` type — used by the registry map where the specific kind
@@ -114,6 +119,7 @@ export function definePageKind<K extends string, L extends { kind: K }>(
     serialize: () => ({}),
     forPath: () => null,
     loadsDocument: true,
+    feature: undefined,
     ...input,
   };
 }

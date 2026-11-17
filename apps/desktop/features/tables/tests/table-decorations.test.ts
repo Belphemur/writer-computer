@@ -3,7 +3,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
-import { foldExtension } from "../../../src/lib/prosemark-core/main";
+import { foldExtension } from "@/lib/prosemark-core/main";
 import { parseTableCellInlineMarkdown, tableDecorations } from "../web/table-decorations";
 import { toggleTableSource } from "../web/table-state";
 

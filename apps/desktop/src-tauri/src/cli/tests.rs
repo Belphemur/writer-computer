@@ -811,6 +811,76 @@ fn outline_and_wordcount() {
     assert_eq!(t.code(&["wordcount", "path=tasks.base"]).0, 1);
 }
 
+impl T {
+    /// What the app writes when the user flips a feature's switch (global `config`, data dir).
+    fn switch(&self, id: &str, on: bool) {
+        fs::write(
+            self.data.path().join("config"),
+            format!("features.{id}.enabled = {on}\n"),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_feature_that_is_off_answers_that_it_is_off_instead_of_running_its_commands() {
+    let t = T::new();
+    t.switch("bases", false);
+    for line in [
+        &["bases"][..],
+        &["base:views", "file=tasks"],
+        &["base:query", "file=tasks"],
+        &["base:create", "file=tasks", "name=X"],
+    ] {
+        let o = t.run(line);
+        assert_eq!(o.code, EXIT_FAIL, "{line:?}");
+        assert!(o.stdout.is_empty(), "{line:?}: {}", o.stdout);
+        assert!(
+            o.stderr.contains("the bases feature is turned off")
+                && o.stderr.contains("features.bases.enabled"),
+            "{line:?}: {}",
+            o.stderr
+        );
+    }
+    assert!(!t.exists("X.md"), "nothing ran");
+    // Usage errors and help still come first, core commands are untouched, and the command stays
+    // documented.
+    assert_eq!(t.code(&["bases", "bogus=1"]).0, EXIT_USAGE);
+    assert!(t.ok(&["help", "base:query"]).contains("Run a base view"));
+    assert!(t.ok(&["files"]).contains("tasks.base"));
+    // switched on again: applies at once (the file is read each run)
+    t.switch("bases", true);
+    assert_eq!(t.ok(&["bases"]), "tasks.base\n");
+}
+
+#[test]
+fn skills_sync_holds_the_skill_of_a_feature_that_is_off_and_leaves_what_is_installed() {
+    let t = T::new();
+    t.switch("bases", false);
+    let out = t.ok(&["skills:sync"]);
+    assert!(
+        out.contains(".claude/skills/writer-bases\tskipped-feature-off"),
+        "{out}"
+    );
+    assert!(
+        out.contains(".agents/skills/writer-cli\tinstalled"),
+        "core skills still install: {out}"
+    );
+    assert!(
+        !t.exists(".claude/skills/writer-bases"),
+        "nothing installed"
+    );
+    // already installed: left exactly as it is (even edited), never removed
+    t.switch("bases", true);
+    t.ok(&["skills:sync"]);
+    assert!(t.exists(".claude/skills/writer-bases/SKILL.md"));
+    let before = t.read(".claude/skills/writer-bases/SKILL.md");
+    t.switch("bases", false);
+    let out = t.ok(&["skills:sync"]);
+    assert!(out.contains(".claude/skills/writer-bases\tskipped-feature-off"));
+    assert_eq!(t.read(".claude/skills/writer-bases/SKILL.md"), before);
+}
+
 #[test]
 fn bases_commands_and_golden_query_outputs() {
     let t = T::new();

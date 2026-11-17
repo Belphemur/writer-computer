@@ -1,0 +1,34 @@
+{
+  "id": "bases",
+  "name": "Bases",
+  "version": "1.0.0",
+  "description": "Obsidian Bases: .base files as tables, cards and lists, bases embedded in notes, the writer-bases agent skill and the writer base commands.",
+  "enabledByDefault": true,
+  "activation": ["onFileKind:base"],
+  "memory": {
+    "level": "medium",
+    "note": "The base view, its editing menus and the embed widgets load when a .base file or a note with an embedded base is first shown; nothing runs in the background. The Rust half (query commands, the writer base commands and the writer-bases skill) takes effect at the next launch."
+  },
+  "provides": ["bases.views"],
+  "rust": {
+    "commands": [
+      "base_eval",
+      "base_functions",
+      "base_list",
+      "base_parse_text",
+      "base_query",
+      "base_query_text",
+      "base_read",
+      "note_properties",
+      "note_property_remove",
+      "note_property_set"
+    ],
+    "skills": ["writer-bases"],
+    "cliCommands": ["bases", "base:views", "base:create", "base:query"]
+  },
+  "contributes": {
+    "editorExtensions": ["bases.embeds"],
+    "slots": ["bases.base-tab"],
+    "services": ["bases.views"]
+  }
+}

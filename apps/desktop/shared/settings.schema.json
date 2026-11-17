@@ -585,6 +585,15 @@
       "scope": "global"
     },
     {
+      "key": "features.bases.enabled",
+      "label": "Bases",
+      "description": "Turns the Bases feature on or off. The Rust part takes effect after a restart.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
       "key": "features.obsidian-host.enabled",
       "label": "Obsidian plugins",
       "description": "Turns the Obsidian plugins feature on or off.",

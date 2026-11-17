@@ -20,24 +20,24 @@ vi.mock("@tauri-apps/api/core", () => ({
     cmd === "read_file" ? { content: disk.get(args.path) ?? "" } : undefined,
   ),
 }));
-vi.mock("../../../src/hooks/workspace-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/hooks/workspace-api")>()),
+vi.mock("@/hooks/workspace-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/workspace-api")>()),
   getWorkspaceRoot: () => "/ws",
 }));
 
-import { locationForPath } from "../../../src/components/editor-area/page-kinds";
+import { locationForPath } from "@/components/editor-area/page-kinds";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { registerEditorView } from "../../../src/lib/editor-views";
+import { registerEditorView } from "@/lib/editor-views";
 import { installDomHelpers } from "../web/host/api/dom";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
 import { usePluginsStore, type PluginsDeps } from "../web/stores/plugins-store";
-import { useEditorStore } from "../../../src/stores/editor-store";
+import { useEditorStore } from "@/stores/editor-store";
 
 const ID = "obsidian-excalidraw-plugin";
 const PLUGIN_DIR = join(homedir(), "Documents/Vault/PersonalVault/.obsidian/plugins", ID);
-const FIXTURES = join(__dirname, "fixtures/excalidraw");
+const FIXTURES = join(import.meta.dirname, "fixtures/excalidraw");
 const g = globalThis as any;
 
 function installBrowserStubs(): void {

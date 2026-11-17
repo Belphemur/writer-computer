@@ -96,7 +96,7 @@ describe("rendered table", () => {
   test("has a scroll container and its stylesheet makes it scroll horizontally", () => {
     const v = make();
     expect(widget(v)!.querySelector(".cm-table-scroll > table")).not.toBeNull();
-    const css = readFileSync(resolve(__dirname, "../web/table-ui.css"), "utf8");
+    const css = readFileSync(resolve(import.meta.dirname, "../web/table-ui.css"), "utf8");
     expect(css).toMatch(/\.cm-table-scroll\s*\{[^}]*overflow-x:\s*auto/);
     expect(css).toMatch(/\.cm-table-scroll\s*\{[^}]*max-width:\s*100%/);
     expect(css).toMatch(/max-width:\s*28rem/);

@@ -17,6 +17,7 @@ pub mod lexer;
 pub mod parser;
 pub mod query;
 pub mod value;
+pub mod wire;
 
 #[cfg(test)]
 mod testkit;

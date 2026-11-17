@@ -19,7 +19,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "paths": { "@/*": ["./src/*"], "@shared/*": ["./shared/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/*": ["./shared/*"],
+      "@features/*": ["./features/*"],
+      "@tests/*": ["./tests/*"]
+    }
   },
   "include": ["src", "shared", "features/*/web"],
   "references": [{ "path": "./tsconfig.node.json" }]

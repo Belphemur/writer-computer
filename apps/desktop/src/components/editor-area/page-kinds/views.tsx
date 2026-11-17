@@ -1,11 +1,14 @@
+import type { ReactNode } from "react";
 import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
-import { BaseView } from "@/components/base-view";
 import { CodeEditorPane } from "@/components/code-editor/code-editor-pane";
 import { ManagedSkillBanner } from "@/components/code-editor/managed-skill-banner";
 import { ImageViewer, ImageViewerFooter } from "@/components/image-viewer/image-viewer";
+import { FeatureOffPage } from "@/components/feature-off-page";
 import { FeatureSlot } from "@/components/feature-slot";
+import { openFileAsTextInNewTab } from "@/hooks/editor-api";
+import { useFeatureActive } from "@/lib/features/active";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { PageViewProps } from "@/lib/features/slots";
 import type { Location } from "./index";
@@ -41,12 +44,24 @@ const FileTabBody = ({ location, isActive }: { location: FileLocation; isActive:
   </>
 );
 
-// A kind whose body a feature supplies (the plugin page kinds of the Obsidian host): the slot
-// `page-view:<kind>` renders it while the feature is on, nothing while it is off.
-function featureView<K extends Location["kind"]>(kind: K) {
-  const Component = (props: PageViewProps<Extract<Location, { kind: K }>>) => (
-    <FeatureSlot slot={`page-view:${kind}`} {...props} />
-  );
+// A kind whose body a feature supplies (the plugin page kinds of the Obsidian host, the base
+// view): the slot `page-view:<kind>` renders it while the feature is on. While it is off, a kind
+// that names its feature (`PageKind.feature`) shows the "turned off" page with `offActions`;
+// the others show nothing.
+function featureView<K extends Location["kind"]>(
+  kind: K,
+  off?: {
+    feature: string;
+    actions?: (location: Extract<Location, { kind: K }>) => ReactNode;
+  },
+) {
+  const Component = (props: PageViewProps<Extract<Location, { kind: K }>>) => {
+    const active = useFeatureActive(off?.feature ?? "");
+    if (off && !active) {
+      return <FeatureOffPage feature={off.feature} actions={off.actions?.(props.location)} />;
+    }
+    return <FeatureSlot slot={`page-view:${kind}`} {...props} />;
+  };
   return { Component };
 }
 
@@ -62,9 +77,18 @@ const views = {
     Component: ImageViewer,
     renderFooter: (l) => <ImageViewerFooter path={l.path} />,
   } satisfies PageKindView<ImageLocation>,
-  base: {
-    Component: BaseView,
-  } satisfies PageKindView<BaseLocation>,
+  base: featureView("base", {
+    feature: "bases",
+    actions: (location) => (
+      <button
+        type="button"
+        onClick={() => void openFileAsTextInNewTab(location.path)}
+        className="rounded-md border border-[var(--line-subtle)] px-2.5 py-1 text-[var(--text-primary)] hover:bg-[var(--item-hover-bg)]"
+      >
+        Open as text
+      </button>
+    ),
+  }) satisfies PageKindView<BaseLocation>,
   launcher: {
     Component: NewTabPage,
   } satisfies PageKindView<LauncherLocation>,

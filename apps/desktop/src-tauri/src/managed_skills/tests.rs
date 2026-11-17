@@ -19,7 +19,7 @@ fn touch(root: &Path, rel: &str, text: &str) {
 }
 
 fn skill(name: &str) -> &'static BundledSkill {
-    SKILLS.iter().find(|s| s.name == name).unwrap()
+    all_skills().find(|s| s.name == name).unwrap()
 }
 
 fn read(root: &Path, rel: &str) -> String {
@@ -55,7 +55,7 @@ fn actions(r: &SyncReport) -> Vec<Action> {
 
 fn assert_all_installed(root: &Path) {
     for base in SKILL_ROOTS {
-        for s in SKILLS {
+        for s in all_skills() {
             for f in s.files {
                 assert_eq!(
                     read(root, &format!("{base}/{}/{}", s.name, f.rel)),
@@ -76,7 +76,7 @@ fn fresh_install_writes_both_roots() {
     let (_t, root) = vault();
     let r = sync(&root, Mode::Apply).unwrap();
     assert!(r.applied);
-    assert_eq!(r.outcomes.len(), SKILL_ROOTS.len() * SKILLS.len());
+    assert_eq!(r.outcomes.len(), SKILL_ROOTS.len() * all_skills().count());
     assert!(actions(&r).iter().all(|a| *a == Action::Installed), "{r:?}");
     assert_all_installed(&root);
     let md = read(&root, ".agents/skills/writer-cli/SKILL.md");
@@ -498,7 +498,7 @@ fn unlocked_concurrent_writers_leave_complete_files() {
                 };
                 for _ in 0..20 {
                     for base in SKILL_ROOTS {
-                        for s in SKILLS {
+                        for s in all_skills() {
                             let o = sync_skill(&v, base, s);
                             assert_ne!(o.action, Action::Error, "{o:?}");
                             assert_ne!(o.action, Action::SkippedUserOwned, "{o:?}");
@@ -521,7 +521,7 @@ fn unlocked_concurrent_writers_leave_complete_files() {
 
 #[test]
 fn render_and_marker_roundtrip() {
-    for s in SKILLS {
+    for s in all_skills() {
         let f = &s.files[0];
         assert_eq!(f.rel, "SKILL.md");
         let text = render(s, f);
@@ -541,7 +541,7 @@ fn render_and_marker_roundtrip() {
 
 #[test]
 fn bundled_skills_have_valid_frontmatter() {
-    for s in SKILLS {
+    for s in all_skills() {
         let src = s.files[0].content;
         let rest = src.strip_prefix("---\n").expect("frontmatter");
         let end = rest.find("\n---\n").expect("closing fence");
@@ -595,9 +595,9 @@ fn bundle_matches_skills_directory() {
         .collect();
     assert_eq!(
         on_disk, bundled,
-        "src-tauri/skills and managed_skills/bundle.rs disagree"
+        "src-tauri/skills and managed_skills/bundle.rs disagree (a feature's skills sit in its own folder)"
     );
-    for s in SKILLS {
+    for s in all_skills() {
         assert_eq!(s.files[0].rel, "SKILL.md");
     }
 }
@@ -647,7 +647,7 @@ fn param_name(tok: &str) -> Option<&str> {
 #[test]
 fn documented_commands_and_parameters_exist_in_the_registry() {
     let mut checked = 0;
-    for s in SKILLS {
+    for s in all_skills() {
         for f in s.files {
             for seg in code_segments(f.content) {
                 let toks: Vec<&str> = seg.split_whitespace().collect();

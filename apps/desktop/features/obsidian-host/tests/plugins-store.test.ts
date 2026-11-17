@@ -5,13 +5,13 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock("../../../src/hooks/workspace-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/hooks/workspace-api")>()),
+vi.mock("@/hooks/workspace-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/workspace-api")>()),
   getWorkspaceRoot: () => "/ws",
 }));
 
 import { Facet } from "@codemirror/state";
-import { useEditorStore } from "../../../src/stores/editor-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { MarkdownView } from "../web/host/api/views";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";

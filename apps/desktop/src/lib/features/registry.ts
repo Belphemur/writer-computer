@@ -24,6 +24,7 @@ import { slotContributions } from "./slots";
 import { workspaceListeners } from "./workspace-events";
 import { settingsSectionContributions } from "./settings-sections";
 import { sidebarActionContributions, sidebarPanelContributions } from "./sidebar";
+import { serviceContributions } from "./services";
 import { statusItemContributions } from "./status-items";
 import type {
   Dispose,
@@ -55,6 +56,7 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.slots ?? []),
     ...(c.commandSources ?? []),
     ...(c.workspaceListeners ?? []),
+    ...(c.services ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
@@ -150,6 +152,7 @@ export function createFeatureHost({
     slotContributions.removeOwner(ownerOf(id));
     featurePaletteSources.removeOwner(ownerOf(id));
     workspaceListeners.removeOwner(ownerOf(id));
+    serviceContributions.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -230,6 +233,9 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.workspaceListeners ?? []) {
           workspaceListeners.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.services ?? []) {
+          serviceContributions.add(x.id, { ...x, owner: o });
         }
         const section = def.contributes?.settingsSection;
         if (section) settingsSectionContributions.add(section.id, { ...section, owner: o });

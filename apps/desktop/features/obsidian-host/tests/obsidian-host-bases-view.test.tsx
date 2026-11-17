@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn(), open: vi.fn(), ask: vi.fn() }));
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn(), readText: vi.fn() }));
-vi.mock("../../../src/lib/bases/ipc", () => ({
+vi.mock("@features/bases/web/ipc", () => ({
   baseList: vi.fn(),
   baseRead: vi.fn(),
   baseQuery: vi.fn(),
@@ -24,22 +24,24 @@ vi.mock("../../../src/lib/bases/ipc", () => ({
   baseFunctions: vi.fn(),
 }));
 
-import { BaseView } from "../../../src/components/base-view";
-import * as ipc from "../../../src/lib/bases/ipc";
-import { resetFunctionRegistry } from "../../../src/lib/bases/function-registry";
-import { FUNCTIONS } from "../../../tests/helpers/bases-functions";
-import { getBaseView, type BaseViewProps } from "../../../src/lib/bases/view-registry";
+import bases from "@features/bases/web";
+import { BaseView } from "@features/bases/web/view";
+import { createFeatureHost } from "@/lib/features/registry";
+import * as ipc from "@features/bases/web/ipc";
+import { resetFunctionRegistry } from "@features/bases/web/lib/function-registry";
+import { FUNCTIONS } from "@features/bases/tests/helpers/bases-functions";
+import { getBaseView, type BaseViewProps } from "@features/bases/web/lib/view-registry";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
-import { useEditorStore } from "../../../src/stores/editor-store";
-import { useWorkspaceStore } from "../../../src/stores/workspace-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import {
   BASE_PATH,
   baseDocument,
   baseView,
   groupedResult,
   taskResult,
-} from "../../../tests/helpers/bases-fixtures";
+} from "@features/bases/tests/helpers/bases-fixtures";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -176,8 +178,12 @@ function propsFor(overrides: Partial<BaseViewProps> = {}): BaseViewProps {
 }
 
 let host: PluginHost;
+/** The built-in feature host the Bases feature is registered in: `registerBasesView` reaches the
+ *  view registry only through its `bases.views` service. */
+const featureHost = createFeatureHost({ onError: () => {}, onFailure: () => {} });
 
 beforeEach(async () => {
+  featureHost.register(bases);
   vi.clearAllMocks();
   resetFunctionRegistry();
   vi.mocked(ipc.baseFunctions).mockResolvedValue(FUNCTIONS);
@@ -189,6 +195,35 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await host.disable("bp");
+  for (const id of featureHost.list()) await featureHost.unregister(id);
+});
+
+describe("with the Bases feature switched off", () => {
+  it("registerBasesView answers false, registers nothing and the plugin keeps loading", async () => {
+    await host.disable("bp");
+    await featureHost.unregister("bases");
+    probe = { instances: [], updates: [], unloaded: 0, registered: [], extra: {} };
+    host = setup();
+    await host.boot();
+    expect(probe.registered).toEqual([false, false, false]);
+    expect(getBaseView("fake")).toBeUndefined();
+    // the built-ins are untouched by the feature going away
+    expect(getBaseView("table")!.owner).toBe("core");
+  });
+
+  it("switching the feature off removes the plugin's views; on again does not bring them back", async () => {
+    expect(getBaseView("fake")).toBeDefined();
+    await featureHost.unregister("bases");
+    expect(getBaseView("fake")).toBeUndefined();
+    featureHost.register(bases);
+    expect(getBaseView("fake")).toBeUndefined();
+    expect(getBaseView("table")).toBeDefined();
+  });
+
+  it("a plugin teardown while the feature is off does not throw", async () => {
+    await featureHost.unregister("bases");
+    await expect(host.disable("bp")).resolves.not.toThrow();
+  });
 });
 
 describe("registerBasesView", () => {

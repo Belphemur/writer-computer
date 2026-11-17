@@ -144,6 +144,7 @@ describe("settings", () => {
       allowedTools: expect.arrayContaining(["Bash(writer search *)"]),
       disallowedTools: [],
       orchestrate: true,
+      showThinking: true,
       tierModels: { cheap: "haiku", standard: "sonnet", strong: "default" },
     });
     expect(

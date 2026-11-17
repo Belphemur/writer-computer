@@ -7,16 +7,16 @@
 //
 // Clean-room: written from the public `obsidian.d.ts` Bases types and the "Build a Bases view"
 // developer guide. `QueryController` and `FormulaContext` are opaque there; these are ours.
-import { canonicalPropertyKey } from "@/lib/bases/cells";
-import { baseEval } from "@/lib/bases/ipc";
 import type {
   BaseDocument,
   BaseQueryResult,
   BaseView as BaseViewConfigData,
+  BaseViewProps,
   Cell,
-} from "@/lib/bases/types";
-import { registerBaseView, type BaseViewProps, type MountedView } from "@/lib/bases/view-registry";
-import { flattenOptions, type ViewOption } from "@/lib/bases/view-options";
+  MountedView,
+  ViewOption,
+} from "@features/bases/web/api";
+import { basesViews, requireBasesViews } from "./bases-service";
 import { recordPluginError } from "../error-log";
 import type { App } from "./app";
 import { Component } from "./core";
@@ -54,7 +54,7 @@ export class BasesEntry {
   ) {}
   /** The value of a property for this file, or `null` when the view did not query it. */
   getValue(propertyId: BasesPropertyId): Value | null {
-    const cell = this.columns.get(canonicalPropertyKey(propertyId));
+    const cell = this.columns.get(requireBasesViews().canonicalPropertyKey(propertyId));
     return cell ? toValue(cell) : null;
   }
 }
@@ -101,7 +101,9 @@ export function buildQueryResult(app: App, props: BaseViewProps): BasesQueryResu
       )
     : [new BasesEntryGroup(entries)];
   const summaryOf = (entriesIn: BasesEntry[], prop: BasesPropertyId, summaryKey: string): Value => {
-    const c = result.columns.findIndex((col) => col.key === canonicalPropertyKey(prop));
+    const c = result.columns.findIndex(
+      (col) => col.key === requireBasesViews().canonicalPropertyKey(prop),
+    );
     const column = result.columns[c];
     if (!column || column.summary !== summaryKey)
       return new ErrorValue(`Summary "${summaryKey}" is not configured for ${prop} in this view`);
@@ -189,7 +191,7 @@ export class BasesViewConfig {
 
   getDisplayName(prop: BasesPropertyId): string {
     const { document, result } = this.source();
-    const key = canonicalPropertyKey(prop);
+    const key = requireBasesViews().canonicalPropertyKey(prop);
     const col = result?.columns.find((c) => c.key === key);
     if (col) return col.displayName;
     return document?.properties[prop]?.displayName ?? document?.properties[key]?.displayName ?? key;
@@ -485,7 +487,7 @@ export class PluginViewInstance implements MountedView {
   private async evaluateFormulas(props: BaseViewProps): Promise<void> {
     const view = props.view;
     if (!view || !this.reg.options) return;
-    const options = flattenOptions(adaptOptions(this.reg.options(this.config)));
+    const options = requireBasesViews().flattenOptions(adaptOptions(this.reg.options(this.config)));
     const next = new Map<string, Value>();
     await Promise.all(
       options
@@ -497,7 +499,7 @@ export class PluginViewInstance implements MountedView {
             return;
           }
           try {
-            const cell = await baseEval({
+            const cell = await requireBasesViews().evaluate({
               expression,
               thisPath: props.path,
               nowOffsetMinutes: -new Date().getTimezoneOffset(),
@@ -535,7 +537,11 @@ export function registerPluginBasesView(
     factory: reg.factory as Factory,
     options: reg.options,
   };
-  const removed = registerBaseView({
+  // Without the Bases feature there is no registry to put the view in: `false`, as Obsidian
+  // answers without its core Bases plugin.
+  const bases = basesViews();
+  if (!bases) return false;
+  const removed = bases.registerView({
     type: viewId,
     name: full.name,
     icon: full.icon,

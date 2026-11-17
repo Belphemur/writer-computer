@@ -15,7 +15,6 @@ import {
 import * as editorApi from "@/hooks/editor-api";
 import { featureEditorExtensions } from "@/lib/features/editor-extensions";
 import { editorNotePath } from "@/lib/editor-views";
-import { baseEmbedDecorations } from "./base-embed-decorations";
 import { calloutDecorations } from "./callout-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { editorBodyContextMenuExtension } from "./editor-body-menu";
@@ -132,7 +131,6 @@ export function createEditorExtensions(
     calloutDecorations(getFilePath),
     htmlBlockDecorations(),
     mermaidDecorations(),
-    baseEmbedDecorations(getFilePath),
     mathDecorations(),
     headingDecorations,
     imageSrcResolver(getFilePath),

@@ -12,7 +12,7 @@ import {
   callAgent as call,
   type AgentArgs as Args,
   type AgentResult as Result,
-} from "../../../features/agent/web/ipc";
+} from "@features/agent/web/ipc";
 import {
   type AgentBinaryInfo,
   type AgentEvent,

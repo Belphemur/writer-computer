@@ -4,7 +4,7 @@
 // `ErrorValue`, ...). Plugins receive instances from `BasesEntry.getValue(id)`; they are built
 // here from the engine's tagged values (`CellValue`), so plugin code and the built-in views read
 // one model: the display text is the engine's, never recomputed.
-import type { CellValue } from "@/lib/bases/types";
+import type { CellValue } from "@features/bases/web/api";
 
 export abstract class Value {
   /** Display text (what a table cell shows). */

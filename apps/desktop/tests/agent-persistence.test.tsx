@@ -344,7 +344,15 @@ function resetStore() {
     paneOpen: false,
     view: "chat",
     backend: "tauri",
-    binary: { found: true, path: "/x", version: "1", source: "path" },
+    binary: {
+      found: true,
+      path: "/x",
+      version: "1",
+      source: "path",
+      searched: [],
+      authenticated: true,
+      account: null,
+    },
     currentProjectPath: null,
     paneWidth: AGENT_PANE_DEFAULT_WIDTH,
   });

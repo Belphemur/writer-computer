@@ -944,7 +944,7 @@ describe("workspace-store restoreFromBundle", () => {
     mockedInvoke.mockResolvedValue({ path: "/ws/a.md", content: "a", modified_at: 1 });
 
     await useWorkspaceStore.getState().restoreFromBundle({
-      workspace: { root: "/ws", name: "ws", file_count: 1 },
+      workspace: { root: "/ws", name: "ws", file_count: 1, epoch: 1 },
       entries: [],
       recent_workspaces: ["/ws"],
       session: null,
@@ -1075,7 +1075,7 @@ describe("createPendingOpenDrainer", () => {
       { workspace: "/a", file: null },
       { workspace: "/b", file: "/b/note.md" },
     ];
-    const handled: Array<{ workspace: string; file: string | null }> = [];
+    const handled: Array<{ workspace: string | null; file: string | null }> = [];
     const drainPendingOpens = createPendingOpenDrainer(
       async () => queue.shift() ?? null,
       async (payload) => {
@@ -1122,7 +1122,7 @@ describe("createPendingOpenDrainer", () => {
 
     let drainPendingOpens!: () => Promise<void>;
     drainPendingOpens = createPendingOpenDrainer(takePendingOpen, async (payload) => {
-      handled.push(payload.workspace);
+      handled.push(payload.workspace!);
     });
 
     const firstDrain = drainPendingOpens();
@@ -1152,7 +1152,7 @@ describe("createPendingOpenDrainer", () => {
         if (payload.workspace === "/broken") {
           throw new Error("boom");
         }
-        handled.push(payload.workspace);
+        handled.push(payload.workspace!);
       },
     );
 

@@ -10,33 +10,33 @@ vi.mock("@tauri-apps/api/core", () => ({
   ),
   convertFileSrc: (p: string) => p,
 }));
-vi.mock("../../../src/lib/preferences", () => ({
+vi.mock("@/lib/preferences", () => ({
   getPreference: vi.fn(async (_k: string, fallback: unknown) => fallback),
   setPreference: vi.fn(async () => {}),
 }));
 
-import { syncBuiltinFeatures } from "../../../src/lib/features/builtin";
-import { dockContributions } from "../../../src/lib/features/docks";
-import { overlayContributions } from "../../../src/lib/features/overlays";
-import { editorExtensionContributions } from "../../../src/lib/features/editor-extensions";
-import { featurePaletteCommands, featurePaletteSources } from "../../../src/lib/features/palette";
-import { slotContributions } from "../../../src/lib/features/slots";
+import { syncBuiltinFeatures } from "@/lib/features/builtin";
+import { dockContributions } from "@/lib/features/docks";
+import { overlayContributions } from "@/lib/features/overlays";
+import { editorExtensionContributions } from "@/lib/features/editor-extensions";
+import { featurePaletteCommands, featurePaletteSources } from "@/lib/features/palette";
+import { slotContributions } from "@/lib/features/slots";
 import {
   emitFileChanged,
   emitSecretChanged,
   emitSecretsReady,
   workspaceListeners,
-} from "../../../src/lib/features/workspace-events";
-import { createFeatureHost, featureHost } from "../../../src/lib/features/registry";
-import { settingsSectionContributions } from "../../../src/lib/features/settings-sections";
-import { buildSettingsNav } from "../../../src/components/settings-panel/settings-sections";
-import { resolveCommands } from "../../../src/components/command-palette/commands";
-import { useFeatureHealth, isOffForSession } from "../../../src/stores/feature-health-store";
+} from "@/lib/features/workspace-events";
+import { createFeatureHost, featureHost } from "@/lib/features/registry";
+import { settingsSectionContributions } from "@/lib/features/settings-sections";
+import { buildSettingsNav } from "@/components/settings-panel/settings-sections";
+import { resolveCommands } from "@/components/command-palette/commands";
+import { useFeatureHealth, isOffForSession } from "@/stores/feature-health-store";
 import { usePluginsStore } from "../web/stores/plugins-store";
 import { useUpdatesStore } from "../web/stores/plugin-updates-store";
-import { useSettingsStore } from "../../../src/stores/settings-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { usePluginBrowserStore } from "../web/stores/plugin-browser-store";
-import { useWorkspaceStore } from "../../../src/stores/workspace-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import manifest from "../feature.json";
 import obsidianHost from "../web/index";
 import { hostRoot, startHostLifecycle } from "../web/lifecycle";
@@ -301,7 +301,7 @@ describe("contributions to core UI", () => {
 
 describe("running plugins published to core", () => {
   it("lists the enabled plugins while the feature is active and clears them when it stops", async () => {
-    const { isCommunityPluginRunning } = await import("../../../src/lib/community-plugins");
+    const { isCommunityPluginRunning } = await import("@/lib/community-plugins");
     const status = (id: string, state: string) => ({ [id]: { state } });
     usePluginsStore.setState({
       snapshot: { status: { ...status("a", "enabled"), ...status("b", "failed") } },

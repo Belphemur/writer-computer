@@ -20,7 +20,7 @@ import {
   PLUGIN_BLOCK_DEBOUNCE_MS,
   pluginMarkdownDecorations,
 } from "../web/plugin-markdown-decorations";
-import { editorNotePath } from "../../../src/lib/editor-views";
+import { editorNotePath } from "@/lib/editor-views";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import {
   findCodeBlockProcessor,
@@ -30,8 +30,8 @@ import {
   resetMarkdownProcessorCaches,
 } from "../web/host/markdown-processors";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
-import { prosemarkMarkdownSyntaxExtensions } from "../../../src/lib/prosemark-core/main";
-import { withFullParse } from "../../../tests/helpers/parsed-state";
+import { prosemarkMarkdownSyntaxExtensions } from "@/lib/prosemark-core/main";
+import { withFullParse } from "@tests/helpers/parsed-state";
 
 type Req = (name: string) => any;
 const g = globalThis as unknown as {

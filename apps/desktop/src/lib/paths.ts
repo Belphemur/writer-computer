@@ -193,6 +193,12 @@ export function getFileStem(path: string): string {
   return name.slice(0, lastDot);
 }
 
+/** Is this an Obsidian base (`.base`)? Core claims the path for its page kind and wiki links; what
+ *  a base shows is the `bases` feature's. */
+export function isBasePath(path: string): boolean {
+  return path.toLowerCase().endsWith(".base");
+}
+
 export function getFileName(path: string): string {
   const lastSlash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return path.slice(lastSlash + 1);

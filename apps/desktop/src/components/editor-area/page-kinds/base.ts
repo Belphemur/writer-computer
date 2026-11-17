@@ -1,5 +1,4 @@
-import { isBasePath } from "@/lib/bases/paths";
-import { getFileName } from "@/lib/paths";
+import { getFileName, isBasePath } from "@/lib/paths";
 import { definePageKind } from "./types";
 
 /**
@@ -17,6 +16,8 @@ export const baseKind = definePageKind<"base", BaseLocation>({
   keepAlive: true,
   supportsFileContextMenu: true,
   loadsDocument: false,
+  // The view is the `bases` feature's; off, a `.base` opens as text (`locationForPath`).
+  feature: "bases",
   forPath: (path) => (isBasePath(path) ? { kind: "base", path } : null),
   fromPayload: (data) =>
     typeof data.path === "string"

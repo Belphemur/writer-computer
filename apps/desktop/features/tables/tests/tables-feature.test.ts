@@ -7,12 +7,12 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
-import { editorExtensionContributions } from "../../../src/lib/features/editor-extensions";
-import { menuContributions } from "../../../src/lib/features/menus";
-import { featurePaletteCommands } from "../../../src/lib/features/palette";
-import { createFeatureHost } from "../../../src/lib/features/registry";
-import { isFeatureEnabled, syncBuiltinFeatures } from "../../../src/lib/features/builtin";
-import schema from "../../../shared/settings.schema.json";
+import { editorExtensionContributions } from "@/lib/features/editor-extensions";
+import { menuContributions } from "@/lib/features/menus";
+import { featurePaletteCommands } from "@/lib/features/palette";
+import { createFeatureHost } from "@/lib/features/registry";
+import { isFeatureEnabled, syncBuiltinFeatures } from "@/lib/features/builtin";
+import schema from "@shared/settings.schema.json";
 import manifest from "../feature.json";
 import tables from "../web/index";
 import { TABLE_PALETTE_COMMAND_IDS } from "../web/table-commands";

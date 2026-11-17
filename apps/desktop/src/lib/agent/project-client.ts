@@ -11,7 +11,7 @@ import {
   type ManifestPreview,
   type ProjectDetail,
   type ProjectUpdate,
-} from "../../../features/agent/web/ipc";
+} from "@features/agent/web/ipc";
 
 export type { FolderInspection, ManifestEntry, ManifestPreview, ProjectDetail, ProjectUpdate };
 

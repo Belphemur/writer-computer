@@ -3,7 +3,7 @@
 // too. Core never imports a feature by name.
 import type { FeatureManifest } from "./types";
 
-const files = import.meta.glob<FeatureManifest>("../../../features/*/feature.json", {
+const files = import.meta.glob<FeatureManifest>("@features/*/feature.json", {
   eager: true,
   import: "default",
 });

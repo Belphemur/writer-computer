@@ -2,6 +2,7 @@
 // cannot beat Writer's Tailwind utilities (unlayered CSS beats every layer). jsdom has no cascade
 // layers, so these assert the wrapping and the declared order, not the computed style.
 // @vitest-environment jsdom
+import process from "node:process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vite-plus/test";

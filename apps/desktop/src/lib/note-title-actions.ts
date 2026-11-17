@@ -1,9 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import * as editorApi from "@/hooks/editor-api";
-import {
-  hasUnsavedEditorChanges,
-  reloadOpenNoteAfterWrite,
-} from "@/components/base-view/open-note-sync";
+import { hasUnsavedEditorChanges, reloadOpenNoteAfterWrite } from "@/lib/open-note-sync";
 import { inferTitle, parseFrontmatter } from "@/lib/frontmatter";
 import * as tauri from "@/lib/tauri";
 

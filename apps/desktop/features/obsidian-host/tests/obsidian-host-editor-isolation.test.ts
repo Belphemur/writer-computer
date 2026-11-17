@@ -16,14 +16,14 @@ import {
   setPluginEditorExtensions,
   validatePluginExtension,
 } from "../web/host/editor-bridge";
-import { registerEditorView } from "../../../src/lib/editor-views";
+import { registerEditorView } from "@/lib/editor-views";
 import { makeRequire } from "../web/host/modules";
 import {
   hideExtension,
   prosemarkBasicSetup,
   prosemarkMarkdownSyntaxExtensions,
-} from "../../../src/lib/prosemark-core/main";
-import { logger } from "../../../src/lib/logger";
+} from "@/lib/prosemark-core/main";
+import { logger } from "@/lib/logger";
 
 const DOC = "intro\n\n## Heading\n\ntext with **bold** and a [[link]]\n";
 

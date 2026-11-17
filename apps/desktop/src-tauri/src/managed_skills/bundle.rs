@@ -55,12 +55,4 @@ pub static SKILLS: &[BundledSkill] = &[
         name: "writer-search",
         files: &[file!("writer-search", "SKILL.md")],
     },
-    BundledSkill {
-        name: "writer-bases",
-        files: &[
-            file!("writer-bases", "SKILL.md"),
-            file!("writer-bases", "references/expressions.md"),
-            file!("writer-bases", "references/recipes.md"),
-        ],
-    },
 ];

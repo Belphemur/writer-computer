@@ -230,7 +230,7 @@ describe("ToggleComponent compat", () => {
 describe("YAML template placeholders", () => {
   it("parse without the `mapAsMap` console warning", async () => {
     const { parseYaml } = await import("../web/host/api/functions");
-    const { parseYamlEntries } = await import("../../../src/lib/yaml-entries");
+    const { parseYamlEntries } = await import("@/lib/yaml-entries");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     parseYaml("created: {{date}}\ntitle: x");
     parseYamlEntries("created: {{date}}");

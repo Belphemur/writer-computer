@@ -19,12 +19,12 @@ if (!Range.prototype.getBoundingClientRect) {
 }
 
 import { pluginMarkdownDecorations } from "../web/plugin-markdown-decorations";
-import { editorNotePath } from "../../../src/lib/editor-views";
+import { editorNotePath } from "@/lib/editor-views";
 import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { resetMarkdownProcessorCaches } from "../web/host/markdown-processors";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
-import { prosemarkMarkdownSyntaxExtensions } from "../../../src/lib/prosemark-core/main";
-import { withFullParse } from "../../../tests/helpers/parsed-state";
+import { prosemarkMarkdownSyntaxExtensions } from "@/lib/prosemark-core/main";
+import { withFullParse } from "@tests/helpers/parsed-state";
 
 const BUNDLE_DIR = "/Users/antoinea/Documents/Vault/PersonalVault/.obsidian/plugins/dataview";
 const hasBundle = existsSync(`${BUNDLE_DIR}/main.js`) && existsSync(`${BUNDLE_DIR}/manifest.json`);

@@ -289,6 +289,14 @@ pub fn settings_schema() -> Vec<SettingDef> {
     load_schema()
 }
 
+/// One boolean of the global `config` file in `global_config_dir`, read without a [`Settings`]
+/// (no migration, nothing written): what the `writer` CLI needs to honour a feature's kill
+/// switch. `None` when the file or the key is absent, or the value is not a boolean.
+pub fn read_global_bool(global_config_dir: &Path, key: &str) -> Option<bool> {
+    let raw = std::fs::read_to_string(global_config_dir.join("config")).ok()?;
+    parse_config_with_defaults(&raw, None).get(key)?.as_bool()
+}
+
 /// Manages the three-layer settings: defaults → global → workspace.
 pub struct Settings {
     defaults: HashMap<String, ConfigValue>,

@@ -222,7 +222,7 @@ A `transactionFilter` returning `[tr, { selection }]` adds a spec whose position
 
 ## Block widgets that host a React root
 
-`base-embed-decorations.ts` mounts `createRoot` per widget. Rules it learned: unmount from `destroy` in a `queueMicrotask` (CodeMirror can destroy a view inside a React commit, where a synchronous `root.unmount()` is refused); keep identity to what is rendered so unrelated typing never remounts, and use `updateDOM` (returning true) so a changed source re-renders the same root; give a block widget `side: 1` when it should sit below its source line (the default is above it); use padding, not margin, on the widget root (CodeMirror measures its box, not its margins); remember the settled height per widget and call `view.requestMeasure()` from a `ResizeObserver`. A wiki embed is not a syntax node, so find it as a top-level `Paragraph` whose single line matches, which also excludes frontmatter, code and comments for free.
+`features/bases/web/embed-decorations.ts` mounts `createRoot` per widget. Rules it learned: unmount from `destroy` in a `queueMicrotask` (CodeMirror can destroy a view inside a React commit, where a synchronous `root.unmount()` is refused); keep identity to what is rendered so unrelated typing never remounts, and use `updateDOM` (returning true) so a changed source re-renders the same root; give a block widget `side: 1` when it should sit below its source line (the default is above it); use padding, not margin, on the widget root (CodeMirror measures its box, not its margins); remember the settled height per widget and call `view.requestMeasure()` from a `ResizeObserver`. A wiki embed is not a syntax node, so find it as a top-level `Paragraph` whose single line matches, which also excludes frontmatter, code and comments for free.
 
 ## The properties panel is not a block widget
 
@@ -249,7 +249,7 @@ Anything that inserts after an await (saving a pasted image) must not trust the 
 - `mermaid-decorations.ts` — canonical replace-only block widget with in-widget editing. Reference for live position lookup (`findEnclosingFencedCode`) and writing the fence back from a nested editor.
 - `mermaid-renderer.ts` — `renderMermaid`, the one call into Pele: render options, DOMPurify, LRU cache, error messages. `mermaid-canvas.css` holds the `--pele-*` theme mapping.
 - `properties-panel.tsx`, `property-value.tsx` — the collapsible properties panel (React, not a widget); the model is `lib/frontmatter-properties.ts`.
-- `base-embed-decorations.ts` — conditional replace <-> widget block widget hosting a React root (`EmbeddedBase`); `fenced-code.ts` is the shared fence parser.
+- `features/bases/web/embed-decorations.ts` — conditional replace <-> widget block widget hosting a React root (`EmbeddedBase`); `fenced-code.ts` is the shared fence parser.
 - `fold/image.ts` — canonical conditional replace ↔ widget, plus the measured-height cache for async-loading content.
 - `features/tables/web/table-decorations.ts` — block widget with live nested `contenteditable` cells, a horizontally scrolling container, hover handles and a fullscreen overlay (`table-cells.ts`, `table-fullscreen.ts`); source lines only by explicit toggle.
 - `prosemark-core/codeFenceScroll.ts` — `codeBlockScrollField` / `setCodeBlockScroll` / `codeBlockAt`, the one place a code block's horizontal offset is stored and driven (wheel, caret reveal, resize clamp, drawn scrollbar thumb).

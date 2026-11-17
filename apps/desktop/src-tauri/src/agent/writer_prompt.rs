@@ -89,7 +89,7 @@ mod tests {
     use crate::agent::roles::{Flags, RenderInput, RoleAdapter};
     use crate::agent::subagents::ClaudeAdapter;
     use crate::cli::registry;
-    use crate::managed_skills::SKILLS;
+    use crate::managed_skills::all_skills;
 
     /// What the Claude adapter produces for a session; `worker` too when its requirement is met.
     fn roles(writer_cli: bool, worker: bool) -> Rendered {
@@ -229,8 +229,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
     /// Every `writer <name>` in backticks is a registered command that a bundled skill documents.
     #[test]
     fn every_named_command_exists_and_is_documented() {
-        let skills: String = SKILLS
-            .iter()
+        let skills: String = all_skills()
             .flat_map(|s| s.files.iter().map(|f| f.content))
             .collect::<Vec<_>>()
             .join("\n");

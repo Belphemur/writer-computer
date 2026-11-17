@@ -12,7 +12,12 @@ pub fn skills_sync(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, Cl
     } else {
         Mode::Apply
     };
-    let report = managed_skills::sync(ctx.root()?, mode).map_err(CliError::fail)?;
+    // A feature that is off keeps its skills as they are (`features::held_skills`).
+    let held = match ctx.env.data_dir() {
+        Ok(dir) => crate::features::held_skills(|m| crate::features::cli_enabled(&dir, &m.id)),
+        Err(_) => Vec::new(),
+    };
+    let report = managed_skills::sync_except(ctx.root()?, mode, &held).map_err(CliError::fail)?;
     let mut out = String::new();
     let mut errors = Vec::new();
     for o in &report.outcomes {

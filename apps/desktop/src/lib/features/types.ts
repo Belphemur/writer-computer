@@ -11,6 +11,7 @@ import type { DirEntry } from "@/types/fs";
 import type { Keybinding } from "@/lib/keybindings/registry";
 import type { FeatureSecrets } from "@/stores/feature-secrets-store";
 import type { PaletteCommandSource } from "./palette";
+import type { ServiceContribution } from "./services";
 import type { SlotContribution } from "./slots";
 import type { WorkspaceListenerContribution } from "./workspace-events";
 
@@ -35,6 +36,8 @@ export interface FeatureManifest {
   activation?: string[];
   /** Shown in Settings > Features so users see what the feature costs. */
   memory?: { level: "low" | "medium" | "high"; note: string };
+  /** Service ids the feature registers (`contributes.services`). */
+  provides?: string[];
   rust?: { commands?: string[]; events?: string[]; hooks?: string[] };
   /** Only the part the settings UI reads; the rest of `contributes` is the loader's. The id lists
    *  (`docks`, `sidebarPanels`, ...) name what the web half registers; a contract test ties them. */
@@ -223,6 +226,8 @@ export interface Contributions {
   commandSources?: readonly CommandSourceContribution[];
   /** Listeners for what core tells features about the workspace (`workspace-events.ts`). */
   workspaceListeners?: readonly WorkspaceListenerContribution[];
+  /** Typed capabilities other code finds through `getService` (`services.ts`). */
+  services?: readonly ServiceContribution[];
   // Declared by the spec, no host registry yet (lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
 }

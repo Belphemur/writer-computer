@@ -48,10 +48,9 @@ export function syncBuiltinFeatures(
   }
 }
 
-const definitions = import.meta.glob<{ default: FeatureDefinition }>(
-  "../../../features/*/web/index.ts",
-  { eager: true },
-);
+const definitions = import.meta.glob<{ default: FeatureDefinition }>("@features/*/web/index.ts", {
+  eager: true,
+});
 export const BUILTIN_FEATURES = Object.entries(definitions).map(([path, mod]) => {
   const manifest = MANIFEST_BY_PATH[path.replace("/web/index.ts", "/feature.json")];
   return { manifest, definition: mod.default };

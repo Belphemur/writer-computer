@@ -4,7 +4,7 @@
 
 use super::args::Args;
 use super::CliError;
-use super::{cmd_bases, cmd_files, cmd_notes, cmd_query, cmd_skills, Ctx};
+use super::{cmd_files, cmd_notes, cmd_query, cmd_skills, Ctx};
 
 pub type Handler = fn(&Ctx, &Args, &CommandSpec) -> Result<String, CliError>;
 
@@ -23,9 +23,12 @@ pub struct CommandSpec {
     pub formats: &'static [&'static str],
     pub default_format: Option<&'static str>,
     pub run: Handler,
+    /// The built-in feature that contributes this command (`features::Feature::cli_commands`):
+    /// while its switch is off the command reports that instead of running. `None` for core.
+    pub feature: Option<&'static str>,
 }
 
-const fn p(name: &'static str, desc: &'static str) -> ParamSpec {
+pub(crate) const fn p(name: &'static str, desc: &'static str) -> ParamSpec {
     ParamSpec {
         name,
         required: false,
@@ -41,11 +44,11 @@ const fn req(name: &'static str, desc: &'static str) -> ParamSpec {
     }
 }
 
-const FILE: ParamSpec = p(
+pub(crate) const FILE: ParamSpec = p(
     "file",
     "file name, resolved like a wikilink (no folder, no extension)",
 );
-const PATH: ParamSpec = p("path", "exact vault-relative path, e.g. folder/note.md");
+pub(crate) const PATH: ParamSpec = p("path", "exact vault-relative path, e.g. folder/note.md");
 
 const RELOCATE_FLAGS: &[(&str, &str)] = &[
     (
@@ -58,9 +61,9 @@ const RELOCATE_FLAGS: &[(&str, &str)] = &[
     ),
 ];
 
-const NO_FLAGS: &[(&str, &str)] = &[];
-const NO_PARAMS: &[ParamSpec] = &[];
-const NO_FORMATS: &[&str] = &[];
+pub(crate) const NO_FLAGS: &[(&str, &str)] = &[];
+pub(crate) const NO_PARAMS: &[ParamSpec] = &[];
+pub(crate) const NO_FORMATS: &[&str] = &[];
 
 macro_rules! cmd {
     ($name:expr, $group:expr, $summary:expr, $params:expr, $flags:expr, $formats:expr, $default:expr, $run:expr) => {
@@ -73,9 +76,11 @@ macro_rules! cmd {
             formats: $formats,
             default_format: $default,
             run: $run,
+            feature: None,
         }
     };
 }
+pub(crate) use cmd;
 
 pub static COMMANDS: &[CommandSpec] =
     &[
@@ -539,61 +544,6 @@ pub static COMMANDS: &[CommandSpec] =
             NO_FORMATS,
             None,
             cmd_query::wordcount
-        ),
-        // Bases
-        cmd!(
-            "bases",
-            "Bases",
-            "List .base files",
-            NO_PARAMS,
-            NO_FLAGS,
-            NO_FORMATS,
-            None,
-            cmd_bases::bases
-        ),
-        cmd!(
-            "base:views",
-            "Bases",
-            "List the views of a base",
-            &[FILE, PATH],
-            NO_FLAGS,
-            NO_FORMATS,
-            None,
-            cmd_bases::base_views
-        ),
-        cmd!(
-            "base:create",
-            "Bases",
-            "Create a note in a base view",
-            &[
-                FILE,
-                PATH,
-                p("view", "view name"),
-                p("name", "note name"),
-                p("content", "initial text")
-            ],
-            &[
-                ("open", "accepted, ignored"),
-                ("newtab", "accepted, ignored")
-            ],
-            NO_FORMATS,
-            None,
-            cmd_bases::base_create
-        ),
-        cmd!(
-            "base:query",
-            "Bases",
-            "Run a base view",
-            &[
-                FILE,
-                PATH,
-                p("view", "view name"),
-                p("format", "json | csv | tsv | md | paths")
-            ],
-            NO_FLAGS,
-            &["json", "csv", "tsv", "md", "paths"],
-            Some("json"),
-            cmd_bases::base_query
         ),
         // Skills
         cmd!(

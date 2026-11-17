@@ -107,6 +107,14 @@ impl Cell {
     }
 }
 
+/// The generated TypeScript describes a cell by [`super::wire::CellWire`], the shape the manual
+/// `Serialize` below writes (a test keeps the two equal).
+impl specta::Type for Cell {
+    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+        <super::wire::CellWire as specta::Type>::definition(types)
+    }
+}
+
 impl Serialize for Cell {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let j = self.value.to_json();
@@ -121,7 +129,7 @@ impl Serialize for Cell {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewInfo {
     pub name: String,
@@ -131,7 +139,7 @@ pub struct ViewInfo {
     pub index: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Column {
     /// Property id as written in `order`.
@@ -145,7 +153,7 @@ pub struct Column {
     pub width: Option<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 pub struct Row {
     /// Vault-relative path of the file.
     pub path: String,
@@ -153,7 +161,7 @@ pub struct Row {
     pub cells: Vec<Cell>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 pub struct Group {
     pub key: Cell,
     /// Range of this group in the flat `rows`.
@@ -163,7 +171,7 @@ pub struct Group {
     pub summaries: Vec<Option<Cell>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum QueryErrorKind {
     ViewNotFound,
@@ -175,7 +183,7 @@ pub enum QueryErrorKind {
 }
 
 /// The explicit error state of a view (spec 7.5): shown instead of rows.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryError {
     pub kind: QueryErrorKind,
@@ -186,7 +194,7 @@ pub struct QueryError {
     pub path: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BaseQueryResult {
     pub view: ViewInfo,

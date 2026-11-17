@@ -9,10 +9,10 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (p: string) => p,
 }));
 
-import "../../../src/lib/features/builtin";
-import { resolveCommands } from "../../../src/components/command-palette/commands";
-import type { CommandContext } from "../../../src/components/command-palette/commands";
-import { createFeatureHost } from "../../../src/lib/features/registry";
+import "@/lib/features/builtin";
+import { resolveCommands } from "@/components/command-palette/commands";
+import type { CommandContext } from "@/components/command-palette/commands";
+import { createFeatureHost } from "@/lib/features/registry";
 import { CommandRegistry } from "../web/host/api/core";
 import obsidianHost from "../web/index";
 import { usePluginsStore } from "../web/stores/plugins-store";

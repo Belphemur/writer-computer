@@ -65,7 +65,8 @@ pub fn spawn_workspace_sync(app: &tauri::AppHandle, label: &str, root: std::path
         .name("managed-skills".into())
         .spawn(move || {
             let root_string = root.to_string_lossy().into_owned();
-            let event = match managed_skills::sync(&root, Mode::Apply) {
+            let held = crate::features::held_skills_live(&app);
+            let event = match managed_skills::sync_except(&root, Mode::Apply, &held) {
                 Ok(report) => {
                     log_report(&root, &report);
                     if !report.notable() {
@@ -112,8 +113,10 @@ pub async fn sync_managed_skills(
     } else {
         Mode::Apply
     };
+    // A skill of a feature that is off is left as it is (neither installed nor updated).
+    let held = crate::features::held_skills_live(&app);
     tauri::async_runtime::spawn_blocking(move || {
-        let report = managed_skills::sync(&root, mode).map_err(AppError::Io)?;
+        let report = managed_skills::sync_except(&root, mode, &held).map_err(AppError::Io)?;
         log_report(&root, &report);
         Ok(report)
     })

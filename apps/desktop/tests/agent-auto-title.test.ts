@@ -171,7 +171,15 @@ async function chatWithExchanges(client: ChatHistoryClient, n: number) {
     chatModels: {},
     paneOpen: false,
     backend: "tauri",
-    binary: { found: true, path: "/x", version: "1", source: "path" },
+    binary: {
+      found: true,
+      path: "/x",
+      version: "1",
+      source: "path",
+      searched: [],
+      authenticated: true,
+      account: null,
+    },
     currentProjectPath: null,
   });
   get().openPane();

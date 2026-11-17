@@ -1,7 +1,6 @@
 import { RENDERABLE_IMAGE_EXTENSIONS } from "./attachments";
-import { isBasePath } from "./bases/paths";
 import { noteLabel } from "./note-title";
-import { getFileStem, getParentDir, normalizePath } from "./paths";
+import { getFileStem, getParentDir, isBasePath, normalizePath } from "./paths";
 import type { SearchResult } from "@/types/fs";
 
 export type WikiLinkTarget =

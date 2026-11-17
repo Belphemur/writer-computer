@@ -83,6 +83,8 @@ mod ipc_tests;
 
 #[path = "../../../features/agent/rust/mod.rs"]
 mod agent;
+#[path = "../../../features/bases/rust/mod.rs"]
+pub(crate) mod bases;
 // Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
 // registers (see the module), it has no plugin, setup or hook for the runner to run.
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
@@ -255,7 +257,7 @@ pub trait Feature<R: Runtime>: Send + Sync {
 /// Every registered first-party feature, in startup order (teardown runs reversed). A
 /// TypeScript-only feature is not listed: its manifest alone is enough.
 pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
-    vec![&agent::Agent]
+    vec![&agent::Agent, &bases::Bases]
 }
 
 /// Is the feature switched on? `features.<id>.enabled` at the global scope (a vault's config can
@@ -874,6 +876,44 @@ fn cli_commands_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'st
     features.iter().flat_map(|f| f.cli_commands()).collect()
 }
 
+/// Is the feature `id` switched on, for a process that has no settings layer (the `writer` CLI)?
+/// Reads the global `config` file in `data_dir`, like [`is_enabled`] over [`Settings`]: the
+/// setting, else the manifest default. An id that is not a registered feature counts as on
+/// (the CLI never gates what is not a feature).
+pub fn cli_enabled(data_dir: &Path, id: &str) -> bool {
+    let manifests = registry::<Wry>()
+        .into_iter()
+        .filter_map(|f| f.manifest().ok());
+    manifests.into_iter().find(|m| m.id == id).is_none_or(|m| {
+        crate::config::read_global_bool(data_dir, &m.enabled_key()).unwrap_or(m.enabled_by_default)
+    })
+}
+
+/// The bundled skills whose feature is switched off, by name: the sync neither installs nor
+/// updates them (what is already installed stays as it is). `is_on` is the caller's way to read
+/// the switch (live settings in the app, [`cli_enabled`] in the CLI).
+pub fn held_skills(is_on: impl Fn(&Manifest) -> bool) -> Vec<&'static str> {
+    held_skills_of(&registry::<Wry>(), is_on)
+}
+
+fn held_skills_of<R: Runtime>(
+    features: &[&'static dyn Feature<R>],
+    is_on: impl Fn(&Manifest) -> bool,
+) -> Vec<&'static str> {
+    features
+        .iter()
+        .filter(|f| f.manifest().is_ok_and(|m| !is_on(&m)))
+        .flat_map(|f| f.skills())
+        .map(|s| s.name)
+        .collect()
+}
+
+/// [`held_skills`] for the running app: a feature that is off, failed or in safe mode holds its
+/// skills ([`is_live`]).
+pub fn held_skills_live<R: Runtime>(app: &AppHandle<R>) -> Vec<&'static str> {
+    held_skills(|m| is_live(app, m))
+}
+
 /// Feature skills, for `managed_skills`.
 pub fn skills() -> Vec<&'static BundledSkill> {
     skills_of(&registry::<Wry>())
@@ -1019,7 +1059,7 @@ mod tests {
             .iter()
             .map(|f| f.manifest().expect("manifest parses").id)
             .collect();
-        assert_eq!(ids, ["agent"]);
+        assert_eq!(ids, ["agent", "bases"]);
     }
 
     #[test]
@@ -1069,8 +1109,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            1,
-            "the agent still starts"
+            2,
+            "the agent and bases still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1246,19 +1286,47 @@ mod tests {
     }
 
     #[test]
-    fn the_core_tables_are_unchanged_while_no_feature_contributes() {
-        assert!(cli_commands().is_empty());
-        assert!(skills().is_empty());
+    fn the_registered_features_add_exactly_their_contributions_to_the_core_tables() {
+        let names: Vec<_> = cli_commands().iter().map(|c| c.name).collect();
+        assert_eq!(names, ["bases", "base:views", "base:create", "base:query"]);
+        assert!(cli_commands().iter().all(|c| c.feature == Some("bases")));
+        let skills: Vec<_> = skills().iter().map(|s| s.name).collect();
+        assert_eq!(skills, ["writer-bases"]);
         assert!(index_ddl().is_empty());
         assert_eq!(index_schema_suffix(), "");
         assert_eq!(crate::index::schema_version(), "2");
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len()
+            crate::cli::registry::COMMANDS.len() + 4
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),
-            crate::managed_skills::SKILLS.len()
+            crate::managed_skills::SKILLS.len() + 1
+        );
+    }
+
+    #[test]
+    fn a_feature_that_is_off_holds_exactly_its_skills_and_the_cli_reads_the_switch_from_the_file() {
+        let off = |m: &Manifest| m.id != "bases";
+        assert_eq!(held_skills(off), ["writer-bases"]);
+        assert!(held_skills(|_| true).is_empty());
+
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            cli_enabled(dir.path(), "bases"),
+            "no config: the manifest default"
+        );
+        std::fs::write(
+            dir.path().join("config"),
+            "features.bases.enabled = false\n",
+        )
+        .unwrap();
+        assert!(!cli_enabled(dir.path(), "bases"));
+        std::fs::write(dir.path().join("config"), "features.bases.enabled = true\n").unwrap();
+        assert!(cli_enabled(dir.path(), "bases"));
+        assert!(
+            cli_enabled(dir.path(), "not-a-feature"),
+            "only features are gated"
         );
     }
 }

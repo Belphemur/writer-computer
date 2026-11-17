@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   }),
 }));
 
-import { logger } from "../../../src/lib/logger";
+import { logger } from "@/lib/logger";
 import { recordPluginError, setPluginVersion } from "../web/host/error-log";
 import { wrapAppForDiagnostics } from "../web/host/missing-api-log";
 import { CommandRegistry } from "../web/host/api/core";

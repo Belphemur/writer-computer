@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 // Real plugins call `app.metadataTypeManager.setType`, which records in the backend.
-vi.mock("../../../src/lib/property-types-ipc", () => ({
+vi.mock("@/lib/property-types-ipc", () => ({
   propertyTypes: vi.fn(async () => []),
   propertyTypeSet: vi.fn(async () => {}),
 }));

@@ -8,6 +8,7 @@
 // the chat note) and while a reply streams (re-render the growing message with wiki links).
 // The assertions are call-count and complexity budgets, not wall-clock limits, so they stay
 // stable on slow CI. Run with `HOST_PERF_REPORT=1` to print the measured table.
+import process from "node:process";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { vi } from "vite-plus/test";
 

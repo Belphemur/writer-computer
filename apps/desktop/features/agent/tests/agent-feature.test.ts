@@ -6,14 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
-import { dockContributions, openDock } from "../../../src/lib/features/docks";
-import { featurePaletteCommands } from "../../../src/lib/features/palette";
-import { featureHost as host } from "../../../src/lib/features/registry";
-import "../../../src/lib/features/builtin";
-import { keybindings } from "../../../src/lib/keybindings/registry";
-import { useAgentStore } from "../../../src/stores/agent-store";
-import { useSettingsStore } from "../../../src/stores/settings-store";
-import { useWorkspaceStore } from "../../../src/stores/workspace-store";
+import { dockContributions, openDock } from "@/lib/features/docks";
+import { featurePaletteCommands } from "@/lib/features/palette";
+import { featureHost as host } from "@/lib/features/registry";
+import "@/lib/features/builtin";
+import { keybindings } from "@/lib/keybindings/registry";
+import { useAgentStore } from "@/stores/agent-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import manifest from "../feature.json";
 
 // The app's own host: importing the loader registers every enabled built-in, as at startup.

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { CommandRegistry, Events, Scope, Keymap } from "../web/host/api/core";
-import { OwnedRegistry } from "../../../src/lib/owned-registry";
+import { OwnedRegistry } from "@/lib/owned-registry";
 
 describe("CommandRegistry", () => {
   it("prefixes the id and name with the plugin like Obsidian does", () => {

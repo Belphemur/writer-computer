@@ -16,7 +16,7 @@ import {
   pluginExtensionCompartment,
   setPluginEditorExtensions,
 } from "../web/host/editor-bridge";
-import { findEditorView, registerEditorView } from "../../../src/lib/editor-views";
+import { findEditorView, registerEditorView } from "@/lib/editor-views";
 
 function makePane() {
   const fns = {

@@ -1,0 +1,10 @@
+{
+  "$comment": "Shared by tests/tsconfig.json and every features/<id>/tests/tsconfig.json. Tests are type-checked with the app's paths (@/, @features/, @shared/, @tests/), so no test needs a climbing relative import, but less strictly than the app: they use newer library APIs than the app target (Promise.withResolvers, Array.at) and loose fakes. A new feature copies its tests/tsconfig.json from an existing one.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  }
+}

@@ -82,4 +82,4 @@ summaries of no numbers are null; `Stddev` is the population deviation.
 
 ## Index-backed row source
 
-`RowSource`/`RowContext` over the vault index live in `src/index/bases_source.rs` (`IndexSource`, `run_base_view`); the Tauri commands are in `src/commands/bases.rs` and the CLI front end in `src/cli/cmd_bases.rs`. See "Backend contracts" in `SPECs/obsidian-bases-spec.md`. `eval_expression` (same file) evaluates one expression with `this` as the current row for the `base_eval` command (plugin `getEvaluatedFormula`).
+`RowSource`/`RowContext` over the vault index live in `src/index/bases_source.rs` (`IndexSource`, `run_base_view`); the Tauri commands are in `features/bases/rust/commands.rs` and the CLI front end in `src/cli/cmd_bases.rs`. See "Backend contracts" in `SPECs/obsidian-bases-spec.md`. `eval_expression` (same file) evaluates one expression with `this` as the current row for the `base_eval` command (plugin `getEvaluatedFormula`).

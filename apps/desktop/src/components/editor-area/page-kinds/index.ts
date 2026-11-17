@@ -6,6 +6,7 @@ import { launcherKind, type LauncherLocation } from "./launcher";
 import { pluginFileKind, type PluginFileLocation } from "./plugin-file";
 import { pluginViewKind, type PluginViewLocation } from "./plugin-view";
 import { settingsKind, type SettingsLocation } from "./settings";
+import { isFeatureActive } from "@/lib/features/active";
 import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
 
 /**
@@ -58,6 +59,8 @@ export function locationForPath(
   path: string,
 ): FileLocation | BaseLocation | CodeLocation | ImageLocation | PluginFileLocation {
   for (const k of kinds) {
+    // A kind whose feature is off claims nothing: its files open as text.
+    if (k.feature && !isFeatureActive(k.feature)) continue;
     const location = (
       k.forPath as (
         path: string,
