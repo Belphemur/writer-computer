@@ -8,7 +8,7 @@ Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Op
 
 These work anywhere in the window, whether or not you are typing in a note.
 
-<!-- Handled by the global `useKeyboardShortcuts` hook. Cmd+Shift+F opens the palette in its `search-notes` mode (SPECs/search-spec.md): Enter opens the match in the current tab, Cmd+Enter in a new tab. It is free of conflicts: the editor's find is Cmd+F and nothing else binds Shift+F. -->
+<!-- One entry per row in `apps/desktop/src/lib/keybindings/core-bindings.ts` (the keybinding registry; `useKeyboardShortcuts` only iterates it). `tests/keybindings.test.ts` fails when this table and the registry disagree, in either direction: add a shortcut there and here together. A binding whose id equals a palette command id makes the palette show the key. Cmd+Shift+F opens the palette in its `search-notes` mode (SPECs/search-spec.md): Enter opens the match in the current tab, Cmd+Enter in a new tab. It is free of conflicts: the editor's find is Cmd+F and nothing else binds Shift+F. -->
 
 | Shortcut        | Action                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------- |

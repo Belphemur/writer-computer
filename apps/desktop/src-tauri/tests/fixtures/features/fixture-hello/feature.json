@@ -1,0 +1,11 @@
+{
+  "id": "fixture-hello",
+  "name": "Fixture hello",
+  "version": "0.0.0",
+  "description": "Test-only feature used by the features infrastructure tests. Never shipped.",
+  "enabledByDefault": true,
+  "rust": {
+    "commands": ["hello_greet", "hello_shout"],
+    "events": ["fixture-hello:greeted"]
+  }
+}

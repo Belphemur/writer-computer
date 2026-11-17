@@ -23,6 +23,7 @@ export {
 } from "./node";
 export type { NodeIpc, NodeOsInfo, ProcEvent, ProcSpawnRequest, FsProbe } from "./node";
 
+export { OwnedRegistry } from "@/lib/owned-registry";
 export { App, FileManager, createApp } from "./api/app";
 export type { AppDeps } from "./api/app";
 export {
@@ -31,7 +32,6 @@ export {
   Events,
   Keymap,
   Notice,
-  OwnedRegistry,
   Plugin,
   Scope,
   createHostServices,

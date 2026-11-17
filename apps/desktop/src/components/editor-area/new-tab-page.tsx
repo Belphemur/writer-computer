@@ -1,4 +1,6 @@
 import { useOpenCommandPalette } from "@/hooks/use-command-palette";
+import "@/lib/keybindings/core-bindings";
+import { keybindings } from "@/lib/keybindings/registry";
 
 function Shortcut({ children }: { children: string }) {
   return (
@@ -18,7 +20,7 @@ export function NewTabPage() {
           className="flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
         >
           Create new note
-          <Shortcut>⌘N</Shortcut>
+          <Shortcut>{keybindings.shortcutFor("new-file") ?? ""}</Shortcut>
         </button>
 
         <button
@@ -27,7 +29,7 @@ export function NewTabPage() {
           className="flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
         >
           Search
-          <Shortcut>⌘O</Shortcut>
+          <Shortcut>{keybindings.shortcutFor("go-to-file") ?? ""}</Shortcut>
         </button>
       </div>
     </div>

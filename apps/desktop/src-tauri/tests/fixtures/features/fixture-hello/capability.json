@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-fixture-hello",
+  "description": "Grants the fixture-hello plugin commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["fixture-hello:default"]
+}

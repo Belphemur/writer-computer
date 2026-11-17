@@ -9,6 +9,7 @@ mod config;
 #[cfg(target_os = "macos")]
 mod dock_menu;
 mod error;
+mod features;
 pub mod fs_entry;
 mod ignore;
 pub mod index;
@@ -566,6 +567,12 @@ pub fn run() {
             // layer exists; `WRITER_LOG` still wins.
             if let Some(settings) = main_state.settings.read().as_ref() {
                 logging::apply_level_setting(logging::level_setting(settings).as_deref());
+            }
+
+            // First-party features (SPECs/builtin-plugins-spec.md): add the Tauri plugin of every
+            // enabled feature. Needs the settings layer above; empty registry today.
+            if let Some(settings) = main_state.settings.read().as_ref() {
+                features::install(app.handle(), settings);
             }
 
             // Telemetry reads its enabled/email values out of the settings

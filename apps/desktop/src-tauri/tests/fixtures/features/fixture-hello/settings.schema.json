@@ -1,0 +1,12 @@
+{
+  "settings": [
+    {
+      "key": "fixture-hello.greeting",
+      "label": "Greeting",
+      "description": "Test-only setting contributed by a fragment.",
+      "category": "Features",
+      "type": "string",
+      "default": "hello"
+    }
+  ]
+}

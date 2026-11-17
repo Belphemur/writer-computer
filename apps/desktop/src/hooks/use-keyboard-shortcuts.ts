@@ -1,198 +1,31 @@
 import { useEffect } from "react";
-import { useUIStore } from "@/stores/ui-store";
-import { useEditorStore } from "@/stores/editor-store";
-import { useWorkspaceStore } from "@/stores/workspace-store";
-import { toggleAgentPane } from "@/hooks/agent-api";
-import { toggleSidebar } from "@/hooks/use-sidebar";
-import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
-import { getWorkspaceChromeMode } from "@/lib/compact-mode";
-import { closeWindow } from "@/lib/tauri";
+import "@/lib/keybindings/core-bindings";
+import { keybindings } from "@/lib/keybindings/registry";
 
-function isEditableTargetFocused(): boolean {
-  const active = document.activeElement;
-  if (!active) return false;
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return true;
-  if ((active as HTMLElement).isContentEditable) return true;
-  // CodeMirror editors render a contenteditable inside .cm-editor
-  return active.closest(".cm-editor") !== null;
+// One dispatcher over the keybinding registry (`lib/keybindings/core-bindings.ts` lists the app's
+// shortcuts, features add theirs). A matched key is always `preventDefault`ed; a binding that must
+// let the key through (the editor's Alt+Arrow, Cmd+W in the compact window) declares a `when`
+// context instead, so it simply does not match.
+function dispatch(phase: "bubble" | "capture") {
+  return (e: KeyboardEvent) => {
+    const binding = keybindings.find(e, phase);
+    if (!binding) return;
+    e.preventDefault();
+    // Capture-phase bindings must also keep the key from reaching CodeMirror's own handlers.
+    if (phase === "capture") e.stopPropagation();
+    binding.run(e);
+  };
 }
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
-
-      // Read current state at event time
-      const { openCommandPalette } = useUIStore.getState();
-      const { root, chromeMode } = useWorkspaceStore.getState();
-      const {
-        tabs,
-        activeTabId,
-        setActiveTab,
-        openNewTab,
-        closeActiveTab,
-        navigateBack,
-        navigateForward,
-      } = useEditorStore.getState();
-      const isCompactFileMode = getWorkspaceChromeMode(root, chromeMode) === "compact-file";
-
-      // Cmd+Shift+T — reopen the last closed tab (repeat to walk back through closed tabs).
-      // Non-Latin layouts report another letter as `key`, so fall back to the physical key there.
-      const isKeyT = e.key.toLowerCase() === "t" || (!/^[a-z]$/i.test(e.key) && e.code === "KeyT");
-      if (mod && e.shiftKey && !e.altKey && isKeyT) {
-        e.preventDefault();
-        if (isCompactFileMode) return;
-        void useEditorStore.getState().reopenClosedTab();
-        return;
-      }
-
-      // Cmd+Shift+A — toggle the agent pane (focuses its composer when opening).
-      const isKeyA = e.key.toLowerCase() === "a" || (!/^[a-z]$/i.test(e.key) && e.code === "KeyA");
-      if (mod && e.shiftKey && !e.altKey && isKeyA) {
-        e.preventDefault();
-        if (root && !isCompactFileMode) toggleAgentPane();
-        return;
-      }
-
-      // Alt+Arrow: history navigation when no editable target is focused;
-      // inside the editor, let CodeMirror handle word-wise cursor motion.
-      if (e.altKey && !e.shiftKey && e.key === "ArrowLeft" && !isEditableTargetFocused()) {
-        e.preventDefault();
-        void navigateBack();
-        return;
-      }
-
-      if (e.altKey && !e.shiftKey && e.key === "ArrowRight" && !isEditableTargetFocused()) {
-        e.preventDefault();
-        void navigateForward();
-        return;
-      }
-
-      // Cmd+P / Cmd+Shift+P — unified search (files + commands)
-      if (mod && (e.key === "p" || e.key === "P")) {
-        e.preventDefault();
-        if (e.shiftKey || root) openCommandPalette("search");
-        return;
-      }
-
-      // Cmd+Shift+F — search in notes (full-text, note contents)
-      if (mod && e.shiftKey && !e.altKey && (e.key === "f" || e.key === "F")) {
-        e.preventDefault();
-        if (root && !isCompactFileMode) openCommandPalette("search-notes");
-        return;
-      }
-
-      // Cmd+W — close current tab. Once the launcher is the only tab left
-      // there is nothing to close (closing it would just recreate it), so
-      // close the window instead; Rust turns that into a hide for the main
-      // window (see `attach_window_handlers`). Any other tab, including
-      // Settings, closes like a file tab.
-      if (mod && e.key === "w") {
-        if (isCompactFileMode) return;
-        e.preventDefault();
-        const onlyLauncherLeft = tabs.every((tab) => tab.location.kind === "launcher");
-        if (onlyLauncherLeft && tabs.length <= 1) {
-          void closeWindow();
-          return;
-        }
-        if (activeTabId) closeActiveTab();
-        return;
-      }
-
-      // Cmd+\ — toggle sidebar
-      if (mod && e.key === "\\") {
-        e.preventDefault();
-        if (isCompactFileMode) return;
-        toggleSidebar();
-        return;
-      }
-
-      // Cmd+N — create new note
-      if (mod && e.key === "n") {
-        e.preventDefault();
-        if (root) openCommandPalette("create-file");
-        return;
-      }
-
-      // Cmd+O — go to file
-      if (mod && e.key === "o") {
-        e.preventDefault();
-        if (root) openCommandPalette("search");
-        return;
-      }
-
-      // Cmd+T — new tab
-      if (mod && e.key === "t") {
-        e.preventDefault();
-        if (isCompactFileMode) return;
-        if (root) openNewTab();
-        return;
-      }
-
-      // Ctrl+Tab / Ctrl+Shift+Tab — cycle tabs
-      if (e.ctrlKey && e.key === "Tab") {
-        e.preventDefault();
-        if (isCompactFileMode) return;
-        if (tabs.length === 0 || !activeTabId) return;
-        const idx = tabs.findIndex((tab) => tab.id === activeTabId);
-        if (idx === -1) return;
-        const next = e.shiftKey ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
-        setActiveTab(tabs[next]!.id);
-        return;
-      }
-
-      // Cmd+= / Cmd++ / Cmd+numpad + — zoom in; Cmd+- — zoom out; Cmd+0 —
-      // actual size. Editor text zoom (a percent on top of Font Size), so it
-      // needs no workspace and compact windows take it too. Alt chords are
-      // left alone: Cmd+Alt+0 is the editor's "strip heading".
-      if (mod && !e.altKey) {
-        if (e.key === "=" || e.key === "+" || e.code === "NumpadAdd") {
-          e.preventDefault();
-          zoomIn();
-          return;
-        }
-        if (e.key === "-" || e.key === "_" || e.code === "NumpadSubtract") {
-          e.preventDefault();
-          zoomOut();
-          return;
-        }
-        if (e.key === "0" || e.code === "Digit0" || e.code === "Numpad0") {
-          e.preventDefault();
-          resetZoom();
-          return;
-        }
-      }
-
-      // Cmd+1 through Cmd+9 — jump to Nth tab
-      if (mod && e.key >= "1" && e.key <= "9") {
-        e.preventDefault();
-        if (isCompactFileMode) return;
-        const n = parseInt(e.key) - 1;
-        if (n < tabs.length) {
-          setActiveTab(tabs[n]!.id);
-        }
-        return;
-      }
-    }
-    // Cmd+[ / Cmd+] are history back / forward everywhere, the note included (what mouse drivers
-    // send for the side buttons). Capture phase, so it wins over CodeMirror's indent bindings
-    // (Tab / Shift-Tab still indent); the agent pane keeps them for its chat switcher.
-    function handleHistoryKeys(e: KeyboardEvent) {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      if (e.key !== "[" && e.key !== "]") return;
-      if (e.target instanceof Element && e.target.closest("[data-agent-pane]")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.repeat) return;
-      void (e.key === "["
-        ? useEditorStore.getState().navigateBack()
-        : useEditorStore.getState().navigateForward());
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keydown", handleHistoryKeys, true);
+    const onKeyDown = dispatch("bubble");
+    const onCaptureKeyDown = dispatch("capture");
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onCaptureKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keydown", handleHistoryKeys, true);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onCaptureKeyDown, true);
     };
   }, []);
 }

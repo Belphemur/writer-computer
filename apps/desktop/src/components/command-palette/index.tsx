@@ -252,9 +252,16 @@ function FilePalette() {
 
   const commandItems = visibleCommands.map((c) => (
     <CommandItem key={c.id} value={c.id} onSelect={c.run}>
-      <div className="flex flex-col">
-        <span>{c.label}</span>
-        <span className="text-[13px] text-text-muted">{c.description}</span>
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-col">
+          <span>{c.label}</span>
+          <span className="text-[13px] text-text-muted">{c.description}</span>
+        </div>
+        {c.shortcut && (
+          <kbd className="ml-auto shrink-0 text-[11px] tracking-[0.1em] text-text-muted">
+            {c.shortcut}
+          </kbd>
+        )}
       </div>
     </CommandItem>
   ));

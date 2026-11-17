@@ -16,6 +16,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
+# Reads `src/features/*/feature.json` so each feature gets its inlined plugin permissions.
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2.12", features = ["protocol-asset", "macos-private-api"] }

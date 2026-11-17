@@ -1,6 +1,9 @@
 // Command registry for the palette. Built-ins are data (id, label, availability, action) and
 // plugin commands are merged in from the host's command registry: adding a command means adding
 // one entry here, not another branch in the component.
+import { featurePaletteCommands } from "@/lib/features/palette";
+import "@/lib/keybindings/core-bindings";
+import { keybindings } from "@/lib/keybindings/registry";
 import type { RegisteredCommand } from "@/lib/obsidian-host/api/core";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
 import { AGENT_PALETTE_COMMANDS } from "./agent-commands";
@@ -50,6 +53,8 @@ export interface PaletteCommand {
   id: string;
   label: string;
   description: string;
+  /** The key bound to this command, read from the keybinding registry (never typed here). */
+  shortcut?: string;
   run: () => void;
 }
 
@@ -195,24 +200,25 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
 ];
 
 /**
- * Built-ins available in `ctx`, then the plugin commands that can run right now
+ * Built-ins (and feature-contributed commands) available in `ctx`, then the plugin commands that can run right now
  * (`checkCallback` / `editorCheckCallback` / editor requirements are evaluated here).
  */
 export function resolveCommands(
   ctx: CommandContext,
   pluginCommands: readonly RegisteredCommand[],
 ): PaletteCommand[] {
-  const builtins = BUILTIN_COMMANDS.filter((c) => c.when?.(ctx) ?? true).map(
-    (c): PaletteCommand => ({
+  const builtins = [...BUILTIN_COMMANDS, ...featurePaletteCommands.list()]
+    .filter((c) => c.when?.(ctx) ?? true)
+    .map((c): PaletteCommand => ({
       id: c.id,
       label: c.label,
       description: c.description,
+      shortcut: keybindings.shortcutFor(c.id),
       run: () => {
         c.run(ctx);
         if (!c.keepOpen) ctx.close();
       },
-    }),
-  );
+    }));
   const taken = new Set(builtins.map((c) => c.id));
   const plugins = pluginCommands
     .filter((c) => !taken.has(c.id) && c.isAvailable())

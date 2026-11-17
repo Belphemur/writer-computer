@@ -94,10 +94,13 @@ mod tests {
     #[test]
     fn sync_commands_are_allowlisted() {
         let mut found = Vec::new();
-        visit(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-            &mut found,
-        );
+        // `../features` holds the Rust half of every built-in feature (`features/<id>/rust/`).
+        for root in ["src", "../features"] {
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(root);
+            if dir.exists() {
+                visit(&dir, &mut found);
+            }
+        }
         let unexpected: Vec<_> = found
             .iter()
             .filter(|n| !SYNC_ALLOWED.contains(&n.as_str()))
