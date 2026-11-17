@@ -6,10 +6,12 @@ import {
   startNewAgentChat,
   stopAgent,
 } from "@/hooks/agent-api";
-import { useChatPermissionMode } from "@/hooks/use-agent";
+import { useChatPermissionMode, type Chat } from "@/hooks/use-agent";
 import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
 import type { AgentPermissionMode, ChatId } from "@/lib/agent/events";
 import { Ico } from "./agent-icon";
+import { ModelChip } from "./model-chip";
+import { SkillsChip } from "./skills-chip";
 
 const MODES = Object.keys(PERMISSION_MODE_LABEL) as AgentPermissionMode[];
 
@@ -95,12 +97,14 @@ function IconButton({
 
 /** Mode chip, new chat, history, and the send/stop toggle. */
 export function ComposerActions({
+  chat,
   chatId,
   busy,
   stopping,
   canSend,
   onSend,
 }: {
+  chat: Chat;
   chatId: ChatId;
   busy: boolean;
   stopping: boolean;
@@ -110,6 +114,8 @@ export function ComposerActions({
   return (
     <div className="flex items-center gap-1 px-2 pb-2">
       <ModeChip chatId={chatId} />
+      <ModelChip chatId={chatId} />
+      <SkillsChip chat={chat} />
       <span className="flex-1" />
       <IconButton label="New chat" icon={Add01Icon} onClick={() => startNewAgentChat()} />
       <IconButton label="Chat history" icon={Clock01Icon} onClick={openAgentHistory} />

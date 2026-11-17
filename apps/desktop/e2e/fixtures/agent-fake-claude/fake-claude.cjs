@@ -177,6 +177,18 @@ rl.on("line", (raw) => {
     subtype: msg.request?.subtype ?? msg.response?.subtype,
     behavior: msg.response?.response?.behavior,
   });
+  if (msg.type === "control_request" && msg.request?.subtype === "set_model") {
+    // Shape recorded from the real CLI: success carries the resolved model id.
+    out({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: msg.request_id,
+        response: { model: msg.request.model ?? "claude-opus-5-5" },
+      },
+    });
+    return;
+  }
   inbox.push(msg);
   wake?.();
 });

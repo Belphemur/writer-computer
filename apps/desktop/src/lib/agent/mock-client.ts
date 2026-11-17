@@ -186,6 +186,15 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
       w(decision === "allow" ? "allowed" : "denied");
     },
     setPermissionMode: async () => {},
+    setModel: async () => {},
+    listSkills: async () => [
+      {
+        name: "summarize-note",
+        description: "Summarize the open note in five bullets.",
+        scope: "vault",
+        path: ".claude/skills/summarize-note/SKILL.md",
+      },
+    ],
     close: async ({ chatId }) => {
       cancelled.add(chatId);
       emit(chatId, { type: "session-ended", reason: "closed", exitCode: null, signal: null });

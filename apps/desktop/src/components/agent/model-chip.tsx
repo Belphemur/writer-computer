@@ -1,0 +1,134 @@
+import { useEffect, useRef, useState } from "react";
+import { setAgentChatModel, setAgentDefaultModel } from "@/hooks/agent-api";
+import { useChatModel } from "@/hooks/use-agent";
+import { useEnabledAgentModels } from "@/hooks/use-enabled-agent-models";
+import type { ChatId } from "@/lib/agent/events";
+import { reportedMatches, shortModelName } from "@/lib/agent/model-label";
+import { DEFAULT_MODEL_ID } from "@/lib/agent/model-catalog";
+
+const EFFORTS = [null, "low", "medium", "high", "xhigh", "max"] as const;
+const effortLabel = (e: (typeof EFFORTS)[number]) => (e === null ? "Default" : e);
+
+/** The model chip: the model the chat runs (the CLI's own report wins once a turn has finished),
+ *  a menu of the enabled models, the effort when the model takes one, and "Set as default". */
+export function ModelChip({ chatId }: { chatId: ChatId }) {
+  const { choice, reported, sessionModel } = useChatModel(chatId);
+  const models = useEnabledAgentModels({ currentModel: choice.model, sessionModel });
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const requestedId = choice.model ?? DEFAULT_MODEL_ID;
+  const current = models.find((m) => m.id === requestedId);
+  const matches = reportedMatches(choice.model, reported);
+  const label = shortModelName(reported ?? requestedId);
+
+  useEffect(() => {
+    if (!open) return;
+    const items = menuRef.current?.querySelectorAll<HTMLElement>("[role^=menuitem]");
+    const checked = menuRef.current?.querySelector<HTMLElement>("[aria-checked=true]");
+    (checked ?? items?.[0])?.focus();
+  }, [open]);
+
+  const move = (delta: 1 | -1) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLElement>("[role^=menuitem]") ?? [])];
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    items[(i + delta + items.length) % items.length]?.focus();
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Model: ${label}`}
+        title={
+          reported && !matches
+            ? `Requested ${shortModelName(requestedId)}, running ${shortModelName(reported)}`
+            : undefined
+        }
+        data-agent-model-chip
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-md bg-[var(--surface-subtle)] px-2 py-0.5 text-[11.5px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
+      >
+        {label} ▾
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label="Model"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setOpen(false);
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              move(1);
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              move(-1);
+            }
+          }}
+          className="absolute bottom-full left-0 z-30 mb-1 w-56 rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
+        >
+          {models.map((m) => (
+            <button
+              key={m.id}
+              role="menuitemradio"
+              aria-checked={m.id === requestedId}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                void setAgentChatModel(m.value, m.supportsEffort ? undefined : null);
+              }}
+              className="block w-full rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-[var(--item-hover-bg)] aria-checked:font-medium"
+            >
+              {m.id === requestedId ? "✓ " : ""}
+              {m.label}
+            </button>
+          ))}
+          {current?.supportsEffort !== false && (
+            <>
+              <div className="mt-1 border-t border-[var(--line-subtle)] px-2 pt-1.5 text-[10.5px] text-text-muted">
+                Effort (restarts the session)
+              </div>
+              {EFFORTS.map((e) => (
+                <button
+                  key={e ?? "default"}
+                  role="menuitemradio"
+                  aria-label={`Effort ${effortLabel(e)}`}
+                  aria-checked={e === choice.effort}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    void setAgentChatModel(choice.model, e);
+                  }}
+                  className="block w-full rounded-md px-2 py-1 text-left text-[12px] hover:bg-[var(--item-hover-bg)] aria-checked:font-medium"
+                >
+                  {e === choice.effort ? "✓ " : ""}
+                  {effortLabel(e)}
+                </button>
+              ))}
+            </>
+          )}
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              void setAgentDefaultModel(choice);
+            }}
+            className="mt-1 block w-full rounded-md border-t border-[var(--line-subtle)] px-2 py-1.5 text-left text-[12px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
+          >
+            Set as default
+          </button>
+          {reported && !matches && (
+            <div className="px-2 py-1 text-[10.5px] text-text-muted">
+              Running {shortModelName(reported)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

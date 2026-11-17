@@ -31,7 +31,9 @@ export interface AgentClient {
   cancel(args: Args<"agent_cancel">): Promise<void>;
   permission(args: Args<"agent_permission">): Promise<void>;
   setPermissionMode(args: Args<"agent_set_permission_mode">): Promise<void>;
+  setModel(args: Args<"agent_set_model">): Promise<void>;
   close(args: Args<"agent_close">): Promise<void>;
+  listSkills(args: Args<"agent_list_skills">): Promise<Result<"agent_list_skills">>;
   snapshot(args: Args<"agent_snapshot">): Promise<Result<"agent_snapshot">>;
   /** Registers the one envelope listener; resolves once the subscription is live. */
   subscribe(handler: (envelope: AgentEventEnvelope) => void): Promise<Unsubscribe>;
@@ -47,7 +49,9 @@ export function createTauriAgentClient(): AgentClient {
     cancel: (a) => call("agent_cancel", a),
     permission: (a) => call("agent_permission", a),
     setPermissionMode: (a) => call("agent_set_permission_mode", a),
+    setModel: (a) => call("agent_set_model", a),
     close: (a) => call("agent_close", a),
+    listSkills: (a) => call("agent_list_skills", a),
     snapshot: (a) => call("agent_snapshot", a),
     subscribe: (handler) =>
       listen<AgentEventEnvelope>(AGENT_EVENT_CHANNEL, (e) => handler(e.payload)),

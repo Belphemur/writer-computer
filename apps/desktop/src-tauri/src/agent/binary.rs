@@ -5,7 +5,8 @@
 //! (`plugin_env::search_dirs`: `~/.claude/local`, Homebrew, version-manager bin dirs). The
 //! version probe is Writer's own fixed `claude --version` with a 5 s timeout and the filtered
 //! environment; it is not a plugin spawn, so it needs no consent and does not count toward the
-//! process cap.
+//! process cap. The sign-in probe is the CLI's own `claude auth status --json` (local, prints
+//! JSON, exit 1 when signed out, never starts a login or opens a browser), same env and timeout.
 
 use crate::plugin_env;
 use parking_lot::Mutex;
@@ -38,6 +39,55 @@ pub struct AgentBinaryInfo {
     pub version: Option<String>,
     pub source: Option<BinarySource>,
     pub searched: Vec<String>,
+    /// `Some(false)` only when the CLI itself says it is signed out; `None` = unknown (probe
+    /// failed, timed out, or printed something unrecognised).
+    pub authenticated: Option<bool>,
+    /// A non-sensitive label (sign-in method and plan, e.g. `claude.ai, enterprise`); never an
+    /// email, organisation, id or path.
+    pub account: Option<String>,
+}
+
+/// Result of `claude auth status`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AuthStatus {
+    pub authenticated: Option<bool>,
+    pub account: Option<String>,
+}
+
+fn safe_label(s: &str) -> Option<String> {
+    let t = s.trim();
+    let ok = !t.is_empty()
+        && t.len() <= 32
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '-' | '_'));
+    ok.then(|| t.to_string())
+}
+
+/// Parse the output of `claude auth status --json`. Defensive: anything that is not a JSON
+/// object with a boolean `loggedIn` is "unknown". Only `authMethod` and `subscriptionType` are
+/// ever read besides `loggedIn`, so an email, organisation or id cannot leak from here.
+pub fn parse_auth_status(stdout: &str) -> AuthStatus {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else {
+        return AuthStatus::default();
+    };
+    let Some(logged_in) = v.get("loggedIn").and_then(|b| b.as_bool()) else {
+        return AuthStatus::default();
+    };
+    let account = logged_in
+        .then(|| {
+            let part = |k: &str| v.get(k).and_then(|x| x.as_str()).and_then(safe_label);
+            let parts: Vec<String> = [part("authMethod"), part("subscriptionType")]
+                .into_iter()
+                .flatten()
+                .filter(|p| p != "none")
+                .collect();
+            (!parts.is_empty()).then(|| parts.join(", "))
+        })
+        .flatten();
+    AuthStatus {
+        authenticated: Some(logged_in),
+        account,
+    }
 }
 
 /// Pure lookup, no probe. `app`/`login` are PATH-style strings.
@@ -131,9 +181,12 @@ pub fn probe_version(program: &Path) -> Option<String> {
     version
 }
 
-fn run_version(program: &Path) -> Option<String> {
+/// Run `program args...` with the filtered environment and no stdin, return its stdout (first
+/// 16 KiB) whatever the exit status, or `None` when it could not start or outlived `timeout`
+/// (the whole group is killed then).
+fn run_capture(program: &Path, args: &[&str], timeout: Duration) -> Option<(bool, String)> {
     let mut cmd = Command::new(program);
-    cmd.arg("--version")
+    cmd.args(args)
         .env_clear()
         .envs(super::env::current())
         .current_dir(std::env::temp_dir())
@@ -146,19 +199,16 @@ fn run_version(program: &Path) -> Option<String> {
         cmd.process_group(0);
     }
     let mut child = cmd.spawn().ok()?;
-    let deadline = Instant::now() + PROBE_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                if !status.success() {
-                    return None;
-                }
                 let mut out = String::new();
                 if let Some(mut so) = child.stdout.take() {
                     use std::io::Read;
-                    let _ = so.by_ref().take(4096).read_to_string(&mut out);
+                    let _ = so.by_ref().take(16 * 1024).read_to_string(&mut out);
                 }
-                return parse_version(&out);
+                return Some((status.success(), out));
             }
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             _ => {
@@ -172,6 +222,45 @@ fn run_version(program: &Path) -> Option<String> {
             }
         }
     }
+}
+
+fn run_version(program: &Path) -> Option<String> {
+    let (ok, out) = run_capture(program, &["--version"], PROBE_TIMEOUT)?;
+    ok.then(|| parse_version(&out)).flatten()
+}
+
+const AUTH_TTL: Duration = Duration::from_secs(10);
+type AuthKey = PathBuf;
+static AUTH_PROBES: Mutex<Option<HashMap<AuthKey, (Instant, AuthStatus)>>> = Mutex::new(None);
+
+/// `claude auth status --json`, cached for a few seconds per program so "Re-detect" after
+/// signing in is fresh but a burst of calls is one process. Blocking (up to 5 s).
+pub fn probe_auth(program: &Path) -> AuthStatus {
+    probe_auth_with(program, PROBE_TIMEOUT)
+}
+
+fn probe_auth_with(program: &Path, timeout: Duration) -> AuthStatus {
+    if let Some((at, st)) = AUTH_PROBES.lock().as_ref().and_then(|m| m.get(program)) {
+        if at.elapsed() < AUTH_TTL {
+            return st.clone();
+        }
+    }
+    // exit status is 1 when signed out, so only the printed JSON counts
+    let status = run_capture(program, &["auth", "status", "--json"], timeout)
+        .map(|(_, out)| parse_auth_status(&out))
+        .unwrap_or_default();
+    // never the account label, never the output
+    log::info!(
+        target: "agent",
+        "agent: sign-in probe finished (known: {}, signed in: {:?})",
+        status.authenticated.is_some(),
+        status.authenticated
+    );
+    AUTH_PROBES
+        .lock()
+        .get_or_insert_with(HashMap::new)
+        .insert(program.to_path_buf(), (Instant::now(), status.clone()));
+    status
 }
 
 /// The `agent_detect_binary` result. Blocking (login shell, version probe).
@@ -190,14 +279,21 @@ pub fn detect(override_path: Option<&str>) -> AgentBinaryInfo {
         plugin_env::home_dir().as_deref(),
     );
     match found {
-        Some((path, source)) => AgentBinaryInfo {
-            found: true,
-            version: probe_version(&path),
-            path: Some(path.to_string_lossy().into_owned()),
-            source: Some(source),
-            searched,
-        },
+        Some((path, source)) => {
+            let auth = probe_auth(&path);
+            AgentBinaryInfo {
+                found: true,
+                version: probe_version(&path),
+                authenticated: auth.authenticated,
+                account: auth.account,
+                path: Some(path.to_string_lossy().into_owned()),
+                source: Some(source),
+                searched,
+            }
+        }
         None => AgentBinaryInfo {
+            authenticated: None,
+            account: None,
             found: false,
             path: None,
             version: None,
@@ -268,6 +364,99 @@ mod tests {
             assert!(f.is_none());
             assert_eq!(searched, vec![bad.to_string()]);
         }
+    }
+
+    #[test]
+    fn auth_status_parsing() {
+        // signed in: only the method and plan become the label, never email/org/ids
+        let signed_in = r#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty",
+            "email":"someone@example.com","orgId":"org-123","orgName":"Example Org",
+            "subscriptionType":"enterprise"}"#;
+        let st = parse_auth_status(signed_in);
+        assert_eq!(st.authenticated, Some(true));
+        assert_eq!(st.account.as_deref(), Some("claude.ai, enterprise"));
+        let label = st.account.unwrap();
+        assert!(!label.contains('@') && !label.contains("Example") && !label.contains("org-"));
+        // signed out
+        let out =
+            parse_auth_status(r#"{"loggedIn":false,"authMethod":"none","loginExpiresAt":null}"#);
+        assert_eq!(
+            out,
+            AuthStatus {
+                authenticated: Some(false),
+                account: None
+            }
+        );
+        // a hostile or odd label is dropped, the sign-in state is kept
+        let odd = parse_auth_status(
+            r#"{"loggedIn":true,"authMethod":"me@x.com","subscriptionType":"a/b"}"#,
+        );
+        assert_eq!(
+            odd,
+            AuthStatus {
+                authenticated: Some(true),
+                account: None
+            }
+        );
+        // anything else is unknown, never "signed out"
+        for garbage in [
+            "",
+            "Not logged in.",
+            "{",
+            "[]",
+            r#"{"loggedIn":"no"}"#,
+            r#"{"status":"ok"}"#,
+        ] {
+            assert_eq!(
+                parse_auth_status(garbage),
+                AuthStatus::default(),
+                "{garbage:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn auth_probe_reads_exit_1_stdout_and_treats_failures_as_unknown() {
+        let d = tempfile::tempdir().unwrap();
+        let signed_out = d.path().join("out/claude");
+        exe(
+            &signed_out,
+            "#!/bin/sh\n[ \"$1 $2 $3\" = \"auth status --json\" ] && echo '{\"loggedIn\":false}' && exit 1\nexit 2\n",
+        );
+        assert_eq!(
+            probe_auth_with(&signed_out, Duration::from_secs(5)).authenticated,
+            Some(false)
+        );
+        let signed_in = d.path().join("in/claude");
+        exe(
+            &signed_in,
+            "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"apiKey\"}'\n",
+        );
+        let st = probe_auth_with(&signed_in, Duration::from_secs(5));
+        assert_eq!(
+            (st.authenticated, st.account.as_deref()),
+            (Some(true), Some("apiKey"))
+        );
+        let garbage = d.path().join("garbage/claude");
+        exe(&garbage, "#!/bin/sh\necho 'what'\n");
+        assert_eq!(
+            probe_auth_with(&garbage, Duration::from_secs(5)),
+            AuthStatus::default()
+        );
+        // a hang is killed at the timeout and is unknown
+        let hang = d.path().join("hang/claude");
+        exe(&hang, "#!/bin/sh\nsleep 30\n");
+        let t = Instant::now();
+        assert_eq!(
+            probe_auth_with(&hang, Duration::from_millis(300)),
+            AuthStatus::default()
+        );
+        assert!(t.elapsed() < Duration::from_secs(5));
+        // cannot start at all
+        assert_eq!(
+            probe_auth_with(&d.path().join("missing"), Duration::from_secs(1)),
+            AuthStatus::default()
+        );
     }
 
     #[test]

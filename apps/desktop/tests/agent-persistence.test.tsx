@@ -117,6 +117,23 @@ describe("chat-persist: what the note holds", () => {
     expect(doc.meta.sessionId).toBe("sess-1");
   });
 
+  it("saves the chosen model, else the reported one, in writer-chat-model", () => {
+    let note = newNoteState("c", null, 0);
+    note = recordSend(note, { messageId: "m", text: "hello", context: [], ts: 1 });
+    const chat = {
+      chatId: "c",
+      title: "t",
+      projectPath: null,
+      session: null,
+      resumeSessionId: null,
+    };
+    const meta = (c: object, chosen?: string | null) =>
+      parseChatNote(buildNote({ ...chat, ...c }, note, 2, chosen).markdown).meta.model;
+    expect(meta({ reportedModel: "claude-haiku-5-5" })).toBe("claude-haiku-5-5");
+    expect(meta({ reportedModel: "claude-haiku-5-5" }, "opus")).toBe("opus");
+    expect(meta({})).toBeNull();
+  });
+
   it("detects a lost CLI session like the Rust matcher", () => {
     expect(isSessionMissing("No conversation found with session ID: x")).toBe(true);
     expect(isSessionMissing("Session abc not found")).toBe(true);
@@ -313,6 +330,7 @@ function resetStore() {
     drafts: {},
     queued: {},
     modes: {},
+    chatModels: {},
     notes: {},
     resuming: {},
     historyError: null,
@@ -420,6 +438,24 @@ describe("openSavedChat", () => {
     await settle(5);
     expect(chat().turns).toHaveLength(3);
     expect(get().resuming["saved-1"]).toBe(false);
+  });
+
+  it("restores the chat's saved model and starts the resumed session with it", async () => {
+    const { client } = fakeHistory({
+      load: vi.fn(async () => ({
+        summary: SUMMARY,
+        markdown: serializeChatNote(NOTE_DOC({ model: "claude-haiku-5-5" })),
+      })),
+    });
+    configureChatPersistenceForTests({ history: client, delayMs: 2, reload: async () => false });
+    const mock = createMockAgentClient({ goldens: g });
+    const start = vi.spyOn(mock, "start");
+    configureAgentRuntimeForTests(mock);
+    get().openPane();
+    await get().openSavedChat("saved-1");
+    expect(get().chatModels["saved-1"]).toMatchObject({ model: "claude-haiku-5-5" });
+    await get().sendMessage("go on");
+    expect(start.mock.calls[0]![0].settings.model).toBe("claude-haiku-5-5");
   });
 
   it("session missing at start: replays the note into a new session, one exchange in the transcript", async () => {

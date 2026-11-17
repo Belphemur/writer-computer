@@ -16,8 +16,8 @@
 
 use super::claude_stream::{
     build_args, encode_control_error, encode_interrupt, encode_permission_allow,
-    encode_permission_deny, encode_set_permission_mode, encode_user_message, updated_permissions,
-    ClaudeSpawn, ClaudeStreamMapper, SessionRef,
+    encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_user_message,
+    updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
 };
 use super::consent::{self, Gate, Preconsented, AGENT_PLUGIN_ID};
 use super::env;
@@ -187,6 +187,8 @@ struct Inner {
     cancel_token: u64,
     counter: u64,
     mode_request: Option<(String, AgentPermissionMode)>,
+    /// (request id, the model asked for)
+    model_request: Option<(String, Option<String>)>,
     restart_after_turn: bool,
     last_activity: Instant,
 }
@@ -368,6 +370,7 @@ impl Session {
                 cancel_token: 0,
                 counter: 0,
                 mode_request: None,
+                model_request: None,
                 restart_after_turn: false,
                 last_activity: Instant::now(),
             }),
@@ -803,6 +806,31 @@ impl Session {
         let id = resp
             .and_then(|r| r.get("request_id"))
             .and_then(Value::as_str);
+        let ok = resp.and_then(|r| r.get("subtype")).and_then(Value::as_str) == Some("success");
+        if id.is_some() && g.model_request.as_ref().map(|(r, _)| r.as_str()) == id {
+            let (_, requested) = g.model_request.take().unwrap();
+            if ok {
+                log::info!(target: "agent", "agent: model changed in the running process");
+            } else if resp
+                .and_then(|r| r.get("error_code"))
+                .and_then(Value::as_str)
+                == Some("restricted_by_org")
+            {
+                // The CLI kept (or fell back to) another model: never pass the refused one again.
+                let using = resp
+                    .and_then(|r| r.get("model"))
+                    .and_then(Value::as_str)
+                    .map(String::from);
+                log::info!(target: "agent", "agent: model refused by the organization policy");
+                g.settings.model = using.clone();
+                self.log.push(AgentEvent::ModelRefused { requested, using });
+            } else {
+                // The model change keeps the new setting for the next spawn (spec 6.1).
+                log::info!(target: "agent", "agent: set_model refused, restarting with --resume");
+                self.restart_when_idle(g);
+            }
+            return;
+        }
         let Some((want, mode)) = g.mode_request.clone() else {
             return;
         };
@@ -811,13 +839,17 @@ impl Session {
         }
         g.mode_request = None;
         g.settings.permission_mode = mode;
-        let ok = resp.and_then(|r| r.get("subtype")).and_then(Value::as_str) == Some("success");
         if ok {
             log::info!(target: "agent", "agent: permission mode changed in the running process");
             return;
         }
         // The CLI refused: restart with --resume and the new --permission-mode (spec 6.1).
         log::info!(target: "agent", "agent: set_permission_mode refused, restarting with --resume");
+        self.restart_when_idle(g);
+    }
+
+    /// Restart with `--resume` now, or once the running turn has finished.
+    fn restart_when_idle(&self, g: &mut Inner) {
         if g.turn_active {
             g.restart_after_turn = true;
         } else {
@@ -843,6 +875,7 @@ impl Session {
             let init_seen = g.init_seen;
             let stderr = String::from_utf8_lossy(&g.stderr).to_ascii_lowercase();
             g.mode_request = None;
+            g.model_request = None;
             g.restart_after_turn = false;
             self.drop_pending(&mut g);
             g.mapper = ClaudeStreamMapper::new();
@@ -1193,6 +1226,28 @@ impl Session {
         let id = format!("req_mode_{}", g.counter);
         g.mode_request = Some((id.clone(), mode));
         self.write(encode_set_permission_mode(&id, mode));
+    }
+
+    /// Live model switch: a `set_model` control request. A changed effort is a spawn flag, so it
+    /// (or a refused or impossible request) restarts with `--resume` at the next idle moment.
+    pub(crate) fn set_model(&self, model: Option<String>, effort: Option<Effort>) {
+        let mut g = self.inner.lock();
+        let model = model.filter(|m| !m.is_empty());
+        let effort_changed = g.settings.effort != effort;
+        let model_changed = g.settings.model != model;
+        g.settings.model = model.clone();
+        g.settings.effort = effort;
+        if g.live_gen.is_none() || !g.ready {
+            return; // takes effect at the next spawn
+        }
+        if effort_changed {
+            self.restart_when_idle(&mut g);
+        } else if model_changed {
+            g.counter += 1;
+            let id = format!("req_model_{}", g.counter);
+            g.model_request = Some((id.clone(), model.clone()));
+            self.write(encode_set_model(&id, model.as_deref()));
+        }
     }
 
     /// Rebind the chat to another CLI session (the next spawn resumes it).

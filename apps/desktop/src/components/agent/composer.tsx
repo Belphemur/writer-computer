@@ -1,27 +1,51 @@
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import {
   decideAgentPermission,
   hasPendingAgentPermission,
+  loadAgentSkills,
   removeQueuedMessage,
   sendAgentMessage,
   setAgentDraft,
   stopAgent,
 } from "@/hooks/agent-api";
-import { useFocusComposerTick, type Chat, type Draft } from "@/hooks/use-agent";
+import {
+  useActiveNoteRelative,
+  useAttachActiveNoteSetting,
+  useCliCatalog,
+  useDiskSkills,
+  useFocusComposerTick,
+  type Chat,
+  type Draft,
+} from "@/hooks/use-agent";
 import type { ContextRef } from "@/lib/agent/events";
-import { searchMentions, toContextRef, type MentionCandidate } from "@/lib/agent/mentions";
+import {
+  searchMentions,
+  specialMentions,
+  toContextRef,
+  type MentionCandidate,
+} from "@/lib/agent/mentions";
 import { isBusy, isComposerDisabled } from "@/lib/agent/reduce";
+import {
+  SLASH_EMPTY_TEXT,
+  SOURCE_LABEL,
+  loadedLabel,
+  applySlash,
+  filterSlash,
+  mergeSlashItems,
+  slashQuery,
+} from "@/lib/agent/slash-commands";
 import { fuzzySearch } from "@/lib/tauri";
 import { ComposerActions } from "./composer-actions";
 import { ContextChips } from "./context-chips";
 import { SuggestionMenu, type Suggestion } from "./suggestion-menu";
 import { useFocusOnTick } from "./use-focus-on-tick";
+import { useLoadSkillsOnMount } from "./use-load-skills";
 
 const EMPTY: Draft = { text: "", mentions: [], activeNote: true };
 
 type Menu =
   | { kind: "mention"; start: number; query: string; items: MentionCandidate[]; active: number }
-  | { kind: "slash"; query: string; items: Suggestion[]; active: number };
+  | { kind: "slash"; query: string; active: number };
 
 const MENTION_TRIGGER = /(^|\s)@([^\s@]*)$/;
 
@@ -67,6 +91,34 @@ export function Composer({
   const focusTick = useFocusComposerTick();
   useFocusOnTick(area, focusTick);
 
+  const activeNote = useActiveNoteRelative();
+  const attachByDefault = useAttachActiveNoteSetting();
+  const disk = useDiskSkills(chat.projectPath);
+  const catalog = useCliCatalog();
+  useLoadSkillsOnMount(chat.projectPath);
+  const allSlash = useMemo(
+    () => mergeSlashItems(disk?.items ?? [], chat.session, catalog),
+    [disk?.items, chat.session, catalog],
+  );
+  const slashItems = useMemo(
+    () => (menu?.kind === "slash" ? filterSlash(allSlash, menu.query) : []),
+    [allSlash, menu],
+  );
+  const slashSuggestions: Suggestion[] = slashItems.map((i) => ({
+    id: i.name,
+    label: `/${i.name}`,
+    detail: i.description || (i.kind === "skill" ? "Skill" : "Command"),
+    icon: "/",
+    tag: SOURCE_LABEL[i.source],
+    status: loadedLabel(i) || undefined,
+  }));
+  const slashEmpty =
+    allSlash.length > 0
+      ? "No matching commands"
+      : disk?.status === "loading"
+        ? "Loading skills…"
+        : SLASH_EMPTY_TEXT;
+
   const disabled = isComposerDisabled(chat);
   const busy = isBusy(chat);
   const text = draft.text;
@@ -99,13 +151,11 @@ export function Composer({
       return;
     }
     searchSeq.current++;
-    if (value.startsWith("/") && !/\s/.test(value)) {
-      const q = value.slice(1).toLowerCase();
-      const items = (chat.session?.slashCommands ?? [])
-        .filter((c) => c.toLowerCase().includes(q))
-        .slice(0, 8)
-        .map((c) => ({ id: c, label: `/${c}`, icon: "/" }));
-      setMenu({ kind: "slash", query: q, items, active: 0 });
+    const slash = slashQuery(value);
+    if (slash !== null) {
+      // Opening the menu re-reads the skills on disk (they may have changed); the cache shows meanwhile.
+      if (menu?.kind !== "slash") void loadAgentSkills(chat.projectPath);
+      setMenu({ kind: "slash", query: slash, active: 0 });
       return;
     }
     setMenu(null);
@@ -117,6 +167,17 @@ export function Composer({
     const caret = el.selectionStart;
     const next = `${text.slice(0, menu.start)}${text.slice(caret)}`.replace(/^ /, "");
     const ref = toContextRef(c);
+    if (c.kind === "active-note") {
+      // The same chip the pane attaches by default; picking brings it back after it was removed.
+      // With the default off there is no automatic chip, so the pick adds an explicit one.
+      const mentions: ContextRef[] = attachByDefault
+        ? draft.mentions
+        : [...draft.mentions.filter((m) => m.kind !== "active-note"), ref];
+      setAgentDraft(chatId, { text: next, mentions, activeNote: true });
+      setMenu(null);
+      el.focus();
+      return;
+    }
     const exists = draft.mentions.some(
       (m) => m.kind === ref.kind && "path" in m && "path" in ref && m.path === ref.path,
     );
@@ -127,29 +188,32 @@ export function Composer({
   }
 
   function pickSlash(s: Suggestion) {
-    setAgentDraft(chatId, { text: `${s.label} ` });
+    setAgentDraft(chatId, { text: applySlash(text, s.id) });
     setMenu(null);
     area.current?.focus();
   }
 
+  // Shortcuts (`@activenote`) come first, then folders and notes from the search.
+  const mentionCandidates: MentionCandidate[] =
+    menu?.kind === "mention" ? [...specialMentions(menu.query, activeNote), ...menu.items] : [];
   const mentionSuggestions: Suggestion[] =
     menu?.kind === "mention"
-      ? menu.items.map((c) => ({
+      ? mentionCandidates.map((c) => ({
           id: `${c.kind}:${c.path}`,
           label: c.label,
           detail: c.detail,
-          icon: c.kind === "folder" ? "▸" : "·",
+          icon: c.kind === "folder" ? "▸" : c.kind === "active-note" ? "@" : "·",
         }))
       : [];
-  const suggestions = menu?.kind === "slash" ? menu.items : mentionSuggestions;
+  const suggestions = menu?.kind === "slash" ? slashSuggestions : mentionSuggestions;
 
   function pickActive() {
     if (!menu) return;
     if (menu.kind === "mention") {
-      const c = menu.items[menu.active];
+      const c = mentionCandidates[menu.active];
       if (c) pickMention(c);
     } else {
-      const s = menu.items[menu.active];
+      const s = slashSuggestions[menu.active];
       if (s) pickSlash(s);
     }
   }
@@ -238,11 +302,12 @@ export function Composer({
           id={listId}
           label={menu.kind === "mention" ? "Add context" : "Commands"}
           items={suggestions}
+          emptyText={menu.kind === "slash" ? slashEmpty : undefined}
           activeIndex={menu.active}
           onPick={(s) => {
             if (menu.kind === "slash") pickSlash(s);
             else {
-              const c = menu.items.find((i) => `${i.kind}:${i.path}` === s.id);
+              const c = mentionCandidates.find((i) => `${i.kind}:${i.path}` === s.id);
               if (c) pickMention(c);
             }
           }}
@@ -272,6 +337,7 @@ export function Composer({
           className="block max-h-[40vh] w-full resize-none bg-transparent px-3 py-2.5 text-[14px] leading-snug text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
         />
         <ComposerActions
+          chat={chat}
           chatId={chatId}
           busy={busy}
           stopping={chat.state === "cancelling"}

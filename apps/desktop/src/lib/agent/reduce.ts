@@ -38,6 +38,7 @@ export function createChat(chatId: ChatId, opts: { projectPath?: string | null }
     banner: null,
     rateLimit: null,
     contextWindow: null,
+    reportedModel: null,
     contextTokens: null,
     totalCostUsd: 0,
     lastSeq: 0,
@@ -185,6 +186,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
           permissionMode: event.permissionMode,
           tools: event.tools,
           slashCommands: event.slashCommands,
+          skills: event.skills ?? [],
           cliVersion: event.cliVersion,
         },
       };
@@ -385,6 +387,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       const base: Chat = {
         ...chat,
         contextWindow: event.contextWindow ?? chat.contextWindow,
+        reportedModel: event.model ?? chat.reportedModel,
         contextTokens: event.inputTokens + event.cacheReadTokens + event.cacheCreationTokens,
         totalCostUsd: chat.totalCostUsd + (event.costUsd ?? 0),
       };
@@ -393,6 +396,13 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       turns[turns.length - 1] = { ...last, usage };
       return { ...base, turns };
     }
+
+    case "model-refused":
+      return {
+        ...chat,
+        reportedModel: event.using ?? chat.reportedModel,
+        banner: `Model ${event.requested ?? "default"} is not available in your organization; using ${event.using ?? "the default"}`,
+      };
 
     case "rate-limit":
       return { ...chat, rateLimit: { status: event.status, resetsAt: event.resetsAt } };

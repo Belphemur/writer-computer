@@ -182,6 +182,23 @@ pub async fn agent_set_permission_mode(
 }
 
 #[tauri::command]
+pub async fn agent_set_model(
+    chat_id: ChatId,
+    model: Option<String>,
+    effort: Option<Effort>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        sessions(&app)
+            .set_model(&label, &chat_id, model, effort)
+            .map_err(rejected)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn agent_close(
     chat_id: ChatId,
     webview: tauri::Webview,

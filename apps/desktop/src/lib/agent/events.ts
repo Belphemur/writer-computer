@@ -88,6 +88,8 @@ export type AgentEvent =
       permissionMode: string | null;
       tools: string[];
       slashCommands: string[];
+      /** Skills the CLI loaded (project, user, plugin), by name; a subset of the slash commands. */
+      skills: string[];
       cliVersion: string | null;
     }
   /** A streamed chunk of assistant text. Append to the block `(messageId, blockIndex)`. */
@@ -153,7 +155,10 @@ export type AgentEvent =
       cacheCreationTokens: number;
       costUsd: number | null;
       contextWindow: number | null;
+      /** Turn scope: the model that did the work (the CLI's `modelUsage` key), the truth. */
+      model?: string | null;
     }
+  | { type: "model-refused"; requested: string | null; using: string | null }
   | { type: "rate-limit"; status: string; resetsAt: number | null }
   | {
       type: "turn-finished";
@@ -189,6 +194,7 @@ export const AGENT_EVENT_TYPES = [
   "permission-request",
   "permission-resolved",
   "usage",
+  "model-refused",
   "rate-limit",
   "turn-finished",
   "error",
@@ -260,6 +266,7 @@ export type AgentCommand =
     }
   | { type: "resume"; sessionId: string }
   | { type: "set-permission-mode"; mode: AgentPermissionMode }
+  | { type: "set-model"; model: string | null; effort: AgentSettings["effort"] }
   | { type: "close" };
 
 export type AgentCommandType = AgentCommand["type"];
@@ -370,7 +377,13 @@ export type AgentCommandMap = {
     void,
   ];
   agent_set_permission_mode: [{ chatId: ChatId; mode: AgentPermissionMode }, void];
+  agent_set_model: [
+    { chatId: ChatId; model: string | null; effort: AgentSettings["effort"] },
+    void,
+  ];
   agent_close: [{ chatId: ChatId }, void];
+  /** Skills in `.claude/skills` and `.agents/skills` of the vault root and the project (lane 2). */
+  agent_list_skills: [{ projectPath: string | null }, DiskSkill[]];
   /** Events with seq > afterSeq still buffered (bounded ring), plus the current state. */
   agent_snapshot: [
     { chatId: ChatId; afterSeq: number },
@@ -404,12 +417,27 @@ export type AgentCommandMap = {
   agent_remove_permission_rule: [{ projectPath: string | null; rule: string }, void];
 };
 
+/** A skill found on disk (spec 3.2); `scope` says where: the project, the vault root or the user's home. */
+export type DiskSkill = {
+  name: string;
+  description: string;
+  scope: "project" | "vault" | "global";
+  /** Vault-relative path of the `SKILL.md`; absolute for a `global` one. */
+  path: string;
+};
+
 export type AgentBinaryInfo = {
   found: boolean;
   path: string | null;
   version: string | null;
   /** Where it was found: `override`, `path`, `login-path`, `known-dir`. */
   source: "override" | "path" | "login-path" | "known-dir" | null;
+  /** From the CLI's own `auth status`: `false` only when it says signed out, `null` = unknown. */
+  authenticated?: boolean | null;
+  /** Non-sensitive label (sign-in method and plan); never an email, organisation or id. */
+  account?: string | null;
+  /** Directories tried when nothing was found. */
+  searched?: string[];
 };
 
 export const AGENT_COMMANDS = [
@@ -419,7 +447,9 @@ export const AGENT_COMMANDS = [
   "agent_cancel",
   "agent_permission",
   "agent_set_permission_mode",
+  "agent_set_model",
   "agent_close",
+  "agent_list_skills",
   "agent_snapshot",
   "agent_list_chats",
   "agent_load_chat",

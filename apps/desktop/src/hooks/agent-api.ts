@@ -3,7 +3,9 @@
  * keyboard hook (docs/react-guidelines.md: an API module, not `store.getState()` in components).
  */
 import { useAgentStore, type AgentBackend, type AgentView, type Draft } from "@/stores/agent-store";
+import type { ChatModelChoice } from "@/lib/agent/agent-settings";
 import type { AgentPermissionMode, ChatId, PermissionPersist } from "@/lib/agent/events";
+import { useSettingsStore } from "@/stores/settings-store";
 
 export const toggleAgentPane = () => useAgentStore.getState().togglePane();
 export const openAgentPane = () => useAgentStore.getState().openPane();
@@ -47,6 +49,14 @@ export const decideAgentPermission = (
 ) => useAgentStore.getState().decidePermission(requestId, decision, persist, message);
 export const setAgentPermissionMode = (m: AgentPermissionMode) =>
   useAgentStore.getState().setPermissionMode(m);
+export const setAgentChatModel = (model: string | null, effort?: ChatModelChoice["effort"]) =>
+  useAgentStore.getState().setChatModel(model, effort);
+/** "Set as default" in the model menu: writes `agent.model` ("" is Agent default) and `agent.effort`. */
+export async function setAgentDefaultModel(choice: ChatModelChoice): Promise<void> {
+  const { setSetting } = useSettingsStore.getState();
+  await setSetting("agent.model", choice.model ?? "");
+  await setSetting("agent.effort", choice.effort ?? "default");
+}
 export const openNewProjectDialog = (opts?: { folder?: string | null }) =>
   useAgentStore.getState().openNewProjectDialog(opts);
 
@@ -55,3 +65,6 @@ export function hasPendingAgentPermission(): boolean {
   const chat = s.activeChatId ? s.chats[s.activeChatId] : null;
   return (chat?.pendingPermissions.length ?? 0) > 0;
 }
+
+export const loadAgentSkills = (projectPath: string | null) =>
+  useAgentStore.getState().loadSkills(projectPath);

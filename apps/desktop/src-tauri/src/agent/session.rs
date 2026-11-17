@@ -493,6 +493,22 @@ impl AgentSessions {
         Ok(())
     }
 
+    pub fn set_model(
+        &self,
+        label: &str,
+        chat_id: &str,
+        model: Option<String>,
+        effort: Option<Effort>,
+    ) -> Result<(), Rejected> {
+        if let Some(m) = model.as_deref().filter(|m| !m.is_empty()) {
+            if !super::claude_stream::is_safe_value(m) {
+                return Err(Rejected("invalid model name".into()));
+            }
+        }
+        self.get(label, chat_id)?.set_model(model, effort);
+        Ok(())
+    }
+
     pub fn close(&self, label: &str, chat_id: &str) -> Result<(), Rejected> {
         // a chat that never started is already closed
         if let Ok(s) = self.get(label, chat_id) {

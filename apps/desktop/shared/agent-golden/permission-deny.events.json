@@ -15,6 +15,7 @@
       "compact",
       "init"
     ],
+    "skills": [],
     "cliVersion": "2.1.325"
   },
   {
@@ -177,7 +178,8 @@
     "cacheReadTokens": 33386,
     "cacheCreationTokens": 9103,
     "costUsd": 0.0409786,
-    "contextWindow": 1000000
+    "contextWindow": 1000000,
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "turn-finished",

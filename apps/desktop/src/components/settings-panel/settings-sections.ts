@@ -50,7 +50,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: "agent",
     label: "Agent",
     group: "General",
-    blocks: [category("Agent"), { type: "agent" }],
+    blocks: [{ type: "agent" }],
   },
   {
     id: "privacy",
@@ -84,6 +84,9 @@ export const DEFAULT_SETTINGS_SECTION = SETTINGS_SECTIONS[0].id;
 /** Schema categories rendered by `ThemesSection`, not by the generic category renderer. */
 export const THEME_CATEGORY = "Theme";
 
+/** Schema category rendered by `AgentSection`, not by the generic category renderer. */
+export const AGENT_CATEGORY = "Agent";
+
 /** Schema categories no section claims (a new category must be added to a section above). */
 export function unassignedCategories(): string[] {
   const claimed = new Set(
@@ -92,6 +95,7 @@ export function unassignedCategories(): string[] {
       .map((b) => b.category),
   );
   claimed.add(THEME_CATEGORY);
+  claimed.add(AGENT_CATEGORY);
   return [...new Set(SETTINGS_SCHEMA.map((d) => d.category))].filter((c) => !claimed.has(c));
 }
 

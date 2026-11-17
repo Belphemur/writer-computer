@@ -114,9 +114,12 @@ export function dropLastExchange(note: NoteState): NoteState {
 
 /** The whole note for `agent_save_chat`. */
 export function buildNote(
-  chat: Pick<Chat, "chatId" | "title" | "projectPath" | "session" | "resumeSessionId">,
+  chat: Pick<Chat, "chatId" | "title" | "projectPath" | "session" | "resumeSessionId"> &
+    Partial<Pick<Chat, "reportedModel">>,
   note: NoteState,
   now: number,
+  /** The model the user picked in the composer; wins over what the CLI reported. */
+  chosenModel?: string | null,
 ): { markdown: string; titleHint: string } {
   const firstUser = note.messages.find((m) => m.role === "user");
   const titleHint = titleFromMessage(firstUser?.text ?? chat.title);
@@ -126,7 +129,7 @@ export function buildNote(
     projectPath: chat.projectPath,
     sessionId: chat.session?.sessionId ?? chat.resumeSessionId ?? note.meta.sessionId,
     cliVersion: chat.session?.cliVersion ?? note.meta.cliVersion,
-    model: chat.session?.model ?? note.meta.model,
+    model: chosenModel ?? chat.reportedModel ?? chat.session?.model ?? note.meta.model,
     updatedAt: now,
     turns: note.messages.filter((m) => m.role === "user").length,
     preview: firstUser ? previewOf(firstUser.text) : null,

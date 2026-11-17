@@ -124,6 +124,25 @@ describe("mentions", () => {
     expect(out[0]).toMatchObject({ kind: "folder", path: "Projects" });
     expect(out.some((c) => c.kind === "note" && c.path === "Other/project-x.md")).toBe(true);
   });
+
+  it("shows a title override first with the file path behind it, else the file name", () => {
+    const out = candidatesFromResults("quarterly", [
+      { relative_path: "Notes/Spec.md", title: "Quarterly Plan" },
+      { relative_path: "Notes/Plain.md", title: null },
+    ]);
+    expect(out).toContainEqual({
+      kind: "note",
+      path: "Notes/Spec.md",
+      label: "Quarterly Plan",
+      detail: "Notes/Spec.md",
+    });
+    expect(out).toContainEqual({
+      kind: "note",
+      path: "Notes/Plain.md",
+      label: "Plain",
+      detail: "Notes",
+    });
+  });
 });
 
 describe("settings", () => {

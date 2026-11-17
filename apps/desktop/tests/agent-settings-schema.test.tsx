@@ -28,6 +28,7 @@ describe("agent.* settings contract", () => {
       "agent.binary-path": "",
       "agent.model": "",
       "agent.effort": "default",
+      "agent.enabled-models": ["default", "opus", "sonnet", "haiku"],
       "agent.permission-mode": "manual",
       "agent.allowed-tools": [],
       "agent.disallowed-tools": [],
@@ -99,18 +100,40 @@ describe("agent.* settings contract", () => {
 describe("Settings > Agent", () => {
   let container: HTMLElement;
   let root: Root;
+  const setCalls: [string, unknown][] = [];
+  let detect: Record<string, unknown>;
+
+  const flush = () => act(async () => {});
+  async function mount() {
+    await act(async () => {
+      root.render(<SettingsPanel isActive />);
+    });
+    await flush();
+  }
+  const q = (sel: string) => container.querySelector<HTMLElement>(sel);
+  const buttonByText = (text: string, within: ParentNode = container) =>
+    [...within.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
 
   beforeEach(() => {
+    window.matchMedia ??= ((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      onchange: null,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    setCalls.length = 0;
+    detect = { found: true, path: "/synthetic/bin/claude", version: "2.1.325", source: "path" };
     invokeMock.mockReset();
-    invokeMock.mockImplementation(async (cmd: string) => {
-      if (cmd === "agent_detect_binary") {
-        return { found: true, path: "/synthetic/bin/claude", version: "2.1.325", source: "path" };
-      }
-      if (cmd === "agent_permission_rules") {
-        return { allow: ["Bash(ls)"], deny: ["Bash(rm)"] };
-      }
-      if (cmd === "agent_remove_permission_rule") {
-        return undefined;
+    invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+      if (cmd === "agent_detect_binary") return detect;
+      if (cmd === "agent_permission_rules") return { allow: ["Bash(ls)"], deny: ["Bash(rm)"] };
+      if (cmd === "set_setting") {
+        setCalls.push([String(args.key), args.value]);
+        return args.value;
       }
       return [];
     });
@@ -130,24 +153,178 @@ describe("Settings > Agent", () => {
     container.remove();
   });
 
-  it("renders the schema rows, the detected binary and the saved rules", async () => {
-    await act(async () => {
-      root.render(<SettingsPanel isActive />);
-    });
-    await act(async () => {});
-    expect(container.querySelector('[data-settings-category="Agent"]')).not.toBeNull();
-    expect(container.textContent).toContain("Permission mode");
-    expect(container.querySelector("[data-agent-binary-status]")?.textContent).toContain(
-      "/synthetic/bin/claude 2.1.325",
+  it("shows Claude active and the other backends as disabled coming-soon pills", async () => {
+    await mount();
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>("[data-agent-backend-tab]")];
+    expect(tabs.map((t) => t.dataset.agentBackendTab)).toEqual([
+      "opencode",
+      "claude",
+      "codex",
+      "quick-chat",
+    ]);
+    expect(tabs.filter((t) => t.getAttribute("aria-selected") === "true")).toHaveLength(1);
+    for (const t of tabs.filter((t) => t.dataset.agentBackendTab !== "claude")) {
+      expect(t.disabled).toBe(true);
+      expect(t.title).toMatch(/Coming soon/);
+    }
+  });
+
+  it("header: Ready with the detected path and version", async () => {
+    await mount();
+    expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("ready");
+    expect(q("[data-agent-binary-status]")?.textContent).toContain("/synthetic/bin/claude");
+    expect(q("[data-agent-binary-status]")?.textContent).toContain("2.1.325");
+  });
+
+  it("header: not found offers Install instructions and Locate", async () => {
+    detect = { found: false, path: null, version: null, source: null };
+    await mount();
+    expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("not-found");
+    expect(buttonByText("Install instructions")).toBeTruthy();
+    expect(buttonByText("Locate…")).toBeTruthy();
+  });
+
+  it("header: an older CLI warns, a signed-out one asks to sign in", async () => {
+    detect = { found: true, path: "/synthetic/bin/claude", version: "2.0.1", source: "path" };
+    await mount();
+    expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("unsupported-version");
+    expect(q("[data-agent-binary-status]")?.textContent).toMatch(/2\.1\.325 and later/);
+    act(() => root.unmount());
+    root = createRoot(container);
+    detect = {
+      found: true,
+      path: "/x/claude",
+      version: "2.1.325",
+      source: "path",
+      authenticated: false,
+    };
+    await mount();
+    expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("needs-sign-in");
+  });
+
+  it("Re-detect asks the backend again", async () => {
+    await mount();
+    const before = invokeMock.mock.calls.filter((c) => c[0] === "agent_detect_binary").length;
+    await act(async () => buttonByText("Re-detect")!.click());
+    await flush();
+    expect(invokeMock.mock.calls.filter((c) => c[0] === "agent_detect_binary").length).toBe(
+      before + 1,
     );
-    const rules = container.querySelector("[data-agent-rules]")!;
+  });
+
+  it("Configure opens a dialog with the path override and the saved rules", async () => {
+    await mount();
+    await act(async () => buttonByText("Configure")!.click());
+    await flush();
+    const dialog = q('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Configure Claude");
+    expect(dialog.querySelector('input[aria-label="Claude program path"]')).not.toBeNull();
+    const rules = dialog.querySelector("[data-agent-rules]")!;
     expect(rules.textContent).toContain("Bash(ls)");
     expect(rules.textContent).toContain("Bash(rm)");
-    const remove = [...rules.querySelectorAll("button")].find((b) => b.textContent === "Remove")!;
-    await act(async () => remove.click());
+    await act(async () => buttonByText("Remove", rules)!.click());
     expect(invokeMock).toHaveBeenCalledWith("agent_remove_permission_rule", {
       projectPath: null,
       rule: "Bash(ls)",
     });
+    await act(async () => buttonByText("Done")!.click());
+    expect(q('[role="dialog"]')).toBeNull();
+  });
+
+  it("lists the catalog with the enabled count and toggles models", async () => {
+    await mount();
+    expect(q("[data-agent-models-count]")?.textContent).toBe("4");
+    const rows = [...container.querySelectorAll<HTMLElement>("[data-agent-model]")].map(
+      (r) => r.dataset.agentModel,
+    );
+    expect(rows.slice(0, 4)).toEqual(["default", "opus", "sonnet", "haiku"]);
+    expect(rows).toContain("claude-sonnet-5-5");
+    const sw = q('[data-agent-model="claude-sonnet-5-5"] [role="switch"]')!;
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    await act(async () => sw.click());
+    await flush();
+    expect(useSettingsStore.getState().settings["agent.enabled-models"]).toEqual([
+      "default",
+      "opus",
+      "sonnet",
+      "haiku",
+      "claude-sonnet-5-5",
+    ]);
+  });
+
+  it("filters models by search and adds a custom model", async () => {
+    await mount();
+    const search = q('input[aria-label="Search Claude models"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        "haiku",
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(
+      [...container.querySelectorAll<HTMLElement>("[data-agent-model]")].map(
+        (r) => r.dataset.agentModel,
+      ),
+    ).toEqual(["haiku", "claude-haiku-5-5", "claude-haiku-4-5"]);
+    const add = q('input[aria-label="Add custom model"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(add, "--bad");
+      add.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      add.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(q('[role="alert"]')?.textContent).toMatch(/letters, digits/);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        add,
+        "my-org/model:1",
+      );
+      add.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      add.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    await flush();
+    expect(useSettingsStore.getState().settings["agent.enabled-models"]).toContain(
+      "my-org/model:1",
+    );
+  });
+
+  it("greys the effort select out for a model without effort levels", async () => {
+    useSettingsStore.setState({
+      settings: {
+        ...useSettingsStore.getState().settings,
+        "agent.model": "haiku",
+      },
+    });
+    await mount();
+    const effort = q('select[aria-label="Default effort"]') as HTMLSelectElement;
+    expect(effort.disabled).toBe(true);
+    const model = q('select[aria-label="Default model"]') as HTMLSelectElement;
+    expect(model.value).toBe("haiku");
+  });
+
+  it("explains auto mode and edits the rule lists; bypass is not offered", async () => {
+    await mount();
+    expect(container.textContent).toContain("Auto mode permissions");
+    expect(container.textContent).toMatch(/never offers a mode that skips permission/);
+    expect(container.textContent).toContain("Always-allowed tools");
+    expect(container.textContent).toContain("Never-allowed tools");
+    expect(container.textContent).not.toContain("bypassPermissions (");
+  });
+
+  it("keeps the remaining agent rows (chats and context)", async () => {
+    await mount();
+    for (const label of [
+      "Attach the open note",
+      "Inject AGENTS.md",
+      "Chats running at once",
+      "Keep chat history for (days)",
+      "Agent pane width",
+    ]) {
+      expect(container.textContent, label).toContain(label);
+    }
   });
 });

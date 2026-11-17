@@ -2,14 +2,17 @@
  * Domain hooks for the native agent pane. Components import these, never `stores/agent-store`
  * (docs/react-guidelines.md). One selector per hook; imperative actions live in `agent-api.ts`.
  */
-import { useEffect } from "react";
-import { useAgentStore } from "@/stores/agent-store";
+import { useEffect, useMemo } from "react";
+import { skillsKey, useAgentStore } from "@/stores/agent-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { agentSettingsFrom } from "@/lib/agent/agent-settings";
+import { agentSettingsFrom, type ChatModelChoice } from "@/lib/agent/agent-settings";
 import type { AgentPermissionMode } from "@/lib/agent/events";
+import { useActiveFilePath } from "@/hooks/use-tabs";
+import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useClosePluginPane, useIsPluginPaneOpen } from "@/hooks/use-plugins";
 import type { ChatId } from "@/lib/agent/events";
 
+export type { SkillsEntry } from "@/stores/agent-store";
 export type { Draft, AgentView, AgentBackend, QueuedMessage } from "@/stores/agent-store";
 export type { Chat, Turn, Block, PermissionView } from "@/lib/agent/transcript";
 
@@ -90,7 +93,47 @@ export function useChatPermissionMode(chatId: ChatId | null): AgentPermissionMod
   return override ?? agentSettingsFrom({ "agent.permission-mode": fromSettings }).permissionMode;
 }
 
+/** What the model chip shows for a chat: the requested model (chat choice, else the settings) and
+ *  the one the CLI reported after the last turn (the truth). */
+export function useChatModel(chatId: ChatId | null): {
+  choice: ChatModelChoice;
+  reported: string | null;
+  sessionModel: string | null;
+} {
+  const own = useAgentStore((s) => (chatId ? s.chatModels[chatId] : undefined));
+  const reported = useAgentStore((s) => (chatId ? (s.chats[chatId]?.reportedModel ?? null) : null));
+  const sessionModel = useAgentStore((s) =>
+    chatId ? (s.chats[chatId]?.session?.model ?? null) : null,
+  );
+  const model = useSettingsStore((s) => s.settings["agent.model"]);
+  const effort = useSettingsStore((s) => s.settings["agent.effort"]);
+  const base = useMemo(() => {
+    const d = agentSettingsFrom({ "agent.model": model, "agent.effort": effort });
+    return { model: d.model, effort: d.effort };
+  }, [model, effort]);
+  return { choice: own ?? base, reported, sessionModel };
+}
+
 /** Is the active-note chip allowed by `agent.attach-active-note` (default on)? */
 export function useAttachActiveNoteSetting(): boolean {
   return useSettingsStore((s) => s.settings["agent.attach-active-note"]) !== false;
+}
+
+/** Skills on disk for a chat's project (vault root when null), as last loaded. */
+export function useDiskSkills(projectPath: string | null) {
+  return useAgentStore((s) => s.skills[skillsKey(projectPath)]);
+}
+
+/** The note open in the editor, vault-relative; null when none is open or it is outside the vault. */
+export function useActiveNoteRelative(): string | null {
+  const path = useActiveFilePath();
+  const root = useWorkspaceRoot();
+  if (!path || !root) return null;
+  const base = root.endsWith("/") ? root : `${root}/`;
+  return path.startsWith(base) ? path.slice(base.length) : null;
+}
+
+/** The CLI's last reported slash commands and skills in this window (null before any chat started). */
+export function useCliCatalog() {
+  return useAgentStore((s) => s.cliCatalog);
 }

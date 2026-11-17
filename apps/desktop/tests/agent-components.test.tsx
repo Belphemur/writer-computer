@@ -173,7 +173,7 @@ describe("AgentPane", () => {
     await flush(5);
     const ta = $("textarea") as HTMLTextAreaElement;
     type(ta, "/co");
-    expect($$("[role=option]").map((o) => o.textContent)).toEqual(["//compact"]);
+    expect($$("[role=option]").map((o) => o.textContent)).toEqual(["//compactCommandfrom Claude"]);
   });
 
   it("the mode chip lists the CLI modes and switches without offering bypass", async () => {
@@ -219,6 +219,30 @@ describe("AgentPane", () => {
     );
     expect(($("textarea") as HTMLTextAreaElement).disabled).toBe(true);
     expect($("[data-agent-error=binary-not-found]")!.textContent).toContain("Choose binary");
+  });
+
+  it("an auth error asks to sign in with /login and offers Retry", async () => {
+    await openPane();
+    act(() =>
+      useAgentStore.setState((s) => {
+        const c = s.chats[s.activeChatId!]!;
+        return {
+          chats: {
+            ...s.chats,
+            [c.chatId]: {
+              ...c,
+              state: "error",
+              error: { kind: "auth", message: "Not logged in", retryable: false, at: 0 },
+            },
+          },
+        };
+      }),
+    );
+    const card = $("[data-agent-error=auth]")!;
+    expect(card.textContent).toContain("Sign in required");
+    expect(card.textContent).toContain("/login");
+    expect(card.textContent).toContain("Copy command");
+    expect(card.textContent).toContain("Retry");
   });
 
   it("tab keys: arrows move focus, Cmd+Shift+N opens a chat, the close button closes", async () => {

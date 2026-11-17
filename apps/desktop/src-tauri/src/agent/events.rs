@@ -137,6 +137,8 @@ pub enum AgentEvent {
         permission_mode: Option<String>,
         tools: Vec<String>,
         slash_commands: Vec<String>,
+        /// Skills the CLI loaded (project, user and plugin), by name.
+        skills: Vec<String>,
         cli_version: Option<String>,
     },
     TextDelta {
@@ -199,6 +201,15 @@ pub enum AgentEvent {
         cache_creation_tokens: u64,
         cost_usd: Option<f64>,
         context_window: Option<u64>,
+        /// Turn scope: the model that did the work, the `modelUsage` key with the most output.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
+    /// The CLI refused a model switch (`restricted_by_org`) and kept `using`. Writer drops the
+    /// refused model for the chat instead of passing it again.
+    ModelRefused {
+        requested: Option<String>,
+        using: Option<String>,
     },
     RateLimit {
         status: String,
@@ -339,6 +350,13 @@ pub enum AgentCommand {
     },
     SetPermissionMode {
         mode: AgentPermissionMode,
+    },
+    /// `model` None is the CLI default. `effort` is a spawn flag, so a change restarts.
+    SetModel {
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
+        effort: Option<Effort>,
     },
     Close,
 }
@@ -493,6 +511,7 @@ mod tests {
                 permission_mode: Some("default".into()),
                 tools: vec!["Bash".into()],
                 slash_commands: vec![],
+                skills: vec!["s".into()],
                 cli_version: Some("2.1.325".into()),
             },
             AgentEvent::TextDelta {
@@ -547,6 +566,11 @@ mod tests {
                 cache_creation_tokens: 4,
                 cost_usd: Some(0.01),
                 context_window: Some(1_000_000),
+                model: Some("claude-sonnet-5-5".into()),
+            },
+            AgentEvent::ModelRefused {
+                requested: Some("opus".into()),
+                using: Some("claude-haiku-5-5".into()),
             },
             AgentEvent::RateLimit {
                 status: "allowed".into(),
@@ -654,6 +678,11 @@ mod tests {
             mode: AgentPermissionMode::AcceptEdits,
         });
         assert_eq!(m["mode"], "acceptEdits");
+        let m = round_trip(&AgentCommand::SetModel {
+            model: Some("opus".into()),
+            effort: None,
+        });
+        assert_eq!(m["model"], "opus");
     }
 
     #[test]

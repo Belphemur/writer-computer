@@ -128,6 +128,7 @@ export type SessionInfo = {
   permissionMode: string | null;
   tools: string[];
   slashCommands: string[];
+  skills: string[];
   cliVersion: string | null;
 };
 
@@ -147,6 +148,8 @@ export type Chat = {
   rateLimit: { status: string; resetsAt: number | null } | null;
   /** Context window of the model from the last `usage{scope:"turn"}`. */
   contextWindow: number | null;
+  /** The model the CLI says did the last turn (`usage{scope:"turn"}.model`); null before one. */
+  reportedModel: string | null;
   /** Tokens in the context after the last turn (input + cache read + cache creation). */
   contextTokens: number | null;
   /** Sum of the `costUsd` of every finished turn of this chat (a lower bound: null costs add 0). */

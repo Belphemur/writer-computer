@@ -89,11 +89,21 @@ fn flatten_tool_result(content: Option<&Value>) -> String {
     }
 }
 
+/// A signed-out CLI ends the turn with `is_error`, `terminal_reason:"api_error"`, no
+/// `api_error_status` and the text `Not logged in · Please run /login` (captured, claude
+/// 2.1.325). Matched loosely and only on that text; an expired key reports 401 and is
+/// classified by status above.
+fn looks_like_auth_failure(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    t.contains("not logged in") || t.contains("please run /login") || t.contains("invalid api key")
+}
+
 fn usage_event(
     scope: UsageScope,
     usage: &Value,
     cost: Option<f64>,
     window: Option<u64>,
+    model: Option<String>,
 ) -> AgentEvent {
     AgentEvent::Usage {
         scope,
@@ -103,6 +113,7 @@ fn usage_event(
         cache_creation_tokens: u64_of(usage, "cache_creation_input_tokens"),
         cost_usd: cost,
         context_window: window,
+        model,
     }
 }
 
@@ -185,6 +196,7 @@ impl ClaudeStreamMapper {
                     permission_mode: str_of(v, "permissionMode").map(String::from),
                     tools: names("tools"),
                     slash_commands: names("slash_commands"),
+                    skills: names("skills"),
                     cli_version: str_of(v, "claude_code_version").map(String::from),
                 });
             }
@@ -311,7 +323,7 @@ impl ClaudeStreamMapper {
             Some("message_delta") => {
                 if let Some(usage) = ev.get("usage") {
                     out.events
-                        .push(usage_event(UsageScope::Message, usage, None, None));
+                        .push(usage_event(UsageScope::Message, usage, None, None, None));
                 }
             }
             _ => {}
@@ -327,7 +339,7 @@ impl ClaudeStreamMapper {
             self.start_message(&id, false);
             if let Some(usage) = msg.get("usage") {
                 out.events
-                    .push(usage_event(UsageScope::Message, usage, None, None));
+                    .push(usage_event(UsageScope::Message, usage, None, None, None));
             }
         }
         let Some(blocks) = msg.get("content").and_then(Value::as_array) else {
@@ -473,11 +485,21 @@ impl ClaudeStreamMapper {
                     .filter_map(|e| e.get("contextWindow").and_then(Value::as_u64))
                     .max()
             });
+        // The model that did the work: the `modelUsage` key with the most output tokens.
+        let model = v
+            .get("modelUsage")
+            .and_then(Value::as_object)
+            .and_then(|m| {
+                m.iter()
+                    .max_by_key(|(_, e)| e.get("outputTokens").and_then(Value::as_u64).unwrap_or(0))
+                    .map(|(k, _)| k.clone())
+            });
         out.events.push(usage_event(
             UsageScope::Turn,
             &usage,
             v.get("total_cost_usd").and_then(Value::as_f64),
             window,
+            model,
         ));
         let subtype = str_of(v, "subtype").unwrap_or("");
         let is_error = v.get("is_error").and_then(Value::as_bool).unwrap_or(false);
@@ -515,6 +537,9 @@ impl ClaudeStreamMapper {
                 Some(429) => (AgentErrorKind::RateLimit, true),
                 Some(s) if s >= 500 => (AgentErrorKind::Api, true),
                 Some(_) => (AgentErrorKind::Api, false),
+                None if looks_like_auth_failure(str_of(v, "result").unwrap_or("")) => {
+                    (AgentErrorKind::Auth, false)
+                }
                 None => (AgentErrorKind::Unknown, false),
             };
             out.events.push(AgentEvent::Error {
@@ -544,6 +569,17 @@ pub fn encode_set_permission_mode(request_id: &str, mode: AgentPermissionMode) -
     json!({"type":"control_request","request_id":request_id,
            "request":{"subtype":"set_permission_mode","mode":mode.as_cli_arg()}})
     .to_string()
+}
+
+/// `set_model` control request. `None` asks for the CLI's default (verified: the CLI answers
+/// `success` with `response.model` set to the resolved id; a refused model is an `error` response
+/// carrying `error_code` and the model it kept).
+pub fn encode_set_model(request_id: &str, model: Option<&str>) -> String {
+    let mut request = json!({"subtype":"set_model"});
+    if let Some(m) = model.filter(|m| !m.is_empty()) {
+        request["model"] = json!(m);
+    }
+    json!({"type":"control_request","request_id":request_id,"request":request}).to_string()
 }
 
 pub fn encode_permission_allow(
@@ -638,7 +674,7 @@ fn is_uuid(s: &str) -> bool {
         })
 }
 
-fn is_safe_value(s: &str) -> bool {
+pub(super) fn is_safe_value(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('-') && !s.contains('\0') && !s.contains('\n')
 }
 
@@ -1044,6 +1080,31 @@ mod tests {
     }
 
     #[test]
+    fn init_carries_the_slash_commands_and_skills_the_cli_reports() {
+        let mut m = ClaudeStreamMapper::new();
+        let out = m.map_line(
+            r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/v","tools":[],"slash_commands":["compact","context","my-skill"],"skills":["my-skill","user-skill"]}"#,
+        );
+        match &out.events[..] {
+            [AgentEvent::SessionStarted {
+                slash_commands,
+                skills,
+                ..
+            }] => {
+                assert_eq!(slash_commands, &["compact", "context", "my-skill"]);
+                assert_eq!(skills, &["my-skill", "user-skill"]);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        // An older CLI without the key gives an empty list, not an error.
+        let out = m.map_line(r#"{"type":"system","subtype":"init","session_id":"s","cwd":"/v"}"#);
+        assert!(matches!(
+            &out.events[..],
+            [AgentEvent::SessionStarted { skills, .. }] if skills.is_empty()
+        ));
+    }
+
+    #[test]
     fn cancel_after_answer_is_not_reported_twice() {
         let mut m = ClaudeStreamMapper::new();
         let req = r#"{"type":"control_request","request_id":"r1","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"t1"}}"#;
@@ -1051,6 +1112,34 @@ mod tests {
         assert!(m.permission_answered("r1"));
         let out = m.map_line(r#"{"type":"control_cancel_request","request_id":"r1"}"#);
         assert!(out.events.is_empty());
+    }
+
+    #[test]
+    fn a_signed_out_cli_is_an_auth_error_that_is_not_retryable() {
+        let mut m = ClaudeStreamMapper::new();
+        let out = m.map_line(
+            r#"{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":null,"duration_ms":10,"result":"Not logged in · Please run /login","usage":{}}"#,
+        );
+        match out.events.last() {
+            Some(AgentEvent::Error {
+                kind, retryable, ..
+            }) => {
+                assert_eq!(*kind, AgentErrorKind::Auth);
+                assert!(!retryable);
+            }
+            other => panic!("{other:?}"),
+        }
+        // other failures without a status stay unknown
+        let out = m.map_line(
+            r#"{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","duration_ms":1,"result":"Overloaded","usage":{}}"#,
+        );
+        assert!(matches!(
+            out.events.last(),
+            Some(AgentEvent::Error {
+                kind: AgentErrorKind::Unknown,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -1230,6 +1319,10 @@ mod tests {
             v["request"],
             json!({"subtype":"set_permission_mode","mode":"acceptEdits"})
         );
+        let v: Value = serde_json::from_str(&encode_set_model("m", Some("opus"))).unwrap();
+        assert_eq!(v["request"], json!({"subtype":"set_model","model":"opus"}));
+        let v: Value = serde_json::from_str(&encode_set_model("m", None)).unwrap();
+        assert_eq!(v["request"], json!({"subtype":"set_model"}));
         // none of the encoders emit a newline (one JSON object per line)
         assert!(!encode_user_message("a\nb").contains('\n'));
     }

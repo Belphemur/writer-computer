@@ -15,6 +15,7 @@
       "compact",
       "init"
     ],
+    "skills": [],
     "cliVersion": "2.1.325"
   },
   {
@@ -136,7 +137,8 @@
     "cacheReadTokens": 33382,
     "cacheCreationTokens": 9964,
     "costUsd": 0.0440622,
-    "contextWindow": 1000000
+    "contextWindow": 1000000,
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "turn-finished",
@@ -165,6 +167,7 @@
       "compact",
       "init"
     ],
+    "skills": [],
     "cliVersion": "2.1.325"
   },
   {
@@ -351,7 +354,8 @@
     "cacheReadTokens": 62622,
     "cacheCreationTokens": 15072,
     "costUsd": 0.1126204,
-    "contextWindow": 1000000
+    "contextWindow": 1000000,
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "turn-finished",

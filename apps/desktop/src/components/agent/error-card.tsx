@@ -60,9 +60,14 @@ export function ErrorCard({ chat }: { chat: Chat }) {
       actions = <Button onClick={() => void retryAgent()}>Ask again</Button>;
       break;
     case "auth":
-      title = "Claude is not signed in";
-      body = "Run `claude` in a terminal to sign in, then try again.";
-      actions = <Button onClick={() => void writeText("claude")}>Copy command</Button>;
+      title = "Sign in required";
+      body = "Run `claude` in a terminal and type /login, then retry.";
+      actions = (
+        <>
+          <Button onClick={() => void writeText("claude")}>Copy command</Button>
+          <Button onClick={() => void retryAgent()}>Retry</Button>
+        </>
+      );
       break;
     case "rate-limit":
       title = "Rate limit reached";

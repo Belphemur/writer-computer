@@ -123,7 +123,7 @@ export function VaultPickerInput({
           id={listId}
           role="listbox"
           aria-label={`${label} suggestions`}
-          className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--surface-card)] p-1 shadow-lg"
+          className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--surface-primary)] p-1 shadow-lg"
         >
           {items.map((c, i) => (
             <li

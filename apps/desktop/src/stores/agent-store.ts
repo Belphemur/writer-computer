@@ -6,7 +6,7 @@ import {
   type EventPump,
   type Unsubscribe,
 } from "@/lib/agent/client";
-import { agentSettingsFrom } from "@/lib/agent/agent-settings";
+import { agentSettingsFrom, type ChatModelChoice } from "@/lib/agent/agent-settings";
 import type {
   AgentBinaryInfo,
   AgentEvent,
@@ -14,6 +14,7 @@ import type {
   AgentPermissionMode,
   ChatId,
   ContextRef,
+  DiskSkill,
   PermissionPersist,
 } from "@/lib/agent/events";
 import {
@@ -37,6 +38,7 @@ import {
   recordSend,
   type NoteState,
 } from "@/lib/agent/chat-persist";
+import { mentionsActiveNote } from "@/lib/agent/mentions";
 import { chatFromNote } from "@/lib/agent/chat-from-note";
 import { parseChatNote } from "@/lib/agent/chat-note";
 import { createChatSaver, type ChatSaver } from "@/lib/agent/chat-saver";
@@ -52,6 +54,14 @@ export const AGENT_PANE_MIN_WIDTH = 320;
 /** The `agent.pane-width` setting's range (shared/settings.schema.json). */
 export const AGENT_PANE_MAX_WIDTH = 900;
 export const AGENT_PANE_DEFAULT_WIDTH = 420;
+
+/** Skills on disk per project (`""` = the vault root): what the `/` menu lists before and next to the CLI's own list. */
+export type SkillsEntry = {
+  status: "loading" | "ready" | "error";
+  items: DiskSkill[];
+  error: string | null;
+};
+export const skillsKey = (projectPath: string | null) => projectPath ?? "";
 
 export type AgentView = "chat" | "history" | "project";
 export type AgentBackend = "tauri" | "mock";
@@ -78,10 +88,16 @@ interface AgentState {
   queued: Record<ChatId, QueuedMessage>;
   /** Per-chat permission mode chosen in the composer; the setting is the default. */
   modes: Record<ChatId, AgentPermissionMode>;
+  /** Per-chat model (and effort) chosen in the composer; null model is "Agent default". Absent:
+   *  the `agent.model` / `agent.effort` settings. Also restored from a saved chat's note. */
+  chatModels: Record<ChatId, ChatModelChoice>;
   /** What each chat's note holds (see `chat-persist.ts`); saved after a send and a turn end. */
   notes: Record<ChatId, NoteState>;
   /** Chats that started with `--resume`: a "session not found" answer triggers the replay path. */
   resuming: Record<ChatId, boolean>;
+  skills: Record<string, SkillsEntry>;
+  /** The CLI's last reported lists in this window (it reports only after a first message). */
+  cliCatalog: { slashCommands: string[]; skills: string[] } | null;
   /** Why the last attempt to open a saved chat failed. */
   historyError: string | null;
   paneOpen: boolean;
@@ -106,6 +122,11 @@ interface AgentState {
   syncPaneWidth: (value: unknown) => void;
   /** Opens a saved chat in a tab: transcript from its note, resumes its CLI session on send. */
   openSavedChat: (chatId: ChatId) => Promise<void>;
+  /** Reads the skills on disk for a project (cached entry stays visible while it refreshes). */
+  loadSkills: (projectPath: string | null) => Promise<void>;
+  /** Switches the active chat's model (and effort): live when a session runs (`set_model`), else
+   *  at the next start. `effort` undefined keeps the current one. */
+  setChatModel: (model: string | null, effort?: ChatModelChoice["effort"]) => Promise<void>;
   setView: (view: AgentView) => void;
   setBackend: (backend: AgentBackend) => void;
   newChat: (projectPath?: string | null) => ChatId;
@@ -232,9 +253,11 @@ function attachActiveNoteDefault(): boolean {
 }
 
 /** The refs sent with a message: the active note unless removed, then the explicit mentions. */
-export function contextForSend(draft: Draft): ContextRef[] {
+export function contextForSend(draft: Draft, text = ""): ContextRef[] {
   const refs: ContextRef[] = [];
-  const note = draft.activeNote && attachActiveNoteDefault() ? activeNoteRef() : null;
+  // `@activenote` typed in the text attaches the note even when its chip was removed.
+  const wanted = mentionsActiveNote(text) || (draft.activeNote && attachActiveNoteDefault());
+  const note = wanted ? activeNoteRef() : null;
   if (note) refs.push(note);
   const seen = new Set(refs.map((r) => `${r.kind}:${"path" in r ? r.path : ""}`));
   for (const m of draft.mentions) {
@@ -243,6 +266,25 @@ export function contextForSend(draft: Draft): ContextRef[] {
     seen.add(key);
   }
   return refs;
+}
+
+/** A refused model switch in a batch: the chat falls back to what the CLI says it uses. */
+function refusedModelFrom(events: readonly AgentEvent[]): { using: string | null } | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.type === "model-refused") return { using: e.using };
+  }
+  return null;
+}
+
+/** The slash commands and skills of the newest `session-started` in a batch. */
+function catalogFrom(events: readonly AgentEvent[]): AgentState["cliCatalog"] {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.type === "session-started")
+      return { slashCommands: e.slashCommands, skills: e.skills ?? [] };
+  }
+  return null;
 }
 
 function withChat(s: AgentState, id: ChatId, next: Chat): Pick<AgentState, "chats"> {
@@ -305,11 +347,11 @@ export function configureChatPersistenceForTests(opts: {
 
 function scheduleSave(chatId: ChatId) {
   persistence.saver().schedule(chatId, () => {
-    const { chats, notes } = useAgentStore.getState();
+    const { chats, notes, chatModels } = useAgentStore.getState();
     const chat = chats[chatId];
     const note = notes[chatId];
     if (!chat || !note || note.messages.length === 0) return null;
-    return buildNote(chat, note, Date.now());
+    return buildNote(chat, note, Date.now(), chatModels[chatId]?.model);
   });
 }
 
@@ -353,7 +395,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
           chatId,
           projectPath: before.projectPath,
           resumeSessionId,
-          settings: { ...settings, permissionMode: get().modes[chatId] ?? settings.permissionMode },
+          settings: {
+            ...settings,
+            permissionMode: get().modes[chatId] ?? settings.permissionMode,
+            ...get().chatModels[chatId],
+          },
           appendSystemPrompt: null,
         });
       }
@@ -410,9 +456,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
     drafts: {},
     queued: {},
     modes: {},
+    chatModels: {},
     notes: {},
     resuming: {},
     historyError: null,
+    skills: {},
+    cliCatalog: null,
     paneOpen: false,
     paneWidth: AGENT_PANE_DEFAULT_WIDTH,
     view: "chat",
@@ -460,8 +509,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
         queued: {},
         drafts: {},
         modes: {},
+        chatModels: {},
         notes: {},
         resuming: {},
+        skills: {},
+        cliCatalog: null,
         binary: null,
       });
       get().newChat();
@@ -495,6 +547,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const { [chatId]: _d, ...drafts } = s.drafts;
         const { [chatId]: _q, ...queued } = s.queued;
         const { [chatId]: _m, ...modes } = s.modes;
+        const { [chatId]: _cm, ...chatModels } = s.chatModels;
         const { [chatId]: _n, ...notes } = s.notes;
         const { [chatId]: _r, ...resuming } = s.resuming;
         const idx = s.order.indexOf(chatId);
@@ -502,7 +555,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           s.activeChatId === chatId
             ? (order[Math.min(idx, order.length - 1)] ?? null)
             : s.activeChatId;
-        return { chats, order, drafts, queued, modes, notes, resuming, activeChatId };
+        return { chats, order, drafts, queued, modes, chatModels, notes, resuming, activeChatId };
       });
       if (get().order.length === 0) get().newChat();
     },
@@ -530,7 +583,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const chat = chatId ? get().chats[chatId] : null;
       const text = rawText.trim();
       if (!chatId || !chat || !text || isComposerDisabled(chat)) return;
-      const context = contextForSend(get().drafts[chatId] ?? EMPTY_DRAFT);
+      const context = contextForSend(get().drafts[chatId] ?? EMPTY_DRAFT, text);
       // Clear the draft now; the mentions are consumed, the active-note choice persists.
       get().setDraft(chatId, { text: "", mentions: [] });
       if (isBusy(chat)) {
@@ -617,6 +670,36 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
       set((s) => ({ modes: { ...s.modes, [chatId]: mode } }));
     },
+    setChatModel: async (model, effort) => {
+      const chatId = get().activeChatId;
+      if (!chatId) return;
+      const prev = get().chatModels[chatId];
+      const settings = agentSettingsFrom(useSettingsStore.getState().settings);
+      const choice: ChatModelChoice = {
+        model,
+        effort: effort === undefined ? (prev?.effort ?? settings.effort) : effort,
+      };
+      const chat = get().chats[chatId];
+      if (chat?.session && chat.state !== "ended") {
+        try {
+          const { client } = await ensureRuntime();
+          await client.setModel({ chatId, ...choice });
+        } catch (e) {
+          const { message } = classifyStartError(e);
+          set((s) =>
+            s.chats[chatId]
+              ? withChat(s, chatId, {
+                  ...s.chats[chatId]!,
+                  error: { kind: "unknown", message, retryable: true, at: Date.now() },
+                })
+              : s,
+          );
+          return;
+        }
+      }
+      set((s) => ({ chatModels: { ...s.chatModels, [chatId]: choice } }));
+      scheduleSave(chatId);
+    },
     retry: async () => {
       const chatId = get().activeChatId;
       const chat = chatId ? get().chats[chatId] : null;
@@ -645,6 +728,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       if (!get().chats[chatId]) return;
       const now = Date.now();
       let finished = false;
+      const refused = refusedModelFrom(events);
       set((s) => {
         const chat = s.chats[chatId];
         if (!chat) return s;
@@ -654,6 +738,13 @@ export const useAgentStore = create<AgentState>((set, get) => {
         return {
           ...withChat(s, chatId, { ...reduceEvents(chat, events, now), lastSeq }),
           notes: folded ? { ...s.notes, [chatId]: folded.note } : s.notes,
+          cliCatalog: catalogFrom(events) ?? s.cliCatalog,
+          chatModels: refused
+            ? {
+                ...s.chatModels,
+                [chatId]: { model: refused.using, effort: s.chatModels[chatId]?.effort ?? null },
+              }
+            : s.chatModels,
         };
       });
       // Side effects after set(): recover a lost CLI session, save, send the queued message.
@@ -682,6 +773,32 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
     },
 
+    loadSkills: async (projectPath) => {
+      const key = skillsKey(projectPath);
+      set((s) => ({
+        skills: {
+          ...s.skills,
+          [key]: { status: "loading", items: s.skills[key]?.items ?? [], error: null },
+        },
+      }));
+      try {
+        const { client } = await ensureRuntime();
+        const items = await client.listSkills({ projectPath });
+        set((s) => ({ skills: { ...s.skills, [key]: { status: "ready", items, error: null } } }));
+      } catch (e) {
+        set((s) => ({
+          skills: {
+            ...s.skills,
+            [key]: {
+              status: "error",
+              items: s.skills[key]?.items ?? [],
+              error: classifyStartError(e).message,
+            },
+          },
+        }));
+      }
+    },
+
     openSavedChat: async (chatId) => {
       if (get().chats[chatId]) {
         set({ paneOpen: true });
@@ -692,6 +809,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const { summary, markdown } = await persistence.history.load(chatId);
         const doc = parseChatNote(markdown);
         const chat = chatFromNote(doc, summary);
+        const savedModel = doc.meta.model;
+        const settingsEffort = agentSettingsFrom(useSettingsStore.getState().settings).effort;
         set((s) => {
           // An untouched empty tab makes room instead of piling up.
           const active = s.activeChatId ? s.chats[s.activeChatId] : null;
@@ -708,6 +827,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
           return {
             chats,
             notes,
+            chatModels: savedModel
+              ? { ...s.chatModels, [chatId]: { model: savedModel, effort: settingsEffort } }
+              : s.chatModels,
             order: [...s.order.filter((id) => id !== drop), chatId],
             activeChatId: chatId,
             paneOpen: true,

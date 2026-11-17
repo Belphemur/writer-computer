@@ -82,7 +82,7 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
         <Ico icon={ArrowDown01Icon} size={12} className="shrink-0 text-text-icon-muted" />
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[var(--border-color)] bg-[var(--surface-card)] p-1 shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[var(--border-color)] bg-[var(--surface-primary)] p-1 shadow-lg">
           <input
             autoFocus
             type="text"

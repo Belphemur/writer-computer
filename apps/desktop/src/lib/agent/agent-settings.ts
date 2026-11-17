@@ -30,6 +30,9 @@ const list = (v: unknown): string[] =>
           .filter(Boolean)
       : [];
 
+/** A chat's own model and effort (null model: "Agent default", no `--model`). */
+export type ChatModelChoice = { model: string | null; effort: AgentSettings["effort"] };
+
 export function agentSettingsFrom(settings: Record<string, unknown>): AgentSettings {
   const mode = read(settings, "agent.permission-mode");
   const effort = read(settings, "agent.effort");

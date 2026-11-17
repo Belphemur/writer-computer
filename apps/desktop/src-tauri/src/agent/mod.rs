@@ -23,3 +23,4 @@ pub mod runner;
 #[cfg(all(test, unix))]
 mod runner_tests;
 pub mod session;
+pub mod skills;

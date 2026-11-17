@@ -289,7 +289,7 @@ export function HistoryList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {error && (
-          <div role="alert" className="px-2 py-1 text-[12px] text-[var(--danger,#c0392b)]">
+          <div role="alert" className="px-2 py-1 text-[12px] text-[var(--danger)]">
             {error}
           </div>
         )}

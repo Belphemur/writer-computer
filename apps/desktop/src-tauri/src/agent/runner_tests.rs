@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 const FAKE: &str = r##"#!/bin/bash
 D="$(cd "$(dirname "$0")" && pwd)"
 if [ "$1" = "--version" ]; then echo "2.1.325 (Claude Code)"; exit 0; fi
+if [ "$1" = auth ]; then echo '{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"pro"}'; exit 0; fi
 MODE="$(cat "$D/mode.txt" 2>/dev/null || echo normal)"
 SID=""; prev=""
 for a in "$@"; do case "$prev" in --session-id|--resume) SID="$a";; esac; prev="$a"; done
@@ -54,9 +55,11 @@ while IFS= read -r line <&3; do
   echo "$line" >> "$D/stdin.log"
   MODE="$(cat "$D/mode.txt" 2>/dev/null || echo normal)"
   case "$line" in
-    *'"subtype":"set_permission_mode"'*)
+    *'"subtype":"set_permission_mode"'*|*'"subtype":"set_model"'*)
       rid=$(printf '%s' "$line" | sed -E 's/.*"request_id":"([^"]*)".*/\1/')
-      if [ "$MODE" = mode-error ]; then
+      if [ "$MODE" = model-restricted ] && printf '%s' "$line" | grep -q set_model; then
+        printf '{"type":"control_response","response":{"subtype":"error","request_id":"%s","error":"restricted","error_code":"restricted_by_org","model":"claude-haiku-5-5"}}\n' "$rid"
+      elif [ "$MODE" = mode-error ]; then
         printf '{"type":"control_response","response":{"subtype":"error","request_id":"%s","error":"nope"}}\n' "$rid"
       else
         printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$rid"
@@ -924,6 +927,123 @@ fn a_refused_permission_mode_restarts_with_resume_and_the_new_mode() {
 }
 
 #[test]
+fn the_model_changes_live_when_the_cli_accepts_it() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    h.sessions
+        .set_model("w", CHAT, Some("opus".into()), None)
+        .unwrap();
+    h.wait_until("request sent", || {
+        h.log("stdin.log").contains("\"subtype\":\"set_model\"")
+            && h.log("stdin.log").contains("\"model\":\"opus\"")
+    });
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(
+        h.lines("pids.log").len(),
+        1,
+        "no restart when the CLI said yes"
+    );
+}
+
+#[test]
+fn a_refused_model_restarts_with_resume_and_the_new_model() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    let pid: i32 = h.lines("pids.log")[0].parse().unwrap();
+    h.set_mode("mode-error");
+    h.sessions
+        .set_model("w", CHAT, Some("haiku".into()), None)
+        .unwrap();
+    h.wait_until("old process restarted away", || !alive(pid));
+    h.send(CHAT, "after the switch");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let argv = h.lines("argv.log");
+    assert_eq!(argv.len(), 2);
+    assert!(argv[1].contains("--model haiku"), "{}", argv[1]);
+    assert!(argv[1].contains(&format!("--resume {CHAT}")), "{}", argv[1]);
+    assert!(
+        !h.seen
+            .iter()
+            .any(|e| matches!(e.event, AgentEvent::SessionEnded { .. })),
+        "a silent restart is invisible"
+    );
+}
+
+#[test]
+fn a_model_restricted_by_the_org_is_dropped_not_retried() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    h.set_mode("model-restricted");
+    h.sessions
+        .set_model("w", CHAT, Some("opus".into()), None)
+        .unwrap();
+    let ev = h.next(CHAT, "model-refused", |e| {
+        matches!(e, AgentEvent::ModelRefused { .. })
+    });
+    assert!(matches!(ev, AgentEvent::ModelRefused { requested, using }
+        if requested.as_deref() == Some("opus") && using.as_deref() == Some("claude-haiku-5-5")));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        h.lines("pids.log").len(),
+        1,
+        "no restart for a policy refusal"
+    );
+    // a later respawn (forced by an effort change) uses the model the CLI kept, not the refused one
+    let pid: i32 = h.lines("pids.log")[0].parse().unwrap();
+    h.sessions
+        .set_model(
+            "w",
+            CHAT,
+            Some("claude-haiku-5-5".into()),
+            Some(Effort::High),
+        )
+        .unwrap();
+    h.wait_until("restarted", || !alive(pid));
+    h.send(CHAT, "again");
+    h.turn_finished(CHAT);
+    let argv = h.lines("argv.log");
+    assert!(argv[1].contains("--model claude-haiku-5-5"), "{}", argv[1]);
+    assert!(!argv[1].contains("opus"), "{}", argv[1]);
+}
+
+#[test]
+fn a_changed_effort_restarts_because_it_is_a_spawn_flag() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    let pid: i32 = h.lines("pids.log")[0].parse().unwrap();
+    h.sessions
+        .set_model("w", CHAT, None, Some(Effort::High))
+        .unwrap();
+    h.wait_until("old process restarted away", || !alive(pid));
+    h.send(CHAT, "again");
+    h.turn_finished(CHAT);
+    assert!(h.lines("argv.log")[1].contains("--effort high"));
+}
+
+#[test]
+fn a_model_with_a_flag_shape_is_rejected() {
+    let h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    assert!(h
+        .sessions
+        .set_model(
+            "w",
+            CHAT,
+            Some("--dangerously-skip-permissions".into()),
+            None
+        )
+        .is_err());
+}
+
+#[test]
 fn unsupported_control_requests_get_an_error_response() {
     let mut h = Harness::new(&["ok-turn"], "unsupported");
     h.start(CHAT);
@@ -1070,4 +1190,20 @@ fn project_chats_use_the_project_cwd_prompt_and_mode_through_the_port() {
         Some("../elsewhere"),
     );
     assert!(h.sessions.start(bad, &Ask::new(Decision::Once)).is_err());
+}
+
+#[test]
+fn detect_reports_version_and_sign_in_state_of_the_override() {
+    let h = Harness::new(&["ok-turn"], "normal");
+    let info = super::binary::detect(Some(h.fake.to_str().unwrap()));
+    assert!(info.found);
+    assert_eq!(info.version.as_deref(), Some("2.1.325"));
+    assert_eq!(info.authenticated, Some(true));
+    assert_eq!(info.account.as_deref(), Some("claude.ai, pro"));
+    let v = serde_json::to_value(&info).unwrap();
+    assert_eq!(v["authenticated"], true);
+    assert!(
+        h.lines("pids.log").is_empty(),
+        "probes are not chat processes"
+    );
 }
