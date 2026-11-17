@@ -10,7 +10,8 @@ use super::fts::{
 };
 use super::note::content_hash;
 use super::rank::{
-    combine, match_path, recency_boost, OpenedMap, Prepared, PreparedQuery, Recency,
+    combine, match_name_or_title, match_path, prepare_title, recency_boost, OpenedMap, Prepared,
+    PreparedQuery, Recency,
 };
 use super::search_query::{parse_query, Filter, ParsedQuery, Term};
 use super::{Index, IndexError, Job};
@@ -94,6 +95,9 @@ pub struct SearchHit {
     pub path: String,
     /// File name without extension.
     pub title: String,
+    /// The note's display-title override (frontmatter `title`), never a heading. Searchable like
+    /// the file name; surfaces show it first (`noteLabel` in `src/lib/note-title.ts`).
+    pub title_override: Option<String>,
     pub folder: String,
     /// bm25 relevance (times the recency boost when enabled), higher is better.
     /// Fuzzy hits carry a small rank value and always follow the exact ones.
@@ -118,9 +122,14 @@ pub struct SearchPage {
     pub truncated: bool,
 }
 
+/// The `title` frontmatter property (text) of a `files` row aliased `f`; headings never count.
+const TITLE_OVERRIDE_SQL: &str = "(SELECT p.v_text FROM props p WHERE p.file_id = f.id \
+     AND p.key = 'title' AND p.vtype = 'text')";
+
 struct RawHit {
     path: String,
     title: String,
+    title_override: Option<String>,
     folder: String,
     hash: Option<i64>,
     score: f64,
@@ -215,7 +224,7 @@ impl Index {
             };
             let sql = format!(
                 "SELECT f.path, f.basename, f.folder, f.body_hash, \
-                        -bm25(notes_fts, {BM25_WEIGHTS}) AS score, f.mtime \
+                        -bm25(notes_fts, {BM25_WEIGHTS}) AS score, f.mtime, {TITLE_OVERRIDE_SQL} \
                  {from}{cond_sql} ORDER BY score DESC, f.path LIMIT {lim} OFFSET {off}"
             );
             let mut st = c.prepare(&sql)?;
@@ -227,6 +236,7 @@ impl Index {
                     hash: r.get(3)?,
                     score: r.get(4)?,
                     mtime_ms: r.get(5)?,
+                    title_override: r.get(6)?,
                 })
             })?;
             let raw = rows.collect::<Result<Vec<_>, _>>()?;
@@ -289,6 +299,7 @@ impl Index {
             hits.push(SearchHit {
                 path: r.path,
                 title: r.title,
+                title_override: r.title_override,
                 folder: r.folder,
                 score: r.score,
                 fuzzy: false,
@@ -347,7 +358,7 @@ impl Index {
         let min_score = FUZZY_MIN_PER_CHAR * q.char_count() as f64;
         let (names, secondary) = self.read(|c| {
             let sql = format!(
-                "SELECT f.id, f.path, f.basename, f.folder, f.mtime FROM files f \
+                "SELECT f.id, f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL} FROM files f \
                  WHERE f.ext = 'md'{cond_sql}"
             );
             let mut st = c.prepare(&sql)?;
@@ -359,6 +370,7 @@ impl Index {
                         r.get::<_, String>(2)?,
                         r.get::<_, String>(3)?,
                         r.get::<_, i64>(4)?,
+                        r.get::<_, Option<String>>(5)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -378,11 +390,18 @@ impl Index {
             Ok((names, secondary))
         })?;
         let mut scored: Vec<(f64, SearchHit)> = Vec::new();
-        for (id, path, basename, folder, mtime_ms) in names {
+        for (id, path, basename, folder, mtime_ms, title_override) in names {
             if seen.contains(&path) {
                 continue;
             }
-            let mut best = match_path(&q, &Prepared::new(&basename)).map(|m| m.score);
+            // File name and display-title override: the better of the two (`rank.rs`).
+            let title_prepared = title_override
+                .as_deref()
+                .filter(|t| !t.trim().is_empty())
+                .map(prepare_title);
+            let mut best =
+                match_name_or_title(&q, &Prepared::new(&basename), title_prepared.as_ref())
+                    .map(|m| m.score);
             if let Some(texts) = secondary.get(&id) {
                 for t in texts {
                     if let Some(m) = match_path(&q, &Prepared::new(t)) {
@@ -413,6 +432,7 @@ impl Index {
                 SearchHit {
                     path,
                     title: basename,
+                    title_override,
                     folder,
                     score: rank_value / 1000.0,
                     fuzzy: true,

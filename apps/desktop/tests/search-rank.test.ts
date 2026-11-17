@@ -94,3 +94,28 @@ describe("search ranking: extras", () => {
     }
   });
 });
+
+describe("title override as a second name", () => {
+  const rec = { openedMs: null, mtimeMs: 0 };
+
+  test("a candidate matches by its file name or its title, never by neither", () => {
+    const items = [
+      { item: "spec", path: "Notes/Spec.md", title: "Quarterly Plan", recency: rec },
+      { item: "zebra", path: "Notes/Zebra.md", title: null, recency: rec },
+    ];
+    const opts = { nowMs: 0, recency: false };
+    expect(rankCandidates(items, "quarterly", opts).map((r) => r.item)).toEqual(["spec"]);
+    expect(rankCandidates(items, "spec", opts).map((r) => r.item)).toEqual(["spec"]);
+    expect(rankCandidates(items, "zebra", opts).map((r) => r.item)).toEqual(["zebra"]);
+    expect(rankCandidates(items, "zzz", opts)).toEqual([]);
+  });
+
+  test("the better of the two scores counts, not the sum", () => {
+    const opts = { nowMs: 0, recency: false };
+    const score = (path: string, title: string | null) =>
+      rankCandidates([{ item: "a", path, title, recency: rec }], "plan", opts)[0].score;
+    const both = score("Notes/Plan.md", "Plan");
+    // the title matches as a file called `Plan.md` (no folder), which beats the nested path
+    expect(both).toBe(Math.max(score("Notes/Plan.md", null), score("Plan.md", null)));
+  });
+});

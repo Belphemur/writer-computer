@@ -642,7 +642,8 @@ fn file_name_match_outranks_heading_and_body_matches() {
     let v = V::new();
     v.write("a/Comet.md", "nothing relevant\n");
     v.write("b/other.md", "# Comet\nComet comet comet comet\n");
-    v.write("c/third.md", "---\ntitle: Comet\n---\nComet\n");
+    // a property value (not the `title` override, which ranks like a name) stays a weak match
+    v.write("c/third.md", "---\nstatus: Comet\n---\nComet\n");
     let index = v.index();
     assert_eq!(search(&index, "comet").hits[0].path, "a/Comet.md");
 }
@@ -780,4 +781,56 @@ fn perf_fuzzy_10k() {
             page.total
         );
     }
+}
+
+#[test]
+fn title_override_is_searchable_ranked_like_a_name_and_reported() {
+    let v = V::new();
+    v.write(
+        "notes/plain-name.md",
+        "---\ntitle: Zephyrine Quartz\n---\n# Heading Only\nbody text\n",
+    );
+    v.write("other/mention.md", "zephyrine appears once in the body\n");
+    v.write("other/plain.md", "no override here\n");
+    let index = v.index();
+    // the override word appears nowhere else in that note, yet it is found
+    let page = search(&index, "Zephyrine");
+    assert_eq!(page.hits[0].path, "notes/plain-name.md");
+    assert_eq!(page.hits[0].title, "plain-name");
+    assert_eq!(
+        page.hits[0].title_override.as_deref(),
+        Some("Zephyrine Quartz")
+    );
+    // it outranks a body-only mention
+    assert_eq!(paths(&page), ["notes/plain-name.md", "other/mention.md"]);
+    // a note without an override carries none, and headings are never an override
+    let page = search(&index, "plain");
+    let plain = page
+        .hits
+        .iter()
+        .find(|h| h.path == "other/plain.md")
+        .unwrap();
+    assert_eq!(plain.title_override, None);
+    let page = search(&index, "Heading");
+    assert_eq!(
+        page.hits[0].title_override.as_deref(),
+        Some("Zephyrine Quartz")
+    ); // same note, via its H1
+    assert_eq!(page.hits[0].path, "notes/plain-name.md");
+}
+
+#[test]
+fn fuzzy_fallback_matches_the_title_override_too() {
+    let v = V::new();
+    v.write("a/x.md", "---\ntitle: Quarterly Planning\n---\nnothing\n");
+    let index = v.index();
+    let mut opts = SearchOptions {
+        fuzzy: true,
+        ..Default::default()
+    };
+    opts.recency = false;
+    let page = index.search("Quarterley Planing", &opts).unwrap();
+    assert!(page.hits.iter().any(|h| h.path == "a/x.md" && h.fuzzy));
+    let hit = page.hits.iter().find(|h| h.path == "a/x.md").unwrap();
+    assert_eq!(hit.title_override.as_deref(), Some("Quarterly Planning"));
 }

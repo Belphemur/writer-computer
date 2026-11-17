@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 pub const SCHEMA_VERSION: &str = "2";
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
-pub const PARSER_VERSION: &str = "1";
+pub const PARSER_VERSION: &str = "2";
 
 const SCHEMA: &str = "
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);

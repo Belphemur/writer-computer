@@ -338,6 +338,14 @@ export interface Candidate<T> {
   path: string;
   recency: Recency;
   prepared?: Prepared;
+  /** Display-title override (frontmatter `title`): a second name, matched like a file called
+   *  `<title>.md`; the better of the two scores counts (twin: `matchNameOrTitle` in `rank.rs`). */
+  title?: string | null;
+}
+
+/** The path a title override is matched as. */
+export function titleCandidatePath(title: string): string {
+  return `${title.trim()}.md`;
 }
 
 export interface RankOptions {
@@ -363,7 +371,11 @@ export function rankCandidates<T>(
       out.push({ item: c.item, score: 0, path: c.path, opened, mtime });
       continue;
     }
-    const m = matchPath(q, c.prepared ?? prepare(c.path));
+    let m = matchPath(q, c.prepared ?? prepare(c.path));
+    if (c.title?.trim()) {
+      const t = matchPath(q, prepare(titleCandidatePath(c.title)));
+      if (t && (!m || t.score > m.score)) m = t;
+    }
     if (!m) continue;
     const boost = opts.recency ? recencyBoost(opts.nowMs, c.recency) : 0;
     out.push({ item: c.item, score: combine(m.score, boost), path: c.path, opened, mtime });

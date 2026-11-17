@@ -163,13 +163,21 @@ fn process_file(
 
 pub(crate) fn walk_builder(root: &Path) -> WalkBuilder {
     let mut b = WalkBuilder::new(root);
-    b.hidden(true)
+    let walk_root = root.to_path_buf();
+    // Hidden entries are filtered by `code_files::rel_is_visible` (not the walker's own
+    // dot-file rule) so `.agents/skills` and `.claude/skills` can be walked.
+    b.hidden(false)
         .git_ignore(true)
         .git_global(false)
         .git_exclude(false)
         .require_git(false)
         .parents(false)
-        .filter_entry(|e| e.file_name() != "node_modules");
+        .filter_entry(move |e| {
+            e.path()
+                .strip_prefix(&walk_root)
+                .map(|rel| rel.as_os_str().is_empty() || crate::code_files::rel_is_visible(rel))
+                .unwrap_or(true)
+        });
     b
 }
 
@@ -333,7 +341,20 @@ fn write_record(
                 delete_children(conn, id)?;
             }
             write_children(conn, id, &rec.path, note, resolver)?;
-            super::fts::write_doc(conn, id, &rec.basename, &note.fts, existed)?;
+            // The display-title override is indexed with the file name in the `title` column, so
+            // it ranks like a name hit.
+            let title_text = match note
+                .props
+                .iter()
+                .find(|p| p.key == "title" && p.vtype == "text")
+                .and_then(|p| p.v_text.as_deref())
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+            {
+                Some(t) => format!("{} {t}", rec.basename),
+                None => rec.basename.clone(),
+            };
+            super::fts::write_doc(conn, id, &title_text, &note.fts, existed)?;
             id
         }
     })

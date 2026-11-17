@@ -6,6 +6,7 @@ import {
   parseWikiImageEmbedTarget,
   resolveWikiImage,
   resolveWikiLink,
+  wikiCompletionDisplay,
 } from "../src/lib/wiki-links";
 import type { SearchResult } from "../src/types/fs";
 
@@ -365,5 +366,32 @@ describe("resolveWikiImage", () => {
     const result = await resolveWikiImage("pic.png", null, "/anywhere/note.md", fileExists, noFind);
     expect(result).toBe("/anywhere/pic.png");
     expect(noFind).not.toHaveBeenCalled();
+  });
+});
+
+describe("wiki-link suggestions and titles", () => {
+  const result = (over: Partial<SearchResult>): SearchResult => ({
+    path: "/ws/People/Spec.md",
+    filename: "Spec.md",
+    relative_path: "People/Spec.md",
+    score: 1,
+    match_indices: [],
+    ...over,
+  });
+
+  test("shows the override, names the file, and still inserts the file name", () => {
+    const hit = result({ title: "Quarterly Plan" });
+    expect(wikiCompletionDisplay(hit)).toEqual({
+      label: "Quarterly Plan",
+      detail: "Spec.md · People",
+    });
+    expect(canonicalWikiTarget(hit, [hit])).toBe("Spec");
+  });
+
+  test("shows the file name when there is no override", () => {
+    expect(wikiCompletionDisplay(result({ title: null }))).toEqual({
+      label: "Spec",
+      detail: "People",
+    });
   });
 });

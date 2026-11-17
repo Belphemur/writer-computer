@@ -9,6 +9,7 @@ import {
 import { useWorkspace } from "@/hooks/use-workspace";
 import { openFileAtLine } from "@/components/editor-area/reveal-line";
 import { splitByRanges, type ContentSearchHit } from "@/lib/content-search";
+import { NoteResultTitle } from "./note-result-title";
 import { CONTENT_SEARCH_MIN_CHARS, useContentSearch } from "./use-content-search";
 
 function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) {
@@ -119,7 +120,7 @@ export function ContentSearchPalette() {
             {hits.map((hit) => (
               <CommandItem key={hit.path} value={hitValue(hit)} onSelect={() => open(hit, false)}>
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate">{hit.title}</span>
+                  <NoteResultTitle path={hit.path} name={hit.title} override={hit.titleOverride} />
                   <span className="truncate text-[13px] text-text-muted">
                     {hit.folder || "Vault root"}
                     {hit.stale ? " · changed since indexed" : ""}

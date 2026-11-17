@@ -18,6 +18,8 @@ pub struct SearchResult {
     pub relative_path: String,
     pub score: u32,
     pub match_indices: Vec<u32>,
+    /// The note's display-title override (frontmatter `title`), matched like the file name.
+    pub title: Option<String>,
 }
 
 fn now_ms() -> i64 {
@@ -66,6 +68,7 @@ pub async fn fuzzy_search(
                 relative_path: m.path,
                 score: m.score,
                 match_indices: m.match_indices,
+                title: m.title,
             })
             .collect())
     })

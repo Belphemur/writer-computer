@@ -17,12 +17,12 @@ import {
 } from "@codemirror/autocomplete";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as tauri from "@/lib/tauri";
-import { getFileStem } from "@/lib/paths";
 import { setPendingAnchor } from "@/lib/pending-anchor";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import * as editorApi from "@/hooks/editor-api";
 import {
   canonicalWikiTarget,
+  wikiCompletionDisplay,
   parseWikiLink,
   parseWikiImageEmbedTarget,
   resolveWikiImage,
@@ -281,12 +281,12 @@ async function wikiLinkCompletions(context: CompletionContext): Promise<Completi
 
   const options: Completion[] = results.map((r) => {
     const insertText = canonicalWikiTarget(r, results);
-    const stem = getFileStem(r.filename);
-    const relDir = r.relative_path.slice(0, r.relative_path.length - r.filename.length);
+    // The inserted link target stays the file name (`insertText`): a title is never a target.
+    const { label, detail } = wikiCompletionDisplay(r);
 
     return {
-      label: stem,
-      detail: relDir ? relDir.replace(/\/$/, "") : undefined,
+      label,
+      detail,
       apply(view: EditorView, _completion: Completion, from: number, to: number) {
         // Consume a trailing ]] if it immediately follows the cursor
         const afterCursor = view.state.doc.sliceString(to, to + 2);
@@ -303,7 +303,9 @@ async function wikiLinkCompletions(context: CompletionContext): Promise<Completi
   return {
     from: queryStart,
     options,
-    validFor: /^[^\]#^|]*$/,
+    // `fuzzy_search` already matched and ranked by file name and title override; CodeMirror's own
+    // label filter would drop a title-only match, so it re-asks the source on every keystroke.
+    filter: false,
   };
 }
 

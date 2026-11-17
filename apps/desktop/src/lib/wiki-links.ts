@@ -1,4 +1,5 @@
 import { isBasePath } from "./bases/paths";
+import { noteLabel } from "./note-title";
 import { getFileStem, getParentDir, normalizePath } from "./paths";
 import type { SearchResult } from "@/types/fs";
 
@@ -206,6 +207,24 @@ export function canonicalWikiTarget(file: SearchResult, allFiles: SearchResult[]
   if (!hasDuplicate) return stem;
 
   return stripMdExtension(file.relative_path);
+}
+
+/**
+ * What a `[[` suggestion shows: the note's title (its file name, or the frontmatter `title`
+ * override) with the folder as detail; an override also names the file. Insertion is separate
+ * ([`canonicalWikiTarget`]): a title is never a link target.
+ */
+export function wikiCompletionDisplay(file: SearchResult): {
+  label: string;
+  detail: string | undefined;
+} {
+  const shown = noteLabel(file.path, file.title);
+  const relDir = file.relative_path.slice(0, file.relative_path.length - file.filename.length);
+  const folder = relDir ? relDir.replace(/\/$/, "") : undefined;
+  return {
+    label: shown.text,
+    detail: shown.isOverride ? [file.filename, folder].filter(Boolean).join(" · ") : folder,
+  };
 }
 
 function stripMdExtension(path: string): string {

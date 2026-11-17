@@ -19,8 +19,8 @@
 //! `WorkspaceState` and is fed by `commands/index.rs`.
 
 use super::rank::{
-    combine, empty_query_key, match_path, original_indices, recency_boost, OpenedMap, Prepared,
-    PreparedQuery, Recency,
+    combine, empty_query_key, match_name_or_title, original_indices, prepare_title, recency_boost,
+    OpenedMap, Prepared, PreparedQuery, Recency,
 };
 use super::{schema, ChangeBatch, Index, IndexError};
 use parking_lot::Mutex;
@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// Extensions quick open lists (lowercase, as stored in `files.ext`).
+/// The always-listed extensions; the code/text ones come from `code_files` (settings).
 pub const LISTED_EXTS: [&str; 2] = ["md", "base"];
 
 /// While the cold build runs, re-read the partial rows at most this often.
@@ -45,6 +45,8 @@ pub struct NameRow {
     /// Vault-relative, forward slashes.
     pub path: String,
     pub mtime_ms: i64,
+    /// The note's frontmatter `title` (display-title override), never a heading.
+    pub title: Option<String>,
 }
 
 /// Value half of the map entry; the vault-relative path is the key.
@@ -56,10 +58,13 @@ struct NameEntry {
     mtime_ms: i64,
     /// Folded form for the fuzzy matcher (see `rank.rs`).
     prepared: Prepared,
+    /// The display-title override and its folded form (matched like a file called `<title>.md`,
+    /// the same shape `rankGlobalRecents` in `command-palette/index.tsx` uses).
+    title: Option<(String, Prepared)>,
 }
 
 impl NameEntry {
-    fn new(path: &str, mtime_ms: i64) -> Self {
+    fn new(path: &str, mtime_ms: i64, title: Option<String>) -> Self {
         let lower = path.to_lowercase();
         let name_start = lower.rfind('/').map(|i| i + 1).unwrap_or(0);
         NameEntry {
@@ -67,6 +72,13 @@ impl NameEntry {
             name_start,
             mtime_ms,
             prepared: Prepared::new(path),
+            title: title
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty())
+                .map(|t| {
+                    let prepared = prepare_title(&t);
+                    (t, prepared)
+                }),
         }
     }
 }
@@ -98,8 +110,10 @@ pub struct NameMatch {
     pub path: String,
     pub name: String,
     pub score: u32,
-    /// Char indices of the match inside `path`.
+    /// Char indices of the match inside `path` (empty when only the title matched).
     pub match_indices: Vec<u32>,
+    /// The display-title override in effect for the file, if any.
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -234,15 +248,18 @@ impl NameCache {
             g.loaded = false;
             return Ok(());
         }
-        let mut found: HashMap<String, i64> =
-            found.into_iter().map(|r| (r.path, r.mtime_ms)).collect();
+        let mut found: HashMap<String, (i64, Option<String>)> = found
+            .into_iter()
+            .map(|r| (r.path, (r.mtime_ms, r.title)))
+            .collect();
         for path in &batch.paths {
             match found.remove(path) {
-                Some(mtime_ms) => upsert(
+                Some((mtime_ms, title)) => upsert(
                     &mut g,
                     NameRow {
                         path: path.clone(),
                         mtime_ms,
+                        title,
                     },
                 ),
                 None => remove(&mut g, path),
@@ -398,8 +415,10 @@ fn upsert(g: &mut Inner, row: NameRow) {
             *g.folders.entry(dir.to_string()).or_insert(0) += 1;
         }
     }
-    g.entries
-        .insert(row.path.clone(), NameEntry::new(&row.path, row.mtime_ms));
+    g.entries.insert(
+        row.path.clone(),
+        NameEntry::new(&row.path, row.mtime_ms, row.title),
+    );
 }
 
 fn remove(g: &mut Inner, path: &str) {
@@ -459,6 +478,7 @@ fn rank<'a>(
         key: (i64, i64),
         path: &'a str,
         folded: Vec<usize>,
+        title: Option<&'a str>,
     }
     let mut hits: Vec<Hit> = Vec::new();
     for (path, entry) in entries {
@@ -482,10 +502,14 @@ fn rank<'a>(
                 key: empty_query_key(recency_of(path, entry)),
                 path,
                 folded: Vec::new(),
+                title: entry.title.as_ref().map(|(t, _)| t.as_str()),
             });
             continue;
         }
-        let Some(m) = match_path(&q, &entry.prepared) else {
+        // The file name/path and the title override both match; the better one scores.
+        let Some(m) =
+            match_name_or_title(&q, &entry.prepared, entry.title.as_ref().map(|(_, p)| p))
+        else {
             continue;
         };
         let boost = if ctx.recency {
@@ -498,6 +522,7 @@ fn rank<'a>(
             key: (0, 0),
             path,
             folded: m.folded,
+            title: entry.title.as_ref().map(|(t, _)| t.as_str()),
         });
     }
     // Entries arrive in path order and the sort is stable: ties stay in path order.
@@ -517,17 +542,20 @@ fn rank<'a>(
                 (h.score * 10.0).round().clamp(0.0, u32::MAX as f64) as u32
             },
             match_indices: original_indices(h.path, &h.folded),
+            title: h.title.map(str::to_string),
         })
         .collect()
 }
 
+/// `WHERE` predicate for the listed rows: notes, bases and the code/text files of
+/// `code_files` (by extension, plus `Dockerfile`/`Makefile` by name).
 fn listed_sql() -> String {
-    LISTED_EXTS
-        .iter()
-        .map(|e| format!("'{e}'"))
-        .collect::<Vec<_>>()
-        .join(",")
+    crate::code_files::listed_sql_predicate()
 }
+
+/// The `title` frontmatter property (text) of a `files` row; headings never count.
+const TITLE_SQL: &str = "(SELECT p.v_text FROM props p WHERE p.file_id = files.id \
+     AND p.key = 'title' AND p.vtype = 'text')";
 
 /// Every listed row plus whether the build that produced them finished, read in
 /// one snapshot.
@@ -536,7 +564,7 @@ fn read_all(db_path: &Path) -> Result<(Vec<NameRow>, bool), IndexError> {
     let tx = conn.unchecked_transaction()?;
     let complete = built(&tx)?;
     let mut st = tx.prepare(&format!(
-        "SELECT path, mtime FROM files WHERE ext IN ({})",
+        "SELECT path, mtime, {TITLE_SQL} FROM files WHERE {}",
         listed_sql()
     ))?;
     let rows = st
@@ -544,12 +572,13 @@ fn read_all(db_path: &Path) -> Result<(Vec<NameRow>, bool), IndexError> {
             Ok(NameRow {
                 path: r.get(0)?,
                 mtime_ms: r.get(1)?,
+                title: r.get(2)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(st);
     drop(tx);
-    Ok((rows, complete))
+    Ok((keep_listed(rows), complete))
 }
 
 fn built(conn: &Connection) -> Result<bool, IndexError> {
@@ -569,20 +598,29 @@ fn read_paths(db_path: &Path, paths: &[String]) -> Result<Vec<NameRow>, IndexErr
     for chunk in paths.chunks(PATH_CHUNK) {
         let marks = vec!["?"; chunk.len()].join(",");
         let mut st = conn.prepare(&format!(
-            "SELECT path, mtime FROM files WHERE ext IN ({}) AND path IN ({marks})",
+            "SELECT path, mtime, {TITLE_SQL} FROM files WHERE {} AND path IN ({marks})",
             listed_sql()
         ))?;
         let rows = st.query_map(params_from_iter(chunk.iter()), |r| {
             Ok(NameRow {
                 path: r.get(0)?,
                 mtime_ms: r.get(1)?,
+                title: r.get(2)?,
             })
         })?;
         for r in rows {
             out.push(r?);
         }
     }
-    Ok(out)
+    Ok(keep_listed(out))
+}
+
+/// The SQL predicate selects by extension; secret-looking names (`.env`, `secrets.yaml`) are
+/// dropped here, where the full name rule lives.
+fn keep_listed(rows: Vec<NameRow>) -> Vec<NameRow> {
+    rows.into_iter()
+        .filter(|r| crate::code_files::is_listed_name(r.path.rsplit('/').next().unwrap_or(&r.path)))
+        .collect()
 }
 
 impl Index {
@@ -638,7 +676,7 @@ mod tests {
     fn entries(paths: &[&str]) -> BTreeMap<String, NameEntry> {
         paths
             .iter()
-            .map(|p| (p.to_string(), NameEntry::new(p, 0)))
+            .map(|p| (p.to_string(), NameEntry::new(p, 0, None)))
             .collect()
     }
 
@@ -874,19 +912,77 @@ mod tests {
             write(r, "readme.md", "# Readme");
             write(r, "tasks.base", "views: []\n");
             write(r, "data.json", "{}");
+            write(r, "run.py", "print(1)");
+            write(r, "Dockerfile", "FROM x");
+            write(r, "blob.bin", "x");
             write(r, "pic.png", "x");
+            write(r, ".env", "TOKEN=1");
+            write(r, "secrets.yaml", "a: 1");
             write(r, ".hidden/secret.md", "x");
             write(r, "node_modules/dep/readme.md", "x");
         });
         h.index.refresh_blocking().unwrap();
         assert_eq!(names(&h, "readme"), ["readme.md"]);
         assert_eq!(names(&h, "tasks"), ["tasks.base"]);
-        assert!(names(&h, "data").is_empty());
+        // code files are listed with their extension; unknown kinds, dotfiles and secrets are not
+        assert_eq!(names(&h, "data"), ["data.json"]);
+        assert_eq!(names(&h, "run.py"), ["run.py"]);
+        assert_eq!(names(&h, "Dockerfile"), ["Dockerfile"]);
+        assert!(names(&h, "blob").is_empty());
+        assert!(names(&h, "pic").is_empty());
+        assert!(names(&h, "env").is_empty());
         assert!(names(&h, "secret").is_empty());
         let s = h.cache.search("readme", 5, &NameFilter::default()).unwrap();
         assert!(!s.building);
         assert!(h.cache.is_ready());
-        assert_eq!(h.cache.len(), 2);
+        assert_eq!(h.cache.len(), 5);
+    }
+
+    #[test]
+    fn quick_open_matches_the_title_override_and_the_file_name_never_the_heading() {
+        let h = harness(|r| {
+            write(
+                r,
+                "Spec.md",
+                "---\ntitle: Quarterly Plan\n---\n# Roadmap Heading\n",
+            );
+            write(r, "Plain.md", "# Other Heading\n");
+        });
+        h.index.refresh_blocking().unwrap();
+        // file name and title both find the note; a heading does not
+        assert_eq!(names(&h, "spec"), ["Spec.md"]);
+        assert_eq!(names(&h, "quarterly"), ["Spec.md"]);
+        assert!(names(&h, "roadmap").is_empty());
+        assert!(names(&h, "other heading").is_empty());
+        let m = h
+            .cache
+            .search("quarterly", 5, &NameFilter::default())
+            .unwrap();
+        assert_eq!(m.matches[0].title.as_deref(), Some("Quarterly Plan"));
+        assert!(m.matches[0].match_indices.is_empty());
+        let m = h.cache.search("spec", 5, &NameFilter::default()).unwrap();
+        assert_eq!(m.matches[0].title.as_deref(), Some("Quarterly Plan"));
+        assert!(!m.matches[0].match_indices.is_empty());
+        // plain notes carry no title
+        let m = h.cache.search("plain", 5, &NameFilter::default()).unwrap();
+        assert_eq!(m.matches[0].title, None);
+
+        // editing the property flows through the change feed
+        write(
+            h.index.root(),
+            "Spec.md",
+            "---\ntitle: Annual Review\n---\nx\n",
+        );
+        h.index
+            .index_paths_blocking(vec![h.index.root().join("Spec.md")])
+            .unwrap();
+        assert!(names(&h, "quarterly").is_empty());
+        assert_eq!(names(&h, "annual"), ["Spec.md"]);
+        write(h.index.root(), "Spec.md", "x\n");
+        h.index
+            .index_paths_blocking(vec![h.index.root().join("Spec.md")])
+            .unwrap();
+        assert!(names(&h, "annual").is_empty());
     }
 
     #[test]

@@ -176,6 +176,33 @@ describe("ContentSearchPalette", () => {
     expect(text()).toContain("1 note");
   });
 
+  it("leads with the title override (italic, tooltip names the file) and keeps the folder below", async () => {
+    mockedInvoke.mockResolvedValue(
+      page({
+        ...hit("Notes/Spec.md", 0, "", []),
+        snippets: [],
+        titleOverride: "Quarterly Plan",
+      }),
+    );
+    await mount();
+    await type("quarterly");
+    await settle();
+    const lead = document.querySelector<HTMLElement>("[data-title-override]")!;
+    expect(lead.textContent).toBe("Quarterly Plan");
+    expect(lead.className).toContain("italic");
+    expect(lead.title).toBe("Title override. File: Spec.md");
+    expect(text()).toContain("Notes");
+  });
+
+  it("shows the file name for a hit without an override", async () => {
+    mockedInvoke.mockResolvedValue(page(hit("Notes/Plain.md", 1, "plain", [[0, 5]])));
+    await mount();
+    await type("plain");
+    await settle();
+    expect(document.querySelector("[data-title-override]")).toBeNull();
+    expect(text()).toContain("Plain");
+  });
+
   it("renders matches as marked React nodes and never injects HTML", async () => {
     const evil = "<img src=x onerror=alert(1)> harbour";
     mockedInvoke.mockResolvedValue(page(hit("Notes/Evil.md", 2, evil, [[29, 36]])));

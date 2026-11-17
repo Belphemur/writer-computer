@@ -194,6 +194,35 @@ pub struct TextMatch {
     pub folded: Vec<usize>,
 }
 
+/// A display-title override prepared as a second name: a file called `<title>.md`.
+pub fn prepare_title(title: &str) -> Prepared {
+    Prepared::new(&format!("{}.md", title.trim()))
+}
+
+/// Match `q` against a note's file path and, when it has one, its display-title override; the
+/// better score wins (twin: `rankCandidates` in `src/lib/search-rank.ts`). When the title wins,
+/// `folded` is empty: its positions do not index the path.
+pub fn match_name_or_title(
+    q: &PreparedQuery,
+    path: &Prepared,
+    title: Option<&Prepared>,
+) -> Option<TextMatch> {
+    let by_path = match_path(q, path);
+    let by_title = title.and_then(|t| match_path(q, t));
+    match (by_path, by_title) {
+        (Some(p), Some(t)) if t.score > p.score => Some(TextMatch {
+            score: t.score,
+            folded: Vec::new(),
+        }),
+        (Some(p), _) => Some(p),
+        (None, Some(t)) => Some(TextMatch {
+            score: t.score,
+            folded: Vec::new(),
+        }),
+        (None, None) => None,
+    }
+}
+
 /// Match `q` against one prepared path. `None` when any word fails.
 pub fn match_path(q: &PreparedQuery, c: &Prepared) -> Option<TextMatch> {
     if q.words.is_empty() {

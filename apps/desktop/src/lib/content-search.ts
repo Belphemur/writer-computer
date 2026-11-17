@@ -13,7 +13,10 @@ export interface ContentSnippet {
 export interface ContentSearchHit {
   /** Vault-relative path. */
   path: string;
+  /** File name without extension. */
   title: string;
+  /** Display-title override (frontmatter `title`), searchable like the file name. */
+  titleOverride?: string | null;
   folder: string;
   score: number;
   snippets: ContentSnippet[];
