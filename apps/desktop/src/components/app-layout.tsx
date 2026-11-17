@@ -13,6 +13,7 @@ import {
 } from "@/hooks/use-plugins";
 import { PluginViewPane } from "./plugins/plugin-view-pane";
 import { DockPane } from "./dock-pane";
+import { FeatureHealthNotices } from "./feature-health-notices";
 import { closeDocks, useDockWidth, useOpenDockId } from "@/hooks/use-docks";
 import { PluginStatusBar } from "./plugins/plugin-strips";
 import { useSidebar } from "@/hooks/use-sidebar";
@@ -207,6 +208,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
           {dockId ? <DockPane id={dockId} /> : <PluginViewPane />}
         </div>
       </div>
+      <FeatureHealthNotices />
     </div>
   );
 }

@@ -12,6 +12,9 @@ pub enum AppError {
     InvalidPath(String),
     #[error("No workspace is open")]
     NoWorkspace,
+    /// A built-in feature failed this session (see `features::guard`); its commands do not run.
+    #[error("Feature unavailable: {0} failed and is turned off until Writer restarts")]
+    FeatureUnavailable(String),
 }
 
 impl Serialize for AppError {

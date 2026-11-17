@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 date: 2026-11-17
 decision-makers: Antoine
 ---
@@ -41,3 +41,5 @@ The first version resolved the window inside the monitor (`ns_window()` compared
 - Patch or fork wry: rejected, hard to maintain and does not help if its JS path is the problem.
 - Subclass the webview and add `otherMouseDown:`: rejected, wry owns that class.
 - Rely on the DOM events alone: that was the state that did not work for the user.
+
+2026-11-17: superseded by [Remove the mouse buttons feature and its native NSEvent monitor](2026-11-17-remove-the-mouse-buttons-feature-and-its-native-monitor.md): the monitor aborted the app a third time and the webview delivers the side buttons itself.

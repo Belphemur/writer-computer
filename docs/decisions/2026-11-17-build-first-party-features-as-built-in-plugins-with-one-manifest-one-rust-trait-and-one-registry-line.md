@@ -284,3 +284,5 @@ None. Questions 1 to 11 are resolved in "Decisions taken". What remains before a
 - Not verified (spike): that `capabilities_path_pattern` accepts a multi-folder pattern; that a plugin added in `setup` still gets its inlined ACL entries (they are generated at build time, so it should).
 
 2026-11-17: the `panic = "abort"` consequence is superseded by [Contain feature failures with unwinding panics and recover from native crashes on the next launch](2026-11-17-contain-feature-failures-with-unwinding-panics-and-recover-from-native-crashes-on-next-launch.md): release builds unwind and every feature boundary runs under one guard.
+
+2026-11-17: the pilot `mouse-buttons` was removed ([ADR](2026-11-17-remove-the-mouse-buttons-feature-and-its-native-monitor.md)); the Rust trait is exercised by the test-only fixture feature and by `agent`.

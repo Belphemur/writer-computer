@@ -78,8 +78,7 @@ specta-typescript = { version = "=0.0.15" }
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6.4", features = ["exception"] }
-block2 = "0.6.2"
+objc2 = "0.6.4"
 
 [features]
 # Embeds a W3C WebDriver server in the app for local E2E testing with
@@ -97,4 +96,6 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "s"
-panic = "abort"
+# Unwind, not abort: features::guard catches a panic at every feature boundary (ADR 2026-11-17
+# "contain feature failures with unwinding panics"). Keep this when merging upstream.
+panic = "unwind"

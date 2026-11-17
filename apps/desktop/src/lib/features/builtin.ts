@@ -2,7 +2,9 @@
 // each must stay import-light) and registered while `features.<id>.enabled` is on. The setting is
 // watched, so switching a feature off removes its commands, menu items and editor extensions at
 // once and switching it on adds them back. Core never imports a feature by name.
+import { isOffForSession, useFeatureHealth } from "@/stores/feature-health-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { startFeatureHealthBridge } from "./health-bridge";
 import { createFeatureHost, featureHost } from "./registry";
 import { isFeatureEnabled, MANIFEST_BY_PATH } from "./manifests";
 import type { FeatureDefinition, FeatureManifest } from "./types";
@@ -17,15 +19,18 @@ type Manifest = Pick<FeatureManifest, "id" | "enabledByDefault"> & {
 };
 
 /** Registers the enabled features that are not registered and unregisters the disabled ones; a
- * feature that lists `onStartup` is activated as it is registered. */
+ * feature that lists `onStartup` is activated as it is registered. `isOff` is the session
+ * override (safe mode, or switched off after failures): such a feature is not wanted whatever its
+ * setting says, and the setting itself is never touched. */
 export function syncBuiltinFeatures(
   host: Host,
   features: readonly { manifest: Manifest; definition: FeatureDefinition }[],
   settings: Record<string, unknown>,
+  isOff: (id: string) => boolean = () => false,
 ): void {
   const registered = new Set(host.list());
   for (const { manifest, definition } of features) {
-    const want = isFeatureEnabled(manifest, settings);
+    const want = isFeatureEnabled(manifest, settings) && !isOff(manifest.id);
     if (want && !registered.has(manifest.id)) {
       host.register(definition);
       // A failed activation is already logged by the host.
@@ -45,10 +50,18 @@ export const BUILTIN_FEATURES = Object.entries(definitions).map(([path, mod]) =>
 });
 
 function sync() {
-  syncBuiltinFeatures(featureHost, BUILTIN_FEATURES, useSettingsStore.getState().settings);
+  const health = useFeatureHealth.getState();
+  syncBuiltinFeatures(featureHost, BUILTIN_FEATURES, useSettingsStore.getState().settings, (id) =>
+    isOffForSession(health, id),
+  );
 }
 
 sync();
 useSettingsStore.subscribe((state, prev) => {
   if (state.settings !== prev.settings) sync();
 });
+// Safe mode, a third failure or a `features:failed` from Rust switches the web half off.
+useFeatureHealth.subscribe((state, prev) => {
+  if (state.sessionOff !== prev.sessionOff || state.safeMode !== prev.safeMode) sync();
+});
+startFeatureHealthBridge();

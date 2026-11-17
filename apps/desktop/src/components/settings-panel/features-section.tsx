@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useFeatureHealth } from "@/stores/feature-health-store";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
 import { enabledKey, FEATURE_MANIFESTS, isFeatureEnabled } from "@/lib/features/manifests";
 import type { FeatureManifest } from "@/lib/features/types";
@@ -19,7 +20,17 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
   const settings = useAllSettings();
   const setSetting = useSetSetting();
   const [open, setOpen] = useState(false);
+  const failure = useFeatureHealth((s) => s.failures[manifest.id]);
+  const sessionOff = useFeatureHealth((s) => s.sessionOff[manifest.id] === true);
+  const crash = useFeatureHealth((s) => s.crashDisabled.find((c) => c.id === manifest.id));
+  const clear = useFeatureHealth((s) => s.clear);
   const enabled = isFeatureEnabled(manifest, settings);
+  // "Turn back on": the setting a crash turned off (the narrowest one) is set again, and the
+  // session failure state is cleared, so the web half returns at once and the Rust half after a restart.
+  const turnBackOn = () => {
+    clear(manifest.id);
+    void setSetting(crash?.setting ?? enabledKey(manifest.id), true);
+  };
   // Everything under the feature comes from its settings fragment: no per-feature code here.
   const defs = FEATURE_SETTINGS[manifest.id] ?? [];
 
@@ -38,6 +49,24 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
           {manifest.memory && (
             <div className="mt-1 text-[12px] text-[var(--text-muted)]">
               Memory: {manifest.memory.level}. {manifest.memory.note}
+            </div>
+          )}
+          {(failure || crash) && (
+            <div
+              role="alert"
+              data-feature-failure={manifest.id}
+              className="mt-1.5 text-[12px] text-[var(--text-primary)]"
+            >
+              {crash
+                ? `Turned off after a crash (${crash.boundary}).`
+                : `Failed in ${failure?.boundary} at ${new Date(failure?.at ?? 0).toLocaleTimeString()}${sessionOff ? " and turned off until Writer restarts" : ""}.`}{" "}
+              <button
+                type="button"
+                onClick={turnBackOn}
+                className="text-[var(--link-color)] hover:underline"
+              >
+                Turn back on
+              </button>
             </div>
           )}
           {hasRustHalf(manifest) && (
@@ -60,7 +89,10 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
         <BooleanControl
           value={enabled}
           label={`${manifest.name} feature`}
-          onChange={(v) => void setSetting(enabledKey(manifest.id), v)}
+          onChange={(v) => {
+            if (v) clear(manifest.id);
+            void setSetting(enabledKey(manifest.id), v);
+          }}
         />
       </div>
       {open && defs.length > 0 && (

@@ -253,7 +253,7 @@ fn fixture_checks(
 ) -> Result<(), String> {
     check_feature(
         m,
-        fixture_def().tauri_plugin().unwrap().name(),
+        super::plugin_of(&m.id, fixture::handler::<Wry>()).name(),
         declared,
         capability,
     )
@@ -275,7 +275,7 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
         let dir = features_dir.join(&m.id);
         assert_eq!(read_json(&dir.join("feature.json"))["id"], json!(m.id));
         // A feature with hooks or events but no commands has no plugin and no ACL.
-        let plugin = def.tauri_plugin();
+        let plugin = def.invoke_handler().map(|h| super::plugin_of(&m.id, h));
         assert_eq!(
             plugin.is_some(),
             !m.rust.commands.is_empty(),

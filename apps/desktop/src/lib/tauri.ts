@@ -2,11 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
 import sidebarEntryKinds from "@shared/sidebar-entry-kinds.json";
+import type { FeaturesStatus } from "@/stores/feature-health-store";
 import type { DirEntry, FileContent, SearchResult, WriteResult, WorkspaceInfo } from "@/types/fs";
 
 // Filesystem commands
 export function readDirectory(path: string): Promise<DirEntry[]> {
   return invoke("read_directory", { path });
+}
+
+/** Failure containment report (`features_status`): safe mode, what a crash turned off, failures. */
+export function featuresStatus(): Promise<FeaturesStatus> {
+  return invoke("features_status");
+}
+
+/** Leave safe mode: Rust resets the startup counter and restarts the app. */
+export function featuresRestartNormally(): Promise<void> {
+  return invoke("features_restart_normally");
 }
 
 export function readRecentFiles(limit: number, offset: number): Promise<DirEntry[]> {

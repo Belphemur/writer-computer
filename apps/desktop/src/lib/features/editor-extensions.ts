@@ -3,9 +3,9 @@
 // editor needs it (a dynamic import, so the code is not in the startup chunk), and when the set
 // of loaded, applicable contributions changes every live editor is reconfigured. That makes
 // enabling and disabling a feature live: unregistering removes its extension from open editors.
-import { Compartment, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { ViewPlugin, type EditorView } from "@codemirror/view";
-import { logger } from "@/lib/logger";
+import { reportOwnerFailure } from "./health";
 import { OwnedRegistry } from "@/lib/owned-registry";
 
 export interface EditorExtensionContribution {
@@ -53,10 +53,18 @@ function startLoads(): void {
     c.load().then(
       (ext) => {
         if (editorExtensionContributions.get(c.id) !== c) return; // unregistered while loading
+        try {
+          // Building a state runs the extension's facets and fields: one that throws here would
+          // break every editor, so it is dropped instead of installed.
+          EditorState.create({ extensions: ext });
+        } catch (e) {
+          reportOwnerFailure(c.owner, "editor-extension", e);
+          return;
+        }
         loaded.set(c, ext);
         refresh();
       },
-      (e) => logger.error("app", `editor extension ${c.id} failed to load: ${String(e)}`),
+      (e) => reportOwnerFailure(c.owner, "editor-extension", e),
     );
   }
 }

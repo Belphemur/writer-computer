@@ -12,7 +12,8 @@ import { keybindings } from "@/lib/keybindings/registry";
 import { logger } from "@/lib/logger";
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { featureEventName } from "./events";
-import { assertFeatureId } from "./id";
+import { assertFeatureId, ownerOf } from "./id";
+import { recordFailure } from "./health";
 import { editorExtensionContributions } from "./editor-extensions";
 import { dockContributions } from "./docks";
 import { editorBodyMenuContributions } from "./menus";
@@ -79,19 +80,26 @@ interface Entry {
   error?: unknown;
 }
 
-const owner = (id: string) => `builtin:${id}`;
-
 export interface FeatureHostDeps {
   onError?: (id: string, phase: string, error: unknown) => void;
+  /** Counts a failure toward the session limit (`stores/feature-health-store.ts`). */
+  onFailure?: (id: string, boundary: string) => void;
   listen?: typeof tauriListen;
 }
 
 export function createFeatureHost({
   onError = (id, phase, error) =>
     logger.error("app", `feature ${id} ${phase} failed: ${String(error)}`, { plugin: id, phase }),
+  onFailure = recordFailure,
   listen = tauriListen,
 }: FeatureHostDeps = {}) {
   const entries = new Map<string, Entry>();
+
+  /** A failure of the feature's own code: logged, and counted toward the session limit. */
+  function fail(id: string, boundary: string, error: unknown) {
+    onError(id, boundary, error);
+    onFailure(id, boundary);
+  }
 
   function makeContext(id: string, disposables: DisposableStore): FeatureContext {
     return {
@@ -113,11 +121,11 @@ export function createFeatureHost({
   }
 
   function removeContributions(id: string) {
-    featurePaletteCommands.removeOwner(owner(id));
-    keybindings.removeOwner(owner(id));
-    editorExtensionContributions.removeOwner(owner(id));
-    editorBodyMenuContributions.removeOwner(owner(id));
-    dockContributions.removeOwner(owner(id));
+    featurePaletteCommands.removeOwner(ownerOf(id));
+    keybindings.removeOwner(ownerOf(id));
+    editorExtensionContributions.removeOwner(ownerOf(id));
+    editorBodyMenuContributions.removeOwner(ownerOf(id));
+    dockContributions.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -125,7 +133,7 @@ export function createFeatureHost({
     host
       .activate(id)
       .then(run)
-      .catch((e) => onError(id, "contribution", e));
+      .catch((e) => fail(id, "command", e));
   }
 
   const host = {
@@ -139,7 +147,7 @@ export function createFeatureHost({
         ctx: makeContext(def.id, disposables),
         disposables,
       };
-      const o = owner(def.id);
+      const o = ownerOf(def.id);
       try {
         for (const c of def.contributes?.commands ?? []) {
           featurePaletteCommands.add(c.id, {
@@ -193,7 +201,7 @@ export function createFeatureHost({
           entry.error = e;
           entry.disposables.dispose();
           removeContributions(id);
-          onError(id, "activate", e);
+          fail(id, "activate", e);
           throw e;
         } finally {
           entry.pending = undefined;

@@ -3,7 +3,7 @@
 // `editor-body` has a host today; a surface joins when its first feature needs it.
 import type { EditorView } from "@codemirror/view";
 import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
-import { logger } from "@/lib/logger";
+import { reportOwnerFailure } from "./health";
 import { OwnedRegistry } from "@/lib/owned-registry";
 
 export interface EditorBodyMenuContribution {
@@ -26,7 +26,7 @@ export async function contributedEditorBodyItems(
       try {
         return await c.items(view, event);
       } catch (e) {
-        logger.error("app", `menu contribution ${c.id} failed: ${String(e)}`);
+        reportOwnerFailure(c.owner, "menu", e);
         return [];
       }
     }),

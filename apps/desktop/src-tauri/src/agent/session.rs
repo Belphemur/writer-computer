@@ -218,6 +218,10 @@ impl Default for AgentSessions {
     }
 }
 
+/// Starts a background thread by name; the app passes `features::spawn` so a panic in it fails
+/// the feature (this module stays Tauri-free).
+pub type Spawner<'a> = dyn Fn(&'static str, Box<dyn FnOnce() + Send>) -> Result<(), String> + 'a;
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StartedIds {
@@ -252,6 +256,18 @@ fn is_uuid(s: &str) -> bool {
 
 impl AgentSessions {
     pub fn with_timing(timing: Timing) -> Self {
+        Self::with_spawner(timing, &|name, f| {
+            std::thread::Builder::new()
+                .name(name.into())
+                .spawn(f)
+                .map(drop)
+                .map_err(|e| e.to_string())
+        })
+        .expect("spawn idle reaper")
+    }
+
+    /// `spawn` starts the idle reaper; an `Err` (no thread) fails the construction.
+    pub fn with_spawner(timing: Timing, spawn: &Spawner<'_>) -> Result<Self, String> {
         let shared = Arc::new(Shared {
             procs: Arc::new(ProcManager::default()),
             ports: Arc::new(AgentPorts::default()),
@@ -261,9 +277,9 @@ impl AgentSessions {
             changes: Arc::new(ChangeStore::default()),
         });
         let weak: Weak<Shared> = Arc::downgrade(&shared);
-        std::thread::Builder::new()
-            .name("agent-reaper".into())
-            .spawn(move || loop {
+        spawn(
+            "agent-reaper",
+            Box::new(move || loop {
                 let every = match weak.upgrade() {
                     Some(s) => s.timing.reaper_every,
                     None => return,
@@ -273,9 +289,9 @@ impl AgentSessions {
                 for session in s.all() {
                     session.reap_if_idle();
                 }
-            })
-            .expect("spawn idle reaper");
-        Self { shared }
+            }),
+        )?;
+        Ok(Self { shared })
     }
 
     pub fn changes(&self) -> Arc<ChangeStore> {

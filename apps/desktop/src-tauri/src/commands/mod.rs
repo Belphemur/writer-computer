@@ -1,4 +1,5 @@
 pub mod bases;
+pub mod features;
 pub mod fonts;
 pub mod fs;
 pub mod images;

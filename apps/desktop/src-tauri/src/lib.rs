@@ -554,6 +554,13 @@ pub fn run() {
         .manage(plugin_proc::ProcManager::default())
         .manage(plugin_env::PluginEnv::default())
         .manage(commands::index::IndexRegistry::default())
+        // The first finished page load means this launch got far enough to reset the
+        // startup-failure counter (`features::recovery`).
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                features::mark_ready(webview.app_handle());
+            }
+        })
         .setup(|app| {
             // Initialize the main window's per-window state (settings layer,
             // pending-open queue). `get_or_create` lazily builds the
@@ -570,8 +577,20 @@ pub fn run() {
             // First-party features (SPECs/builtin-plugins-spec.md): add the Tauri plugin of every
             // enabled feature (`setup` hook, then its plugin). Needs the settings layer above. A
             // feature whose setup fails is logged and skipped; the app still starts.
+            // Recovery first: what the last run left behind turns a crashed feature's setting off
+            // and decides safe mode (a settings write, so before the read lock below).
+            let boot = {
+                let dir = app
+                    .path()
+                    .app_data_dir()
+                    .expect("failed to get app data dir");
+                match main_state.settings.write().as_mut() {
+                    Some(settings) => features::boot(&dir, settings),
+                    None => features::Boot::none(),
+                }
+            };
             if let Some(settings) = main_state.settings.read().as_ref() {
-                features::install(app.handle(), settings);
+                features::install(app.handle(), settings, boot);
             }
 
             // Telemetry reads its enabled/email values out of the settings
@@ -636,6 +655,8 @@ pub fn run() {
             commands::logs::log_info,
             commands::logs::open_log_folder,
             commands::logs::recent_log_errors,
+            commands::features::features_status,
+            commands::features::features_restart_normally,
             commands::fs::read_directory,
             commands::fs::read_recent_files,
             commands::fs::read_file_entries,

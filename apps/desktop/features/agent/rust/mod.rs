@@ -12,16 +12,19 @@
 //! always did (one sleeping thread). The feature contributes no bundled skills: the managed skills
 //! (`writer-cli`, `writer-search`, `writer-bases`) are for any agent working in a vault, not for
 //! this pane.
+//!
+//! Containment: the idle reaper thread starts through `features::spawn` (a panic in it fails the
+//! agent, not the app); the per-chat event pumps still start inside the Tauri-free
+//! `agent::session` and are covered by the process-level recovery only.
 //! Spec: `SPECs/native-agent-spec.md`.
 
 mod bindings;
 mod commands;
 
 use crate::agent::project_context::ProjectLibrary;
-use crate::agent::session::AgentSessions;
-use crate::features::Feature;
+use crate::agent::session::{AgentSessions, Timing};
+use crate::features::{Feature, InvokeHandler};
 use std::sync::Arc;
-use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Manager, Runtime};
 
 pub struct Agent;
@@ -41,17 +44,17 @@ impl<R: Runtime> Feature<R> for Agent {
     }
 
     /// The 30 `plugin:agent|agent_*` commands; the list is `bindings::builder`.
-    fn tauri_plugin(&self) -> Option<TauriPlugin<R>> {
-        Some(
-            tauri::plugin::Builder::new("agent")
-                .invoke_handler(bindings::builder::<R>().invoke_handler())
-                .build(),
-        )
+    fn invoke_handler(&self) -> Option<InvokeHandler<R>> {
+        Some(Box::new(bindings::builder::<R>().invoke_handler()))
     }
 
     fn setup(&self, app: &AppHandle<R>) -> Result<(), String> {
         // Agent projects: the runner resolves cwd and the appended system prompt through this port.
-        let state = AgentSessions::default();
+        let state = AgentSessions::with_spawner(Timing::default(), &|name, f| {
+            crate::features::spawn(app, "agent", name, f)
+                .map(drop)
+                .map_err(|e| e.to_string())
+        })?;
         state.ports().set_project(Arc::new(ProjectLibrary));
         if !app.manage(state) {
             return Err("AgentSessions is already managed".into());
