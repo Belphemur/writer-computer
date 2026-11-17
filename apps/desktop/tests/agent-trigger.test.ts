@@ -63,3 +63,12 @@ describe("applyTrigger", () => {
     expect(end).toEqual({ text: "go /summarize ", caret: 14 });
   });
 });
+
+describe("Markdown marks around a mention", () => {
+  it("opens the menu for an @ right after ** or ~~ that start a token", () => {
+    expect(at("**@Pl")).toMatchObject({ char: "@", start: 2, query: "Pl" });
+    expect(at("see ~~@Pl")).toMatchObject({ char: "@", start: 6, query: "Pl" });
+    expect(at("a**@Pl")).toBeNull();
+    expect(at("**/sum")).toBeNull(); // skills keep the plain start rule
+  });
+});

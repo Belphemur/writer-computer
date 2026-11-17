@@ -53,9 +53,11 @@ function hook(node: Element) {
   if (node.tagName === "IMG") node.remove();
 }
 
-export function renderAgentMarkdown(markdown: string): string {
+/** `breaks`: a single newline is a line break (the user's own messages, typed in a composer where
+ *  Shift+Enter means "next line"); assistant text keeps CommonMark's soft breaks. */
+export function renderAgentMarkdown(markdown: string, opts: { breaks?: boolean } = {}): string {
   const source = markdown.length > MAX_CHARS ? markdown.slice(0, MAX_CHARS) : markdown;
-  const html = marked.parse(source, { async: false });
+  const html = marked.parse(source, { async: false, breaks: opts.breaks ?? false });
   return sanitizeHtml(
     html,
     { tags: SAFE_TAGS, attrs: SAFE_ATTR.filter((a) => a !== "target"), uriRegexp: URI_REGEXP },

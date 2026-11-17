@@ -4,8 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const open = vi.hoisted(() => vi.fn());
-vi.mock("../src/components/agent/agent-links", () => ({ openVaultPath: open }));
+vi.mock("../src/components/agent/agent-links", () => ({
+  openVaultPath: open,
+  handleMarkdownClick: () => {},
+}));
 
+import { renderUserMessage } from "../src/components/agent/message-text";
 import { UserTurnCard } from "../src/components/agent/user-turn-card";
 import type { ContextRef } from "../src/lib/agent/events";
 
@@ -72,5 +76,71 @@ describe("user message tokens", () => {
     render("see @activenote and @Nothing", []);
     expect(tokens()[0]!.tagName).toBe("SPAN");
     expect(tokens().map((t) => t.dataset.resolved)).toEqual(["false", "false"]); // muted
+  });
+
+  it("renders Markdown in the editor's typography and keeps pills inside it", () => {
+    render(
+      [
+        "# Plan",
+        "",
+        "Compare **@Projects/Plan.md** with `code` and ~~old~~",
+        "second line",
+        "",
+        "- [ ] task one",
+        "- see @Docs",
+        "",
+        "> quoted /summarize",
+        "",
+        "```ts",
+        "let a = 1;",
+        "```",
+        "",
+        "[site](https://example.com) and [[Wiki Note]]",
+      ].join("\n"),
+      [
+        { kind: "note", path: "Projects/Plan.md" },
+        { kind: "folder", path: "Docs" },
+      ],
+    );
+    const md = container.querySelector(".agent-markdown")!;
+    expect(md.querySelector("h1")!.textContent).toBe("Plan");
+    expect(md.querySelector("strong [data-agent-token]")!.textContent).toBe("Plan");
+    expect(md.querySelector("code")!.textContent).toBe("code");
+    expect(md.querySelector("del")!.textContent).toBe("old");
+    expect(md.querySelectorAll("p br").length).toBeGreaterThan(0); // one newline stays a line break
+    expect(md.querySelectorAll("ul li")).toHaveLength(2);
+    expect(md.querySelector("li [data-pill-kind='folder']")).not.toBeNull();
+    expect(md.querySelector("blockquote [data-pill-kind='skill']")!.textContent).toBe("/summarize");
+    expect(md.querySelector("pre code")!.textContent).toContain("let a = 1;");
+    expect(md.querySelector("a[href='https://example.com']")!.textContent).toBe("site");
+    expect(md.querySelector("a[href='#wikilink:Wiki%20Note']")).not.toBeNull();
+    expect(tokens().map((t) => t.dataset.agentToken)).toEqual(["mention", "mention", "skill"]);
+    act(() => tokens()[0]!.click());
+    expect(open).toHaveBeenLastCalledWith("Projects/Plan.md");
+  });
+
+  it("plain text stays plain: same words, pills in place, no stray markup", () => {
+    render("just a plain line with @Docs", [{ kind: "folder", path: "Docs" }]);
+    expect(container.querySelector(".agent-markdown")!.innerHTML).toMatch(
+      /^<p>just a plain line with <span data-pill-slot="0">.*<\/span><\/p>\n?$/s,
+    );
+  });
+});
+
+describe("renderUserMessage", () => {
+  it("keeps tokens out of Markdown (underscores, asterisks) and out of attributes", () => {
+    const r = renderUserMessage('see @"my_file_name_*x*.md" and [t](@Docs)', [
+      { kind: "note", path: "my_file_name_*x*.md" },
+    ]);
+    expect(r.pills).toHaveLength(2);
+    expect(r.html).toContain('<span data-pill-slot="0"></span>');
+    expect(r.html).not.toContain("<em>");
+    expect(r.html).not.toMatch(/[\uE000\uE001]/);
+  });
+
+  it("escapes HTML and never lets raw tags through", () => {
+    const r = renderUserMessage("<img src=x onerror=alert(1)> <b>x</b>", []);
+    expect(r.html).not.toContain("<img");
+    expect(r.html).not.toContain("<b>");
   });
 });

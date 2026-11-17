@@ -128,6 +128,14 @@ describe("tokenizeMessage", () => {
     ).toBe(text);
   });
 
+  it("finds a mention wrapped in Markdown emphasis, without the closing marks", () => {
+    expect(kinds("**@Plan.md** and ~~@Docs~~ and *@a.md* but a**@b.md")).toEqual([
+      "@Plan.md",
+      "@Docs",
+      "@a.md",
+    ]);
+  });
+
   it("agrees with the composer trigger rules", () => {
     expect(kinds("src/lib/foo a@b.c and/or /usr/bin https://x.test/@y")).toEqual([]);
     expect(tokenizeMessage("/go now")[0]).toMatchObject({ kind: "slash", atStart: true });

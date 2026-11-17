@@ -52,7 +52,7 @@ work.
 
 The Agent pane is the chat on the right. It shares the right side with the plugin pane: opening one closes the other. These work while focus is inside the pane.
 
-<!-- Implemented in `components/agent/agent-pane.tsx` (pane-scoped chords, which stop propagation so the global hook's Cmd+W never sees them), `composer.tsx` (Enter, Esc order, ArrowUp recall, Cmd+Enter / Cmd+Shift+Enter / Cmd+Backspace for a pending permission) and `permission-card.tsx` (Enter / Esc with focus on the card). Cmd+Shift+A is bound in `use-keyboard-shortcuts.ts`; it collides with no native menu accelerator (only Cmd+, exists) and no editor binding. Spec: SPECs/native-agent-spec.md section 3.6. Cmd+Shift+H opens the in-pane chat list until the history view lands (lane 4). -->
+<!-- Implemented in `components/agent/agent-pane.tsx` (pane-scoped chords, which stop propagation so the global hook's Cmd+W never sees them), `composer.tsx` (Enter, Esc order, ArrowUp recall, Cmd+Enter / Cmd+Shift+Enter / Cmd+Backspace for a pending permission) and `permission-card.tsx` (Enter / Esc with focus on the card). Cmd+Shift+A is bound in `use-keyboard-shortcuts.ts`; it collides with no native menu accelerator (only Cmd+, exists) and no editor binding. Spec: SPECs/native-agent-spec.md section 3.6. Cmd+Shift+H opens the in-pane chat list until the history view lands (lane 4). Cmd+B / Cmd+I and the list-continuing Shift+Enter live in `composer-markdown.ts` (a CodeMirror keymap, so they only fire with the message box focused; they reuse `toggleBold` / `toggleItalic` of the note editor and collide with no global binding or menu accelerator). Tab is left alone. -->
 
 | Shortcut                    | Action                                                                                           |
 | --------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -71,6 +71,8 @@ The Agent pane is the chat on the right. It shares the right side with the plugi
 | `@`                         | Add a note or folder as context (Arrow keys, Enter or Tab to pick)                               |
 | `/`                         | Pick a Claude Code command                                                                       |
 | ArrowUp in an empty message | Bring back your previous message                                                                 |
+| Cmd+B / Cmd+I               | Wrap the selection in `**` / `*` (again to unwrap), from the message box only                    |
+| Shift+Enter in a list       | New line that continues the bullet, number, task or quote; on an empty item it ends the list     |
 | ArrowLeft / ArrowRight      | Between chat tabs                                                                                |
 
 The command palette also has "Agent: Toggle pane", "Agent: New chat" and "Agent: History".

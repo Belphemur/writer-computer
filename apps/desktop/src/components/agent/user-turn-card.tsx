@@ -11,9 +11,9 @@ export function UserTurnCard({ message }: { message: UserMessage }) {
       aria-label="Your message"
       className="rounded-xl border border-[var(--line-subtle)] bg-[var(--surface-card)] px-3 py-2.5"
     >
-      <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-text-primary">
+      <div className="break-words text-[14px] leading-relaxed text-text-primary">
         <MessageText text={message.text} context={message.context} />
-      </p>
+      </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-text-muted">
         {message.context.map((ref, i) => (
           <span

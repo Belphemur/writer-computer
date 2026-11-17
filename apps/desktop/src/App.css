@@ -621,10 +621,49 @@ body.tree-dragging [data-tree-path] {
 .agent-markdown h1,
 .agent-markdown h2,
 .agent-markdown h3,
-.agent-markdown h4 {
+.agent-markdown h4,
+.agent-markdown h5,
+.agent-markdown h6 {
   margin: 0.9em 0 0.4em;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.3;
+}
+/* The editor's heading scale (HEADING_SCALES) tuned down for a narrow pane; the composer uses
+   the same steps (.cm-md-h1 ...). */
+.agent-markdown h1 {
+  font-size: 1.3em;
+}
+.agent-markdown h2 {
+  font-size: 1.18em;
+}
+.agent-markdown h3 {
+  font-size: 1.08em;
+}
+.agent-markdown h4,
+.agent-markdown h5,
+.agent-markdown h6 {
+  font-size: 1em;
+}
+.agent-markdown h6 {
+  color: var(--text-secondary);
+}
+.agent-markdown strong {
+  font-weight: 700;
+}
+.agent-markdown del {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+.agent-markdown hr {
+  margin: 0.9em 0;
+  border: 0;
+  border-top: 1px solid var(--line-subtle);
+}
+.agent-markdown li > p {
+  margin: 0.2em 0;
+}
+.agent-markdown li::marker {
+  color: var(--text-muted);
 }
 .agent-markdown code {
   border-radius: 4px;
@@ -748,6 +787,86 @@ button.agent-pill:hover {
 }
 .agent-composer-editor .cm-editor .cm-placeholder {
   color: var(--text-muted);
+}
+/* Live Markdown in the composer (composer-markdown.ts): classes only, markers stay visible but
+   dimmed, the text is never rewritten. Same scale and tokens as `.agent-markdown`. */
+.agent-composer-editor .cm-md-h1,
+.agent-composer-editor .cm-md-h2,
+.agent-composer-editor .cm-md-h3,
+.agent-composer-editor .cm-md-h4 {
+  font-weight: 700;
+}
+.agent-composer-editor .cm-md-h1 {
+  font-size: 1.3em;
+}
+.agent-composer-editor .cm-md-h2 {
+  font-size: 1.18em;
+}
+.agent-composer-editor .cm-md-h3 {
+  font-size: 1.08em;
+}
+.agent-composer-editor .cm-md-strong {
+  font-weight: 700;
+}
+.agent-composer-editor .cm-md-em {
+  font-style: italic;
+}
+.agent-composer-editor .cm-md-strike {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+.agent-composer-editor .cm-md-mark {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.agent-composer-editor .cm-md-code {
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-family: var(--mono-font);
+  font-size: 0.9em;
+}
+.agent-composer-editor .cm-md-link,
+.agent-composer-editor .cm-md-url {
+  color: var(--link-color);
+}
+.agent-composer-editor .cm-md-link:not(.cm-md-mark) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.agent-composer-editor .cm-md-quote {
+  color: var(--text-secondary);
+}
+.agent-composer-editor .cm-md-hr {
+  color: var(--text-muted);
+}
+.agent-composer-editor .cm-md-task {
+  color: var(--text-secondary);
+  font-family: var(--mono-font);
+}
+.agent-composer-editor .cm-md-fence-info {
+  color: var(--text-muted);
+}
+.agent-composer-editor .cm-md-fence-line {
+  background: var(--surface-subtle);
+  font-family: var(--mono-font);
+  font-size: 0.92em;
+  padding: 0 0.5rem !important;
+}
+.agent-composer-editor .cm-md-fence-line .cm-md-code {
+  background: none;
+  font-size: 1em;
+}
+.agent-composer-editor .cm-md-fence-first {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+.agent-composer-editor .cm-md-fence-last {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.agent-composer-editor .cm-md-quote-line {
+  border-left: 2px solid var(--blockquote-border);
+  padding-left: 0.6rem !important;
 }
 .agent-composer-editor[data-disabled] {
   opacity: 0.6;

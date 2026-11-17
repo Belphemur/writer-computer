@@ -5,7 +5,7 @@
  * the document, the clipboard and the sent prompt keep the token string. Pure CodeMirror, no
  * React: the model is testable with an `EditorState` (see tests/agent-composer-pills.test.ts).
  */
-import { history, historyKeymap, insertNewline, standardKeymap } from "@codemirror/commands";
+import { history, historyKeymap, standardKeymap } from "@codemirror/commands";
 import {
   EditorSelection,
   EditorState,
@@ -22,6 +22,7 @@ import {
   placeholder,
   type DecorationSet,
 } from "@codemirror/view";
+import { composerMarkdown } from "./composer-markdown";
 import {
   createPillElement,
   pillRanges,
@@ -147,7 +148,7 @@ export function composerExtensions(extras: ComposerExtras): Extension[] {
     pillField,
     history(),
     composerKeys(extras.onKey),
-    Prec.high(keymap.of([{ key: "Shift-Enter", run: insertNewline }])),
+    composerMarkdown(),
     keymap.of([...editingKeymap, ...historyKeymap]),
     pillMouse(extras.open),
     EditorView.lineWrapping,

@@ -21,6 +21,16 @@ export type Trigger = {
 
 const OPENERS = new Set(["(", "[", "{", '"', "'", "`", "<"]);
 const isSpace = (c: string) => /\s/.test(c);
+/** Markdown emphasis marks (`**@Plan.md**`, `~~@Plan.md~~`): an `@` right after a run of them that
+ *  itself starts at a token boundary still starts a mention. */
+const MARKS = new Set(["*", "~"]);
+function afterMarks(text: string, i: number): boolean {
+  let j = i;
+  while (j > 0 && MARKS.has(text[j - 1]!)) j--;
+  if (j === i) return false;
+  const before = j === 0 ? " " : text[j - 1]!;
+  return isSpace(before) || OPENERS.has(before);
+}
 
 export function findTrigger(text: string, caret: number, composing = false): Trigger | null {
   if (composing || caret < 0 || caret > text.length) return null;
@@ -31,6 +41,11 @@ export function findTrigger(text: string, caret: number, composing = false): Tri
   // `i` is the first character of the token under (or ending at) the caret.
   let start = i;
   if (start < caret && OPENERS.has(text[start]!) && start + 1 <= caret) start++;
+  else {
+    let k = start;
+    while (k < caret && MARKS.has(text[k]!)) k++;
+    if (k > start && k < caret && text[k] === "@") start = k;
+  }
   const char = text[start];
   if (start >= caret || (char !== "/" && char !== "@")) return null;
   let query = text.slice(start + 1, caret);
@@ -54,7 +69,7 @@ function quotedMention(text: string, caret: number): Trigger | null {
   const at = text.lastIndexOf('@"', caret - 1);
   if (at < 0) return null;
   const prev = at === 0 ? " " : text[at - 1]!;
-  if (!(isSpace(prev) || OPENERS.has(prev))) return null;
+  if (!(isSpace(prev) || OPENERS.has(prev) || afterMarks(text, at))) return null;
   const typed = text.slice(at + 2, caret);
   if (typed.includes('"') || typed.includes("\n")) return null;
   const close = text.indexOf('"', caret);
@@ -90,7 +105,8 @@ export type MessageSegment =
   | { kind: "mention"; raw: string; path: string }
   | { kind: "slash"; raw: string; name: string; atStart: boolean };
 
-const TRAILING = /[.,;:!?)\]}'"`>]+$/;
+// `*` and `~` close Markdown emphasis and strikethrough around a token (`**see @Plan.md**`)
+const TRAILING = /[.,;:!?)\]}'"`>*~]+$/;
 const SKILL_NAME = /^[A-Za-z0-9][\w:.-]*$/;
 
 /**
@@ -110,7 +126,8 @@ export function tokenizeMessage(text: string): MessageSegment[] {
   while (i < text.length) {
     const c = text[i]!;
     const prev = i === 0 ? " " : text[i - 1]!;
-    if ((c !== "@" && c !== "/") || !(isSpace(prev) || OPENERS.has(prev))) {
+    const startsHere = isSpace(prev) || OPENERS.has(prev) || (c === "@" && afterMarks(text, i));
+    if ((c !== "@" && c !== "/") || !startsHere) {
       i++;
       continue;
     }
