@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-17
 decision-makers: Writer maintainers
 ---
@@ -85,3 +85,5 @@ Chosen option: A.
 ## More Information
 
 Spec: [`SPECs/note-graph-spec.md`](../../SPECs/note-graph-spec.md) (sources with URLs, scratch benchmark numbers, queries). Related: [SQLite vault index](2026-11-15-sqlite-vault-index-in-app-data.md), [links resolve by file name](2026-11-16-links-resolve-by-file-name-and-rename-rewrites-links-through-one-rust-function.md), [Obsidian-style writer CLI](2026-11-15-obsidian-style-writer-cli.md), [record property types](2026-11-17-record-property-types-in-writers-own-file-and-read-obsidians-types-json-read-only.md). Revisit if users want ad hoc graph queries (GraphQLite), if a vault exceeds 1M edges (index size), or if resolution ever stops being a function of the file name.
+
+**Accepted (2026-11-17).** The user chose to build the graph view on this design (rendering ADR `2026-11-17-render-the-graph-view-with-react-sigma-sigma-graphology-and-a-forceatlas2-worker`); implementation starts with the migration plan phases 1 to 3 of the spec.

@@ -100,5 +100,4 @@ Two independent tools that combine:
 
 ## 10. Open questions
 
-1. Click in the global graph: open the note and leave the graph tab (as a link does), or open it in a split next to the graph? Proposed: link-activation rule as is.
-2. Should the local graph panel show a depth of 1 or 2 by default? Proposed: 1.
+None. Decided 2026-11-17 (proposed defaults taken): a click in the global graph follows the link-activation rule as is; the local graph panel defaults to depth 1. ForceAtlas2 stays on 0.10.1; 0.11.0-rc1 (`backgroundIterations`) only if layout settling is measured too slow.
