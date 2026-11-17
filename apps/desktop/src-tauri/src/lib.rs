@@ -602,8 +602,17 @@ pub fn run() {
                 install_app_menu(app.handle(), config_dir)?;
                 #[cfg(target_os = "macos")]
                 dock_menu::install(app.handle());
+                // The native NSEvent monitor aborted the app (an Objective-C exception escaped
+                // the monitor block, twice) and never saw a side button, so it is off unless
+                // WRITER_NATIVE_MOUSE is set. See SPECs/mouse-side-buttons-spec.md.
                 #[cfg(target_os = "macos")]
-                macos_mouse::install(app.handle());
+                if std::env::var_os("WRITER_NATIVE_MOUSE").is_some() {
+                    macos_mouse::install(app.handle());
+                } else {
+                    log::info!(
+                        "native mouse monitor disabled (set WRITER_NATIVE_MOUSE=1 to enable)"
+                    );
+                }
 
                 // Kick off the launch check once the window is ready to show
                 // any follow-up dialogs on top of a visible app.

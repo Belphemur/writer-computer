@@ -30,8 +30,8 @@ These work anywhere in the window, whether or not you are typing in a note.
 | Cmd+0           | Actual size (zoom back to 100%)                                        |
 | Alt+ArrowLeft   | Navigate back (outside the note; inside it, moves by word)             |
 | Alt+ArrowRight  | Navigate forward (outside the note; inside it, moves by word)          |
-| Cmd+[           | Navigate back (outside the note; inside it, indents less)              |
-| Cmd+]           | Navigate forward (outside the note; inside it, indents more)           |
+| Cmd+[           | Navigate back, everywhere including the note (Tab / Shift+Tab indent)  |
+| Cmd+]           | Navigate forward, everywhere including the note                        |
 
 Zoom scales the note text only, in preset stops (50–300%); the sidebar, tab
 strip, and status bar keep their size. The current zoom is also in
@@ -142,8 +142,6 @@ These also apply while you are typing in a note.
 | Cmd+Enter            | Insert line below                    |
 | Tab                  | Indent / accept completion           |
 | Shift+Tab            | Dedent                               |
-| Cmd+]                | Indent more                          |
-| Cmd+[                | Indent less                          |
 | Cmd+F                | Find, with Replace in the find panel |
 | Cmd+G                | Find next                            |
 | Cmd+Shift+G          | Find previous                        |

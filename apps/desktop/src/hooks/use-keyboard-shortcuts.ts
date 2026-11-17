@@ -68,22 +68,6 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Cmd+[ / Cmd+] (Safari/Finder convention, and what mouse drivers send for the side buttons):
-      // history navigation only when no editable target is focused. In the note CodeMirror owns them
-      // (indent less / more), and the agent pane's chat switcher stops them before they get here.
-      if (
-        e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !e.shiftKey &&
-        (e.key === "[" || e.key === "]") &&
-        !isEditableTargetFocused()
-      ) {
-        e.preventDefault();
-        void (e.key === "[" ? navigateBack() : navigateForward());
-        return;
-      }
-
       // Cmd+P / Cmd+Shift+P — unified search (files + commands)
       if (mod && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
@@ -190,9 +174,25 @@ export function useKeyboardShortcuts() {
         return;
       }
     }
+    // Cmd+[ / Cmd+] are history back / forward everywhere, the note included (what mouse drivers
+    // send for the side buttons). Capture phase, so it wins over CodeMirror's indent bindings
+    // (Tab / Shift-Tab still indent); the agent pane keeps them for its chat switcher.
+    function handleHistoryKeys(e: KeyboardEvent) {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (e.key !== "[" && e.key !== "]") return;
+      if (e.target instanceof Element && e.target.closest("[data-agent-pane]")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      void (e.key === "["
+        ? useEditorStore.getState().navigateBack()
+        : useEditorStore.getState().navigateForward());
+    }
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleHistoryKeys, true);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleHistoryKeys, true);
     };
   }, []);
 }
