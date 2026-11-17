@@ -172,10 +172,4 @@ describe("Menu and plugin-layer styles", () => {
     expect(OBSIDIAN_THEME_CSS).not.toContain("@layer plugins");
     expect(OBSIDIAN_THEME_CSS).not.toMatch(/(^|[\s,}])\.hidden\s*[{,]/);
   });
-
-  it("makes LanguageTool's glass popup opaque enough to read, with theme text color", () => {
-    const rule = /\.lt-predictions-container-glass \{([^}]*)\}/.exec(OBSIDIAN_THEME_CSS)?.[1] ?? "";
-    expect(rule).toContain("var(--background-primary)");
-    expect(rule).toContain("color: var(--text-normal)");
-  });
 });

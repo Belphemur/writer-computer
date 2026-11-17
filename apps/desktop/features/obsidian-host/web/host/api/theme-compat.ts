@@ -221,20 +221,23 @@ const MENU_CSS = `@layer components {
 }
 `;
 
-/** A plugin's own hard-coded colors that cannot work on Writer's translucent window. LanguageTool's
- *  "glass" suggestion popup is white at 25% opacity with the page's near-white text on top, which
- *  is readable only over an opaque dark editor. Unlayered, so it beats the plugin's layer. Keyed
- *  on the plugin's public class names; one row per plugin, nothing is written to the plugin. */
-const PLUGIN_SURFACE_FIXES = `.lt-predictions-container-glass {
-  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+/** CodeMirror's base theme paints every `.cm-tooltip` light (`background #f5f5f5; border #bbb`) from
+ *  an unlayered sheet injected at runtime, which beats the `plugins` layer whatever the plugin's own
+ *  specificity. A plugin tooltip (LanguageTool's suggestion card sets `background-color:
+ *  var(--background-primary)` and inherits Writer's near-white text) therefore got white text on a
+ *  light surface. Give plugin tooltips Writer's surface and text color; the doubled class outranks
+ *  CodeMirror's `.ͼ2 .cm-tooltip`. Writer's own autocomplete tooltip has its own rule (App.css). */
+const TOOLTIP_SURFACE_CSS = `.cm-tooltip.cm-tooltip:not(.cm-tooltip-autocomplete) {
+  background-color: var(--background-secondary);
   color: var(--text-normal);
+  border-color: var(--background-modifier-border);
 }
 `;
 
 export const OBSIDIAN_THEME_CSS =
   VARIABLES_CSS +
   MENU_CSS +
-  PLUGIN_SURFACE_FIXES +
+  TOOLTIP_SURFACE_CSS +
   `
 /* View structure: .workspace-leaf > .workspace-leaf-content[data-type] > .view-header + .view-content.
    The pane gives the leaf a definite height; every level is a flex column with min-height: 0 so a
