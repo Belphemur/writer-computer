@@ -26,8 +26,12 @@ pub struct PathIndex {
     by_name: HashMap<String, Vec<String>>,
 }
 
+/// The comparison key for every name and path: Unicode NFC, then lowercase. macOS file names are
+/// often decomposed (NFD: `c` + combining cedilla) while links are typed precomposed (NFC: `ç`);
+/// without normalizing, `[[François]]` never finds `François.md`.
 fn lower(s: &str) -> String {
-    s.to_lowercase()
+    use unicode_normalization::UnicodeNormalization;
+    s.nfc().collect::<String>().to_lowercase()
 }
 
 fn split_name(path: &str) -> (&str, &str) {
@@ -143,7 +147,7 @@ impl PathIndex {
             dir.split('/')
                 .filter(|s| !s.is_empty())
                 .zip(src.iter())
-                .take_while(|(a, b)| a.eq_ignore_ascii_case(b))
+                .take_while(|(a, b)| lower(a) == lower(b))
                 .count()
         };
         cands
@@ -233,6 +237,25 @@ mod tests {
         assert_eq!(r("missing"), None);
         assert_eq!(r("a/Other"), None);
         assert_eq!(r("pic"), None);
+    }
+
+    #[test]
+    fn unicode_normalization_forms_match_each_other() {
+        // "François" decomposed (c + U+0327) on disk, precomposed (U+00E7) in the link, and back.
+        let nfd = "Fran\u{63}\u{327}ois Lamarre";
+        let nfc = "Fran\u{e7}ois Lamarre";
+        assert_ne!(nfd, nfc);
+        let on_disk_nfd = idx(&[&format!("Boss/{nfd}.md")]);
+        let on_disk_nfc = idx(&[&format!("Boss/{nfc}.md")]);
+        for (index, expected) in [(&on_disk_nfd, nfd), (&on_disk_nfc, nfc)] {
+            for link in [nfc, nfd, &nfc.to_uppercase(), &format!("Boss/{nfc}")] {
+                assert_eq!(
+                    index.resolve("s.md", link, LinkKind::Wikilink),
+                    Some(format!("Boss/{expected}.md")),
+                    "link {link:?}"
+                );
+            }
+        }
     }
 
     #[test]

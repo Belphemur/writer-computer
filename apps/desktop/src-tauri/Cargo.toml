@@ -65,6 +65,7 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 ] }
 tracing-appender = "=0.2.5"
 tracing-log = { version = "=0.2.0", default-features = false, features = ["log-tracer", "std"] }
+unicode-normalization = "0.1.26"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

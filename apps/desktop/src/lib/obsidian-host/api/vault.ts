@@ -94,6 +94,12 @@ export class TFolder extends TAbstractFile {
   }
 }
 
+/** Comparison key for names and paths: NFC then lowercase (macOS file names are often NFD while
+ *  links are typed NFC, so `[[François]]` must still find `François.md`). */
+export function nameKey(s: string): string {
+  return s.normalize("NFC").toLowerCase();
+}
+
 // ---------------------------------------------------------------- adapters
 
 export class DataAdapter {
@@ -306,8 +312,8 @@ export class Vault extends Events {
   getAbstractFileByPathInsensitive(path: string): TAbstractFile | null {
     const exact = this.getAbstractFileByPath(path);
     if (exact) return exact;
-    const lower = normalizePath(path).toLowerCase();
-    for (const [p, node] of this.index) if (p.toLowerCase() === lower) return node;
+    const lower = nameKey(normalizePath(path));
+    for (const [p, node] of this.index) if (nameKey(p) === lower) return node;
     return null;
   }
   /** Undocumented (Templater): a free `<path>.<ext>`, then `<path> 1.<ext>`, `<path> 2.<ext>`, ... */
@@ -348,7 +354,7 @@ export class Vault extends Events {
       if (!(f instanceof TFile)) continue;
       files.push(f);
       if (f.extension.toLowerCase() === "md") markdown.push(f);
-      const key = f.name.toLowerCase();
+      const key = nameKey(f.name);
       const bucket = byName.get(key);
       if (bucket) bucket.push(f);
       else byName.set(key, [f]);
@@ -896,17 +902,17 @@ export class MetadataCache extends Events {
     if (!want || want === "/") return this.vault.getFileByPath(sourcePath);
     const exact = this.vault.getFileByPath(want) ?? this.vault.getFileByPath(`${want}.md`);
     if (exact) return exact;
-    const name = (want.endsWith(".md") ? want : `${want}.md`).toLowerCase();
+    const name = nameKey(want.endsWith(".md") ? want : `${want}.md`);
     const wantsPath = name.includes("/");
     // Name lookup instead of a scan of every file: this runs once per link of every note.
     const lastSlash = name.lastIndexOf("/");
     const byName = this.vault.getFilesByLowerName(lastSlash < 0 ? name : name.slice(lastSlash + 1));
     const candidates = wantsPath
       ? byName.filter((f) => {
-          const p = f.path.toLowerCase();
+          const p = nameKey(f.path);
           return p === name || p.endsWith(`/${name}`);
         })
-      : [...new Set([...byName, ...this.vault.getFilesByLowerName(want.toLowerCase())])];
+      : [...new Set([...byName, ...this.vault.getFilesByLowerName(nameKey(want))])];
     if (candidates.length === 0) return null;
     // Same order as the Rust resolver (index/resolve.rs): the most leading folders shared with the
     // source note, then the fewest path components, then the shortest path, then alphabetical.
@@ -914,12 +920,7 @@ export class MetadataCache extends Events {
     const shared = (path: string) => {
       const dirs = path.split("/").slice(0, -1);
       let n = 0;
-      while (
-        n < dirs.length &&
-        n < srcDirs.length &&
-        dirs[n].toLowerCase() === srcDirs[n].toLowerCase()
-      )
-        n++;
+      while (n < dirs.length && n < srcDirs.length && nameKey(dirs[n]) === nameKey(srcDirs[n])) n++;
       return n;
     };
     const depth = (path: string) => path.split("/").length;
@@ -936,7 +937,7 @@ export class MetadataCache extends Events {
   fileToLinktext(file: TFile, _sourcePath: string, omitMdExtension = true): string {
     const base = omitMdExtension && file.extension === "md" ? file.path.slice(0, -3) : file.path;
     const sameName = this.vault
-      .getFilesByLowerName(file.name.toLowerCase())
+      .getFilesByLowerName(nameKey(file.name))
       .filter((f) => f.name === file.name);
     return sameName.length > 1
       ? base

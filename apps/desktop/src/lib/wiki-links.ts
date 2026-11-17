@@ -196,10 +196,11 @@ export async function resolveWikiImage(
  */
 export function canonicalWikiTarget(file: SearchResult, allFiles: SearchResult[]): string {
   const stem = getFileStem(file.filename);
-  const stemLower = stem.toLowerCase();
+  const key = (s: string) => s.normalize("NFC").toLowerCase();
+  const stemLower = key(stem);
 
   const hasDuplicate = allFiles.some(
-    (f) => f.path !== file.path && getFileStem(f.filename).toLowerCase() === stemLower,
+    (f) => f.path !== file.path && key(getFileStem(f.filename)) === stemLower,
   );
 
   if (!hasDuplicate) return stem;

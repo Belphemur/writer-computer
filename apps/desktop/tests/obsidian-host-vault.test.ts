@@ -237,6 +237,23 @@ describe("Vault over a VaultIo", () => {
     expect(cache.getFirstLinkpathDest("", "z/y.md")?.path).toBe("z/y.md");
   });
 
+  it("getFirstLinkpathDest matches decomposed (NFD) file names with precomposed (NFC) links and back", async () => {
+    const nfd = "Fran\u0063\u0327ois Lamarre"; // macOS-style: c + combining cedilla
+    const nfc = "Fran\u00e7ois Lamarre";
+    expect(nfd).not.toBe(nfc);
+    for (const [onDisk, link] of [
+      [nfd, nfc],
+      [nfc, nfd],
+    ]) {
+      const io = createMemoryVaultIo({ [`Boss/${onDisk}.md`]: "", "z/y.md": "" });
+      const vault = new Vault(io);
+      await vault.load();
+      const cache = new MetadataCache(vault);
+      expect(cache.getFirstLinkpathDest(link, "z/y.md")?.path).toBe(`Boss/${onDisk}.md`);
+      expect(cache.getFirstLinkpathDest(`Boss/${link}`, "z/y.md")?.path).toBe(`Boss/${onDisk}.md`);
+    }
+  });
+
   it("getFirstLinkpathDest ties break like the Rust resolver: nearest folder, shortest, alphabetical", async () => {
     const io = createMemoryVaultIo({ "a/n.md": "", "b/n.md": "", "b/s/n.md": "" });
     const vault = new Vault(io);
