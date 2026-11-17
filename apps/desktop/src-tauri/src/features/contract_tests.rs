@@ -6,7 +6,7 @@
 //! the only guard, so it is mandatory for every registered feature. (The end-to-end IPC/ACL test
 //! under Tauri's mock runtime needs the `tauri` `test` feature and is pending approval.)
 
-use super::{fixture, registry, FeatureDef, Manifest};
+use super::{fixture, registry, Feature, Manifest};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -58,6 +58,18 @@ fn valid_event_name(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || "-/:_".contains(c))
 }
 
+fn check_events(m: &Manifest) -> Result<(), String> {
+    let id = &m.id;
+    for event in &m.rust.events {
+        if !event.starts_with(&format!("{id}:")) || !valid_event_name(event) {
+            return Err(format!(
+                "{id}: event {event:?} must be \"{id}:<name>\" (no dots)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Manifest vs the plugin's name, the commands in the source and the capability.
 fn check_feature(
     m: &Manifest,
@@ -75,13 +87,7 @@ fn check_feature(
             "{id}: feature.json rust.commands {listed:?} != #[tauri::command] fns {declared:?}"
         ));
     }
-    for event in &m.rust.events {
-        if !event.starts_with(&format!("{id}:")) || !valid_event_name(event) {
-            return Err(format!(
-                "{id}: event {event:?} must be \"{id}:<name>\" (no dots)"
-            ));
-        }
-    }
+    check_events(m)?;
     if capability["identifier"] != json!(format!("feature-{id}")) {
         return Err(format!("{id}: capability identifier must be feature-{id}"));
     }
@@ -186,7 +192,7 @@ fn fixture_dir() -> PathBuf {
     crate_dir().join("tests/fixtures/features/fixture-hello")
 }
 
-fn fixture_def() -> FeatureDef<Wry> {
+fn fixture_def() -> &'static dyn Feature<Wry> {
     fixture::registry::<Wry>().remove(0)
 }
 
@@ -195,7 +201,12 @@ fn fixture_checks(
     declared: &BTreeSet<String>,
     capability: &Value,
 ) -> Result<(), String> {
-    check_feature(m, (fixture_def().plugin)().name(), declared, capability)
+    check_feature(
+        m,
+        fixture_def().tauri_plugin().unwrap().name(),
+        declared,
+        capability,
+    )
 }
 
 #[test]
@@ -209,17 +220,31 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
         assert!(ids.insert(m.id.clone()), "duplicate feature id {}", m.id);
         let dir = features_dir.join(&m.id);
         assert_eq!(read_json(&dir.join("feature.json"))["id"], json!(m.id));
-        let capability =
-            read_json(&crate_dir().join(format!("capabilities/features/{}.json", m.id)));
-        let plugin = (def.plugin)();
-        check_feature(
-            &m,
-            plugin.name(),
-            &scan_commands(&dir.join("rust")),
-            &capability,
-        )
-        .unwrap();
-        let entries = schema_entries(&m, def.settings).unwrap();
+        // A feature with hooks or events but no commands has no plugin and no ACL.
+        let plugin = def.tauri_plugin();
+        assert_eq!(
+            plugin.is_some(),
+            !m.rust.commands.is_empty(),
+            "{}: a plugin exists exactly when feature.json lists commands",
+            m.id
+        );
+        let declared = scan_commands(&dir.join("rust"));
+        match &plugin {
+            Some(plugin) => {
+                let capability =
+                    read_json(&crate_dir().join(format!("capabilities/features/{}.json", m.id)));
+                check_feature(&m, plugin.name(), &declared, &capability).unwrap();
+            }
+            None => {
+                assert!(
+                    declared.is_empty(),
+                    "{}: commands without a manifest entry",
+                    m.id
+                );
+                check_events(&m).unwrap();
+            }
+        }
+        let entries = schema_entries(&m, def.settings_source()).unwrap();
         check_schema(&shared, &entries).unwrap();
     }
     // A feature folder without a registry entry would silently get ACL but no plugin, unless it has
@@ -317,7 +342,7 @@ fn a_stale_manifest_or_capability_fails_the_contract() {
 #[test]
 fn settings_fragments_are_merged_into_the_shared_schema_or_the_test_fails() {
     let m = fixture_def().manifest().unwrap();
-    let wanted = schema_entries(&m, fixture_def().settings).unwrap();
+    let wanted = schema_entries(&m, fixture_def().settings_source()).unwrap();
     assert_eq!(wanted[0]["key"], "features.fixture-hello.enabled");
     assert_eq!(wanted[1]["key"], "fixture-hello.greeting");
 

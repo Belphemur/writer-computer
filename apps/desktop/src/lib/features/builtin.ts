@@ -11,6 +11,8 @@ type Host = ReturnType<typeof createFeatureHost>;
 interface Manifest {
   id: string;
   enabledByDefault?: boolean;
+  /** Activation events from `feature.json`; only `onStartup` is acted on here, the rest are lazy by use. */
+  activation?: string[];
 }
 
 export const enabledKey = (id: string) => `features.${id}.enabled`;
@@ -20,7 +22,8 @@ export function isFeatureEnabled(manifest: Manifest, settings: Record<string, un
   return typeof v === "boolean" ? v : (manifest.enabledByDefault ?? true);
 }
 
-/** Registers the enabled features that are not registered and unregisters the disabled ones. */
+/** Registers the enabled features that are not registered and unregisters the disabled ones; a
+ * feature that lists `onStartup` is activated as it is registered. */
 export function syncBuiltinFeatures(
   host: Host,
   features: readonly { manifest: Manifest; definition: FeatureDefinition }[],
@@ -29,8 +32,12 @@ export function syncBuiltinFeatures(
   const registered = new Set(host.list());
   for (const { manifest, definition } of features) {
     const want = isFeatureEnabled(manifest, settings);
-    if (want && !registered.has(manifest.id)) host.register(definition);
-    else if (!want && registered.has(manifest.id)) void host.unregister(manifest.id);
+    if (want && !registered.has(manifest.id)) {
+      host.register(definition);
+      // A failed activation is already logged by the host.
+      if (manifest.activation?.includes("onStartup"))
+        void host.activate(manifest.id).catch(() => {});
+    } else if (!want && registered.has(manifest.id)) void host.unregister(manifest.id);
   }
 }
 

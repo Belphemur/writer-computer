@@ -28,6 +28,12 @@ pub struct BundledSkill {
     pub files: &'static [BundledFile],
 }
 
+/// Every bundled skill: the core table below followed by the ones features contribute
+/// (`features::Feature::skills`). The sync, the prompt and the fingerprint read this.
+pub fn all() -> impl Iterator<Item = &'static BundledSkill> {
+    SKILLS.iter().chain(crate::features::skills())
+}
+
 macro_rules! file {
     ($skill:literal, $rel:literal) => {
         BundledFile {

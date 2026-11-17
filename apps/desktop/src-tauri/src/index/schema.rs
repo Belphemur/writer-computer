@@ -5,7 +5,16 @@ use rusqlite::{Connection, OpenFlags};
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
+/// The core schema's version. The version stored in `meta` and compared on open is
+/// [`schema_version`]: this plus the suffix for the DDL features contribute.
 pub const SCHEMA_VERSION: &str = "2";
+
+/// Core version plus `features::index_schema_suffix` (empty while no feature adds DDL), so a
+/// feature adding or changing a table rebuilds the rebuildable cache from its own folder.
+pub fn schema_version() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION.get_or_init(|| format!("{SCHEMA_VERSION}{}", crate::features::index_schema_suffix()))
+}
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
 pub const PARSER_VERSION: &str = "2";
@@ -100,9 +109,10 @@ fn check_existing(conn: &Connection, root: &str) -> rusqlite::Result<Option<Stri
         return Ok(Some(format!("integrity check failed: {check}")));
     }
     let version = meta(conn, "schema_version")?;
-    if version.as_deref() != Some(SCHEMA_VERSION) {
+    if version.as_deref() != Some(schema_version()) {
         return Ok(Some(format!(
-            "schema version {version:?} != {SCHEMA_VERSION}"
+            "schema version {version:?} != {}",
+            schema_version()
         )));
     }
     let parser = meta(conn, "parser_version")?;
@@ -136,7 +146,10 @@ fn create_fresh(db_path: &Path, root: &str) -> Result<Connection, IndexError> {
     apply_pragmas(&conn)?;
     conn.execute_batch(SCHEMA)?;
     conn.execute_batch(super::fts::FTS_DDL)?;
-    set_meta(&conn, "schema_version", SCHEMA_VERSION)?;
+    for ddl in crate::features::index_ddl() {
+        conn.execute_batch(ddl)?;
+    }
+    set_meta(&conn, "schema_version", schema_version())?;
     set_meta(&conn, "parser_version", PARSER_VERSION)?;
     set_meta(&conn, "workspace_root", root)?;
     Ok(conn)

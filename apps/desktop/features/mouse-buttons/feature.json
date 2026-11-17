@@ -1,0 +1,17 @@
+{
+  "id": "mouse-buttons",
+  "name": "Mouse buttons",
+  "version": "1.0.0",
+  "description": "Back and forward with the mouse side buttons; middle click stays with the page.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "low",
+    "note": "Two DOM listeners and one event listener; on macOS the native monitor (opt-in with WRITER_NATIVE_MOUSE) adds one small worker thread."
+  },
+  "rust": {
+    "commands": [],
+    "events": ["mouse-buttons:navigate"]
+  },
+  "contributes": {}
+}

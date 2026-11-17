@@ -629,8 +629,15 @@ pub static COMMANDS: &[CommandSpec] =
         ),
     ];
 
+/// Every command: the core table followed by the ones features contribute
+/// (`features::Feature::cli_commands`). This, not `COMMANDS`, is what `find`, `help` and dispatch
+/// read.
+pub fn commands() -> impl Iterator<Item = &'static CommandSpec> {
+    COMMANDS.iter().chain(crate::features::cli_commands())
+}
+
 pub fn find(name: &str) -> Option<&'static CommandSpec> {
-    COMMANDS.iter().find(|c| c.name == name)
+    commands().find(|c| c.name == name)
 }
 
 /// Commands of the public Obsidian CLI that need a running Obsidian-style app
@@ -752,7 +759,7 @@ fn help(_: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
                 "Usage: writer [vault=<name|id|path>] <command> [param=value ...] [flag ...] [--copy]\n\nvault= must be the first argument; without it the vault containing the working directory is used.\nfile=<name> resolves like a wikilink; path=<path> is exact from the vault root.\n",
             );
             let mut group = "";
-            for c in COMMANDS {
+            for c in commands() {
                 if c.group != group {
                     group = c.group;
                     out.push_str(&format!("\n{group}:\n"));

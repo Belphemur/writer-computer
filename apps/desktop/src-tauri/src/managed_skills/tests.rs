@@ -742,10 +742,7 @@ fn command_reference_lists_every_registry_command_exactly() {
             );
         }
     }
-    let all: BTreeSet<String> = registry::COMMANDS
-        .iter()
-        .map(|c| c.name.to_string())
-        .collect();
+    let all: BTreeSet<String> = registry::commands().map(|c| c.name.to_string()).collect();
     assert_eq!(
         listed, all,
         "commands.md and cli/registry.rs list different commands"

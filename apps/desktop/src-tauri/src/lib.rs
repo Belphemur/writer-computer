@@ -16,8 +16,6 @@ pub mod index;
 pub mod logging;
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(target_os = "macos")]
-mod macos_mouse;
 pub mod managed_skills;
 pub mod open_target;
 mod plugin_consent;
@@ -111,6 +109,7 @@ fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
             // drops on the last `Arc` release, unregistering FSEvents/inotify.
             commands::plugins::stop_window_work(&handle, &label);
             commands::index::stop_window(&handle, &label);
+            features::workspace_close(&handle, &label);
             handle.state::<AppState>().remove(&label);
         }
         _ => {}
@@ -528,6 +527,12 @@ fn handle_single_instance(app: &tauri::AppHandle, argv: Vec<String>) {
     }
 }
 
+/// The one expansion of `generate_context!` (it can expand once per crate): `run` builds the app
+/// with it and the mock-runtime tests reuse it, so they see the real build-time ACL.
+pub(crate) fn context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init_app();
@@ -570,7 +575,8 @@ pub fn run() {
             }
 
             // First-party features (SPECs/builtin-plugins-spec.md): add the Tauri plugin of every
-            // enabled feature. Needs the settings layer above; empty registry today.
+            // enabled feature (`setup` hook, then its plugin). Needs the settings layer above. A
+            // feature whose setup fails is logged and skipped; the app still starts.
             if let Some(settings) = main_state.settings.read().as_ref() {
                 features::install(app.handle(), settings);
             }
@@ -614,17 +620,6 @@ pub fn run() {
                 install_app_menu(app.handle(), config_dir)?;
                 #[cfg(target_os = "macos")]
                 dock_menu::install(app.handle());
-                // The native NSEvent monitor aborted the app (an Objective-C exception escaped
-                // the monitor block, twice) and never saw a side button, so it is off unless
-                // WRITER_NATIVE_MOUSE is set. See SPECs/mouse-side-buttons-spec.md.
-                #[cfg(target_os = "macos")]
-                if std::env::var_os("WRITER_NATIVE_MOUSE").is_some() {
-                    macos_mouse::install(app.handle());
-                } else {
-                    log::info!(
-                        "native mouse monitor disabled (set WRITER_NATIVE_MOUSE=1 to enable)"
-                    );
-                }
 
                 // Kick off the launch check once the window is ready to show
                 // any follow-up dialogs on top of a visible app.
@@ -782,7 +777,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             commands::shell_install::uninstall_cli,
         ])
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("error while building tauri application")
         .run(|_app, _event| {
             if let tauri::RunEvent::ExitRequested { code, .. } = &_event {
@@ -792,6 +787,7 @@ pub fn run() {
                 logging::log_exit("exit", None);
                 _app.state::<plugin_proc::ProcManager>().kill_all();
                 _app.state::<agent::session::AgentSessions>().kill_all();
+                features::exit(_app);
                 logging::shutdown();
             }
             // Dock click with every window hidden or closed: bring the main

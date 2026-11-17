@@ -9,7 +9,6 @@ import { useIsStartupResolved } from "./hooks/use-workspace";
 import { useFileWatcher } from "./hooks/use-file-watcher";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useMenuEvents } from "./hooks/use-menu-events";
-import { useMouseNavigation } from "./hooks/use-mouse-navigation";
 import { useOpenDrop } from "./hooks/use-open-drop";
 import { usePluginHostLifecycle } from "./hooks/use-plugins";
 import "./lib/features/builtin";
@@ -23,7 +22,6 @@ function App() {
   useFileWatcher();
   useKeyboardShortcuts();
   useMenuEvents();
-  useMouseNavigation();
   useOpenDrop();
   usePluginHostLifecycle();
 

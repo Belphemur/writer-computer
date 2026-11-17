@@ -28,7 +28,7 @@ mod bundle;
 #[cfg(test)]
 mod tests;
 
-pub use bundle::{BundledFile, BundledSkill, BUNDLE_VERSION, SKILLS};
+pub use bundle::{all as all_skills, BundledFile, BundledSkill, BUNDLE_VERSION, SKILLS};
 
 use crate::vault_ops::{self, VaultOpError};
 use serde::Serialize;
@@ -170,7 +170,7 @@ pub fn skill_hash(skill: &BundledSkill) -> String {
 /// Hash over the whole bundle (every skill name and hash).
 pub fn bundle_fingerprint() -> String {
     let mut buf = String::new();
-    for s in SKILLS {
+    for s in all_skills() {
         buf.push_str(s.name);
         buf.push('\0');
         buf.push_str(&skill_hash(s));
@@ -307,9 +307,7 @@ pub fn managed_dirs(root: &Path) -> Vec<String> {
 /// as "not installed".
 pub fn claude_skills_installed(root: &Path) -> bool {
     let dirs = managed_dirs(root);
-    SKILLS
-        .iter()
-        .all(|s| dirs.contains(&format!("{CLAUDE_SKILL_ROOT}/{}", s.name)))
+    all_skills().all(|s| dirs.contains(&format!("{CLAUDE_SKILL_ROOT}/{}", s.name)))
 }
 
 // ---------------------------------------------------------------------------
@@ -596,7 +594,7 @@ fn remove_obsolete(v: &Vault, base: &str, out: &mut Vec<SkillOutcome>) {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)) // symlinks are not followed
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| !SKILLS.iter().any(|s| s.name == n))
+        .filter(|n| !all_skills().any(|s| s.name == n))
         .collect();
     names.sort();
     for name in names {
@@ -656,7 +654,7 @@ pub fn sync(root: &Path, mode: Mode) -> Result<SyncReport, String> {
     let v = Vault { root, mode };
     let mut outcomes = Vec::new();
     for base in SKILL_ROOTS {
-        for skill in SKILLS {
+        for skill in all_skills() {
             outcomes.push(sync_skill(&v, base, skill));
         }
         remove_obsolete(&v, base, &mut outcomes);

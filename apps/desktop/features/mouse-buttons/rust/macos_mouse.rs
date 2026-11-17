@@ -19,7 +19,7 @@
 //! buttons, swipe events and command/control/option chords on `[ ] ArrowLeft ArrowRight`, so the log
 //! shows whether a mouse driver turns the side buttons into keystrokes or swipes.
 //!
-//! Spec: `SPECs/mouse-side-buttons-spec.md`. The `NSEvent` glue cannot be unit tested; the pure
+//! Spec: `SPECs/mouse-side-buttons-spec.md`; mounted by `features/mouse-buttons/rust/mod.rs`. The `NSEvent` glue cannot be unit tested; the pure
 //! decisions and the panic guard can, and are.
 
 use block2::RcBlock;
@@ -29,10 +29,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe, UnwindSafe};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-/// Tauri event sent to one window; payload `{ "direction": "back" | "forward" }`.
-pub(crate) const EVENT: &str = "writer://mouse-navigate";
+/// Tauri event sent to one window; payload `{ "direction": "back" | "forward" }`. Named
+/// `<feature id>:<name>` like every feature event; `feature.json` `rust.events` lists it and the
+/// web side listens through `ctx.listen("navigate")`.
+pub(crate) const EVENT: &str = "mouse-buttons:navigate";
 
 const T_LEFT_DOWN: usize = 1;
 const T_RIGHT_DOWN: usize = 3;
@@ -229,9 +231,16 @@ fn report_failure(what: &str) {
 
 static MONITOR: AtomicPtr<AnyObject> = AtomicPtr::new(ptr::null_mut());
 
-pub(crate) fn install(app: &AppHandle) {
-    if !MONITOR.load(Ordering::Acquire).is_null() {
-        return;
+/// Is the monitor installed in this process? (`feature.json` kill switch tests read this.)
+pub(crate) fn is_installed() -> bool {
+    !MONITOR.load(Ordering::Acquire).is_null()
+}
+
+/// Installs the process-wide monitor. An `Err` is returned to the feature runner, which logs it
+/// and keeps the app running without the native path (the DOM fallback still works).
+pub(crate) fn install<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    if is_installed() {
+        return Ok(());
     }
     let (tx, rx) = channel::<RawEvent>();
     let worker_app = app.clone();
@@ -239,8 +248,9 @@ pub(crate) fn install(app: &AppHandle) {
         .name("mouse-monitor".into())
         .spawn(move || worker(worker_app, rx))
     {
-        log::error!("mouse monitor not installed: could not start its worker thread: {err}");
-        return;
+        return Err(format!(
+            "mouse monitor not installed: could not start its worker thread: {err}"
+        ));
     }
     let handler = RcBlock::new(move |event: *mut AnyObject| -> *mut AnyObject {
         guard(event, AssertUnwindSafe(|| handle_event(&tx, event)))
@@ -254,15 +264,15 @@ pub(crate) fn install(app: &AppHandle) {
         ]
     };
     if token.is_null() {
-        log::error!(
-            "mouse monitor not installed: addLocalMonitorForEventsMatchingMask returned nil"
+        return Err(
+            "mouse monitor not installed: addLocalMonitorForEventsMatchingMask returned nil".into(),
         );
-        return;
     }
     // The token is autoreleased; keep it for the process lifetime.
     let token: *mut AnyObject = unsafe { msg_send![token, retain] };
     MONITOR.store(token, Ordering::Release);
     log::info!("mouse monitor installed (token {token:p}, mask {EVENT_MASK:#x})");
+    Ok(())
 }
 
 /// Runs inside AppKit's event observers: AppKit reads under an Objective-C exception catch, one
@@ -316,7 +326,7 @@ unsafe fn read_event(event: *mut AnyObject) -> RawEvent {
 }
 
 /// Off the main thread: rate-limited diagnostics and the window lookup plus `emit_to`.
-fn worker(app: AppHandle, rx: std::sync::mpsc::Receiver<RawEvent>) {
+fn worker<R: Runtime>(app: AppHandle<R>, rx: std::sync::mpsc::Receiver<RawEvent>) {
     let mut seen = [0usize; Category::ALL.len()];
     for raw in rx {
         if let Some((category, line)) = describe(&raw) {
@@ -350,7 +360,7 @@ fn worker(app: AppHandle, rx: std::sync::mpsc::Receiver<RawEvent>) {
     }
 }
 
-fn focused_writer_label(app: &AppHandle) -> Option<String> {
+fn focused_writer_label<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     app.webview_windows().into_iter().find_map(|(label, w)| {
         (is_writer_window_label(&label) && w.is_focused().unwrap_or(false)).then_some(label)
     })

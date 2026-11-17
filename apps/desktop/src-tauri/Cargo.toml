@@ -84,6 +84,8 @@ e2e = ["dep:tauri-plugin-webdriver"]
 [dev-dependencies]
 tempfile = "3"
 regex-lite = "0.1"
+# Empty cargo feature: `tauri::test::mock_builder` for the mock-runtime IPC/ACL and feature runner tests.
+tauri = { version = "2.12", features = ["test"] }
 
 [profile.release]
 strip = true

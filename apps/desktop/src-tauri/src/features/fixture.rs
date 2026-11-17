@@ -3,7 +3,7 @@
 //! `tests/fixtures/features/fixture-hello/` so `build.rs` (which scans `src/features/*/`) never
 //! turns it into a real plugin.
 
-use super::FeatureDef;
+use super::Feature;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::Runtime;
 
@@ -31,10 +31,20 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
-pub fn registry<R: Runtime>() -> Vec<FeatureDef<R>> {
-    vec![FeatureDef {
-        manifest: MANIFEST,
-        settings: Some(SETTINGS),
-        plugin: plugin::<R>,
-    }]
+pub struct FixtureHello;
+
+impl<R: Runtime> Feature<R> for FixtureHello {
+    fn manifest_source(&self) -> &'static str {
+        MANIFEST
+    }
+    fn settings_source(&self) -> Option<&'static str> {
+        Some(SETTINGS)
+    }
+    fn tauri_plugin(&self) -> Option<TauriPlugin<R>> {
+        Some(plugin::<R>())
+    }
+}
+
+pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
+    vec![&FixtureHello]
 }

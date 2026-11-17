@@ -37,7 +37,7 @@ pub use build::ScanStats;
 pub use fts::{fts_size_bytes, FtsMaintenance, FTS_MAX_BODY_BYTES};
 pub use paths::{cli_app_data_dir, index_db_path, INDEX_DIR_ENV, RELEASE_IDENTIFIER};
 pub use query::*;
-pub use schema::{PARSER_VERSION, SCHEMA_VERSION};
+pub use schema::{schema_version, PARSER_VERSION};
 pub use search::{SearchHit, SearchOptions, SearchPage, Snippet};
 
 use parking_lot::Mutex;
@@ -507,7 +507,7 @@ impl Index {
             state,
             root: self.shared.root.to_string_lossy().into_owned(),
             db_path: self.shared.db_path.to_string_lossy().into_owned(),
-            schema_version: SCHEMA_VERSION,
+            schema_version: schema_version(),
             parser_version: PARSER_VERSION,
             files,
             markdown_files,

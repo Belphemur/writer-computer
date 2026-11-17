@@ -493,6 +493,9 @@ fn prepare_workspace_state(
     // own background thread, never blocks or fails the open.
     crate::commands::skills::spawn_workspace_sync(&app, label, root.clone());
 
+    // Feature hooks (`features::Feature::on_workspace_open`).
+    crate::features::workspace_open(&app, label, &root);
+
     Ok(WorkspaceInfo {
         root: canonical_path,
         name,
