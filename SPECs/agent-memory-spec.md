@@ -99,3 +99,12 @@ Manual checks only a real window and the real CLI can give: that haiku and sonne
 4. Should memory be shown in the Changes card for transparency instead of excluded (7.5)?
 5. Do we want a Writer-owned format (option C) rather than Claude's file layout, accepting the loss of its built-in save logic?
 6. Should we try to import existing home-directory memories (needs reading `~/.claude`, which Writer's rules currently forbid)?
+
+## Decisions (user, 2026-11-17)
+
+1. Default: `agent.memory = vault` for every vault (memory in the vault by default; `default` = Claude's home location and `off` remain options).
+2. Scope: both. One vault-wide memory, plus one per project (a project chat sees the vault memory and its project's memory; a vault chat sees the vault memory only).
+3. Location: hidden (`.writer/memory/` for the vault, a hidden folder in the project for project memory), shown and editable through a "Memory" section in Settings > Agent.
+4. Memory writes are not shown on the Changes card.
+5. Format: Claude Code's memory format for now; other backends convert in their adapter. kremory is not adopted (see the evaluation summary in the chat of 2026-11-17: young, heavy, needs its own LLM and embedder); its ideas (bi-temporal facts, reversible consolidation) may be built later on the vault index.
+6. Import: Writer offers a one-time, user-initiated import of the existing Claude Code memory for this vault (and its projects) from the user's home Claude folder into the vault memory. Writer reads only the matching project memory directories, never anything else under the Claude folder, and only when the user clicks Import.
