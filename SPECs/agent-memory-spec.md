@@ -108,3 +108,5 @@ Manual checks only a real window and the real CLI can give: that haiku and sonne
 4. Memory writes are not shown on the Changes card.
 5. Format: Claude Code's memory format for now; other backends convert in their adapter. kremory is not adopted (see the evaluation summary in the chat of 2026-11-17: young, heavy, needs its own LLM and embedder); its ideas (bi-temporal facts, reversible consolidation) may be built later on the vault index.
 6. Import: Writer offers a one-time, user-initiated import of the existing Claude Code memory for this vault (and its projects) from the user's home Claude folder into the vault memory. Writer reads only the matching project memory directories, never anything else under the Claude folder, and only when the user clicks Import.
+
+ADR: [Keep agent memory in the vault through the backend's own memory tool](../docs/decisions/2026-11-17-keep-agent-memory-in-the-vault-through-the-backends-own-memory-tool.md).
