@@ -89,9 +89,21 @@ describe("pinned rendering", () => {
 
   it("draws one divider after the pinned group only", () => {
     expect(host.querySelectorAll("[data-pinned-divider]")).toHaveLength(1);
-    expect(tabEl("a").querySelector("[data-pinned-divider]")).not.toBeNull();
+    expect(host.querySelector("[data-pinned-group] + [data-pinned-divider]")).not.toBeNull();
     act(() => state().unpinTab("a"));
     expect(host.querySelectorAll("[data-pinned-divider]")).toHaveLength(0);
+  });
+
+  it("keeps the pinned group outside the scrolling part, which holds only unpinned tabs", () => {
+    const group = host.querySelector("[data-pinned-group]")!;
+    const scroller = host.querySelector("[data-tab-scroll]")!;
+    expect(group.contains(scroller)).toBe(false);
+    expect(scroller.contains(group)).toBe(false);
+    expect(group.querySelector("[data-tab-id]")!.getAttribute("data-tab-id")).toBe("a");
+    expect(
+      [...scroller.querySelectorAll("[data-tab-id]")].map((e) => e.getAttribute("data-tab-id")),
+    ).toEqual(["b", "c"]);
+    expect(group.closest("[data-tab-strip]")).toBe(scroller.closest("[data-tab-strip]"));
   });
 
   it("middle click on a pinned tab unpins it and does not close it", () => {

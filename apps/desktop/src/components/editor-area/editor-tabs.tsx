@@ -175,6 +175,9 @@ export function EditorTabs() {
   const workspaceRoot = useWorkspaceRoot();
   const [, startTransition] = useTransition();
   useScrollActiveTabIntoView();
+  // The store keeps the pinned group as the prefix, so a filter keeps the order.
+  const pinnedTabs = tabs.filter(isTabPinned);
+  const unpinnedTabs = tabs.filter((tab) => !isTabPinned(tab));
 
   const handleTabContextMenu = useCallback(
     (_event: MouseEvent<HTMLElement>, tab: Tab) => {
@@ -232,6 +235,25 @@ export function EditorTabs() {
     [onPointerDown],
   );
 
+  const renderTab = (tab: Tab) => (
+    <div
+      key={tab.id}
+      data-tab-id={tab.id}
+      data-tab-pinned={isTabPinned(tab)}
+      className="flex items-center"
+    >
+      <EditorTabButton
+        tab={tab}
+        isActive={tab.id === activeTabId}
+        onSelect={(tabId) => startTransition(() => setActiveTab(tabId))}
+        onClose={closeTabByUser}
+        onContextMenu={handleTabContextMenu}
+        onPointerDown={handleTabPointerDown}
+        shouldIgnoreClick={consumeDragClick}
+      />
+    </div>
+  );
+
   return (
     <div
       data-tauri-drag-region
@@ -266,47 +288,39 @@ export function EditorTabs() {
         </button>
       </div>
 
-      <div data-tauri-drag-region className="relative flex min-w-0 flex-1 items-center">
+      <div
+        data-tauri-drag-region
+        data-tab-strip
+        className="relative flex min-w-0 flex-1 items-center"
+      >
+        {/* Two parts so the pinned group is fixed: it never scrolls, only the unpinned tabs do
+            (SPECs/pinned-tabs-spec.md "Fixed pinned group"). */}
+        {pinnedTabs.length > 0 ? (
+          <>
+            <div
+              data-tauri-drag-region
+              data-pinned-group
+              className="flex min-w-0 max-w-[50%] shrink-0 items-center gap-1 overflow-x-auto scrollbar-none"
+            >
+              {pinnedTabs.map(renderTab)}
+            </div>
+            {unpinnedTabs.length > 0 ? (
+              <div
+                aria-hidden="true"
+                data-pinned-divider
+                className="mx-1 h-4 w-px shrink-0 bg-[var(--line-subtle)]"
+              />
+            ) : null}
+          </>
+        ) : null}
         <ScrollFade
           axis="horizontal"
-          data-tab-strip
+          data-tab-scroll
           data-tauri-drag-region
           className="flex min-w-0 items-center overflow-x-auto scrollbar-none"
         >
           <div data-tauri-drag-region className="flex min-w-max items-center gap-1">
-            {tabs.map((tab, index) => {
-              const isActive = tab.id === activeTabId;
-              const pinned = isTabPinned(tab);
-              // A hairline closes the pinned group when unpinned tabs follow it.
-              const endsPinnedGroup =
-                pinned && tabs[index + 1] !== undefined && !isTabPinned(tabs[index + 1]!);
-
-              return (
-                <div
-                  key={tab.id}
-                  data-tab-id={tab.id}
-                  data-tab-pinned={pinned}
-                  className="flex items-center"
-                >
-                  <EditorTabButton
-                    tab={tab}
-                    isActive={isActive}
-                    onSelect={(tabId) => startTransition(() => setActiveTab(tabId))}
-                    onClose={closeTabByUser}
-                    onContextMenu={handleTabContextMenu}
-                    onPointerDown={handleTabPointerDown}
-                    shouldIgnoreClick={consumeDragClick}
-                  />
-                  {endsPinnedGroup ? (
-                    <div
-                      aria-hidden="true"
-                      data-pinned-divider
-                      className="ml-1 h-4 w-px shrink-0 bg-[var(--line-subtle)]"
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
+            {unpinnedTabs.map(renderTab)}
           </div>
         </ScrollFade>
         <button

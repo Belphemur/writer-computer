@@ -16,6 +16,12 @@ Right-click a tab and choose "Pin tab". Pinned tabs stay at the left of the tab 
 - Same tokens as other tabs (`--tab-active-bg`, `--text-secondary`, `--text-icon-muted`); a hairline (`--line-subtle`) closes the pinned group when unpinned tabs follow.
 - The tooltip and the accessible name carry the full title: "<title> (pinned)".
 
+## Fixed pinned group
+
+- The strip has two parts side by side: the pinned group (never scrolls, always visible) and the scrolling part holding only the unpinned tabs; a hairline sits between them. Only the unpinned tabs scroll horizontally (wheel, trackpad, drag), and they are clipped at the pinned group's edge with the strip's start fade, as if passing under it. If the pinned tabs alone exceed half the strip, the group takes at most half and scrolls on its own.
+- Scrolling a tab into view (active tab changes: keyboard switch, new tab, reveal) works on the scrolling part only, so an unpinned tab never ends up hidden behind the pinned group. A pinned tab needs no scroll. The math is `scrollDeltaIntoView` in `src/hooks/use-scroll-active-tab-into-view.ts`, shared with the agent pane's chat tabs (`useScrollTabIntoView`, a `data-tab-scroll` container), which scroll a chat into view whenever it becomes active.
+- Drag reorder is unchanged: candidates are the tabs of the dragged tab's own group, found under the shared `data-tab-strip` root that wraps both parts.
+
 ## Context menu
 
 Right-click on any tab, every kind (before, only file kinds had a menu):

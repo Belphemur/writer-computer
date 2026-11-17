@@ -12,6 +12,7 @@ import {
   useChatTitle,
 } from "@features/agent/web/hooks/use-agent";
 import type { ChatId } from "@features/agent/web/lib/events";
+import { useScrollTabIntoView } from "@/hooks/use-scroll-active-tab-into-view";
 import { Ico, Spinner } from "./agent-icon";
 
 export async function requestCloseChat(chatId: ChatId, busy: boolean) {
@@ -111,9 +112,16 @@ function Tab({
 export function ChatTabs() {
   const ids = useAgentChatIds();
   const active = useActiveChatId();
+  // Any chat that becomes active (new, restored, opened, attached) scrolls into view.
+  useScrollTabIntoView(active ? `#${CSS.escape(`agent-tab-${active}`)}` : null);
   return (
     <div className="flex shrink-0 items-center gap-1 border-b border-[var(--line-subtler)] px-2 py-1.5">
-      <div role="tablist" aria-label="Chats" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+      <div
+        role="tablist"
+        aria-label="Chats"
+        data-tab-scroll
+        className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+      >
         {ids.map((id, i) => (
           <Tab key={id} id={id} index={i} count={ids.length} active={id === active} />
         ))}
