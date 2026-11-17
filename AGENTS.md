@@ -76,6 +76,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - If a behavior or rule changes in practice, update the owning doc in the same task.
 - In autonomous/loop mode, complete exactly one task at a time and commit immediately. Do not batch unless the user explicitly asks.
 - When coding or reviewing, follow the Engineering Guardrails below and the guidelines in linked docs.
+- Always apply [`.agents/skills/engineering-philosophy/SKILL.md`](./.agents/skills/engineering-philosophy/SKILL.md): **DRY > SOLID > KISS**, in that order. One source of truth for every piece of knowledge (search for existing code first, never copy-paste, registries over per-case branches, shared data for Rust/TS twins), then SOLID structure, then the simplest design that satisfies both. KISS never justifies duplication. Read the skill before writing or reviewing code.
 
 ## Engineering Guardrails
 
