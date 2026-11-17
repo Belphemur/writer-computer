@@ -67,6 +67,20 @@ describe("agent store: panes and tabs", () => {
     expect(get().activeChatId).toBe(get().order[0]);
   });
 
+  it("switching project reuses an untouched chat, but starts a new one once it has content", () => {
+    const first = get().newChat("Projects/A");
+    const reused = get().newChat("Projects/B");
+    expect(reused).toBe(first);
+    expect(get().order.filter((id) => id === first)).toHaveLength(1);
+    expect(get().chats[first]!.projectPath).toBe("Projects/B");
+    expect(get().notes[first]!.meta.projectPath).toBe("Projects/B");
+    get().setDraft(first, { text: "half-written" });
+    const next = get().newChat("Projects/C");
+    expect(next).not.toBe(first);
+    expect(get().chats[first]!.projectPath).toBe("Projects/B");
+    expect(get().newChat()).not.toBe(next);
+  });
+
   it("cycles tabs and clamps the width", () => {
     const a = get().newChat();
     const b = get().newChat();

@@ -361,6 +361,18 @@ function withChat(s: AgentState, id: ChatId, next: Chat): Pick<AgentState, "chat
 // ---------------------------------------------------------------------------------------------
 // Persistence glue: the note is built from the store's state and written by the debounced saver
 
+/** A chat nothing happened in: no turns, no CLI session, nothing typed or attached. */
+function isUntouchedChat(chat: Chat, draft: Draft | undefined): boolean {
+  return (
+    chat.turns.length === 0 &&
+    !chat.session &&
+    !chat.resumeSessionId &&
+    chat.state === "idle" &&
+    !draft?.text.trim() &&
+    !(draft?.mentions.length ?? 0)
+  );
+}
+
 const persistence = {
   history: chatHistoryClient as ChatHistoryClient,
   delayMs: 500,
@@ -734,6 +746,33 @@ export const useAgentStore = create<AgentState>((set, get) => {
     },
 
     newChat: (projectPath) => {
+      // Switching project while the active chat is untouched reuses it instead of stacking
+      // another empty "New chat": only its project changes (nothing to carry over). A plain
+      // new chat (no project given) always adds a tab.
+      const activeId = get().activeChatId;
+      const active = activeId ? get().chats[activeId] : undefined;
+      if (
+        projectPath !== undefined &&
+        active &&
+        isUntouchedChat(active, get().drafts[active.chatId])
+      ) {
+        const target = projectPath ?? get().currentProjectPath;
+        set((s) => ({
+          chats: { ...s.chats, [active.chatId]: { ...active, projectPath: target } },
+          notes: s.notes[active.chatId]
+            ? {
+                ...s.notes,
+                [active.chatId]: {
+                  ...s.notes[active.chatId],
+                  meta: { ...s.notes[active.chatId].meta, projectPath: target },
+                },
+              }
+            : s.notes,
+          view: "chat",
+          focusComposerTick: s.focusComposerTick + 1,
+        }));
+        return active.chatId;
+      }
       const chatId = newId();
       const chat = createChat(chatId, { projectPath: projectPath ?? get().currentProjectPath });
       set((s) => ({
