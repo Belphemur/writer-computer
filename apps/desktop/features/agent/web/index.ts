@@ -73,6 +73,13 @@ export default defineFeature({
         load: () => import("@/components/agent/agent-pane").then((m) => m.AgentPane),
       },
     ],
+    // The Agent page of Settings: backend tabs, Claude status, models and the generic rows.
+    settingsSection: {
+      id: "agent",
+      label: "Agent",
+      order: 40,
+      load: () => import("./agent-section").then((m) => ({ default: m.AgentSection })),
+    },
   },
   activate: async (ctx) => (await import("./dock-sync")).syncAgentDock(ctx),
 });

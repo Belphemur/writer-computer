@@ -11,6 +11,7 @@
 import { keybindings } from "@/lib/keybindings/registry";
 import { logger } from "@/lib/logger";
 import { listen as tauriListen } from "@tauri-apps/api/event";
+import { featureSecrets } from "@/stores/feature-secrets-store";
 import { featureEventName } from "./events";
 import { assertFeatureId, ownerOf } from "./id";
 import { recordFailure } from "./health";
@@ -18,6 +19,7 @@ import { editorExtensionContributions } from "./editor-extensions";
 import { dockContributions } from "./docks";
 import { editorBodyMenuContributions } from "./menus";
 import { featurePaletteCommands } from "./palette";
+import { settingsSectionContributions } from "./settings-sections";
 import type {
   Dispose,
   DisposableStore,
@@ -105,6 +107,7 @@ export function createFeatureHost({
     return {
       id,
       disposables,
+      secrets: featureSecrets(id),
       listen(name, fn) {
         let un: Dispose | undefined;
         let disposed = false;
@@ -126,6 +129,7 @@ export function createFeatureHost({
     editorExtensionContributions.removeOwner(ownerOf(id));
     editorBodyMenuContributions.removeOwner(ownerOf(id));
     dockContributions.removeOwner(ownerOf(id));
+    settingsSectionContributions.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -176,6 +180,8 @@ export function createFeatureHost({
         for (const d of def.contributes?.docks ?? []) {
           dockContributions.add(d.id, { ...d, owner: o });
         }
+        const section = def.contributes?.settingsSection;
+        if (section) settingsSectionContributions.add(section.id, { ...section, owner: o });
       } catch (e) {
         removeContributions(def.id);
         throw e;

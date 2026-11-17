@@ -7,6 +7,7 @@ import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
 import type { Keybinding } from "@/lib/keybindings/registry";
+import type { FeatureSecrets } from "@/stores/feature-secrets-store";
 
 export type Dispose = () => void;
 
@@ -22,6 +23,15 @@ export interface FeatureManifest {
   /** Shown in Settings > Features so users see what the feature costs. */
   memory?: { level: "low" | "medium" | "high"; note: string };
   rust?: { commands?: string[]; events?: string[]; hooks?: string[] };
+  /** Only the part the settings UI reads; the rest of `contributes` is the loader's. */
+  contributes?: { secrets?: FeatureSecretDecl[] };
+}
+
+/** `contributes.secrets` of `feature.json`: the key is `features.<id>.<name>`. */
+export interface FeatureSecretDecl {
+  key: string;
+  label: string;
+  description?: string;
 }
 
 /** Everything a feature registers while active; `dispose` tears it down in reverse order. */
@@ -37,6 +47,8 @@ export interface FeatureContext {
   readonly disposables: DisposableStore;
   /** `<id>:<name>` events; the listener is removed on deactivate. */
   listen<T = unknown>(name: string, fn: (payload: T) => void): Dispose;
+  /** The feature's own declared secrets; Rust refuses a key another feature (or nobody) declares. */
+  readonly secrets: FeatureSecrets;
 }
 
 export interface CommandContribution {
@@ -87,12 +99,24 @@ export interface DockContribution {
   load: () => Promise<ComponentType>;
 }
 
+/** A page in the Settings sidebar, contributed by a feature (the Agent section). Shown only while
+ *  the feature is on; the component is a dynamic import, so its chunk loads when the page opens. */
+export interface SettingsSectionContribution {
+  /** Sidebar id (also the remembered selection); must not repeat a core section's id. */
+  id: string;
+  label: string;
+  /** Sidebar position among all sections (core ones have fixed orders, `settings-sections.ts`). */
+  order: number;
+  load: () => Promise<{ default: ComponentType }>;
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
   editorExtensions?: readonly EditorExtensionContribution[];
   menus?: { "editor-body"?: readonly EditorBodyMenuContribution[] };
   docks?: readonly DockContribution[];
+  settingsSection?: SettingsSectionContribution;
   // Declared by the spec, no host registry yet (each lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
   sidebar?: readonly unknown[];

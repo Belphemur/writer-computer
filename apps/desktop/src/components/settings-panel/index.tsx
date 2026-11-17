@@ -6,8 +6,10 @@ import {
   usePluginUpdateCount,
   usePluginsSnapshot,
 } from "@/hooks/use-plugins";
+import { useFeatureSections } from "@/hooks/use-feature-sections";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useUIStore } from "@/stores/ui-store";
+import { FeatureSectionContent } from "./feature-section-content";
 import { PluginSectionContent } from "./plugin-section";
 import { SectionBlocks } from "./settings-blocks";
 import { SETTINGS_PANEL_ID, SettingsNav, settingsTabId } from "./settings-nav";
@@ -19,6 +21,7 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
   const settingTabs = usePluginSettingTabs();
   const openBrowser = useOpenPluginBrowser();
   const updateCount = usePluginUpdateCount();
+  const featureSections = useFeatureSections();
   const selectedId = useUIStore((s) => s.settingsSection);
   const selectSection = useUIStore((s) => s.selectSettingsSection);
   const hydrateSection = useUIStore((s) => s.hydrateSettingsSection);
@@ -36,8 +39,8 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
         snapshot?.installed.find((p) => p.id === entry.owner)?.name ||
         entry.owner,
     }));
-    return buildSettingsNav({ hasWorkspace: !!root, pluginTabs, updateCount });
-  }, [root, settingTabs, snapshot, updateCount]);
+    return buildSettingsNav({ hasWorkspace: !!root, pluginTabs, featureSections, updateCount });
+  }, [root, settingTabs, snapshot, updateCount, featureSections]);
 
   const current = resolveNavItem(groups, selectedId);
   const pluginEntry = current?.plugin
@@ -76,6 +79,7 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
                 </h1>
               )}
               {current?.section && <SectionBlocks section={current.section} />}
+              {current?.feature && <FeatureSectionContent section={current.feature} />}
               {pluginEntry && <PluginSectionContent key={current?.id} entry={pluginEntry} />}
             </div>
           </EditorScrollContainer>

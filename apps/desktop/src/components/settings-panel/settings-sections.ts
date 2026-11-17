@@ -1,6 +1,7 @@
 // The one registry of Settings sections. The sidebar, the content pane, the "open Settings at
 // section X" entry points and the tests all derive from `SETTINGS_SECTIONS`; plugin sections
 // are appended at runtime by `buildSettingsNav`. No React here so stores and hooks can import it.
+import type { ComponentType } from "react";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 
 /** What a section's content pane is made of. Each type has exactly one renderer in
@@ -11,8 +12,7 @@ export type SectionBlock =
   | { type: "community-plugins" }
   | { type: "secrets" }
   | { type: "logs" }
-  | { type: "agent" }
-  /** Generated from the feature manifests: a toggle per feature with its settings under it. */
+  /** Generated from the feature manifests: a toggle per feature, its info and failure state. */
   | { type: "features" };
 
 export const SETTINGS_GROUPS = ["General", "Community plugins"] as const;
@@ -23,6 +23,8 @@ export interface SettingsSection {
   label: string;
   group: SettingsGroup;
   blocks: readonly SectionBlock[];
+  /** Sidebar position among all sections, features' ones included (`FeatureNavSection.order`). */
+  order: number;
   /** Hidden when no workspace is open (plugins belong to a vault). */
   requiresWorkspace?: boolean;
 }
@@ -32,54 +34,56 @@ const category = (name: string): SectionBlock => ({ type: "category", category: 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   {
     id: "editor",
+    order: 10,
     label: "Editor",
     group: "General",
     blocks: [category("Editor"), category("Status Bar")],
   },
   {
     id: "appearance",
+    order: 20,
     label: "Appearance",
     group: "General",
     blocks: [category("Appearance"), category("Typography"), { type: "themes" }],
   },
   {
     id: "files",
+    order: 30,
     label: "Files & vault",
     group: "General",
     blocks: [category("Files"), category("Workspace"), category("Window"), category("Search")],
   },
   {
-    id: "agent",
-    label: "Agent",
-    group: "General",
-    blocks: [{ type: "agent" }],
-  },
-  {
     id: "features",
+    order: 100,
     label: "Features",
     group: "General",
     blocks: [{ type: "features" }],
   },
   {
     id: "privacy",
+    order: 110,
     label: "Privacy",
     group: "General",
     blocks: [category("Privacy")],
   },
   {
     id: "secrets",
+    order: 120,
     label: "Secrets",
     group: "General",
     blocks: [{ type: "secrets" }],
   },
   {
     id: "logs",
+    order: 130,
     label: "Logs",
     group: "General",
     blocks: [category("Logs"), { type: "logs" }],
   },
   {
     id: "community-plugins",
+    order: 200,
     label: "Manage plugins",
     group: "Community plugins",
     blocks: [category("Community plugins"), { type: "community-plugins" }],
@@ -92,7 +96,7 @@ export const DEFAULT_SETTINGS_SECTION = SETTINGS_SECTIONS[0].id;
 /** Schema categories rendered by `ThemesSection`, not by the generic category renderer. */
 export const THEME_CATEGORY = "Theme";
 
-/** Schema category rendered by `AgentSection`, not by the generic category renderer. */
+/** Schema category rendered by the Agent feature's own section, not by the generic category renderer. */
 export const AGENT_CATEGORY = "Agent";
 
 /** Schema category of the features' kill switches, rendered by `FeaturesSection`. */
@@ -125,6 +129,15 @@ export interface PluginTabInfo {
   label: string;
 }
 
+/** A sidebar page a feature contributes (its own, or the generated one for a feature with
+ *  settings or secrets and no page of its own). Shown only while the feature is on. */
+export interface FeatureNavSection {
+  id: string;
+  label: string;
+  order: number;
+  load: () => Promise<{ default: ComponentType }>;
+}
+
 export interface NavItem {
   id: string;
   label: string;
@@ -132,6 +145,8 @@ export interface NavItem {
   /** Static section, or the plugin tab this entry mounts. */
   section?: SettingsSection;
   plugin?: PluginTabInfo;
+  /** The feature page this entry mounts. */
+  feature?: FeatureNavSection;
   /** Small count shown next to the label (plugin updates on "Manage plugins"). */
   badge?: number;
 }
@@ -146,21 +161,38 @@ export interface NavGroup {
 export function buildSettingsNav(opts: {
   hasWorkspace: boolean;
   pluginTabs: readonly PluginTabInfo[];
+  /** Pages of the features that are on, merged with the core sections by `order`. A page whose id
+   *  is a core section's id is ignored (the core page wins). */
+  featureSections?: readonly FeatureNavSection[];
   /** Plugins with an update available; badges the community-plugins entry. */
   updateCount?: number;
 }): NavGroup[] {
-  const items: NavItem[] = [
+  const coreIds = new Set(SETTINGS_SECTIONS.map((s) => s.id));
+  const general: (NavItem & { order: number })[] = [
     ...SETTINGS_SECTIONS.filter((s) => opts.hasWorkspace || !s.requiresWorkspace).map(
       (section) => ({
         id: section.id,
         label: section.label,
         group: section.group,
+        order: section.order,
         section,
         ...(section.id === "community-plugins" && opts.updateCount
           ? { badge: opts.updateCount }
           : {}),
       }),
     ),
+    ...(opts.featureSections ?? [])
+      .filter((f) => !coreIds.has(f.id))
+      .map((feature) => ({
+        id: feature.id,
+        label: feature.label,
+        group: "General" as const,
+        order: feature.order,
+        feature,
+      })),
+  ].sort((a, b) => a.order - b.order);
+  const items: NavItem[] = [
+    ...general,
     ...(opts.hasWorkspace ? opts.pluginTabs : []).map((plugin) => ({
       id: pluginSectionId(plugin.owner, plugin.tabId),
       label: plugin.label,

@@ -1,0 +1,16 @@
+{
+  "id": "fixture-secrets",
+  "name": "Fixture secrets",
+  "version": "0.0.0",
+  "description": "Test-only feature that declares one secret. Never shipped.",
+  "enabledByDefault": true,
+  "contributes": {
+    "secrets": [
+      {
+        "key": "features.fixture-secrets.api-token",
+        "label": "API token",
+        "description": "Token the fixture feature sends to its fake service."
+      }
+    ]
+  }
+}

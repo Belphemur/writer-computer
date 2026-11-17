@@ -68,6 +68,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
 pub mod lazy;
 pub mod recovery;
+pub mod secrets;
 
 #[cfg(test)]
 mod containment_tests;
@@ -96,6 +97,16 @@ pub struct Manifest {
     pub enabled_by_default: bool,
     #[serde(default)]
     pub rust: RustPart,
+    #[serde(default)]
+    pub contributes: Contributes,
+}
+
+/// The parts of `contributes` Rust reads (the rest is the web half's).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Contributes {
+    /// Secrets the feature owns (spec "Feature settings and secrets").
+    #[serde(default)]
+    pub secrets: Vec<secrets::SecretDecl>,
 }
 
 #[allow(dead_code)]

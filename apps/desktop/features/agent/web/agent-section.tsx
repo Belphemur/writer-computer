@@ -23,7 +23,7 @@ import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
 import { AgentModels } from "./agent-models";
-import { SettingRows } from "./setting-rows";
+import { SettingRows } from "@/components/settings-panel/setting-rows";
 
 const text = (v: unknown, fallback: string): string => (typeof v === "string" ? v : fallback);
 

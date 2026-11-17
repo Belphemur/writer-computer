@@ -10,6 +10,8 @@ vi.mock("../src/lib/preferences", () => ({
   setPreference: vi.fn(async () => {}),
 }));
 
+import agentFeature from "../features/agent/web/index";
+import { featureHost } from "../src/lib/features/registry";
 import { SettingsPanel } from "../src/components/settings-panel";
 import { agentSettingsFrom } from "../src/lib/agent/agent-settings";
 import { SETTINGS_SCHEMA } from "../src/lib/settings-schema";
@@ -138,6 +140,8 @@ describe("Settings > Agent", () => {
     await act(async () => {
       root.render(<SettingsPanel isActive />);
     });
+    // the Agent page is the agent feature's contribution: a lazy chunk, loaded when it opens
+    await vi.waitFor(() => expect(q("[data-agent-status]")).not.toBeNull());
     await flush();
   }
   const q = (sel: string) => container.querySelector<HTMLElement>(sel);
@@ -168,6 +172,7 @@ describe("Settings > Agent", () => {
       }
       return [];
     });
+    featureHost.register(agentFeature);
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -179,9 +184,10 @@ describe("Settings > Agent", () => {
     useWorkspaceStore.setState({ root: "/synthetic-vault" });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     act(() => root.unmount());
     container.remove();
+    await featureHost.unregister("agent");
   });
 
   it("shows Claude active and the other backends as disabled coming-soon pills", async () => {

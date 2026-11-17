@@ -1,11 +1,8 @@
-import { useState } from "react";
 import { useFeatureHealth } from "@/stores/feature-health-store";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
 import { enabledKey, FEATURE_MANIFESTS, isFeatureEnabled } from "@/lib/features/manifests";
 import type { FeatureManifest } from "@/lib/features/types";
-import { FEATURE_SETTINGS } from "@/lib/settings-schema";
 import { BooleanControl } from "./setting-control";
-import { SettingRows } from "./setting-rows";
 
 /** Does the feature have a Rust half whose state survives a toggle until the next launch? */
 function hasRustHalf(m: FeatureManifest): boolean {
@@ -19,7 +16,6 @@ function hasRustHalf(m: FeatureManifest): boolean {
 function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
   const settings = useAllSettings();
   const setSetting = useSetSetting();
-  const [open, setOpen] = useState(false);
   const failure = useFeatureHealth((s) => s.failures[manifest.id]);
   const sessionOff = useFeatureHealth((s) => s.sessionOff[manifest.id] === true);
   const crash = useFeatureHealth((s) => s.crashDisabled.find((c) => c.id === manifest.id));
@@ -31,9 +27,6 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
     clear(manifest.id);
     void setSetting(crash?.setting ?? enabledKey(manifest.id), true);
   };
-  // Everything under the feature comes from its settings fragment: no per-feature code here.
-  const defs = FEATURE_SETTINGS[manifest.id] ?? [];
-
   return (
     <section
       data-feature={manifest.id}
@@ -75,16 +68,6 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
               switches at once.
             </div>
           )}
-          {defs.length > 0 && (
-            <button
-              type="button"
-              aria-expanded={open}
-              onClick={() => setOpen(!open)}
-              className="mt-2 text-[13px] text-[var(--link-color)] hover:underline"
-            >
-              {open ? "Hide" : "Show"} settings ({defs.length})
-            </button>
-          )}
         </div>
         <BooleanControl
           value={enabled}
@@ -95,23 +78,22 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
           }}
         />
       </div>
-      {open && defs.length > 0 && (
-        <div className="border-t border-[var(--line-subtler)] p-3">
-          <SettingRows defs={defs} />
-        </div>
-      )}
     </section>
   );
 }
 
 /** Settings > Features: one row per built-in feature, generated from the manifests. */
-export function FeaturesSection() {
+export function FeaturesSection({
+  manifests = FEATURE_MANIFESTS,
+}: {
+  manifests?: readonly FeatureManifest[];
+}) {
   return (
     <div className="flex flex-col gap-3">
       <p className="mb-1 text-[13px] text-[var(--text-muted)]">
         Turn features off to save memory. Core editing, tabs and the sidebar always run.
       </p>
-      {FEATURE_MANIFESTS.map((m) => (
+      {manifests.map((m) => (
         <FeatureRow key={m.id} manifest={m} />
       ))}
     </div>

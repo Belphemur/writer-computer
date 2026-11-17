@@ -1,90 +1,7 @@
 import { useEffect, useState } from "react";
 import { confirmAction } from "@/lib/tauri";
-import { isValidSecretId } from "@/lib/secrets-client";
 import { useSecretsStore } from "@/stores/secrets-store";
-
-const ROW = "flex items-center justify-between gap-4 px-4 py-3";
-const BUTTON =
-  "shrink-0 rounded-lg border border-[var(--line-subtle)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle-strong)] disabled:opacity-50";
-const INPUT =
-  "h-9 rounded-lg border border-transparent bg-[var(--surface-input)] px-3 text-[13px] text-[var(--text-secondary)] font-[inherit] outline-none focus:border-[var(--focus-border)]";
-
-/** Write-only value field: the typed value lives in local state until Save and is cleared after. */
-function SecretForm({
-  fixedName,
-  submitLabel,
-  onSubmit,
-  onCancel,
-}: {
-  fixedName?: string;
-  submitLabel: string;
-  onSubmit: (name: string, value: string) => Promise<boolean>;
-  onCancel?: () => void;
-}) {
-  const [name, setName] = useState(fixedName ?? "");
-  const [value, setValue] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
-  const busy = useSecretsStore((s) => s.busy);
-
-  async function submit() {
-    if (!isValidSecretId(name)) {
-      setProblem("Use lowercase letters, digits and dashes for the name.");
-      return;
-    }
-    if (!value) {
-      setProblem("Enter a value.");
-      return;
-    }
-    setProblem(null);
-    const ok = await onSubmit(name, value);
-    setValue("");
-    if (ok && !fixedName) setName("");
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {fixedName === undefined && (
-          <input
-            type="text"
-            value={name}
-            placeholder="secret-name"
-            aria-label="Secret name"
-            spellCheck={false}
-            autoComplete="off"
-            onChange={(e) => setName(e.target.value)}
-            className={`${INPUT} w-48`}
-          />
-        )}
-        <input
-          type="password"
-          value={value}
-          placeholder="Value"
-          aria-label={fixedName ? `New value for ${fixedName}` : "Secret value"}
-          autoComplete="off"
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void submit();
-          }}
-          className={`${INPUT} w-56`}
-        />
-        <button type="button" className={BUTTON} disabled={busy} onClick={() => void submit()}>
-          {submitLabel}
-        </button>
-        {onCancel && (
-          <button type="button" className={BUTTON} onClick={onCancel}>
-            Cancel
-          </button>
-        )}
-      </div>
-      {problem && (
-        <div role="alert" className="text-[13px] text-red-500">
-          {problem}
-        </div>
-      )}
-    </div>
-  );
-}
+import { BUTTON, ROW, SecretForm } from "./secret-form";
 
 export function SecretsSection() {
   const { ids, status, error, actionError, busy } = useSecretsStore();
@@ -171,6 +88,7 @@ export function SecretsSection() {
                 {editing === id && (
                   <div className="px-4 pb-3">
                     <SecretForm
+                      busy={busy}
                       fixedName={id}
                       submitLabel="Save"
                       onCancel={() => setEditing(null)}
@@ -188,7 +106,7 @@ export function SecretsSection() {
         </div>
       )}
       <h2 className="mb-3 text-[13px] font-medium text-[var(--text-muted)]">Add a secret</h2>
-      <SecretForm submitLabel="Add" onSubmit={save} />
+      <SecretForm busy={busy} submitLabel="Add" onSubmit={save} />
     </section>
   );
 }

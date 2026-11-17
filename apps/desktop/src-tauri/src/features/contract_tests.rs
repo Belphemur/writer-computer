@@ -139,6 +139,37 @@ fn kill_switch(m: &Manifest) -> Value {
     })
 }
 
+/// `contributes.secrets`: every key is `features.<id>.<name>` (`name` lowercase letters, digits and
+/// dashes), no key repeats and every entry has a label.
+fn check_secret_declarations(m: &Manifest) -> Result<(), String> {
+    let id = &m.id;
+    let prefix = format!("features.{id}.");
+    let mut seen = BTreeSet::new();
+    for s in &m.contributes.secrets {
+        let name = s.key.strip_prefix(&prefix).ok_or(format!(
+            "{id}: secret {:?} must start with \"{prefix}\"",
+            s.key
+        ))?;
+        let valid = !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !valid {
+            return Err(format!(
+                "{id}: secret {:?} needs a name of lowercase letters, digits and dashes",
+                s.key
+            ));
+        }
+        if s.label.trim().is_empty() {
+            return Err(format!("{id}: secret {:?} has no label", s.key));
+        }
+        if !seen.insert(&s.key) {
+            return Err(format!("{id}: duplicate secret {:?}", s.key));
+        }
+    }
+    Ok(())
+}
+
 const FRAGMENT_FIELDS: [&str; 6] = ["key", "label", "description", "category", "type", "default"];
 
 /// A feature's settings fragment: every key starts with `<id>.`, every entry has the fields the
@@ -299,6 +330,7 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
             }
         }
         check_schema(&shared, &[kill_switch(&m)]).unwrap();
+        check_secret_declarations(&m).unwrap();
         if let Some(raw) = def.settings_source() {
             let own = fragment_entries(&m, raw).unwrap();
             check_fragment_merged(&shared, &own, &merged_keys).unwrap();
@@ -480,4 +512,60 @@ fn the_fixture_commands_work_through_the_plain_function_path() {
         block_on(fixture::hello_shout("a".into())).unwrap(),
         "HELLO A"
     );
+}
+
+fn secret_manifest(secrets: Value) -> Manifest {
+    serde_json::from_value(
+        json!({ "id": "demo", "name": "Demo", "contributes": { "secrets": secrets } }),
+    )
+    .unwrap()
+}
+
+#[test]
+fn every_shipped_manifest_declares_well_formed_secrets() {
+    // Every folder, Rust or TypeScript-only, and the test-only fixture that declares one.
+    let shipped: Vec<Manifest> = std::fs::read_dir(crate_dir().join("../features"))
+        .unwrap()
+        .flatten()
+        .filter(|e| e.path().join("feature.json").is_file())
+        .map(|e| serde_json::from_value(read_json(&e.path().join("feature.json"))).unwrap())
+        .collect();
+    assert!(!shipped.is_empty());
+    for m in shipped {
+        check_secret_declarations(&m).unwrap();
+    }
+    let fixture: Manifest = serde_json::from_value(read_json(
+        &crate_dir().join("tests/fixtures/features/fixture-secrets/feature.json"),
+    ))
+    .unwrap();
+    assert_eq!(fixture.contributes.secrets.len(), 1);
+    check_secret_declarations(&fixture).unwrap();
+}
+
+#[test]
+fn a_secret_key_must_be_namespaced_unique_and_labelled() {
+    let ok = json!({ "key": "features.demo.token", "label": "Token", "description": "d" });
+    check_secret_declarations(&secret_manifest(json!([ok]))).unwrap();
+
+    let wrong_prefix = json!([{ "key": "demo.token", "label": "Token" }]);
+    assert!(check_secret_declarations(&secret_manifest(wrong_prefix))
+        .unwrap_err()
+        .contains("must start with"));
+    let other_feature = json!([{ "key": "features.other.token", "label": "Token" }]);
+    assert!(check_secret_declarations(&secret_manifest(other_feature))
+        .unwrap_err()
+        .contains("must start with"));
+    let bad_name = json!([{ "key": "features.demo.Bad_Name", "label": "Token" }]);
+    assert!(check_secret_declarations(&secret_manifest(bad_name))
+        .unwrap_err()
+        .contains("lowercase"));
+    let empty_name = json!([{ "key": "features.demo.", "label": "Token" }]);
+    assert!(check_secret_declarations(&secret_manifest(empty_name)).is_err());
+    let no_label = json!([{ "key": "features.demo.token", "label": " " }]);
+    assert!(check_secret_declarations(&secret_manifest(no_label))
+        .unwrap_err()
+        .contains("no label"));
+    assert!(check_secret_declarations(&secret_manifest(json!([ok, ok])))
+        .unwrap_err()
+        .contains("duplicate"));
 }

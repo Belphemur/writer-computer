@@ -5,11 +5,12 @@ use std::{fs, path::Path};
 /// `<id>:allow-<command>` permissions and are called as `plugin:<id>|<command>`. The capability
 /// that grants them lives in `capabilities/features/<id>.json`: tauri-build's default pattern
 /// (`./capabilities/**/*`) already picks it up, so there is no capability code here.
-fn features(attrs: tauri_build::Attributes) -> tauri_build::Attributes {
+/// Every `apps/desktop/features/<id>/feature.json`, sorted; empty without a features folder.
+fn manifest_paths() -> Vec<std::path::PathBuf> {
     let dir = Path::new("../features");
     println!("cargo::rerun-if-changed={}", dir.display());
     let Ok(entries) = fs::read_dir(dir) else {
-        return attrs;
+        return Vec::new();
     };
     let mut manifests: Vec<_> = entries
         .flatten()
@@ -17,7 +18,26 @@ fn features(attrs: tauri_build::Attributes) -> tauri_build::Attributes {
         .filter(|p| p.is_file())
         .collect();
     manifests.sort();
-    manifests.into_iter().fold(attrs, |attrs, path| {
+    manifests
+}
+
+/// `$OUT_DIR/feature_manifests.rs`: every manifest, `include_str!`ed, for `features::secrets`
+/// (a TypeScript-only feature has no registry entry, so its declared secrets are read from here).
+fn write_manifest_list() {
+    let items: String = manifest_paths()
+        .iter()
+        .map(|p| format!("    include_str!({:?}),\n", p.canonicalize().unwrap()))
+        .collect();
+    let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("feature_manifests.rs");
+    fs::write(
+        out,
+        format!("pub const FEATURE_MANIFESTS: &[&str] = &[\n{items}];\n"),
+    )
+    .unwrap();
+}
+
+fn features(attrs: tauri_build::Attributes) -> tauri_build::Attributes {
+    manifest_paths().into_iter().fold(attrs, |attrs, path| {
         println!("cargo::rerun-if-changed={}", path.display());
         let raw = fs::read_to_string(&path).unwrap();
         let m: serde_json::Value = serde_json::from_str(&raw)
@@ -53,5 +73,6 @@ fn main() {
     println!("cargo::rerun-if-env-changed=WRITER_POSTHOG_KEY");
     println!("cargo::rerun-if-env-changed=WRITER_POSTHOG_HOST");
 
+    write_manifest_list();
     tauri_build::try_build(features(tauri_build::Attributes::new())).unwrap();
 }

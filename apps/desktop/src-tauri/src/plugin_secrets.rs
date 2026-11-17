@@ -16,6 +16,12 @@
 //! identifier) never touches the real keychain. Secrets are shared by every plugin and vault
 //! of the user, like Obsidian's keychain.
 //!
+//! Feature secrets (`features.<id>.<key>`, `features::secrets`) live in the same document and so
+//! in the same single item. The `features.` prefix is reserved: [`PluginSecrets::load_all`] and
+//! [`PluginSecrets::list_ids`] (what plugins and Settings > Secrets see) leave those entries out,
+//! and [`PluginSecrets::set`] / [`PluginSecrets::delete`] refuse them, so a plugin or a stray id
+//! cannot read, list or overwrite a feature's secret. Only the `feature_*` methods reach them.
+//!
 //! Item size: macOS Keychain and the Linux Secret Service accept far more than we need;
 //! Windows Credential Manager caps a blob at 2560 bytes and `keyring` stores UTF-16, so the
 //! whole document is capped at 1280 UTF-8 bytes there and 64 KiB elsewhere.
@@ -24,6 +30,8 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Reserved id prefix of the secrets built-in features own (`features.<id>.<key>`).
+pub const FEATURE_PREFIX: &str = "features.";
 const DOC_ACCOUNT: &str = "secrets:v2";
 const DOC_VERSION: u32 = 2;
 const MAX_ID_LEN: usize = 256;
@@ -92,6 +100,24 @@ fn check_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn check_plugin_id(id: &str) -> Result<(), String> {
+    if id.starts_with(FEATURE_PREFIX) {
+        return Err(format!(
+            "EINVAL: the \"{FEATURE_PREFIX}\" id prefix is reserved for built-in features"
+        ));
+    }
+    Ok(())
+}
+
+fn check_feature_key(key: &str) -> Result<(), String> {
+    if !key.starts_with(FEATURE_PREFIX) {
+        return Err(format!(
+            "EINVAL: a feature secret starts with \"{FEATURE_PREFIX}\""
+        ));
+    }
+    Ok(())
+}
+
 fn encode(secrets: &Secrets) -> Result<String, String> {
     let raw = serde_json::to_string(&Doc {
         version: DOC_VERSION,
@@ -144,16 +170,26 @@ impl PluginSecrets {
         Ok(guard.as_mut().expect("just loaded"))
     }
 
-    /// Every secret as `id -> value`.
+    /// Every plugin secret as `id -> value` (a feature's secrets are never in it).
     pub fn load_all(&self) -> Result<Secrets, String> {
         let mut g = self.cache.lock();
-        Ok(self.loaded(&mut g)?.clone())
+        Ok(self
+            .loaded(&mut g)?
+            .iter()
+            .filter(|(id, _)| !id.starts_with(FEATURE_PREFIX))
+            .map(|(id, v)| (id.clone(), v.clone()))
+            .collect())
     }
 
-    /// Ids of the secrets, sorted. The Settings UI lists names only.
+    /// Ids of the plugin secrets, sorted. The Settings UI lists names only.
     pub fn list_ids(&self) -> Result<Vec<String>, String> {
         let mut g = self.cache.lock();
-        Ok(self.loaded(&mut g)?.keys().cloned().collect())
+        Ok(self
+            .loaded(&mut g)?
+            .keys()
+            .filter(|id| !id.starts_with(FEATURE_PREFIX))
+            .cloned()
+            .collect())
     }
 
     /// Writes `next` as the whole document, then makes it the cache.
@@ -164,7 +200,46 @@ impl PluginSecrets {
         Ok(())
     }
 
+    /// Sets a plugin secret. A reserved (`features.`) id is refused.
     pub fn set(&self, id: &str, value: &str) -> Result<(), String> {
+        check_plugin_id(id)?;
+        self.put(id, value)
+    }
+
+    pub fn delete(&self, id: &str) -> Result<(), String> {
+        check_plugin_id(id)?;
+        self.remove(id)
+    }
+
+    /// The value of a feature secret (`key` is the full `features.<id>.<key>`), if set.
+    pub fn feature_get(&self, key: &str) -> Result<Option<String>, String> {
+        check_feature_key(key)?;
+        let mut g = self.cache.lock();
+        Ok(self.loaded(&mut g)?.get(key).cloned())
+    }
+
+    pub fn feature_set(&self, key: &str, value: &str) -> Result<(), String> {
+        check_feature_key(key)?;
+        self.put(key, value)
+    }
+
+    pub fn feature_delete(&self, key: &str) -> Result<(), String> {
+        check_feature_key(key)?;
+        self.remove(key)
+    }
+
+    /// Which of `keys` (full feature keys) hold a value. Names only, never values.
+    pub fn feature_keys_set(&self, keys: &[String]) -> Result<Vec<String>, String> {
+        let mut g = self.cache.lock();
+        let doc = self.loaded(&mut g)?;
+        Ok(keys
+            .iter()
+            .filter(|k| doc.contains_key(*k))
+            .cloned()
+            .collect())
+    }
+
+    fn put(&self, id: &str, value: &str) -> Result<(), String> {
         check_id(id)?;
         if value.len() > MAX_SECRET_BYTES {
             return Err(format!(
@@ -181,7 +256,7 @@ impl PluginSecrets {
         self.commit(&mut g, next)
     }
 
-    pub fn delete(&self, id: &str) -> Result<(), String> {
+    fn remove(&self, id: &str) -> Result<(), String> {
         check_id(id)?;
         let mut g = self.cache.lock();
         let mut next = self.loaded(&mut g)?.clone();
@@ -384,6 +459,35 @@ mod tests {
         assert!(!e.contains(secret), "{e}");
         let e = s2.set("c", "v").unwrap_err();
         assert!(!e.contains(secret), "{e}");
+    }
+
+    #[test]
+    fn feature_secrets_share_the_item_but_are_hidden_from_plugins() {
+        let (s, f) = secrets();
+        s.set("plug", "p").unwrap();
+        s.feature_set("features.x.token", "f").unwrap();
+        assert_eq!(
+            s.feature_get("features.x.token").unwrap().as_deref(),
+            Some("f")
+        );
+        assert_eq!(s.feature_get("features.x.other").unwrap(), None);
+        // plugins and Settings > Secrets see the plugin secret only
+        assert_eq!(s.list_ids().unwrap(), ["plug"]);
+        assert_eq!(s.load_all().unwrap().len(), 1);
+        // and cannot reach a feature's secret, nor the other way round
+        assert!(s.set("features.x.token", "evil").is_err());
+        assert!(s.delete("features.x.token").is_err());
+        assert!(s.feature_set("plug", "evil").is_err());
+        assert!(s.feature_get("plug").is_err());
+        assert_eq!(
+            s.feature_keys_set(&["features.x.token".into(), "features.x.other".into()])
+                .unwrap(),
+            ["features.x.token"]
+        );
+        s.feature_delete("features.x.token").unwrap();
+        assert_eq!(s.feature_get("features.x.token").unwrap(), None);
+        // still exactly one keychain item
+        assert_eq!(f.map.lock().keys().collect::<Vec<_>>(), [DOC_ACCOUNT]);
     }
 
     #[test]

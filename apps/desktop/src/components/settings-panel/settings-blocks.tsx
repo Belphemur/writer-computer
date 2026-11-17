@@ -4,7 +4,6 @@ import { CommunityPluginsSection } from "@/components/plugins/community-plugins-
 import type { SectionBlock, SettingsSection } from "./settings-sections";
 import { SettingRows } from "./setting-rows";
 import { FeaturesSection } from "./features-section";
-import { AgentSection } from "./agent-section";
 import { LogsSection } from "./logs-section";
 import { SecretsSection } from "./secrets-section";
 import { ThemesSection } from "./themes-section";
@@ -33,7 +32,6 @@ const BLOCK_RENDERERS: {
   "community-plugins": () => <CommunityPluginsSection />,
   secrets: () => <SecretsSection />,
   logs: () => <LogsSection />,
-  agent: () => <AgentSection />,
   features: () => <FeaturesSection />,
 };
 

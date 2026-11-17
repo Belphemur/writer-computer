@@ -13,7 +13,6 @@ import {
   setAgentView,
 } from "@/hooks/agent-api";
 import { useAgentView } from "@/hooks/use-agent";
-import { SETTINGS_SECTIONS } from "@/components/settings-panel/settings-sections";
 import { Ico } from "./agent-icon";
 import { ProjectSwitcherSlot } from "./slots";
 
@@ -46,7 +45,6 @@ function HeaderButton({
  */
 export function AgentHeader({ projectPath }: { projectPath: string | null }) {
   const view = useAgentView();
-  const settingsSection = SETTINGS_SECTIONS.some((s) => s.id === "agent") ? "agent" : undefined;
   return (
     <header
       data-agent-header
@@ -72,7 +70,7 @@ export function AgentHeader({ projectPath }: { projectPath: string | null }) {
         <HeaderButton
           label="Agent settings"
           icon={Settings01Icon}
-          onClick={() => openSettings(settingsSection)}
+          onClick={() => openSettings("agent")}
         />
         <HeaderButton label="Close agent pane" icon={Cancel01Icon} onClick={closeAgentPane} />
       </div>

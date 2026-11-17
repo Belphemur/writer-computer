@@ -30,8 +30,6 @@ afterEach(() => {
 });
 
 const row = (id: string) => container.querySelector<HTMLElement>(`[data-feature="${id}"]`)!;
-const settingsButton = (id: string) =>
-  [...row(id).querySelectorAll("button")].find((b) => b.hasAttribute("aria-expanded"));
 
 describe("the merged settings schema", () => {
   it("holds the agent's settings from its fragment, not from the shared file", () => {
@@ -50,19 +48,16 @@ describe("Settings > Features", () => {
     for (const m of FEATURE_MANIFESTS) expect(row(m.id)).toBeTruthy();
   });
 
-  it("shows the agent's settings under it, collapsed until asked", async () => {
-    const count = FEATURE_SETTINGS.agent.length;
-    expect(row("agent").querySelector("[data-setting-key], [role='switch']")).toBeTruthy();
+  it("shows no setting rows and no expander for any feature, the agent included", () => {
+    for (const m of FEATURE_MANIFESTS) {
+      expect(row(m.id).querySelector("[aria-expanded]"), m.id).toBeNull();
+      expect(row(m.id).querySelector("[data-setting-key]"), m.id).toBeNull();
+    }
     expect(row("agent").textContent).not.toContain("Claude binary");
-    await act(async () => settingsButton("agent")!.click());
-    expect(settingsButton("agent")!.textContent).toBe(`Hide settings (${count})`);
-    expect(row("agent").textContent).toContain("Claude binary");
-  });
-
-  it("shows only the toggle and info for a feature without settings", () => {
-    expect(FEATURE_SETTINGS.tables).toBeUndefined();
-    expect(row("tables")).toBeTruthy();
-    expect(settingsButton("tables")).toBeUndefined();
+    expect(row("agent").textContent).not.toContain("Secrets");
+    // what is left: name, version, description, memory note and the toggle
+    expect(row("agent").textContent).toContain("Memory:");
+    expect(row("agent").querySelector("[role='switch']")).toBeTruthy();
   });
 
   it("writes the kill switch", async () => {

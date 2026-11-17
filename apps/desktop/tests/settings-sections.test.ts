@@ -44,7 +44,6 @@ describe("settings section registry", () => {
       "Editor",
       "Appearance",
       "Files & vault",
-      "Agent",
       "Features",
       "Privacy",
       "Secrets",
@@ -75,6 +74,22 @@ describe("buildSettingsNav", () => {
     expect(manage?.badge).toBe(2);
     const none = buildSettingsNav({ hasWorkspace: true, pluginTabs: [], updateCount: 0 });
     expect(none.flatMap((g) => g.items).find((i) => i.badge)).toBeUndefined();
+  });
+
+  it("merges feature pages with the core sections by order, and a core id wins", () => {
+    const load = async () => ({ default: () => null });
+    const items = (featureSections: Parameters<typeof buildSettingsNav>[0]["featureSections"]) =>
+      buildSettingsNav({ hasWorkspace: true, pluginTabs: [], featureSections })
+        .flatMap((g) => g.items)
+        .map((i) => i.id);
+    const base = items([]);
+    expect(base).not.toContain("agent");
+    const withAgent = items([{ id: "agent", label: "Agent", order: 40, load }]);
+    // after Files & vault (30), before Features (100)
+    expect(withAgent.indexOf("agent")).toBe(withAgent.indexOf("files") + 1);
+    expect(withAgent.indexOf("agent")).toBe(withAgent.indexOf("features") - 1);
+    // a page named like a core section never replaces it
+    expect(items([{ id: "privacy", label: "Imposter", order: 1, load }])).toEqual(base);
   });
 
   it("falls back to the first item when the selection is gone", () => {
