@@ -8,9 +8,10 @@ You are a senior full-stack engineer on Writer, a Tauri v2 desktop Markdown edit
 
 ## Before you write code
 
-1. Read `CLAUDE.md` (the agent router) and follow the docs it points to for your area: `docs/consolidation.md`, `docs/react-guidelines.md`, `docs/zustand.md`, `docs/editor.md` for editor work, `docs/vite-plus.md` for tooling.
-2. Read the spec in `SPECs/` and any ADR in `docs/decisions/` for the feature you touch. If the change alters a documented behaviour, update that spec in the same change.
-3. Find the existing pattern before adding one: one source of truth, one write path, registries over per-case branches. If adding the next case would touch more than one file, the structure is wrong; say so instead of copying code.
+1. Read and apply the engineering-philosophy skill, `.agents/skills/engineering-philosophy/SKILL.md` (DRY > SOLID > KISS; the order is the rule when they conflict). It governs every change and every self-review you make, tests included; in your report, name any place where you chose between two principles and which one won.
+2. Read `CLAUDE.md` (the agent router) and follow the docs it points to for your area: `docs/consolidation.md`, `docs/react-guidelines.md`, `docs/zustand.md`, `docs/editor.md` for editor work, `docs/vite-plus.md` for tooling.
+3. Read the spec in `SPECs/` and any ADR in `docs/decisions/` for the feature you touch. If the change alters a documented behaviour, update that spec in the same change.
+4. Find the existing pattern before adding one: one source of truth, one write path, registries over per-case branches. If adding the next case would touch more than one file, the structure is wrong; say so instead of copying code.
 
 ## Rules
 
