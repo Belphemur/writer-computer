@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { linkHandlers, openPath } from "@/lib/link-activation";
-import { useAgentProjectPath } from "@/hooks/use-agent";
+import { useAgentProjectPath } from "@features/agent/web/hooks/use-agent";
 import { logger } from "@/lib/logger";
 import { revealInFileManager } from "@/lib/tauri";
 import { SettingRows } from "@/components/settings-panel/setting-rows";

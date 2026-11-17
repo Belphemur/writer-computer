@@ -37,7 +37,7 @@ import {
   serializeLocation,
 } from "../src/components/editor-area/page-kinds";
 import { noteLabel } from "../src/lib/note-title";
-import { candidatesFromResults } from "../src/lib/agent/mentions";
+import { candidatesFromResults } from "@features/agent/web/lib/mentions";
 import { useEditorStore } from "../src/stores/editor-store";
 import { flattenTree } from "../src/components/sidebar/flatten-tree";
 import { FileIcon } from "../src/components/sidebar/file-tree-icons";

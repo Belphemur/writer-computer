@@ -23,7 +23,8 @@ export type ContributionIdPoint =
   | "sidebarPanels"
   | "sidebarActions"
   | "statusItems"
-  | "overlays";
+  | "overlays"
+  | "fileTreeDecorations";
 
 /** The static facts in `src-tauri/src/features/<id>/feature.json` that the web side may read. */
 export interface FeatureManifest {
@@ -202,6 +203,24 @@ export interface OverlayContribution {
   load: () => Promise<ComponentType>;
 }
 
+/** A badge at the end of a sidebar tree row: an icon with a tooltip. Core draws it (one look for
+ *  every feature); the feature only says whether and what. */
+export interface FileTreeBadge {
+  /** Tooltip and accessible name. */
+  label: string;
+  icon: IconSvgElement;
+  testId?: string;
+}
+
+/** A badge per sidebar tree entry (the agent's project badge on a project folder). */
+export interface FileTreeDecorationContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  /** A React hook, called once per rendered row from a component of its own, so it may read
+   *  stores; sync (rows render at once), so keep its module small. `null` draws nothing. */
+  useBadge: (entry: DirEntry) => FileTreeBadge | null;
+}
+
 /** Palette commands computed each time the palette opens (a source of dynamic commands). */
 export interface CommandSourceContribution {
   /** `<feature id>.<name>`. */
@@ -221,6 +240,8 @@ export interface Contributions {
   sidebarActions?: readonly SidebarActionContribution[];
   statusItems?: readonly StatusItemContribution[];
   overlays?: readonly OverlayContribution[];
+  /** Badges on sidebar tree rows (`lib/features/file-tree.ts`). */
+  fileTreeDecorations?: readonly FileTreeDecorationContribution[];
   /** Components mounted in named places of core UI (`lib/features/slots.ts`). */
   slots?: readonly SlotContribution[];
   commandSources?: readonly CommandSourceContribution[];

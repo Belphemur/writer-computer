@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSetSetting, useSetting } from "@/hooks/use-settings";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
-import { chatHistoryClient } from "@/lib/agent/chat-history-client";
+import { chatHistoryClient } from "@features/agent/web/lib/chat-history-client";
 
 const BUTTON =
   "shrink-0 rounded-lg border border-[var(--line-subtle)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle-strong)] disabled:opacity-50";

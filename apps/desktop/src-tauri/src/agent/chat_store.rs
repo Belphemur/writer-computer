@@ -7,7 +7,7 @@
 //! index (`index::paths::is_indexable_rel`), the watcher, the sidebar, Quick Open and `rg` never
 //! see them. Identity is the frontmatter `writer-chat-id`, never the file name.
 //!
-//! Note format (the TypeScript mirror is `src/lib/agent/chat-note.ts`; both read the golden notes
+//! Note format (the TypeScript mirror is `features/agent/web/lib/chat-note.ts`; both read the golden notes
 //! in `tests/fixtures/agent-chat-notes/`):
 //!
 //! ```text

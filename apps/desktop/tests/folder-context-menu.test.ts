@@ -17,7 +17,6 @@ function makeHandlers(): FolderContextMenuHandlers & { calls: string[] } {
     calls,
     onNewFile: () => calls.push("new-file"),
     onNewFolder: () => calls.push("new-folder"),
-    onMakeProject: () => calls.push("make-project"),
     onCopyRelativePath: () => calls.push("copy-relative-path"),
     onCopyAbsolutePath: () => calls.push("copy-absolute-path"),
     onOpenInTerminal: () => calls.push("open-terminal"),
@@ -38,8 +37,6 @@ describe("buildFolderMenuItemsSpec", () => {
     expect(summary).toEqual([
       "new-file:New File",
       "new-folder:New Folder",
-      "---",
-      "make-project:Make project",
       "---",
       "copy-relative-path:Copy relative path",
       "copy-absolute-path:Copy absolute path",
@@ -81,7 +78,6 @@ describe("buildFolderMenuItemsSpec", () => {
     expect(handlers.calls).toEqual([
       "new-file",
       "new-folder",
-      "make-project",
       "copy-relative-path",
       "copy-absolute-path",
       "open-terminal",

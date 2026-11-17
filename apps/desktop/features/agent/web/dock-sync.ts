@@ -1,19 +1,24 @@
 // What keeps the agent dock in step with the app, started once at startup (`activation:
-// onStartup`): the saved pane width and open state from the settings, and the chats that were open
-// in the vault. Replaces the `useAgentPaneDock` hook the layout used to mount.
-import { restoreAgentChats, syncAgentPane } from "@/hooks/agent-api";
+// onStartup`): the saved pane width and open state from the settings. The chats that were open in
+// the vault come back when the pane mounts (`components/agent-pane.tsx`), so this path never loads
+// the chat store. Also starts the project list that feeds the sidebar badge.
 import type { FeatureContext } from "@/lib/features/types";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useWorkspaceStore } from "@/stores/workspace-store";
-
-const WIDTH = "agent.pane-width";
-const OPEN = "agent.pane-open";
+import {
+  AGENT_PANE_OPEN_SETTING as OPEN,
+  AGENT_PANE_WIDTH_SETTING as WIDTH,
+  usePaneStore,
+} from "@features/agent/web/stores/pane-store";
+import { watchProjects } from "@features/agent/web/stores/projects-store";
 
 export function syncAgentDock(ctx: FeatureContext): void {
   // The settings are the saved state (also edited in Settings): adopt them now and on change, so
   // the pane is applied before it renders.
-  const adopt = (settings: Record<string, unknown>) =>
-    syncAgentPane({ width: settings[WIDTH], open: settings[OPEN] });
+  const adopt = (settings: Record<string, unknown>) => {
+    const pane = usePaneStore.getState();
+    pane.syncWidth(settings[WIDTH]);
+    pane.syncOpen(settings[OPEN]);
+  };
   adopt(useSettingsStore.getState().settings);
   ctx.disposables.add(
     useSettingsStore.subscribe((s, prev) => {
@@ -21,15 +26,5 @@ export function syncAgentDock(ctx: FeatureContext): void {
         adopt(s.settings);
     }),
   );
-
-  // The chats that were open in this vault come back once per vault, whether or not the pane is open.
-  const restore = (root: string | null) => {
-    if (root) void restoreAgentChats(root);
-  };
-  restore(useWorkspaceStore.getState().root);
-  ctx.disposables.add(
-    useWorkspaceStore.subscribe((s, prev) => {
-      if (s.root !== prev.root) restore(s.root);
-    }),
-  );
+  ctx.disposables.add(watchProjects());
 }

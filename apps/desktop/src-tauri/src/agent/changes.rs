@@ -43,7 +43,7 @@ pub const MAX_ROW_CHARS: usize = 2_000;
 const MAX_DIFF_LINES: usize = 200_000;
 
 /// Tools that edit a file, with the input keys that hold its path. Twin of the `edit` kind in
-/// `src/lib/agent/tool-kinds.ts` (the TS side only renders; this side must know the paths).
+/// `features/agent/web/lib/tool-kinds.ts` (the TS side only renders; this side must know the paths).
 const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 const PATH_KEYS: [&str; 3] = ["file_path", "notebook_path", "path"];
 const SHELL_TOOL: &str = "Bash";

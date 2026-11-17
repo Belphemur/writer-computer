@@ -9,7 +9,6 @@ import {
 import "@/lib/keybindings/core-bindings";
 import { keybindings } from "@/lib/keybindings/registry";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
-import { PROJECT_PALETTE_COMMANDS } from "./project-commands";
 import { TITLE_PALETTE_COMMANDS } from "./title-commands";
 
 /** Everything a built-in command may read or do. Supplied by the palette component. */
@@ -177,7 +176,6 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
     when: (c) => !c.isCompactFileMode,
     run: (c) => c.openSettings(),
   },
-  ...PROJECT_PALETTE_COMMANDS,
   ...TITLE_PALETTE_COMMANDS,
 ];
 

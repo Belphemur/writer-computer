@@ -7,7 +7,7 @@ import {
   isValidModelId,
   toggleModel,
   type ModelRow,
-} from "@/lib/agent/model-catalog";
+} from "@features/agent/web/lib/model-catalog";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
 import { INPUT } from "./agent-rows";
 

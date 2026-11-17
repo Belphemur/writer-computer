@@ -2,7 +2,7 @@
 //! backend through adapters", spec `SPECs/agent-roles-spec.md`). Tauri-free.
 //!
 //! `shared/agent-roles.json` is the one definition of a role: purpose, prompt, model tier and
-//! capabilities, with no vendor model name and no tool name (`src/lib/agent/agent-roles.ts` reads
+//! capabilities, with no vendor model name and no tool name (`features/agent/web/lib/agent-roles.ts` reads
 //! the same file). A [`RoleAdapter`] maps it to one backend's config (`subagents.rs` is the Claude
 //! adapter): capabilities become that backend's tools, tiers become models from that backend's tier
 //! settings. This module owns what is common to every adapter: parsing, the availability flags, the

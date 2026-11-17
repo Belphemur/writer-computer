@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
-import { AGENT_TIERS, claudeTierSettingKey } from "@/lib/agent/agent-roles";
+import { AGENT_TIERS, claudeTierSettingKey } from "@features/agent/web/lib/agent-roles";
 import {
   CLAUDE_MODEL_CATALOG,
   DEFAULT_MODEL_ID,
   catalogModel,
   isValidModelId,
-} from "@/lib/agent/model-catalog";
+} from "@features/agent/web/lib/model-catalog";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { INPUT, SELECT, SelectRow } from "./agent-rows";
 

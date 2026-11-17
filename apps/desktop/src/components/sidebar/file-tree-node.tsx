@@ -5,9 +5,9 @@ import { useIsActive } from "@/hooks/use-tabs";
 import { linkHandlers } from "@/lib/link-activation";
 import { getFileStem } from "@/lib/paths";
 import type { DirEntry } from "@/types/fs";
-import { useIsProjectFolder } from "@/stores/projects-store";
 import { AgentFolderBadge } from "./agent-folder-badge";
-import { FileIcon, FolderIcon, ProjectBadge } from "./file-tree-icons";
+import { FileTreeDecorations } from "./file-tree-decorations";
+import { FileIcon, FolderIcon } from "./file-tree-icons";
 import { useFileTreeLabel } from "./use-file-tree-label";
 
 interface FileTreeNodeProps {
@@ -44,7 +44,6 @@ export const FileTreeNode = memo(function FileTreeNode({
 }: FileTreeNodeProps) {
   const isActive = useIsActive(entry.path);
   const label = useFileTreeLabel(entry);
-  const isProject = useIsProjectFolder(entry.path, entry.is_dir);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus and select the stem when entering rename mode.
@@ -177,7 +176,7 @@ export const FileTreeNode = memo(function FileTreeNode({
       >
         {label.text}
       </span>
-      {isProject ? <ProjectBadge /> : null}
+      <FileTreeDecorations entry={entry} />
       {entry.is_dir ? <AgentFolderBadge entry={entry} /> : null}
     </button>
   );

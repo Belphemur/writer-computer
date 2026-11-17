@@ -7,8 +7,8 @@
 // `AgentCommands` is the argument object of each command as the pane uses them (argument names are
 // the one thing the generated functions do not keep as a type) and its result, which is always the
 // generated one (`Ret`): no wire result is described by hand. The pane's own types
-// (`lib/agent/events.ts`) re-export the generated ones and add the UI-only fields (`ContextRef.label`).
-// `tests/agent-ipc.test.ts` ties the command list of the manifest, the generated bindings and this
+// (`web/lib/events.ts`) re-export the generated ones and add the UI-only fields (`ContextRef.label`).
+// `features/agent/tests/agent-ipc.test.ts` ties the command list of the manifest, the generated bindings and this
 // map together.
 import { featureEvents } from "@/lib/features/events";
 import { featureInvoke } from "@/lib/features/ipc";

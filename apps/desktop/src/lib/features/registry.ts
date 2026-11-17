@@ -17,6 +17,7 @@ import { assertFeatureId, ownerOf } from "./id";
 import { recordFailure } from "./health";
 import { editorExtensionContributions } from "./editor-extensions";
 import { dockContributions } from "./docks";
+import { fileTreeDecorationContributions } from "./file-tree";
 import { menuContributions, menuKey } from "./menus";
 import { overlayContributions } from "./overlays";
 import { featurePaletteCommands, featurePaletteSources } from "./palette";
@@ -53,6 +54,7 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.sidebarActions ?? []),
     ...(c.statusItems ?? []),
     ...(c.overlays ?? []),
+    ...(c.fileTreeDecorations ?? []),
     ...(c.slots ?? []),
     ...(c.commandSources ?? []),
     ...(c.workspaceListeners ?? []),
@@ -149,6 +151,7 @@ export function createFeatureHost({
     sidebarActionContributions.removeOwner(ownerOf(id));
     statusItemContributions.removeOwner(ownerOf(id));
     overlayContributions.removeOwner(ownerOf(id));
+    fileTreeDecorationContributions.removeOwner(ownerOf(id));
     slotContributions.removeOwner(ownerOf(id));
     featurePaletteSources.removeOwner(ownerOf(id));
     workspaceListeners.removeOwner(ownerOf(id));
@@ -224,6 +227,9 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.overlays ?? []) {
           overlayContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.fileTreeDecorations ?? []) {
+          fileTreeDecorationContributions.add(x.id, { ...x, owner: o });
         }
         for (const x of def.contributes?.slots ?? []) {
           slotContributions.add(x.id, { ...x, owner: o });

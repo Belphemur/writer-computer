@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { linkHandlers } from "@/lib/link-activation";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
-import { createTauriAgentClient } from "@/lib/agent/client";
+import { createTauriAgentClient } from "@features/agent/web/lib/client";
 import {
   AGENT_BACKENDS,
   DEFAULT_BACKEND_ID,
@@ -11,15 +11,15 @@ import {
   type BackendGlyph,
   type BackendStatus,
   type DetectedBinary,
-} from "@/lib/agent/backends";
+} from "@features/agent/web/lib/backends";
 import {
   buildModelRows,
   modelIdToSetting,
   modelSettingToId,
   modelSupportsEffort,
   DEFAULT_MODEL_ID,
-} from "@/lib/agent/model-catalog";
-import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
+} from "@features/agent/web/lib/model-catalog";
+import { PERMISSION_MODE_LABEL } from "@features/agent/web/lib/agent-settings";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
 import { AgentMemory } from "./agent-memory";

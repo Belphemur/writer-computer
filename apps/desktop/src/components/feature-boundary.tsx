@@ -30,6 +30,8 @@ interface Props {
   /** The feature that owns what renders inside. */
   feature: string;
   children: ReactNode;
+  /** What shows after a render error instead of the full placeholder (a badge on a tree row). */
+  fallback?: ReactNode;
 }
 
 /** The one error boundary for UI a built-in feature contributes (docks today; every new host for
@@ -53,6 +55,11 @@ export class FeatureBoundary extends Component<Props, { failed: boolean }> {
   }
 
   render() {
-    return this.state.failed ? <FailedPlaceholder id={this.props.feature} /> : this.props.children;
+    if (!this.state.failed) return this.props.children;
+    return this.props.fallback === undefined ? (
+      <FailedPlaceholder id={this.props.feature} />
+    ) : (
+      this.props.fallback
+    );
   }
 }

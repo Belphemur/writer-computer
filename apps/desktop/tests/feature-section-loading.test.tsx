@@ -145,6 +145,8 @@ describe("Settings > Agent before detection resolves", () => {
     expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("checking");
     expect(q("[data-agent-header]")).not.toBeNull();
     expect(container.querySelector('select[aria-label="Default model"]')).not.toBeNull();
+    // Detection starts in an effect once the page's chunk has loaded; wait for it, never assume.
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     await act(async () =>
       finish({ found: true, path: "/synthetic/bin/claude", version: "2.1.325", source: "path" }),
     );

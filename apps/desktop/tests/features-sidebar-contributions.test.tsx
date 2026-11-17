@@ -222,7 +222,11 @@ describe("sidebar panels", () => {
 });
 
 describe("sidebar menus", () => {
-  beforeEach(() => host.register(fixtureSidebarFeature()));
+  beforeEach(() => {
+    // The shipped agent feature also offers a folder item; these tests are about the fixture's.
+    menuContributions.removeOwner("builtin:agent");
+    host.register(fixtureSidebarFeature());
+  });
 
   it("hands each surface its own target and keeps surfaces apart", async () => {
     expect(await contributedMenuItems("sidebar-file", entry("a.md"))).toMatchObject([

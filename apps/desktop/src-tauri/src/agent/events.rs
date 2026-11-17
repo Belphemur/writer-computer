@@ -1,5 +1,5 @@
 //! The typed event contract of the agent pane, Rust side. The TypeScript types are
-//! generated from it (`features/agent/web/bindings.ts`, re-exported by `src/lib/agent/events.ts`); spec: `SPECs/native-agent-spec.md`.
+//! generated from it (`features/agent/web/bindings.ts`, re-exported by `features/agent/web/lib/events.ts`); spec: `SPECs/native-agent-spec.md`.
 //!
 //! JSON shape rules (pinned by the tests below and the golden files in
 //! `shared/agent-golden/`): a kebab-case `type` discriminant, camelCase field names, enums as

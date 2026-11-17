@@ -13,7 +13,6 @@ import { getWorkspaceIdentity, isCurrentWorkspaceIdentity } from "@/hooks/worksp
 import { getParentDir, getRelativePath } from "@/lib/paths";
 import { duplicateFile } from "./duplicate-file";
 import { showFileContextMenu } from "./file-context-menu";
-import { openMakeProjectForFolder } from "@/lib/agent/project-actions";
 import { showFolderContextMenu } from "./folder-context-menu";
 import { showBulkContextMenu } from "./bulk-context-menu";
 import { createSidebarEntryAndRename } from "./create-sidebar-entry-and-rename";
@@ -170,7 +169,6 @@ export function useFileTreeContextMenus({
           onNewFolder: () => {
             createChildEntry(entry, "folder");
           },
-          onMakeProject: () => openMakeProjectForFolder(entry.path),
           onCopyRelativePath: () => {
             void writeText(relative);
           },

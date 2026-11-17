@@ -14,6 +14,7 @@ import {
   Table01Icon,
 } from "@hugeicons/core-free-icons";
 import { isRenderableImageName } from "@/lib/attachments";
+import type { FileTreeBadge } from "@/lib/features/types";
 import { codeIconFamily, isCodeName, type CodeIconFamily } from "@/lib/code-files";
 
 // Shared file/folder glyphs used by file-tree rows and the drag ghost so they
@@ -133,17 +134,17 @@ export function ManagedSkillBadge() {
   );
 }
 
-/** Marks a folder that holds an agent project (`project.md` with a project id). */
-export function ProjectBadge() {
+/** A badge a feature contributes to a tree row (`lib/features/file-tree.ts`): one look for all. */
+export function FileTreeBadgeIcon({ badge }: { badge: FileTreeBadge }) {
   return (
     <span
       role="img"
-      aria-label="Agent project"
-      title="Agent project"
-      data-testid="project-badge"
+      aria-label={badge.label}
+      title={badge.label}
+      data-testid={badge.testId}
       className="ml-auto flex shrink-0 items-center text-[var(--text-icon-muted)] opacity-70"
     >
-      <HugeiconsIcon icon={SparklesIcon} size={12} color="currentColor" strokeWidth={1.8} />
+      <HugeiconsIcon icon={badge.icon} size={12} color="currentColor" strokeWidth={1.8} />
     </span>
   );
 }

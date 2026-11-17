@@ -7,7 +7,7 @@
   "activation": ["onStartup"],
   "memory": {
     "level": "medium",
-    "note": "Applies the saved pane state at startup (two store subscriptions); the chat pane loads when you first open it and one Claude process starts per open chat. Nothing runs while the pane is closed."
+    "note": "Applies the saved pane state at startup (two subscriptions) and keeps the project list for the sidebar badge; the chat store and pane load when you first open the pane, and one Claude process starts per open chat. Nothing else runs while the pane is closed."
   },
   "rust": {
     "commands": [
@@ -76,6 +76,18 @@
         "label": "Agent: Use demo backend (recorded sessions)",
         "description": "Command",
         "when": "dev-workspace-window"
+      },
+      {
+        "id": "agent.new-project",
+        "label": "New project",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.make-project-from-folder",
+        "label": "Make project from this folder",
+        "description": "Command",
+        "when": "workspace-window-in-folder"
       }
     ],
     "keybindings": [
@@ -86,6 +98,11 @@
         "layoutIndependent": true
       }
     ],
-    "docks": ["agent.pane"]
+    "docks": ["agent.pane"],
+    "overlays": ["agent.new-project-dialog"],
+    "menus": {
+      "sidebar-folder": ["agent.make-project"]
+    },
+    "fileTreeDecorations": ["agent.project-badge"]
   }
 }

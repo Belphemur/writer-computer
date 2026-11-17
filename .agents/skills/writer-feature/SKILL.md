@@ -39,21 +39,22 @@ Required: `id`, `name`, `version`, `description`, `enabledByDefault`, `memory: {
 
 `contributes` (every contributed id starts with `<id>.`):
 
-| Key               | Shape                                                   | Registered in `defineFeature` as                                                                                               |
-| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `commands`        | `[{ id, label, description, when }]`                    | `commands: [{ id, label, when, run(ctx, feature) }]`                                                                           |
-| `keybindings`     | `[{ id, keys, description }]`                           | `keybindings: [{ ..., run(feature, e) }]`                                                                                      |
-| `docks`           | `[ids]`                                                 | `docks: [{ id, priority, isOpen, width, close, subscribe, load }]`                                                             |
-| `sidebarPanels`   | `[ids]`                                                 | `sidebarPanels: [{ id, label, icon, order, load }]`                                                                            |
-| `sidebarActions`  | `[ids]`                                                 | `sidebarActions: [{ id, label, icon, order, run(feature) }]`                                                                   |
-| `statusItems`     | `[ids]`                                                 | `statusItems: [{ id, order, load }]` (component gets `{ filePath }`)                                                           |
-| `menus`           | `{ "<surface>": [ids] }`                                | `menus: { "<surface>": [{ id, items(...target) }] }`; surfaces `editor-body`, `sidebar-file`, `sidebar-folder`, `sidebar-bulk` |
-| `settingsSection` | none (a page)                                           | `settingsSection: { id, label, order, load }`                                                                                  |
-| `secrets`         | `[{ key: "features.<id>.<name>", label, description }]` | `ctx.secrets.get/set/delete(key)`                                                                                              |
-| editor extensions | none                                                    | `editorExtensions: [{ id, when?, load }]`                                                                                      |
-| `slots`           | none                                                    | `slots: [{ id, slot, load }]` (`sidebar-ribbon`, `editor-status`, `page-view:<kind>`; `lib/features/slots.ts`)                 |
-| palette sources   | none                                                    | `commandSources: [{ id, list(ctx) }]` (commands computed when the palette opens)                                               |
-| core events       | none                                                    | `workspaceListeners: [{ id, onFileChanged?, onSecretChanged?, onSecretsReady? }]`                                              |
+| Key                   | Shape                                                   | Registered in `defineFeature` as                                                                                               |
+| --------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `commands`            | `[{ id, label, description, when }]`                    | `commands: [{ id, label, when, run(ctx, feature) }]`                                                                           |
+| `keybindings`         | `[{ id, keys, description }]`                           | `keybindings: [{ ..., run(feature, e) }]`                                                                                      |
+| `docks`               | `[ids]`                                                 | `docks: [{ id, priority, isOpen, width, close, subscribe, load }]`                                                             |
+| `sidebarPanels`       | `[ids]`                                                 | `sidebarPanels: [{ id, label, icon, order, load }]`                                                                            |
+| `sidebarActions`      | `[ids]`                                                 | `sidebarActions: [{ id, label, icon, order, run(feature) }]`                                                                   |
+| `statusItems`         | `[ids]`                                                 | `statusItems: [{ id, order, load }]` (component gets `{ filePath }`)                                                           |
+| `fileTreeDecorations` | `[ids]`                                                 | `fileTreeDecorations: [{ id, useBadge(entry) }]` (a hook returning `{ label, icon, testId? }` or `null`; core draws the badge) |
+| `menus`               | `{ "<surface>": [ids] }`                                | `menus: { "<surface>": [{ id, items(...target) }] }`; surfaces `editor-body`, `sidebar-file`, `sidebar-folder`, `sidebar-bulk` |
+| `settingsSection`     | none (a page)                                           | `settingsSection: { id, label, order, load }`                                                                                  |
+| `secrets`             | `[{ key: "features.<id>.<name>", label, description }]` | `ctx.secrets.get/set/delete(key)`                                                                                              |
+| editor extensions     | none                                                    | `editorExtensions: [{ id, when?, load }]`                                                                                      |
+| `slots`               | none                                                    | `slots: [{ id, slot, load }]` (`sidebar-ribbon`, `editor-status`, `page-view:<kind>`; `lib/features/slots.ts`)                 |
+| palette sources       | none                                                    | `commandSources: [{ id, list(ctx) }]` (commands computed when the palette opens)                                               |
+| core events           | none                                                    | `workspaceListeners: [{ id, onFileChanged?, onSecretChanged?, onSecretsReady? }]`                                              |
 
 Feature items are always grouped after core items behind a separator (in the Settings sidebar, feature pages are grouped under a "Features" label after the core groups; every settings group is labelled): surfaces call `withFeatureDivider` (`src/lib/features/origin.ts`), never hand-place a divider; a new surface or point must use it and add a test that the divider shows only when a feature item exists.
 

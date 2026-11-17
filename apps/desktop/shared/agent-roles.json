@@ -1,5 +1,5 @@
 {
-  "$comment": "The agent roles, defined once (ADR 2026-11-17 define-agent-roles-once..., spec SPECs/agent-roles-spec.md). Read by src-tauri/src/agent/roles.rs (include_str!) and src/lib/agent/agent-roles.ts (JSON import); both have a contract test. No vendor model names and no tool names here: a role names a tier (models come from the backend's tier settings) and capabilities (a backend adapter maps them to its tools). `{<capability>}` in a prompt is replaced by the adapter's tools for that capability. `promptByCapability` and a delegation task's `capability` apply only when that capability is granted.",
+  "$comment": "The agent roles, defined once (ADR 2026-11-17 define-agent-roles-once..., spec SPECs/agent-roles-spec.md). Read by src-tauri/src/agent/roles.rs (include_str!) and features/agent/web/lib/agent-roles.ts (JSON import); both have a contract test. No vendor model names and no tool names here: a role names a tier (models come from the backend's tier settings) and capabilities (a backend adapter maps them to its tools). `{<capability>}` in a prompt is replaced by the adapter's tools for that capability. `promptByCapability` and a delegation task's `capability` apply only when that capability is granted.",
   "version": 1,
   "tiers": ["cheap", "standard", "strong"],
   "capabilities": {

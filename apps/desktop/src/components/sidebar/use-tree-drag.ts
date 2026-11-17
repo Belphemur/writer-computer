@@ -12,7 +12,7 @@ import {
   previewImageDropAt,
   vaultImageSources,
 } from "@/components/editor-area/editor-image-insert";
-import { dropOnChatComposer } from "@/lib/agent/chat-image-target";
+import { dropVaultFilesOnTarget } from "@/lib/vault-drop-target";
 import type { DirEntry } from "@/types/fs";
 import type { FlatTreeItem } from "./flatten-tree";
 import { canMoveInto, resolveDropDir, resolveDropRange } from "./tree-move";
@@ -331,13 +331,11 @@ export function useTreeDrag({
       // Released over a note: link the dragged images there, copying nothing.
       const images = vaultImageSources(entries);
       if (images.length > 0 && !dropImagesAt(event.clientX, event.clientY, images)) {
-        // not over a note: the agent composer takes the images by reference
-        dropOnChatComposer(
+        // not over a note: a registered target (the agent composer) takes them by reference
+        dropVaultFilesOnTarget(
           event.clientX,
           event.clientY,
-          images.flatMap((i) =>
-            i.kind === "vault" ? [{ kind: "vault" as const, path: i.path }] : [],
-          ),
+          images.flatMap((i) => (i.kind === "vault" ? [i.path] : [])),
         );
       }
     },

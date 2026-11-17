@@ -24,7 +24,7 @@ const counts = () => [
     .length,
   editorExtensionContributions.list().filter((c: { owner: string }) => c.owner === "builtin:tables")
     .length,
-  menuContributions.size,
+  menuContributions.list().filter((c: { owner: string }) => c.owner === "builtin:tables").length,
 ];
 
 afterEach(async () => {

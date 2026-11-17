@@ -1,6 +1,5 @@
 import { AppLayout } from "./components/app-layout";
 import { NoteTitleDialog } from "./components/note-title-dialog";
-import { NewProjectDialog } from "./components/agent/new-project-dialog";
 import { CommandPalette } from "./components/command-palette";
 import { FeatureOverlays } from "./components/feature-overlays";
 import { TelemetryConsentDialog } from "./components/telemetry-consent-dialog";
@@ -33,7 +32,6 @@ function App() {
       <AppLayout />
       <CommandPalette />
       <FeatureOverlays />
-      <NewProjectDialog />
       <NoteTitleDialog />
       <TelemetryConsentDialog />
     </>

@@ -9,7 +9,7 @@ import { DESKTOP, sourceFiles } from "./helpers/import-graph";
 const ALLOWED = new Set([
   "src/lib/link-activation.ts",
   "src/components/editor-area/editor-tabs.tsx",
-  "src/components/agent/chat-tabs.tsx",
+  "features/agent/web/components/chat-tabs.tsx",
 ]);
 const FORBIDDEN = /button\s*[!=]==?\s*1\b|onAuxClick|["']auxclick["']/;
 

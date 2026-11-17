@@ -16,7 +16,7 @@ vi.mock("@/lib/preferences", () => ({
 }));
 
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
-import { useAgentStore } from "@/stores/agent-store";
+import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { AgentMemory } from "../web/agent-memory";
 import type { ImportReport, MemoryOverview } from "../web/bindings";

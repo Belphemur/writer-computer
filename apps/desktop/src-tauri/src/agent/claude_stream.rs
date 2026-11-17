@@ -933,7 +933,7 @@ mod tests {
             .collect()
     }
 
-    /// The golden files are what the TypeScript side reads (`tests/agent-events.test.ts`).
+    /// The golden files are what the TypeScript side reads (`features/agent/tests/agent-events.test.ts`).
     /// Regenerate with `WRITER_UPDATE_GOLDEN=1 cargo test golden`.
     #[test]
     fn golden_event_streams_match_the_files_typescript_reads() {
@@ -1537,7 +1537,7 @@ mod tests {
         assert!(!encode_user_message("a\nb", &[]).contains('\n'));
     }
 
-    /// The prompt is built in TypeScript (`src/lib/agent/context-text.ts`, which asserts these same
+    /// The prompt is built in TypeScript (`features/agent/web/lib/context-text.ts`, which asserts these same
     /// cases); this side proves the refs of the contract deserialize and that the encoder carries
     /// each prompt to the CLI's stdin byte for byte, as one line.
     #[test]

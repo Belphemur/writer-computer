@@ -26,6 +26,7 @@ function definedIds(def: FeatureDefinition): Ids {
     sidebarActions: ids(c.sidebarActions),
     statusItems: ids(c.statusItems),
     overlays: ids(c.overlays),
+    fileTreeDecorations: ids(c.fileTreeDecorations),
     ...Object.fromEntries(Object.entries(c.menus ?? {}).map(([s, m]) => [`menus.${s}`, ids(m)])),
   };
 }
@@ -39,6 +40,7 @@ function declaredIds(manifest: FeatureManifest): Ids {
     sidebarActions: list(c.sidebarActions),
     statusItems: list(c.statusItems),
     overlays: list(c.overlays),
+    fileTreeDecorations: list(c.fileTreeDecorations),
     ...Object.fromEntries(Object.entries(c.menus ?? {}).map(([s, m]) => [`menus.${s}`, list(m)])),
   };
 }

@@ -68,13 +68,13 @@ describe("palette built-in commands", () => {
       "open-log-folder",
       "copy-recent-errors",
       "open-settings",
-      "agent-new-project",
       "note-set-display-title",
       // contributed by the agent feature (`features/agent`); development builds only for the demo
       "agent.toggle-pane",
       "agent.new-chat",
       "agent.history",
       "agent.use-demo-backend",
+      "agent.new-project",
     ]);
   });
 
