@@ -387,6 +387,7 @@ export function AgentSection() {
           "agent.max-concurrent-chats",
           "agent.chats-keep-days",
           "agent.auto-title-chats",
+          "agent.restore-chats",
           "agent.title-model",
           "agent.pane-width",
         ]}

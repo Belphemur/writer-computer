@@ -218,6 +218,27 @@ export function getRecentFilesGlobal(limit?: number): Promise<RecentFile[]> {
 export interface SessionData {
   tabs?: SessionTabData[];
   active_index?: number | null;
+  /** The agent pane's open chats; absent in older session files. */
+  agent_chats?: AgentChatsData | null;
+}
+
+export interface AgentChatRefData {
+  chat_id: string;
+  /** CLI session to resume on the next send (the chat note holds it too). */
+  session_id?: string | null;
+}
+
+export interface AgentChatsData {
+  chats?: AgentChatRefData[];
+  active_chat_id?: string | null;
+}
+
+export function saveAgentChats(
+  workspaceRoot: string,
+  chats: AgentChatRefData[],
+  activeChatId: string | null,
+): Promise<void> {
+  return invoke("save_agent_chats", { workspaceRoot, chats, activeChatId });
 }
 
 export interface SerializedLocationData {

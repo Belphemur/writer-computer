@@ -54,6 +54,7 @@ describe("agent.* settings contract", () => {
       "agent.chats-keep-days": 0,
       "agent.auto-title-chats": true,
       "agent.title-model": "",
+      "agent.restore-chats": true,
       "agent.pane-width": 420,
     });
   });

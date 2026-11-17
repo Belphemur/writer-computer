@@ -672,6 +672,7 @@ pub fn run() {
             commands::workspace::remove_recent_workspace,
             commands::workspace::take_pending_open,
             commands::workspace::save_session,
+            commands::workspace::save_agent_chats,
             commands::workspace::load_session,
             commands::workspace::open_file_in_standalone_window,
             commands::workspace::watch_standalone_file,

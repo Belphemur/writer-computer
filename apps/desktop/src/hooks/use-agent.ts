@@ -75,6 +75,13 @@ export function useAgentPaneDock() {
   const syncWidth = useAgentStore((s) => s.syncPaneWidth);
   const widthSetting = useSettingsStore((s) => s.settings["agent.pane-width"]);
   const closeAgent = useAgentStore((s) => s.closePane);
+  const restoreChats = useAgentStore((s) => s.restoreChats);
+  const root = useWorkspaceRoot();
+
+  // The chats that were open in this vault come back once per vault, whether or not the pane is open.
+  useEffect(() => {
+    if (root) void restoreChats(root);
+  }, [restoreChats, root]);
 
   // The setting is the saved width (also edited in Settings): adopt it at startup and on change.
   useEffect(() => syncWidth(widthSetting), [syncWidth, widthSetting]);

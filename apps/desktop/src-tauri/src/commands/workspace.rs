@@ -898,6 +898,70 @@ pub struct SessionData {
     pub tabs: Vec<SessionTab>,
     #[serde(default)]
     pub active_index: Option<usize>,
+    /// The agent pane's open chats (spec "Restoring open chats"); absent in older files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_chats: Option<AgentChatsSession>,
+}
+
+/// One open chat of the agent pane: the chat note id and the CLI session id to resume lazily.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentChatRef {
+    pub chat_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentChatsSession {
+    #[serde(default)]
+    pub chats: Vec<AgentChatRef>,
+    #[serde(default)]
+    pub active_chat_id: Option<String>,
+}
+
+/// The editor tabs replace theirs and keep the agent chats as they were. An entry with nothing
+/// left in it is dropped.
+fn with_editor_tabs(
+    existing: Option<SessionData>,
+    tabs: Vec<SessionTab>,
+    active_index: Option<usize>,
+) -> Option<SessionData> {
+    let agent_chats = existing.and_then(|s| s.agent_chats);
+    if tabs.is_empty() && active_index.is_none() && agent_chats.is_none() {
+        return None;
+    }
+    Some(SessionData {
+        tabs,
+        active_index,
+        agent_chats,
+    })
+}
+
+/// The agent chats replace theirs and keep the editor tabs as they were.
+fn with_agent_chats(
+    existing: Option<SessionData>,
+    chats: Vec<AgentChatRef>,
+    active_chat_id: Option<String>,
+) -> Option<SessionData> {
+    let agent_chats = if chats.is_empty() {
+        None
+    } else {
+        Some(AgentChatsSession {
+            chats,
+            active_chat_id,
+        })
+    };
+    let (tabs, active_index) = existing
+        .map(|s| (s.tabs, s.active_index))
+        .unwrap_or_default();
+    if tabs.is_empty() && active_index.is_none() && agent_chats.is_none() {
+        return None;
+    }
+    Some(SessionData {
+        tabs,
+        active_index,
+        agent_chats,
+    })
 }
 
 fn sessions_path(app: &tauri::AppHandle) -> Result<PathBuf, AppError> {
@@ -949,12 +1013,31 @@ pub async fn save_session(
         let _guard = state.sessions_file_lock.lock();
         let mut sessions = load_all_sessions(&app);
 
-        if tabs.is_empty() && active_index.is_none() {
-            sessions.remove(&key);
-        } else {
-            sessions.insert(key, SessionData { tabs, active_index });
+        if let Some(next) = with_editor_tabs(sessions.remove(&key), tabs, active_index) {
+            sessions.insert(key, next);
         }
 
+        save_all_sessions(&app, &sessions)
+    })
+    .await
+}
+
+/// Saves the agent pane's open chats beside the editor tabs of the same workspace entry.
+#[tauri::command]
+pub async fn save_agent_chats(
+    workspace_root: String,
+    chats: Vec<AgentChatRef>,
+    active_chat_id: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    super::blocking(move || {
+        let key = workspace_root.trim_end_matches('/').to_string();
+        let state = app.state::<AppState>();
+        let _guard = state.sessions_file_lock.lock();
+        let mut sessions = load_all_sessions(&app);
+        if let Some(next) = with_agent_chats(sessions.remove(&key), chats, active_chat_id) {
+            sessions.insert(key, next);
+        }
         save_all_sessions(&app, &sessions)
     })
     .await
@@ -981,6 +1064,32 @@ pub async fn load_session(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn agent_chats_and_editor_tabs_do_not_clobber_each_other() {
+        let chats = vec![AgentChatRef {
+            chat_id: "c1".into(),
+            session_id: Some("s1".into()),
+        }];
+        // chats alone make an entry; an editor save keeps them
+        let a = with_agent_chats(None, chats.clone(), Some("c1".into())).unwrap();
+        let b = with_editor_tabs(Some(a), vec![], None).unwrap();
+        assert_eq!(b.agent_chats.as_ref().unwrap().chats, chats);
+        // editor tabs survive a chats save
+        let tab: SessionTab =
+            serde_json::from_str(r#"{"location":{"kind":"file","path":"/x"}}"#).expect("tab");
+        let c = with_editor_tabs(None, vec![tab], Some(0)).unwrap();
+        let d = with_agent_chats(Some(c), chats, None).unwrap();
+        assert_eq!(d.tabs.len(), 1);
+        assert!(d.agent_chats.is_some());
+        // nothing left: the entry goes
+        let e = with_agent_chats(Some(d), vec![], None).unwrap();
+        assert!(e.agent_chats.is_none());
+        assert!(with_editor_tabs(with_agent_chats(None, vec![], None), vec![], None).is_none());
+        // an older file without the field still parses
+        let old: SessionData = serde_json::from_str(r#"{"tabs":[],"active_index":null}"#).unwrap();
+        assert!(old.agent_chats.is_none());
+    }
 
     #[test]
     fn session_tab_pinned_defaults_false_and_round_trips() {

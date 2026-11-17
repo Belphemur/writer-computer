@@ -52,6 +52,7 @@ import { createChatSaver, type ChatSaver } from "@/lib/agent/chat-saver";
 import { chatHistoryClient, type ChatHistoryClient } from "@/lib/agent/chat-history-client";
 import { reloadChatNoteIfOpen } from "@/lib/agent/chat-editor-sync";
 import { logger } from "@/lib/logger";
+import { loadAgentChats, saveAgentChats, type AgentChatsSession } from "@/lib/session";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -129,6 +130,9 @@ interface AgentState {
   persistPaneWidth: () => void;
   /** Adopts the `agent.pane-width` setting (startup, and when Settings changes it). */
   syncPaneWidth: (value: unknown) => void;
+  /** Brings back the chats that were open in this vault (`agent.restore-chats`): transcripts from
+   *  their notes, no CLI process; the session resumes on the next send. Once per vault. */
+  restoreChats: (root: string) => Promise<void>;
   /** Opens a saved chat in a tab: transcript from its note, resumes its CLI session on send. */
   openSavedChat: (chatId: ChatId) => Promise<void>;
   /** Reads the skills on disk for a project (cached entry stays visible while it refreshes). */
@@ -403,12 +407,82 @@ export function configureChatPersistenceForTests(opts: {
   history?: ChatHistoryClient;
   delayMs?: number;
   reload?: (relativePath: string) => Promise<unknown>;
+  chatsIo?: ChatsIo;
 }) {
+  chatRestore.reset(opts.chatsIo, opts.delayMs);
   persistence.instance = null;
   persistence.titleAttempts = new Set();
   persistence.history = opts.history ?? chatHistoryClient;
   persistence.delayMs = opts.delayMs ?? 500;
   persistence.reload = opts.reload ?? reloadChatNoteIfOpen;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The open chats of the pane, saved with the editor session of the vault (`lib/session.ts`) and
+// restored from their chat notes. Nothing is saved until the restore for the vault has finished,
+// or the empty first chat would overwrite the saved list.
+
+type ChatsIo = {
+  load: (root: string) => Promise<AgentChatsSession | null>;
+  save: (root: string, s: AgentChatsSession) => Promise<void>;
+};
+
+const chatRestore = {
+  io: { load: loadAgentChats, save: saveAgentChats } as ChatsIo,
+  delayMs: 500,
+  /** Vault whose restore is running or done. */
+  root: null as string | null,
+  /** Restore finished for `root`: saving is allowed. */
+  ready: false,
+  lastKey: null as string | null,
+  timer: null as ReturnType<typeof setTimeout> | null,
+  reset(io?: ChatsIo, delayMs?: number) {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.root = null;
+    this.ready = false;
+    this.lastKey = null;
+    this.io = io ?? { load: loadAgentChats, save: saveAgentChats };
+    this.delayMs = delayMs ?? 500;
+  },
+};
+
+/** The chats worth restoring (those with a message, so a note exists) in tab order. */
+function openChatsSnapshot(s: AgentState): AgentChatsSession {
+  const chats = s.order
+    .filter((id) => (s.notes[id]?.messages.length ?? 0) > 0)
+    .map((id) => ({
+      chatId: id,
+      sessionId:
+        s.chats[id]?.session?.sessionId ??
+        s.chats[id]?.resumeSessionId ??
+        s.notes[id]?.meta.sessionId ??
+        null,
+    }));
+  const active = s.activeChatId;
+  return {
+    chats,
+    activeChatId: active && chats.some((c) => c.chatId === active) ? active : null,
+  };
+}
+
+function flushOpenChats() {
+  if (chatRestore.timer) clearTimeout(chatRestore.timer);
+  chatRestore.timer = null;
+  const root = useWorkspaceStore.getState().root;
+  const state = useAgentStore.getState();
+  if (!chatRestore.ready || !root || root !== chatRestore.root || state.backend !== "tauri") return;
+  const snap = openChatsSnapshot(state);
+  const key = JSON.stringify(snap);
+  if (key === chatRestore.lastKey) return;
+  chatRestore.lastKey = key;
+  void chatRestore.io.save(root, snap);
+}
+
+function scheduleOpenChatsSave() {
+  if (!chatRestore.ready) return;
+  if (chatRestore.timer) clearTimeout(chatRestore.timer);
+  chatRestore.timer = setTimeout(flushOpenChats, chatRestore.delayMs);
 }
 
 function scheduleSave(chatId: ChatId) {
@@ -952,6 +1026,65 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
     },
 
+    restoreChats: async (root) => {
+      if (chatRestore.root === root) return;
+      chatRestore.root = root;
+      chatRestore.ready = false;
+      chatRestore.lastKey = null;
+      const saved = await chatRestore.io.load(root);
+      const restored: { chat: Chat; note: NoteState; model: string | null }[] = [];
+      for (const ref of saved?.chats ?? []) {
+        if (get().chats[ref.chatId]) continue;
+        try {
+          const { summary, markdown } = await persistence.history.load(ref.chatId);
+          const doc = parseChatNote(markdown);
+          const chat = chatFromNote(doc, summary);
+          if (!doc.meta.sessionId && ref.sessionId) chat.resumeSessionId = ref.sessionId;
+          restored.push({ chat, note: noteStateFromDoc(doc), model: doc.meta.model });
+        } catch (e) {
+          // the note is gone (or unreadable): the chat drops out of the saved list
+          logger.log("debug", "agent", `skipping a chat to restore: ${String(e)}`);
+        }
+      }
+      // the vault changed while the notes loaded: this restore is stale
+      if (chatRestore.root !== root || useWorkspaceStore.getState().root !== root) return;
+      if (restored.length > 0) {
+        const settingsEffort = agentSettingsFrom(useSettingsStore.getState().settings).effort;
+        set((s) => {
+          const chats = { ...s.chats };
+          const notes = { ...s.notes };
+          const chatModels = { ...s.chatModels };
+          // untouched empty tabs make room, like opening a saved chat
+          const keep = s.order.filter((id) => {
+            const c = s.chats[id];
+            const empty = c && c.turns.length === 0 && !(s.drafts[id]?.text ?? "");
+            if (empty) {
+              delete chats[id];
+              delete notes[id];
+            }
+            return !empty;
+          });
+          for (const r of restored) {
+            chats[r.chat.chatId] = r.chat;
+            notes[r.chat.chatId] = r.note;
+            if (r.model) chatModels[r.chat.chatId] = { model: r.model, effort: settingsEffort };
+          }
+          const order = [...restored.map((r) => r.chat.chatId), ...keep];
+          const current = s.activeChatId && keep.includes(s.activeChatId) ? s.activeChatId : null;
+          const wanted =
+            saved?.activeChatId && restored.some((r) => r.chat.chatId === saved.activeChatId)
+              ? saved.activeChatId
+              : restored[restored.length - 1]!.chat.chatId;
+          return { chats, notes, chatModels, order, activeChatId: current ?? wanted };
+        });
+      }
+      chatRestore.ready = true;
+      // what is saved may have lost chats whose notes are gone
+      const now = openChatsSnapshot(get());
+      if (saved && JSON.stringify(now) !== JSON.stringify(saved)) scheduleOpenChatsSave();
+      else chatRestore.lastKey = JSON.stringify(now);
+    },
+
     openSavedChat: async (chatId) => {
       if (get().chats[chatId]) {
         set({ paneOpen: true });
@@ -997,3 +1130,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
     },
   };
 });
+
+// Save the open chats on every change to the tab strip or its transcripts (debounced), and on
+// window close, like the editor session.
+useAgentStore.subscribe((s, prev) => {
+  if (
+    s.order !== prev.order ||
+    s.activeChatId !== prev.activeChatId ||
+    s.notes !== prev.notes ||
+    s.chats !== prev.chats
+  )
+    scheduleOpenChatsSave();
+});
+if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOpenChats);
