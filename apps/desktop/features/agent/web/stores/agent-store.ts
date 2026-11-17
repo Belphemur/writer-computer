@@ -1,3 +1,4 @@
+import { reportedMatches } from "@features/agent/web/lib/model-label";
 import { parseWriterCommand } from "@features/agent/web/lib/writer-commands";
 import { create } from "zustand";
 import {
@@ -105,6 +106,10 @@ interface AgentState {
   /** Per-chat model (and effort) chosen in the composer; null model is "Agent default". Absent:
    *  the `agent.model` / `agent.effort` settings. Also restored from a saved chat's note. */
   chatModels: Record<ChatId, ChatModelChoice>;
+  /** Chats whose model or effort was changed in a running session and not yet confirmed by the
+   *  CLI (a `session-started` or turn `usage` naming the model, or `model-refused`). The chip
+   *  shows the selected choice with a pending hint until then. */
+  modelPending: Record<ChatId, true>;
   /** What each chat's note holds (see `chat-persist.ts`); saved after a send and a turn end. */
   notes: Record<ChatId, NoteState>;
   /** Chats that started with `--resume`: a "session not found" answer triggers the replay path. */
@@ -344,6 +349,18 @@ function refusedModelFrom(events: readonly AgentEvent[]): { using: string | null
   return null;
 }
 
+/** Does a batch confirm the chat's pending model? The CLI refusing it settles it too; otherwise a
+ *  `session-started` or turn `usage` naming a model that matches the choice does. */
+function confirmsModel(events: readonly AgentEvent[], choice: ChatModelChoice | undefined) {
+  return events.some(
+    (e) =>
+      e.type === "model-refused" ||
+      ((e.type === "session-started" || e.type === "usage") &&
+        !!e.model &&
+        reportedMatches(choice?.model ?? null, e.model)),
+  );
+}
+
 /** The slash commands and skills of the newest `session-started` in a batch. */
 function catalogFrom(events: readonly AgentEvent[]): AgentState["cliCatalog"] {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -352,6 +369,11 @@ function catalogFrom(events: readonly AgentEvent[]): AgentState["cliCatalog"] {
       return { slashCommands: e.slashCommands, skills: e.skills ?? [] };
   }
   return null;
+}
+
+function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
+  const { [key]: _gone, ...rest } = map;
+  return rest;
 }
 
 function withChat(s: AgentState, id: ChatId, next: Chat): Pick<AgentState, "chats"> {
@@ -684,6 +706,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     queued: {},
     modes: {},
     chatModels: {},
+    modelPending: {},
     notes: {},
     resuming: {},
     historyError: null,
@@ -716,6 +739,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         drafts: {},
         modes: {},
         chatModels: {},
+        modelPending: {},
         notes: {},
         resuming: {},
         skills: {},
@@ -781,6 +805,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const { [chatId]: _q, ...queued } = s.queued;
         const { [chatId]: _m, ...modes } = s.modes;
         const { [chatId]: _cm, ...chatModels } = s.chatModels;
+        const { [chatId]: _mp, ...modelPending } = s.modelPending;
         const { [chatId]: _n, ...notes } = s.notes;
         const { [chatId]: _r, ...resuming } = s.resuming;
         const idx = s.order.indexOf(chatId);
@@ -788,7 +813,18 @@ export const useAgentStore = create<AgentState>((set, get) => {
           s.activeChatId === chatId
             ? (order[Math.min(idx, order.length - 1)] ?? null)
             : s.activeChatId;
-        return { chats, order, drafts, queued, modes, chatModels, notes, resuming, activeChatId };
+        return {
+          chats,
+          order,
+          drafts,
+          queued,
+          modes,
+          chatModels,
+          modelPending,
+          notes,
+          resuming,
+          activeChatId,
+        };
       });
       if (get().order.length === 0) get().newChat();
     },
@@ -949,24 +985,39 @@ export const useAgentStore = create<AgentState>((set, get) => {
         effort: effort === undefined ? (prev?.effort ?? settings.effort) : effort,
       };
       const chat = get().chats[chatId];
-      if (chat?.session && chat.state !== "ended") {
+      const live = !!chat?.session && chat.state !== "ended";
+      // Optimistic: the chip shows the selection at once; a live session confirms it later.
+      set((s) => ({
+        chatModels: { ...s.chatModels, [chatId]: choice },
+        modelPending: live ? { ...s.modelPending, [chatId]: true } : s.modelPending,
+      }));
+      if (live) {
         try {
           const { client } = await ensureRuntime();
           await client.setModel({ chatId, ...choice });
         } catch (e) {
           const { message } = classifyStartError(e);
-          set((s) =>
-            s.chats[chatId]
-              ? withChat(s, chatId, {
-                  ...s.chats[chatId]!,
-                  error: { kind: "unknown", message, retryable: true, at: Date.now() },
-                })
-              : s,
-          );
+          set((s) => {
+            // a newer selection owns the chat's choice now: leave it alone
+            const superseded = s.chatModels[chatId] !== choice;
+            const reverted = {
+              chatModels: prev
+                ? { ...s.chatModels, [chatId]: prev }
+                : omitKey(s.chatModels, chatId),
+              modelPending: omitKey(s.modelPending, chatId),
+            };
+            const error = {
+              kind: "unknown",
+              message,
+              retryable: true,
+              at: Date.now(),
+            } as const;
+            const chats = s.chats[chatId] ? withChat(s, chatId, { ...s.chats[chatId]!, error }) : s;
+            return superseded ? chats : { ...chats, ...reverted };
+          });
           return;
         }
       }
-      set((s) => ({ chatModels: { ...s.chatModels, [chatId]: choice } }));
       scheduleSave(chatId);
     },
     retry: async () => {
@@ -1012,6 +1063,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
           ...withChat(s, chatId, { ...reduceEvents(chat, events, now), lastSeq }),
           notes: folded ? { ...s.notes, [chatId]: folded.note } : s.notes,
           cliCatalog: catalogFrom(events) ?? s.cliCatalog,
+          modelPending:
+            s.modelPending[chatId] && confirmsModel(events, s.chatModels[chatId])
+              ? omitKey(s.modelPending, chatId)
+              : s.modelPending,
           chatModels: refused
             ? {
                 ...s.chatModels,

@@ -84,19 +84,22 @@ export function useChatModel(chatId: ChatId | null): {
   choice: ChatModelChoice;
   reported: string | null;
   sessionModel: string | null;
+  /** Selected in a running session, not yet confirmed by the CLI. */
+  pending: boolean;
 } {
   const own = useAgentStore((s) => (chatId ? s.chatModels[chatId] : undefined));
   const reported = useAgentStore((s) => (chatId ? (s.chats[chatId]?.reportedModel ?? null) : null));
   const sessionModel = useAgentStore((s) =>
     chatId ? (s.chats[chatId]?.session?.model ?? null) : null,
   );
+  const pending = useAgentStore((s) => (chatId ? !!s.modelPending[chatId] : false));
   const model = useSettingsStore((s) => s.settings["agent.model"]);
   const effort = useSettingsStore((s) => s.settings["agent.effort"]);
   const base = useMemo(() => {
     const d = agentSettingsFrom({ "agent.model": model, "agent.effort": effort });
     return { model: d.model, effort: d.effort };
   }, [model, effort]);
-  return { choice: own ?? base, reported, sessionModel };
+  return { choice: own ?? base, reported, sessionModel, pending };
 }
 
 /** How full the chat's context window is (`web/lib/context-usage.ts`); null without a chat. */

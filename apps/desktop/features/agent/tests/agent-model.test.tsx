@@ -95,6 +95,7 @@ describe("the model chip", () => {
       queued: {},
       modes: {},
       chatModels: {},
+      modelPending: {},
       notes: {},
       resuming: {},
       skills: {},
@@ -146,12 +147,61 @@ describe("the model chip", () => {
     expect(useAgentStore.getState().chatModels[chatId()]!.model).toBe("haiku");
   });
 
-  it("a failing live switch shows the error and keeps the old model", async () => {
+  it("a failing live switch shows the error and reverts the chip to the old model", async () => {
     await sendHello();
+    const before = chip().textContent;
     setModel.mockRejectedValueOnce(new Error("nope"));
     await choose(/^Opus$/);
     expect(useAgentStore.getState().chatModels[chatId()]).toBeUndefined();
+    expect(useAgentStore.getState().modelPending[chatId()]).toBeUndefined();
+    expect(chip().textContent).toBe(before);
     expect(useAgentStore.getState().chats[chatId()]!.error?.message).toContain("nope");
+  });
+
+  it("a live switch shows the new model at once, pending, until the CLI confirms it", async () => {
+    await sendHello();
+    let release!: () => void;
+    setModel.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+    await choose(/^Opus$/);
+    // selected, request still in flight: the chip already reads Opus, with the pending hint
+    expect(chip().textContent).toContain("Opus");
+    expect(chip().hasAttribute("data-pending")).toBe(true);
+    act(() => chip().click());
+    expect($("[data-agent-model-footer]")!.textContent).toBe("Switching to Opus…");
+    act(() => chip().click());
+    await act(async () => release());
+    expect(chip().hasAttribute("data-pending")).toBe(true); // sent, not yet confirmed
+    // the CLI's next report naming the model settles it
+    const id = chatId();
+    act(() =>
+      useAgentStore.getState().ingest(
+        id,
+        [
+          {
+            type: "usage",
+            scope: "turn",
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: null,
+            contextWindow: null,
+            model: "claude-opus-5-5",
+          },
+        ],
+        useAgentStore.getState().chats[id]!.lastSeq + 1,
+      ),
+    );
+    expect(chip().hasAttribute("data-pending")).toBe(false);
+    expect(chip().textContent).toContain("Opus 5.5");
+  });
+
+  it("an effort change is pending too", async () => {
+    await sendHello();
+    act(() => chip().click());
+    act(() => $("[aria-label='Effort high']")!.click());
+    await flush();
+    expect(chip().hasAttribute("data-pending")).toBe(true);
   });
 
   it("shows the model the CLI reports, even when it differs from the request", async () => {

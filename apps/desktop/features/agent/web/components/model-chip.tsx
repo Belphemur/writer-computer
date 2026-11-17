@@ -14,7 +14,7 @@ const effortLabel = (e: (typeof EFFORTS)[number]) => (e === null ? "Default" : e
 /** The model chip: the model the chat runs (the CLI's own report wins once a turn has finished),
  *  a menu of the enabled models, the effort when the model takes one, and "Set as default". */
 export function ModelChip({ chatId }: { chatId: ChatId }) {
-  const { choice, reported, sessionModel } = useChatModel(chatId);
+  const { choice, reported, sessionModel, pending } = useChatModel(chatId);
   const models = useEnabledAgentModels({ currentModel: choice.model, sessionModel });
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -24,7 +24,8 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
   const requestedId = choice.model ?? DEFAULT_MODEL_ID;
   const current = models.find((m) => m.id === requestedId);
   const matches = reportedMatches(choice.model, reported);
-  const label = shortModelName(reported ?? requestedId);
+  // Pending: the selection, at once. Applied: what the CLI says it runs (it wins over the request).
+  const label = shortModelName(pending ? requestedId : (reported ?? requestedId));
 
   useEffect(() => {
     if (!open) return;
@@ -47,15 +48,19 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
         aria-expanded={open}
         aria-label={`Model: ${label}`}
         title={
-          reported && !matches
-            ? `Requested ${shortModelName(requestedId)}, running ${shortModelName(reported)}`
-            : undefined
+          pending
+            ? `Switching to ${shortModelName(requestedId)}`
+            : reported && !matches
+              ? `Requested ${shortModelName(requestedId)}, running ${shortModelName(reported)}`
+              : undefined
         }
         data-agent-model-chip
+        data-pending={pending || undefined}
         onClick={() => setOpen((v) => !v)}
-        className="rounded-md bg-[var(--surface-subtle)] px-2 py-0.5 text-[11.5px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
+        className="rounded-md bg-[var(--surface-subtle)] px-2 py-0.5 text-[11.5px] text-text-secondary hover:bg-[var(--item-hover-bg)] data-[pending]:italic data-[pending]:opacity-70"
       >
-        {label} ▾
+        {label}
+        {pending ? "…" : ""} ▾
       </button>
       {open && (
         <div
@@ -128,10 +133,17 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
           >
             Set as default
           </button>
-          {reported && !matches && (
-            <div className="px-2 py-1 text-[10.5px] text-text-muted">
-              Running {shortModelName(reported)}
+          {pending ? (
+            <div data-agent-model-footer className="px-2 py-1 text-[10.5px] text-text-muted">
+              Switching to {shortModelName(requestedId)}…
             </div>
+          ) : (
+            reported &&
+            !matches && (
+              <div data-agent-model-footer className="px-2 py-1 text-[10.5px] text-text-muted">
+                Running {shortModelName(reported)}
+              </div>
+            )
           )}
         </div>
       )}
