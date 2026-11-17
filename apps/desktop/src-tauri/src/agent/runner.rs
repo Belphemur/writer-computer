@@ -285,7 +285,7 @@ impl LineBuf {
     }
 }
 
-fn redact_prompt(args: &[String]) -> Vec<String> {
+pub(crate) fn redact_prompt(args: &[String]) -> Vec<String> {
     let mut out = Vec::with_capacity(args.len());
     let mut redact = false;
     for a in args {

@@ -45,3 +45,7 @@ Limits: cwd confined to the vault, at most 8 live processes, process groups kill
 ## Addendum (2026-11-17)
 
 This consent governs community plugins only. The first-party agent pane no longer uses it (no `writer-agent` consent, no dialog): the agent feature's switch is its approval, see the addendum of [build a first-party agent pane](2026-11-17-build-a-first-party-agent-pane-over-the-claude-clis-stream-json-protocol.md).
+
+## Addendum (2026-11-17): the dialog text is bounded
+
+A native alert does not scroll, so a long argv (an agent's `--agents` JSON, a system prompt) or many environment names pushed Allow and Deny off screen. The dialog stays native, and only its display changes: `ConsentRequest::message()` builds one bounded text (at most 1600 characters; arguments cut to 80 characters, JSON shown as `<JSON, N chars>`, at most 12 arguments and 900 characters of them; at most 8 environment names, never values) that points to the log. The full argv and environment names are logged once at info level (`log_full`, the system prompt reduced to its length). The consent identity is unchanged: it is still keyed by vault, plugin and program in `ConsentStore`, never by the displayed text.

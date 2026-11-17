@@ -120,38 +120,121 @@ pub struct ConsentRequest {
     pub inherit_env: bool,
 }
 
+/// Hard cap on the dialog body: a native alert does not scroll, so the buttons must stay on a
+/// 768-px-high screen. Footer included.
+pub const CONSENT_MAX_CHARS: usize = 1600;
+const CONSENT_ARGS_MAX_CHARS: usize = 900;
+const CONSENT_MAX_ARGS: usize = 12;
+const CONSENT_ARG_MAX_CHARS: usize = 80;
+const CONSENT_PATH_MAX_CHARS: usize = 240;
+const CONSENT_MAX_ENV_NAMES: usize = 8;
+const CONSENT_FOOTER: &str = "\n\nFull details are in the log (Settings > Logs).";
+
+/// First `max` chars of `s`, then an ellipsis when something was cut.
+fn clip(s: &str, max: usize) -> String {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => format!("{}…", &s[..i]),
+        None => s.to_string(),
+    }
+}
+
+/// One argument for display: JSON becomes `<JSON, N chars>`, long text is cut, and the result is
+/// Debug-quoted so a newline cannot fake a line of the dialog.
+fn display_arg(a: &str) -> String {
+    let n = a.chars().count();
+    let t = a.trim();
+    let json_shaped =
+        (t.starts_with('{') && t.ends_with('}')) || (t.starts_with('[') && t.ends_with(']'));
+    if n > CONSENT_ARG_MAX_CHARS
+        && json_shaped
+        && serde_json::from_str::<serde_json::Value>(t).is_ok()
+    {
+        return format!("<JSON, {n} chars>");
+    }
+    if n > CONSENT_ARG_MAX_CHARS {
+        return format!("{:?} ({n} chars)", clip(a, CONSENT_ARG_MAX_CHARS));
+    }
+    format!("{a:?}")
+}
+
 impl ConsentRequest {
-    /// The dialog body. Every page-supplied value is Debug-quoted so a newline
-    /// cannot fake a line of the dialog, and nothing is truncated.
+    /// The dialog body, bounded (see `CONSENT_MAX_CHARS`). Every page-supplied value is
+    /// Debug-quoted so a newline cannot fake a line of the dialog. Display only: consent is keyed
+    /// by plugin + program (`ConsentStore`), never by this text, and the full argv and env names
+    /// go to the log (`log_full`).
     pub fn message(&self) -> String {
-        let mut cmd = format!("{:?}", self.program.to_string_lossy());
-        for a in &self.args {
-            cmd.push(' ');
-            cmd.push_str(&format!("{a:?}"));
+        let mut args = String::new();
+        let mut shown = 0;
+        for a in self.args.iter().take(CONSENT_MAX_ARGS) {
+            let line = format!("\n  {}", display_arg(a));
+            if args.chars().count() + line.chars().count() > CONSENT_ARGS_MAX_CHARS {
+                break;
+            }
+            args.push_str(&line);
+            shown += 1;
         }
-        let env = if self.env_keys.is_empty() {
-            "(none)".to_string()
-        } else {
-            self.env_keys.join(", ")
-        };
+        if shown < self.args.len() {
+            args.push_str(&format!(
+                "\n  … and {} more arguments",
+                self.args.len() - shown
+            ));
+        }
+        if self.args.is_empty() {
+            args.push_str(" (none)");
+        }
+        let names: Vec<String> = self
+            .env_keys
+            .iter()
+            .take(CONSENT_MAX_ENV_NAMES)
+            .map(|k| format!("{:?}", clip(k, 40)))
+            .collect();
+        let mut env = format!("{} variables passed on", self.env_keys.len());
+        if !names.is_empty() {
+            env.push_str(&format!(": {}", names.join(", ")));
+            if self.env_keys.len() > names.len() {
+                env.push_str(&format!(
+                    " … and {} more",
+                    self.env_keys.len() - names.len()
+                ));
+            }
+        }
         let inherit = if self.inherit_env {
             "Writer's own environment is passed on."
         } else {
             "Writer's own environment is NOT passed on."
         };
-        format!(
+        let path = |p: &Path| format!("{:?}", clip(&p.to_string_lossy(), CONSENT_PATH_MAX_CHARS));
+        let body = format!(
             "The plugin {:?} wants to run a program on this computer.\n\n\
-             Command:\n{cmd}\n\n\
-             Working directory:\n{:?}\n\n\
-             Extra environment variables: {env}\n{inherit}\n\n\
-             Vault: {:?}\n\n\
+             Program:\n{}\n\n\
+             Arguments:{args}\n\n\
+             Working directory:\n{}\n\n\
+             Environment: {env}\n{inherit}\n\n\
+             Vault: {}\n\n\
              Only allow this if you trust the plugin and recognise the command. \
              The program runs with your own permissions. \"Always allow\" \
              lets this plugin run programs without asking in this vault.",
+            clip(&self.plugin_id, 80),
+            path(&self.program),
+            path(&self.cwd),
+            path(&self.vault),
+        );
+        let room = CONSENT_MAX_CHARS - CONSENT_FOOTER.chars().count() - 1;
+        format!("{}{CONSENT_FOOTER}", clip(&body, room))
+    }
+
+    /// The full, untruncated request for the local log (names only, never env values; the system
+    /// prompt is reduced to its length like the agent spawn log).
+    pub fn log_full(&self) {
+        log::info!(
+            "plugin spawn consent requested: plugin={} program={:?} args={:?} cwd={:?} env_names={:?} inherit_env={}",
             self.plugin_id,
-            self.cwd.to_string_lossy(),
-            self.vault.to_string_lossy(),
-        )
+            self.program,
+            crate::agent::runner::redact_prompt(&self.args),
+            self.cwd,
+            self.env_keys,
+            self.inherit_env
+        );
     }
 }
 
@@ -359,6 +442,7 @@ impl ProcManager {
                 env_keys: p.env.iter().map(|(k, _)| k.clone()).collect(),
                 inherit_env: p.inherit_env,
             };
+            ask.log_full();
             match consent.ask(&ask) {
                 Decision::Deny => return Err("EACCES: the user denied this program".into()),
                 Decision::Once => {}
@@ -1319,5 +1403,87 @@ mod tests {
         };
         let m = r.message();
         assert!(m.contains("a\\nFAKE LINE") && !m.contains("a\nFAKE"));
+    }
+
+    fn long_req() -> ConsentRequest {
+        let json = format!("{{\"a\":\"{}\"}}", "x".repeat(5000));
+        let mut args: Vec<String> = vec!["--agents".into(), json, "--append-system-prompt".into()];
+        args.push("secret ".repeat(300));
+        args.extend((0..40).map(|i| format!("--flag-{i}")));
+        ConsentRequest {
+            plugin_id: "copilot".into(),
+            vault: PathBuf::from("/v"),
+            program: PathBuf::from("/usr/local/bin/claude"),
+            args,
+            cwd: PathBuf::from("/v"),
+            env_keys: (0..30).map(|i| format!("ENV_NAME_{i}")).collect(),
+            inherit_env: true,
+        }
+    }
+
+    #[test]
+    fn consent_message_is_bounded_and_summarises() {
+        let r = long_req();
+        let m = r.message();
+        assert!(
+            m.chars().count() <= CONSENT_MAX_CHARS,
+            "{}",
+            m.chars().count()
+        );
+        assert!(m.contains("<JSON, "));
+        assert!(m.contains("more arguments"));
+        assert!(m.contains("30 variables passed on"));
+        assert!(m.contains("… and 22 more"));
+        assert!(m.contains("ENV_NAME_7") && !m.contains("ENV_NAME_8\""));
+        assert!(m.contains("(2100 chars)"));
+        assert!(!m.contains(&"secret ".repeat(20)));
+        assert!(m.ends_with("Full details are in the log (Settings > Logs)."));
+        assert!(m.contains("/usr/local/bin/claude"));
+    }
+
+    #[test]
+    fn consent_message_bound_holds_for_huge_paths_and_names() {
+        let mut r = long_req();
+        r.program = PathBuf::from(format!("/{}", "p".repeat(10_000)));
+        r.cwd = r.program.clone();
+        r.vault = r.program.clone();
+        r.plugin_id = "i".repeat(10_000);
+        r.env_keys = (0..8).map(|_| "N".repeat(10_000)).collect();
+        let m = r.message();
+        assert!(m.chars().count() <= CONSENT_MAX_CHARS);
+        assert!(m.ends_with("(Settings > Logs)."));
+    }
+
+    #[test]
+    fn short_commands_are_shown_in_full() {
+        let r = ConsentRequest {
+            plugin_id: "p".into(),
+            vault: PathBuf::from("/v"),
+            program: PathBuf::from("/bin/echo"),
+            args: vec!["-n".into(), "hello world".into()],
+            cwd: PathBuf::from("/v"),
+            env_keys: vec!["FOO".into()],
+            inherit_env: false,
+        };
+        let m = r.message();
+        assert!(m.contains("\"-n\"") && m.contains("\"hello world\""));
+        assert!(m.contains("1 variables passed on: \"FOO\""));
+        assert!(!m.contains("more"));
+    }
+
+    #[test]
+    fn display_does_not_change_the_consent_identity() {
+        let r = long_req();
+        let before = (r.program.clone(), r.args.clone(), r.env_keys.clone());
+        let _ = r.message();
+        assert_eq!(
+            (r.program.clone(), r.args.clone(), r.env_keys.clone()),
+            before
+        );
+        // consent is keyed by plugin + program: the same program with any argv is one identity
+        let dir = tempfile::tempdir().unwrap();
+        let st = store(dir.path());
+        st.allow_plugin(Path::new("/v"), "copilot").unwrap();
+        assert!(st.is_allowed(Path::new("/v"), "copilot", &r.program));
     }
 }
