@@ -343,3 +343,18 @@ fn candidate_names_keep_the_extension() {
     assert_eq!(candidate("noext", 1), "noext-imported");
     assert_eq!(candidate(".hidden", 1), ".hidden-imported");
 }
+
+#[test]
+fn the_vault_index_is_named_relative_to_the_chat_cwd() {
+    let root = Path::new("/very/long/vault");
+    assert_eq!(vault_index_from(root, root), ".writer/memory/MEMORY.md");
+    assert_eq!(
+        vault_index_from(root, &root.join("Projects/P")),
+        "../../.writer/memory/MEMORY.md"
+    );
+    // outside the vault (cannot happen for a confined project): absolute, never a `..` guess
+    assert_eq!(
+        vault_index_from(root, Path::new("/elsewhere")),
+        "/very/long/vault/.writer/memory/MEMORY.md"
+    );
+}

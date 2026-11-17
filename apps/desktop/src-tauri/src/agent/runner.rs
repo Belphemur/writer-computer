@@ -450,7 +450,7 @@ impl Session {
     }
 
     fn ensure_inner(self: &Arc<Self>) -> Result<(), SpawnError> {
-        let (program, args, used_resume, cli_dir, memory_off) = {
+        let (program, args, used_resume, cli_dir, memory_mode) = {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
@@ -487,14 +487,11 @@ impl Session {
                 args,
                 used_resume,
                 g.cli_dir.clone(),
-                g.settings.memory == AgentMemory::Off,
+                g.settings.memory,
             )
         };
 
-        let mut env = env::current(cli_dir.as_deref());
-        if memory_off {
-            env = env::with_auto_memory_off(env);
-        }
+        let env = env::with_memory_mode(env::current(cli_dir.as_deref()), memory_mode);
         let display = redact_prompt(&args);
         self.launch(program, args, display, env, used_resume)
     }

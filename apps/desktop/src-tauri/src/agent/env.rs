@@ -8,6 +8,7 @@
 //!
 //! The child is started with `env_clear()` plus exactly this list.
 
+use super::events::AgentMemory;
 use crate::plugin_env::secret_looking;
 use std::collections::HashSet;
 use std::path::Path;
@@ -83,15 +84,26 @@ pub fn child_env(
     out
 }
 
-/// The CLI's own off-switch for auto memory, set for `agent.memory` = `off`.
+/// The CLI's own off-switch for auto memory: set for `agent.memory` = `off`, removed for `vault`.
 pub const DISABLE_AUTO_MEMORY: &str = "CLAUDE_CODE_DISABLE_AUTO_MEMORY";
 
-/// `env` with auto memory switched off (replacing any value the app's environment carried).
-/// The one place Writer sets it; `default` and `vault` leave the variable as the user has it.
-pub fn with_auto_memory_off(mut env: Vec<(String, String)>) -> Vec<(String, String)> {
-    env.retain(|(k, _)| k != DISABLE_AUTO_MEMORY);
-    env.push((DISABLE_AUTO_MEMORY.into(), "1".into()));
-    env.sort();
+/// `env` as `agent.memory` wants it. The one place Writer touches the switch: `Off` sets it to 1
+/// (replacing any value the app's environment carried); `Vault` removes it, so a value from the
+/// user's shell cannot silently disable the memory the Writer block tells the agent about;
+/// `Default` leaves it as the user has it.
+pub fn with_memory_mode(
+    mut env: Vec<(String, String)>,
+    mode: AgentMemory,
+) -> Vec<(String, String)> {
+    match mode {
+        AgentMemory::Default => {}
+        AgentMemory::Vault => env.retain(|(k, _)| k != DISABLE_AUTO_MEMORY),
+        AgentMemory::Off => {
+            env.retain(|(k, _)| k != DISABLE_AUTO_MEMORY);
+            env.push((DISABLE_AUTO_MEMORY.into(), "1".into()));
+            env.sort();
+        }
+    }
     env
 }
 
@@ -172,27 +184,31 @@ mod tests {
     }
 
     #[test]
-    fn auto_memory_off_sets_the_cli_switch_once_and_keeps_the_rest() {
-        let base = env(&[("HOME", "/h"), (DISABLE_AUTO_MEMORY, "0")]);
-        let off = with_auto_memory_off(base.clone());
-        assert_eq!(
-            off.iter().filter(|(k, _)| k == DISABLE_AUTO_MEMORY).count(),
-            1
-        );
-        assert_eq!(
-            off.iter()
-                .find(|(k, _)| k == DISABLE_AUTO_MEMORY)
-                .unwrap()
-                .1,
-            "1"
-        );
+    fn memory_mode_owns_the_cli_switch() {
+        let base = env(&[("HOME", "/h"), (DISABLE_AUTO_MEMORY, "1")]);
+        let has =
+            |e: &[(String, String)]| e.iter().find(|(k, _)| k == DISABLE_AUTO_MEMORY).cloned();
         let others = |e: &[(String, String)]| {
             e.iter()
                 .filter(|(k, _)| k != DISABLE_AUTO_MEMORY)
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        assert_eq!(others(&off), others(&base));
+        // default: the user's env, untouched
+        assert_eq!(with_memory_mode(base.clone(), AgentMemory::Default), base);
+        // vault: a value from the user's shell is removed, the rest kept
+        let vault = with_memory_mode(base.clone(), AgentMemory::Vault);
+        assert!(has(&vault).is_none());
+        assert_eq!(others(&vault), others(&base));
+        // off: set to 1 exactly once, even over another value, and the list stays sorted
+        let other_value = env(&[("HOME", "/h"), (DISABLE_AUTO_MEMORY, "0")]);
+        let off = with_memory_mode(other_value.clone(), AgentMemory::Off);
+        assert_eq!(
+            off.iter().filter(|(k, _)| k == DISABLE_AUTO_MEMORY).count(),
+            1
+        );
+        assert_eq!(has(&off).unwrap().1, "1");
+        assert_eq!(others(&off), others(&other_value));
         let mut sorted = off.clone();
         sorted.sort();
         assert_eq!(off, sorted);

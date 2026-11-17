@@ -18,34 +18,49 @@ pub const MAX_CHARS: usize = 2000;
 const HEADER: &str = "## Writer environment";
 
 /// Lines that hold with or without the `writer` CLI.
-const INTRO: &str = "The working directory is a vault of Markdown notes, with optional code and skill files. The user reviews your note edits as a changes card; do not paste full diffs back.";
-const READ_EDIT: &str = "Read a note with Read before editing it. Make minimal, targeted Edit changes; use Write only to create files.";
+const INTRO: &str = "The working directory is a Markdown vault (plus optional code and skill files). The user reviews your edits as a changes card; do not paste diffs.";
+const READ_EDIT: &str =
+    "Read notes before editing. Make minimal, targeted Edit changes; Write only to create files.";
 const FRONTMATTER: &str = "Preserve YAML frontmatter: keys, order, quoting, comments.";
-const LINKS: &str = "Wikilinks resolve by file name, never by title. Attached `@` references are authoritative paths; read them first.";
-const FORBIDDEN: &str = "Never touch .obsidian/, .git/, other .writer/ files or secret files. If a requested path is outside the vault, say so instead of working around it.";
+const LINKS: &str = "Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.";
+const FORBIDDEN: &str = "Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.";
 const FINDING: &str = "Find files with Glob and Grep, not Bash find or grep.";
 
 /// Without the CLI the generic rule stands alone.
 const BASH_PLAIN: &str = "Use Bash only when no dedicated tool fits.";
-const MOVE_PLAIN: &str = "Never rename or move notes with mv or Bash (links would break); ask the user to rename them in Writer.";
+const MOVE_PLAIN: &str =
+    "Never mv or rename notes via Bash (links would break); ask the user to rename them in Writer.";
 
 /// With the CLI.
 const BASH_CLI: &str = "Use Bash only when no dedicated tool or `writer` command fits.";
-const MOVE_CLI: &str = "Rename or move notes only with `writer rename` and `writer move`, which rewrite every link; never mv.";
+const MOVE_CLI: &str =
+    "Rename or move notes only with `writer rename`/`writer move` (they rewrite links); never mv.";
 const PROPERTIES_CLI: &str = "Change properties with `writer property:set`, not by editing YAML.";
-const SEARCH_CLI: &str = "Before grepping the whole vault, try `writer search`, `writer backlinks`, `writer links`, `writer bases` and `writer base:query` (skills writer-cli, writer-search, writer-bases).";
+/// The query commands the search line names, after `writer `: each is in the command registry and
+/// documented by a managed skill (a test says so).
+const SEARCH_COMMANDS: [&str; 5] = ["search", "backlinks", "links", "bases", "base:query"];
+const SEARCH_SKILLS: &str = "writer-cli, writer-search, writer-bases";
+
+fn search_cli() -> String {
+    let [first, rest @ ..] = SEARCH_COMMANDS;
+    let (last, middle) = rest.split_last().unwrap();
+    let middle: String = middle.iter().map(|c| format!(", `{c}`")).collect();
+    format!(
+        "Before grepping the vault, try `writer {first}`{middle} or `{last}` (skills {SEARCH_SKILLS})."
+    )
+}
 
 /// Orchestration (setting `agent.orchestrate`): the line is rendered from the roles the backend
 /// adapter actually produced for the session (`roles.rs`, `subagents.rs`). The fixed sentences are
 /// backend-neutral (no vendor or tool name); the backend supplies how it says "launch a sub-agent"
 /// ([`Rendered::launch`]) and each role its own delegation sentence.
-const ORCHESTRATE_OPEN: &str = "Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several {launch} in one message).";
-const ORCHESTRATE_CLOSE: &str = "Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.";
+const ORCHESTRATE_OPEN: &str = "Orchestrate by default: split the work into independent parts, run sub-agents in parallel (several {launch} in one message).";
+const ORCHESTRATE_CLOSE: &str = "Do it yourself only when very simple and fast: a single read, a one-line edit, a direct answer.";
 
 /// Memory (setting `agent.memory` = `vault`, `memory.rs`): one neutral line naming the folder, no
 /// vendor or tool name; how the backend stores it is the adapter's business. Only sent in
 /// `vault` mode, so `default` and `off` chats never hear of a folder.
-const MEMORY_SAVE: &str = "save only stable facts or preferences the user asks you to remember or corrects you on, never note contents or secrets.";
+const MEMORY_SAVE: &str = "save only stable facts or preferences the user asks you to remember or corrects, never note contents or secrets.";
 
 /// Where this chat's memory is, for the block's memory line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,8 +69,9 @@ pub enum MemoryNote<'a> {
     /// it ([`crate::agent::memory::VAULT_MEMORY_REL`]).
     Vault,
     /// A project chat: new facts go to the project's memory (the backend is pointed at it);
-    /// `vault_index` is the absolute path of the vault memory's `MEMORY.md`, which the agent also
-    /// reads.
+    /// `vault_index` is the vault memory's `MEMORY.md` as named from the chat's working directory
+    /// ([`crate::agent::memory::vault_index_from`]: relative, so its length is bounded by the
+    /// project's depth, not by where the vault lives), which the agent also reads.
     Project { vault_index: &'a str },
 }
 
@@ -67,7 +83,7 @@ fn memory_line(note: MemoryNote<'_>) -> String {
             memory::INDEX_FILE,
         ),
         MemoryNote::Project { vault_index } => format!(
-            "Memory: save in this project's `{}/` folder and also read the vault memory `{vault_index}`; {MEMORY_SAVE}",
+            "Memory: save in this project's `{}/` folder, also read the vault memory `{vault_index}`; {MEMORY_SAVE}",
             memory::PROJECT_MEMORY_DIR,
         ),
     }
@@ -92,6 +108,7 @@ pub fn render(
     orchestration: Option<&Rendered>,
     memory: Option<MemoryNote<'_>>,
 ) -> String {
+    let search = search_cli();
     let mut lines = vec![INTRO, READ_EDIT, FRONTMATTER];
     if writer_cli {
         lines.push(PROPERTIES_CLI);
@@ -101,7 +118,7 @@ pub fn render(
     lines.push(FORBIDDEN);
     lines.push(FINDING);
     if writer_cli {
-        lines.push(SEARCH_CLI);
+        lines.push(&search);
     }
     lines.push(if writer_cli { BASH_CLI } else { BASH_PLAIN });
     let orchestrate_line = orchestration.and_then(orchestration_line);
@@ -145,32 +162,32 @@ mod tests {
     /// spec together.
     const GOLDEN_PLAIN: &str = "\
 ## Writer environment
-The working directory is a vault of Markdown notes, with optional code and skill files. The user reviews your note edits as a changes card; do not paste full diffs back.
-- Read a note with Read before editing it. Make minimal, targeted Edit changes; use Write only to create files.
+The working directory is a Markdown vault (plus optional code and skill files). The user reviews your edits as a changes card; do not paste diffs.
+- Read notes before editing. Make minimal, targeted Edit changes; Write only to create files.
 - Preserve YAML frontmatter: keys, order, quoting, comments.
-- Wikilinks resolve by file name, never by title. Attached `@` references are authoritative paths; read them first.
-- Never rename or move notes with mv or Bash (links would break); ask the user to rename them in Writer.
-- Never touch .obsidian/, .git/, other .writer/ files or secret files. If a requested path is outside the vault, say so instead of working around it.
+- Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.
+- Never mv or rename notes via Bash (links would break); ask the user to rename them in Writer.
+- Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.
 - Find files with Glob and Grep, not Bash find or grep.
 - Use Bash only when no dedicated tool fits.
 ";
 
     const GOLDEN_CLI: &str = "\
 ## Writer environment
-The working directory is a vault of Markdown notes, with optional code and skill files. The user reviews your note edits as a changes card; do not paste full diffs back.
-- Read a note with Read before editing it. Make minimal, targeted Edit changes; use Write only to create files.
+The working directory is a Markdown vault (plus optional code and skill files). The user reviews your edits as a changes card; do not paste diffs.
+- Read notes before editing. Make minimal, targeted Edit changes; Write only to create files.
 - Preserve YAML frontmatter: keys, order, quoting, comments.
 - Change properties with `writer property:set`, not by editing YAML.
-- Wikilinks resolve by file name, never by title. Attached `@` references are authoritative paths; read them first.
-- Rename or move notes only with `writer rename` and `writer move`, which rewrite every link; never mv.
-- Never touch .obsidian/, .git/, other .writer/ files or secret files. If a requested path is outside the vault, say so instead of working around it.
+- Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.
+- Rename or move notes only with `writer rename`/`writer move` (they rewrite links); never mv.
+- Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.
 - Find files with Glob and Grep, not Bash find or grep.
-- Before grepping the whole vault, try `writer search`, `writer backlinks`, `writer links`, `writer bases` and `writer base:query` (skills writer-cli, writer-search, writer-bases).
+- Before grepping the vault, try `writer search`, `backlinks`, `links`, `bases` or `base:query` (skills writer-cli, writer-search, writer-bases).
 - Use Bash only when no dedicated tool or `writer` command fits.
 ";
 
-    const ORCHESTRATE_PLAIN: &str = "- Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.\n";
-    const ORCHESTRATE_CLI: &str = "- Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, `writer` queries, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.\n";
+    const ORCHESTRATE_PLAIN: &str = "- Orchestrate by default: split the work into independent parts, run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do it yourself only when very simple and fast: a single read, a one-line edit, a direct answer.\n";
+    const ORCHESTRATE_CLI: &str = "- Orchestrate by default: split the work into independent parts, run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, `writer` queries, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Do it yourself only when very simple and fast: a single read, a one-line edit, a direct answer.\n";
 
     #[test]
     fn golden_text_of_both_variants() {
@@ -188,7 +205,7 @@ The working directory is a vault of Markdown notes, with optional code and skill
     }
 
     /// The orchestration line with both roles offered (the default), CLI lines present.
-    const ORCHESTRATE_CLI_WORKER: &str = "- Orchestrate by default: split the work into independent parts and run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, `writer` queries, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Delegate bounded edits to named notes to `writer-worker`, a sub-agent that edits only the notes you name and reports one line per file (give parallel workers different files). Do the work yourself only when it is very simple and fast: a single read, a one-line edit, a direct answer.\n";
+    const ORCHESTRATE_CLI_WORKER: &str = "- Orchestrate by default: split the work into independent parts, run sub-agents in parallel (several Agent/Task calls in one message). Delegate mechanical work (exploring and searching the vault, reading many notes, `writer` queries, summarising) to `writer-explorer`, a cheap read-only sub-agent that returns paths and short findings. Delegate bounded edits to named notes to `writer-worker`, a sub-agent that edits only the notes you name and reports one line per file (give parallel workers different files). Do it yourself only when very simple and fast: a single read, a one-line edit, a direct answer.\n";
 
     #[test]
     fn golden_orchestration_line_with_the_worker() {
@@ -260,20 +277,41 @@ The working directory is a vault of Markdown notes, with optional code and skill
     }
 
     const VAULT: MemoryNote<'static> = MemoryNote::Vault;
-    /// A realistic absolute path of 60 characters; each character beyond that counts against the
-    /// budget in the worst case (project chat, CLI skills, orchestration).
     const PROJECT: MemoryNote<'static> = MemoryNote::Project {
-        vault_index: "/Users/someone/Documents/Notes/.writer/memory/MEMORY.md",
+        vault_index: "../../.writer/memory/MEMORY.md",
     };
 
-    const MEMORY_VAULT_LINE: &str = "- Durable memory for this vault is the Markdown folder `.writer/memory/`: read `MEMORY.md` first; save only stable facts or preferences the user asks you to remember or corrects you on, never note contents or secrets.\n";
-    const MEMORY_PROJECT_LINE: &str = "- Memory: save in this project's `.memory/` folder and also read the vault memory `/v/.writer/memory/MEMORY.md`; save only stable facts or preferences the user asks you to remember or corrects you on, never note contents or secrets.\n";
+    /// The worst case (project chat, CLI skills, both roles, orchestration, memory) with a path of
+    /// [`LONG_PATH`] characters still fits the budget.
+    #[test]
+    fn the_worst_case_fits_with_a_200_character_path() {
+        let path = format!("{}/MEMORY.md", "d".repeat(LONG_PATH - "/MEMORY.md".len()));
+        assert_eq!(path.chars().count(), LONG_PATH);
+        let r = roles(true, true);
+        let n = render(
+            true,
+            Some(&r),
+            Some(MemoryNote::Project { vault_index: &path }),
+        )
+        .chars()
+        .count();
+        assert!(
+            n <= MAX_CHARS,
+            "worst case is {n} chars, budget {MAX_CHARS}"
+        );
+    }
+
+    /// The longest memory path the budget is verified for.
+    const LONG_PATH: usize = 200;
+
+    const MEMORY_VAULT_LINE: &str = "- Durable memory for this vault is the Markdown folder `.writer/memory/`: read `MEMORY.md` first; save only stable facts or preferences the user asks you to remember or corrects, never note contents or secrets.\n";
+    const MEMORY_PROJECT_LINE: &str = "- Memory: save in this project's `.memory/` folder, also read the vault memory `../../.writer/memory/MEMORY.md`; save only stable facts or preferences the user asks you to remember or corrects, never note contents or secrets.\n";
 
     /// One line per scope, after everything else; no line at all without a memory note.
     #[test]
     fn golden_memory_line_per_scope() {
         let project = MemoryNote::Project {
-            vault_index: "/v/.writer/memory/MEMORY.md",
+            vault_index: "../../.writer/memory/MEMORY.md",
         };
         for cli in [false, true] {
             let base = render(cli, None, None);
@@ -365,7 +403,20 @@ The working directory is a vault of Markdown notes, with optional code and skill
             );
             seen += 1;
         }
-        assert!(seen >= 7, "expected the named commands, found {seen}");
+        assert!(seen >= 3, "expected the named commands, found {seen}");
+        for name in SEARCH_COMMANDS {
+            assert!(
+                registry::find(name).is_some(),
+                "`writer {name}` is not in the registry"
+            );
+            assert!(
+                skills.contains(&format!("writer {name}")) || skills.contains(&format!("`{name}`")),
+                "`writer {name}` is not documented by a managed skill"
+            );
+            assert!(
+                text.contains(&format!("`{name}`")) || text.contains(&format!("`writer {name}`"))
+            );
+        }
     }
 
     /// The default `agent.allowed-tools` allow only `Bash(writer <read-only command> ...)`: each

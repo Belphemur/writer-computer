@@ -76,6 +76,19 @@ pub fn prepare_dir(root: &Path, project_path: Option<&str>) -> Result<PathBuf, V
     Ok(dir)
 }
 
+/// The vault memory's index as a chat running in `cwd` should name it: relative to `cwd`
+/// (`../../.writer/memory/MEMORY.md` from a project two folders deep), so the block's text stays
+/// short however long the vault's absolute path is (the block has a character budget). `cwd` is
+/// the vault root or a folder under it; anything else (it cannot happen for a confined project)
+/// falls back to the absolute path. Pure, no I/O.
+pub fn vault_index_from(root: &Path, cwd: &Path) -> String {
+    let index = format!("{VAULT_MEMORY_REL}/{INDEX_FILE}");
+    match cwd.strip_prefix(root) {
+        Ok(rel) => format!("{}{index}", "../".repeat(rel.components().count())),
+        Err(_) => root.join(index).to_string_lossy().into_owned(),
+    }
+}
+
 /// Whether a vault-relative path (forward slashes) is inside a memory folder: under
 /// `.writer/memory/`, or under a `.memory/` folder (a project's). Used by the Changes card.
 pub fn is_memory_rel(rel: &str) -> bool {

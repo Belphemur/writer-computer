@@ -1354,7 +1354,7 @@ fn memory_modes_set_the_spawn_argv_env_and_prompt() {
             mode == AgentMemory::Vault && project.is_none()
         );
         assert_eq!(
-            argv.contains("save in this project's `.memory/` folder"),
+            argv.contains("save in this project's `.memory/` folder, also read the vault memory `../../.writer/memory/MEMORY.md`"),
             mode == AgentMemory::Vault && project.is_some()
         );
         // the env: only `off` sets the CLI's switch; the others keep what the app had

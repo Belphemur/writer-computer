@@ -367,15 +367,11 @@ impl AgentSessions {
                 memory::prepare_dir(&p.root, project).map_err(|e| format!("the memory folder: {e}"))
             };
             let dir = prepare(project_path)?;
+            // the vault memory is created too, and named relative to the cwd (short text)
             let vault_index = project_path
                 .map(|_| {
-                    let vault = prepare(None)?;
-                    Ok::<_, String>(
-                        vault
-                            .join(memory::INDEX_FILE)
-                            .to_string_lossy()
-                            .into_owned(),
-                    )
+                    prepare(None)?;
+                    Ok::<_, String>(memory::vault_index_from(&p.root, cwd))
                 })
                 .transpose()?;
             (Some(dir), vault_index)
