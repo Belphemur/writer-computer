@@ -1,6 +1,7 @@
 //! The child's environment (spec 8): the app's environment minus anything secret-looking
 //! (`plugin_env::secret_looking`, shared with the plugin host), except what the claude CLI itself
-//! needs for sign-in and routing; `TERM=dumb`; PATH = the login-shell PATH first, then the app's.
+//! needs for sign-in and routing; `TERM=dumb`; PATH = the login-shell PATH first, then the app's,
+//! then `/usr/local/bin` (the `writer` shim).
 //! Writer's own secrets (the plugin keychain item) are never in the process environment, so
 //! there is nothing of ours to leak; `WRITER_*` variables are dropped anyway.
 //!
@@ -32,11 +33,17 @@ fn allowed(name: &str) -> bool {
     !secret_looking(name) || cli_needs(name)
 }
 
-/// `login` entries first, then `app`, absolute and unique.
+/// Where "Install 'writer' Command Line Tool" puts the `writer` shim (the parent of
+/// `commands::shell_install::INSTALL_TARGET`). Appended last, so a login shell that does not
+/// list it (fish without `path_helper`) still lets the agent's Bash run `writer`.
+const WRITER_SHIM_DIR: &str = "/usr/local/bin";
+
+/// `login` entries first, then `app`, then [`WRITER_SHIM_DIR`]: absolute and unique.
 fn merge_path(login: &str, app: &str) -> String {
     let mut seen = HashSet::new();
     let dirs: Vec<_> = std::env::split_paths(login)
         .chain(std::env::split_paths(app))
+        .chain(std::iter::once(std::path::PathBuf::from(WRITER_SHIM_DIR)))
         .filter(|d| d.is_absolute() && seen.insert(d.clone()))
         .collect();
     std::env::join_paths(dirs)
@@ -145,6 +152,10 @@ mod tests {
     fn login_path_comes_first_without_duplicates() {
         let e = env(&[("PATH", "/usr/bin:/app/bin:relative")]);
         let path = &e.iter().find(|(k, _)| k == "PATH").unwrap().1;
-        assert_eq!(path, "/login/bin:/usr/bin:/app/bin");
+        assert_eq!(path, "/login/bin:/usr/bin:/app/bin:/usr/local/bin");
+        // already listed: not repeated
+        let e = env(&[("PATH", "/usr/local/bin:/usr/bin")]);
+        let path = &e.iter().find(|(k, _)| k == "PATH").unwrap().1;
+        assert_eq!(path, "/login/bin:/usr/bin:/usr/local/bin");
     }
 }

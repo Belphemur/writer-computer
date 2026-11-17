@@ -247,3 +247,35 @@ pub async fn agent_snapshot(
     })
     .await
 }
+
+/// The diffs of one finished turn, or `null` when the in-memory snapshot is gone (the app was
+/// restarted, or the turn was dropped to stay under the memory cap). Spec "Turn changes".
+#[tauri::command]
+pub async fn agent_turn_changes(
+    chat_id: ChatId,
+    turn_id: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<TurnChanges>, AppError> {
+    let root = trusted_root(&webview, &app)?;
+    blocking(move || Ok(sessions(&app).changes().detail(&chat_id, &turn_id, &root))).await
+}
+
+/// Undo: restore the pre-turn content of `paths`. One outcome per path; a file that changed since
+/// the turn ended is refused, never overwritten. `null` when the snapshot is gone.
+#[tauri::command]
+pub async fn agent_revert_changes(
+    chat_id: ChatId,
+    turn_id: String,
+    paths: Vec<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<Vec<RevertOutcome>>, AppError> {
+    let root = trusted_root(&webview, &app)?;
+    blocking(move || {
+        Ok(sessions(&app)
+            .changes()
+            .revert(&chat_id, &turn_id, &root, &paths))
+    })
+    .await
+}

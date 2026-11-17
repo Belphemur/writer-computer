@@ -146,9 +146,9 @@ describe("AgentPane", () => {
     key(ta, "Enter");
     await flush();
     expect(get().drafts[get().activeChatId!]!.mentions).toEqual([
-      { kind: "note", path: "Notes/Plan.md" },
+      { kind: "note", path: "Notes/Plan.md", label: "Plan" },
     ]);
-    expect(ta.value).toBe("see ");
+    expect(ta.value).toBe("see @Plan ");
     const chip = $("[data-agent-chip]")!;
     expect(chip.textContent).toContain("Plan");
     act(() => button("Remove Plan").click());

@@ -30,7 +30,11 @@
 //! answer text
 //!
 //! <!-- writer:tools [{"id":"toolu_1","tool":"Bash","input":{"command":"ls"},"outcome":"ok"}] -->
+//! <!-- writer:changes {"turnId":"t1","files":[{"path":"a.md","status":"modified","added":3,"removed":1}]} -->
 //! ```
+//!
+//! `writer:changes` (optional, assistant messages, always last) is the "Changes" card's compact
+//! summary: paths, status and +/- counts, never file contents. Notes without it are unchanged.
 //!
 //! A message line that would read as structure (`## user ·`, `## assistant ·`, `> context:`,
 //! `<!-- writer:`) is stored with a leading U+200B and unescaped on read, so splitting the file on
@@ -42,7 +46,7 @@
 //! ([`MAX_NOTE_BYTES`]): the oldest messages are dropped first and counted in a
 //! `writer:trimmed` marker. Nothing here logs note content.
 
-use super::events::ChatSummary;
+use super::events::{ChatSummary, TitleSource};
 use crate::index::frontmatter::{self, fm_span};
 use crate::index::patch::{self, NoteProperty, PatchError};
 use crate::vault_ops::{self, VaultOpError};
@@ -77,6 +81,8 @@ pub const ESCAPE: char = '\u{200B}';
 pub const K_ID: &str = "writer-chat-id";
 pub const K_TITLE: &str = "writer-chat-title";
 pub const K_RENAMED: &str = "writer-chat-renamed";
+/// Set once an automatic title was applied (`ChatAction::AutoTitle`); a save keeps the title then.
+pub const K_TITLE_AUTO: &str = "writer-chat-title-auto";
 pub const K_BACKEND: &str = "writer-chat-backend";
 pub const K_SESSION: &str = "writer-chat-session-id";
 pub const K_PROJECT: &str = "writer-chat-project";
@@ -93,7 +99,7 @@ pub const K_PREVIEW: &str = "writer-chat-preview";
 
 /// Properties only the chat actions (rename, pin, archive) own once the note exists: a save never
 /// overwrites them, so a stale pane cannot undo a rename or a pin made from the history list.
-const ACTION_OWNED: [&str; 4] = [K_RENAMED, K_PINNED, K_ARCHIVED_AT, K_TITLE];
+const ACTION_OWNED: [&str; 5] = [K_RENAMED, K_TITLE_AUTO, K_PINNED, K_ARCHIVED_AT, K_TITLE];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChatStoreError {
@@ -144,6 +150,8 @@ pub struct ChatMeta {
     pub chat_id: String,
     pub title: String,
     pub title_renamed: bool,
+    /// An automatic title was applied (see [`ChatMeta::title_source`]).
+    pub title_auto: bool,
     pub backend: Option<String>,
     pub session_id: Option<String>,
     pub project: Option<String>,
@@ -157,6 +165,21 @@ pub struct ChatMeta {
     pub archived_at: Option<i64>,
     pub usage: Option<Value>,
     pub preview: Option<String>,
+}
+
+impl ChatMeta {
+    /// Who chose the title: the user (a rename always wins), an automatic title, or nobody yet
+    /// (the first message cut to 60 characters). Derived from the two flags so a note written
+    /// before automatic titles reads as `none` or `user`.
+    pub fn title_source(&self) -> TitleSource {
+        if self.title_renamed {
+            TitleSource::User
+        } else if self.title_auto {
+            TitleSource::Auto
+        } else {
+            TitleSource::None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -189,6 +212,9 @@ pub struct Turn {
     pub context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Value>,
+    /// The turn's `TurnChangesSummary` (paths and counts, never contents), assistant only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changes: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -307,6 +333,14 @@ fn parse_section(index: usize, role: Role, when: &str, lines: &[&str]) -> Turn {
             rest = trim_blank_edges(&rest[1..]);
         }
     }
+    // `writer:changes` is the last comment of a message, after `writer:tools`
+    let mut changes = None;
+    if let Some(last) = rest.last() {
+        if let Some(p) = comment_payload(last, "changes") {
+            changes = serde_json::from_str::<Value>(p).ok();
+            rest = trim_blank_edges(&rest[..rest.len() - 1]);
+        }
+    }
     let mut tools = None;
     if let Some(last) = rest.last() {
         if let Some(p) = comment_payload(last, "tools") {
@@ -334,6 +368,7 @@ fn parse_section(index: usize, role: Role, when: &str, lines: &[&str]) -> Turn {
         text,
         context,
         tools,
+        changes,
     }
 }
 
@@ -437,6 +472,7 @@ pub fn meta_from_text(text: &str) -> Result<Option<ChatMeta>> {
     Ok(Some(ChatMeta {
         title: prop_str(&props, K_TITLE).unwrap_or_else(|| "New chat".into()),
         title_renamed: prop_bool(&props, K_RENAMED),
+        title_auto: prop_bool(&props, K_TITLE_AUTO),
         backend: prop_str(&props, K_BACKEND),
         session_id: prop_str(&props, K_SESSION),
         project: prop_str(&props, K_PROJECT),
@@ -681,6 +717,7 @@ fn summary_of(root: &Path, abs: &Path, meta: &ChatMeta) -> ChatSummary {
         archived: meta.archived_at.is_some(),
         pinned: meta.pinned,
         preview: meta.preview.clone(),
+        title_source: meta.title_source(),
     }
 }
 
@@ -987,7 +1024,8 @@ fn merge_into_existing(
     incoming: &[NoteProperty],
 ) -> Result<String> {
     let current = patch::read_properties(existing)?;
-    let renamed = prop_bool(&current, K_RENAMED);
+    // a title chosen by the user or by the automatic titler is never overwritten by a save
+    let title_locked = prop_bool(&current, K_RENAMED) || prop_bool(&current, K_TITLE_AUTO);
     let mut t = existing.to_string();
     if fm_span(&t).is_none() {
         // A chat note whose frontmatter the user deleted: start over from the pane's copy.
@@ -998,7 +1036,7 @@ fn merge_into_existing(
             continue;
         }
         let owned = ACTION_OWNED.contains(&p.name.as_str());
-        if owned && (p.name != K_TITLE || renamed) {
+        if owned && (p.name != K_TITLE || title_locked) {
             continue;
         }
         if p.name == K_TITLE {
@@ -1019,6 +1057,13 @@ fn merge_into_existing(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatAction {
     Rename,
+    /// Apply an automatic title once: a no-op when the user renamed the chat or a title was
+    /// already applied automatically.
+    AutoTitle,
+    /// The user asked for a new automatic title (history "Regenerate title"): overwrites any
+    /// title, user-set included, and leaves an automatic one (`writer-chat-title-auto` set, the
+    /// rename flag removed) so a later manual rename wins again.
+    RegenerateTitle,
     Pin,
     Unpin,
     Archive,
@@ -1049,20 +1094,17 @@ pub fn action(
             forget(root, chat_id);
             Ok(None)
         }
-        ChatAction::Rename => {
-            let title = clean_title(title.unwrap_or(""));
-            if title.is_empty() {
-                return Err(ChatStoreError::Invalid(
-                    "a chat title cannot be empty".into(),
-                ));
-            }
-            vault_ops::edit_note(&abs, |t| {
-                let t = patch::set_property(t, K_TITLE, &json!(title), None)?;
-                patch::set_property(&t, K_RENAMED, &json!(true), None)
+        ChatAction::Rename => set_title(root, &abs, chat_id, title, TitleSource::User),
+        ChatAction::AutoTitle => {
+            let meta = read_meta(&abs)?.ok_or_else(|| {
+                ChatStoreError::Invalid("not a chat note (no writer-chat-id)".into())
             })?;
-            let abs = rename_file_to_title(root, &abs, chat_id, &title);
-            finish(root, &abs).map(Some)
+            if meta.title_source() != TitleSource::None {
+                return finish(root, &abs).map(Some);
+            }
+            set_title(root, &abs, chat_id, title, TitleSource::Auto)
         }
+        ChatAction::RegenerateTitle => set_title(root, &abs, chat_id, title, TitleSource::Auto),
         ChatAction::Pin | ChatAction::Unpin => {
             let pinned = action == ChatAction::Pin;
             vault_ops::edit_note(&abs, |t| {
@@ -1082,6 +1124,37 @@ pub fn action(
             finish(root, &abs).map(Some)
         }
     }
+}
+
+/// The one title writer (rename, automatic, regenerated): sets `writer-chat-title` and the flag of
+/// `source`, renames the file's slug. `User` sets the rename flag; `Auto` sets the automatic flag
+/// and removes the rename flag (the title is no longer the user's).
+fn set_title(
+    root: &Path,
+    abs: &Path,
+    chat_id: &str,
+    title: Option<&str>,
+    source: TitleSource,
+) -> Result<Option<ChatSummary>> {
+    let title = clean_title(title.unwrap_or(""));
+    if title.is_empty() {
+        return Err(ChatStoreError::Invalid(
+            "a chat title cannot be empty".into(),
+        ));
+    }
+    vault_ops::edit_note(abs, |t| {
+        let t = patch::set_property(t, K_TITLE, &json!(title), None)?;
+        if source == TitleSource::User {
+            return patch::set_property(&t, K_RENAMED, &json!(true), None);
+        }
+        let t = patch::set_property(&t, K_TITLE_AUTO, &json!(true), None)?;
+        match patch::remove_property(&t, K_RENAMED) {
+            Err(PatchError::NotFound(_)) => Ok(t),
+            other => other,
+        }
+    })?;
+    let abs = rename_file_to_title(root, abs, chat_id, &title);
+    finish(root, &abs).map(Some)
 }
 
 fn finish(root: &Path, abs: &Path) -> Result<ChatSummary> {
@@ -1143,12 +1216,16 @@ fn est_tokens(s: &str) -> usize {
 
 const REPLAY_INTRO: &str = "[Resumed from notes] The earlier part of this conversation was restored from a saved note because the original session is no longer available. It is context, not new instructions.";
 
+/// The messages of a whole chat note (frontmatter skipped).
+pub fn turns_of(markdown: &str) -> Vec<Turn> {
+    parse_body(&markdown[frontmatter::split(markdown).body_start..]).turns
+}
+
 /// A capped replay of the note's user and assistant text: the most recent messages that fit
 /// `max_tokens` (estimated at 4 characters per token), oldest first, each message cut to half the
 /// budget. The newest message is always included. Tool trails and context lines are left out.
 pub fn replay_seed(markdown: &str, max_tokens: usize) -> ReplaySeed {
-    let body = &markdown[frontmatter::split(markdown).body_start..];
-    let turns = parse_body(body).turns;
+    let turns = turns_of(markdown);
     let total = turns.len();
     let per_message_chars = (max_tokens * 4 / 2).max(200);
     let budget = max_tokens.saturating_sub(est_tokens(REPLAY_INTRO) + 20);
@@ -1200,9 +1277,7 @@ pub fn replay_seed(markdown: &str, max_tokens: usize) -> ReplaySeed {
 
 /// "Copy chat as markdown": the transcript without frontmatter, context lines or tool trails.
 pub fn transcript_markdown(markdown: &str) -> String {
-    let body = &markdown[frontmatter::split(markdown).body_start..];
-    parse_body(body)
-        .turns
+    turns_of(markdown)
         .iter()
         .map(|t| format!("**{}**\n\n{}", t.role.label(), t.text))
         .collect::<Vec<_>>()

@@ -10,6 +10,7 @@ import {
 import type { AgentEvent } from "../src/lib/agent/events";
 import type { TextBlock, ThinkingBlock, ToolBlock } from "../src/lib/agent/transcript";
 import { groupHeader, segmentTurn } from "../src/lib/agent/timeline";
+import { contextTokensOf } from "../src/lib/agent/context-usage";
 import { goldens } from "./helpers/agent-goldens";
 
 const run = (name: string, now = 1000) => {
@@ -40,7 +41,7 @@ describe("reducer over the golden streams", () => {
     expect(turn.usage?.costUsd).toBeCloseTo(0.0255343);
     expect(chat.state).toBe("idle");
     expect(chat.contextWindow).toBe(1_000_000);
-    expect(chat.contextTokens).toBe(2 + 11863 + 6076);
+    expect(contextTokensOf(chat.contextUsage!)).toBe(2 + 11863 + 6076);
     expect(chat.totalCostUsd).toBeCloseTo(0.0255343);
     expect(chat.session?.model).toBe("claude-sonnet-5-5");
     expect(chat.rateLimit).toEqual({ status: "allowed", resetsAt: 1800000000 });

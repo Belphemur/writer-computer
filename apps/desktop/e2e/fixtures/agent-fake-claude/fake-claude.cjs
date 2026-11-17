@@ -8,7 +8,8 @@
 // else `plain`.
 //   plain             one text reply (FAKE-CLAUDE-REPLY: <prompt>)
 //   thinking, tool-auto   a tool that needs no permission, a thinking block, then the answer
-//   permission-allow  Write then Bash, each waits for a control_response (allow path of the capture)
+//   permission-allow  Write then Bash, each waits for a control_response (allow path of the capture);
+//                     an allowed Write really creates the file in the cwd (Changes card, Undo)
 //   permission-deny   Bash waits for a control_response (deny path of the capture)
 //   interrupt         Bash waits; an `interrupt` control_request ends the turn aborted
 //   multi-turn        successive prompts play the successive turns of multi-turn-rule.jsonl
@@ -57,6 +58,24 @@ function flag(name) {
 if (argv.includes("--version") || argv.includes("-v")) {
   process.stdout.write(`${VERSION} (Claude Code)\n`);
   process.exit(0);
+}
+
+// One-shot chat-title call (`-p --output-format json`, prompt on stdin, no stream-json input):
+// answers one JSON result, starts no session. FAKE_CLAUDE_TITLE overrides the title,
+// FAKE_CLAUDE_TITLE_FAIL=1 makes the call fail (exit 1).
+if (argv.includes("--output-format") && flag("output-format") === "json" && !flag("input-format")) {
+  log({ ev: "title", argv, cwd: process.cwd() });
+  if (env.FAKE_CLAUDE_TITLE_FAIL) process.exit(1);
+  process.stdin.resume();
+  process.stdin.on("data", () => {});
+  process.stdin.on("end", () => {
+    const title = env.FAKE_CLAUDE_TITLE || "Fake chat title";
+    process.stdout.write(
+      JSON.stringify({ type: "result", is_error: false, result: title, total_cost_usd: 0 }) + "\n",
+    );
+    process.exit(0);
+  });
+  return;
 }
 
 const resumeId = flag("resume");
@@ -416,6 +435,16 @@ async function runTurn(prompt) {
         await nextEvent();
       }
       if (!answer.interrupted) persistRules(answer);
+      // Like the real CLI, an allowed Write really writes the file (the pane's Changes card
+      // reads the vault); the captured path is already this process's cwd (see `adapt`).
+      if (
+        !answer.interrupted &&
+        line.request.tool_name === "Write" &&
+        answer.response?.response?.behavior === "allow"
+      ) {
+        const { file_path: target, content } = line.request.input || {};
+        if (target) fs.writeFileSync(target, content ?? "");
+      }
       pendingTool = false;
     }
     if (delay) await sleep(delay);

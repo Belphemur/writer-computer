@@ -25,10 +25,8 @@ import { createMockAgentClient, type Goldens } from "../src/lib/agent/mock-clien
 import {
   SLASH_EMPTY_TEXT,
   loadedLabel,
-  applySlash,
   filterSlash,
   mergeSlashItems,
-  slashQuery,
 } from "../src/lib/agent/slash-commands";
 import { configureAgentRuntimeForTests, useAgentStore } from "../src/stores/agent-store";
 import { goldens } from "./helpers/agent-goldens";
@@ -140,23 +138,6 @@ describe("slash menu logic", () => {
 
   it("lists nothing before any source exists (no invented built-ins)", () => {
     expect(mergeSlashItems([], null)).toEqual([]);
-  });
-
-  it("shows the menu for a leading slash, also after spaces, never mid-sentence or in a path", () => {
-    expect(slashQuery("/")).toBe("");
-    expect(slashQuery("/wri")).toBe("wri");
-    expect(slashQuery("   /wri")).toBe("wri");
-    expect(slashQuery("\n/x")).toBe("x");
-    expect(slashQuery("see /wri")).toBeNull();
-    expect(slashQuery("/usr/bin/env")).toBeNull();
-    expect(slashQuery("/foo bar")).toBeNull();
-    expect(slashQuery("a/b")).toBeNull();
-    expect(slashQuery("")).toBeNull();
-  });
-
-  it("picking replaces only the command word", () => {
-    expect(applySlash("/wri", "writer-cli")).toBe("/writer-cli ");
-    expect(applySlash("  /", "compact")).toBe("/compact ");
   });
 
   it("filters fuzzily on the name with the vault ranker, then by description words", () => {
@@ -274,13 +255,85 @@ describe("the / menu in the composer", () => {
     expect(send.mock.calls[0]![0].text).toBe("/writer-cli list notes");
   });
 
-  it("appears after leading spaces but not mid-sentence or for a path", async () => {
+  const typeAt = (value: string, caret: number) => {
+    const el = ta();
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set as (
+      this: HTMLTextAreaElement,
+      v: string,
+    ) => void;
+    act(() => {
+      setter.call(el, value);
+      el.setSelectionRange(caret, caret);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const draftText = () =>
+    useAgentStore.getState().drafts[useAgentStore.getState().activeChatId!]!.text;
+
+  it("appears after leading spaces, and not for a path, URL or email", async () => {
     type(ta(), "  /wr");
     await flush(5);
     expect(rows().length).toBeGreaterThan(0);
+    for (const v of ["/usr/bin", "see https://x.dev/wr", "a@b.c", "and/or"]) {
+      type(ta(), v);
+      expect($("[role=listbox]")).toBeNull();
+    }
+  });
+
+  it("opens mid-sentence with a hint that it is only referenced by name", async () => {
     type(ta(), "please run /wr");
+    await flush(5);
+    expect(rows().length).toBeGreaterThan(0);
+    expect($("[role=listbox]")!.textContent).toContain("Mid-message: referenced by name");
+    type(ta(), "/wr");
+    await flush(5);
+    expect($("[role=listbox]")!.textContent).not.toContain("Mid-message");
+  });
+
+  it("a pick replaces only the token under the caret and keeps the text around it", async () => {
+    typeAt("first /wr and then /rel later", "first /wr".length);
+    await flush(5);
+    key(ta(), "Enter");
+    await flush();
+    expect(draftText()).toBe("first /writer-cli and then /rel later");
+    expect(ta().selectionStart).toBe("first /writer-cli ".length);
+    typeAt(draftText().replace("/rel", "/re"), "first /writer-cli and then /re".length);
+    await flush(5);
+    key(ta(), "Enter");
+    await flush();
+    expect(draftText()).toBe("first /writer-cli and then /release-notes later");
+  });
+
+  it("Escape closes without changing the text, and Cmd+Z after a pick restores the token", async () => {
+    typeAt("run /wr", 7);
+    await flush(5);
+    key(ta(), "Escape");
     expect($("[role=listbox]")).toBeNull();
-    type(ta(), "/usr/bin");
+    expect(draftText()).toBe("run /wr");
+    typeAt("run /writer-c", 13);
+    await flush(5);
+    key(ta(), "Tab");
+    await flush();
+    expect(draftText()).toBe("run /writer-cli ");
+    act(
+      () =>
+        void ta().dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "z",
+            metaKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+    );
+    expect(draftText()).toBe("run /writer-c");
+  });
+
+  it("a click outside closes the menu", async () => {
+    type(ta(), "/");
+    await flush(5);
+    expect($("[role=listbox]")).not.toBeNull();
+    act(() => void document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
     expect($("[role=listbox]")).toBeNull();
   });
 

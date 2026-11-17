@@ -8,7 +8,7 @@
 
 use crate::plugin_consent::{ConsentStore, ANY_PROGRAM};
 use crate::plugin_proc::{Consent, ConsentRequest, Decision};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Pseudo plugin id under which the pane's spawn consent is stored.
 pub const AGENT_PLUGIN_ID: &str = "writer-agent";
@@ -75,6 +75,20 @@ impl Consent for Preconsented {
     }
 }
 
+/// The program a one-shot helper call (title regeneration) may run for a chat that has no live
+/// session, `None` when the user never consented. Two ways to have consented, both the pane's own
+/// spawn consent and never a new dialog: a chat of this window was started and allowed
+/// (`window_consented`, "Run once" included), or the vault remembers "Always allow" for the
+/// program `find` locates (`find` runs only when needed: it may start a login shell).
+pub fn helper_program(
+    window_consented: Option<PathBuf>,
+    store: &ConsentStore,
+    root: &Path,
+    find: impl FnOnce() -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    window_consented.or_else(|| find().filter(|p| store.is_allowed(root, AGENT_PLUGIN_ID, p)))
+}
+
 /// Forget the vault's "always allow" for the pane (Settings > Agent "Revoke").
 pub fn revoke(store: &ConsentStore, root: &Path) -> Result<(), String> {
     store.revoke(root, AGENT_PLUGIN_ID, ANY_PROGRAM)
@@ -107,6 +121,33 @@ mod tests {
             &[],
             &move || ok,
         )
+    }
+
+    #[test]
+    fn helper_program_needs_a_window_consent_or_a_remembered_always() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ConsentStore::new(dir.path().join("c.json"));
+        let root = dir.path().join("v");
+        std::fs::create_dir_all(&root).unwrap();
+        let claude = || Some(PathBuf::from("/bin/claude"));
+        // never consented: nothing may run, and the program is not even looked up when a
+        // window consent exists
+        assert_eq!(helper_program(None, &store, &root, claude), None);
+        assert_eq!(
+            helper_program(Some("/w/claude".into()), &store, &root, || unreachable!()),
+            Some(PathBuf::from("/w/claude"))
+        );
+        // a program missing on disk is not a consent
+        store.allow_plugin(&root, AGENT_PLUGIN_ID).unwrap();
+        assert_eq!(helper_program(None, &store, &root, || None), None);
+        assert_eq!(
+            helper_program(None, &store, &root, claude),
+            Some(PathBuf::from("/bin/claude"))
+        );
+        // another vault never inherits it
+        let other = dir.path().join("w");
+        std::fs::create_dir_all(&other).unwrap();
+        assert_eq!(helper_program(None, &store, &other, claude), None);
     }
 
     #[test]

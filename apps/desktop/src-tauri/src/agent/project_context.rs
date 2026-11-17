@@ -15,6 +15,7 @@
 use super::events::{AgentPermissionMode, ProjectSource};
 use super::ports::{InjectAgentsMd, ProjectPort, SpawnContext};
 use super::project::{self, ProjectDetail, ProjectUpdate, AGENTS_FILE, CLAUDE_FILE};
+use super::writer_prompt;
 use crate::index::{FileFilter, Index};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -566,7 +567,7 @@ pub fn audit_dir(
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextBundle {
-    /// Value for `--append-system-prompt`; `None` when there is nothing to add.
+    /// Value for `--append-system-prompt`: the Writer block, then instructions, then the project.
     pub append_system_prompt: Option<String>,
     pub manifest: Option<Manifest>,
     pub manifest_text: Option<String>,
@@ -581,6 +582,9 @@ pub struct BundleInput<'a> {
     pub mode: InjectMode,
     pub cli_version: Option<&'a str>,
     pub index: Option<&'a dyn SourceIndex>,
+    /// The managed `writer` skills are installed for the spawned CLI (selects the Writer block's
+    /// variant).
+    pub writer_cli: bool,
 }
 
 /// Build the per-spawn context. Text only, no note bodies (a shadowed `AGENTS.md` is the one
@@ -628,7 +632,8 @@ pub fn build(input: &BundleInput) -> std::io::Result<ContextBundle> {
         .map(Manifest::render)
         .filter(|t| !t.is_empty());
 
-    let mut sections: Vec<String> = Vec::new();
+    // The Writer system block opens every prompt, before the instruction files and the project.
+    let mut sections: Vec<String> = vec![writer_prompt::render(input.writer_cli)];
     let injected: Vec<&InstructionAudit> = instructions
         .iter()
         .filter(|a| matches!(a.status, InstructionStatus::Injected { .. }))
@@ -716,6 +721,7 @@ impl ProjectPort for ProjectLibrary {
             mode: inject_mode(ctx.inject_agents_md),
             cli_version: ctx.cli_version,
             index: Some(&fs_index),
+            writer_cli: crate::managed_skills::claude_skills_installed(ctx.root),
         })
         .map_err(|e| e.to_string())?;
         Ok(
@@ -931,7 +937,10 @@ mod tests {
             requested_prompt: None,
             ..ctx
         };
-        assert_eq!(lib.append_system_prompt(&ctx2).unwrap(), None);
+        assert_eq!(
+            lib.append_system_prompt(&ctx2).unwrap(),
+            Some(writer_prompt::render(false))
+        );
     }
 
     #[test]
@@ -1048,6 +1057,7 @@ mod tests {
             mode: InjectMode::Auto,
             cli_version: Some("2.1.325 (Claude Code)"),
             index: Some(&fake),
+            writer_cli: true,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
@@ -1060,19 +1070,22 @@ mod tests {
     }
 
     #[test]
-    fn bundle_is_empty_without_project_or_shadow() {
+    fn bundle_is_the_writer_block_without_project_or_shadow() {
         let d = TempDir::new().unwrap();
         let root = d.path().canonicalize().unwrap();
-        let b = build(&BundleInput {
+        let input = |writer_cli| BundleInput {
             root: &root,
             project: None,
             mode: InjectMode::Auto,
             cli_version: None,
             index: None,
-        })
-        .unwrap();
-        assert!(b.append_system_prompt.is_none());
-        // A project with a native-loaded AGENTS.md still gets the header.
+            writer_cli,
+        };
+        for cli in [false, true] {
+            let b = build(&input(cli)).unwrap();
+            assert_eq!(b.append_system_prompt.unwrap(), writer_prompt::render(cli));
+        }
+        // A project with a native-loaded AGENTS.md: the block, then the header, no instruction text.
         let (_d2, root2, p) = project_with(&[], &[]);
         let b = build(&BundleInput {
             root: &root2,
@@ -1080,9 +1093,34 @@ mod tests {
             mode: InjectMode::Auto,
             cli_version: Some("2.1.325"),
             index: None,
+            writer_cli: false,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
+        assert!(s.starts_with(&writer_prompt::render(false)));
         assert!(s.contains("## Project: P") && !s.contains("Be brief."));
+    }
+
+    /// Golden order of the whole prompt: Writer block, shadowed instructions (vault then project),
+    /// project section; the shadowed audit text is untouched by the block.
+    #[test]
+    fn golden_prompt_order_with_shadowed_instructions() {
+        let (_d, root, p) = project_with(&[], &[]);
+        std::fs::write(root.join("AGENTS.md"), "vault rules\n").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "c").unwrap();
+        let b = build(&BundleInput {
+            root: &root,
+            project: Some(&p),
+            mode: InjectMode::Auto,
+            cli_version: Some("2.1.325"),
+            index: None,
+            writer_cli: true,
+        })
+        .unwrap();
+        let expected = format!(
+            "{}\nThe following instruction files are not loaded automatically; follow them. Later instructions take precedence over earlier ones.\n\n### AGENTS.md\n\nvault rules\n\n## Project: P\nDesc\nProject folder: Projects/P\n",
+            writer_prompt::render(true)
+        );
+        assert_eq!(b.append_system_prompt.unwrap(), expected);
     }
 }

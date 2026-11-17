@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
+import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { Add01Icon, Clock01Icon, SentIcon, StopIcon } from "@hugeicons/core-free-icons";
 import {
   openAgentHistory,
@@ -10,6 +12,7 @@ import { useChatPermissionMode, type Chat } from "@/hooks/use-agent";
 import { PERMISSION_MODE_LABEL } from "@/lib/agent/agent-settings";
 import type { AgentPermissionMode, ChatId } from "@/lib/agent/events";
 import { Ico } from "./agent-icon";
+import { ContextRing } from "./context-ring";
 import { ModelChip } from "./model-chip";
 import { SkillsChip } from "./skills-chip";
 
@@ -20,6 +23,8 @@ export function ModeChip({ chatId }: { chatId: ChatId }) {
   const mode = useChatPermissionMode(chatId);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  usePopoverDismiss(ref, ref, () => setOpen(false), open);
+  const placement = usePopoverPlacement(ref, open, { width: 176 });
   return (
     <div ref={ref} className="relative">
       <button
@@ -49,7 +54,8 @@ export function ModeChip({ chatId }: { chatId: ChatId }) {
               setOpen(false);
             }
           }}
-          className="absolute bottom-full left-0 z-30 mb-1 w-44 rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
+          style={placement}
+          className="absolute bottom-full left-0 z-30 mb-1 overflow-y-auto rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
         >
           {MODES.map((m) => (
             <button
@@ -115,6 +121,7 @@ export function ComposerActions({
     <div className="flex items-center gap-1 px-2 pb-2">
       <ModeChip chatId={chatId} />
       <ModelChip chatId={chatId} />
+      <ContextRing chatId={chatId} />
       <SkillsChip chat={chat} />
       <span className="flex-1" />
       <IconButton label="New chat" icon={Add01Icon} onClick={() => startNewAgentChat()} />

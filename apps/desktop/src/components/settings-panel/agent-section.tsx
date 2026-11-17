@@ -381,9 +381,12 @@ export function AgentSection() {
       <SchemaRows
         keys={[
           "agent.attach-active-note",
+          "agent.show-turn-changes",
           "agent.inject-agents-md",
           "agent.max-concurrent-chats",
           "agent.chats-keep-days",
+          "agent.auto-title-chats",
+          "agent.title-model",
           "agent.pane-width",
         ]}
       />

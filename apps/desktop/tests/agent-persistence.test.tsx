@@ -152,6 +152,7 @@ const NOTE_DOC = (over: Partial<ChatNoteDoc["meta"]> = {}): ChatNoteDoc => ({
     chatId: "saved-1",
     title: "Plan the review",
     titleRenamed: false,
+    titleAuto: false,
     backend: "claude",
     sessionId: "sess-9",
     project: null,
@@ -196,6 +197,7 @@ const SUMMARY: ChatSummary = {
   turnCount: 2,
   archived: false,
   pinned: false,
+  titleSource: "none",
 };
 
 describe("chat-from-note", () => {
@@ -309,6 +311,8 @@ function fakeHistory(over: Partial<ChatHistoryClient> = {}) {
       return { ...SUMMARY, chatId: a.chatId };
     }),
     action: vi.fn(async () => null),
+    autoTitle: vi.fn(async () => null),
+    regenerateTitle: vi.fn(),
     replay: vi.fn(async () => ({
       text: "[Resumed from notes] earlier text",
       turnsIncluded: 2,

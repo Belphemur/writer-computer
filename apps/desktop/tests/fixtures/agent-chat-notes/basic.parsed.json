@@ -3,6 +3,7 @@
     "chatId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
     "title": "Plan the Q4 review",
     "titleRenamed": false,
+    "titleAuto": false,
     "backend": "claude",
     "sessionId": "5328964b-5fe4-4e06-8843-5cf92bdc9e7c",
     "project": "Demo",

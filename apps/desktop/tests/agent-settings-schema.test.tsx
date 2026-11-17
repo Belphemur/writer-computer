@@ -19,6 +19,20 @@ import { useWorkspaceStore } from "../src/stores/workspace-store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Read-only `writer` commands only; Rust test `default_allowed_tools_are_read_only_registered_commands` checks the names. */
+const DEFAULT_ALLOWED = [
+  "Bash(writer search *)",
+  "Bash(writer search:context *)",
+  "Bash(writer backlinks *)",
+  "Bash(writer links *)",
+  "Bash(writer properties *)",
+  "Bash(writer property:read *)",
+  "Bash(writer bases)",
+  "Bash(writer base:views *)",
+  "Bash(writer base:query *)",
+  "Bash(writer version)",
+];
+
 const agent = SETTINGS_SCHEMA.filter((d) => d.key.startsWith("agent."));
 const byKey = (k: string) => agent.find((d) => d.key === k)!;
 
@@ -30,12 +44,15 @@ describe("agent.* settings contract", () => {
       "agent.effort": "default",
       "agent.enabled-models": ["default", "opus", "sonnet", "haiku"],
       "agent.permission-mode": "manual",
-      "agent.allowed-tools": [],
+      "agent.allowed-tools": DEFAULT_ALLOWED,
       "agent.disallowed-tools": [],
       "agent.attach-active-note": true,
+      "agent.show-turn-changes": true,
       "agent.inject-agents-md": "auto",
       "agent.max-concurrent-chats": 4,
       "agent.chats-keep-days": 0,
+      "agent.auto-title-chats": true,
+      "agent.title-model": "",
       "agent.pane-width": 420,
     });
   });
@@ -70,6 +87,7 @@ describe("agent.* settings contract", () => {
   it("trims the free-text keys", () => {
     expect(byKey("agent.binary-path").normalize).toBe("trim");
     expect(byKey("agent.model").normalize).toBe("trim");
+    expect(byKey("agent.title-model").normalize).toBe("trim");
   });
 
   it("maps to StartSessionRequest settings through agentSettingsFrom", () => {
@@ -79,7 +97,7 @@ describe("agent.* settings contract", () => {
       model: null,
       effort: null,
       permissionMode: "manual",
-      allowedTools: [],
+      allowedTools: DEFAULT_ALLOWED,
       disallowedTools: [],
     });
     expect(

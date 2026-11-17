@@ -11,6 +11,7 @@ import type {
   PermissionRequestId,
   PermissionSuggestion,
   ToolCallId,
+  TurnChangesSummary,
   TurnFinishReason,
 } from "./events";
 
@@ -100,6 +101,8 @@ export type Turn = {
   /** Output tokens summed from `usage{scope:"message"}` while the turn runs. */
   liveOutputTokens: number;
   errors: string[];
+  /** What the agent changed in the vault this turn (`turn-changes`, or the chat note). */
+  changes?: TurnChangesSummary;
 };
 
 export type PermissionView = {
@@ -132,6 +135,17 @@ export type SessionInfo = {
   cliVersion: string | null;
 };
 
+/** What the model was given on the latest API call, plus what it answered. `turnIndex` is
+ *  `turns.length` when it was recorded, so a turn's summed result cannot overwrite the more
+ *  accurate per-call numbers already seen in that turn. */
+export type ContextUsage = {
+  inputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  outputTokens: number;
+  turnIndex: number;
+};
+
 export type Chat = {
   chatId: ChatId;
   /** Tab title; set from the first user message unless renamed. */
@@ -150,8 +164,8 @@ export type Chat = {
   contextWindow: number | null;
   /** The model the CLI says did the last turn (`usage{scope:"turn"}.model`); null before one. */
   reportedModel: string | null;
-  /** Tokens in the context after the last turn (input + cache read + cache creation). */
-  contextTokens: number | null;
+  /** The latest API call's usage (the context as of now); null on a new chat. See `context-usage.ts`. */
+  contextUsage: ContextUsage | null;
   /** Sum of the `costUsd` of every finished turn of this chat (a lower bound: null costs add 0). */
   totalCostUsd: number;
   /** Last `seq` applied from the backend; 0 before the first event. */

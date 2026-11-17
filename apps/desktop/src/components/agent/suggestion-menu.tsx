@@ -1,7 +1,11 @@
+import type { CSSProperties, Ref } from "react";
+
 export type Suggestion = {
   id: string;
   label: string;
   detail?: string;
+  /** Tooltip for the row (the complete path of a note). */
+  title?: string;
   icon?: string;
   /** Muted tag at the right (a skill's source). */
   tag?: string;
@@ -18,6 +22,9 @@ export function SuggestionMenu({
   activeIndex,
   onPick,
   emptyText = "No matches",
+  hint,
+  menuRef,
+  style,
 }: {
   id: string;
   label: string;
@@ -26,13 +33,20 @@ export function SuggestionMenu({
   onPick: (item: Suggestion) => void;
   /** Shown when `items` is empty. */
   emptyText?: string;
+  /** A subtle line under the rows (not an option). */
+  hint?: string;
+  menuRef?: Ref<HTMLDivElement>;
+  /** Placement from `usePopoverPlacement` (left, width, max height). */
+  style?: CSSProperties;
 }) {
   return (
     <div
       id={id}
+      ref={menuRef}
       role="listbox"
       aria-label={label}
-      className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-56 overflow-y-auto rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
+      style={style}
+      className="absolute bottom-full z-30 mb-1 max-h-56 overflow-y-auto rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-1 shadow-lg"
     >
       {items.length === 0 ? (
         <p className="px-2 py-1.5 text-[12.5px] text-text-muted">{emptyText}</p>
@@ -42,6 +56,7 @@ export function SuggestionMenu({
             key={item.id}
             id={`${id}-${i}`}
             role="option"
+            title={item.title}
             aria-selected={i === activeIndex}
             onMouseDown={(e) => {
               e.preventDefault(); // keep focus in the textarea
@@ -72,6 +87,7 @@ export function SuggestionMenu({
           </div>
         ))
       )}
+      {hint && <p className="px-2 pt-1 text-[11px] text-text-muted">{hint}</p>}
     </div>
   );
 }

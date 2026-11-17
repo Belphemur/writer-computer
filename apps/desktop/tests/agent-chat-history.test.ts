@@ -23,6 +23,7 @@ const chat = (id: string, over: Partial<ChatSummary> = {}): ChatSummary => ({
   turnCount: 1,
   archived: false,
   pinned: false,
+  titleSource: "none",
   ...over,
 });
 

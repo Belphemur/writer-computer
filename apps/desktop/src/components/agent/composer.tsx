@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   decideAgentPermission,
   hasPendingAgentPermission,
@@ -21,6 +21,10 @@ import type { ContextRef } from "@/lib/agent/events";
 import {
   searchMentions,
   specialMentions,
+  mentionToken,
+  middleTruncate,
+  pickLabel,
+  unattachedMentions,
   toContextRef,
   type MentionCandidate,
 } from "@/lib/agent/mentions";
@@ -29,11 +33,12 @@ import {
   SLASH_EMPTY_TEXT,
   SOURCE_LABEL,
   loadedLabel,
-  applySlash,
   filterSlash,
   mergeSlashItems,
-  slashQuery,
 } from "@/lib/agent/slash-commands";
+import { applyTrigger, findTrigger, type Trigger } from "@/lib/agent/trigger";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
+import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { fuzzySearch } from "@/lib/tauri";
 import { ComposerActions } from "./composer-actions";
 import { ContextChips } from "./context-chips";
@@ -44,20 +49,11 @@ import { useLoadSkillsOnMount } from "./use-load-skills";
 const EMPTY: Draft = { text: "", mentions: [], activeNote: true };
 
 type Menu =
-  | { kind: "mention"; start: number; query: string; items: MentionCandidate[]; active: number }
-  | { kind: "slash"; query: string; active: number };
+  | { kind: "mention"; trigger: Trigger; items: MentionCandidate[]; active: number }
+  | { kind: "slash"; trigger: Trigger; active: number };
 
-const MENTION_TRIGGER = /(^|\s)@([^\s@]*)$/;
-
-/** Text before the caret ends in `@query`: its start index (of the `@`) and the query. */
-export function mentionTrigger(
-  text: string,
-  caret: number,
-): { start: number; query: string } | null {
-  const before = text.slice(0, caret);
-  const m = MENTION_TRIGGER.exec(before);
-  return m ? { start: before.length - m[2]!.length - 1, query: m[2]! } : null;
-}
+/** Identifies a token, so a dismissed menu stays closed until the caret moves to another one. */
+const tokenKey = (t: Trigger) => `${t.char}${t.start}:${t.query}`;
 
 function placeholder(chat: Chat): string {
   switch (chat.state) {
@@ -88,6 +84,15 @@ export function Composer({
   const listId = useId();
   const [menu, setMenu] = useState<Menu | null>(null);
   const searchSeq = useRef(0);
+  const composing = useRef(false);
+  const dismissed = useRef<string | null>(null);
+  const pendingCaret = useRef<number | null>(null);
+  /** The last pick, so Cmd+Z right after it restores the typed token. */
+  const lastPick = useRef<{ before: string; caret: number; after: string } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  /** Tokens whose "not attached" hint the user closed (the hint never blocks sending). */
+  const [hintClosed, setHintClosed] = useState<ReadonlySet<string>>(new Set());
+  const menuRef = useRef<HTMLDivElement>(null);
   const focusTick = useFocusComposerTick();
   useFocusOnTick(area, focusTick);
 
@@ -101,7 +106,7 @@ export function Composer({
     [disk?.items, chat.session, catalog],
   );
   const slashItems = useMemo(
-    () => (menu?.kind === "slash" ? filterSlash(allSlash, menu.query) : []),
+    () => (menu?.kind === "slash" ? filterSlash(allSlash, menu.trigger.query) : []),
     [allSlash, menu],
   );
   const slashSuggestions: Suggestion[] = slashItems.map((i) => ({
@@ -128,18 +133,26 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
   }
 
-  function setText(value: string, caret: number) {
-    setAgentDraft(chatId, { text: value });
-    const trigger = mentionTrigger(value, caret);
-    if (trigger) {
+  /** Opens, updates or closes the menu for the token the caret is in. */
+  function refresh(value: string, caret: number) {
+    const trigger = findTrigger(value, caret, composing.current);
+    if (!trigger || dismissed.current === tokenKey(trigger)) {
+      if (!trigger) dismissed.current = null;
+      searchSeq.current++;
+      setMenu(null);
+      return;
+    }
+    if (
+      menu &&
+      menu.trigger.char === trigger.char &&
+      tokenKey(menu.trigger) === tokenKey(trigger)
+    ) {
+      if (menu.trigger.end !== trigger.end) setMenu({ ...menu, trigger } as Menu);
+      return;
+    }
+    if (trigger.char === "@") {
       const seq = ++searchSeq.current;
-      setMenu({
-        kind: "mention",
-        start: trigger.start,
-        query: trigger.query,
-        items: [],
-        active: 0,
-      });
+      setMenu({ kind: "mention", trigger, items: [], active: 0 });
       void searchMentions(trigger.query, fuzzySearch)
         .then((items) => {
           if (seq === searchSeq.current)
@@ -151,57 +164,80 @@ export function Composer({
       return;
     }
     searchSeq.current++;
-    const slash = slashQuery(value);
-    if (slash !== null) {
-      // Opening the menu re-reads the skills on disk (they may have changed); the cache shows meanwhile.
-      if (menu?.kind !== "slash") void loadAgentSkills(chat.projectPath);
-      setMenu({ kind: "slash", query: slash, active: 0 });
-      return;
-    }
+    // Opening the menu re-reads the skills on disk (they may have changed); the cache shows meanwhile.
+    if (menu?.kind !== "slash") void loadAgentSkills(chat.projectPath);
+    setMenu({ kind: "slash", trigger, active: 0 });
+  }
+
+  function closeMenu() {
+    if (menu) dismissed.current = tokenKey(menu.trigger);
+    searchSeq.current++;
     setMenu(null);
   }
 
+  /** Puts `replacement` in place of the token under the caret and the caret after it. */
+  function replaceToken(t: Trigger, replacement: string, extra: Partial<Draft> = {}) {
+    const next = applyTrigger(text, t, replacement);
+    lastPick.current = { before: text, caret: t.start + 1 + t.query.length, after: next.text };
+    pendingCaret.current = next.caret;
+    setAgentDraft(chatId, { text: next.text, ...extra });
+    searchSeq.current++;
+    setMenu(null);
+    area.current?.focus();
+  }
+
   function pickMention(c: MentionCandidate) {
-    const el = area.current;
-    if (!el || menu?.kind !== "mention") return;
-    const caret = el.selectionStart;
-    const next = `${text.slice(0, menu.start)}${text.slice(caret)}`.replace(/^ /, "");
-    const ref = toContextRef(c);
+    if (menu?.kind !== "mention") return;
+    const label = c.kind === "active-note" ? undefined : pickLabel(c, draft.mentions);
+    const ref = toContextRef(c, label);
     if (c.kind === "active-note") {
       // The same chip the pane attaches by default; picking brings it back after it was removed.
       // With the default off there is no automatic chip, so the pick adds an explicit one.
       const mentions: ContextRef[] = attachByDefault
         ? draft.mentions
         : [...draft.mentions.filter((m) => m.kind !== "active-note"), ref];
-      setAgentDraft(chatId, { text: next, mentions, activeNote: true });
-      setMenu(null);
-      el.focus();
+      replaceToken(menu.trigger, "@activenote", { mentions, activeNote: true });
       return;
     }
     const exists = draft.mentions.some(
       (m) => m.kind === ref.kind && "path" in m && "path" in ref && m.path === ref.path,
     );
     const mentions: ContextRef[] = exists ? draft.mentions : [...draft.mentions, ref];
-    setAgentDraft(chatId, { text: next, mentions });
-    setMenu(null);
-    el.focus();
+    replaceToken(menu.trigger, mentionToken(label ?? c.path), { mentions });
   }
 
   function pickSlash(s: Suggestion) {
-    setAgentDraft(chatId, { text: applySlash(text, s.id) });
-    setMenu(null);
-    area.current?.focus();
+    if (menu?.kind !== "slash") return;
+    replaceToken(menu.trigger, `/${s.id}`);
   }
+
+  useLayoutEffect(() => {
+    const caret = pendingCaret.current;
+    if (caret !== null && area.current) {
+      area.current.setSelectionRange(caret, caret);
+      pendingCaret.current = null;
+    }
+  });
+
+  usePopoverDismiss(menuRef, area, closeMenu, menu !== null);
+  const placement = usePopoverPlacement(wrapRef, menu !== null, {
+    width: 520,
+    maxHeight: 224,
+    side: "top",
+  });
 
   // Shortcuts (`@activenote`) come first, then folders and notes from the search.
   const mentionCandidates: MentionCandidate[] =
-    menu?.kind === "mention" ? [...specialMentions(menu.query, activeNote), ...menu.items] : [];
+    menu?.kind === "mention"
+      ? [...specialMentions(menu.trigger.query, activeNote), ...menu.items]
+      : [];
   const mentionSuggestions: Suggestion[] =
     menu?.kind === "mention"
       ? mentionCandidates.map((c) => ({
           id: `${c.kind}:${c.path}`,
           label: c.label,
-          detail: c.detail,
+          detail: middleTruncate(c.detail),
+          title: c.path,
           icon: c.kind === "folder" ? "▸" : c.kind === "active-note" ? "@" : "·",
         }))
       : [];
@@ -217,6 +253,11 @@ export function Composer({
       if (s) pickSlash(s);
     }
   }
+
+  const unattached =
+    menu?.kind === "mention"
+      ? []
+      : unattachedMentions(text, draft.mentions).filter((t) => !hintClosed.has(t));
 
   function send() {
     if (!text.trim() || disabled) return;
@@ -261,12 +302,25 @@ export function Composer({
       }
     }
 
+    // Cmd+Z right after a pick gives the typed token back (a programmatic edit has no native undo).
+    if (mod && !e.shiftKey && e.key.toLowerCase() === "z") {
+      const pick = lastPick.current;
+      if (pick && pick.after === text) {
+        e.preventDefault();
+        lastPick.current = null;
+        pendingCaret.current = pick.caret;
+        setAgentDraft(chatId, { text: pick.before });
+        refresh(pick.before, pick.caret);
+        return;
+      }
+    }
+
     if (e.key === "Escape") {
       // In order: close an open menu, clear a queued chip, stop the turn, return to the editor.
       if (menu) {
         e.preventDefault();
         e.stopPropagation();
-        setMenu(null);
+        closeMenu();
       } else if (hasQueued) {
         e.preventDefault();
         removeQueuedMessage(chatId);
@@ -296,10 +350,17 @@ export function Composer({
   }
 
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       {menu && (
         <SuggestionMenu
           id={listId}
+          menuRef={menuRef}
+          style={placement}
+          hint={
+            menu.kind === "slash" && !menu.trigger.atStart
+              ? "Mid-message: referenced by name"
+              : undefined
+          }
           label={menu.kind === "mention" ? "Add context" : "Commands"}
           items={suggestions}
           emptyText={menu.kind === "slash" ? slashEmpty : undefined}
@@ -331,7 +392,18 @@ export function Composer({
           placeholder={placeholder(chat)}
           onChange={(e) => {
             grow(e.currentTarget);
-            setText(e.currentTarget.value, e.currentTarget.selectionStart);
+            setAgentDraft(chatId, { text: e.currentTarget.value });
+            refresh(e.currentTarget.value, e.currentTarget.selectionStart);
+          }}
+          onSelect={(e) => refresh(e.currentTarget.value, e.currentTarget.selectionStart)}
+          onCompositionStart={() => {
+            composing.current = true;
+            closeMenu();
+          }}
+          onCompositionEnd={(e) => {
+            composing.current = false;
+            dismissed.current = null;
+            refresh(e.currentTarget.value, e.currentTarget.selectionStart);
           }}
           onKeyDown={onKeyDown}
           className="block max-h-[40vh] w-full resize-none bg-transparent px-3 py-2.5 text-[14px] leading-snug text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
@@ -345,6 +417,26 @@ export function Composer({
           onSend={send}
         />
       </div>
+      {unattached.length > 0 && (
+        <p
+          role="status"
+          data-agent-unattached-hint
+          className="mx-3 -mt-1 mb-2 flex items-start gap-2 text-[11.5px] text-text-muted"
+        >
+          <span className="min-w-0 flex-1">
+            {unattached[0]} is not attached: pick a note from the menu
+            {unattached.length > 1 ? ` (and ${unattached.length - 1} more)` : ""}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="shrink-0 rounded px-1 hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
+            onClick={() => setHintClosed(new Set([...hintClosed, ...unattached]))}
+          >
+            ×
+          </button>
+        </p>
+      )}
     </div>
   );
 }

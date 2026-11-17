@@ -67,6 +67,7 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
         final: true,
       });
     }
+    if (m.changes) current.changes = m.changes;
     current.status = m.reason ?? "completed";
     current.finishedAt = m.at;
     // An assistant message closes its turn: the next user message opens a new one.

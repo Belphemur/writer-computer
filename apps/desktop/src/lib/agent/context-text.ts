@@ -1,12 +1,13 @@
 /**
- * The plain-text `<writer-context>` block that precedes the user's text (spec section 5,
- * "What Writer sends"). Pure and golden-tested; "Preview exact text" shows this string.
- *
- * Ownership note: the Rust `agent_send` builds the text that is actually written to the CLI. This
- * module is the UI's pure twin for the preview and must be kept equal to it; if Rust becomes the
- * only builder, `agent_context_preview` replaces this file.
+ * The one function that builds the prompt Claude receives (spec "What Writer sends"): the user's
+ * text with each `@` reference kept inline in Claude Code's own syntax, then a compact
+ * `<references>` block that ties the attached context to those tokens. Pure and golden-tested
+ * (`shared/agent-prompt-golden.json`, also read by the Rust encoder test); the agent store sends
+ * its result as `agent_send.text` and a "Preview exact text" view would show the same string.
  */
 import type { ContextRef } from "./events";
+import { isActiveNoteToken, mentionToken } from "./mentions";
+import { tokenizeMessage } from "./trigger";
 
 export function contextRefLabel(ref: ContextRef): string {
   switch (ref.kind) {
@@ -30,32 +31,114 @@ export function contextRefLabel(ref: ContextRef): string {
 /** Rough size estimate: ceil(chars / 4), shown with "~", never as exact. */
 export const estimateTokens = (chars: number): number => Math.ceil(chars / 4);
 
-/** Returns "" when there is nothing to say (no block is sent then). */
-export function buildContextText(refs: readonly ContextRef[]): string {
-  const lines: string[] = [];
-  for (const ref of refs) {
-    switch (ref.kind) {
-      case "active-note":
-        lines.push(`active note: ${ref.path}${ref.inline ? " (content included)" : ""}`);
+/** `path` (vault-relative) as the claude process sees it: relative to its cwd, which is the
+ *  vault root or the chat's project folder. A path outside the project climbs with `../`
+ *  (the vault root is an `--add-dir`), so an absolute home path is never sent. */
+export function relativeToCwd(path: string, cwd: string | null): string {
+  if (path.startsWith("/")) return path;
+  const base = (cwd ?? "").split("/").filter(Boolean);
+  const parts = path.split("/").filter(Boolean);
+  let common = 0;
+  while (common < base.length && common < parts.length && base[common] === parts[common]) common++;
+  const out = [...Array<string>(base.length - common).fill(".."), ...parts.slice(common)].join("/");
+  return out === "" ? "." : out;
+}
+
+export type PromptInput = {
+  /** What the user typed (and what the transcript and the chat note keep). */
+  text: string;
+  refs: readonly ContextRef[];
+  /** The chat's project folder (vault-relative), null at the vault root. */
+  cwd: string | null;
+  /** Skill names known for this chat; a `/name` in the middle of the text gets a line. */
+  skills?: readonly string[];
+};
+
+const REFERENCES_HEADER =
+  "Attached by the user, paths relative to the working directory (read them with the Read tool when relevant):";
+
+/**
+ * Text sent to claude. Without a reference worth reporting it is `text` unchanged.
+ *
+ * - A token that matches an attached note or folder (by the readable label its pick put in the
+ *   text, or by path) is rewritten to the note's full path in the cwd-relative form Claude Code resolves itself (quoted when it has spaces); it is expanded by
+ *   the CLI (verified: file contents, folder listing). `@activenote` becomes the active note's
+ *   path, resolved now from `refs` (no active-note ref: it stays literal and has no entry).
+ * - Then, unless the text starts with a `/command` (Claude Code expands it only at the very
+ *   start, and a block after it would become its arguments), a `<references>` block lists every
+ *   attached ref once by the same token, with its kind. Nothing is inlined except a selection's
+ *   quoted text. A mid-message `/skill` that is a known skill gets a line (the CLI does not
+ *   expand it there).
+ */
+export function buildPrompt({ text, refs, cwd, skills = [] }: PromptInput): string {
+  const sentToken = (path: string) => mentionToken(relativeToCwd(path, cwd));
+  const tokenFor = new Map<string, string>();
+  const entries = new Map<string, string>();
+  let activeToken: string | null = null;
+  const add = (key: string, line: string) => {
+    if (!entries.has(key)) entries.set(key, line);
+  };
+  for (const r of refs) {
+    switch (r.kind) {
+      case "active-note": {
+        const token = sentToken(r.path);
+        activeToken ??= token;
+        tokenFor.set(r.path, token);
+        add(token, `- ${token} (active note: the note open in Writer)`);
         break;
-      case "selection":
-        lines.push(`selection in ${ref.path} lines ${ref.fromLine}-${ref.toLine}:`, ref.text);
-        break;
+      }
       case "note":
-        lines.push(`mentioned note: ${ref.path}`);
+      case "folder": {
+        const token = sentToken(r.path);
+        // the token the pick put in the text (its readable label) and the plain path both map
+        // to this ref; the label is never guessed from other refs
+        if (r.label) tokenFor.set(r.label, token);
+        if (!tokenFor.has(r.path)) tokenFor.set(r.path, token);
+        add(token, `- ${token} (${r.kind})`);
         break;
-      case "folder":
-        lines.push(`mentioned folder: ${ref.path}`);
+      }
+      case "selection": {
+        const token = sentToken(r.path);
+        const quoted = r.text.split("\n").map((l) => `  ${l}`);
+        add(
+          `selection:${token}:${r.fromLine}-${r.toLine}`,
+          [`- selection in ${token}, lines ${r.fromLine}-${r.toLine}:`, ...quoted].join("\n"),
+        );
         break;
-      case "tag":
-        lines.push(`notes tagged: #${ref.tag.replace(/^#/, "")}`);
+      }
+      case "tag": {
+        const tag = `#${r.tag.replace(/^#/, "")}`;
+        add(`tag:${tag}`, `- ${tag} (notes with this tag)`);
         break;
+      }
       case "property":
-        lines.push(`notes with property: ${contextRefLabel(ref)}`);
+        add(`property:${contextRefLabel(r)}`, `- ${contextRefLabel(r)} (notes with this property)`);
         break;
       default:
         break; // project instructions and sources are attached by the system, not per message
     }
   }
-  return lines.length === 0 ? "" : `<writer-context>\n${lines.join("\n")}\n</writer-context>\n\n`;
+
+  const known = new Set(skills.map((s) => s.toLowerCase()));
+  const segments = tokenizeMessage(text);
+  let leadingCommand = false;
+  const sent = segments
+    .map((seg) => {
+      if (seg.kind === "slash") {
+        if (seg.atStart) leadingCommand = true;
+        else if (known.has(seg.name.toLowerCase()))
+          add(
+            `skill:${seg.name.toLowerCase()}`,
+            `- /${seg.name} (skill, not expanded mid-message: invoke it with the Skill tool)`,
+          );
+        return seg.raw;
+      }
+      if (seg.kind === "text") return seg.text;
+      if (isActiveNoteToken(seg)) return activeToken ?? seg.raw;
+      return tokenFor.get(seg.path) ?? tokenFor.get(seg.path.replace(/\/$/, "")) ?? seg.raw;
+    })
+    .join("");
+
+  if (leadingCommand || entries.size === 0) return sent;
+  return `${sent}\n\n<references>\n${REFERENCES_HEADER}\n${[...entries.values()].join("\n")}\n</references>`;
 }

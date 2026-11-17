@@ -3,6 +3,7 @@ import { segmentTurn } from "@/lib/agent/timeline";
 import { AssistantText } from "./assistant-text";
 import { ErrorCard } from "./error-card";
 import { TimelineGroup } from "./timeline-group";
+import { TurnChangesCard } from "./turn-changes-card";
 import { TurnFooter } from "./turn-footer";
 import { useStickToBottom } from "./use-stick-to-bottom";
 import { UserTurnCard } from "./user-turn-card";
@@ -63,6 +64,7 @@ export function Transcript({ chat }: { chat: Chat }) {
                 />
               ),
             )}
+            <TurnChangesCard chatId={chat.chatId} turn={turn} />
             <TurnFooter turn={turn} />
           </div>
         ))}

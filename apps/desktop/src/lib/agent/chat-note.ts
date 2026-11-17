@@ -8,7 +8,14 @@
  * attached paths per message and a capped tool trail; never tool output or note contents.
  */
 import { parse as parseYaml } from "yaml";
-import type { AgentEvent, ContextRef, ToolOutcome, TurnFinishReason } from "./events";
+import type {
+  AgentEvent,
+  ContextRef,
+  TitleSource,
+  ToolOutcome,
+  TurnChangesSummary,
+  TurnFinishReason,
+} from "./events";
 
 export const ESCAPE = "\u200B";
 export const MAX_TOOL_INPUT_CHARS = 500;
@@ -22,6 +29,8 @@ export type ChatNoteMeta = {
   title: string;
   /** True once the user renamed the chat: saves then keep the title. */
   titleRenamed: boolean;
+  /** True once an automatic title was applied: saves then keep it too. See `titleSourceOf`. */
+  titleAuto: boolean;
   backend: string | null;
   sessionId: string | null;
   /** Project name or id, for humans. */
@@ -59,6 +68,8 @@ export type ChatNoteMessage = {
   /** What the user attached (paths and tags, never contents). */
   context?: string;
   tools?: ChatNoteTool[];
+  /** The "Changes" card's summary (assistant only): paths and counts, never contents. */
+  changes?: TurnChangesSummary;
 };
 
 export type ChatNoteDoc = {
@@ -74,6 +85,7 @@ export const emptyMeta = (chatId: string, now: number): ChatNoteMeta => ({
   chatId,
   title: "New chat",
   titleRenamed: false,
+  titleAuto: false,
   backend: "claude",
   sessionId: chatId,
   project: null,
@@ -135,6 +147,7 @@ function fmLines(meta: ChatNoteMeta): string[] {
   str("writer-chat-id", meta.chatId);
   str("writer-chat-title", meta.title);
   if (meta.titleRenamed) out.push("writer-chat-renamed: true");
+  if (meta.titleAuto) out.push("writer-chat-title-auto: true");
   str("writer-chat-backend", meta.backend);
   str("writer-chat-session-id", meta.sessionId);
   str("writer-chat-project", meta.project);
@@ -207,6 +220,9 @@ function serializeMessage(m: ChatNoteMessage): string {
   if (text) blocks.push(escapeText(text));
   if (m.context) blocks.push(`> context: ${m.context.replace(/\s+/g, " ").trim()}`);
   if (m.tools && m.tools.length > 0) blocks.push(`<!-- writer:tools ${commentJson(m.tools)} -->`);
+  // always the last comment of a message (the Rust parser reads it first)
+  if (m.changes && m.changes.files.length > 0)
+    blocks.push(`<!-- writer:changes ${commentJson(m.changes)} -->`);
   return blocks.join("\n\n");
 }
 
@@ -257,6 +273,7 @@ function parseMeta(fm: Record<string, unknown>): ChatNoteMeta {
     chatId,
     title: str(fm["writer-chat-title"]) ?? "New chat",
     titleRenamed: bool(fm["writer-chat-renamed"]),
+    titleAuto: bool(fm["writer-chat-title-auto"]),
     backend: str(fm["writer-chat-backend"]),
     sessionId: str(fm["writer-chat-session-id"]),
     project: str(fm["writer-chat-project"]),
@@ -311,6 +328,14 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
     }
     rest = trimEdges(rest.slice(1));
   }
+  let changes: TurnChangesSummary | undefined;
+  if (rest.length > 0) {
+    const p = payload(rest[rest.length - 1], "changes");
+    if (p !== null) {
+      changes = jsonOr<TurnChangesSummary>(p) ?? undefined;
+      rest = trimEdges(rest.slice(0, -1));
+    }
+  }
   let tools: ChatNoteTool[] | undefined;
   if (rest.length > 0) {
     const p = payload(rest[rest.length - 1], "tools");
@@ -328,6 +353,7 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
   if (reason) message.reason = reason;
   if (context !== undefined) message.context = context;
   if (tools) message.tools = tools;
+  if (changes && Array.isArray(changes.files)) message.changes = changes;
   return message;
 }
 
@@ -414,6 +440,11 @@ export function contextLine(refs: readonly ContextRef[]): string {
 export function previewOf(text: string): string {
   const one = text.replace(/\s+/g, " ").trim();
   return one.length > 160 ? `${one.slice(0, 159)}…` : one;
+}
+
+/** Who chose the title (twin of Rust `ChatMeta::title_source`): a rename always wins. */
+export function titleSourceOf(meta: Pick<ChatNoteMeta, "titleRenamed" | "titleAuto">): TitleSource {
+  return meta.titleRenamed ? "user" : meta.titleAuto ? "auto" : "none";
 }
 
 /** Default title: the first user message cut to 60 characters (spec section 9). */

@@ -1,0 +1,140 @@
+[
+  {
+    "name": "two refs, @activenote and a mid-message skill",
+    "text": "compare @Projects/Plan.md with @activenote and /summarize",
+    "refs": [
+      {
+        "kind": "active-note",
+        "path": "Notes/Today.md",
+        "inline": false
+      },
+      {
+        "kind": "note",
+        "path": "Projects/Plan.md"
+      }
+    ],
+    "cwd": null,
+    "skills": ["summarize"],
+    "prompt": "compare @Projects/Plan.md with @Notes/Today.md and /summarize\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @Notes/Today.md (active note: the note open in Writer)\n- @Projects/Plan.md (note)\n- /summarize (skill, not expanded mid-message: invoke it with the Skill tool)\n</references>"
+  },
+  {
+    "name": "path with spaces keeps the quoted form",
+    "text": "read @\"Projects/My Plan.md\" and @Docs",
+    "refs": [
+      {
+        "kind": "note",
+        "path": "Projects/My Plan.md"
+      },
+      {
+        "kind": "folder",
+        "path": "Docs"
+      }
+    ],
+    "cwd": null,
+    "prompt": "read @\"Projects/My Plan.md\" and @Docs\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @\"Projects/My Plan.md\" (note)\n- @Docs (folder)\n</references>"
+  },
+  {
+    "name": "no reference, no footer; @activenote without a note stays literal",
+    "text": "what about @activenote? say \"hi\"\nthen /usr/bin and a@b.c",
+    "refs": [],
+    "cwd": null,
+    "prompt": "what about @activenote? say \"hi\"\nthen /usr/bin and a@b.c"
+  },
+  {
+    "name": "project cwd: paths become cwd-relative",
+    "text": "see @Projects/A/x.md and @Notes/y.md",
+    "refs": [
+      {
+        "kind": "active-note",
+        "path": "Projects/A/x.md",
+        "inline": false
+      },
+      {
+        "kind": "note",
+        "path": "Notes/y.md"
+      },
+      {
+        "kind": "folder",
+        "path": "Projects/A"
+      }
+    ],
+    "cwd": "Projects/A",
+    "prompt": "see @x.md and @../../Notes/y.md\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @x.md (active note: the note open in Writer)\n- @../../Notes/y.md (note)\n- @\".\" (folder)\n</references>"
+  },
+  {
+    "name": "leading slash command: no footer, tokens still rewritten",
+    "text": "/summarize @Notes/y.md",
+    "refs": [
+      {
+        "kind": "note",
+        "path": "Notes/y.md"
+      }
+    ],
+    "cwd": "Projects/A",
+    "skills": ["summarize"],
+    "prompt": "/summarize @../../Notes/y.md"
+  },
+  {
+    "name": "selection and tag",
+    "text": "rewrite this",
+    "refs": [
+      {
+        "kind": "selection",
+        "path": "Notes/a b.md",
+        "text": "line one\nline two",
+        "fromLine": 2,
+        "toLine": 3
+      },
+      {
+        "kind": "tag",
+        "tag": "#todo"
+      }
+    ],
+    "cwd": null,
+    "prompt": "rewrite this\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- selection in @\"Notes/a b.md\", lines 2-3:\n  line one\n  line two\n- #todo (notes with this tag)\n</references>"
+  },
+  {
+    "name": "picked by readable name: the full quoted vault path is sent",
+    "text": "prep for @\"Daniel Wierdsma Staff Timing and Growth Plan\" tomorrow",
+    "refs": [
+      {
+        "kind": "note",
+        "path": "Management/Meeting Preps/2026/11/2026-11-16 - Daniel Wierdsma Staff Timing and Growth Plan.md",
+        "label": "Daniel Wierdsma Staff Timing and Growth Plan"
+      }
+    ],
+    "cwd": null,
+    "prompt": "prep for @\"Management/Meeting Preps/2026/11/2026-11-16 - Daniel Wierdsma Staff Timing and Growth Plan.md\" tomorrow\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @\"Management/Meeting Preps/2026/11/2026-11-16 - Daniel Wierdsma Staff Timing and Growth Plan.md\" (note)\n</references>"
+  },
+  {
+    "name": "same readable name in two folders maps each token to its own path",
+    "text": "diff @Plan against @\"Team/Plan\"",
+    "refs": [
+      {
+        "kind": "note",
+        "path": "Alpha/Plan.md",
+        "label": "Plan"
+      },
+      {
+        "kind": "note",
+        "path": "Team/Plan.md",
+        "label": "Team/Plan"
+      }
+    ],
+    "cwd": null,
+    "prompt": "diff @Alpha/Plan.md against @Team/Plan.md\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @Alpha/Plan.md (note)\n- @Team/Plan.md (note)\n</references>"
+  },
+  {
+    "name": "a token whose name was edited keeps the ref in the footer",
+    "text": "look at @\"Daniel Wierdsm\"",
+    "refs": [
+      {
+        "kind": "note",
+        "path": "Team/Daniel Wierdsma.md",
+        "label": "Daniel Wierdsma"
+      }
+    ],
+    "cwd": null,
+    "prompt": "look at @\"Daniel Wierdsm\"\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @\"Team/Daniel Wierdsma.md\" (note)\n</references>"
+  }
+]

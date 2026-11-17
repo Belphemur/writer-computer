@@ -14,6 +14,7 @@
 //! Never logged: user text, assistant text, tool input/output, note paths, the system prompt,
 //! environment values (spec section 8).
 
+use super::changes::{ChangeStore, ClosedTurn};
 use super::claude_stream::{
     build_args, encode_control_error, encode_interrupt, encode_permission_allow,
     encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_user_message,
@@ -177,6 +178,8 @@ struct Inner {
 
     state: AgentSessionState,
     mapper: ClaudeStreamMapper,
+    /// Tool name by call id for the current turn: `tool-call-input` carries only the id.
+    tool_names: HashMap<String, String>,
     pending: HashMap<String, PendingPerm>,
     turn_active: bool,
     queue: VecDeque<String>,
@@ -203,6 +206,7 @@ pub struct Session {
     shared: Weak<Shared>,
     procs: Arc<ProcManager>,
     ports: Arc<AgentPorts>,
+    changes: Arc<ChangeStore>,
     store: ConsentStore,
     still_ok: Arc<dyn Fn() -> bool + Send + Sync>,
     timing: Timing,
@@ -332,6 +336,7 @@ impl Session {
             shared: init.shared,
             procs,
             ports: Arc::clone(&shared.ports),
+            changes: Arc::clone(&shared.changes),
             store: init.store,
             still_ok: init.still_ok,
             timing: shared.timing,
@@ -360,6 +365,7 @@ impl Session {
                 pid: None,
                 state: AgentSessionState::Idle,
                 mapper: ClaudeStreamMapper::new(),
+                tool_names: HashMap::new(),
                 pending: HashMap::new(),
                 turn_active: false,
                 queue: VecDeque::new(),
@@ -397,6 +403,16 @@ impl Session {
 
     pub fn pid(&self) -> Option<u32> {
         self.inner.lock().pid
+    }
+
+    /// What a one-shot helper call (the chat title) may run: the program and the confined cwd of
+    /// a chat whose spawn the user already consented to. `None` before that, or once ended.
+    pub fn helper_target(&self) -> Option<(PathBuf, PathBuf)> {
+        let g = self.inner.lock();
+        if !g.consented || g.terminal {
+            return None;
+        }
+        Some((g.program.clone()?, self.cwd.clone()))
     }
 
     // ---------------------------------------------------------------- start
@@ -681,6 +697,9 @@ impl Session {
 
     fn on_line(self: &Arc<Self>, gen: u64, line: &str) {
         let mut started: Option<ChatSessionInfo> = None;
+        // snapshots to take and the turn to finish happen after the lock is released (file IO)
+        let mut captures: Vec<(String, Value)> = Vec::new();
+        let mut closed: Option<ClosedTurn> = None;
         {
             let mut g = self.inner.lock();
             if g.live_gen != Some(gen) {
@@ -697,7 +716,41 @@ impl Session {
                 self.write(encode_control_error(&id, "unsupported"));
             }
             for ev in out.events {
+                match &ev {
+                    AgentEvent::ToolCallStarted {
+                        tool_call_id, tool, ..
+                    } => {
+                        g.tool_names.insert(tool_call_id.clone(), tool.clone());
+                    }
+                    AgentEvent::ToolCallInput {
+                        tool_call_id,
+                        input,
+                    } => {
+                        if let Some(tool) = g.tool_names.get(tool_call_id) {
+                            captures.push((tool.clone(), input.clone()));
+                        }
+                    }
+                    // the permission request may come first: the tool has not run yet either
+                    AgentEvent::PermissionRequest { tool, input, .. } => {
+                        captures.push((tool.clone(), input.clone()));
+                    }
+                    AgentEvent::TurnFinished { .. } => {
+                        g.tool_names.clear();
+                        // taken before `apply` flushes a queued message that starts the next turn
+                        closed = self.changes.close_turn(&self.chat_id);
+                    }
+                    _ => {}
+                }
                 self.apply(&mut g, ev, &mut started);
+            }
+        }
+        for (tool, input) in captures {
+            self.changes
+                .capture(&self.chat_id, &self.root, &self.cwd, &tool, &input);
+        }
+        if let Some(turn) = closed {
+            if let Some(summary) = self.changes.finish(turn) {
+                self.log.push(AgentEvent::TurnChanges(summary));
             }
         }
         if let Some(info) = started {

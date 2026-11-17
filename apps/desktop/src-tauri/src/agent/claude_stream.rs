@@ -678,6 +678,43 @@ pub(super) fn is_safe_value(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('-') && !s.contains('\0') && !s.contains('\n')
 }
 
+/// The argv of the one-shot chat-title call (`claude -p`, the prompt on stdin): a single turn
+/// with no tools, no setting files, no skills, no MCP servers and nothing saved to the CLI's
+/// session history, JSON output (`result`, `is_error`, `total_cost_usd`). `model` `None` keeps the
+/// CLI's default. Verified against claude 2.1.325 (spec "Automatic chat titles").
+pub fn build_title_args(model: Option<&str>, system_prompt: &str) -> Result<Vec<String>, String> {
+    let mut a: Vec<String> = [
+        "-p",
+        "--output-format",
+        "json",
+        "--max-turns",
+        "1",
+        "--no-session-persistence",
+        "--tools",
+        "",
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    if let Some(model) = model.filter(|m| !m.is_empty()) {
+        if !is_safe_value(model) {
+            return Err("invalid model name".into());
+        }
+        a.push("--model".into());
+        a.push(model.into());
+    }
+    if system_prompt.contains('\0') {
+        return Err("system prompt contains NUL".into());
+    }
+    a.push("--system-prompt".into());
+    a.push(system_prompt.into());
+    Ok(a)
+}
+
 /// The argv after the program name. Fixed flags first; everything user-supplied is validated so
 /// it can never be read as another flag.
 pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
@@ -1325,6 +1362,39 @@ mod tests {
         assert_eq!(v["request"], json!({"subtype":"set_model"}));
         // none of the encoders emit a newline (one JSON object per line)
         assert!(!encode_user_message("a\nb").contains('\n'));
+    }
+
+    /// The prompt is built in TypeScript (`src/lib/agent/context-text.ts`, which asserts these same
+    /// cases); this side proves the refs of the contract deserialize and that the encoder carries
+    /// each prompt to the CLI's stdin byte for byte, as one line.
+    #[test]
+    fn prompt_golden_cases_reach_stdin_verbatim() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/agent-prompt-golden.json");
+        let cases: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap())
+            .expect("agent-prompt-golden.json");
+        assert!(cases.len() >= 6);
+        for c in &cases {
+            let refs: Vec<ContextRef> = serde_json::from_value(c["refs"].clone()).unwrap();
+            let prompt = c["prompt"].as_str().unwrap();
+            let name = c["name"].as_str().unwrap();
+            let line = encode_user_message(prompt);
+            assert!(!line.contains('\n'), "{name}: one line");
+            let v: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(v["message"]["content"], prompt, "{name}");
+            // the footer exists exactly when something was attached and no `/command` leads
+            let footer = prompt.contains("\n\n<references>\n");
+            let leading = c["text"].as_str().unwrap().trim_start().starts_with('/');
+            assert!(!(footer && leading), "{name}: no footer behind a command");
+            if refs.is_empty() && c.get("skills").is_none() {
+                assert_eq!(prompt, c["text"].as_str().unwrap(), "{name}: unchanged");
+            }
+        }
+        // the reference example, exactly as written to stdin
+        let first = encode_user_message(cases[0]["prompt"].as_str().unwrap());
+        assert_eq!(
+            first,
+            r#"{"message":{"content":"compare @Projects/Plan.md with @Notes/Today.md and /summarize\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @Notes/Today.md (active note: the note open in Writer)\n- @Projects/Plan.md (note)\n- /summarize (skill, not expanded mid-message: invoke it with the Skill tool)\n</references>","role":"user"},"type":"user"}"#
+        );
     }
 
     #[test]

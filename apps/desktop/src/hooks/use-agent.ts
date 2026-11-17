@@ -11,6 +11,7 @@ import { useActiveFilePath } from "@/hooks/use-tabs";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useClosePluginPane, useIsPluginPaneOpen } from "@/hooks/use-plugins";
 import type { ChatId } from "@/lib/agent/events";
+import { contextStatus, type ContextStatus } from "@/lib/agent/context-usage";
 
 export type { SkillsEntry } from "@/stores/agent-store";
 export type { Draft, AgentView, AgentBackend, QueuedMessage } from "@/stores/agent-store";
@@ -112,6 +113,13 @@ export function useChatModel(chatId: ChatId | null): {
     return { model: d.model, effort: d.effort };
   }, [model, effort]);
   return { choice: own ?? base, reported, sessionModel };
+}
+
+/** How full the chat's context window is (`lib/agent/context-usage.ts`); null without a chat. */
+export function useChatContext(chatId: ChatId | null): ContextStatus | null {
+  const chat = useAgentChat(chatId);
+  const { choice } = useChatModel(chatId);
+  return useMemo(() => (chat ? contextStatus(chat, choice.model) : null), [chat, choice.model]);
 }
 
 /** Is the active-note chip allowed by `agent.attach-active-note` (default on)? */

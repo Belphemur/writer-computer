@@ -102,19 +102,6 @@ export function mergeSlashItems(
   return out;
 }
 
-/** The text after a leading `/` while the user is still typing the command name: whitespace
- *  before the slash is allowed, a space or a second slash after it (a sentence, a path) is not.
- *  Null when the menu should not show. */
-export function slashQuery(text: string): string | null {
-  const m = /^\s*\/([^\s/]*)$/.exec(text);
-  return m ? m[1]! : null;
-}
-
-/** Text of the composer after picking `name`: the command, a space, nothing else. */
-export function applySlash(text: string, name: string): string {
-  return text.replace(/^\s*\/[^\s/]*$/, `/${name} `);
-}
-
 /** Fuzzy filter on the name (the vault search ranker), then description word matches. */
 export function filterSlash(items: readonly SlashItem[], query: string, limit = 12): SlashItem[] {
   const q = query.trim();

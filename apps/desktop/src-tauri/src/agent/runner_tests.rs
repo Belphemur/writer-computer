@@ -1207,3 +1207,96 @@ fn detect_reports_version_and_sign_in_state_of_the_override() {
         "probes are not chat processes"
     );
 }
+
+#[test]
+fn a_turn_that_edits_a_vault_file_ends_with_a_turn_changes_event_and_undo_works() {
+    let mut h = Harness::new(&["permission-allow"], "normal");
+    // the captured Write + Bash turn, pointed at a real file of the harness vault
+    let derived = std::fs::read_to_string(fixture("permission-allow"))
+        .unwrap()
+        .replace(
+            "/vault/Projects/Demo/notes.txt",
+            &h.root.join("notes.txt").to_string_lossy(),
+        );
+    std::fs::write(h.fdir.join("derived.jsonl"), derived).unwrap();
+    std::fs::write(
+        h.fdir.join("turns.txt"),
+        format!("{}\n", h.fdir.join("derived.jsonl").display()),
+    )
+    .unwrap();
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+
+    h.start(CHAT);
+    h.send(CHAT, "write it");
+    let ask = |h: &mut Harness| match h.next(CHAT, "permission-request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    }) {
+        AgentEvent::PermissionRequest {
+            request_id, tool, ..
+        } => (request_id, tool),
+        _ => unreachable!(),
+    };
+    let (id, tool) = ask(&mut h);
+    assert_eq!(tool, "Write");
+    // the snapshot is taken as the request is seen; the (fake) tool only runs after the answer
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\nadded\n").unwrap();
+    let allow = |h: &Harness, id: &str| {
+        h.sessions
+            .permission("w", CHAT, id, PermissionDecision::Allow, None, None)
+            .unwrap()
+    };
+    allow(&h, &id);
+    let (id2, tool2) = ask(&mut h);
+    assert_eq!(tool2, "Bash");
+    allow(&h, &id2);
+
+    let summary = match h.next(CHAT, "turn-changes", |e| {
+        matches!(e, AgentEvent::TurnChanges(_))
+    }) {
+        AgentEvent::TurnChanges(s) => s,
+        _ => unreachable!(),
+    };
+    assert!(summary.bash, "a Bash call ran in the turn");
+    assert_eq!(summary.files.len(), 1);
+    let f = &summary.files[0];
+    assert_eq!(f.path, "notes.txt");
+    assert_eq!(f.status, ChangeStatus::Modified);
+    assert_eq!((f.added, f.removed), (2, 1));
+
+    let seq_of = |h: &Harness, pred: fn(&AgentEvent) -> bool| {
+        h.seen
+            .iter()
+            .find(|e| pred(&e.event))
+            .map(|e| e.seq)
+            .unwrap()
+    };
+    assert!(
+        seq_of(&h, |e| matches!(e, AgentEvent::TurnFinished { .. }))
+            < seq_of(&h, |e| matches!(e, AgentEvent::TurnChanges(_))),
+        "turn-changes follows turn-finished"
+    );
+
+    let changes = h.sessions.changes();
+    let detail = changes.detail(CHAT, &summary.turn_id, &h.root).unwrap();
+    assert_eq!(detail.files[0].undo, UndoState::Available);
+    let out = changes
+        .revert(CHAT, &summary.turn_id, &h.root, &["notes.txt".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Reverted);
+    assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\nline\n");
+}
+
+#[test]
+fn a_read_only_turn_sends_no_turn_changes() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "hi");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+    assert!(!h
+        .seen
+        .iter()
+        .any(|e| matches!(e.event, AgentEvent::TurnChanges(_))));
+}

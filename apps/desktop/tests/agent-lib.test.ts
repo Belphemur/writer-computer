@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vite-plus/test";
-import { buildContextText, contextRefLabel, estimateTokens } from "../src/lib/agent/context-text";
+import { contextRefLabel, estimateTokens } from "../src/lib/agent/context-text";
 import { createEventPump } from "../src/lib/agent/client";
 import type { AgentEvent, AgentEventEnvelope } from "../src/lib/agent/events";
 import { renderAgentMarkdown, wikilinkTarget } from "../src/lib/agent/markdown";
@@ -77,18 +77,7 @@ describe("tool kinds", () => {
 });
 
 describe("context text", () => {
-  it("is empty without context and a block otherwise", () => {
-    expect(buildContextText([])).toBe("");
-    const text = buildContextText([
-      { kind: "active-note", path: "Notes/a.md", inline: false },
-      { kind: "note", path: "b.md" },
-      { kind: "folder", path: "Projects" },
-      { kind: "selection", path: "a.md", text: "quoted", fromLine: 2, toLine: 3 },
-      { kind: "tag", tag: "#todo" },
-    ]);
-    expect(text).toBe(
-      "<writer-context>\nactive note: Notes/a.md\nmentioned note: b.md\nmentioned folder: Projects\nselection in a.md lines 2-3:\nquoted\nnotes tagged: #todo\n</writer-context>\n\n",
-    );
+  it("labels refs and estimates tokens (the prompt itself: agent-prompt.test.ts)", () => {
     expect(
       contextRefLabel({ kind: "selection", path: "a.md", text: "", fromLine: 1, toLine: 2 }),
     ).toBe("a.md:1-2");
@@ -152,7 +141,7 @@ describe("settings", () => {
       model: null,
       effort: null,
       permissionMode: "manual",
-      allowedTools: [],
+      allowedTools: expect.arrayContaining(["Bash(writer search *)"]),
       disallowedTools: [],
     });
     expect(

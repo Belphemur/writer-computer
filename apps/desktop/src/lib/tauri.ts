@@ -80,6 +80,12 @@ export function findFileByName(root: string, fileName: string): Promise<string |
   return invoke("find_file_by_name", { root, fileName });
 }
 
+/** Vault-relative paths of every file named exactly `fileName` (extension included, case
+ *  ignored), shallowest first; backed by `find_files_by_exact_name` (index `files.name`). */
+export function findFilesByExactName(fileName: string): Promise<string[]> {
+  return invoke("find_files_by_exact_name", { fileName });
+}
+
 // Local log files (the frontend writes through `@/lib/logger`, never `log_event` directly)
 export interface LogInfo {
   dir: string;

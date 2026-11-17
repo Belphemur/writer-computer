@@ -12,6 +12,7 @@ vi.mock("../src/lib/preferences", () => ({
 import { HistoryList } from "../src/components/agent/history-list";
 import type { ChatHistoryClient } from "../src/lib/agent/chat-history-client";
 import { serializeChatNote, emptyMeta } from "../src/lib/agent/chat-note";
+import type { RegenerateOutcome } from "../src/lib/agent/auto-title";
 import type { ChatSummary } from "../src/lib/agent/events";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,6 +30,7 @@ const mk = (id: string, over: Partial<ChatSummary> = {}): ChatSummary => ({
   turnCount: 1,
   archived: false,
   pinned: false,
+  titleSource: "none",
   ...over,
 });
 
@@ -88,6 +90,7 @@ beforeEach(() => {
         chats = chats.map((c) => (c.chatId === chatId ? { ...c, title: title! } : c));
       return null;
     }),
+    regenerateTitle: vi.fn(),
     replay: vi.fn(),
     permissionRules: vi.fn(),
     removePermissionRule: vi.fn(),
@@ -207,5 +210,184 @@ describe("HistoryList", () => {
     });
     await mount();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("boom");
+  });
+
+  describe("row menu and Regenerate title", () => {
+    const menu = () => document.querySelector<HTMLElement>('[role="menu"]');
+    const item = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (b) => b.textContent === label,
+      )!;
+    const more = (row: HTMLElement) =>
+      row.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!;
+    const openMenu = async (row = rows()[0]) => act(async () => more(row).click());
+    const deferred = () => {
+      let resolve!: (o: RegenerateOutcome) => void;
+      const promise = new Promise<RegenerateOutcome>((r) => (resolve = r));
+      return { promise, resolve };
+    };
+    const done = (id: string, title: string): RegenerateOutcome => ({
+      status: "done",
+      summary: mk(id, { title, titleSource: "auto" }),
+    });
+    const retitle = (id: string, title: string, titleSource: ChatSummary["titleSource"]) => {
+      chats = chats.map((c) => (c.chatId === id ? { ...c, title, titleSource } : c));
+    };
+
+    it("opens from the ... button with every action, and closes on Esc, outside click and a pick", async () => {
+      await mount();
+      await openMenu();
+      expect(menu()).not.toBeNull();
+      expect(more(rows()[0]).getAttribute("aria-expanded")).toBe("true");
+      expect([...document.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(
+        [
+          "Resume",
+          "Rename",
+          "Pin",
+          "Archive",
+          "Regenerate title",
+          "Copy as markdown",
+          "Reveal note",
+          "Delete",
+        ],
+      );
+      await act(async () =>
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+      );
+      expect(menu()).toBeNull();
+      await openMenu();
+      await act(async () =>
+        document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })),
+      );
+      expect(menu()).toBeNull();
+      // the other actions stay reachable from the menu
+      await openMenu();
+      await act(async () => item("Pin").click());
+      expect(menu()).toBeNull();
+      expect(calls).toEqual(["pin:alpha"]);
+    });
+
+    it("opens on right click and moves with the arrow keys", async () => {
+      await mount();
+      await act(async () => {
+        rows()[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      });
+      expect(menu()).not.toBeNull();
+      expect(document.activeElement).toBe(item("Resume"));
+      const key = (k: string) =>
+        act(async () => {
+          menu()!.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+        });
+      await key("ArrowDown");
+      expect(document.activeElement).toBe(item("Rename"));
+      await key("ArrowUp");
+      await key("ArrowUp");
+      expect(document.activeElement).toBe(item("Delete"));
+    });
+
+    it("regenerates a closed chat: Generating... on its row, then the new title", async () => {
+      const d = deferred();
+      const regenerateTitle = vi.fn(() => d.promise);
+      await mount({ regenerateTitle });
+      await openMenu();
+      await act(async () => item("Regenerate title").click());
+      expect(regenerateTitle).toHaveBeenCalledWith("alpha");
+      const status = rows()[0].querySelector('[role="status"]')!;
+      expect(status.textContent).toContain("Generating");
+      expect(container.textContent).toContain("Quarterly review");
+      // the entry is disabled while the call runs
+      await openMenu();
+      expect(item("Regenerate title").disabled).toBe(true);
+      await act(async () =>
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+      );
+      retitle("alpha", "Q4 review plan", "auto");
+      await act(async () => d.resolve(done("alpha", "Q4 review plan")));
+      await flush();
+      expect(rows()[0].querySelector('[role="status"]')).toBeNull();
+      expect(container.textContent).toContain("Q4 review plan");
+      expect(container.textContent).not.toContain("Quarterly review");
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it("shows a short inline error, keeps the old title, and allows a retry", async () => {
+      const regenerateTitle = vi
+        .fn<(id: string) => Promise<RegenerateOutcome>>()
+        .mockResolvedValueOnce({ status: "refused", reason: "not-consented" })
+        .mockRejectedValueOnce(new Error("disk full"));
+      await mount({ regenerateTitle });
+      await openMenu();
+      await act(async () => item("Regenerate title").click());
+      await flush();
+      const alert = rows()[0].querySelector('[role="alert"]')!;
+      expect(alert.textContent).toContain("Open a chat once and allow Claude to run");
+      expect(container.textContent).toContain("Quarterly review");
+      await openMenu();
+      await act(async () => item("Regenerate title").click());
+      await flush();
+      expect(rows()[0].querySelector('[role="alert"]')!.textContent).toContain("disk full");
+      await act(async () => button(rows()[0], "Dismiss").click());
+      expect(rows()[0].querySelector('[role="alert"]')).toBeNull();
+      expect(regenerateTitle).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks before replacing a title the user chose, and Cancel does nothing", async () => {
+      chats = chats.map((c) => (c.chatId === "alpha" ? { ...c, titleSource: "user" } : c));
+      const regenerateTitle = vi.fn(async () => done("alpha", "Auto words"));
+      await mount({ regenerateTitle });
+      await openMenu();
+      await act(async () => item("Regenerate title").click());
+      expect(regenerateTitle).not.toHaveBeenCalled();
+      expect(rows()[0].textContent).toContain("Replace your title?");
+      await act(async () => button(rows()[0], "Cancel").click());
+      expect(rows()[0].textContent).not.toContain("Replace your title?");
+      await openMenu();
+      await act(async () => item("Regenerate title").click());
+      await act(async () => button(rows()[0], "Replace").click());
+      await flush();
+      expect(regenerateTitle).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not ask for an automatic or placeholder title", async () => {
+      const regenerateTitle = vi.fn(async () => done("beta", "Shopping list"));
+      await mount({ regenerateTitle });
+      const beta = rows().find((r) => r.dataset.agentHistoryRow === "beta")!;
+      await openMenu(beta);
+      await act(async () => item("Regenerate title").click());
+      await flush();
+      expect(regenerateTitle).toHaveBeenCalledWith("beta");
+      expect(container.textContent).not.toContain("Replace your title?");
+    });
+
+    it("is disabled for a chat with nothing to title", async () => {
+      chats = chats.map((c) => (c.chatId === "alpha" ? { ...c, turnCount: 0 } : c));
+      const regenerateTitle = vi.fn(async () => done("alpha", "x"));
+      await mount({ regenerateTitle });
+      await openMenu();
+      const entry = item("Regenerate title");
+      expect(entry.disabled).toBe(true);
+      expect(entry.title).toMatch(/no reply/);
+      await act(async () => entry.click());
+      expect(regenerateTitle).not.toHaveBeenCalled();
+      // the keyboard skips it
+      expect(document.activeElement).toBe(item("Resume"));
+    });
+
+    it("guards a double click: one call per chat", async () => {
+      chats = chats.map((c) => (c.chatId === "alpha" ? { ...c, titleSource: "user" } : c));
+      const d = deferred();
+      const regenerateTitle = vi.fn(() => d.promise);
+      await mount({ regenerateTitle });
+      await openMenu();
+      await act(async () => item("Regenerate title").click());
+      const replace = button(rows()[0], "Replace");
+      await act(async () => {
+        replace.click();
+        replace.click();
+      });
+      expect(regenerateTitle).toHaveBeenCalledTimes(1);
+      await act(async () => d.resolve(done("alpha", "Once")));
+      await flush();
+    });
   });
 });

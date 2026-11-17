@@ -137,6 +137,11 @@ describe("Native agent pane + fake claude", function () {
         timeoutMsg: "the permission card never went away",
       },
     );
+    // the allowed Write created notes.txt: the turn ends with a Changes card for it
+    const card = await $("[data-agent-changes]");
+    await card.waitForExist({ timeout: 20_000 });
+    ok(/1 file changed/.test(await card.getText()), `Changes card: ${await card.getText()}`);
+    await shot("C-changes");
   });
 
   it("D: permission deny", async function () {
@@ -185,5 +190,32 @@ describe("Native agent pane + fake claude", function () {
     await waitTranscript(/FAKE-CLAUDE-REPLY: resumed/);
     const log = readFileSync(FAKE_LOG, "utf8");
     ok(log.includes("--resume"), "a later spawn used --resume");
+  });
+
+  it("H: History regenerates a title from the saved note through the row menu", async function () {
+    const titleCalls = () =>
+      readFileSync(FAKE_LOG, "utf8")
+        .split("\n")
+        .filter((l) => l.includes('"ev":"title"')).length;
+    const before = titleCalls();
+    await runCommand("agent-history");
+    const row = await $("[data-agent-history-row]");
+    await row.waitForExist({ timeout: 15_000 });
+    await row.$('button[aria-label="More actions"]').click();
+    const entry = await $('[role="menuitem"]=Regenerate title');
+    await entry.waitForExist({ timeout: 5_000 });
+    await entry.click();
+    await browser.waitUntil(() => titleCalls() === before + 1, {
+      timeout: 20_000,
+      timeoutMsg: "no one-shot title call after Regenerate title",
+    });
+    await browser.waitUntil(async () => (await row.getText()).includes("Fake chat title"), {
+      timeout: 20_000,
+      timeoutMsg: "the row never showed the regenerated title",
+    });
+    const note = readdirSync(CHATS()).find((f) => f.endsWith(".md"));
+    ok(note, "the chat note is still on disk");
+    ok(readFileSync(join(CHATS(), note), "utf8").includes("writer-chat-title-auto: true"));
+    await shot("H-regenerate");
   });
 });

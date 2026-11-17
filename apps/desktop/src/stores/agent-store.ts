@@ -13,6 +13,7 @@ import type {
   AgentErrorKind,
   AgentPermissionMode,
   ChatId,
+  ChatSummary,
   ContextRef,
   DiskSkill,
   PermissionPersist,
@@ -38,7 +39,10 @@ import {
   recordSend,
   type NoteState,
 } from "@/lib/agent/chat-persist";
+import { applyTitleSummary, shouldAutoTitle, type RegenerateOutcome } from "@/lib/agent/auto-title";
+import { buildPrompt } from "@/lib/agent/context-text";
 import { mentionsActiveNote } from "@/lib/agent/mentions";
+import { createRefIo, prepareRefs, type RefIo } from "@/lib/agent/ref-resolve";
 import { chatFromNote } from "@/lib/agent/chat-from-note";
 import { parseChatNote } from "@/lib/agent/chat-note";
 import { createChatSaver, type ChatSaver } from "@/lib/agent/chat-saver";
@@ -194,6 +198,11 @@ async function ensureRuntime(): Promise<Runtime> {
   return runtimeStarting;
 }
 
+/** The one client, for the stores that call agent commands outside this one (turn changes). */
+export async function getAgentClient(): Promise<AgentClient> {
+  return (await ensureRuntime()).client;
+}
+
 function teardownRuntime() {
   runtime?.unsubscribe();
   runtime = null;
@@ -240,6 +249,31 @@ export function classifyStartError(e: unknown): { kind: AgentErrorKind; message:
   if (/command .* not found|unknown command/.test(lower))
     return { kind: "unknown", message: "The agent backend is not available in this build." };
   return { kind: "spawn-failed", message: raw };
+}
+
+let refIoOverride: RefIo | null = null;
+/** Test seam: the I/O behind send-time reference resolution (default: the real index). */
+export function configureRefIoForTests(io: RefIo | null) {
+  refIoOverride = io;
+}
+
+/** Follows renames of picked notes and resolves hand-typed exact paths; on any failure the refs
+ *  stay as they were (the message must still go out). */
+async function resolveRefs(text: string, refs: ContextRef[]): Promise<ContextRef[]> {
+  try {
+    const root = useWorkspaceStore.getState().root;
+    const io = refIoOverride ?? (root ? createRefIo(root) : null);
+    return io ? await prepareRefs(text, refs, io) : refs;
+  } catch (e) {
+    logger.log("debug", "agent", `could not resolve references: ${String(e)}`);
+    return refs;
+  }
+}
+
+/** Skill names this chat can use: its session's, the window's last CLI lists, the disk scan. */
+function knownSkillNames(s: AgentState, chat: Chat): string[] {
+  const disk = s.skills[skillsKey(chat.projectPath)]?.items ?? [];
+  return [...disk.map((d) => d.name), ...(chat.session?.skills ?? s.cliCatalog?.skills ?? [])];
 }
 
 function activeNoteRef(): ContextRef | null {
@@ -299,6 +333,8 @@ const persistence = {
   delayMs: 500,
   reload: reloadChatNoteIfOpen as (relativePath: string) => Promise<unknown>,
   instance: null as ChatSaver | null,
+  /** Chats that already had their one automatic title attempt in this window. */
+  titleAttempts: new Set<ChatId>(),
   saver(): ChatSaver {
     this.instance ??= createChatSaver({
       delayMs: this.delayMs,
@@ -340,6 +376,7 @@ export function configureChatPersistenceForTests(opts: {
   reload?: (relativePath: string) => Promise<unknown>;
 }) {
   persistence.instance = null;
+  persistence.titleAttempts = new Set();
   persistence.history = opts.history ?? chatHistoryClient;
   persistence.delayMs = opts.delayMs ?? 500;
   persistence.reload = opts.reload ?? reloadChatNoteIfOpen;
@@ -353,6 +390,63 @@ function scheduleSave(chatId: ChatId) {
     if (!chat || !note || note.messages.length === 0) return null;
     return buildNote(chat, note, Date.now(), chatModels[chatId]?.model);
   });
+}
+
+/** Automatic chat title (spec "Automatic chat titles"): at most one attempt per chat, started by
+ *  a finished turn. A failure, a refusal or a chat closed meanwhile leaves the placeholder; the
+ *  user's own rename always wins (Rust refuses to overwrite it and says so in the summary). */
+async function maybeAutoTitle(chatId: ChatId) {
+  const { chats, notes, chatModels } = useAgentStore.getState();
+  const chat = chats[chatId];
+  const note = notes[chatId];
+  if (!chat || !note) return;
+  const settings = useSettingsStore.getState().settings;
+  const enabled = settings["agent.auto-title-chats"] !== false;
+  const attempted = persistence.titleAttempts.has(chatId);
+  if (!shouldAutoTitle({ enabled, meta: note.meta, messages: note.messages, attempted })) return;
+  persistence.titleAttempts.add(chatId);
+  try {
+    // the note must be on disk: Rust reads the title input from it
+    await persistence.saver().flush(chatId);
+    const summary = await persistence.history.autoTitle({
+      chatId,
+      titleModel: titleModelSetting(),
+      chatModel: chatModels[chatId]?.model ?? chat.reportedModel ?? null,
+    });
+    if (summary) adoptTitleSummary(chatId, summary);
+  } catch (e) {
+    logger.log("debug", "agent", `automatic title failed: ${String(e)}`);
+  }
+}
+
+/** `agent.title-model`, `null` when unset (Rust then picks the cheapest model). */
+function titleModelSetting(): string | null {
+  const m = useSettingsStore.getState().settings["agent.title-model"];
+  return typeof m === "string" ? m : null;
+}
+
+/** Show a title Rust applied to the note: the tab title and the note's flags, with no focus
+ *  change. A chat that is not open in the pane changes nothing here (its note is the truth). */
+function adoptTitleSummary(chatId: ChatId, summary: ChatSummary) {
+  useAgentStore.setState((s) => {
+    const current = s.chats[chatId];
+    const applied = current && applyTitleSummary(current, s.notes[chatId], summary);
+    if (!applied) return s;
+    return {
+      chats: { ...s.chats, [chatId]: applied.chat },
+      notes: applied.note ? { ...s.notes, [chatId]: applied.note } : s.notes,
+    };
+  });
+}
+
+/** History "Regenerate title" for any chat, open or not. An open chat's pending save is flushed
+ *  first (the note is the input, and a stale save must not race the title); the result is adopted
+ *  live. Never throws for a refusal: the outcome says why. */
+export async function regenerateChatTitle(chatId: ChatId): Promise<RegenerateOutcome> {
+  await persistence.saver().flush(chatId);
+  const outcome = await persistence.history.regenerateTitle(chatId, titleModelSetting());
+  if (outcome.status === "done") adoptTitleSummary(chatId, outcome.summary);
+  return outcome;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -403,12 +497,20 @@ export const useAgentStore = create<AgentState>((set, get) => {
           appendSystemPrompt: null,
         });
       }
-      let sendText = text;
+      // What claude receives is built at send time (the active note resolves now); the card and
+      // the chat note keep `text` as the user saw it.
+      const refs = await resolveRefs(text, context);
+      let sendText = buildPrompt({
+        text,
+        refs,
+        cwd: before.projectPath,
+        skills: knownSkillNames(get(), before),
+      });
       if (opts.replay) {
         const seed = await persistence.history.replay(chatId);
-        sendText = `${seed.text}\n\n${text}`;
+        sendText = `${seed.text}\n\n${sendText}`;
       }
-      await client.send({ chatId, messageId, text: sendText, context });
+      await client.send({ chatId, messageId, text: sendText, context: refs });
     } catch (e) {
       const { kind, message } = classifyStartError(e);
       if (!opts.replay && !live && resumeSessionId !== null && isSessionMissing(message)) {
@@ -724,8 +826,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
       set({ newProjectDialog: { open: true, folder: opts?.folder ?? null } }),
     closeNewProjectDialog: () => set({ newProjectDialog: { open: false, folder: null } }),
 
-    ingest: (chatId, events, lastSeq) => {
+    ingest: (chatId, incoming, lastSeq) => {
       if (!get().chats[chatId]) return;
+      // `agent.show-turn-changes` off: the card (and its note summary) never appears
+      const showChanges = useSettingsStore.getState().settings["agent.show-turn-changes"] !== false;
+      const events = showChanges ? incoming : incoming.filter((e) => e.type !== "turn-changes");
       const now = Date.now();
       let finished = false;
       const refused = refusedModelFrom(events);
@@ -764,7 +869,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
         )
           set((s) => ({ resuming: { ...s.resuming, [chatId]: false } }));
       }
-      if (finished) scheduleSave(chatId);
+      if (finished) {
+        scheduleSave(chatId);
+        void maybeAutoTitle(chatId);
+      }
       const after = get().chats[chatId];
       const queued = get().queued[chatId];
       if (after && queued && after.state === "idle") {

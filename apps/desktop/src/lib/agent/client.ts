@@ -33,6 +33,8 @@ export interface AgentClient {
   setPermissionMode(args: Args<"agent_set_permission_mode">): Promise<void>;
   setModel(args: Args<"agent_set_model">): Promise<void>;
   close(args: Args<"agent_close">): Promise<void>;
+  turnChanges(args: Args<"agent_turn_changes">): Promise<Result<"agent_turn_changes">>;
+  revertChanges(args: Args<"agent_revert_changes">): Promise<Result<"agent_revert_changes">>;
   listSkills(args: Args<"agent_list_skills">): Promise<Result<"agent_list_skills">>;
   snapshot(args: Args<"agent_snapshot">): Promise<Result<"agent_snapshot">>;
   /** Registers the one envelope listener; resolves once the subscription is live. */
@@ -51,6 +53,8 @@ export function createTauriAgentClient(): AgentClient {
     setPermissionMode: (a) => call("agent_set_permission_mode", a),
     setModel: (a) => call("agent_set_model", a),
     close: (a) => call("agent_close", a),
+    turnChanges: (a) => call("agent_turn_changes", a),
+    revertChanges: (a) => call("agent_revert_changes", a),
     listSkills: (a) => call("agent_list_skills", a),
     snapshot: (a) => call("agent_snapshot", a),
     subscribe: (handler) =>

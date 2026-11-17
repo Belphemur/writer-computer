@@ -4,6 +4,7 @@
  */
 import { noteLabel } from "../note-title";
 import type { ContextRef } from "./events";
+import { tokenizeMessage } from "./trigger";
 
 export type MentionCandidate =
   /** `@activenote`: the note open in the editor, as the same chip the pane attaches by default. */
@@ -20,9 +21,60 @@ export type MentionSearch = (query: string, limit: number) => Promise<MentionHit
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
-export function toContextRef(c: MentionCandidate): ContextRef {
+export function toContextRef(c: MentionCandidate, label?: string): ContextRef {
   if (c.kind === "active-note") return { kind: "active-note", path: c.path, inline: false };
-  return c.kind === "note" ? { kind: "note", path: c.path } : { kind: "folder", path: c.path };
+  const l = label === undefined ? {} : { label };
+  return c.kind === "note"
+    ? { kind: "note", path: c.path, ...l }
+    : { kind: "folder", path: c.path, ...l };
+}
+
+/**
+ * The one rule for the readable name a pick puts in the text: the candidate's label (display
+ * title or file name). When another attached path already uses that label, parent folders are
+ * added until it is unique (`11/Plan`, then `2026/11/Plan`); with none left the whole path (no
+ * extension). A label that cannot sit inside `@"..."` also becomes the path.
+ */
+export function pickLabel(c: MentionCandidate, attached: readonly ContextRef[]): string {
+  const bare = c.path.replace(/\.md$/i, "");
+  if (/["\n]/.test(c.label)) return bare;
+  const taken = new Set(
+    attached.flatMap((r) =>
+      "path" in r && "label" in r && r.label && r.path !== c.path ? [r.label] : [],
+    ),
+  );
+  const parents = dirOf(c.path).split("/").filter(Boolean);
+  let label = c.label;
+  for (let k = 1; taken.has(label) && k <= parents.length; k++)
+    label = `${parents.slice(-k).join("/")}/${c.label}`;
+  return taken.has(label) ? bare : label;
+}
+
+/** `a/b/…/y/z` shortened in the middle to at most `max` characters (the ends are what tell
+ *  paths apart); the full text belongs in a tooltip. */
+export function middleTruncate(path: string, max = 48): string {
+  if (path.length <= max) return path;
+  const keep = max - 1;
+  const head = Math.ceil(keep / 2);
+  return `${path.slice(0, head)}\u2026${path.slice(path.length - (keep - head))}`;
+}
+
+/** `@` tokens in the text that nothing attached owns: no chip carries that label or path, they
+ *  are not `@activenote`, and they do not look like a typed path (those resolve, or stay
+ *  literal, at send). Claude gets no path for them, which the composer says. */
+export function unattachedMentions(text: string, attached: readonly ContextRef[]): string[] {
+  const owned = new Set(
+    attached.flatMap((r) =>
+      r.kind === "note" || r.kind === "folder" ? [r.path, r.label ?? r.path] : [],
+    ),
+  );
+  const out: string[] = [];
+  for (const seg of tokenizeMessage(text)) {
+    if (seg.kind !== "mention" || isActiveNoteToken(seg) || owned.has(seg.path)) continue;
+    if (seg.path.includes("/") || /\.[^/.]+$/.test(seg.path)) continue;
+    if (!out.includes(seg.raw)) out.push(seg.raw);
+  }
+  return out;
 }
 
 export const ACTIVE_NOTE_TOKEN = "activenote";
@@ -45,7 +97,17 @@ export function specialMentions(query: string, activeNotePath: string | null): M
 
 /** Did the user type `@activenote` as a word? Then that message carries the active note. */
 export function mentionsActiveNote(text: string): boolean {
-  return /(^|\s)@activenote(?![\w-])/i.test(text);
+  return tokenizeMessage(text).some((s) => isActiveNoteToken(s));
+}
+
+/** The composer text for a picked name or path: `@name`, or `@"name with spaces"`, the quoted form
+ *  Claude Code's own `@` mentions understand (verified with 2.1.325). */
+export function mentionToken(path: string): string {
+  return /[\s@]|[.,;:!?)\]}'"`>]$/.test(path) ? `@"${path}"` : `@${path}`;
+}
+
+export function isActiveNoteToken(seg: { kind: string; path?: string }): boolean {
+  return seg.kind === "mention" && seg.path?.toLowerCase() === ACTIVE_NOTE_TOKEN;
 }
 
 /** Pure ranking of search hits into a short mixed list (folders whose name matches first). */

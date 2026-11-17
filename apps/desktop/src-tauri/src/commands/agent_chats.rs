@@ -4,11 +4,16 @@
 //! maps errors and runs the IO through `blocking`. Never logs titles or note text.
 
 use super::blocking;
+use super::plugins::{consent_store, trusted_root};
+use crate::agent::binary;
 use crate::agent::chat_store::{
     self, ChatAction, ChatStoreError, ListOptions, ListScope, ReplaySeed,
 };
+use crate::agent::consent;
 use crate::agent::events::ChatSummary;
 use crate::agent::permission_rules::{self, PermissionRules};
+use crate::agent::session::AgentSessions;
+use crate::agent::title;
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::vault_ops::VaultOpError;
@@ -105,6 +110,7 @@ pub async fn agent_save_chat(
 #[serde(rename_all = "lowercase")]
 pub enum ChatActionName {
     Rename,
+    AutoTitle,
     Pin,
     Unpin,
     Archive,
@@ -116,6 +122,7 @@ impl From<ChatActionName> for ChatAction {
     fn from(a: ChatActionName) -> Self {
         match a {
             ChatActionName::Rename => ChatAction::Rename,
+            ChatActionName::AutoTitle => ChatAction::AutoTitle,
             ChatActionName::Pin => ChatAction::Pin,
             ChatActionName::Unpin => ChatAction::Unpin,
             ChatActionName::Archive => ChatAction::Archive,
@@ -138,6 +145,138 @@ pub async fn agent_chat_action(
     blocking(move || {
         chat_store::action(&root, &chat_id, action.into(), title.as_deref(), false)
             .map_err(store_err)
+    })
+    .await
+}
+
+/// Automatic chat title (spec "Automatic chat titles"): one small `claude -p` call for a title,
+/// applied through the chat store only while the user has not renamed the chat. Never an error
+/// for the user: no consented session, a failed call or a refused title all answer `None` and the
+/// placeholder title stays. The note must already be saved (the pane flushes first): the title
+/// input is read from it, exactly as for "Regenerate title".
+#[tauri::command]
+pub async fn agent_auto_title(
+    chat_id: String,
+    title_model: Option<String>,
+    chat_model: Option<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Option<ChatSummary>, AppError> {
+    let root = root_of(&app, &webview)?;
+    let label = webview.label().to_string();
+    blocking(move || {
+        let Some((program, cwd)) = app
+            .state::<AgentSessions>()
+            .get(&label, &chat_id)
+            .ok()
+            .and_then(|s| s.helper_target())
+        else {
+            log::debug!(target: "agent", "agent: no title call (no consented session)");
+            return Ok(None);
+        };
+        // a failed call or an apply failure (the note is gone, a lock error) is quiet
+        Ok(title::title_chat(
+            &root,
+            &chat_id,
+            &program,
+            &cwd,
+            title_model.as_deref(),
+            chat_model.as_deref(),
+            ChatAction::AutoTitle,
+        )
+        .inspect_err(|_| log::debug!(target: "agent", "agent: no automatic title applied"))
+        .ok())
+    })
+    .await
+}
+
+/// Why "Regenerate title" did nothing; the history list words each one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegenerateRefusal {
+    /// The user never allowed Claude to run in this vault in this window.
+    NotConsented,
+    /// No `claude` program was found.
+    NoBinary,
+    /// The chat has no assistant reply yet.
+    NoReply,
+    /// The call failed or answered junk; the old title stays.
+    Failed,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum RegenerateOutcome {
+    Done { summary: ChatSummary },
+    Refused { reason: RegenerateRefusal },
+}
+
+/// "Regenerate title" for ANY chat of the vault, open or not (spec "Automatic chat titles"): the
+/// same title input and call as the automatic title, applied as `RegenerateTitle` (the user asked,
+/// so it replaces even their own title and leaves an automatic one). Needs no live session of the
+/// chat: see `consent::helper_program` for the consent rule. For an open chat the pane flushes
+/// its pending save first (the note is the input).
+#[tauri::command]
+pub async fn agent_regenerate_title(
+    chat_id: String,
+    title_model: Option<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<RegenerateOutcome, AppError> {
+    let root = trusted_root(&webview, &app)?;
+    let label = webview.label().to_string();
+    let store = consent_store(&app)?;
+    let override_path = {
+        let state = app.state::<AppState>().get_or_create(&label);
+        let guard = state.settings.read();
+        guard
+            .as_ref()
+            .and_then(|s| s.get("agent.binary-path"))
+            .and_then(|v| v.as_str().map(str::to_string))
+    };
+    blocking(move || {
+        let sessions = app.state::<AgentSessions>();
+        let (summary, _) = chat_store::load(&root, &chat_id).map_err(store_err)?;
+        let cwd = sessions
+            .ports()
+            .project()
+            .resolve_cwd(&root, summary.project_path.as_deref())
+            .map_err(AppError::InvalidPath)?;
+        let mut missing = false;
+        let program =
+            consent::helper_program(sessions.consented_program(&label), &store, &root, || {
+                let found = binary::find(override_path.as_deref());
+                missing = found.is_none();
+                found
+            });
+        let Some(program) = program else {
+            let reason = if missing {
+                RegenerateRefusal::NoBinary
+            } else {
+                RegenerateRefusal::NotConsented
+            };
+            return Ok(RegenerateOutcome::Refused { reason });
+        };
+        Ok(
+            match title::title_chat(
+                &root,
+                &chat_id,
+                &program,
+                &cwd,
+                title_model.as_deref(),
+                None,
+                ChatAction::RegenerateTitle,
+            ) {
+                Ok(summary) => RegenerateOutcome::Done { summary },
+                Err(title::TitleError::NoReply) => RegenerateOutcome::Refused {
+                    reason: RegenerateRefusal::NoReply,
+                },
+                Err(title::TitleError::Failed) => RegenerateOutcome::Refused {
+                    reason: RegenerateRefusal::Failed,
+                },
+                Err(title::TitleError::Store(e)) => return Err(store_err(e)),
+            },
+        )
     })
     .await
 }

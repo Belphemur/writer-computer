@@ -14,9 +14,11 @@ import type {
   MessageId,
   PermissionResolution,
 } from "./events";
+import { contextTokensOf } from "./context-usage";
 import type {
   Block,
   Chat,
+  ContextUsage,
   PermissionView,
   ThinkingBlock,
   ToolBlock,
@@ -39,7 +41,7 @@ export function createChat(chatId: ChatId, opts: { projectPath?: string | null }
     rateLimit: null,
     contextWindow: null,
     reportedModel: null,
-    contextTokens: null,
+    contextUsage: null,
     totalCostUsd: 0,
     lastSeq: 0,
     resumeSessionId: null,
@@ -65,6 +67,26 @@ function newTurn(chat: Chat, now: number, user: Turn["user"]): Turn {
     liveOutputTokens: 0,
     errors: [],
   };
+}
+
+/** Records the context size from a usage event. A call without input tokens (a stream that only
+ *  reports output) never zeroes the ring; a turn-scope sum yields to the per-call numbers already
+ *  recorded in the same turn. */
+function withContextUsage(
+  chat: Chat,
+  event: Extract<AgentEvent, { type: "usage" }>,
+  perCall: boolean,
+): Chat {
+  const usage: ContextUsage = {
+    inputTokens: event.inputTokens,
+    cacheReadTokens: event.cacheReadTokens,
+    cacheCreationTokens: event.cacheCreationTokens,
+    outputTokens: event.outputTokens,
+    turnIndex: chat.turns.length,
+  };
+  if (contextTokensOf(usage) === 0) return chat;
+  if (!perCall && chat.contextUsage?.turnIndex === usage.turnIndex) return chat;
+  return { ...chat, contextUsage: usage };
 }
 
 /** Applies `fn` to the running turn, opening an agent-initiated one when none runs. */
@@ -371,10 +393,11 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
 
     case "usage": {
       if (event.scope === "message") {
-        return inTurn(chat, now, (t) => ({
+        const next = inTurn(chat, now, (t) => ({
           ...t,
           liveOutputTokens: t.liveOutputTokens + event.outputTokens,
         }));
+        return withContextUsage(next, event, true);
       }
       const last = chat.turns[chat.turns.length - 1];
       const usage = {
@@ -388,13 +411,14 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
         ...chat,
         contextWindow: event.contextWindow ?? chat.contextWindow,
         reportedModel: event.model ?? chat.reportedModel,
-        contextTokens: event.inputTokens + event.cacheReadTokens + event.cacheCreationTokens,
         totalCostUsd: chat.totalCostUsd + (event.costUsd ?? 0),
       };
-      if (!last) return base;
-      const turns = base.turns.slice();
+      // The turn's usage is summed over its API calls: only a fallback for the context size.
+      const withContext = withContextUsage(base, event, false);
+      if (!last) return withContext;
+      const turns = withContext.turns.slice();
       turns[turns.length - 1] = { ...last, usage };
-      return { ...base, turns };
+      return { ...withContext, turns };
     }
 
     case "model-refused":
@@ -418,6 +442,18 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
         state: chat.state === "error" || chat.state === "ended" ? chat.state : "idle",
         banner: null,
       };
+    }
+
+    case "turn-changes": {
+      // follows its `turn-finished`; a queued message may already have opened the next turn
+      let i = chat.turns.length - 1;
+      while (i >= 0 && isRunning(chat.turns[i])) i--;
+      const turn = chat.turns[i];
+      if (!turn || turn.changes) return chat;
+      const { type: _type, ...summary } = event;
+      const turns = chat.turns.slice();
+      turns[i] = { ...turn, changes: summary };
+      return { ...chat, turns };
     }
 
     case "error": {

@@ -230,11 +230,126 @@ pub enum AgentEvent {
         message: String,
         retryable: bool,
     },
+    /// Runner-originated, right after `turn-finished`: the vault files the agent changed during
+    /// the turn (compact, no contents). Only sent when something changed. See `changes.rs`.
+    TurnChanges(TurnChangesSummary),
     SessionEnded {
         reason: SessionEndReason,
         exit_code: Option<i32>,
         signal: Option<String>,
     },
+}
+
+// -------------------------------------------------------------------------------------------
+// Turn changes (the "Changes" card; Tauri-free logic in `changes.rs`)
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+/// One changed file, as sent in `turn-changes` and stored in the chat note (paths and counts only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChangeSummary {
+    /// Vault-relative, forward slashes. For a rename, the new path.
+    pub path: String,
+    pub status: ChangeStatus,
+    pub added: u32,
+    pub removed: u32,
+    /// Renames only: where the file came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
+    /// Not shown as a diff: binary, too large, or not safely readable. Counts are 0.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_diff: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnChangesSummary {
+    /// Opaque; unique per app run, so a stored summary never matches a later snapshot by accident.
+    pub turn_id: String,
+    pub files: Vec<FileChangeSummary>,
+    /// A shell command ran in the turn: its side effects are not tracked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bash: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiffRowKind {
+    Context,
+    Add,
+    Del,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffRow {
+    pub kind: DiffRowKind,
+    /// 1-based; None on an added row.
+    pub old_line: Option<u32>,
+    /// 1-based; None on a removed row.
+    pub new_line: Option<u32>,
+    pub text: String,
+}
+
+/// Whether "Undo" can run now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UndoState {
+    Available,
+    /// The file differs from how the turn left it: Undo would clobber newer edits.
+    ChangedSince,
+    /// No pre-turn copy (too large, binary, outside the vault, a link).
+    Unavailable,
+    Reverted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    #[serde(flatten)]
+    pub summary: FileChangeSummary,
+    pub rows: Vec<DiffRow>,
+    /// `rows` stops early (very large diff).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    pub undo: UndoState,
+}
+
+/// Reply of `agent_turn_changes`: the summary plus every diff.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnChanges {
+    pub turn_id: String,
+    pub files: Vec<FileChange>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bash: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RevertResult {
+    Reverted,
+    ChangedSince,
+    Unavailable,
+    Failed,
+}
+
+/// Reply item of `agent_revert_changes`, one per requested path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevertOutcome {
+    pub path: String,
+    pub result: RevertResult,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Payload of the Tauri event `agent://event`.
@@ -420,6 +535,17 @@ pub struct StartSessionRequest {
     pub append_system_prompt: Option<String>,
 }
 
+/// Who chose a chat's title: nobody yet (the first message, cut), the automatic titler, or the
+/// user (a rename always wins and is never overwritten).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TitleSource {
+    #[default]
+    None,
+    Auto,
+    User,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSummary {
@@ -436,6 +562,8 @@ pub struct ChatSummary {
     /// First user message, one line, for the history list and its search.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<String>,
+    #[serde(default)]
+    pub title_source: TitleSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -596,6 +724,18 @@ mod tests {
                 exit_code: None,
                 signal: Some("SIGTERM".into()),
             },
+            AgentEvent::TurnChanges(TurnChangesSummary {
+                turn_id: "t1".into(),
+                files: vec![FileChangeSummary {
+                    path: "a.md".into(),
+                    status: ChangeStatus::Renamed,
+                    added: 0,
+                    removed: 0,
+                    old_path: Some("b.md".into()),
+                    no_diff: false,
+                }],
+                bash: true,
+            }),
         ];
         for ev in &events {
             let json = round_trip(ev);
@@ -607,6 +747,60 @@ mod tests {
                 "snake_case key in {json}"
             );
         }
+    }
+
+    #[test]
+    fn turn_changes_wire_shape() {
+        let ev = AgentEvent::TurnChanges(TurnChangesSummary {
+            turn_id: "t1".into(),
+            files: vec![FileChangeSummary {
+                path: "a.md".into(),
+                status: ChangeStatus::Modified,
+                added: 3,
+                removed: 1,
+                old_path: None,
+                no_diff: false,
+            }],
+            bash: false,
+        });
+        assert_eq!(
+            round_trip(&ev),
+            json!({"type":"turn-changes","turnId":"t1","files":[{"path":"a.md","status":"modified","added":3,"removed":1}]})
+        );
+        let detail = TurnChanges {
+            turn_id: "t1".into(),
+            files: vec![FileChange {
+                summary: FileChangeSummary {
+                    path: "a.md".into(),
+                    status: ChangeStatus::Added,
+                    added: 1,
+                    removed: 0,
+                    old_path: None,
+                    no_diff: false,
+                },
+                rows: vec![DiffRow {
+                    kind: DiffRowKind::Add,
+                    old_line: None,
+                    new_line: Some(1),
+                    text: "x".into(),
+                }],
+                truncated: false,
+                undo: UndoState::ChangedSince,
+            }],
+            bash: true,
+        };
+        let v = round_trip(&detail);
+        assert_eq!(
+            v["files"][0]["path"], "a.md",
+            "summary fields are flattened"
+        );
+        assert_eq!(v["files"][0]["undo"], "changed-since");
+        assert_eq!(v["files"][0]["rows"][0]["newLine"], 1);
+        round_trip(&RevertOutcome {
+            path: "a.md".into(),
+            result: RevertResult::ChangedSince,
+            message: Some("file changed since".into()),
+        });
     }
 
     #[test]
@@ -726,6 +920,7 @@ mod tests {
             archived: false,
             pinned: true,
             preview: Some("hi".into()),
+            title_source: TitleSource::Auto,
         });
         round_trip(&ProjectInfo {
             path: "Projects/Demo".into(),

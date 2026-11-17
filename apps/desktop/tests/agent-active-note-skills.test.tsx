@@ -138,7 +138,7 @@ describe("@activenote and the Skills chip", () => {
     await flush();
     expect(draft().activeNote).toBe(true);
     expect($("[data-agent-chip]")!.textContent).toContain("Plan");
-    expect(ta().value).toBe("");
+    expect(ta().value).toBe("@activenote ");
   });
 
   it("typing @activenote verbatim sends the active note even with the chip removed", async () => {
@@ -161,6 +161,94 @@ describe("@activenote and the Skills chip", () => {
     await act(async () => await useAgentStore.getState().sendMessage("plain"));
     await flush(5);
     expect(send.mock.calls[1]![0].context).toEqual([]);
+  });
+
+  it("two mentions in one message each get a chip, deduplicated, and the text keeps the readable name", async () => {
+    hoisted.search.mockResolvedValue([
+      { relative_path: "Notes/A.md" },
+      { relative_path: "Notes/B.md" },
+    ] as never);
+    type(ta(), "compare @Notes/A");
+    await flush(5);
+    key(ta(), "Enter");
+    await flush();
+    type(ta(), `${ta().value}with @Notes/B`);
+    await flush(5);
+    const rows = $$("[role=option]").map((o) => o.textContent!);
+    const b = rows.findIndex((r) => r.includes("B"));
+    for (let i = 0; i < b; i++) key(ta(), "ArrowDown");
+    key(ta(), "Enter");
+    await flush();
+    expect(ta().value).toBe("compare @A with @B ");
+    expect(draft().mentions).toEqual([
+      { kind: "note", path: "Notes/A.md", label: "A" },
+      { kind: "note", path: "Notes/B.md", label: "B" },
+    ]);
+    type(ta(), `${ta().value}and @Notes/A`);
+    await flush(5);
+    key(ta(), "Enter");
+    await flush();
+    expect(draft().mentions).toHaveLength(2);
+    act(() => $("[aria-label='Remove A']")!.click());
+    expect(ta().value).toContain("@A");
+    hoisted.search.mockResolvedValue([] as never);
+  });
+
+  it("menu rows show the folder after the name, with the full path as tooltip", async () => {
+    hoisted.search.mockResolvedValue([
+      { relative_path: "Alpha/Plan.md" },
+      { relative_path: "Team/2026/11/Plan.md" },
+    ] as never);
+    type(ta(), "@Plan");
+    await flush(5);
+    const rows = $$("[role=option]").filter((o) => !o.textContent!.includes("activenote"));
+    expect(rows.map((r) => r.title)).toEqual(["Alpha/Plan.md", "Team/2026/11/Plan.md"]);
+    expect(rows[0]!.textContent).toBe("·PlanAlpha");
+    expect(rows[1]!.textContent).toBe("·PlanTeam/2026/11");
+    hoisted.search.mockResolvedValue([] as never);
+  });
+
+  it("two notes with the same label get a folder-qualified token", async () => {
+    hoisted.search.mockResolvedValue([
+      { relative_path: "Alpha/Plan.md" },
+      { relative_path: "Team/Plan.md" },
+    ] as never);
+    const pick = async (row: number) => {
+      const all = $$("[role=option]");
+      const rows = all.filter((o) => !o.textContent!.includes("activenote"));
+      for (let n = 0; n < all.indexOf(rows[row]!); n++) key(ta(), "ArrowDown");
+      key(ta(), "Enter");
+      await flush();
+    };
+    type(ta(), "@Pla");
+    await flush(5);
+    await pick(0);
+    type(ta(), `${ta().value}and @Pla`);
+    await flush(5);
+    await pick(1);
+    expect(ta().value).toBe("@Plan and @Team/Plan ");
+    expect(draft().mentions).toEqual([
+      { kind: "note", path: "Alpha/Plan.md", label: "Plan" },
+      { kind: "note", path: "Team/Plan.md", label: "Team/Plan" },
+    ]);
+    hoisted.search.mockResolvedValue([] as never);
+  });
+
+  it("hints about a token with no attached note, can be dismissed, never blocks send", async () => {
+    type(ta(), "check @Plan now");
+    await flush(5);
+    const hint = () => $("[data-agent-unattached-hint]");
+    expect(hint()!.textContent).toContain("@Plan is not attached: pick a note from the menu");
+    act(() => hint()!.querySelector<HTMLElement>("[aria-label=Dismiss]")!.click());
+    expect(hint()).toBeNull();
+    type(ta(), "check @Plan now and @Other now");
+    await flush(5);
+    expect(hint()!.textContent).toContain("@Other is not attached");
+    key(ta(), "Enter");
+    await flush(5);
+    expect(useAgentStore.getState().chats[id()]!.turns[0]!.user!.text).toBe(
+      "check @Plan now and @Other now",
+    );
   });
 
   it("the Skills chip counts every skill, shows source and a global reveal link", async () => {

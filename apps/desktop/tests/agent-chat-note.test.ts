@@ -99,7 +99,28 @@ function props(): ChatNoteDoc {
   return d;
 }
 
-const CASES: Record<string, () => ChatNoteDoc> = { basic: base, escape: escapes, props };
+/** An assistant message with tools AND the Changes summary (`writer:changes` is the last comment). */
+function withChanges(): ChatNoteDoc {
+  const d = base();
+  d.messages[1]!.changes = {
+    turnId: "t19a2f01",
+    bash: true,
+    files: [
+      { path: "Plan.md", status: "modified", added: 3, removed: 1 },
+      { path: "New <note>.md", status: "added", added: 12, removed: 0 },
+      { path: "b.md", status: "renamed", added: 0, removed: 0, oldPath: "a.md" },
+      { path: "logo.png", status: "modified", added: 0, removed: 0, noDiff: true },
+    ],
+  };
+  return d;
+}
+
+const CASES: Record<string, () => ChatNoteDoc> = {
+  basic: base,
+  escape: escapes,
+  props,
+  changes: withChanges,
+};
 
 describe("chat note golden files", () => {
   for (const [name, make] of Object.entries(CASES)) {
@@ -148,6 +169,21 @@ describe("chat note golden files", () => {
       ["assistant", "m2", "hello"],
     ]);
     expect(p.messages[0].at).toBe(Date.UTC(2026, 10, 17, 9, 12));
+  });
+
+  it("keeps the changes summary last, after the tools, and drops an empty one", () => {
+    const note = serializeChatNote(withChanges());
+    const lines = note.trimEnd().split("\n");
+    expect(lines.at(-1)!.startsWith("<!-- writer:changes ")).toBe(true);
+    expect(lines.at(-3)!.startsWith("<!-- writer:tools ")).toBe(true);
+    expect(note).not.toContain("SECRET");
+    const parsed = parseChatNote(note);
+    expect(parsed.messages[1]!.changes?.files).toHaveLength(4);
+    expect(parsed.messages[1]!.tools).toHaveLength(2);
+    expect(parsed.messages[1]!.text).toBe(base().messages[1]!.text);
+    const empty = withChanges();
+    empty.messages[1]!.changes = { turnId: "t", files: [] };
+    expect(serializeChatNote(empty)).not.toContain("writer:changes");
   });
 
   it("rejects notes that are not chats", () => {

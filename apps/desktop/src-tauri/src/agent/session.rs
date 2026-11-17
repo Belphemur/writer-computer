@@ -10,6 +10,7 @@
 //!   `kill_all`) and after 30 idle minutes (resumed on the next message).
 
 use super::binary;
+use super::changes::ChangeStore;
 use super::events::*;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
@@ -177,6 +178,8 @@ pub(crate) struct Shared {
     /// Serialises "count the window's live processes, then take a slot".
     pub gate: Mutex<()>,
     pub timing: Timing,
+    /// In-memory pre-turn snapshots behind the "Changes" card (`changes.rs`).
+    pub changes: Arc<ChangeStore>,
 }
 
 impl Shared {
@@ -254,6 +257,7 @@ impl AgentSessions {
             sessions: Mutex::new(HashMap::new()),
             gate: Mutex::new(()),
             timing,
+            changes: Arc::new(ChangeStore::default()),
         });
         let weak: Weak<Shared> = Arc::downgrade(&shared);
         std::thread::Builder::new()
@@ -273,6 +277,10 @@ impl AgentSessions {
         Self { shared }
     }
 
+    pub fn changes(&self) -> Arc<ChangeStore> {
+        Arc::clone(&self.shared.changes)
+    }
+
     /// Where lane 3 and lane 4 install their implementations.
     pub fn ports(&self) -> &AgentPorts {
         &self.shared.ports
@@ -290,6 +298,16 @@ impl AgentSessions {
             return Err(Rejected("this chat belongs to another window".into()));
         }
         Ok(s)
+    }
+
+    /// The program of any chat of this window whose spawn the user consented to (a "Run once"
+    /// counts): what a helper call for a chat without a session may reuse.
+    pub fn consented_program(&self, label: &str) -> Option<PathBuf> {
+        self.shared
+            .all()
+            .iter()
+            .filter(|s| s.label == label)
+            .find_map(|s| s.helper_target().map(|(program, _)| program))
     }
 
     /// Live agent processes of a window.

@@ -2,7 +2,13 @@
  * Imperative (non-reactive) access to the agent pane for event handlers, the palette and the
  * keyboard hook (docs/react-guidelines.md: an API module, not `store.getState()` in components).
  */
-import { useAgentStore, type AgentBackend, type AgentView, type Draft } from "@/stores/agent-store";
+import {
+  regenerateChatTitle,
+  useAgentStore,
+  type AgentBackend,
+  type AgentView,
+  type Draft,
+} from "@/stores/agent-store";
 import type { ChatModelChoice } from "@/lib/agent/agent-settings";
 import type { AgentPermissionMode, ChatId, PermissionPersist } from "@/lib/agent/events";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -30,6 +36,8 @@ export function openAgentHistory() {
   if (s.order.length === 0) s.newChat();
   useAgentStore.setState({ paneOpen: true, view: "history" });
 }
+/** History "Regenerate title": any chat, open or not; an open chat updates live. */
+export const regenerateAgentChatTitle = regenerateChatTitle;
 export const closeAgentChat = (id: ChatId) => useAgentStore.getState().closeChat(id);
 export const selectAgentChat = (id: ChatId) => useAgentStore.getState().selectChat(id);
 export const cycleAgentChat = (d: 1 | -1) => useAgentStore.getState().cycleChat(d);

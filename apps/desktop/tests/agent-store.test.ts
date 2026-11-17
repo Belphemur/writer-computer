@@ -12,9 +12,12 @@ import { createMockAgentClient, type Goldens } from "../src/lib/agent/mock-clien
 import {
   classifyStartError,
   configureAgentRuntimeForTests,
+  configureRefIoForTests,
   toVaultRelative,
   useAgentStore,
 } from "../src/stores/agent-store";
+import { useEditorStore } from "../src/stores/editor-store";
+import { useWorkspaceStore } from "../src/stores/workspace-store";
 import { goldens } from "./helpers/agent-goldens";
 
 const g = goldens as unknown as Goldens;
@@ -169,6 +172,109 @@ describe("agent store: a turn against the recorded backend", () => {
     expect(send.mock.calls[0]![0].context).toEqual([{ kind: "note", path: "a.md" }]);
     expect(get().drafts[id]!.mentions).toEqual([]);
     await mock.idle(id);
+  });
+
+  describe("what claude receives", () => {
+    const setActive = (rel: string | null) =>
+      useEditorStore.setState({ activeFilePath: rel ? `/v/${rel}` : null } as never);
+    beforeEach(() => useWorkspaceStore.setState({ root: "/v" } as never));
+
+    async function sendDraft(text: string, mentions = [] as never[]) {
+      get().openPane();
+      const id = get().activeChatId!;
+      const send = vi.spyOn(mock, "send");
+      get().setDraft(id, { text, mentions, activeNote: false });
+      await get().sendMessage(text);
+      await mock.idle(id);
+      return { id, sent: send.mock.calls[0]![0] };
+    }
+
+    it("sends the prompt with @activenote resolved now, the card keeps what was typed", async () => {
+      setActive("Notes/Today.md");
+      const { id, sent } = await sendDraft("compare @Projects/Plan.md with @activenote", [
+        { kind: "note", path: "Projects/Plan.md" } as never,
+      ]);
+      expect(
+        sent.text.startsWith("compare @Projects/Plan.md with @Notes/Today.md\n\n<references>"),
+      ).toBe(true);
+      expect(sent.text).toContain("- @Notes/Today.md (active note");
+      expect(get().chats[id]!.turns[0]!.user!.text).toBe(
+        "compare @Projects/Plan.md with @activenote",
+      );
+      expect(get().notes[id]!.messages[0]!.text).toBe("compare @Projects/Plan.md with @activenote");
+      expect(sent.context).toContainEqual({
+        kind: "active-note",
+        path: "Notes/Today.md",
+        inline: false,
+      });
+    });
+
+    it("follows a rename of the active note between composing and sending", async () => {
+      setActive("Old.md");
+      get().openPane();
+      const id = get().activeChatId!;
+      get().setDraft(id, { text: "fix @activenote", activeNote: true });
+      setActive("Renamed.md");
+      const send = vi.spyOn(mock, "send");
+      await get().sendMessage("fix @activenote");
+      await mock.idle(id);
+      expect(send.mock.calls[0]![0].text).toMatch(/^fix @Renamed\.md\n/);
+    });
+
+    it("sends the full path for a note picked by its readable name, following a rename", async () => {
+      setActive(null);
+      get().openPane();
+      const id = get().activeChatId!;
+      const NAME = "Daniel Wierdsma Staff Timing and Growth Plan";
+      const NEW = `Management/Meeting Preps/2026/11/2026-11-16 - ${NAME}.md`;
+      configureRefIoForTests({
+        exists: async (p: string) => p === NEW,
+        findByName: async (n: string) => (n === "Plan.md" ? [NEW] : []),
+      });
+      const send = vi.spyOn(mock, "send");
+      get().setDraft(id, { mentions: [{ kind: "note", path: "Old/Plan.md", label: NAME }] });
+      await get().sendMessage(`prep @"${NAME}"`);
+      await mock.idle(id);
+      configureRefIoForTests(null);
+      // the recorded path is gone: its file name resolved to the renamed file at send time
+      expect(send.mock.calls[0]![0].text.startsWith(`prep @"${NEW}"\n`)).toBe(true);
+      expect(send.mock.calls[0]![0].text).toContain(`- @"${NEW}" (note)`);
+      expect(get().chats[id]!.turns[0]!.user!.text).toBe(`prep @"${NAME}"`);
+    });
+
+    it("leaves a hand-typed bare name literal and resolves an exact typed path", async () => {
+      setActive(null);
+      configureRefIoForTests({
+        exists: async (p: string) => p === "Notes/Solo.md",
+        findByName: async () => [],
+      });
+      const { sent } = await sendDraft("read @Solo and @Notes/Solo.md");
+      configureRefIoForTests(null);
+      expect(sent.text.startsWith("read @Solo and @Notes/Solo.md\n")).toBe(true);
+      expect(sent.text).toContain("- @Notes/Solo.md (note)");
+      expect(sent.text.match(/^- /gm)).toHaveLength(1); // @Solo has no entry
+    });
+
+    it("keeps @activenote literal, with no footer, when no note is open", async () => {
+      setActive(null);
+      const { sent } = await sendDraft("fix @activenote");
+      expect(sent.text).toBe("fix @activenote");
+      expect(sent.context).toEqual([]);
+    });
+
+    it("sends cwd-relative paths in a project chat", async () => {
+      setActive(null);
+      get().openPane();
+      const id = get().activeChatId!;
+      useAgentStore.setState((st) => ({
+        chats: { ...st.chats, [id]: { ...st.chats[id]!, projectPath: "Projects/A" } },
+      }));
+      const send = vi.spyOn(mock, "send");
+      get().setDraft(id, { mentions: [{ kind: "note", path: "Notes/My Note.md" }] });
+      await get().sendMessage('read @"Notes/My Note.md"');
+      await mock.idle(id);
+      expect(send.mock.calls[0]![0].text.startsWith('read @"../../Notes/My Note.md"\n')).toBe(true);
+    });
   });
 
   it("passes the per-chat permission mode to the session start", async () => {

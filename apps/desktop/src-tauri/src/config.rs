@@ -882,15 +882,17 @@ mod tests {
             Some(&ConfigValue::Number(0.0))
         );
         assert_eq!(
-            defaults.get("agent.allowed-tools"),
-            Some(&ConfigValue::List(vec![]))
+            defaults
+                .get("agent.allowed-tools")
+                .map(|v| matches!(v, ConfigValue::List(l) if !l.is_empty())),
+            Some(true)
         );
         let schema = settings_schema();
         let agent: Vec<_> = schema
             .iter()
             .filter(|d| d.key.starts_with("agent."))
             .collect();
-        assert_eq!(agent.len(), 12);
+        assert_eq!(agent.len(), 15);
         assert_eq!(
             defaults.get("agent.enabled-models"),
             Some(&ConfigValue::List(vec![
@@ -939,9 +941,10 @@ mod tests {
             settings.get("agent.permission-mode"),
             Some(&ConfigValue::String("manual".into()))
         );
+        // the vault's `allowed-tools = Bash` is ignored: the value is the default
         assert_eq!(
             settings.get("agent.allowed-tools"),
-            Some(&ConfigValue::List(vec![]))
+            default_settings().get("agent.allowed-tools")
         );
         assert!(settings
             .set_workspace("agent.binary-path", ConfigValue::String("/x".into()))

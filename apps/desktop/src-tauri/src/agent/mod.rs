@@ -10,11 +10,13 @@
 //! "Implementation plan") and add their own sibling modules here.
 
 pub mod binary;
+pub mod changes;
 pub mod chat_store;
 pub mod claude_stream;
 pub mod consent;
 pub mod env;
 pub mod events;
+pub mod line_diff;
 pub mod permission_rules;
 pub mod ports;
 pub mod project;
@@ -24,3 +26,5 @@ pub mod runner;
 mod runner_tests;
 pub mod session;
 pub mod skills;
+pub mod title;
+pub mod writer_prompt;

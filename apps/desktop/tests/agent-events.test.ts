@@ -50,7 +50,13 @@ describe("agent event contract", () => {
     for (const events of Object.values(golden))
       for (const e of events as AgentEvent[]) seen.add(e.type);
     // session-ended, error and model-refused are produced by the runner, not by the mapper
-    const runnerOnly = new Set(["session-ended", "error", "permission-resolved", "model-refused"]);
+    const runnerOnly = new Set([
+      "session-ended",
+      "error",
+      "permission-resolved",
+      "model-refused",
+      "turn-changes",
+    ]);
     for (const t of AGENT_EVENT_TYPES) {
       if (!runnerOnly.has(t)) expect(seen.has(t), t).toBe(true);
     }
@@ -89,6 +95,8 @@ describe("agent event contract", () => {
           return e.reason;
         case "error":
           return e.kind;
+        case "turn-changes":
+          return e.turnId;
         case "session-ended":
           return e.reason;
         default: {

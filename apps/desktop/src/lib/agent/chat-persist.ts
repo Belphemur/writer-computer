@@ -14,6 +14,7 @@ import {
   previewOf,
   serializeChatNote,
   titleFromMessage,
+  titleSourceOf,
 } from "./chat-note";
 import type { Chat } from "./transcript";
 
@@ -71,6 +72,18 @@ export function recordEvents(
   let next = note;
   let finished = false;
   for (const ev of events) {
+    if (ev.type === "turn-changes") {
+      // arrives right after `turn-finished` closed the assistant message: attach, write again
+      const { type: _type, ...changes } = ev;
+      const at = next.messages.map((m) => m.role).lastIndexOf("assistant");
+      if (at >= 0 && !next.messages[at]!.changes) {
+        const messages = next.messages.slice();
+        messages[at] = { ...messages[at]!, changes };
+        next = { ...next, messages };
+        finished = true;
+      }
+      continue;
+    }
     const pending = [...next.pending, ev];
     if (ev.type !== "turn-finished") {
       next = { ...next, pending };
@@ -125,7 +138,7 @@ export function buildNote(
   const titleHint = titleFromMessage(firstUser?.text ?? chat.title);
   const meta: ChatNoteMeta = {
     ...note.meta,
-    title: note.meta.titleRenamed ? note.meta.title : titleHint,
+    title: titleSourceOf(note.meta) === "none" ? titleHint : note.meta.title,
     projectPath: chat.projectPath,
     sessionId: chat.session?.sessionId ?? chat.resumeSessionId ?? note.meta.sessionId,
     cliVersion: chat.session?.cliVersion ?? note.meta.cliVersion,

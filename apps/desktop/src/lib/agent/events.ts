@@ -173,12 +173,63 @@ export type AgentEvent =
       errors: string[];
     }
   | { type: "error"; kind: AgentErrorKind; message: string; retryable: boolean }
+  /** Runner-originated, right after `turn-finished`, only when the agent changed vault files. */
+  | ({ type: "turn-changes" } & TurnChangesSummary)
   | {
       type: "session-ended";
       reason: SessionEndReason;
       exitCode: number | null;
       signal: string | null;
     };
+
+// Turn changes (Rust: `events.rs`, logic in `changes.rs`; spec "Turn changes")
+
+export type ChangeStatus = "added" | "modified" | "deleted" | "renamed";
+
+/** One changed file as sent in `turn-changes` and stored in the chat note: no contents. */
+export type FileChangeSummary = {
+  /** Vault-relative; for a rename the new path. */
+  path: string;
+  status: ChangeStatus;
+  added: number;
+  removed: number;
+  oldPath?: string;
+  /** Listed only: binary, too large or unreadable, so no diff and no counts. */
+  noDiff?: boolean;
+};
+
+export type TurnChangesSummary = {
+  /** Opaque, unique per app run: a stored summary never matches a later snapshot by accident. */
+  turnId: string;
+  files: FileChangeSummary[];
+  /** A shell command ran in the turn: its side effects are not tracked. */
+  bash?: boolean;
+};
+
+export type DiffRow = {
+  kind: "context" | "add" | "del";
+  oldLine: number | null;
+  newLine: number | null;
+  text: string;
+};
+
+export type UndoState = "available" | "changed-since" | "unavailable" | "reverted";
+
+export type FileChange = FileChangeSummary & {
+  rows: DiffRow[];
+  /** `rows` stops early (very large diff). */
+  truncated?: boolean;
+  undo: UndoState;
+};
+
+/** Reply of `agent_turn_changes`. */
+export type TurnChanges = { turnId: string; files: FileChange[]; bash?: boolean };
+
+export type RevertOutcome = {
+  path: string;
+  result: "reverted" | "changed-since" | "unavailable" | "failed";
+  message?: string;
+};
 
 export type AgentEventType = AgentEvent["type"];
 
@@ -197,6 +248,7 @@ export const AGENT_EVENT_TYPES = [
   "model-refused",
   "rate-limit",
   "turn-finished",
+  "turn-changes",
   "error",
   "session-ended",
 ] as const satisfies readonly AgentEventType[];
@@ -224,8 +276,10 @@ export type ContextRef =
   /** The note open in the editor (sent as a path, not a body, unless `inline`). */
   | { kind: "active-note"; path: string; inline: boolean }
   | { kind: "selection"; path: string; text: string; fromLine: number; toLine: number }
-  | { kind: "note"; path: string }
-  | { kind: "folder"; path: string }
+  /** `label`: the readable name the composer put in the text (`@"Plan"`), UI side only (the
+   *  prompt builder maps that token to `path`; Rust ignores the field). */
+  | { kind: "note"; path: string; label?: string }
+  | { kind: "folder"; path: string; label?: string }
   | { kind: "tag"; tag: string }
   | { kind: "property"; name: string; value: string | null }
   /** Instructions and sources of the chat's project, attached by the system, shown in the
@@ -304,6 +358,10 @@ export type StartSessionRequest = {
   appendSystemPrompt: string | null;
 };
 
+/** Who chose a chat's title: nobody yet (the first message, cut), the automatic titler, or the
+ *  user. A rename always wins and is never overwritten. */
+export type TitleSource = "none" | "auto" | "user";
+
 export type ChatSummary = {
   chatId: ChatId;
   /** Vault-relative path of the chat note. */
@@ -318,6 +376,7 @@ export type ChatSummary = {
   pinned: boolean;
   /** First user message, one line (history list and search). */
   preview?: string;
+  titleSource: TitleSource;
 };
 
 /** A context source declared in `project.md`. `raw` is the original text of the entry. */
@@ -382,6 +441,13 @@ export type AgentCommandMap = {
     void,
   ];
   agent_close: [{ chatId: ChatId }, void];
+  /** The diffs of a finished turn; `null` once the in-memory snapshot is gone (app restart). */
+  agent_turn_changes: [{ chatId: ChatId; turnId: string }, TurnChanges | null];
+  /** Undo: restore the pre-turn content; one outcome per path; `null` when the snapshot is gone. */
+  agent_revert_changes: [
+    { chatId: ChatId; turnId: string; paths: string[] },
+    RevertOutcome[] | null,
+  ];
   /** Skills in `.claude/skills` and `.agents/skills` of the vault root and the project (lane 2). */
   agent_list_skills: [{ projectPath: string | null }, DiskSkill[]];
   /** Events with seq > afterSeq still buffered (bounded ring), plus the current state. */
@@ -449,6 +515,8 @@ export const AGENT_COMMANDS = [
   "agent_set_permission_mode",
   "agent_set_model",
   "agent_close",
+  "agent_turn_changes",
+  "agent_revert_changes",
   "agent_list_skills",
   "agent_snapshot",
   "agent_list_chats",

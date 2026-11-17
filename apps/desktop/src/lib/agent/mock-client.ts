@@ -199,6 +199,9 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
       cancelled.add(chatId);
       emit(chatId, { type: "session-ended", reason: "closed", exitCode: null, signal: null });
     },
+    // the demo backend keeps no snapshots: the card shows "no longer available"
+    turnChanges: async () => null,
+    revertChanges: async () => null,
     snapshot: async ({ chatId, afterSeq }) => ({
       state: states.get(chatId) ?? "idle",
       events: (log.get(chatId) ?? []).filter((e) => e.seq > afterSeq),

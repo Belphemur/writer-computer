@@ -83,7 +83,7 @@ export function ContextChips({ chatId, draft }: { chatId: ChatId; draft: Draft }
       {draft.mentions.map((ref, i) => (
         <Chip
           key={`${ref.kind}:${contextRefLabel(ref)}:${i}`}
-          label={nameOf(contextRefLabel(ref))}
+          label={"label" in ref && ref.label ? ref.label : nameOf(contextRefLabel(ref))}
           title={contextRefLabel(ref)}
           folder={ref.kind === "folder"}
           onOpen={ref.kind === "note" ? () => openVaultPath(ref.path) : undefined}

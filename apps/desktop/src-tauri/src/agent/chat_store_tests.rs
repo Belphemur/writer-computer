@@ -46,7 +46,7 @@ fn all(root: &Path) -> Vec<ChatSummary> {
 
 #[test]
 fn golden_notes_parse_to_the_shared_json() {
-    for name in ["basic", "escape", "props"] {
+    for name in ["basic", "escape", "props", "changes"] {
         let (meta, body) = parse_note(&fixture(&format!("{name}.md"))).unwrap();
         let golden: Value = serde_json::from_str(&fixture(&format!("{name}.parsed.json"))).unwrap();
         assert_eq!(
@@ -469,4 +469,125 @@ fn transcript_markdown_has_no_metadata() {
     assert!(md.starts_with("**user**\n\nSummarise"));
     assert!(!md.contains("writer-chat"));
     assert!(!md.contains("context:"));
+}
+
+#[test]
+fn auto_title_applies_once_survives_a_stale_save_and_renames_the_file() {
+    let (_d, root) = vault();
+    save(&root, ID, &note(ID, None, "First message cut", 1), None).unwrap();
+    let s = action(
+        &root,
+        ID,
+        ChatAction::AutoTitle,
+        Some("Q4 review plan"),
+        true,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(s.title, "Q4 review plan");
+    assert_eq!(s.title_source, TitleSource::Auto);
+    assert!(
+        s.path.ends_with("-q4-review-plan-5328964b.md"),
+        "{}",
+        s.path
+    );
+    // one automatic attempt: a second one changes nothing
+    let again = action(&root, ID, ChatAction::AutoTitle, Some("Other words"), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.title, "Q4 review plan");
+    // a pane that still has the placeholder saves: the title stays
+    let stale = save(&root, ID, &note(ID, None, "First message cut", 5), None).unwrap();
+    assert_eq!(stale.title, "Q4 review plan");
+    assert_eq!(stale.title_source, TitleSource::Auto);
+    let (_, text) = load(&root, ID).unwrap();
+    assert_eq!(text.matches("writer-chat-title-auto: true").count(), 1);
+    assert!(!text.contains("writer-chat-renamed"));
+}
+
+#[test]
+fn auto_title_never_overwrites_a_user_title_and_a_user_rename_beats_an_auto_one() {
+    let (_d, root) = vault();
+    save(&root, ID, &note(ID, None, "Draft", 1), None).unwrap();
+    action(&root, ID, ChatAction::Rename, Some("Mine"), true).unwrap();
+    let s = action(&root, ID, ChatAction::AutoTitle, Some("Robot title"), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(s.title, "Mine");
+    assert_eq!(s.title_source, TitleSource::User);
+
+    save(&root, ID2, &note(ID2, None, "Draft", 1), None).unwrap();
+    action(&root, ID2, ChatAction::AutoTitle, Some("Robot title"), true).unwrap();
+    let r = action(&root, ID2, ChatAction::Rename, Some("Human title"), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(r.title, "Human title");
+    assert_eq!(r.title_source, TitleSource::User);
+    assert!(action(&root, ID2, ChatAction::AutoTitle, Some("  "), true).is_ok());
+}
+
+#[test]
+fn auto_title_rejects_an_empty_title_and_keeps_the_placeholder() {
+    let (_d, root) = vault();
+    save(&root, ID, &note(ID, None, "Draft", 1), None).unwrap();
+    assert!(action(&root, ID, ChatAction::AutoTitle, Some("  "), true).is_err());
+    let s = all(&root).pop().unwrap();
+    assert_eq!(s.title, "Draft");
+    assert_eq!(s.title_source, TitleSource::None);
+}
+
+#[test]
+fn regenerate_overwrites_a_user_title_as_an_auto_one_and_a_later_rename_wins() {
+    let (_d, root) = vault();
+    save(&root, ID, &note(ID, None, "Draft", 1), None).unwrap();
+    action(&root, ID, ChatAction::Rename, Some("Mine"), true).unwrap();
+    let s = action(
+        &root,
+        ID,
+        ChatAction::RegenerateTitle,
+        Some("Q4 review plan"),
+        true,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(s.title, "Q4 review plan");
+    assert_eq!(s.title_source, TitleSource::Auto);
+    assert!(
+        s.path.ends_with("-q4-review-plan-5328964b.md"),
+        "{}",
+        s.path
+    );
+    let (_, text) = load(&root, ID).unwrap();
+    assert_eq!(text.matches("writer-chat-title-auto: true").count(), 1);
+    assert!(!text.contains("writer-chat-renamed"), "{text}");
+    // a stale pane that still holds the user's flags cannot bring the old title back
+    let stale = save(&root, ID, &note(ID, None, "Mine", 9), None).unwrap();
+    assert_eq!(stale.title, "Q4 review plan");
+    assert_eq!(stale.title_source, TitleSource::Auto);
+    // regenerating again replaces an automatic title too (AutoTitle would not)
+    let again = action(&root, ID, ChatAction::RegenerateTitle, Some("Fresh"), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.title, "Fresh");
+    // a manual rename wins afterwards
+    let r = action(&root, ID, ChatAction::Rename, Some("Human"), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (r.title.as_str(), r.title_source),
+        ("Human", TitleSource::User)
+    );
+}
+
+#[test]
+fn regenerate_rejects_an_empty_title_and_keeps_the_user_title() {
+    let (_d, root) = vault();
+    save(&root, ID, &note(ID, None, "Draft", 1), None).unwrap();
+    action(&root, ID, ChatAction::Rename, Some("Mine"), true).unwrap();
+    assert!(action(&root, ID, ChatAction::RegenerateTitle, Some(" "), true).is_err());
+    let s = all(&root).pop().unwrap();
+    assert_eq!(
+        (s.title.as_str(), s.title_source),
+        ("Mine", TitleSource::User)
+    );
 }

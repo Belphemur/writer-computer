@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openFileInNewTab } from "@/hooks/editor-api";
 import { useSetting } from "@/hooks/use-settings";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
+import { regenerateAgentChatTitle } from "@/hooks/agent-api";
+import {
+  canRegenerateTitle,
+  REGENERATE_REFUSAL_TEXT,
+  type RegenerateOutcome,
+} from "@/lib/agent/auto-title";
 import { parseChatNote, transcriptMarkdown } from "@/lib/agent/chat-note";
 import {
   chatNoteAbsPath,
@@ -19,6 +25,8 @@ import {
 } from "@/lib/agent/chat-history-client";
 import type { ChatSummary } from "@/lib/agent/events";
 import { formatRelativeTime } from "@/lib/relative-time";
+import { ChatRowMenu, type RowMenuItem } from "./chat-row-menu";
+import { Spinner } from "./agent-icon";
 
 function describe(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -31,11 +39,16 @@ const SMALL =
 const FIELD =
   "h-8 rounded-lg border border-transparent bg-[var(--surface-input)] px-2 text-[13px] text-[var(--text-secondary)] outline-none focus:border-[var(--focus-border)]";
 
+/** "Regenerate title" on one row: asking to replace a title of the user's, running, or failed. */
+type RegenState = { phase: "confirm" } | { phase: "running" } | { phase: "error"; message: string };
+
 type RowProps = {
   chat: ChatSummary;
   now: number;
   renaming: boolean;
   confirmingDelete: boolean;
+  regen: RegenState | undefined;
+  menuOpen: boolean;
   onOpen: () => void;
   onAction: (action: ChatAction, title?: string) => void;
   onStartRename: () => void;
@@ -43,17 +56,70 @@ type RowProps = {
   onAskDelete: (on: boolean) => void;
   onReveal: () => void;
   onCopy: () => void;
+  onRegenerate: () => void;
+  onConfirmRegenerate: () => void;
+  onDismissRegen: () => void;
+  onMenu: (open: boolean) => void;
 };
+
+type RowAction = RowMenuItem & {
+  /** Also a button in the row (the frequent ones); every action is in the menu. */
+  inline: boolean;
+};
+
+/** The ONE list of per-chat actions: the row's inline buttons and its menu both render it. */
+function rowActions(p: RowProps): RowAction[] {
+  const { chat } = p;
+  const regenerating = p.regen?.phase === "running";
+  const noTitleInput = !canRegenerateTitle(chat);
+  return [
+    { id: "resume", label: "Resume", onSelect: p.onOpen, inline: true },
+    { id: "rename", label: "Rename", onSelect: p.onStartRename, inline: true },
+    {
+      id: "pin",
+      label: chat.pinned ? "Unpin" : "Pin",
+      onSelect: () => p.onAction(chat.pinned ? "unpin" : "pin"),
+      inline: true,
+    },
+    {
+      id: "archive",
+      label: chat.archived ? "Unarchive" : "Archive",
+      onSelect: () => p.onAction(chat.archived ? "unarchive" : "archive"),
+      inline: true,
+    },
+    {
+      id: "regenerate",
+      label: "Regenerate title",
+      onSelect: p.onRegenerate,
+      disabled: regenerating || noTitleInput,
+      hint: regenerating
+        ? "Generating…"
+        : noTitleInput
+          ? "Nothing to title yet: the chat has no reply"
+          : undefined,
+      inline: false,
+    },
+    { id: "copy", label: "Copy as markdown", onSelect: p.onCopy, inline: true },
+    { id: "reveal", label: "Reveal note", onSelect: p.onReveal, inline: true },
+    { id: "delete", label: "Delete", onSelect: () => p.onAskDelete(true), inline: true },
+  ];
+}
 
 function ChatRow(p: RowProps) {
   const { chat } = p;
   const [draft, setDraft] = useState(chat.title);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const when = formatRelativeTime(Math.floor(chat.updatedAt / 1000), Math.floor(p.now / 1000));
+  const actions = rowActions(p);
   return (
     <li
       data-agent-history-row={chat.chatId}
       data-pinned={chat.pinned || undefined}
       data-archived={chat.archived || undefined}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        p.onMenu(true);
+      }}
       className="group rounded-lg px-2 py-1.5 hover:bg-[var(--item-hover-bg)]"
     >
       {p.renaming ? (
@@ -86,6 +152,35 @@ function ChatRow(p: RowProps) {
           )}
         </button>
       )}
+      {p.regen?.phase === "running" && (
+        <div
+          role="status"
+          data-agent-history-regenerating
+          className="mt-1 flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]"
+        >
+          <Spinner size={12} />
+          Generating…
+        </div>
+      )}
+      {p.regen?.phase === "error" && (
+        <div className="mt-1 flex items-center gap-2 text-[12px]" role="alert">
+          <span className="text-[var(--danger)]">{p.regen.message}</span>
+          <button type="button" className={SMALL} onClick={p.onDismissRegen}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {p.regen?.phase === "confirm" && (
+        <div className="mt-1 flex items-center gap-2 text-[12px]" role="alert">
+          <span className="text-[var(--text-muted)]">Replace your title?</span>
+          <button type="button" className={SMALL} onClick={p.onConfirmRegenerate}>
+            Replace
+          </button>
+          <button type="button" className={SMALL} onClick={p.onDismissRegen}>
+            Cancel
+          </button>
+        </div>
+      )}
       {p.confirmingDelete ? (
         <div className="mt-1 flex items-center gap-2 text-[12px]" role="alert">
           <span className="text-[var(--text-muted)]">Move this chat note to the Trash?</span>
@@ -98,36 +193,33 @@ function ChatRow(p: RowProps) {
         </div>
       ) : (
         <div className="mt-0.5 flex flex-wrap gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          <button type="button" className={SMALL} onClick={p.onOpen}>
-            Resume
-          </button>
-          <button type="button" className={SMALL} onClick={p.onStartRename}>
-            Rename
-          </button>
+          {actions
+            .filter((a) => a.inline)
+            .map((a) => (
+              <button key={a.id} type="button" className={SMALL} onClick={a.onSelect}>
+                {a.label}
+              </button>
+            ))}
           <button
+            ref={moreRef}
             type="button"
             className={SMALL}
-            onClick={() => p.onAction(chat.pinned ? "unpin" : "pin")}
+            aria-label="More actions"
+            aria-haspopup="menu"
+            aria-expanded={p.menuOpen}
+            onClick={() => p.onMenu(!p.menuOpen)}
           >
-            {chat.pinned ? "Unpin" : "Pin"}
-          </button>
-          <button
-            type="button"
-            className={SMALL}
-            onClick={() => p.onAction(chat.archived ? "unarchive" : "archive")}
-          >
-            {chat.archived ? "Unarchive" : "Archive"}
-          </button>
-          <button type="button" className={SMALL} onClick={p.onCopy}>
-            Copy as markdown
-          </button>
-          <button type="button" className={SMALL} onClick={p.onReveal}>
-            Reveal note
-          </button>
-          <button type="button" className={SMALL} onClick={() => p.onAskDelete(true)}>
-            Delete
+            …
           </button>
         </div>
+      )}
+      {p.menuOpen && (
+        <ChatRowMenu
+          items={actions}
+          anchorRef={moreRef}
+          label={`Actions for ${chat.title}`}
+          onClose={() => p.onMenu(false)}
+        />
       )}
     </li>
   );
@@ -144,13 +236,16 @@ export type HistoryListProps = {
   /** Absolute path of a chat note to a tab; defaults to the editor's new tab. */
   onReveal?: (chat: ChatSummary) => void;
   copyText?: (text: string) => Promise<void>;
+  /** "Regenerate title" for a chat (open or not); defaults to the history client's call. */
+  regenerateTitle?: (chatId: string) => Promise<RegenerateOutcome>;
   now?: () => number;
 };
 
 const ALL = "\u0000all";
 
 /** Searchable chat history grouped by project (spec section 9): resume, rename, pin, archive,
- *  copy as markdown, reveal the note, delete to the Trash, and the keep-days clean-up. */
+ *  regenerate the title, copy as markdown, reveal the note, delete to the Trash (buttons on the
+ *  row and a "..." / right-click menu with the same actions), and the keep-days clean-up. */
 export function HistoryList({
   onOpen,
   client = chatHistoryClient,
@@ -158,6 +253,7 @@ export function HistoryList({
   keepDays = 0,
   onReveal,
   copyText = (t) => navigator.clipboard.writeText(t),
+  regenerateTitle = (chatId) => client.regenerateTitle(chatId, null),
   now = Date.now,
 }: HistoryListProps) {
   const [chats, setChats] = useState<ChatSummary[] | null>(null);
@@ -172,6 +268,10 @@ export function HistoryList({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [cleaning, setCleaning] = useState(false);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [regen, setRegen] = useState<Record<string, RegenState>>({});
+  // the double-click guard: one title call per chat at a time, whatever the clicks do
+  const regenerating = useRef(new Set<string>());
 
   const reload = useCallback(async () => {
     try {
@@ -221,6 +321,42 @@ export function HistoryList({
     } catch (e) {
       setError(describe(e));
     }
+  }
+
+  const setRegenFor = (chatId: string, state: RegenState | undefined) =>
+    setRegen((all) => {
+      const { [chatId]: _old, ...rest } = all;
+      return state ? { ...rest, [chatId]: state } : rest;
+    });
+
+  async function regenerate(chat: ChatSummary) {
+    const id = chat.chatId;
+    if (regenerating.current.has(id)) return;
+    regenerating.current.add(id);
+    setRegenFor(id, { phase: "running" });
+    try {
+      const outcome = await regenerateTitle(id);
+      if (outcome.status === "done") {
+        setRegenFor(id, undefined);
+        await reload();
+      } else {
+        setRegenFor(id, { phase: "error", message: REGENERATE_REFUSAL_TEXT[outcome.reason] });
+      }
+    } catch (e) {
+      setRegenFor(id, {
+        phase: "error",
+        message: `Could not regenerate the title: ${describe(e)}`,
+      });
+    } finally {
+      regenerating.current.delete(id);
+    }
+  }
+
+  /** A title the user chose is replaced only after one small confirmation. */
+  function askRegenerate(chat: ChatSummary) {
+    if (regenerating.current.has(chat.chatId)) return;
+    if (chat.titleSource === "user") setRegenFor(chat.chatId, { phase: "confirm" });
+    else void regenerate(chat);
   }
 
   async function copy(chat: ChatSummary) {
@@ -319,6 +455,12 @@ export function HistoryList({
                   now={now()}
                   renaming={renaming === c.chatId}
                   confirmingDelete={deleting === c.chatId}
+                  regen={regen[c.chatId]}
+                  menuOpen={menuFor === c.chatId}
+                  onMenu={(open) => setMenuFor(open ? c.chatId : null)}
+                  onRegenerate={() => askRegenerate(c)}
+                  onConfirmRegenerate={() => void regenerate(c)}
+                  onDismissRegen={() => setRegenFor(c.chatId, undefined)}
                   onOpen={() => onOpen(c)}
                   onAction={(a, t) => void run(c, a, t)}
                   onStartRename={() => setRenaming(c.chatId)}
@@ -368,6 +510,7 @@ export function HistoryPane({ onOpen }: { onOpen: (chat: ChatSummary) => void })
   return (
     <HistoryList
       onOpen={onOpen}
+      regenerateTitle={regenerateAgentChatTitle}
       keepDays={keepDays}
       onReveal={(c) => root && void openFileInNewTab(chatNoteAbsPath(root, c))}
     />
