@@ -5,11 +5,16 @@ import type { ComponentType } from "react";
 import type { CommandContext } from "@/components/command-palette/commands";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import type { IconSvgElement } from "@hugeicons/react";
 import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
+import type { DirEntry } from "@/types/fs";
 import type { Keybinding } from "@/lib/keybindings/registry";
 import type { FeatureSecrets } from "@/stores/feature-secrets-store";
 
 export type Dispose = () => void;
+
+/** The contribution points whose `feature.json` entry is a plain list of ids. */
+export type ContributionIdPoint = "docks" | "sidebarPanels" | "sidebarActions" | "statusItems";
 
 /** The static facts in `src-tauri/src/features/<id>/feature.json` that the web side may read. */
 export interface FeatureManifest {
@@ -23,8 +28,12 @@ export interface FeatureManifest {
   /** Shown in Settings > Features so users see what the feature costs. */
   memory?: { level: "low" | "medium" | "high"; note: string };
   rust?: { commands?: string[]; events?: string[]; hooks?: string[] };
-  /** Only the part the settings UI reads; the rest of `contributes` is the loader's. */
-  contributes?: { secrets?: FeatureSecretDecl[] };
+  /** Only the part the settings UI reads; the rest of `contributes` is the loader's. The id lists
+   *  (`docks`, `sidebarPanels`, ...) name what the web half registers; a contract test ties them. */
+  contributes?: {
+    secrets?: FeatureSecretDecl[];
+    menus?: Partial<Record<MenuSurface, string[]>>;
+  } & Partial<Record<ContributionIdPoint, string[]>>;
 }
 
 /** `contributes.secrets` of `feature.json`: the key is `features.<id>.<name>`. */
@@ -75,10 +84,25 @@ export interface EditorExtensionContribution {
   load: () => Promise<Extension>;
 }
 
-export interface EditorBodyMenuContribution {
+/** Where a feature can add context-menu items, and what the surface hands the feature. One key
+ *  per surface in `contributes.menus` and in the one menu registry (`lib/features/menus.ts`). */
+export interface MenuSurfaces {
+  /** Right-click in the editor body at `event`. */
+  "editor-body": [view: EditorView, event: MouseEvent];
+  /** Right-click on a file row of the sidebar (tree, Pinned and Recents). */
+  "sidebar-file": [entry: DirEntry];
+  /** Right-click on a folder row of the sidebar. */
+  "sidebar-folder": [entry: DirEntry];
+  /** Right-click on a multi-selection of the sidebar. */
+  "sidebar-bulk": [paths: readonly string[]];
+}
+export type MenuSurface = keyof MenuSurfaces;
+
+export interface MenuContribution<S extends MenuSurface = MenuSurface> {
   /** `<feature id>.<name>`. */
   id: string;
-  items: (view: EditorView, event: MouseEvent) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
+  /** Items for the right-click; empty when the feature has nothing to offer there. */
+  items: (...args: MenuSurfaces[S]) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
 }
 
 /** A pane docked at the right edge (the agent pane). The layout shows the open dock with the
@@ -110,16 +134,57 @@ export interface SettingsSectionContribution {
   load: () => Promise<{ default: ComponentType }>;
 }
 
+/** A panel in the left sidebar next to Files (a feature's own list or tree). Shown only while the
+ *  feature is on; the component is a dynamic import, so its chunk loads when the panel is first
+ *  selected, and it renders inside the feature's error boundary. */
+export interface SidebarPanelContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  label: string;
+  icon: IconSvgElement;
+  /** Position in the panel switcher; Files is core and always first. Ties break on `id`. */
+  order: number;
+  load: () => Promise<ComponentType>;
+}
+
+/** A button in the sidebar header toolbar. */
+export interface SidebarActionContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  label: string;
+  icon: IconSvgElement;
+  /** Position among the toolbar buttons, left to right. Ties break on `id`. */
+  order: number;
+  /** Runs after the feature has activated (the first click activates it). */
+  run: (feature: FeatureContext) => void | Promise<void>;
+}
+
+/** What a status item component receives: the note the footer belongs to. */
+export interface StatusItemProps {
+  filePath: string;
+}
+
+/** An item in the document footer, after the built-in word and character counts. */
+export interface StatusItemContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  /** Position among the footer items, left to right. Ties break on `id`. */
+  order: number;
+  load: () => Promise<ComponentType<StatusItemProps>>;
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
   editorExtensions?: readonly EditorExtensionContribution[];
-  menus?: { "editor-body"?: readonly EditorBodyMenuContribution[] };
+  menus?: { [S in MenuSurface]?: readonly MenuContribution<S>[] };
   docks?: readonly DockContribution[];
   settingsSection?: SettingsSectionContribution;
-  // Declared by the spec, no host registry yet (each lands with its first pilot).
+  sidebarPanels?: readonly SidebarPanelContribution[];
+  sidebarActions?: readonly SidebarActionContribution[];
+  statusItems?: readonly StatusItemContribution[];
+  // Declared by the spec, no host registry yet (lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
-  sidebar?: readonly unknown[];
 }
 
 export interface FeatureDefinition {

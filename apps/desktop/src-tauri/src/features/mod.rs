@@ -101,12 +101,45 @@ pub struct Manifest {
     pub contributes: Contributes,
 }
 
-/// The parts of `contributes` Rust reads (the rest is the web half's).
+/// The parts of `contributes` Rust reads (the rest is the web half's). The id lists name what the
+/// web half registers; the contract test checks their shape and a TypeScript test ties them to
+/// the `defineFeature` call.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Contributes {
     /// Secrets the feature owns (spec "Feature settings and secrets").
     #[serde(default)]
     pub secrets: Vec<secrets::SecretDecl>,
+    #[serde(default)]
+    pub docks: Vec<String>,
+    #[serde(default)]
+    pub sidebar_panels: Vec<String>,
+    #[serde(default)]
+    pub sidebar_actions: Vec<String>,
+    #[serde(default)]
+    pub status_items: Vec<String>,
+    /// Menu surface (`editor-body`, `sidebar-file`, ...) to contributed item ids.
+    #[serde(default)]
+    pub menus: BTreeMap<String, Vec<String>>,
+}
+
+impl Contributes {
+    /// Every id-list point as (point name, ids): one table for the checks that walk them all.
+    pub fn id_lists(&self) -> Vec<(String, &Vec<String>)> {
+        let mut lists = vec![
+            ("docks".to_string(), &self.docks),
+            ("sidebarPanels".to_string(), &self.sidebar_panels),
+            ("sidebarActions".to_string(), &self.sidebar_actions),
+            ("statusItems".to_string(), &self.status_items),
+        ];
+        lists.extend(
+            self.menus
+                .iter()
+                .map(|(s, ids)| (format!("menus.{s}"), ids)),
+        );
+        lists
+    }
 }
 
 #[allow(dead_code)]

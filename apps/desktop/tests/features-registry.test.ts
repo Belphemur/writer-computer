@@ -69,7 +69,9 @@ describe("defineFeature", () => {
         contributes: { commands: [{ id: "b.x", label: "x", run: () => {} }] },
       }),
     ).toThrow(/must start with "a\."/);
-    expect(() => defineFeature({ id: "a", contributes: { sidebar: [] } })).toThrow(/no host yet/);
+    expect(() => defineFeature({ id: "a", contributes: { settingsBlocks: {} } })).toThrow(
+      /no host yet/,
+    );
   });
 });
 

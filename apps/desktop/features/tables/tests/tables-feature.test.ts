@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
 import { editorExtensionContributions } from "../../../src/lib/features/editor-extensions";
-import { editorBodyMenuContributions } from "../../../src/lib/features/menus";
+import { menuContributions } from "../../../src/lib/features/menus";
 import { featurePaletteCommands } from "../../../src/lib/features/palette";
 import { createFeatureHost } from "../../../src/lib/features/registry";
 import { isFeatureEnabled, syncBuiltinFeatures } from "../../../src/lib/features/builtin";
@@ -23,7 +23,7 @@ const counts = () => [
   featurePaletteCommands.list().filter((c: { owner: string }) => c.owner === "builtin:tables")
     .length,
   editorExtensionContributions.size,
-  editorBodyMenuContributions.size,
+  menuContributions.size,
 ];
 
 afterEach(async () => {

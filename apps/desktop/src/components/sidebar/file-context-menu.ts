@@ -1,6 +1,6 @@
-import { Menu } from "@tauri-apps/api/menu/menu";
-import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
-import { MenuItem } from "@tauri-apps/api/menu/menuItem";
+import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
+import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
+import type { DirEntry } from "@/types/fs";
 import { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
 
 export { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
@@ -97,26 +97,13 @@ export function buildFileMenuItemsSpec(
 }
 
 /**
- * Build a Tauri native menu and pop it up at the current cursor position.
- * Returns a promise that resolves once the menu has been displayed (the menu
- * itself dismisses through the OS, not via JS).
+ * Pop up the file row menu at the current cursor position (a native menu, dismissed by the OS):
+ * the core items, then what features contributed for `entry` (`sidebar-file`).
  */
-export async function showFileContextMenu(handlers: FileContextMenuHandlers): Promise<void> {
-  const spec = buildFileMenuItemsSpec(handlers);
-
-  const items = await Promise.all(
-    spec.map(async (entry) => {
-      if (entry.kind === "separator") {
-        return PredefinedMenuItem.new({ item: "Separator" });
-      }
-      return MenuItem.new({
-        id: entry.id,
-        text: entry.text,
-        action: entry.action,
-      });
-    }),
-  );
-
-  const menu = await Menu.new({ items });
-  await menu.popup();
+export async function showFileContextMenu(
+  handlers: FileContextMenuHandlers,
+  entry: DirEntry,
+): Promise<void> {
+  const extra = await contributedMenuItems("sidebar-file", entry);
+  await showNativeContextMenu(withContributedItems(buildFileMenuItemsSpec(handlers), extra));
 }

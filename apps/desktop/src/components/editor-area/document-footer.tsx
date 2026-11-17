@@ -1,6 +1,10 @@
 import type { MouseEvent } from "react";
 import { useFileStats } from "@/hooks/use-tabs";
+import { FeaturePane } from "@/components/feature-pane";
 import { useBooleanSetting, useSetSetting } from "@/hooks/use-settings";
+import { useRegistryItems } from "@/hooks/use-registry-items";
+import { byOrder } from "@/lib/features/order";
+import { statusItemContributions } from "@/lib/features/status-items";
 import {
   FOOTER_METRICS,
   showFooterContextMenu,
@@ -25,8 +29,10 @@ export function DocumentFooter({ filePath }: { filePath: string }) {
     "statusbar.show-paragraphs": useBooleanSetting("statusbar.show-paragraphs"),
   };
   const visibleMetrics = FOOTER_METRICS.filter((metric) => visibility[metric.settingKey]);
+  // Items features add (`contributes.statusItems`), after the counts.
+  const statusItems = byOrder(useRegistryItems(statusItemContributions));
 
-  if (visibleMetrics.length === 0) return null;
+  if (visibleMetrics.length === 0 && statusItems.length === 0) return null;
 
   const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -50,6 +56,9 @@ export function DocumentFooter({ filePath }: { filePath: string }) {
           label={metric.footerLabel}
           value={stats[metric.statKey]}
         />
+      ))}
+      {statusItems.map((item) => (
+        <FeaturePane key={item.id} contribution={item} filePath={filePath} />
       ))}
     </div>
   );

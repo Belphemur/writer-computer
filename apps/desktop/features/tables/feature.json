@@ -14,6 +14,7 @@
     "events": []
   },
   "contributes": {
+    "menus": { "editor-body": ["tables.table-submenu"] },
     "commands": [
       {
         "id": "tables.insert",

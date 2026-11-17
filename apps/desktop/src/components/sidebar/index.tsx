@@ -1,9 +1,9 @@
-import { FileBrowser } from "./file-browser";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { PluginRibbon } from "@/components/plugins/plugin-strips";
 import { useWorkspaceGeneration } from "@/hooks/use-workspace";
 import { useAutoRevealActiveFile } from "@/hooks/use-auto-reveal-active-file";
 import { useSidebarSurface } from "./use-sidebar-surface";
+import { SidebarBody } from "./sidebar-body";
 
 export function Sidebar() {
   const workspaceGeneration = useWorkspaceGeneration();
@@ -39,7 +39,7 @@ function SidebarSurface() {
           }}
         />
         <div data-sidebar-surface-content className="min-h-0 flex-1 overflow-hidden">
-          <FileBrowser
+          <SidebarBody
             renamingPath={surface.tree.renamingPath}
             onRenamingPathChange={surface.tree.onRenamingPathChange}
             everythingCollapsed={surface.tree.everythingCollapsed}

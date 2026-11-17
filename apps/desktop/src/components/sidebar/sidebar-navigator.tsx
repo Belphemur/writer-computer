@@ -117,72 +117,75 @@ export function SidebarNavigator({
       const parent = getParentDir(entry.path);
       const relative = getRelativePath(entry.path, root);
 
-      void showFileContextMenu({
-        isPinned: pinnedPaths.includes(entry.path),
-        onOpen: () => {
-          void openFileAndComplete(entry.path);
-        },
-        onOpenInNewTab: () => {
-          void openFileInNewTabAction(entry.path).catch((error: unknown) => {
-            window.alert(
-              `Failed to open in new tab: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          });
-        },
-        onTogglePin: () => {
-          togglePinnedFile(entry.path);
-        },
-        onDuplicate: () => {
-          void (async () => {
-            try {
-              const newPath = await duplicateFile(entry.path);
-              await refreshDirectory(parent);
-              await openFileInNewTabAction(newPath);
-            } catch (error) {
+      void showFileContextMenu(
+        {
+          isPinned: pinnedPaths.includes(entry.path),
+          onOpen: () => {
+            void openFileAndComplete(entry.path);
+          },
+          onOpenInNewTab: () => {
+            void openFileInNewTabAction(entry.path).catch((error: unknown) => {
               window.alert(
-                `Failed to duplicate: ${error instanceof Error ? error.message : String(error)}`,
+                `Failed to open in new tab: ${error instanceof Error ? error.message : String(error)}`,
               );
-            }
-          })();
-        },
-        onCopyRelativePath: () => {
-          void writeText(relative);
-        },
-        onCopyAbsolutePath: () => {
-          void writeText(entry.path);
-        },
-        onReveal: () => {
-          void tauri.revealInFileManager(entry.path).catch((error: unknown) => {
-            window.alert(
-              `Failed to reveal: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          });
-        },
-        onRename: () => {
-          handleRenameFile(entry);
-        },
-        onDelete: () => {
-          void (async () => {
-            const openFileState = getOpenFile(entry.path);
-            if (openFileState?.isDirty) {
-              const confirmed = window.confirm(
-                `"${entry.name}" has unsaved changes. Delete anyway?`,
-              );
-              if (!confirmed) return;
-            }
-            try {
-              await tauri.deleteEntry(entry.path);
-              removePathReferences(entry.path);
-              removePinnedFile(entry.path);
-              await refreshDirectory(parent);
-            } catch (error) {
+            });
+          },
+          onTogglePin: () => {
+            togglePinnedFile(entry.path);
+          },
+          onDuplicate: () => {
+            void (async () => {
+              try {
+                const newPath = await duplicateFile(entry.path);
+                await refreshDirectory(parent);
+                await openFileInNewTabAction(newPath);
+              } catch (error) {
+                window.alert(
+                  `Failed to duplicate: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
+            })();
+          },
+          onCopyRelativePath: () => {
+            void writeText(relative);
+          },
+          onCopyAbsolutePath: () => {
+            void writeText(entry.path);
+          },
+          onReveal: () => {
+            void tauri.revealInFileManager(entry.path).catch((error: unknown) => {
               window.alert(
-                `Failed to delete: ${error instanceof Error ? error.message : String(error)}`,
+                `Failed to reveal: ${error instanceof Error ? error.message : String(error)}`,
               );
-            }
-          })();
+            });
+          },
+          onRename: () => {
+            handleRenameFile(entry);
+          },
+          onDelete: () => {
+            void (async () => {
+              const openFileState = getOpenFile(entry.path);
+              if (openFileState?.isDirty) {
+                const confirmed = window.confirm(
+                  `"${entry.name}" has unsaved changes. Delete anyway?`,
+                );
+                if (!confirmed) return;
+              }
+              try {
+                await tauri.deleteEntry(entry.path);
+                removePathReferences(entry.path);
+                removePinnedFile(entry.path);
+                await refreshDirectory(parent);
+              } catch (error) {
+                window.alert(
+                  `Failed to delete: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
+            })();
+          },
         },
-      });
+        entry,
+      );
     },
     [
       enableContextMenus,

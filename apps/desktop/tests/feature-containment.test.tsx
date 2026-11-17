@@ -24,7 +24,7 @@ import {
   featureEditorExtensions,
 } from "../src/lib/features/editor-extensions";
 import { startFeatureHealthBridge } from "../src/lib/features/health-bridge";
-import { contributedEditorBodyItems } from "../src/lib/features/menus";
+import { contributedMenuItems } from "../src/lib/features/menus";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 import { keybindings } from "../src/lib/keybindings/registry";
 import { tableExtension } from "../features/tables/web/extension";
@@ -150,23 +150,25 @@ describe("the feature host contains a throwing contribution", () => {
 
 describe("a throwing menu item and editor extension", () => {
   it("a throwing menu contribution is skipped, counted, and the others still contribute", async () => {
-    const { editorBodyMenuContributions } = await import("../src/lib/features/menus");
-    editorBodyMenuContributions.add("bad.menu", {
+    const { menuContributions } = await import("../src/lib/features/menus");
+    menuContributions.add("editor-body:bad.menu", {
       owner: "builtin:bad",
+      surface: "editor-body",
       id: "bad.menu",
       items: boom,
     });
-    editorBodyMenuContributions.add("good.menu", {
+    menuContributions.add("editor-body:good.menu", {
       owner: "builtin:good",
+      surface: "editor-body",
       id: "good.menu",
       items: () => [{ label: "ok" } as never],
     });
-    const items = await contributedEditorBodyItems({} as never, {} as never);
+    const items = await contributedMenuItems("editor-body", {} as never, {} as never);
     expect(items).toHaveLength(1);
     expect(health().failures.bad?.boundary).toBe("menu");
     expect(health().failures.good).toBeUndefined();
-    editorBodyMenuContributions.removeOwner("builtin:bad");
-    editorBodyMenuContributions.removeOwner("builtin:good");
+    menuContributions.removeOwner("builtin:bad");
+    menuContributions.removeOwner("builtin:good");
   });
 
   it("a load that rejects, or an extension that cannot build a state, is dropped and counted", async () => {

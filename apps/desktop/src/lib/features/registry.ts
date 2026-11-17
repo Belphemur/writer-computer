@@ -17,21 +17,24 @@ import { assertFeatureId, ownerOf } from "./id";
 import { recordFailure } from "./health";
 import { editorExtensionContributions } from "./editor-extensions";
 import { dockContributions } from "./docks";
-import { editorBodyMenuContributions } from "./menus";
+import { menuContributions, menuKey } from "./menus";
 import { featurePaletteCommands } from "./palette";
 import { settingsSectionContributions } from "./settings-sections";
+import { sidebarActionContributions, sidebarPanelContributions } from "./sidebar";
+import { statusItemContributions } from "./status-items";
 import type {
   Dispose,
   DisposableStore,
   FeatureContext,
   FeatureDefinition,
   FeatureState,
+  MenuSurface,
 } from "./types";
 
 export function defineFeature<T extends FeatureDefinition>(def: T): T {
   assertFeatureId(def.id);
   const c = def.contributes ?? {};
-  for (const point of ["settingsBlocks", "sidebar"] as const) {
+  for (const point of ["settingsBlocks"] as const) {
     if (c[point] !== undefined) {
       throw new Error(`feature ${def.id}: contribution point "${point}" has no host yet`);
     }
@@ -40,8 +43,11 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.commands ?? []),
     ...(c.keybindings ?? []),
     ...(c.editorExtensions ?? []),
-    ...(c.menus?.["editor-body"] ?? []),
+    ...Object.values(c.menus ?? {}).flat(),
     ...(c.docks ?? []),
+    ...(c.sidebarPanels ?? []),
+    ...(c.sidebarActions ?? []),
+    ...(c.statusItems ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
@@ -127,9 +133,12 @@ export function createFeatureHost({
     featurePaletteCommands.removeOwner(ownerOf(id));
     keybindings.removeOwner(ownerOf(id));
     editorExtensionContributions.removeOwner(ownerOf(id));
-    editorBodyMenuContributions.removeOwner(ownerOf(id));
+    menuContributions.removeOwner(ownerOf(id));
     dockContributions.removeOwner(ownerOf(id));
     settingsSectionContributions.removeOwner(ownerOf(id));
+    sidebarPanelContributions.removeOwner(ownerOf(id));
+    sidebarActionContributions.removeOwner(ownerOf(id));
+    statusItemContributions.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -174,11 +183,30 @@ export function createFeatureHost({
         for (const x of def.contributes?.editorExtensions ?? []) {
           editorExtensionContributions.add(x.id, { ...x, owner: o });
         }
-        for (const m of def.contributes?.menus?.["editor-body"] ?? []) {
-          editorBodyMenuContributions.add(m.id, { ...m, owner: o });
+        for (const [surface, items] of Object.entries(def.contributes?.menus ?? {})) {
+          for (const m of items) {
+            menuContributions.add(menuKey(surface as MenuSurface, m.id), {
+              ...m,
+              surface: surface as MenuSurface,
+              owner: o,
+            });
+          }
         }
         for (const d of def.contributes?.docks ?? []) {
           dockContributions.add(d.id, { ...d, owner: o });
+        }
+        for (const p of def.contributes?.sidebarPanels ?? []) {
+          sidebarPanelContributions.add(p.id, { ...p, owner: o });
+        }
+        for (const a of def.contributes?.sidebarActions ?? []) {
+          sidebarActionContributions.add(a.id, {
+            ...a,
+            owner: o,
+            run: () => whenActive(def.id, () => a.run(entry.ctx)),
+          });
+        }
+        for (const x of def.contributes?.statusItems ?? []) {
+          statusItemContributions.add(x.id, { ...x, owner: o });
         }
         const section = def.contributes?.settingsSection;
         if (section) settingsSectionContributions.add(section.id, { ...section, owner: o });

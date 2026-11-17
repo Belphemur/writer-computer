@@ -11,7 +11,7 @@ import {
   editorExtensionContributions,
   featureEditorExtensions,
 } from "../src/lib/features/editor-extensions";
-import { contributedEditorBodyItems, editorBodyMenuContributions } from "../src/lib/features/menus";
+import { contributedMenuItems, menuContributions } from "../src/lib/features/menus";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -96,10 +96,10 @@ describe("editor-body menu contributions", () => {
       }),
     );
     const view = editor();
-    const items = await contributedEditorBodyItems(view, new MouseEvent("contextmenu"));
+    const items = await contributedMenuItems("editor-body", view, new MouseEvent("contextmenu"));
     expect(items).toEqual([{ kind: "separator" }]);
     await host.unregister("menu-a");
-    expect(editorBodyMenuContributions.size).toBe(0);
+    expect(menuContributions.size).toBe(0);
   });
 
   it("rejects a contribution id outside the feature's prefix", () => {

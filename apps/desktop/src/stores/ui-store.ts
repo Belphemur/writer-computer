@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { DEFAULT_SETTINGS_SECTION } from "@/components/settings-panel/settings-sections";
 import { getPreference, setPreference } from "@/lib/preferences";
 
+/** The core Files panel of the left sidebar. */
+export const FILES_PANEL_ID = "files";
+
 export const SETTINGS_SECTION_PREFERENCE = "settings.section";
 
 export type CommandPaletteIntent = "search" | "create-file" | "search-notes";
@@ -13,7 +16,10 @@ interface UIState {
   isPluginBrowserOpen: boolean;
   /** Selected Settings section id (see settings-sections.ts); remembered across restarts. */
   settingsSection: string;
+  /** Selected left sidebar panel id: `files` (core) or a feature's panel; not remembered. */
+  sidebarPanel: string;
 
+  selectSidebarPanel: (id: string) => void;
   selectSettingsSection: (id: string) => void;
   hydrateSettingsSection: () => Promise<void>;
   openPluginBrowser: () => void;
@@ -29,7 +35,9 @@ export const useUIStore = create<UIState>((set, get) => ({
   commandPaletteSearch: "",
   isPluginBrowserOpen: false,
   settingsSection: DEFAULT_SETTINGS_SECTION,
+  sidebarPanel: FILES_PANEL_ID,
 
+  selectSidebarPanel: (id) => set({ sidebarPanel: id }),
   selectSettingsSection: (id) => {
     if (get().settingsSection === id) return;
     set({ settingsSection: id });

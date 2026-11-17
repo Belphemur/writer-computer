@@ -1,6 +1,5 @@
-import { Menu } from "@tauri-apps/api/menu/menu";
-import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
-import { MenuItem } from "@tauri-apps/api/menu/menuItem";
+import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
+import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
 
 export type BulkMenuActionId = "delete" | "copy-relative-paths" | "copy-absolute-paths";
 
@@ -39,25 +38,14 @@ export function buildBulkMenuItemsSpec(
   ];
 }
 
+/** Pop up the multi-selection menu: the core items, then what features contributed for `paths`
+ *  (`sidebar-bulk`). */
 export async function showBulkContextMenu(
   handlers: BulkContextMenuHandlers,
-  count: number,
+  paths: readonly string[],
 ): Promise<void> {
-  const spec = buildBulkMenuItemsSpec(handlers, count);
-
-  const items = await Promise.all(
-    spec.map(async (entry) => {
-      if (entry.kind === "separator") {
-        return PredefinedMenuItem.new({ item: "Separator" });
-      }
-      return MenuItem.new({
-        id: entry.id,
-        text: entry.text,
-        action: entry.action,
-      });
-    }),
+  const extra = await contributedMenuItems("sidebar-bulk", paths);
+  await showNativeContextMenu(
+    withContributedItems(buildBulkMenuItemsSpec(handlers, paths.length), extra),
   );
-
-  const menu = await Menu.new({ items });
-  await menu.popup();
 }

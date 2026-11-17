@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { generatedFeatureSection } from "@/components/settings-panel/generated-feature-section";
 import type { FeatureNavSection } from "@/components/settings-panel/settings-sections";
 import { FEATURE_MANIFESTS, isFeatureEnabled } from "@/lib/features/manifests";
@@ -7,6 +7,7 @@ import { featureOfOwner } from "@/lib/features/id";
 import { FEATURE_SETTINGS } from "@/lib/settings-schema";
 import { isOffForSession, useFeatureHealth } from "@/stores/feature-health-store";
 import { useAllSettings } from "@/hooks/use-settings";
+import { useRegistryItems } from "@/hooks/use-registry-items";
 
 /** The Settings sidebar pages of the features that are on: the pages features contribute (the
  *  registry holds them only while the feature is registered), plus a generated page for each
@@ -15,12 +16,7 @@ export function useFeatureSections(): FeatureNavSection[] {
   const settings = useAllSettings();
   const safeMode = useFeatureHealth((s) => s.safeMode);
   const sessionOff = useFeatureHealth((s) => s.sessionOff);
-  const [contributed, setContributed] = useState(() => settingsSectionContributions.list());
-  useEffect(() => {
-    const sync = () => setContributed(settingsSectionContributions.list());
-    sync();
-    return settingsSectionContributions.subscribe(sync);
-  }, []);
+  const contributed = useRegistryItems(settingsSectionContributions);
 
   return useMemo(() => {
     const own = new Set(contributed.map((c) => featureOfOwner(c.owner)));

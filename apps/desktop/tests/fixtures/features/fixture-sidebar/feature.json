@@ -1,0 +1,17 @@
+{
+  "id": "fixture-sidebar",
+  "name": "Fixture sidebar",
+  "version": "0.0.0",
+  "description": "Test-only feature that contributes to the sidebar and the footer. Never shipped.",
+  "enabledByDefault": true,
+  "contributes": {
+    "sidebarPanels": ["fixture-sidebar.panel-late", "fixture-sidebar.panel-early"],
+    "sidebarActions": ["fixture-sidebar.action"],
+    "statusItems": ["fixture-sidebar.status"],
+    "menus": {
+      "sidebar-file": ["fixture-sidebar.file-item"],
+      "sidebar-folder": ["fixture-sidebar.folder-item"],
+      "sidebar-bulk": ["fixture-sidebar.bulk-item"]
+    }
+  }
+}

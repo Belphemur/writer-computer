@@ -170,6 +170,27 @@ fn check_secret_declarations(m: &Manifest) -> Result<(), String> {
     Ok(())
 }
 
+/// The id lists of `contributes` (`docks`, `sidebarPanels`, `sidebarActions`, `statusItems`,
+/// `menus.<surface>`): every id starts with `<feature id>.` and no id repeats within a list.
+fn check_contribution_ids(m: &Manifest) -> Result<(), String> {
+    let id = &m.id;
+    let prefix = format!("{id}.");
+    for (point, ids) in m.contributes.id_lists() {
+        let mut seen = BTreeSet::new();
+        for entry in ids {
+            if !entry.starts_with(&prefix) || entry.len() == prefix.len() {
+                return Err(format!(
+                    "{id}: {point} id {entry:?} must start with \"{prefix}\""
+                ));
+            }
+            if !seen.insert(entry) {
+                return Err(format!("{id}: duplicate {point} id {entry:?}"));
+            }
+        }
+    }
+    Ok(())
+}
+
 const FRAGMENT_FIELDS: [&str; 6] = ["key", "label", "description", "category", "type", "default"];
 
 /// A feature's settings fragment: every key starts with `<id>.`, every entry has the fields the
@@ -533,6 +554,7 @@ fn every_shipped_manifest_declares_well_formed_secrets() {
     assert!(!shipped.is_empty());
     for m in shipped {
         check_secret_declarations(&m).unwrap();
+        check_contribution_ids(&m).unwrap();
     }
     let fixture: Manifest = serde_json::from_value(read_json(
         &crate_dir().join("tests/fixtures/features/fixture-secrets/feature.json"),
@@ -568,4 +590,55 @@ fn a_secret_key_must_be_namespaced_unique_and_labelled() {
     assert!(check_secret_declarations(&secret_manifest(json!([ok, ok])))
         .unwrap_err()
         .contains("duplicate"));
+}
+
+fn contribution_manifest(contributes: Value) -> Manifest {
+    serde_json::from_value(json!({ "id": "demo", "name": "Demo", "contributes": contributes }))
+        .unwrap()
+}
+
+#[test]
+fn the_sidebar_fixture_declares_every_new_contribution_point() {
+    let fixture: Manifest = serde_json::from_value(read_json(
+        &crate_dir().join("../tests/fixtures/features/fixture-sidebar/feature.json"),
+    ))
+    .unwrap();
+    check_contribution_ids(&fixture).unwrap();
+    let c = &fixture.contributes;
+    assert_eq!(c.sidebar_panels.len(), 2);
+    assert_eq!(c.sidebar_actions.len(), 1);
+    assert_eq!(c.status_items.len(), 1);
+    assert_eq!(
+        c.menus.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["sidebar-bulk", "sidebar-file", "sidebar-folder"]
+    );
+}
+
+#[test]
+fn a_contribution_id_must_be_namespaced_and_unique() {
+    let ok = json!({
+        "docks": ["demo.dock"],
+        "sidebarPanels": ["demo.panel"],
+        "sidebarActions": ["demo.action"],
+        "statusItems": ["demo.status"],
+        "menus": { "sidebar-file": ["demo.menu"], "sidebar-folder": ["demo.menu"] }
+    });
+    check_contribution_ids(&contribution_manifest(ok)).unwrap();
+
+    for point in ["docks", "sidebarPanels", "sidebarActions", "statusItems"] {
+        let wrong = contribution_manifest(json!({ point: ["other.thing"] }));
+        assert!(check_contribution_ids(&wrong)
+            .unwrap_err()
+            .contains("must start with"));
+        let bare = contribution_manifest(json!({ point: ["demo."] }));
+        assert!(check_contribution_ids(&bare).is_err());
+        let twice = contribution_manifest(json!({ point: ["demo.a", "demo.a"] }));
+        assert!(check_contribution_ids(&twice)
+            .unwrap_err()
+            .contains("duplicate"));
+    }
+    let menu = contribution_manifest(json!({ "menus": { "sidebar-bulk": ["x.y"] } }));
+    assert!(check_contribution_ids(&menu)
+        .unwrap_err()
+        .contains("menus.sidebar-bulk"));
 }

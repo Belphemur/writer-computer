@@ -1,6 +1,6 @@
-import { Menu } from "@tauri-apps/api/menu/menu";
-import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
-import { MenuItem } from "@tauri-apps/api/menu/menuItem";
+import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
+import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
+import type { DirEntry } from "@/types/fs";
 import { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
 
 export type FolderMenuActionId =
@@ -74,24 +74,13 @@ export function buildFolderMenuItemsSpec(
 }
 
 /**
- * Build a Tauri native menu and pop it up at the current cursor position.
+ * Pop up the folder row menu: the core items, then what features contributed for `entry`
+ * (`sidebar-folder`).
  */
-export async function showFolderContextMenu(handlers: FolderContextMenuHandlers): Promise<void> {
-  const spec = buildFolderMenuItemsSpec(handlers);
-
-  const items = await Promise.all(
-    spec.map(async (entry) => {
-      if (entry.kind === "separator") {
-        return PredefinedMenuItem.new({ item: "Separator" });
-      }
-      return MenuItem.new({
-        id: entry.id,
-        text: entry.text,
-        action: entry.action,
-      });
-    }),
-  );
-
-  const menu = await Menu.new({ items });
-  await menu.popup();
+export async function showFolderContextMenu(
+  handlers: FolderContextMenuHandlers,
+  entry: DirEntry,
+): Promise<void> {
+  const extra = await contributedMenuItems("sidebar-folder", entry);
+  await showNativeContextMenu(withContributedItems(buildFolderMenuItemsSpec(handlers), extra));
 }

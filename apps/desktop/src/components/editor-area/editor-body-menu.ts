@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { writeText, readText } from "@tauri-apps/plugin-clipboard-manager";
-import { contributedEditorBodyItems } from "@/lib/features/menus";
+import { contributedMenuItems } from "@/lib/features/menus";
 import { buildEditorBodyMenuItemsSpec, showNativeContextMenu } from "./editor-context-menu";
 import { followLink, linkHrefAtPos } from "./link-navigation";
 import { runEditorCommand } from "./markdown-formatting";
@@ -22,7 +22,7 @@ export function editorBodyContextMenuExtension(
       const filePath = getFilePath();
 
       // Features may move the caret (a table puts it in the clicked cell) and add items.
-      void contributedEditorBodyItems(view, event).then((extra) =>
+      void contributedMenuItems("editor-body", view, event).then((extra) =>
         showNativeContextMenu(
           buildEditorBodyMenuItemsSpec(
             {
