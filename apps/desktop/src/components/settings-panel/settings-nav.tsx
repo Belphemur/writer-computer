@@ -16,11 +16,14 @@ export function SettingsNav({
   groups,
   selectedId,
   onSelect,
+  onIntent,
   footer,
 }: {
   groups: readonly NavGroup[];
   selectedId: string;
   onSelect: (id: string) => void;
+  /** Hover or focus on an item: the panel preloads that page. */
+  onIntent?: (id: string) => void;
   footer?: { label: string; onClick: () => void };
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -78,6 +81,8 @@ export function SettingsNav({
                   aria-controls={SETTINGS_PANEL_ID}
                   tabIndex={selected ? 0 : -1}
                   onClick={() => onSelect(item.id)}
+                  onPointerEnter={() => onIntent?.(item.id)}
+                  onFocus={() => onIntent?.(item.id)}
                   className="shrink-0 truncate rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-subtle-strong)] hover:text-[var(--text-primary)] aria-selected:bg-[var(--surface-card)] aria-selected:text-[var(--text-primary)]"
                 >
                   {item.label}

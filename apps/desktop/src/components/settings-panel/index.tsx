@@ -6,7 +6,8 @@ import {
   usePluginUpdateCount,
   usePluginsSnapshot,
 } from "@/hooks/use-plugins";
-import { useFeatureSections } from "@/hooks/use-feature-sections";
+import { useFeatureSections, usePreloadFeatureSections } from "@/hooks/use-feature-sections";
+import { preloadSections } from "@/lib/features/section-loader";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useUIStore } from "@/stores/ui-store";
 import { FeatureSectionContent } from "./feature-section-content";
@@ -22,6 +23,7 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
   const openBrowser = useOpenPluginBrowser();
   const updateCount = usePluginUpdateCount();
   const featureSections = useFeatureSections();
+  usePreloadFeatureSections(featureSections, isActive);
   const selectedId = useUIStore((s) => s.settingsSection);
   const selectSection = useUIStore((s) => s.selectSettingsSection);
   const hydrateSection = useUIStore((s) => s.hydrateSettingsSection);
@@ -62,6 +64,9 @@ export function SettingsPanel({ isActive }: { isActive: boolean }) {
           groups={groups}
           selectedId={current?.id ?? ""}
           onSelect={selectSection}
+          onIntent={(id) =>
+            preloadSections(featureSections.filter((f) => f.id === id).map((f) => f.load))
+          }
           footer={root ? { label: "Browse plugins…", onClick: openBrowser } : undefined}
         />
         <div className="min-h-0 min-w-0 flex-1">

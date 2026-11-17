@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { preloadSections } from "@/lib/features/section-loader";
 import { generatedFeatureSection } from "@/components/settings-panel/generated-feature-section";
 import type { FeatureNavSection } from "@/components/settings-panel/settings-sections";
 import { FEATURE_MANIFESTS, isFeatureEnabled } from "@/lib/features/manifests";
@@ -28,4 +29,12 @@ export function useFeatureSections(): FeatureNavSection[] {
     ).flatMap((m) => generatedFeatureSection(m, FEATURE_SETTINGS[m.id] ?? []) ?? []);
     return [...contributed, ...generated];
   }, [contributed, settings, safeMode, sessionOff]);
+}
+
+/** Preloads the chunk of every page in `sections` (the features that are on) while Settings is
+ *  showing, so selecting one renders without a wait. */
+export function usePreloadFeatureSections(sections: readonly FeatureNavSection[], active: boolean) {
+  useEffect(() => {
+    if (active) preloadSections(sections.map((s) => s.load));
+  }, [sections, active]);
 }

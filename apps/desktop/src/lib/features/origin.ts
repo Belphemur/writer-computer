@@ -4,7 +4,8 @@
 // a feature item by definition) and calls `withFeatureDivider`; it never decides by itself
 // whether a divider is due. Spec: SPECs/builtin-plugins-spec.md section 6.5.
 
-/** The name of the group feature pages and items are gathered under (Settings sidebar). */
+/** The label of the group feature pages are gathered under (Settings sidebar); the nav draws it
+ *  like every group label, from `SETTINGS_GROUPS`. */
 export const FEATURE_GROUP_LABEL = "Features";
 
 /** `core`, then `divider`, then `feature`; the divider only when both lists are non-empty. */
