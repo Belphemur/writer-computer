@@ -9,6 +9,8 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 
 import {
   AUTO_TITLE_LONG_FIRST_MESSAGE_CHARS,
+  NOTHING_TO_TITLE_TEXT,
+  REGENERATE_REFUSAL_TEXT,
   applyTitleSummary,
   completedExchanges,
   shouldAutoTitle,
@@ -18,6 +20,7 @@ import type { ChatHistoryClient } from "../src/lib/agent/chat-history-client";
 import { emptyMeta, titleSourceOf, type ChatNoteMessage } from "../src/lib/agent/chat-note";
 import type { ChatSummary } from "../src/lib/agent/events";
 import { createMockAgentClient, type Goldens } from "../src/lib/agent/mock-client";
+import { parseWriterCommand } from "../src/lib/agent/writer-commands";
 import { createChat } from "../src/lib/agent/reduce";
 import {
   configureAgentRuntimeForTests,
@@ -361,5 +364,87 @@ describe("auto title in the store", () => {
     release({ ...SUMMARY, chatId: b.id, title: "Late title", titleSource: "auto" });
     await new Promise((r) => setTimeout(r, 10));
     expect(get().chats[b.id]).toBeUndefined();
+  });
+});
+
+describe("/regenerate-title: a Writer command run locally", () => {
+  /** The store keeps its own copy of the client's methods, so the spy must be installed through it. */
+  const spySend = (mock: ReturnType<typeof createMockAgentClient>) => {
+    const send = vi.spyOn(mock, "send");
+    configureAgentRuntimeForTests({ ...mock, send } as typeof mock);
+    return send;
+  };
+  const done = (title: string) =>
+    vi.fn(async (chatId: string) => ({
+      status: "done" as const,
+      summary: { ...SUMMARY, chatId, title, titleSource: "auto" as const },
+    }));
+
+  it("regenerates the active chat without a CLI turn, a user card or a note entry", async () => {
+    const client = history({ regenerateTitle: done("Fresh words") });
+    const { id, mock } = await chatWithExchanges(client, 1);
+    const send = spySend(mock);
+    const turns = get().chats[id]!.turns.length;
+    const messages = get().notes[id]!.messages.length;
+    get().setDraft(id, { text: "/regenerate-title", mentions: [], parked: [] });
+    await get().sendMessage("/regenerate-title");
+    expect(client.regenerateTitle).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(get().chats[id]!.turns).toHaveLength(turns);
+    expect(get().notes[id]!.messages).toHaveLength(messages);
+    expect(get().chats[id]!.title).toBe("Fresh words");
+    expect(get().chats[id]!.localNotice).toBe("Title regenerated: Fresh words");
+    expect(get().drafts[id]!.text).toBe("");
+  });
+
+  it("accepts arguments, and the next user turn clears the notice", async () => {
+    const client = history({ regenerateTitle: done("Again") });
+    const { id, mock } = await chatWithExchanges(client, 1);
+    await get().sendMessage("  /Regenerate-Title please ");
+    expect(get().chats[id]!.localNotice).toBe("Title regenerated: Again");
+    await exchange(mock, id, "carry on");
+    expect(get().chats[id]!.localNotice).toBeNull();
+  });
+
+  it("shows the refusal reason, and the existing reason for a chat with no content", async () => {
+    const client = history({
+      regenerateTitle: vi.fn(async () => ({
+        status: "refused" as const,
+        reason: "no-reply" as const,
+      })),
+    });
+    const { id } = await chatWithExchanges(client, 1);
+    await get().sendMessage("/regenerate-title");
+    expect(get().chats[id]!.localNotice).toBe(REGENERATE_REFUSAL_TEXT["no-reply"]);
+    const empty = await chatWithExchanges(history(), 0);
+    await get().sendMessage("/regenerate-title");
+    expect(get().chats[empty.id]!.localNotice).toBe(NOTHING_TO_TITLE_TEXT);
+  });
+
+  it("a thrown error is the notice, not an unhandled rejection", async () => {
+    const client = history({
+      regenerateTitle: vi.fn(async () => {
+        throw new Error("boom");
+      }),
+    });
+    const { id } = await chatWithExchanges(client, 1);
+    await get().sendMessage("/regenerate-title");
+    expect(get().chats[id]!.localNotice).toContain("boom");
+  });
+
+  it("an unknown /foo still goes to Claude", async () => {
+    const client = history({ regenerateTitle: done("x") });
+    const { mock } = await chatWithExchanges(client, 0);
+    const send = spySend(mock);
+    await get().sendMessage("/foo bar");
+    expect(send.mock.calls.map((c) => c[0].text)).toEqual(["/foo bar"]);
+    expect(client.regenerateTitle).not.toHaveBeenCalled();
+  });
+
+  it("only a whole message at its start is a Writer command", () => {
+    expect(parseWriterCommand("/regenerate-title")?.command.name).toBe("regenerate-title");
+    expect(parseWriterCommand("/regenerate-title  now")?.args).toBe("now");
+    for (const t of ["please /regenerate-title", "/regenerate-titles", "/foo", "regenerate-title"])
+      expect(parseWriterCommand(t)).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { parseWriterCommand } from "@/lib/agent/writer-commands";
 import { create } from "zustand";
 import {
   createEventPump,
@@ -884,6 +885,21 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const chat = chatId ? get().chats[chatId] : null;
       const text = rawText.trim();
       if (!chatId || !chat || !text || isComposerDisabled(chat)) return;
+      const writer = parseWriterCommand(text);
+      if (writer) {
+        // Writer's own command: runs here, never reaches Claude, adds no user turn or note entry.
+        get().setDraft(chatId, { text: "", mentions: [], parked: [] });
+        const notice = await writer.command.run({
+          chatId,
+          chat,
+          args: writer.args,
+          regenerateTitle: regenerateChatTitle,
+        });
+        set((s) =>
+          s.chats[chatId] ? withChat(s, chatId, { ...s.chats[chatId]!, localNotice: notice }) : s,
+        );
+        return;
+      }
       const context = contextForSend(get().drafts[chatId] ?? EMPTY_DRAFT, text);
       // Clear the draft now; the mentions are consumed, the active-note choice persists.
       get().setDraft(chatId, { text: "", mentions: [], parked: [] });

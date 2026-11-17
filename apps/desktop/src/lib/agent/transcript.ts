@@ -161,6 +161,9 @@ export type Chat = {
   error: ChatError | null;
   /** Shown as a banner row ("Connection lost, resuming"). */
   banner: string | null;
+  /** The result line of a Writer slash command (`writer-commands.ts`): local to this window, never
+   *  saved to the chat note; the next user turn clears it. */
+  localNotice: string | null;
   rateLimit: { status: string; resetsAt: number | null } | null;
   /** Context window of the model from the last `usage{scope:"turn"}`. */
   contextWindow: number | null;

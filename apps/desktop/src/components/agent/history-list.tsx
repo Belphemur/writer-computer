@@ -5,6 +5,7 @@ import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { regenerateAgentChatTitle } from "@/hooks/agent-api";
 import {
   canRegenerateTitle,
+  NOTHING_TO_TITLE_TEXT,
   REGENERATE_REFUSAL_TEXT,
   type RegenerateOutcome,
 } from "@/lib/agent/auto-title";
@@ -92,11 +93,7 @@ function rowActions(p: RowProps): RowAction[] {
       label: "Regenerate title",
       onSelect: p.onRegenerate,
       disabled: regenerating || noTitleInput,
-      hint: regenerating
-        ? "Generating…"
-        : noTitleInput
-          ? "Nothing to title yet: the chat has no reply"
-          : undefined,
+      hint: regenerating ? "Generating…" : noTitleInput ? NOTHING_TO_TITLE_TEXT : undefined,
       inline: false,
     },
     { id: "copy", label: "Copy as markdown", onSelect: p.onCopy, inline: true },

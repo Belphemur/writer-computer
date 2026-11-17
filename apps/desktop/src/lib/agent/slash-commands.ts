@@ -2,7 +2,7 @@
  * The composer's `/` menu: where the rows come from, how they merge and how typing filters them.
  * Pure; the composer owns the UI and the store owns the disk lookup.
  *
- * Sources, merged and de-duplicated by name (first wins):
+ * Writer's own commands (`writer-commands.ts`) come first, marked "Writer". Other sources, merged and de-duplicated by name (first wins):
  *  1. skills on disk in the chat's project and the vault (`.claude/skills`, `.agents/skills`),
  *     read by `agent_list_skills`, with their descriptions;
  *  2. what the CLI reports in `session-started`: `slashCommands` (built-ins such as /compact,
@@ -13,11 +13,12 @@
  * mode, so none is listed (the CLI's own list appears after the first turn).
  */
 import type { DiskSkill } from "./events";
+import { WRITER_COMMANDS, findWriterCommand } from "./writer-commands";
 import { prepare, prepareQuery, matchPath } from "@/lib/search-rank";
 
 /** Where a skill on disk lives (`DiskSkill.scope`, a plain string on the wire). */
 type DiskScope = "project" | "vault" | "global";
-export type SlashSource = DiskScope | "cli";
+export type SlashSource = DiskScope | "cli" | "writer";
 
 export type SlashItem = {
   /** Without the leading slash. */
@@ -32,13 +33,20 @@ export type SlashItem = {
   /** True when the CLI listed it in `session-started` (registered for this chat), false when it
    *  did not, null before any session has started (nothing to compare with). */
   loaded: boolean | null;
+  /** A skill or CLI command with the name of a Writer command: still listed, but sending the name
+   *  runs the Writer command (`writer-commands.ts`). */
+  shadowed?: boolean;
 };
+
+/** One row's identity in the menu: a name alone is ambiguous when a skill shares a Writer name. */
+export const slashKey = (i: Pick<SlashItem, "name" | "source">) => `${i.source}:${i.name}`;
 
 export const SOURCE_LABEL: Record<SlashSource, string> = {
   project: "project",
   vault: "vault",
   global: "global",
   cli: "from Claude",
+  writer: "Writer",
 };
 
 /** Short, accurate status for a row (see the spec: "loaded" = in the CLI's init `skills` list). */
@@ -74,8 +82,18 @@ export function mergeSlashItems(
     const key = item.name.toLowerCase();
     if (!item.name || seen.has(key)) return;
     seen.add(key);
-    out.push(item);
+    out.push(findWriterCommand(key) ? { ...item, shadowed: true } : item);
   };
+  // Writer's own commands first; they stay out of `seen` so a same-named skill is listed too.
+  for (const c of WRITER_COMMANDS)
+    out.push({
+      name: c.name,
+      description: c.description,
+      kind: "command",
+      source: "writer",
+      path: null,
+      loaded: null,
+    });
   // Precedence project > vault > global (the list arrives in that order, then by name).
   const rank: Record<DiskScope, number> = { project: 0, vault: 1, global: 2 };
   // The wire carries the scope as a plain string; an unknown one (a newer backend) is listed last as global.

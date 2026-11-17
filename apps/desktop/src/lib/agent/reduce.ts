@@ -39,6 +39,7 @@ export function createChat(chatId: ChatId, opts: { projectPath?: string | null }
     pendingPermissions: [],
     error: null,
     banner: null,
+    localNotice: null,
     rateLimit: null,
     contextWindow: null,
     reportedModel: null,
@@ -521,6 +522,7 @@ export function appendUserTurn(
     state: live ? "running" : "starting",
     error: null,
     banner: null,
+    localNotice: null,
   };
 }
 

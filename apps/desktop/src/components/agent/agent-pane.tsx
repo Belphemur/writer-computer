@@ -139,7 +139,7 @@ export function AgentPane() {
           <HistorySlot />
         ) : chat ? (
           <>
-            {chat.turns.length === 0 && !chat.error ? (
+            {chat.turns.length === 0 && !chat.error && !chat.localNotice ? (
               <EmptyState chatId={chat.chatId} />
             ) : (
               <Transcript chat={chat} />

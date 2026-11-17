@@ -81,3 +81,6 @@ export const REGENERATE_REFUSAL_TEXT: Record<RegenerateRefusal, string> = {
  *  the assistant reply, which only Rust can check; it answers `no-reply` when there is none). */
 export const canRegenerateTitle = (chat: Pick<ChatSummary, "turnCount">): boolean =>
   chat.turnCount > 0;
+
+/** Why there is nothing to title: shown as the disabled hint in history and by `/regenerate-title`. */
+export const NOTHING_TO_TITLE_TEXT = "Nothing to title yet: the chat has no reply";

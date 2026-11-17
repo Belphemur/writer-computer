@@ -8,6 +8,7 @@
 import { File02Icon, Folder01Icon } from "@hugeicons/core-free-icons";
 import type { ContextRef } from "./events";
 import { isActiveNoteToken, isTypedPath, refForToken } from "./mentions";
+import { findWriterCommand } from "./writer-commands";
 import { tokenizeMessage, type MessageSegment } from "./trigger";
 
 export type PillKind = "note" | "folder" | "active-note" | "skill";
@@ -27,6 +28,9 @@ export type PillModel = {
   /** True: an attached ref or a known skill backs the token, so it is a finished reference. A
    *  token that is merely path-shaped (resolved at send) or unbacked is text while it is typed. */
   attached: boolean;
+  /** A Writer command at the start of the message (`writer-commands.ts`): Writer runs it, Claude
+   *  never sees it. Marked "Writer" on the pill. */
+  writer?: boolean;
 };
 
 export type PillContext = {
@@ -42,6 +46,17 @@ const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1).replace(/\.md$/i, 
 
 export function pillFor(seg: TokenSegment, ctx: PillContext): PillModel {
   if (seg.kind === "slash") {
+    if (seg.atStart && findWriterCommand(seg.name))
+      return {
+        kind: "skill",
+        raw: seg.raw,
+        label: seg.raw,
+        title: "Writer command: runs in Writer, not sent to Claude",
+        target: null,
+        resolved: true,
+        attached: true,
+        writer: true,
+      };
     const resolved = !ctx.skills || ctx.skills.has(seg.name.toLowerCase());
     return {
       kind: "skill",
@@ -115,8 +130,9 @@ export function pillRanges(text: string, ctx: PillContext): PillRange[] {
 }
 
 export function pillAriaLabel(m: PillModel): string {
-  const what =
-    m.kind === "skill"
+  const what = m.writer
+    ? "Writer command"
+    : m.kind === "skill"
       ? "Skill"
       : m.kind === "folder"
         ? "Folder"
@@ -133,7 +149,8 @@ export const samePill = (a: PillModel, b: PillModel) =>
   a.title === b.title &&
   a.target === b.target &&
   a.resolved === b.resolved &&
-  a.attached === b.attached;
+  a.attached === b.attached &&
+  a.writer === b.writer;
 
 type IconData = readonly (readonly [string, Record<string, string | number>])[];
 const ICONS: Record<PillKind, IconData | null> = {
@@ -192,5 +209,12 @@ export function createPillElement(
   label.className = "agent-pill-label";
   label.textContent = model.label;
   el.appendChild(label);
+  if (model.writer) {
+    el.dataset.pillWriter = "true";
+    const mark = doc.createElement("span");
+    mark.className = "agent-pill-mark";
+    mark.textContent = "Writer";
+    el.appendChild(mark);
+  }
   return el;
 }

@@ -44,6 +44,7 @@ import {
   SOURCE_LABEL,
   loadedLabel,
   filterSlash,
+  slashKey,
   mergeSlashItems,
 } from "@/lib/agent/slash-commands";
 import { applyTrigger, findTrigger, type Trigger } from "@/lib/agent/trigger";
@@ -121,19 +122,21 @@ export function Composer({
     [allSlash, menu],
   );
   const slashSuggestions: Suggestion[] = slashItems.map((i) => ({
-    id: i.name,
+    id: slashKey(i),
     label: `/${i.name}`,
-    detail: i.description || (i.kind === "skill" ? "Skill" : "Command"),
+    detail: i.shadowed
+      ? "Hidden by the Writer command of the same name"
+      : i.description || (i.kind === "skill" ? "Skill" : "Command"),
     icon: "/",
     tag: SOURCE_LABEL[i.source],
     status: loadedLabel(i) || undefined,
   }));
-  const slashEmpty =
-    allSlash.length > 0
-      ? "No matching commands"
-      : disk?.status === "loading"
-        ? "Loading skills…"
-        : SLASH_EMPTY_TEXT;
+  // Writer's own rows are always there, so "nothing found" is about the skills and CLI commands.
+  const slashEmpty = allSlash.some((i) => i.source !== "writer")
+    ? "No matching commands"
+    : disk?.status === "loading"
+      ? "Loading skills…"
+      : SLASH_EMPTY_TEXT;
 
   // Images: paste, a browser drag, Finder files (OS drop) and vault files (sidebar drag) become
   // image chips; one that is refused (type, size) shows a notice that goes away by itself.
@@ -287,7 +290,8 @@ export function Composer({
 
   function pickSlash(s: Suggestion) {
     if (menu?.kind !== "slash") return;
-    replaceToken(menu.trigger, `/${s.id}`);
+    const item = slashItems.find((i) => slashKey(i) === s.id);
+    if (item) replaceToken(menu.trigger, `/${item.name}`);
   }
 
   // Shortcuts (`@activenote`) come first, then folders and notes from the search.

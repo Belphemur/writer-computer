@@ -73,6 +73,11 @@ export function Transcript({ chat }: { chat: Chat }) {
             {chat.banner}
           </p>
         )}
+        {chat.localNotice && (
+          <p role="status" data-agent-local-notice className="px-1 text-[12.5px] text-text-muted">
+            {chat.localNotice}
+          </p>
+        )}
         {chat.state === "starting" && !last?.blocks.length && (
           <p role="status" className="px-1 text-[12.5px] text-text-muted">
             Starting Claude…

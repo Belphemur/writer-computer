@@ -28,6 +28,7 @@ import {
   loadedLabel,
   filterSlash,
   mergeSlashItems,
+  slashKey,
 } from "../src/lib/agent/slash-commands";
 import { configureAgentRuntimeForTests, useAgentStore } from "../src/stores/agent-store";
 import { goldens } from "./helpers/agent-goldens";
@@ -68,6 +69,7 @@ describe("slash menu logic", () => {
       skills: ["user-skill", "writer-cli"],
     });
     expect(items.map((i) => i.name)).toEqual([
+      "regenerate-title",
       "release-notes",
       "writer-cli",
       "writer-search",
@@ -77,6 +79,7 @@ describe("slash menu logic", () => {
       "context",
     ]);
     expect(items.map((i) => i.source)).toEqual([
+      "writer",
       "project",
       "vault",
       "vault",
@@ -85,7 +88,7 @@ describe("slash menu logic", () => {
       "cli",
       "cli",
     ]);
-    expect(items[1]).toMatchObject({ kind: "skill", description: "Use the writer command line" });
+    expect(items[2]).toMatchObject({ kind: "skill", description: "Use the writer command line" });
     expect(items.find((i) => i.name === "user-skill")).toMatchObject({
       source: "cli",
       kind: "skill",
@@ -104,8 +107,11 @@ describe("slash menu logic", () => {
       path: d,
     });
     const items = mergeSlashItems([mk("global", "g"), mk("vault", "v"), mk("project", "p")], null);
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ source: "project", description: "p" });
+    expect(items.filter((i) => i.name === "dup")).toHaveLength(1);
+    expect(items.find((i) => i.name === "dup")).toMatchObject({
+      source: "project",
+      description: "p",
+    });
   });
 
   it("loaded means the CLI listed it for this chat; null before any session", () => {
@@ -137,13 +143,28 @@ describe("slash menu logic", () => {
     expect(items.every((i) => i.loaded === null)).toBe(true);
   });
 
-  it("lists nothing before any source exists (no invented built-ins)", () => {
-    expect(mergeSlashItems([], null)).toEqual([]);
+  it("before any other source exists only Writer's own commands are listed (no invented built-ins)", () => {
+    expect(mergeSlashItems([], null).map((i) => [i.name, i.source])).toEqual([
+      ["regenerate-title", "writer"],
+    ]);
+  });
+
+  it("a skill or CLI command named like a Writer command is still listed, with its source, marked shadowed", () => {
+    const disk: DiskSkill[] = [
+      { name: "regenerate-title", description: "mine", scope: "vault", path: "v/SKILL.md" },
+    ];
+    const items = mergeSlashItems(disk, { slashCommands: ["Regenerate-Title"], skills: [] });
+    const rows = items.filter((i) => i.name.toLowerCase() === "regenerate-title");
+    expect(rows.map((r) => [r.source, r.shadowed ?? false])).toEqual([
+      ["writer", false],
+      ["vault", true],
+    ]);
+    expect(new Set(rows.map(slashKey)).size).toBe(rows.length);
   });
 
   it("filters fuzzily on the name with the vault ranker, then by description words", () => {
     const items = mergeSlashItems(DISK, { slashCommands: ["compact"], skills: [] });
-    expect(filterSlash(items, "").map((i) => i.name)).toHaveLength(5);
+    expect(filterSlash(items, "").map((i) => i.name)).toHaveLength(6);
     expect(filterSlash(items, "search")[0]!.name).toBe("writer-search");
     expect(filterSlash(items, "wcli").map((i) => i.name)).toEqual(["writer-cli"]);
     expect(filterSlash(items, "relnot").map((i) => i.name)).toContain("release-notes");
@@ -202,6 +223,7 @@ describe("the / menu in the composer", () => {
     type(ta(), "/");
     await flush(5);
     expect(rows()).toEqual([
+      "//regenerate-titleWrite a new title for this chatWriter",
       "//release-notesDraft bullets for a releaseproject",
       "//writer-cliUse the writer command linevault",
       "//writer-searchSearch the vault from the shellvault",
@@ -224,6 +246,7 @@ describe("the / menu in the composer", () => {
     expect(useAgentStore.getState().chats[id]!.turns).toHaveLength(0);
     type(ta(), "/");
     await flush(5);
+    key(ta(), "ArrowDown");
     key(ta(), "ArrowDown");
     key(ta(), "Tab");
     expect(useAgentStore.getState().drafts[id]!.text).toBe("/writer-cli ");
@@ -301,9 +324,58 @@ describe("the / menu in the composer", () => {
     expect($("[role=listbox]")).toBeNull();
   });
 
+  it("lists the Writer command first, marked Writer; picking it inserts a Writer pill", async () => {
+    type(ta(), "/regen");
+    await flush(5);
+    expect(rows()).toEqual(["//regenerate-titleWrite a new title for this chatWriter"]);
+    key(ta(), "Enter");
+    await flush();
+    expect(draftText()).toBe("/regenerate-title ");
+    const pill = $("[data-pill-writer]")!;
+    expect(pill.dataset.pillKind).toBe("skill");
+    expect(pill.getAttribute("aria-label")).toBe("Writer command: /regenerate-title");
+    expect(pill.textContent).toContain("Writer");
+  });
+
+  it("sending /regenerate-title runs locally: no CLI send, no user card, a system line instead", async () => {
+    const send = vi.spyOn(mock, "send");
+    configureAgentRuntimeForTests({ ...mock, send, listSkills: async () => disk } as typeof mock);
+    const id = useAgentStore.getState().activeChatId!;
+    await act(async () => await useAgentStore.getState().sendMessage("hi"));
+    await act(async () => mock.idle(id));
+    send.mockClear();
+    type(ta(), "/regenerate-title");
+    key(ta(), "Enter");
+    await flush(10);
+    expect(send).not.toHaveBeenCalled();
+    expect(useAgentStore.getState().chats[id]!.turns).toHaveLength(1);
+    expect($("[data-agent-local-notice]")).not.toBeNull();
+    expect(draftText()).toBe("");
+  });
+
+  it("an unknown /foo goes to Claude as before", async () => {
+    const send = vi.spyOn(mock, "send");
+    configureAgentRuntimeForTests({ ...mock, send, listSkills: async () => disk } as typeof mock);
+    type(ta(), "/foo");
+    key(ta(), "Enter");
+    await flush(5);
+    expect(send.mock.calls[0]![0].text).toBe("/foo");
+  });
+
+  it("a skill with a Writer name is listed next to the Writer row, with its source", async () => {
+    disk = [{ name: "regenerate-title", description: "mine", scope: "vault", path: "v" }];
+    act(() => useAgentStore.setState({ skills: {} }));
+    type(ta(), "/regenerate");
+    await flush(5);
+    expect(rows()).toEqual([
+      "//regenerate-titleWrite a new title for this chatWriter",
+      "//regenerate-titleHidden by the Writer command of the same namevault",
+    ]);
+  });
+
   it("explains where skills are read from when there are none", async () => {
     disk = [];
-    type(ta(), "/");
+    type(ta(), "/zzzz");
     await flush(5);
     expect($("[role=listbox]")!.textContent).toBe(SLASH_EMPTY_TEXT);
     expect(SLASH_EMPTY_TEXT).toBe(
@@ -343,6 +415,6 @@ describe("the / menu in the composer", () => {
     type(ta(), "/");
     await flush(5);
     expect(useAgentStore.getState().skills[""]!.status).toBe("error");
-    expect($("[role=listbox]")!.textContent).toBe(SLASH_EMPTY_TEXT);
+    expect(rows()).toEqual(["//regenerate-titleWrite a new title for this chatWriter"]);
   });
 });
