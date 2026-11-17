@@ -19,13 +19,15 @@ const run = (name: string, now = 1000) => {
   return reduceEvents(chat, goldens[name]!, now);
 };
 describe("reducer over the golden streams", () => {
-  it("has all six goldens", () => {
+  it("has all eight goldens", () => {
     expect(Object.keys(goldens).sort()).toEqual([
       "interrupt",
       "multi-turn-rule",
       "ok-turn",
       "permission-allow",
       "permission-deny",
+      "thinking-redacted",
+      "thinking-summary",
       "tool-auto-allowed",
     ]);
   });

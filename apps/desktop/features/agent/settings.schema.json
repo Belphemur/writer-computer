@@ -148,6 +148,15 @@
       "default": true
     },
     {
+      "key": "agent.show-thinking",
+      "label": "Show the agent's reasoning",
+      "description": "Start the claude CLI with --thinking-display summarized, so the thinking row in the agent pane can be opened to read the model's reasoning summary, streaming while it thinks. Off keeps the row to a duration and a token estimate (the CLI then sends no reasoning text). Applies to chats started or resumed after the change; the summary is shown in the pane only and is not saved in the chat note.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "agent.orchestrate",
       "label": "Orchestrate with sub-agents",
       "description": "Tell the agent to split work into parts and run sub-agents in parallel: the cheap read-only writer-explorer for exploring, searching and summarising, and the writer-worker for bounded edits (its edits appear on the Changes card, labelled with the sub-agent, and can be undone), doing only very simple work itself. Adds a short paragraph to the Writer system block and defines the sub-agents with --agents. Their tool calls use the same permission prompts and allow rules. Turn off to chat with a single agent.",

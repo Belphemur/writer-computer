@@ -11,7 +11,7 @@ const escapeText = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** The pass for a streaming block: markdown up to the last pass, plain pre-wrapped tail after. */
-export function liveHtml(block: TextBlock, now: number): string {
+export function liveHtml(block: Pick<TextBlock, "id" | "text">, now: number): string {
   let entry = live.get(block.id);
   if (!entry || (now - entry.at >= THROTTLE_MS && entry.len !== block.text.length)) {
     entry = { at: now, len: block.text.length, html: renderAgentMarkdown(block.text) };
@@ -23,15 +23,17 @@ export function liveHtml(block: TextBlock, now: number): string {
     : entry.html;
 }
 
+/** The one markdown pass for a block of streamed text (assistant text, reasoning): throttled
+ *  while it streams, rendered once and forgotten when it is final. */
+export function renderBlockHtml(block: Pick<TextBlock, "id" | "text">, final: boolean): string {
+  if (!final) return liveHtml(block, Date.now());
+  live.delete(block.id);
+  return renderAgentMarkdown(block.text);
+}
+
 /** Finished blocks render once and are memoised by (id, final text) through `memo`. */
 export const AssistantText = memo(function AssistantText({ block }: { block: TextBlock }) {
-  const html = useMemo(() => {
-    if (block.final) {
-      live.delete(block.id);
-      return renderAgentMarkdown(block.text);
-    }
-    return liveHtml(block, Date.now());
-  }, [block]);
+  const html = useMemo(() => renderBlockHtml(block, block.final), [block]);
   return (
     <div
       data-agent-text

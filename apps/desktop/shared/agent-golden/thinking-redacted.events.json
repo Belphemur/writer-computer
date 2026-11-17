@@ -1,0 +1,246 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "plan",
+    "tools": [
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_think1",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_think1",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 50
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_think1",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 269
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_think1",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "Step by"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " step:\n\n1. Split"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " 23"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " into 20 +"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " 3."
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "\n2. 17 × "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "20 = 340\n3."
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " 17 × 3 ="
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " 51\n4. 340 "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "+ 51 = "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "391\n\n**17 × 23"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " = 391**"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "\n\nCheck:"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " 23"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " × 17 = 23"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "× 10 + 23 "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "× 7 = 230 "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "+ 161 = 391 "
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "✓\n\nThis"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " was"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " only"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " ar"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "ithmetic, so I did"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "n't write"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " a plan file or change"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": " anything."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_think1",
+    "blockIndex": 1,
+    "text": "Step by step:\n\n1. Split 23 into 20 + 3.\n2. 17 × 20 = 340\n3. 17 × 3 = 51\n4. 340 + 51 = 391\n\n**17 × 23 = 391**\n\nCheck: 23 × 17 = 23 × 10 + 23 × 7 = 230 + 161 = 391 ✓\n\nThis was only arithmetic, so I didn't write a plan file or change anything."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 0,
+    "outputTokens": 274,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 300,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": null
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 2000,
+    "apiDurationMs": null,
+    "numTurns": 1,
+    "isError": false,
+    "result": "Step by step:\n\n1. Split 23 into 20 + 3.\n2. 17 × 20 = 340\n3. 17 × 3 = 51\n4. 340 + 51 = 391\n\n**17 × 23 = 391**\n\nCheck: 23 × 17 = 23 × 10 + 23 × 7 = 230 + 161 = 391 ✓\n\nThis was only arithmetic, so I didn't write a plan file or change anything.",
+    "sessionId": null,
+    "errors": []
+  }
+]

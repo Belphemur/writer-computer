@@ -544,6 +544,9 @@ pub struct AgentSettings {
     pub disallowed_tools: Vec<String>,
     /// `agent.orchestrate`: the Writer block's orchestration paragraph and `--agents`.
     pub orchestrate: bool,
+    /// `agent.show-thinking`: spawn with `--thinking-display summarized` so the CLI sends the
+    /// reasoning summary text (without it every thinking block is empty, spec A.3).
+    pub show_thinking: bool,
     /// The `agent.claude.model-<tier>` settings by tier id, as stored (the tiers are the ones of
     /// `shared/agent-roles.json`); Rust resolves them in `subagents::tier_model`.
     #[serde(default)]
@@ -935,6 +938,7 @@ mod tests {
                 allowed_tools: vec!["Read".into()],
                 disallowed_tools: vec![],
                 orchestrate: true,
+                show_thinking: true,
                 tier_models: BTreeMap::from([("cheap".to_string(), Some("haiku".to_string()))]),
             },
             append_system_prompt: None,

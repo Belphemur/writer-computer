@@ -56,6 +56,7 @@ describe("agent.* settings contract", () => {
       "agent.max-concurrent-chats": 4,
       "agent.chats-keep-days": 0,
       "agent.auto-title-chats": true,
+      "agent.show-thinking": true,
       "agent.orchestrate": true,
       "agent.claude.model-cheap": "haiku",
       "agent.claude.model-standard": "sonnet",
@@ -111,12 +112,14 @@ describe("agent.* settings contract", () => {
       allowedTools: DEFAULT_ALLOWED,
       disallowedTools: [],
       orchestrate: true,
+      showThinking: true,
       tierModels: { cheap: "haiku", standard: "sonnet", strong: "default" },
     });
     expect(
       agentSettingsFrom({
         ...defaults,
         "agent.orchestrate": false,
+        "agent.show-thinking": false,
         "agent.claude.model-cheap": "  ",
         "agent.effort": "high",
         "agent.permission-mode": "acceptEdits",
@@ -127,6 +130,7 @@ describe("agent.* settings contract", () => {
       permissionMode: "acceptEdits",
       allowedTools: ["Bash(git status)"],
       orchestrate: false,
+      showThinking: false,
       tierModels: { cheap: null, standard: "sonnet", strong: "default" },
     });
   });

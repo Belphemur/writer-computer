@@ -49,6 +49,7 @@ export function agentSettingsFrom(settings: Record<string, unknown>): AgentSetti
     allowedTools: list(read(settings, "agent.allowed-tools")),
     disallowedTools: list(read(settings, "agent.disallowed-tools")),
     orchestrate: read(settings, "agent.orchestrate") !== false,
+    showThinking: read(settings, "agent.show-thinking") !== false,
     // One stored value per tier; Rust resolves them (blank means the tier's default model).
     tierModels: Object.fromEntries(
       AGENT_TIERS.map((tier) => [tier, str(read(settings, claudeTierSettingKey(tier)))]),

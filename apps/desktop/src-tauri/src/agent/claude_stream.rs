@@ -817,6 +817,12 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
         a.push("--effort".into());
         a.push(effort.as_cli_arg().into());
     }
+    if spawn.settings.show_thinking {
+        // Without it the CLI streams empty `thinking` text (only token estimates); verified
+        // with 2.1.326, spec A.3. A fixed value, never user-supplied.
+        a.push("--thinking-display".into());
+        a.push("summarized".into());
+    }
     if let Some(prompt) = spawn.append_system_prompt.filter(|p| !p.is_empty()) {
         // A value after its flag is never parsed as a flag by the CLI, but keep NULs out.
         if prompt.contains('\0') {
@@ -870,6 +876,8 @@ mod tests {
             "permission-deny" => include_str!("fixtures/permission-deny.jsonl"),
             "interrupt" => include_str!("fixtures/interrupt.jsonl"),
             "multi-turn-rule" => include_str!("fixtures/multi-turn-rule.jsonl"),
+            "thinking-summary" => include_str!("fixtures/thinking-summary.jsonl"),
+            "thinking-redacted" => include_str!("fixtures/thinking-redacted.jsonl"),
             other => panic!("unknown fixture {other}"),
         }
     }
@@ -909,6 +917,8 @@ mod tests {
             "permission-deny",
             "interrupt",
             "multi-turn-rule",
+            "thinking-summary",
+            "thinking-redacted",
         ] {
             let (events, _) = run(name);
             let actual = serde_json::to_string_pretty(&events).unwrap() + "\n";
@@ -922,6 +932,58 @@ mod tests {
             });
             assert_eq!(actual, expected, "golden drift in {name}");
         }
+    }
+
+    /// `--thinking-display summarized` (real capture, 2.1.326): the deltas carry the summary text
+    /// in pieces that can end mid-word, and the final block repeats the whole text.
+    #[test]
+    fn thinking_summary_streams_text_and_ends_with_the_full_text() {
+        let (events, _) = run("thinking-summary");
+        let thinking: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Thinking {
+                    phase,
+                    text,
+                    block_index,
+                    ..
+                } => Some((*phase, text.clone(), *block_index)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thinking.first().unwrap().0, ThinkingPhase::Start);
+        let streamed: String = thinking
+            .iter()
+            .filter(|(p, ..)| *p == ThinkingPhase::Delta)
+            .map(|(_, t, _)| t.as_str())
+            .collect();
+        let (last_phase, final_text, _) = thinking.last().unwrap();
+        assert_eq!(*last_phase, ThinkingPhase::End);
+        assert!(streamed.starts_with("Checking the arithmetic: 17 times 23 breaks into"));
+        assert!(!streamed.is_empty() && final_text.starts_with(&streamed[..20]));
+        assert!(thinking.iter().all(|(_, _, i)| *i == 0));
+    }
+
+    /// Without `--thinking-display` (or for redacted content) every delta and the final block have
+    /// empty text: only token estimates arrive, and no text event is invented.
+    #[test]
+    fn redacted_thinking_carries_no_text_only_token_estimates() {
+        let (events, _) = run("thinking-redacted");
+        let mut estimates = 0;
+        for e in &events {
+            if let AgentEvent::Thinking {
+                phase,
+                text,
+                estimated_tokens,
+                ..
+            } = e
+            {
+                assert!(text.is_empty(), "{phase:?}");
+                estimates += usize::from(estimated_tokens.is_some());
+            }
+        }
+        assert!(estimates > 0);
+        assert!(types(&events).contains(&"text".to_string()));
     }
 
     #[test]
@@ -1512,6 +1574,7 @@ mod tests {
             allowed_tools: vec![],
             disallowed_tools: vec![],
             orchestrate: true,
+            show_thinking: false,
             tier_models: Default::default(),
         }
     }
@@ -1567,6 +1630,24 @@ mod tests {
             "--allow-dangerously-skip-permissions",
         ] {
             assert!(!args.contains(&forbidden.to_string()));
+        }
+    }
+
+    #[test]
+    fn thinking_display_is_a_spawn_flag_of_the_setting() {
+        for on in [true, false] {
+            let mut s = settings();
+            s.show_thinking = on;
+            let args = build_args(&ClaudeSpawn {
+                session: SessionRef::New(UUID.into()),
+                settings: &s,
+                append_system_prompt: None,
+                add_dirs: &[],
+                agents: None,
+            })
+            .unwrap();
+            let at = args.iter().position(|a| a == "--thinking-display");
+            assert_eq!(at.map(|i| args[i + 1].as_str()), on.then_some("summarized"));
         }
     }
 

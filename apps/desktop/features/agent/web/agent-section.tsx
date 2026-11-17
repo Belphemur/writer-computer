@@ -347,6 +347,7 @@ export function AgentSection() {
           "agent.auto-title-chats",
           "agent.restore-chats",
           "agent.orchestrate",
+          "agent.show-thinking",
           "agent.pane-width",
           "agent.pane-open",
         ]}

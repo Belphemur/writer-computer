@@ -164,6 +164,11 @@ export type AgentSettings = {
 	/**  `agent.orchestrate`: the Writer block's orchestration paragraph and `--agents`. */
 	orchestrate: boolean,
 	/**
+	 *  `agent.show-thinking`: spawn with `--thinking-display summarized` so the CLI sends the
+	 *  reasoning summary text (without it every thinking block is empty, spec A.3).
+	 */
+	showThinking: boolean,
+	/**
 	 *  The `agent.claude.model-<tier>` settings by tier id, as stored (the tiers are the ones of
 	 *  `shared/agent-roles.json`); Rust resolves them in `subagents::tier_model`.
 	 */

@@ -193,6 +193,7 @@ impl Harness {
             allowed_tools: vec![],
             disallowed_tools: vec![],
             orchestrate: true,
+            show_thinking: false,
             tier_models: Default::default(),
         }
     }
@@ -1289,6 +1290,23 @@ fn orchestration_passes_the_agents_flag_only_when_on() {
             assert!(argv.contains("writer-worker"), "{argv}");
             assert!(argv.contains(r#""model":"sonnet""#), "{argv}");
         }
+    }
+}
+
+#[test]
+fn show_thinking_passes_the_display_flag_only_when_on() {
+    for show in [true, false] {
+        let h = Harness::new(&["ok-turn"], "normal");
+        let mut p = h.params(CHAT, "w", None);
+        p.request.settings.show_thinking = show;
+        h.sessions.start(p).unwrap();
+        h.wait_until("process", || !h.lines("argv.log").is_empty());
+        let argv = &h.lines("argv.log")[0];
+        assert_eq!(
+            argv.contains("--thinking-display summarized"),
+            show,
+            "{argv}"
+        );
     }
 }
 

@@ -14,6 +14,7 @@
 //! Never logged: user text, assistant text, tool input/output, note paths, the system prompt,
 //! environment values (spec section 8).
 
+use super::binary::is_older_than_verified;
 use super::changes::{ChangeStore, ClosedTurn};
 use super::claude_stream::{
     build_args, encode_control_error, encode_interrupt, encode_permission_allow,
@@ -458,9 +459,13 @@ impl Session {
             } else {
                 SessionRef::New(g.session_id.clone())
             };
+            // `--thinking-display` is newer than the verified CLI: an older one would refuse
+            // the unknown option and the chat could not start, so it only gets the default.
+            let mut settings = g.settings.clone();
+            settings.show_thinking &= !is_older_than_verified(g.cli_version.as_deref());
             let args = build_args(&ClaudeSpawn {
                 session,
-                settings: &g.settings,
+                settings: &settings,
                 append_system_prompt: g.system_prompt.as_deref(),
                 add_dirs: &g.add_dirs,
                 agents: g.agents.as_deref(),
