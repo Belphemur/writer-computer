@@ -25,6 +25,7 @@ function makeBodyHandlers(): EditorBodyMenuHandlers & { calls: string[] } {
     onPaste: () => calls.push("paste"),
     onSelectAll: () => calls.push("select-all"),
     onOpenLink: () => calls.push("open-link"),
+    onOpenLinkInNewTab: () => calls.push("open-link-new-tab"),
     onCopyLink: () => calls.push("copy-link"),
   };
 }
@@ -74,6 +75,7 @@ describe("buildEditorBodyMenuItemsSpec", () => {
       "select-all",
       "---",
       "open-link",
+      "open-link-new-tab",
       "copy-link",
     ]);
   });
@@ -105,6 +107,7 @@ describe("buildEditorBodyMenuItemsSpec", () => {
       "paste",
       "select-all",
       "open-link",
+      "open-link-new-tab",
       "copy-link",
     ]);
   });

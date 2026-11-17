@@ -1,38 +1,43 @@
-import { useMemo, type MouseEvent } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useMemo, useRef } from "react";
+import { bindLinkActivation, type LinkTarget } from "@/lib/link-activation";
 import { classifyLink } from "./link-action";
 import { renderReadme } from "./render-readme";
 import "./readme-view.css";
 
-/** Sanitized README HTML. The webview never navigates: every link click is intercepted. */
+/** Sanitized README HTML. The webview never navigates: every link click is intercepted, and web
+ *  links open the system browser on a left, middle or modifier click (`lib/link-activation.ts`). */
 export function ReadmeView({ markdown, repo }: { markdown: string; repo: string }) {
   const html = useMemo(() => renderReadme(markdown, { repo }), [markdown, repo]);
+  const host = useRef<HTMLDivElement>(null);
 
-  const onClick = (event: MouseEvent<HTMLDivElement>) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const link = target.closest("a");
-    if (!link || !event.currentTarget.contains(link)) return;
-    event.preventDefault();
-    const action = classifyLink(link.getAttribute("href"));
-    if (action.kind === "open") void openUrl(action.url);
-    else if (action.kind === "anchor") {
-      // Ids are only ever set by renderReadme (`readme-<slug>`); compare, never CSS-escape.
-      const wanted = `readme-${action.id.toLowerCase()}`;
-      const el = Array.from(event.currentTarget.querySelectorAll("[id]")).find(
-        (n) => n.id === wanted,
-      );
-      el?.scrollIntoView?.({ block: "start" });
-    }
-  };
+  useEffect(() => {
+    const root = host.current;
+    if (!root) return;
+    return bindLinkActivation(root, (target): LinkTarget | null => {
+      const link = target.closest("a");
+      if (!link) return null;
+      const action = classifyLink(link.getAttribute("href"));
+      if (action.kind === "open") return { kind: "url", href: action.url };
+      if (action.kind !== "anchor") return { kind: "custom", open: () => {} };
+      return {
+        kind: "custom",
+        open: () => {
+          // Ids are only ever set by renderReadme (`readme-<slug>`); compare, never CSS-escape.
+          const wanted = `readme-${action.id.toLowerCase()}`;
+          const el = Array.from(root.querySelectorAll("[id]")).find((n) => n.id === wanted);
+          el?.scrollIntoView?.({ block: "start" });
+        },
+      };
+    });
+  }, [html]);
 
   return (
     <div
+      ref={host}
       role="document"
       tabIndex={0}
       aria-label="README"
       className="plugin-readme"
-      onClick={onClick}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

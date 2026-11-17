@@ -131,7 +131,7 @@ describe("Settings > Agent > Memory", () => {
   it("opens a memory file as a note tab and reveals the folder", async () => {
     await mount();
     await click(q("button[aria-label='Open user-cat.md']") ?? undefined);
-    expect(openTab).toHaveBeenCalledWith(`${VAULT}/user-cat.md`);
+    expect(openTab).toHaveBeenCalledWith(`${VAULT}/user-cat.md`, { activate: true });
     await click(button("Open folder", q("[data-agent-memory-folder=vault]")!));
     expect(calls.some(([c, a]) => c === "reveal_in_file_manager" && a.path === VAULT)).toBe(true);
   });

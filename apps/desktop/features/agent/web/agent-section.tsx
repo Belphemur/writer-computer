@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { linkHandlers } from "@/lib/link-activation";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
 import { createTauriAgentClient } from "@/lib/agent/client";
 import {
@@ -244,7 +244,9 @@ export function AgentSection() {
                   <button
                     type="button"
                     className={BUTTON}
-                    onClick={() => backend.installUrl && void openUrl(backend.installUrl)}
+                    {...(backend.installUrl
+                      ? linkHandlers({ kind: "url", href: backend.installUrl })
+                      : {})}
                   >
                     Install instructions
                   </button>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { openFileInNewTab } from "@/hooks/editor-api";
+import { openPath } from "@/lib/link-activation";
 import { openNewProjectDialog, setAgentView, startNewAgentChat } from "@/hooks/agent-api";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import {
@@ -96,7 +96,7 @@ export function ProjectHome({
   const absolute = (file: string) => (root ? `${root}/${projectPath}/${file}` : null);
   const openNote = (file: string) => {
     const path = absolute(file);
-    if (path) void openFileInNewTab(path);
+    if (path) void openPath(path, "new-tab-active");
   };
 
   async function createAgents() {

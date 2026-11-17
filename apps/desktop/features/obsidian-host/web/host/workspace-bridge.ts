@@ -31,8 +31,9 @@ export interface AppWorkspace {
   getActiveFilePath(): string | null;
   /** The CodeMirror view showing `absPath`. */
   getEditorView(absPath: string | null): EditorView | null;
-  /** Opens `absPath` in the current tab, or in a new tab. */
-  openFile(absPath: string, opts: { newLeaf: boolean }): Promise<void>;
+  /** Opens `absPath` in the current tab, or in a new tab (a background one when `activate` is
+   *  false; the default is to activate it). */
+  openFile(absPath: string, opts: { newLeaf: boolean; activate?: boolean }): Promise<void>;
 }
 
 export function toVaultPath(root: string, absPath: string): string | null {

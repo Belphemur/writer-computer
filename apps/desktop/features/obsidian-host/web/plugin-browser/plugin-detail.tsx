@@ -1,4 +1,4 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { linkHandlers } from "@/lib/link-activation";
 import type { StoreAudit, StoreDetail } from "../host/store-client";
 import {
   useActionError,
@@ -112,7 +112,7 @@ export function PluginDetail({ onPluginsChanged }: { onPluginsChanged?: () => vo
           <button
             type="button"
             className="underline"
-            onClick={() => void openUrl(repoUrl)}
+            {...linkHandlers({ kind: "url", href: repoUrl })}
             aria-label={`Open ${entry.repo} on GitHub`}
           >
             {entry.repo}

@@ -32,6 +32,8 @@ export interface EditorBodyMenuHandlers {
   onPaste: () => void;
   onSelectAll: () => void;
   onOpenLink?: () => void;
+  /** The same link in a new tab (the menu twin of a middle click). */
+  onOpenLinkInNewTab?: () => void;
   onCopyLink?: () => void;
   onRunCommand?: (id: EditorCommandId) => void;
 }
@@ -133,6 +135,13 @@ export function buildEditorBodyMenuItemsSpec(
       text: "Open link",
       action: handlers.onOpenLink,
     });
+    if (handlers.onOpenLinkInNewTab)
+      items.push({
+        kind: "item",
+        id: "open-link-new-tab",
+        text: "Open link in new tab",
+        action: handlers.onOpenLinkInNewTab,
+      });
     items.push({
       kind: "item",
       id: "copy-link",

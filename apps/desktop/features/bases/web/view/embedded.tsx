@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import * as editorApi from "@/hooks/editor-api";
+import { linkHandlers, openPath, type LinkIntent } from "@/lib/link-activation";
 import { embedKey, type BaseEmbed } from "../lib/embeds";
 import { viewChoices, viewNames, viewOfResult } from "../lib/grid";
 import { setPendingAnchor } from "@/lib/pending-anchor";
@@ -184,13 +185,17 @@ function Body({
   const title = source.kind === "file" ? "The base" : "The base block";
   const filePath = source.kind === "file" ? source.path : null;
 
-  const openBase = useCallback(() => {
-    if (!filePath) return;
-    if (chosen) setPendingAnchor(filePath, chosen);
-    editorApi
-      .openFileInNewTab(filePath)
-      .catch((e) => notify("error", `Could not open ${filePath}: ${errorMessage(e)}`));
-  }, [filePath, chosen, notify]);
+  const openBase = useCallback(
+    (intent: LinkIntent = "new-tab-active") => {
+      if (!filePath) return;
+      if (chosen) setPendingAnchor(filePath, chosen);
+      // always a new tab: the embed's own note stays where it is
+      openPath(filePath, intent === "current" ? "new-tab-active" : intent).catch((e) =>
+        notify("error", `Could not open ${filePath}: ${errorMessage(e)}`),
+      );
+    },
+    [filePath, chosen, notify],
+  );
 
   const editYaml = useCallback(() => {
     if (!filePath) return onEdit();
@@ -229,7 +234,7 @@ function Body({
                 type="button"
                 data-embed-open
                 title="Open the base in a new tab"
-                onClick={openBase}
+                {...linkHandlers({ kind: "custom", open: openBase })}
                 className={buttonClass}
                 {...holdEditorFocus}
               >

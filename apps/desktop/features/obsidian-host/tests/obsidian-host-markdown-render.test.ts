@@ -221,7 +221,7 @@ describe("markdown render: clicks", () => {
     rig = await makeRig({ "Note.md": "n", "dir/Other.md": "o" });
   });
 
-  it("internal links open a new tab, whatever the modifier", async () => {
+  it("internal links open a new tab; a middle or Ctrl click keeps it in the background", async () => {
     const el = await rig.render("[[Note]] [[dir/Other#H]]", undefined, "x.md");
     const [a, b] = [...el.querySelectorAll("a")];
     expect(click(a)).toBe(false); // default prevented: the webview never navigates
@@ -232,9 +232,9 @@ describe("markdown render: clicks", () => {
     await Promise.resolve();
     expect(rig.tabs).toEqual([
       { path: "Note.md", newLeaf: true },
-      { path: "dir/Other.md", newLeaf: true },
-      { path: "Note.md", newLeaf: true },
-      { path: "dir/Other.md", newLeaf: true },
+      { path: "dir/Other.md", newLeaf: true, activate: false }, // Ctrl (jsdom is not macOS)
+      { path: "Note.md", newLeaf: true }, // Meta alone is a plain click here
+      { path: "dir/Other.md", newLeaf: true, activate: false }, // middle button
     ]);
   });
 

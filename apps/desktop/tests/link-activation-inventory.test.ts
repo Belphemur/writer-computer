@@ -13,6 +13,18 @@ const ALLOWED = new Set([
 ]);
 const FORBIDDEN = /button\s*[!=]==?\s*1\b|onAuxClick|["']auxclick["']/;
 
+// Direct tab-opening calls: only the store, its API wrapper, the module, and the two adapters that
+// take an intent from the module (Bases cells, the Obsidian host's workspace) may make them. A click
+// handler opens a note through `openPath` / `activateLink` / the bindings instead.
+const OPEN_ALLOWED = new Set([
+  "src/lib/link-activation.ts",
+  "src/hooks/editor-api.ts",
+  "src/stores/editor-store.ts",
+  "features/bases/web/view/use-cell-actions.ts",
+  "features/obsidian-host/web/stores/plugins-store.ts",
+]);
+const DIRECT_OPEN = /\b(openFileInNewTab|navigateToFile)\(/;
+
 describe("link activation inventory", () => {
   const files = [...sourceFiles(join(DESKTOP, "src")), ...sourceFiles(join(DESKTOP, "features"))];
 
@@ -28,5 +40,13 @@ describe("link activation inventory", () => {
     expect(offenders, "use linkHandlers, bindLinkActivation or linkActivationExtension").toEqual(
       [],
     );
+  });
+
+  it("no file opens a note in a tab directly from a click handler: use openPath or the bindings", () => {
+    const offenders = files
+      .map((f) => relative(DESKTOP, f))
+      .filter((f) => !OPEN_ALLOWED.has(f) && !f.includes("/tests/"))
+      .filter((f) => DIRECT_OPEN.test(readFileSync(join(DESKTOP, f), "utf8")));
+    expect(offenders).toEqual([]);
   });
 });

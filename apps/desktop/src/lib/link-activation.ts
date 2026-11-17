@@ -55,9 +55,9 @@ export function keyIntent(
 }
 
 /** A note or file path through the editor store's one open path. */
-export function openPath(path: string, intent: LinkIntent): Promise<void> | void {
-  if (intent === "current") return navigateToFile(path);
-  return openFileInNewTab(path, { activate: intent === "new-tab-active" });
+export async function openPath(path: string, intent: LinkIntent): Promise<void> {
+  if (intent === "current") await navigateToFile(path);
+  else await openFileInNewTab(path, { activate: intent === "new-tab-active" });
 }
 
 /** An http(s)/mailto URL in the system browser, whatever the gesture. */

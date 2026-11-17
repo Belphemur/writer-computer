@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { openFileInNewTab } from "@/hooks/editor-api";
+import { linkHandlers, openPath } from "@/lib/link-activation";
 import { useAgentProjectPath } from "@/hooks/use-agent";
 import { logger } from "@/lib/logger";
 import { revealInFileManager } from "@/lib/tauri";
@@ -139,7 +139,13 @@ function FolderCard({
                 type="button"
                 className={SMALL}
                 aria-label={`Open ${f.name}`}
-                onClick={() => void run(() => openFileInNewTab(f.path))}
+                {...linkHandlers({
+                  kind: "custom",
+                  open: (intent) =>
+                    void run(() =>
+                      openPath(f.path, intent === "current" ? "new-tab-active" : intent),
+                    ),
+                })}
               >
                 Open
               </button>

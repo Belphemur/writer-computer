@@ -500,11 +500,15 @@ function attach(el: HTMLElement, app: App, sourcePath: string, component: Compon
       const href = a.getAttribute("data-href") ?? "";
       return {
         kind: "custom",
-        open: () => {
-          state.app.workspace.openLinkText(href, state.sourcePath, true).catch((err: unknown) => {
-            console.error("[plugin] openLinkText failed:", err);
-            new Notice(`Cannot open "${href}": no such note`);
-          });
+        open: (intent) => {
+          // `active: false` is Obsidian's own OpenViewState flag for a background tab.
+          const openState = { active: intent !== "new-tab-background" };
+          state.app.workspace
+            .openLinkText(href, state.sourcePath, true, openState)
+            .catch((err: unknown) => {
+              console.error("[plugin] openLinkText failed:", err);
+              new Notice(`Cannot open "${href}": no such note`);
+            });
         },
       };
     }

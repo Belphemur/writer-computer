@@ -47,7 +47,7 @@ export interface WorkspaceBridge {
   getActiveEditor(): EditorBackend | null;
   /** The plugin leaf whose tab is the active one in the main area, or null (a document or no tab). */
   getActivePluginLeaf(): WorkspaceLeaf | null;
-  openFile(path: string, opts: { newLeaf: boolean }): Promise<void>;
+  openFile(path: string, opts: { newLeaf: boolean; activate?: boolean }): Promise<void>;
   /** `Workspace.updateOptions()`: re-apply the registered editor extensions to every editor. */
   reapplyEditorOptions(): void;
   /**
@@ -682,8 +682,8 @@ export class WorkspaceLeaf extends Component {
    * request) reuses the current tab; any other leaf opens a new tab. The note's scroll/line
    * (`openState.eState`) is not applied.
    */
-  async openFile(file: TFile, _openState?: unknown): Promise<void> {
-    await this.app.workspace.openFileInLeaf(this, file.path);
+  async openFile(file: TFile, openState?: { active?: boolean }): Promise<void> {
+    await this.app.workspace.openFileInLeaf(this, file.path, openState?.active !== false);
   }
   /** Leaf identity of Obsidian's tab header (no tab strip of Obsidian's exists here). */
   tabHeaderEl = createEl("div", { cls: "workspace-tab-header" });
@@ -1053,9 +1053,9 @@ export class Workspace extends Events {
    * tab, any other leaf opens a new tab. A leaf that showed nothing is dropped afterwards (the
    * note lives in the editor, not in the empty leaf).
    */
-  async openFileInLeaf(leaf: WorkspaceLeaf, path: string): Promise<void> {
+  async openFileInLeaf(leaf: WorkspaceLeaf, path: string, activate = true): Promise<void> {
     const reuse = (leaf === this.markdownLeaf && !leaf.pendingNewTab) || leaf.tabId !== null;
-    await this.bridge.openFile(path, { newLeaf: !reuse });
+    await this.bridge.openFile(path, { newLeaf: !reuse, ...(activate ? {} : { activate: false }) });
     leaf.pendingNewTab = false;
     if (leaf !== this.markdownLeaf && leaf.view instanceof EmptyView) leaf.detach();
   }
@@ -1171,7 +1171,7 @@ export class Workspace extends Events {
   }
 
   /**
-   * Opens the note a link points at in the main editor: a new tab when `newLeaf` is truthy
+   * Opens the note a link points at in the main editor: a new tab (in the background when `openState.active` is false) when `newLeaf` is truthy
    * (`true`, `"tab"`, `"split"`, `"window"`), the current tab otherwise. A link to a missing note
    * rejects (Obsidian would create it); a `#heading` suffix is ignored.
    */
@@ -1179,13 +1179,16 @@ export class Workspace extends Events {
     linktext: string,
     sourcePath: string,
     newLeaf?: NewLeafTarget,
-    _openState?: unknown,
+    openState?: { active?: boolean },
   ): Promise<void> {
     const hash = linktext.indexOf("#");
     const path = hash < 0 ? linktext : linktext.slice(0, hash);
     const file = this.app.metadataCache.getFirstLinkpathDest(path, sourcePath);
     if (!file) throw new Error(`Cannot open "${linktext}": no such note`);
-    await this.bridge.openFile(file.path, { newLeaf: !!newLeaf });
+    await this.bridge.openFile(file.path, {
+      newLeaf: !!newLeaf,
+      ...(openState?.active === false ? { activate: false } : {}),
+    });
   }
 
   getLastOpenFiles(): string[] {

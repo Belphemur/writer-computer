@@ -2,6 +2,7 @@ import { useCallback, useState, type MouseEvent } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useBooleanSetting } from "@/hooks/use-settings";
+import { openPath } from "@/lib/link-activation";
 import {
   usePinnedFiles,
   useRefreshDirectory,
@@ -9,11 +10,7 @@ import {
   useTogglePinnedFile,
 } from "@/hooks/use-file-tree";
 import { useOpenFile } from "@/hooks/use-tabs";
-import {
-  getOpenFile,
-  openFileInNewTab as openFileInNewTabAction,
-  removePathReferences,
-} from "@/hooks/editor-api";
+import { getOpenFile, removePathReferences } from "@/hooks/editor-api";
 import {
   SIDEBAR_SECTION_PAGE_SIZE,
   RECENTS_SECTION_PAGE_SIZE,
@@ -124,7 +121,7 @@ export function SidebarNavigator({
             void openFileAndComplete(entry.path);
           },
           onOpenInNewTab: () => {
-            void openFileInNewTabAction(entry.path).catch((error: unknown) => {
+            void openPath(entry.path, "new-tab-active").catch((error: unknown) => {
               window.alert(
                 `Failed to open in new tab: ${error instanceof Error ? error.message : String(error)}`,
               );
@@ -138,7 +135,7 @@ export function SidebarNavigator({
               try {
                 const newPath = await duplicateFile(entry.path);
                 await refreshDirectory(parent);
-                await openFileInNewTabAction(newPath);
+                await openPath(newPath, "new-tab-active");
               } catch (error) {
                 window.alert(
                   `Failed to duplicate: ${error instanceof Error ? error.message : String(error)}`,

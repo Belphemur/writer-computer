@@ -205,8 +205,10 @@ const appWorkspace: AppWorkspace = {
   getActiveFilePath: editorApi.getActiveFilePath,
   getEditorView: findEditorView,
   // `navigateToFile` never replaces a plugin view's tab (it opens a new tab instead).
-  openFile: (path, { newLeaf }) =>
-    newLeaf ? editorApi.openFileInNewTab(path) : editorApi.navigateToFile(path),
+  openFile: (path, { newLeaf, activate }) =>
+    newLeaf
+      ? editorApi.openFileInNewTab(path, { activate: activate !== false })
+      : editorApi.navigateToFile(path),
 };
 
 /** The path a leaf's file view shows, for the views that are file views (`FileView.file`). */

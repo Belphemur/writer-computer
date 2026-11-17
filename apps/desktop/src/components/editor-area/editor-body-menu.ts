@@ -53,6 +53,11 @@ export function editorBodyContextMenuExtension(
                     void followLink(linkHref, view, filePath);
                   }
                 : undefined,
+              onOpenLinkInNewTab: hasLink
+                ? () => {
+                    void followLink(linkHref, view, filePath, "new-tab-active");
+                  }
+                : undefined,
               onCopyLink: hasLink
                 ? () => {
                     void writeText(linkHref);

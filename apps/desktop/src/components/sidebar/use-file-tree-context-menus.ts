@@ -1,10 +1,10 @@
 import { isMarkdownPath, openNoteTitleDialog } from "@/stores/note-title-dialog-store";
 import { useCallback } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { openPath } from "@/lib/link-activation";
 import {
   getOpenFile,
   getOpenFiles,
-  openFileInNewTab as openFileInNewTabAction,
   removePathReferences,
   removePathsWithPrefix,
 } from "@/hooks/editor-api";
@@ -80,7 +80,7 @@ export function useFileTreeContextMenus({
             void openFile(entry.path);
           },
           onOpenInNewTab: () => {
-            void openFileInNewTabAction(entry.path).catch((error: unknown) => {
+            void openPath(entry.path, "new-tab-active").catch((error: unknown) => {
               window.alert(
                 `Failed to open in new tab: ${error instanceof Error ? error.message : String(error)}`,
               );
@@ -91,7 +91,7 @@ export function useFileTreeContextMenus({
               try {
                 const newPath = await duplicateFile(entry.path);
                 await refreshDirectory(parent);
-                await openFileInNewTabAction(newPath);
+                await openPath(newPath, "new-tab-active");
               } catch (error) {
                 window.alert(
                   `Failed to duplicate: ${error instanceof Error ? error.message : String(error)}`,

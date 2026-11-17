@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { openFileInNewTab } from "@/hooks/editor-api";
+import { openPath } from "@/lib/link-activation";
 import { useSetting } from "@/hooks/use-settings";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { regenerateAgentChatTitle } from "@/hooks/agent-api";
@@ -509,7 +509,7 @@ export function HistoryPane({ onOpen }: { onOpen: (chat: ChatSummary) => void })
       onOpen={onOpen}
       regenerateTitle={regenerateAgentChatTitle}
       keepDays={keepDays}
-      onReveal={(c) => root && void openFileInNewTab(chatNoteAbsPath(root, c))}
+      onReveal={(c) => root && void openPath(chatNoteAbsPath(root, c), "new-tab-active")}
     />
   );
 }

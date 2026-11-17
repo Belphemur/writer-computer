@@ -1,3 +1,4 @@
+import { keyIntent, linkHandlers } from "@/lib/link-activation";
 import { memo, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
@@ -121,9 +122,10 @@ const Card = memo(function Card({
       role="article"
       tabIndex={0}
       data-card-path={rowPath}
-      onClick={() => actions.openFile(rowPath)}
+      {...linkHandlers({ kind: "custom", open: (intent) => actions.openFile(rowPath, intent) })}
       onKeyDown={(e) => {
-        if (e.target === e.currentTarget && e.key === "Enter") actions.openFile(rowPath);
+        const intent = keyIntent(e);
+        if (intent && e.target === e.currentTarget) actions.openFile(rowPath, intent);
       }}
       style={{ width: options.size, height }}
       className="shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-surface-primary hover:bg-[var(--item-hover-bg)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--focus-border)]"

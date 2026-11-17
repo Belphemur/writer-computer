@@ -1,3 +1,4 @@
+import { linkHandlers } from "@/lib/link-activation";
 import { useCallback } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, File02Icon } from "@hugeicons/core-free-icons";
@@ -79,7 +80,8 @@ function RecentFileRow({ entry, isActive, onOpen, onRemove }: RecentFileRowProps
     >
       <button
         type="button"
-        onClick={() => void onOpen(entry.path)}
+        // a compact window has no tabs: every gesture opens the file here
+        {...linkHandlers({ kind: "custom", open: () => void onOpen(entry.path) })}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-[10px] pr-8 text-left"
       >
         <span
