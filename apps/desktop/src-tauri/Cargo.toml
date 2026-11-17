@@ -68,6 +68,10 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 tracing-appender = "=0.2.5"
 tracing-log = { version = "=0.2.0", default-features = false, features = ["log-tracer", "std"] }
 unicode-normalization = "0.1.26"
+# The note graph's in-memory snapshot (SPECs/note-graph-spec.md 5.3, decision 7): `Csr` adjacency
+# and `UnionFind`. Exact pin, minimal features (no graphmap, stable_graph or matrix_graph); 0.8.3
+# was already in Cargo.lock through tree_magic_mini, so no crate is added, only a direct edge.
+petgraph = { version = "=0.8.3", default-features = false, features = ["std"] }
 # Typed commands, events and types for built-in features (ADR 2026-11-17, Q7; review in
 # SPECs/typegen-maintainer-review.md). Exact pins on purpose: the rc line breaks between releases.
 tauri-specta = { version = "=2.0.0-rc.29", features = ["derive", "typescript"] }

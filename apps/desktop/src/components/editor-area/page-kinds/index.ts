@@ -1,6 +1,7 @@
 import { baseKind, type BaseLocation } from "./base";
 import { codeKind, type CodeLocation } from "./code";
 import { fileKind, type FileLocation } from "./file";
+import { graphKind, type GraphLocation } from "./graph";
 import { imageKind, type ImageLocation } from "./image";
 import { launcherKind, type LauncherLocation } from "./launcher";
 import { pluginFileKind, type PluginFileLocation } from "./plugin-file";
@@ -19,6 +20,7 @@ import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
 const kinds = [
   fileKind,
   baseKind,
+  graphKind,
   codeKind,
   imageKind,
   launcherKind,
@@ -30,6 +32,7 @@ const kinds = [
 export type Location =
   | FileLocation
   | BaseLocation
+  | GraphLocation
   | CodeLocation
   | ImageLocation
   | LauncherLocation
@@ -96,6 +99,8 @@ export function deserializeLocation(data: SerializedLocation | null | undefined)
 export type { PageKind, SerializedLocation, AnyPageKind } from "./types";
 export type { FileLocation } from "./file";
 export type { BaseLocation } from "./base";
+export type { GraphLocation, GraphCamera } from "./graph";
+export { withGraphState } from "./graph";
 export type { CodeLocation } from "./code";
 export type { ImageLocation } from "./image";
 export type { LauncherLocation } from "./launcher";

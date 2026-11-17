@@ -40,6 +40,7 @@ import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
 import { sidebarActionContributions, sidebarPanelContributions } from "../src/lib/features/sidebar";
 import { statusItemContributions } from "../src/lib/features/status-items";
 import { useFeatureHealth } from "../src/stores/feature-health-store";
+import { useSettingsStore } from "../src/stores/settings-store";
 import { FILES_PANEL_ID, useUIStore } from "../src/stores/ui-store";
 import type { DirEntry } from "../src/types/fs";
 import { calls, fixtureSidebarFeature, manifest } from "./fixtures/features/fixture-sidebar";
@@ -72,6 +73,9 @@ let container: HTMLElement;
 let root: Root;
 
 beforeEach(() => {
+  // Importing the loader registers the shipped features; the graph feature contributes a sidebar
+  // panel and action of its own, which these fixture-only counts must not see.
+  useSettingsStore.setState({ settings: { "features.graph.enabled": false } });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);

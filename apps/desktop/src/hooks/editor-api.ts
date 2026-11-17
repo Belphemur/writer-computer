@@ -1,11 +1,12 @@
 import { useUIStore } from "@/stores/ui-store";
 import {
+  createGraphTab,
   createPluginFileTab,
   createPluginViewTab,
   createSettingsTab,
   useEditorStore,
 } from "@/stores/editor-store";
-import type { Location } from "@/components/editor-area/page-kinds";
+import type { GraphLocation, Location } from "@/components/editor-area/page-kinds";
 export type { OpenFile, Tab, SessionTab } from "@/stores/editor-store";
 
 export function getOpenFile(path: string) {
@@ -61,6 +62,25 @@ export function navigateToFile(path: string) {
 /** Persist the selected view of a base tab in its location (restored with the session). */
 export function setBaseTabView(tabId: string, view: string | undefined) {
   useEditorStore.getState().setBaseTabView(tabId, view);
+}
+
+/** Opens (or focuses) the global graph tab; with `center` the tab is centered on that note
+ *  (vault-relative path) and a graph tab already open is re-centered on it. */
+export function openGraphTab(target: { center?: string; depth?: number } = {}) {
+  const store = useEditorStore.getState();
+  const existing = store.tabs.find((t) => t.location.kind === "graph");
+  if (existing && target.center !== undefined) {
+    store.setGraphTabState(existing.id, { center: target.center, depth: target.depth });
+  }
+  store.openOrFocus(
+    (tab) => tab.location.kind === "graph",
+    () => createGraphTab(target),
+  );
+}
+
+/** Persist a graph tab's camera and pins in its location (restored with the session). */
+export function setGraphTabState(tabId: string, state: Partial<Omit<GraphLocation, "kind">>) {
+  useEditorStore.getState().setGraphTabState(tabId, state);
 }
 
 export function renameOpenFile(oldPath: string, newPath: string) {

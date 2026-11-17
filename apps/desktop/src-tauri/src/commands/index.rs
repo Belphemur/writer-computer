@@ -47,6 +47,16 @@ pub(crate) fn app_err(e: IndexError) -> AppError {
 
 use super::blocking;
 
+/// Queries over a cold index would silently miss rows: fail instead (Bases, the graph).
+pub(crate) fn ensure_ready(index: &Index) -> Result<(), AppError> {
+    if index.status().map_err(app_err)?.state == IndexState::Building {
+        return Err(AppError::Io(
+            "the vault index is still being built; try again when it is ready".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Return this window's index, opening it (and queueing a warm scan) when the
 /// window has none for the current workspace and epoch.
 fn ensure_index<R: Runtime>(

@@ -118,6 +118,87 @@ pub struct ItemRow {
     pub link_target: Option<String>,
 }
 
+/// A link found in a frontmatter value, with the property it sits in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FmLink {
+    pub link: ParsedLink,
+    /// The property key (nested keys joined with `.`). In a block that does not parse it is the
+    /// top-level key of the line holding the link, when one can be told.
+    pub label: Option<String>,
+    /// 1-based line inside the frontmatter text (the first line after the opening fence is 1);
+    /// the line of the top-level key for parsed values. `None` when unknown.
+    pub line: Option<u32>,
+}
+
+/// Top-level `key:` lines of a frontmatter text: `(1-based line, key)`. A heuristic that reads
+/// only the line shape (column 0, not a comment or a list item); it is used for the line of a
+/// link and for the label when the YAML does not parse.
+fn key_lines(text: &str) -> Vec<(u32, String)> {
+    let mut out = Vec::new();
+    for (i, line) in text.split('\n').enumerate() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.starts_with([' ', '\t', '#', '-']) {
+            continue;
+        }
+        let Some((key, _)) = line.split_once(':') else {
+            continue;
+        };
+        let key = key.trim().trim_matches(['"', '\'']);
+        if !key.is_empty() {
+            out.push((i as u32 + 1, key.to_string()));
+        }
+    }
+    out
+}
+
+/// Links of one value, labelled and located; walks the value in document order.
+fn collect_links(
+    node: &YNode,
+    path: &mut Vec<String>,
+    keys: &[(u32, String)],
+    out: &mut Vec<FmLink>,
+) {
+    match node {
+        YNode::Str { s, .. } => {
+            let label = (!path.is_empty()).then(|| path.join("."));
+            let line = path
+                .first()
+                .and_then(|top| keys.iter().find(|(_, k)| k == top).map(|(line, _)| *line));
+            out.extend(markdown::scan_links(s).into_iter().map(|link| FmLink {
+                link,
+                label: label.clone(),
+                line,
+            }));
+        }
+        YNode::Seq(items) => items.iter().for_each(|n| collect_links(n, path, keys, out)),
+        YNode::Map(pairs) => {
+            for (key, value) in pairs {
+                path.push(key.clone());
+                collect_links(value, path, keys, out);
+                path.pop();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Links of a frontmatter text that does not parse: every link in the text, labelled by the
+/// nearest top-level key above it.
+fn scan_unparsed_links(text: &str, keys: &[(u32, String)]) -> Vec<FmLink> {
+    markdown::scan_links(text)
+        .into_iter()
+        .map(|link| {
+            let line = 1 + text[..link.span.0].matches('\n').count() as u32;
+            let key = keys.iter().rev().find(|(l, _)| *l <= line);
+            FmLink {
+                link,
+                label: key.map(|(_, k)| k.clone()),
+                line: Some(line),
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Default)]
 pub struct FrontmatterData {
     pub json: Option<String>,
@@ -126,7 +207,7 @@ pub struct FrontmatterData {
     pub items: Vec<ItemRow>,
     /// Raw `tags` strings (before normalisation).
     pub tags: Vec<String>,
-    pub links: Vec<ParsedLink>,
+    pub links: Vec<FmLink>,
 }
 
 pub fn vtype(node: &YNode) -> &'static str {
@@ -183,15 +264,6 @@ fn scalar_date(node: &YNode) -> Option<i64> {
     match node {
         YNode::Date { ms, .. } | YNode::DateTime { ms, .. } => Some(*ms),
         _ => None,
-    }
-}
-
-fn collect_strings<'a>(node: &'a YNode, out: &mut Vec<&'a str>) {
-    match node {
-        YNode::Str { s, .. } => out.push(s),
-        YNode::Seq(items) => items.iter().for_each(|n| collect_strings(n, out)),
-        YNode::Map(pairs) => pairs.iter().for_each(|(_, n)| collect_strings(n, out)),
-        _ => {}
     }
 }
 
@@ -270,7 +342,7 @@ pub fn parse_frontmatter(text: &str) -> FrontmatterData {
         Err(e) => {
             data.error = Some(e);
             // Best effort so links in a broken block still count.
-            data.links = markdown::scan_links(text);
+            data.links = scan_unparsed_links(text, &key_lines(text));
             return data;
         }
     };
@@ -321,11 +393,7 @@ pub fn parse_frontmatter(text: &str) -> FrontmatterData {
         }
     }
 
-    let mut strings = Vec::new();
-    collect_strings(&node, &mut strings);
-    for s in strings {
-        data.links.extend(markdown::scan_links(s));
-    }
+    collect_links(&node, &mut Vec::new(), &key_lines(text), &mut data.links);
     data
 }
 
@@ -347,7 +415,7 @@ mod tests {
         assert_eq!(items[1].vtype, "link");
         assert_eq!(items[2].vtype, "text");
         assert_eq!(ty("real"), "list", "a real nested list stays a list");
-        assert!(d.links.iter().any(|l| l.raw == "A"));
+        assert!(d.links.iter().any(|l| l.link.raw == "A"));
     }
 
     #[test]

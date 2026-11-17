@@ -29,6 +29,26 @@ impl LinkKind {
             LinkKind::MarkdownEmbed => "markdown_embed",
         }
     }
+
+    /// Whether the link embeds its target (`![[x]]`, `![](x)`).
+    pub fn is_embed(self) -> bool {
+        matches!(self, LinkKind::Embed | LinkKind::MarkdownEmbed)
+    }
+
+    /// Whether it was written as a markdown link (`[t](x)`) rather than a wikilink.
+    pub fn is_markdown(self) -> bool {
+        matches!(self, LinkKind::Markdown | LinkKind::MarkdownEmbed)
+    }
+
+    /// Inverse of ([`Self::is_embed`], [`Self::is_markdown`]).
+    pub fn from_parts(embed: bool, markdown: bool) -> Self {
+        match (embed, markdown) {
+            (false, false) => LinkKind::Wikilink,
+            (true, false) => LinkKind::Embed,
+            (false, true) => LinkKind::Markdown,
+            (true, true) => LinkKind::MarkdownEmbed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +61,15 @@ pub struct ParsedLink {
     pub subpath: Option<String>,
     /// Byte span of the whole link in the scanned text.
     pub span: (usize, usize),
+}
+
+/// A body link with where it sits: the 1-based file line and the text of the nearest heading at
+/// or above it (None before the first heading), untruncated.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedLink {
+    pub link: ParsedLink,
+    pub line: u32,
+    pub section: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,7 +88,7 @@ pub struct Heading {
 
 #[derive(Debug, Default)]
 pub struct BodyScan {
-    pub links: Vec<ParsedLink>,
+    pub links: Vec<LocatedLink>,
     /// Normalised (lowercase) tags exactly as written; ancestors are added by
     /// [`with_ancestors`].
     pub tags: Vec<String>,
@@ -510,6 +539,7 @@ fn count_words(line: &str) -> u32 {
 pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
     let mut scan = BodyScan::default();
     let mut fence: Option<(char, usize)> = None;
+    let mut section: Option<String> = None;
     for (i, raw_line) in body.split('\n').enumerate() {
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let line_no = first_line + i as u32;
@@ -526,6 +556,7 @@ pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
             continue;
         }
         if let Some(h) = heading(line, line_no) {
+            section = Some(h.text.clone());
             scan.headings.push(h);
         }
         if let Some(t) = task(line, line_no) {
@@ -534,7 +565,11 @@ pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
         let masked = mask_code_spans(line);
         let links = scan_links(&masked);
         scan_tags(&masked, &links, &mut scan.tags);
-        scan.links.extend(links);
+        scan.links.extend(links.into_iter().map(|link| LocatedLink {
+            link,
+            line: line_no,
+            section: section.clone(),
+        }));
     }
     scan
 }

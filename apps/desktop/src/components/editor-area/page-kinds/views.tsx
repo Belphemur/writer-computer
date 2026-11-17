@@ -15,6 +15,7 @@ import type { Location } from "./index";
 import type { BaseLocation } from "./base";
 import type { CodeLocation } from "./code";
 import type { FileLocation } from "./file";
+import type { GraphLocation } from "./graph";
 import type { ImageLocation } from "./image";
 import type { LauncherLocation } from "./launcher";
 import type { PluginFileLocation } from "./plugin-file";
@@ -89,6 +90,7 @@ const views = {
       </button>
     ),
   }) satisfies PageKindView<BaseLocation>,
+  graph: featureView("graph", { feature: "graph" }) satisfies PageKindView<GraphLocation>,
   launcher: {
     Component: NewTabPage,
   } satisfies PageKindView<LauncherLocation>,

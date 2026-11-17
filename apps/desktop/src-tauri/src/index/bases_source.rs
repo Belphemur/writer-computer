@@ -15,7 +15,7 @@
 //!   parked in the source and surfaced by [`run_base_view`] (no silent fallback).
 
 use super::markdown::{normalize_tag, LinkKind};
-use super::{Index, IndexError};
+use super::{edges, Index, IndexError};
 use crate::bases::context::{Clock, FileMeta, RowContext};
 use crate::bases::datetime;
 use crate::bases::document::Document;
@@ -228,21 +228,15 @@ impl IndexRow {
                 .collect::<Result<_, _>>()?;
             // The index stores ancestors of nested tags too; `file.tags` lists
             // tags as written (leaves), `hasTag` still matches ancestors.
-            Ok(all
-                .iter()
-                .filter(|t| {
-                    let prefix = format!("{t}/");
-                    !all.iter().any(|u| u.starts_with(&prefix))
-                })
-                .cloned()
-                .collect())
+            Ok(super::query::leaf_tags(all))
         })
     }
 
     fn load_links(&self) -> Res<(Vec<LinkValue>, Vec<LinkValue>)> {
         self.env.index.read(|c| {
             let mut st = c.prepare_cached(
-                "SELECT raw, target_path, kind, display FROM links WHERE src_id = ?1 ORDER BY rowid",
+                "SELECT e.target, d.path, e.kind, e.display FROM edges e \
+                 LEFT JOIN files d ON d.id = e.dst_id WHERE e.src_id = ?1 ORDER BY e.ord",
             )?;
             let mut links = Vec::new();
             let mut embeds = Vec::new();
@@ -258,7 +252,7 @@ impl IndexRow {
                     display: r.get(3)?,
                     resolved: r.get(1)?,
                 };
-                if kind == "embed" || kind == "markdown_embed" {
+                if kind == edges::KIND_EMBED {
                     embeds.push(link);
                 } else {
                     links.push(link);
@@ -315,8 +309,16 @@ impl RowContext for IndexRow {
     }
 
     fn backlinks(&self) -> Vec<String> {
-        match self.env.index.cached_backlinks() {
-            Ok(map) => map.get(&self.path).cloned().unwrap_or_default(),
+        match self.env.index.graph_snapshot() {
+            Ok(graph) => graph
+                .node_of_path(&self.path)
+                .map(|n| {
+                    graph
+                        .in_neighbors(n)
+                        .map(|m| graph.path(m).to_string())
+                        .collect()
+                })
+                .unwrap_or_default(),
             Err(e) => {
                 self.env.fail(e);
                 Vec::new()
@@ -758,18 +760,21 @@ mod tests {
     }
 
     #[test]
-    fn backlink_cache_follows_the_index_epoch() {
+    fn backlink_snapshot_follows_the_index_epoch() {
         let v = vault();
-        let first = v.index.cached_backlinks().unwrap();
-        let again = v.index.cached_backlinks().unwrap();
+        let first = v.index.graph_snapshot().unwrap();
+        let again = v.index.graph_snapshot().unwrap();
         assert!(Arc::ptr_eq(&first, &again));
         write(v.index.root(), "Newcomer.md", "[[Home]]\n");
         v.index
             .index_paths_blocking(vec![v.index.root().join("Newcomer.md")])
             .unwrap();
-        let after = v.index.cached_backlinks().unwrap();
+        let after = v.index.graph_snapshot().unwrap();
         assert!(!Arc::ptr_eq(&first, &after));
-        assert!(after["Home.md"].contains(&"Newcomer.md".to_string()));
+        let home = after.node_of_path("Home.md").unwrap();
+        assert!(after
+            .in_neighbors(home)
+            .any(|n| after.path(n) == "Newcomer.md"));
     }
 
     #[test]

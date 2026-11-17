@@ -11,6 +11,8 @@ import {
   opensAsDocument,
   serializeLocation,
   deserializeLocation,
+  withGraphState,
+  type GraphLocation,
   type Location,
   type SerializedLocation,
 } from "@/components/editor-area/page-kinds";
@@ -138,6 +140,8 @@ interface EditorState {
   markSaved: (path: string, diskContent: string, hasNewerChanges?: boolean) => void;
   setSaveError: (path: string, error: string | null) => void;
   setBaseTabView: (tabId: string, view: string | undefined) => void;
+  /** Persists a graph tab's own state (camera, pins) in its location, restored with the session. */
+  setGraphTabState: (tabId: string, state: Partial<Omit<GraphLocation, "kind">>) => void;
   reloadFromDisk: (path: string, rawContent: string) => void;
   updateScrollPos: (path: string, pos: number) => void;
   updateCursorPos: (path: string, pos: number) => void;
@@ -178,6 +182,14 @@ export function createFileTab(path: string, id = createTabId()): Tab {
 
 export function createSettingsTab(id = createTabId()): Tab {
   return { id, location: { kind: "settings" }, back: [], forward: [] };
+}
+
+/** A tab for the global graph, optionally centered on a vault-relative note. */
+export function createGraphTab(
+  target: { center?: string; depth?: number } = {},
+  id = createTabId(),
+): Tab {
+  return { id, location: withGraphState({ kind: "graph" }, target), back: [], forward: [] };
 }
 
 export function createPluginViewTab(
@@ -1543,6 +1555,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const location: Location = { kind: "base", path: tab.location.path };
       if (view !== undefined) location.view = view;
       const tabs = [...state.tabs];
+      tabs[index] = { ...tab, location };
+      return { tabs };
+    });
+  },
+
+  setGraphTabState: (tabId: string, state) => {
+    set((current) => {
+      const index = getTabIndex(current.tabs, tabId);
+      const tab = current.tabs[index];
+      if (!tab || tab.location.kind !== "graph") return current;
+      const location = withGraphState(tab.location, state);
+      if (JSON.stringify(location) === JSON.stringify(tab.location)) return current;
+      const tabs = [...current.tabs];
       tabs[index] = { ...tab, location };
       return { tabs };
     });

@@ -13,11 +13,11 @@ use crate::bases::document::Document;
 use crate::bases::functions::{function_infos, FunctionInfo};
 use crate::bases::query::BaseQueryResult;
 use crate::commands::blocking;
-use crate::commands::index::{app_err, window_index};
+use crate::commands::index::{app_err, ensure_ready, window_index};
 use crate::error::AppError;
 use crate::index::bases_source::{eval_expression, run_base_view};
 use crate::index::patch::{self, ValueType};
-use crate::index::{FileFilter, Index, IndexState};
+use crate::index::{FileFilter, Index};
 use crate::vault_ops::{self, Confined, VaultOpError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -32,16 +32,6 @@ pub(crate) fn op_err(e: VaultOpError) -> AppError {
         VaultOpError::Invalid(m) => AppError::InvalidPath(m),
         other => AppError::Io(other.to_string()),
     }
-}
-
-/// Queries over a cold index would silently miss rows: fail instead.
-fn ensure_ready(index: &Index) -> Result<(), AppError> {
-    if index.status().map_err(app_err)?.state == IndexState::Building {
-        return Err(AppError::Io(
-            "the vault index is still being built; try again when it is ready".into(),
-        ));
-    }
-    Ok(())
 }
 
 fn require_base(c: &Confined) -> Result<(), AppError> {

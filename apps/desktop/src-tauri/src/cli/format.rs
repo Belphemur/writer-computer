@@ -138,6 +138,37 @@ pub fn render(t: &Table, format: &str, header: bool) -> Result<String, String> {
                     .join(",")
             })))
         }
+        "text" => {
+            // Columns padded to their widest cell, two spaces apart; the last one is not padded.
+            let mut grid: Vec<Vec<String>> = Vec::new();
+            if header {
+                grid.push(t.cols.clone());
+            }
+            grid.extend(t.rows.iter().map(texts));
+            let ncols = t.cols.len();
+            let widths: Vec<usize> = (0..ncols)
+                .map(|c| {
+                    grid.iter()
+                        .map(|r| r.get(c).map_or(0, |s| s.chars().count()))
+                        .max()
+                        .unwrap_or(0)
+                })
+                .collect();
+            lines(grid.iter().map(|r| {
+                let cells: Vec<String> = r
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        if i + 1 == ncols {
+                            c.clone()
+                        } else {
+                            format!("{c:<w$}", w = widths[i])
+                        }
+                    })
+                    .collect();
+                cells.join("  ").trim_end().to_string()
+            }))
+        }
         "md" => {
             let mut out = format!(
                 "| {} |\n| {} |\n",
@@ -206,6 +237,10 @@ mod tests {
         assert_eq!(
             render(&o, "json", true).unwrap(),
             "[\n  {\n    \"z\": 1,\n    \"a\": [\n      1,\n      2\n    ]\n  }\n]\n"
+        );
+        assert_eq!(
+            render(&t, "text", false).unwrap(),
+            "a,b    1\nx\"y|z\np, q   2.5\n"
         );
         assert!(render(&t, "yaml", true).is_err());
     }

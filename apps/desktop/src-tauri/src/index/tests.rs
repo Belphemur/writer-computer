@@ -7,12 +7,12 @@ use std::fs;
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
-struct Fixture {
-    vault: TempDir,
-    data: TempDir,
+pub(super) struct Fixture {
+    pub(super) vault: TempDir,
+    pub(super) data: TempDir,
 }
 
-fn write(root: &Path, rel: &str, content: &str) {
+pub(super) fn write(root: &Path, rel: &str, content: &str) {
     let p = root.join(rel);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
     fs::write(p, content).unwrap();
@@ -29,7 +29,7 @@ const FIXTURE_FILES: usize = 43;
 /// Markdown notes (everything except `pic.png`, `spec.pdf`, `data.base`).
 const FIXTURE_MD: usize = 40;
 
-fn build_fixture() -> Fixture {
+pub(super) fn build_fixture() -> Fixture {
     let vault = TempDir::new().unwrap();
     let r = vault.path();
     write(
@@ -109,7 +109,7 @@ fn build_fixture() -> Fixture {
     }
 }
 
-fn open(fx: &Fixture) -> Index {
+pub(super) fn open(fx: &Fixture) -> Index {
     Index::open_for_cli(fx.vault.path(), Some(fx.data.path())).unwrap()
 }
 

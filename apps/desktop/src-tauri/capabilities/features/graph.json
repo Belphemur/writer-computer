@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-graph",
+  "description": "Grants the graph feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["graph:default"]
+}

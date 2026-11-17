@@ -1,0 +1,96 @@
+{
+  "settings": [
+    {
+      "key": "graph.local-depth",
+      "label": "Local graph depth",
+      "description": "How many links away from the active note the local graph panel reaches by default.",
+      "category": "Graph",
+      "type": "range",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "scope": "global",
+      "default": 1
+    },
+    {
+      "key": "graph.label-zoom",
+      "label": "Label zoom",
+      "description": "How far you zoom in before every note shows its name (percent; lower shows names sooner). The note under the pointer, the center note and search matches always show theirs.",
+      "category": "Graph",
+      "type": "range",
+      "min": 20,
+      "max": 300,
+      "step": 10,
+      "scope": "global",
+      "default": 100
+    },
+    {
+      "key": "graph.force-center",
+      "label": "Center force",
+      "description": "How strongly the graph is pulled toward its center.",
+      "category": "Graph",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "scope": "global",
+      "default": 20
+    },
+    {
+      "key": "graph.force-repel",
+      "label": "Repel force",
+      "description": "How strongly notes push each other apart.",
+      "category": "Graph",
+      "type": "range",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "scope": "global",
+      "default": 10
+    },
+    {
+      "key": "graph.force-link-distance",
+      "label": "Link distance",
+      "description": "How far linked notes sit from each other (higher spreads links out).",
+      "category": "Graph",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "scope": "global",
+      "default": 50
+    },
+    {
+      "key": "graph.force-group-pull",
+      "label": "Group pull",
+      "description": "How strongly notes of the same group (Group by) are pulled together.",
+      "category": "Graph",
+      "type": "range",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "scope": "global",
+      "default": 40
+    },
+    {
+      "key": "graph.animate",
+      "label": "Animate",
+      "description": "Animate the layout and camera moves. Always off when your system asks for reduced motion.",
+      "category": "Graph",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
+      "key": "graph.card-properties",
+      "label": "Card property",
+      "description": "Property names, comma separated, whose first value a note's close-up card shows under its title (type, status or an enum property). The first one a note has set wins.",
+      "category": "Graph",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "type, status",
+      "scope": "global",
+      "default": "type, status"
+    }
+  ]
+}

@@ -34,20 +34,21 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 
 See [references/commands.md](references/commands.md) for every command with its parameters and flags.
 
-| Group      | Commands                                                                    |
-| ---------- | --------------------------------------------------------------------------- |
-| Vault      | `vault`, `vaults`                                                           |
-| Files      | `files`, `file`, `folders`, `folder`                                        |
-| Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `title`, `delete`  |
-| Search     | `search`, `search:context` (see the `writer-search` skill)                  |
-| Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases` |
-| Tags       | `tags`, `tag`                                                               |
-| Tasks      | `tasks`, `task`                                                             |
-| Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                   |
-| Structure  | `outline`, `wordcount`                                                      |
-| Bases      | `bases`, `base:views`, `base:create`, `base:query` (see `writer-bases`)     |
-| Meta       | `help`, `version`                                                           |
-| Skills     | `skills:sync` (reinstall the managed agent skills in this vault)            |
+| Group      | Commands                                                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vault      | `vault`, `vaults`                                                                                                                             |
+| Files      | `files`, `file`, `folders`, `folder`                                                                                                          |
+| Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `title`, `delete`                                                                    |
+| Search     | `search`, `search:context` (see the `writer-search` skill)                                                                                    |
+| Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases`                                                                   |
+| Tags       | `tags`, `tag`                                                                                                                                 |
+| Tasks      | `tasks`, `task`                                                                                                                               |
+| Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                                                                                     |
+| Graph      | `graph:neighbors`, `graph:path`, `graph:relationships`, `graph:backlinks`, `graph:related`, `graph:hubs`, `graph:components`, `graph:orphans` |
+| Structure  | `outline`, `wordcount`                                                                                                                        |
+| Bases      | `bases`, `base:views`, `base:create`, `base:query` (see `writer-bases`)                                                                       |
+| Meta       | `help`, `version`                                                                                                                             |
+| Skills     | `skills:sync` (reinstall the managed agent skills in this vault)                                                                              |
 
 ## Typical tasks
 
@@ -61,12 +62,18 @@ writer append path=Inbox.md heading="Today" content="- call back"
 writer property:set file=Recipe name=status value=draft
 writer tags counts sort=count
 writer backlinks file=Recipe format=json
+writer graph:neighbors file=Recipe depth=2 format=json   # what surrounds a note, and why
+writer graph:backlinks file=Recipe context format=json   # who links here, with the line
 writer tasks todo verbose
 writer rename file=Recipe name="Best recipe"      # updates links in other notes
 writer rename file=Recipe name="Best recipe" dry-run   # show which files and how many links would change
 writer title file=Recipe set="Best recipe"        # display title only (the `title` property); the file keeps its name
 writer title file=Recipe clear dry-run            # preview removing it
 ```
+
+## How notes relate (graph)
+
+Use the `graph:*` commands, with `format=json`, to understand how notes are connected before reading many files: `graph:neighbors` (notes within `depth=` links, each with how it is reached: a body `link`, an `embed` or a `property` such as `manager`), `graph:path from=A to=B`, `graph:relationships` (property links like `manager: [[Daniel]]`; with no `file=` it lists the property names in use, reuse those names when you write new ones), `graph:backlinks context` (the line that holds each link, capped), `graph:related` (notes that share linked notes), `graph:hubs`, `graph:components`, `graph:orphans` (no link in or out; `orphans` means no incoming link). Results are capped; `truncated: true` means raise `limit=` or lower `depth=`. A note with hundreds of links is listed but not expanded. Links resolve by file name, so a bare `[[index]]` that matches several files is reported by the index as ambiguous.
 
 ## Safety
 

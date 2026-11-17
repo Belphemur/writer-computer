@@ -452,7 +452,7 @@ pub fn set_type(
 
 /// `<root>/.writer`, created, and proven to resolve inside the vault (a symlinked `.writer`
 /// pointing elsewhere is refused).
-fn writer_dir(root: &Path) -> Result<PathBuf, PropertyTypeError> {
+pub(crate) fn writer_dir(root: &Path) -> Result<PathBuf, PropertyTypeError> {
     let io = |e: std::io::Error| PropertyTypeError::Io(e.to_string());
     let dir = root.join(".writer");
     std::fs::create_dir_all(&dir).map_err(io)?;

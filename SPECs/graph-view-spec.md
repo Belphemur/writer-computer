@@ -1,6 +1,6 @@
 # Graph view (UX)
 
-Status: **draft for review (2026-11-17)**. UX of the `graph` built-in feature. The data layer (edges table, snapshot, `graph_slice`, `writer graph:*`) is [`note-graph-spec.md`](./note-graph-spec.md) and its ADR `2026-11-17-represent-the-note-graph-as-one-typed-edge-table-in-the-vault-index` (proposed); section 8.5 there is the data contract this view consumes. Links follow [`link-activation-spec.md`](./link-activation-spec.md). Library ADR: [`docs/decisions/2026-11-17-render-the-graph-view-with-react-sigma-sigma-graphology-and-a-forceatlas2-worker.md`](../docs/decisions/2026-11-17-render-the-graph-view-with-react-sigma-sigma-graphology-and-a-forceatlas2-worker.md).
+Status: **web half implemented 2026-11-17 (phases 3 to 6), Rust half and `.writer/graph.json` commands pending**. UX of the `graph` built-in feature. The data layer (edges table, snapshot, `graph_slice`, `writer graph:*`) is [`note-graph-spec.md`](./note-graph-spec.md) and its ADR `2026-11-17-represent-the-note-graph-as-one-typed-edge-table-in-the-vault-index` (proposed); section 8.5 there is the data contract this view consumes. Links follow [`link-activation-spec.md`](./link-activation-spec.md). Library ADR: [`docs/decisions/2026-11-17-render-the-graph-view-with-react-sigma-sigma-graphology-and-a-forceatlas2-worker.md`](../docs/decisions/2026-11-17-render-the-graph-view-with-react-sigma-sigma-graphology-and-a-forceatlas2-worker.md).
 
 ## 1. Decisions (user, 2026-11-17)
 
@@ -70,7 +70,7 @@ Two independent tools that combine:
 
 - The global graph requests at most 10,000 nodes (highest degree first, per the data contract); a banner says "Showing 10,000 of N notes, refine with filters" when truncated.
 - Hubs above 300 links are drawn but not auto-expanded in the local graph.
-- Layout runs in a Web Worker; the canvas renders with WebGL so 10,000 nodes stay interactive. Libraries (ADR above, user's go 2026-11-17): `@react-sigma/core` over `sigma` 4 (WebGL), `graphology`, and `graphology-layout-forceatlas2` in its Web Worker mode.
+- Layout runs in a Web Worker; the canvas renders with WebGL so 10,000 nodes stay interactive. Libraries (ADR above, user's go 2026-11-17): `@react-sigma/core` over `sigma` 4 (WebGL), `graphology`, and `graphology-layout-forceatlas2`, whose synchronous iteration runs in our own module worker (`layout.worker.ts`), never a blob worker.
 
 ## 6. Settings and persistence
 
@@ -101,3 +101,38 @@ Two independent tools that combine:
 ## 10. Open questions
 
 None. Decided 2026-11-17 (proposed defaults taken): a click in the global graph follows the link-activation rule as is; the local graph panel defaults to depth 1. ForceAtlas2 stays on 0.10.1; 0.11.0-rc1 (`backgroundIterations`) only if layout settling is measured too slow.
+
+## 11. Implementation notes (web half, 2026-11-17)
+
+- Code: `apps/desktop/features/graph/` (`feature.json`, `settings.schema.json`, `web/`, `tests/`). The page kind `graph` is core's (`page-kinds/graph.ts`, `Location` is a closed union, like `base`); its body is the lazy slot `page-view:graph`; the tab keeps camera and pins in its location (session), the vault keeps filters, color rules and Group by.
+- One model (`model.ts`: slice to `GraphSpec` with the filters applied, then `applySpec` in place keyed by path), pure reducers (`reducers.ts`), the ForceAtlas2 worker supervisor (`layout.ts`, factory injected), groups and hull geometry (`groups.ts`, `hulls.ts`), one surface hook shared by the tab and the panel (`use-graph-surface.ts`).
+- Group pull is a hidden anchor node per group with weighted edges from its members (ForceAtlas2 has no custom force). Tag nodes are built client-side from `GraphNode.tags` (the slice contract has no tag nodes). Property-based color rules and Group by read frontmatter through the core `index_get_metadata`, only when a rule or the property needs it.
+- "Attach to agent chat" goes through the service `agent.context` (`features/agent/web/api.ts`), absent while the agent is off.
+- At 10,000 nodes labels are hidden below the zoom threshold, and sigma's label grid (largest, so highest degree, first) limits the rest; hover, focus, search and center always label; edge hover hit-testing turns off when zoomed out past a camera ratio of 3.
+- The layout worker is our own module over ForceAtlas2's synchronous API (`layout.worker.ts`, `layout-worker-core.ts`, `layout-worker-client.ts`), bundled as its own file; the CSP is `worker-src 'self'` with no `blob:` anywhere (the library's own `/worker` entry builds a blob worker, so it is not used).
+- Pending: `.writer/graph.json` needs two Rust commands (`graph_config_read`, `graph_config_write`, see `web/ipc.ts`); until they exist the view uses defaults and does not save. Not verified in a real window: WebGL rendering, edge dashes and arrows, the center ring, hulls, drag-to-pin, frame rate at 10,000 nodes.
+
+## 12. Level of detail (semantic zoom)
+
+The graph shows more the further you zoom in and less the further you zoom out. One function (`features/graph/web/lod.ts`) turns the camera into one of four levels; the tab and the panel share it because it lives in the shared stage.
+
+**Measure.** The on-screen spacing between neighbouring nodes in pixels: `min(width, height) / (sqrt(nodes) * cameraRatio)`. A 40-note graph at "fit" is already in Detail; a 10,000-node graph at "fit" is in Overview. The setting "Label zoom" scales the spacing, moving every boundary at once.
+
+**Table (the one place the numbers live, `LOD_TABLE`).** A level starts at its minimum spacing; moving to a finer level needs 15% more zoom than the boundary and moving back 15% less (hysteresis), so the view never flickers at a boundary.
+
+| Level     | From spacing | Nodes                                                                              | Edges                                                                            | Labels                                                 | Other                                    |
+| --------- | ------------ | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
+| Overview  | 0 px         | Grouped: one bubble per group, sized by note count. Flat: top hubs plus faint dots | Grouped: one line per pair of groups, width by link count. Flat: hub to hub only | Bubble: "value (count)". Flat: hubs only               | A click on a bubble zooms into the group |
+| Structure | 8 px         | Every node a dot sized by degree                                                   | Thin and faint, kinds by color only (no dashes, no arrows)                       | Hubs, plus hovered, searched, center and focused nodes | Edge hover off                           |
+| Detail    | 28 px        | As today                                                                           | Style by kind (dashed embeds), arrowheads                                        | Every node in view, within sigma's label grid density  | Edge hover with its label; hulls visible |
+| Close-up  | 110 px       | Cards                                                                              | As Detail, and property labels drawn on the edges                                | Titles are on the cards                                | Missing notes show "Create note"         |
+
+**Overview grouping.** By "Group by" when it is set; else by folder (top folders, the nested level control applies) when the vault has at least two groups; else the flat hubs mode (1.5% of the nodes by degree, at least 5). Notes with no value join "Other". The aggregation (counts, group-to-group link counts) is computed once per slice or grouping change (`aggregate.ts`); a frame only places each bubble at the centroid of its members (`overview.ts`, a canvas layer over the stage) while the reducers hide the sigma nodes and edges.
+
+**Close-up cards.** An HTML overlay (`cards-layer.tsx`) for at most 150 nodes in view (center, hovered and focused first, then by degree): title, up to 3 tags, the note's type or status value. Chosen over a sigma node program because the cost is bounded by the cap however big the graph is, the browser lays out and keeps the text crisp, and a node program would need a text atlas and GLSL for tags and statuses. The overlay takes no pointer events; clicks and hover still reach sigma's picking.
+
+**Card value (needs the Rust half).** The card's type or status comes from the slice, never from reading a note on the web side: `GraphNode.cardValue?: string | null` (the first set value of the properties the request names) and `GraphSliceArgs.cardProperties?: string[]`, filled from the setting `graph.card-properties` (default `type, status`; the user may name an enum property). Until `graph_slice` returns it the card shows no value line.
+
+**Transitions.** At a level change the scene fades in (opacity from 0.3 to 1 over about 220 ms, nodes, edges and bubbles alike); instant when "Animate" is off or the system asks for reduced motion.
+
+**Performance.** The overview draws at most a few hundred bubbles and 400 lines, or about 150 hubs with faint dots (sigma only), so 10,000 notes stay smooth zoomed out; real frame rate is a manual check.

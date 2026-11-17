@@ -56,6 +56,19 @@ One bullet per command: `required` parameters are marked, everything else is opt
 - `orphans` — files nothing links to. Flags: `total`.
 - `deadends` — files with no outgoing links. Flags: `total`.
 
+## Graph
+
+Every `graph:*` command takes `format=` (text, json or tsv; default text, use json from an agent) and prints errors as `writer: ...` on stderr. `file=` and `path=` work as elsewhere. Traversals are bounded (depth at most 4) and results are capped.
+
+- `graph:neighbors` — notes within a few links of a note, each with `depth`, degrees and `via` (the kind and property of the first link of the way), plus the edges among them; JSON is `{center, nodes, edges, truncated}`. Params: `file=`, `path=`, `depth=` (1 to 4, default 2), `kind=` (link, embed, property; comma separated), `label=` (property name), `direction=` (in, out or both), `limit=` (default 50), `format=`.
+- `graph:path` — the shortest chain of links between two notes, direction ignored, through notes only; exits 1 with `no path within N hops` otherwise. Params: `from=` (required), `to=` (required), `maxdepth=` (default 6), `format=`.
+- `graph:relationships` — property links as `source, label, target, resolved, line`, for a note (as source or target) and/or one property name; with neither, the property names in use with `edges` and `notes` counts. Params: `file=`, `path=`, `label=`, `format=`.
+- `graph:backlinks` — notes linking to a note with `kind`, property `label`, `line` and `section`; `context` adds the line holding each link (at most 240 characters, at most 50 links, read from the note). Params: `file=`, `path=`, `limit=` (default 20), `format=`. Flags: `context`.
+- `graph:related` — notes not linked to the note that share linked notes with it, ranked by `score` (rare shared notes count more), with `shared` and `via`. Params: `file=`, `path=`, `limit=` (default 10), `format=`.
+- `graph:hubs` — the most linked notes. Params: `limit=` (default 20), `format=`.
+- `graph:components` — groups of connected notes, largest first, with one example each. Params: `limit=` (default 20), `format=`.
+- `graph:orphans` — notes with no link in or out (`orphans` means no incoming link). Params: `limit=`, `format=`.
+
 ## Structure
 
 - `outline` — headings of a file. Params: `file=`, `path=`, `format=` (tree, md or json). Flags: `total`.

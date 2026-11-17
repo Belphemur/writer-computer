@@ -1,0 +1,207 @@
+// The surfaces with the canvas mocked (jsdom has no WebGL): the list fallback opens notes from the
+// keyboard and with every gesture, the truncated banner names the 10,000 cap, the local panel
+// follows the active note and the config store saves through one debounced write.
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn() }));
+const nav = vi.hoisted(() => ({
+  navigateToFile: vi.fn(),
+  openFileInNewTab: vi.fn(),
+  setGraphTabState: vi.fn(),
+}));
+vi.mock("@/hooks/editor-api", () => ({
+  ...nav,
+  openGraphTab: vi.fn(),
+  getActiveFilePath: () => null,
+}));
+vi.mock("@/hooks/workspace-api", () => ({
+  getWorkspaceRoot: () => "/vault",
+  getWorkspaceEventIdentity: () => ({ root: "/vault", epoch: 1 }),
+}));
+vi.mock("@/lib/platform", () => ({ detectPlatform: () => "macos" }));
+const ipc = vi.hoisted(() => ({
+  graphSlice: vi.fn(),
+  graphStats: vi.fn(),
+  graphConfigRead: vi.fn(async () => null),
+  graphConfigWrite: vi.fn(async () => {}),
+  noteFrontmatter: vi.fn(async () => ({})),
+  vaultPropertyNames: vi.fn(async () => ["status"]),
+  onIndexChanged: vi.fn(),
+}));
+vi.mock("../web/ipc", () => ipc);
+vi.mock("../web/graph-canvas", () => ({
+  GraphCanvas: (p: { spec: { nodes: unknown[] } }) => (
+    <div data-testid="canvas" data-nodes={p.spec.nodes.length} />
+  ),
+  webglAvailable: () => true,
+}));
+
+import { useEditorStore } from "@/stores/editor-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import { DEFAULT_CONFIG } from "../web/config";
+import { LocalGraphPanel } from "../web/local-panel";
+import { GraphView } from "../web/graph-view";
+import { NodeList } from "../web/node-list";
+import { applySpec, buildSpec, createModel } from "../web/model";
+import { DEFAULT_FILTERS } from "../web/config";
+import { REFETCH_DEBOUNCE_MS, batchAffects } from "../web/use-graph-data";
+import { SAVE_DEBOUNCE_MS, setConfigPort, useGraphConfig } from "../web/store";
+import { smallSlice } from "./fixtures";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let root: Root;
+let el: HTMLElement;
+const flush = () =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.clearAllMocks();
+  ipc.graphSlice.mockResolvedValue(smallSlice());
+  ipc.graphStats.mockResolvedValue({ notes: 25000, edges: 1, unresolved: 0, components: 1 });
+  ipc.onIndexChanged.mockResolvedValue(() => {});
+  useGraphConfig.getState().reset();
+  el = document.createElement("div");
+  document.body.append(el);
+  root = createRoot(el);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  el.remove();
+  vi.useRealTimers();
+  setConfigPort(null);
+});
+
+describe("node list fallback", () => {
+  const spec = () => {
+    const model = createModel();
+    const s = buildSpec(smallSlice(), DEFAULT_FILTERS);
+    applySpec(model, s);
+    return s;
+  };
+
+  it("lists the visible slice by degree and opens a note on Enter or click", async () => {
+    const onOpen = vi.fn();
+    act(() => root.render(<NodeList nodes={spec().nodes} onOpen={onOpen} />));
+    const rows = [...el.querySelectorAll("li button")];
+    expect(rows.map((r) => r.querySelector("span")?.textContent)[0]).toBe("Ana");
+    expect(rows).toHaveLength(4);
+    act(() => rows[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 })));
+    expect(onOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "People/Ana.md" }),
+      "current",
+    );
+    act(() =>
+      rows[0]!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, button: 0, metaKey: true, shiftKey: true }),
+      ),
+    );
+    expect(onOpen).toHaveBeenLastCalledWith(expect.anything(), "new-tab-active");
+    act(() => rows[1]!.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 })));
+    expect(onOpen).toHaveBeenLastCalledWith(expect.anything(), "new-tab-background");
+  });
+});
+
+describe("global graph tab", () => {
+  const location = { kind: "graph" as const };
+  const render = () =>
+    act(() => root.render(<GraphView location={location} isActive tabId="t1" />));
+
+  it("requests at most 10,000 nodes and says so when the slice is truncated", async () => {
+    ipc.graphSlice.mockResolvedValue({ ...smallSlice(), truncated: true });
+    render();
+    await flush();
+    await flush();
+    expect(ipc.graphSlice).toHaveBeenCalledWith(expect.objectContaining({ limit: 10_000 }));
+    expect(el.textContent).toContain("Showing 10,000 of 25,000 notes, refine with filters");
+    expect(el.querySelector("[data-testid=canvas]")?.getAttribute("data-nodes")).toBe("4");
+  });
+
+  it("toggles the Nodes list for screen readers", async () => {
+    render();
+    await flush();
+    await flush();
+    const button = [...el.querySelectorAll("button")].find((b) => b.textContent === "Nodes")!;
+    act(() => button.click());
+    expect(el.querySelector("[data-testid=graph-node-list]")).not.toBeNull();
+  });
+
+  it("shows a filters panel whose changes save once, debounced, to the vault file", async () => {
+    render();
+    await flush();
+    await flush();
+    act(() => [...el.querySelectorAll("button")].find((b) => b.textContent === "Filters")!.click());
+    const tags = [...el.querySelectorAll("label")]
+      .find((l) => l.textContent === "Tags")!
+      .querySelector("input")!;
+    act(() => tags.click());
+    act(() =>
+      [...el.querySelectorAll("label")]
+        .find((l) => l.textContent === "Bases")!
+        .querySelector("input")!
+        .click(),
+    );
+    expect(ipc.graphConfigWrite).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS + 10);
+    });
+    expect(ipc.graphConfigWrite).toHaveBeenCalledTimes(1);
+    const saved = JSON.parse((ipc.graphConfigWrite.mock.calls as unknown as [string][])[0]![0]);
+    expect(saved.global.filters).toMatchObject({ tags: true, bases: true });
+    expect(saved.local).toEqual(DEFAULT_CONFIG.local);
+  });
+});
+
+describe("local graph panel", () => {
+  it("shows an empty state without an active note and follows the active note with depth 1", async () => {
+    useWorkspaceStore.setState({ root: "/vault" });
+    useEditorStore.setState({ activeFilePath: null });
+    act(() => root.render(<LocalGraphPanel />));
+    expect(el.textContent).toContain("Open a note to see its links");
+
+    act(() => useEditorStore.setState({ activeFilePath: "/vault/People/Ana.md" }));
+    await flush();
+    await flush();
+    expect(ipc.graphSlice).toHaveBeenLastCalledWith(
+      expect.objectContaining({ center: "People/Ana.md", depth: 1 }),
+    );
+    const slider = el.querySelector<HTMLInputElement>("input[type=range]")!;
+    expect(slider.value).toBe("1");
+    expect(el.textContent).toContain("Open in graph tab");
+  });
+});
+
+describe("live updates", () => {
+  it("refetches only for batches that concern the slice", () => {
+    expect(batchAffects({ full: true, paths: [] }, new Set(), true)).toBe(true);
+    expect(batchAffects({ full: false, paths: ["x.png"] }, new Set(["a.md"]), true)).toBe(false);
+    expect(batchAffects({ full: false, paths: ["a.md"] }, new Set(["a.md"]), true)).toBe(true);
+    expect(batchAffects({ full: false, paths: ["new.md"] }, new Set(), false)).toBe(true);
+  });
+
+  it("an index change refetches once after the debounce", async () => {
+    let fire: (b: { full: boolean; paths: string[] }) => void = () => {};
+    ipc.onIndexChanged.mockImplementation(async (h) => {
+      fire = h;
+      return () => {};
+    });
+    act(() => root.render(<GraphView location={{ kind: "graph" }} isActive tabId="t1" />));
+    await flush();
+    await flush();
+    const before = ipc.graphSlice.mock.calls.length;
+    fire({ full: false, paths: ["People/Ana.md"] });
+    fire({ full: false, paths: ["People/Ben.md"] });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFETCH_DEBOUNCE_MS + 10);
+    });
+    expect(ipc.graphSlice.mock.calls.length).toBe(before + 1);
+  });
+});

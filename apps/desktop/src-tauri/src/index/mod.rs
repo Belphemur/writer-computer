@@ -13,8 +13,10 @@
 
 pub mod bases_source;
 mod build;
+pub(crate) mod edges;
 pub(crate) mod frontmatter;
 pub mod fts;
+pub mod graph;
 pub(crate) mod markdown;
 pub mod names;
 mod note;
@@ -26,8 +28,11 @@ pub(crate) mod resolve;
 mod schema;
 mod search;
 mod search_query;
+pub mod snapshot;
 mod yaml;
 
+#[cfg(test)]
+mod graph_tests;
 #[cfg(test)]
 mod search_tests;
 #[cfg(test)]
@@ -53,6 +58,7 @@ pub use paths::{cli_app_data_dir, index_db_path, INDEX_DIR_ENV, RELEASE_IDENTIFI
 pub use query::*;
 pub use schema::{schema_version, PARSER_VERSION};
 pub use search::{SearchHit, SearchOptions, SearchPage, Snippet};
+pub use snapshot::GraphSnapshot;
 
 use parking_lot::Mutex;
 use resolve::PathIndex;
@@ -176,11 +182,8 @@ impl ReadPool {
 struct EpochCache {
     epoch: u64,
     paths: Option<Arc<PathIndex>>,
-    backlinks: Option<Arc<BacklinkMap>>,
+    snapshot: Option<Arc<GraphSnapshot>>,
 }
-
-/// Target path -> sorted, distinct source paths (self-links excluded).
-pub type BacklinkMap = std::collections::HashMap<String, Vec<String>>;
 
 pub struct Index {
     shared: Arc<Shared>,
@@ -278,18 +281,23 @@ impl Index {
         self.shared.epoch.load(Ordering::SeqCst)
     }
 
-    /// Path index (link resolution), cached per epoch.
-    pub(crate) fn cached_paths(&self) -> Result<Arc<PathIndex>, IndexError> {
+    /// One derived value, built on first use after the epoch moved and shared until it moves
+    /// again. `slot` picks its cell in the cache; `build` gets the epoch it is built for.
+    fn cached<T>(
+        &self,
+        slot: fn(&mut EpochCache) -> &mut Option<Arc<T>>,
+        build: impl FnOnce(u64) -> Result<T, IndexError>,
+    ) -> Result<Arc<T>, IndexError> {
         let epoch = self.epoch();
         {
-            let c = self.cache.lock();
+            let mut c = self.cache.lock();
             if c.epoch == epoch {
-                if let Some(p) = &c.paths {
-                    return Ok(Arc::clone(p));
+                if let Some(v) = slot(&mut c) {
+                    return Ok(Arc::clone(v));
                 }
             }
         }
-        let built = Arc::new(self.read(build::load_path_index)?);
+        let built = Arc::new(build(epoch)?);
         let mut c = self.cache.lock();
         if c.epoch != epoch {
             *c = EpochCache {
@@ -297,45 +305,22 @@ impl Index {
                 ..EpochCache::default()
             };
         }
-        c.paths = Some(Arc::clone(&built));
+        *slot(&mut c) = Some(Arc::clone(&built));
         Ok(built)
     }
 
-    /// Reverse link map, cached per epoch (it is the slow part of
-    /// `file.backlinks`).
-    pub fn cached_backlinks(&self) -> Result<Arc<BacklinkMap>, IndexError> {
-        let epoch = self.epoch();
-        {
-            let c = self.cache.lock();
-            if c.epoch == epoch {
-                if let Some(b) = &c.backlinks {
-                    return Ok(Arc::clone(b));
-                }
-            }
-        }
-        let built = Arc::new(self.read(|c| {
-            let mut st = c.prepare(
-                "SELECT DISTINCT l.target_path, f.path FROM links l JOIN files f ON f.id = l.src_id \
-                 WHERE l.target_path IS NOT NULL AND l.target_path != f.path ORDER BY l.target_path, f.path",
-            )?;
-            let mut map = BacklinkMap::new();
-            let mut rows = st.query([])?;
-            while let Some(r) = rows.next()? {
-                map.entry(r.get::<_, String>(0)?)
-                    .or_default()
-                    .push(r.get::<_, String>(1)?);
-            }
-            Ok(map)
-        })?);
-        let mut c = self.cache.lock();
-        if c.epoch != epoch {
-            *c = EpochCache {
-                epoch,
-                ..EpochCache::default()
-            };
-        }
-        c.backlinks = Some(Arc::clone(&built));
-        Ok(built)
+    /// Path index (link resolution), cached per epoch.
+    pub(crate) fn cached_paths(&self) -> Result<Arc<PathIndex>, IndexError> {
+        self.cached(|c| &mut c.paths, |_| self.read(build::load_path_index))
+    }
+
+    /// The note graph in memory (backlinks for Bases, paths, hubs, components), cached per
+    /// epoch and built off the writer thread on first use.
+    pub fn graph_snapshot(&self) -> Result<Arc<GraphSnapshot>, IndexError> {
+        self.cached(
+            |c| &mut c.snapshot,
+            |epoch| self.read(|conn| graph::load_snapshot(conn, epoch)),
+        )
     }
 
     pub fn root(&self) -> &Path {

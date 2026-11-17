@@ -57,6 +57,9 @@ catalogs:
     '@lezer/yaml':
       specifier: ^1.0.4
       version: 1.0.4
+    '@react-sigma/core':
+      specifier: 6.0.0
+      version: 6.0.0
     '@tailwindcss/vite':
       specifier: ^4.3.5
       version: 4.3.5
@@ -90,6 +93,12 @@ catalogs:
     dompurify:
       specifier: ^3.4.17
       version: 3.4.17
+    graphology:
+      specifier: 0.26.0
+      version: 0.26.0
+    graphology-layout-forceatlas2:
+      specifier: 0.10.1
+      version: 0.10.1
     jsdom:
       specifier: ^31.0.1
       version: 31.0.1
@@ -111,6 +120,9 @@ catalogs:
     posthog-js:
       specifier: ^1.448.0
       version: 1.448.0
+    sigma:
+      specifier: 4.0.6
+      version: 4.0.6
     tailwindcss:
       specifier: ^4.3.5
       version: 4.3.5
@@ -201,6 +213,9 @@ importers:
       '@lezer/yaml':
         specifier: 'catalog:'
         version: 1.0.4
+      '@react-sigma/core':
+        specifier: 'catalog:'
+        version: 6.0.0(graphology@0.26.0(graphology-types@0.24.8))(react@19.3.1)(sigma@4.0.6(graphology-types@0.24.8))
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.5(@voidzero-dev/vite-plus-core@1.6.0(@types/node@26.6.6)(esbuild@0.27.4)(jiti@2.7.0)(tsx@4.21.0)(typescript@7.0.2)(yaml@2.9.1))
@@ -228,6 +243,12 @@ importers:
       dompurify:
         specifier: 'catalog:'
         version: 3.4.17
+      graphology:
+        specifier: 'catalog:'
+        version: 0.26.0(graphology-types@0.24.8)
+      graphology-layout-forceatlas2:
+        specifier: 'catalog:'
+        version: 0.10.1(graphology-types@0.24.8)
       katex:
         specifier: 'catalog:'
         version: 0.19.1
@@ -249,6 +270,9 @@ importers:
       react-dom:
         specifier: ^19.3.1
         version: 19.3.1(react@19.3.1)
+      sigma:
+        specifier: 'catalog:'
+        version: 4.0.6(graphology-types@0.24.8)
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.5
@@ -1719,6 +1743,13 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@react-sigma/core@6.0.0':
+    resolution: {integrity: sha512-0PGdB2b4bjX/FIHshhCLovIQaqhLpb6LccghmxDRaX99R1w3oX3kyPqHeVMFDK21pfreu6rusvciTSjsCbTzew==}
+    peerDependencies:
+      graphology: ^0.26.0
+      react: ^18.0.0 || ^19.0.0
+      sigma: ^4.0.0
 
   '@rolldown/binding-android-arm-eabi@1.2.19':
     resolution: {integrity: sha512-e+Ebe0WT+9tbXmNKPIiC8YrWAHYwug3m6i4p3rZGGulfZri1jtI4HslT+OZnFf/OIHowWF71DTlHwXBP2SiA7A==}
@@ -3437,6 +3468,24 @@ packages:
   grapheme-splitter@1.0.4:
     resolution: {integrity: sha512-bzh50DW9kTPM00T8y4o8vQg89Di9oLJVLW/KaOGIXJWP/iqCN6WKYkbNOF04vFLJhwcpYUh9ydh/+5vpOqV4YQ==}
 
+  graphology-layout-forceatlas2@0.10.1:
+    resolution: {integrity: sha512-ogzBeF1FvWzjkikrIFwxhlZXvD2+wlY54lqhsrWprcdPjopM2J9HoMweUmIgwaTvY4bUYVimpSsOdvDv1gPRFQ==}
+    peerDependencies:
+      graphology-types: '>=0.19.0'
+
+  graphology-types@0.24.8:
+    resolution: {integrity: sha512-hDRKYXa8TsoZHjgEaysSRyPdT6uB78Ci8WnjgbStlQysz7xR52PInxNsmnB7IBOM1BhikxkNyCVEFgmPKnpx3Q==}
+
+  graphology-utils@2.5.2:
+    resolution: {integrity: sha512-ckHg8MXrXJkOARk56ZaSCM1g1Wihe2d6iTmz1enGOz4W/l831MBCKSayeFQfowgF8wd+PQ4rlch/56Vs/VZLDQ==}
+    peerDependencies:
+      graphology-types: '>=0.23.0'
+
+  graphology@0.26.0:
+    resolution: {integrity: sha512-8SSImzgUUYC89Z042s+0r/vMibY7GX/Emz4LDO5e7jYXhuoWfHISPFJYjpRLUSJGq6UQ6xlenvX1p/hJdfXuXg==}
+    peerDependencies:
+      graphology-types: '>=0.24.0'
+
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
@@ -4278,6 +4327,9 @@ packages:
   shell-quote@1.8.4:
     resolution: {integrity: sha512-VsC6n6vz1ihYYyZZwX7YZSF5l5x36ca17OC+a69h94YqB7X6XLwf+5MOgynYir2SLFUbl8gIYvBo8K8RoNQ6bQ==}
     engines: {node: '>= 0.4'}
+
+  sigma@4.0.6:
+    resolution: {integrity: sha512-3yD7On7NLHGMkBcG2fyhIECxkliqZ+lVcTBS1Lfm/qnndQVGMB+Xp2qL1A/co1qUJAM5bKank3cSrNO5L6J9Zw==}
 
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
@@ -6166,6 +6218,12 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
+  '@react-sigma/core@6.0.0(graphology@0.26.0(graphology-types@0.24.8))(react@19.3.1)(sigma@4.0.6(graphology-types@0.24.8))':
+    dependencies:
+      graphology: 0.26.0(graphology-types@0.24.8)
+      react: 19.3.1
+      sigma: 4.0.6(graphology-types@0.24.8)
+
   '@rolldown/binding-android-arm-eabi@1.2.19':
     optional: true
 
@@ -7879,6 +7937,22 @@ snapshots:
 
   grapheme-splitter@1.0.4: {}
 
+  graphology-layout-forceatlas2@0.10.1(graphology-types@0.24.8):
+    dependencies:
+      graphology-types: 0.24.8
+      graphology-utils: 2.5.2(graphology-types@0.24.8)
+
+  graphology-types@0.24.8: {}
+
+  graphology-utils@2.5.2(graphology-types@0.24.8):
+    dependencies:
+      graphology-types: 0.24.8
+
+  graphology@0.26.0(graphology-types@0.24.8):
+    dependencies:
+      events: 3.3.0
+      graphology-types: 0.24.8
+
   has-flag@4.0.0: {}
 
   he@1.2.0: {}
@@ -8750,6 +8824,13 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   shell-quote@1.8.4: {}
+
+  sigma@4.0.6(graphology-types@0.24.8):
+    dependencies:
+      events: 3.3.0
+      graphology-utils: 2.5.2(graphology-types@0.24.8)
+    transitivePeerDependencies:
+      - graphology-types
 
   signal-exit@4.1.0: {}
 

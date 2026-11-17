@@ -85,6 +85,8 @@ mod ipc_tests;
 mod agent;
 #[path = "../../../features/bases/rust/mod.rs"]
 pub(crate) mod bases;
+#[path = "../../../features/graph/rust/mod.rs"]
+mod graph;
 // Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
 // registers (see the module), it has no plugin, setup or hook for the runner to run.
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
@@ -257,7 +259,7 @@ pub trait Feature<R: Runtime>: Send + Sync {
 /// Every registered first-party feature, in startup order (teardown runs reversed). A
 /// TypeScript-only feature is not listed: its manifest alone is enough.
 pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
-    vec![&agent::Agent, &bases::Bases]
+    vec![&agent::Agent, &bases::Bases, &graph::Graph]
 }
 
 /// Is the feature switched on? `features.<id>.enabled` at the global scope (a vault's config can
@@ -1059,7 +1061,7 @@ mod tests {
             .iter()
             .map(|f| f.manifest().expect("manifest parses").id)
             .collect();
-        assert_eq!(ids, ["agent", "bases"]);
+        assert_eq!(ids, ["agent", "bases", "graph"]);
     }
 
     #[test]
@@ -1109,8 +1111,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            2,
-            "the agent and bases still start"
+            3,
+            "the agent, bases and graph still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1294,7 +1296,9 @@ mod tests {
         assert_eq!(skills, ["writer-bases"]);
         assert!(index_ddl().is_empty());
         assert_eq!(index_schema_suffix(), "");
-        assert_eq!(crate::index::schema_version(), "2");
+        assert!(crate::index::schema_version()
+            .chars()
+            .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
             crate::cli::registry::COMMANDS.len() + 4

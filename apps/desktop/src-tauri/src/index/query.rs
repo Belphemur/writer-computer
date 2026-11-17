@@ -1,7 +1,7 @@
 //! Read-only query API. Plain Rust, no `tauri::` types; backs the Tauri
 //! commands and the CLI.
 
-use super::{Index, IndexError};
+use super::{edges, Index, IndexError};
 use rusqlite::{params_from_iter, types::Value as SqlValue, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -281,16 +281,31 @@ pub struct VaultSummary {
     pub size: i64,
 }
 
+/// The tags as written: drops every tag that is the ancestor of another one in the list (the
+/// index stores `a` and `a/b` for `#a/b`).
+pub(crate) fn leaf_tags(all: Vec<String>) -> Vec<String> {
+    let leaf = |t: &String| {
+        let prefix = format!("{t}/");
+        !all.iter().any(|u| u.starts_with(&prefix))
+    };
+    all.iter().filter(|t| leaf(t)).cloned().collect()
+}
+
 fn in_placeholders(n: usize) -> String {
     vec!["?"; n].join(",")
 }
 
+/// The columns [`link_entry`] reads, over `edges e LEFT JOIN files d ON d.id = e.dst_id`.
+const LINK_COLS: &str = "e.target, d.path, e.kind, e.syntax, e.display, e.subpath";
+const LINK_JOIN: &str = "edges e LEFT JOIN files d ON d.id = e.dst_id";
+
 fn link_entry(r: &rusqlite::Row, o: usize) -> rusqlite::Result<LinkEntry> {
+    let (kind, syntax): (String, String) = (r.get(o + 2)?, r.get(o + 3)?);
     Ok(LinkEntry {
         raw: r.get(o)?,
         target: r.get(o + 1)?,
-        kind: r.get(o + 2)?,
-        in_fm: r.get::<_, i64>(o + 3)? != 0,
+        kind: edges::legacy_link_kind(&kind, &syntax).to_string(),
+        in_fm: kind == edges::KIND_PROPERTY,
         display: r.get(o + 4)?,
         subpath: r.get(o + 5)?,
     })
@@ -417,7 +432,7 @@ impl Index {
                         n.tags.push(TagEntry { tag: r.get(1)?, source: r.get(2)? });
                     }
                 }
-                let mut st = c.prepare(&q("SELECT src_id, raw, target_path, kind, in_fm, display, subpath FROM links {where} ORDER BY src_id, rowid", "src_id"))?;
+                let mut st = c.prepare(&q(&format!("SELECT e.src_id, {LINK_COLS} FROM {LINK_JOIN} {{where}} ORDER BY e.src_id, e.ord"), "e.src_id"))?;
                 let mut rows = st.query(params_from_iter(args.iter()))?;
                 while let Some(r) = rows.next()? {
                     if let Some(n) = notes.get_mut(&r.get::<_, i64>(0)?) {
@@ -440,11 +455,10 @@ impl Index {
     /// Files linking to `path` (self-links excluded), with the link details.
     pub fn backlinks(&self, path: &str) -> Res<Vec<BacklinkEntry>> {
         self.read(|c| {
-            let mut st = c.prepare(
-                "SELECT f.path, l.raw, l.target_path, l.kind, l.in_fm, l.display, l.subpath \
-                 FROM links l JOIN files f ON f.id = l.src_id \
-                 WHERE l.target_path = ?1 AND f.path != ?1 ORDER BY f.path, l.rowid",
-            )?;
+            let mut st = c.prepare(&format!(
+                "SELECT s.path, {LINK_COLS} FROM {LINK_JOIN} JOIN files s ON s.id = e.src_id \
+                 WHERE d.path = ?1 AND e.src_id != e.dst_id ORDER BY s.path, e.ord"
+            ))?;
             let rows = st
                 .query_map([path], |r| {
                     Ok(BacklinkEntry {
@@ -461,9 +475,9 @@ impl Index {
     pub fn links(&self, path: &str) -> Res<Vec<LinkEntry>> {
         self.read(|c| {
             let id = require_file_id(c, path)?;
-            let mut st = c.prepare(
-                "SELECT raw, target_path, kind, in_fm, display, subpath FROM links WHERE src_id = ?1 ORDER BY rowid",
-            )?;
+            let mut st = c.prepare(&format!(
+                "SELECT {LINK_COLS} FROM {LINK_JOIN} WHERE e.src_id = ?1 ORDER BY e.ord"
+            ))?;
             let rows = st
                 .query_map([id], |r| link_entry(r, 0))?
                 .collect::<Result<_, _>>()?;
@@ -475,8 +489,8 @@ impl Index {
     pub fn unresolved(&self) -> Res<Vec<UnresolvedLink>> {
         self.read(|c| {
             let mut st = c.prepare(
-                "SELECT l.raw, f.path FROM links l JOIN files f ON f.id = l.src_id \
-                 WHERE l.target_path IS NULL ORDER BY l.raw COLLATE NOCASE, f.path",
+                "SELECT e.target, f.path FROM edges e JOIN files f ON f.id = e.src_id \
+                 WHERE e.dst_id IS NULL ORDER BY e.target COLLATE NOCASE, f.path",
             )?;
             let mut out: Vec<UnresolvedLink> = Vec::new();
             let mut rows = st.query([])?;
@@ -504,7 +518,7 @@ impl Index {
     /// Markdown files no other file links to.
     pub fn orphans(&self) -> Res<Vec<String>> {
         self.paths_where(
-            "f.ext = 'md' AND NOT EXISTS (SELECT 1 FROM links l WHERE l.target_path = f.path AND l.src_id != f.id)",
+            "f.ext = 'md' AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.dst_id = f.id AND e.src_id != f.id)",
         )
     }
 
@@ -512,7 +526,7 @@ impl Index {
     /// count as outgoing links; self-links do not).
     pub fn deadends(&self) -> Res<Vec<String>> {
         self.paths_where(
-            "f.ext = 'md' AND NOT EXISTS (SELECT 1 FROM links l WHERE l.src_id = f.id AND (l.target_path IS NULL OR l.target_path != f.path))",
+            "f.ext = 'md' AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.src_id = f.id AND (e.dst_id IS NULL OR e.dst_id != f.id))",
         )
     }
 

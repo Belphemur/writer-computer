@@ -3,7 +3,7 @@
 // contribute (the Obsidian host's plugin pages among them) are merged in by `buildSettingsNav`. No React here so stores and hooks can import it.
 import type { ComponentType } from "react";
 import { FEATURE_GROUP_LABEL } from "@/lib/features/origin";
-import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
+import { FEATURE_SETTINGS, SETTINGS_SCHEMA } from "@/lib/settings-schema";
 
 /** What a section's content pane is made of. Each type has exactly one renderer in
  *  `settings-blocks.tsx` (a `Record` keyed by this union, so a new type cannot be forgotten). */
@@ -109,6 +109,8 @@ export function unassignedCategories(): string[] {
   claimed.add(AGENT_CATEGORY);
   claimed.add(FEATURES_CATEGORY);
   claimed.add(COMMUNITY_PLUGINS_CATEGORY);
+  // A feature's own settings fragment is rendered by its generated page (or its own section).
+  for (const def of Object.values(FEATURE_SETTINGS).flat()) claimed.add(def.category);
   return [...new Set(SETTINGS_SCHEMA.map((d) => d.category))].filter((c) => !claimed.has(c));
 }
 

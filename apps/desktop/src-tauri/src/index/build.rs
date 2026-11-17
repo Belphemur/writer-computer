@@ -2,6 +2,7 @@
 //! writer. Everything here runs on the single writer thread; parsing runs on
 //! the walker threads.
 
+use super::edges;
 use super::note::{content_hash, parse_note, ParsedNote};
 use super::paths::{is_indexable_rel, rel_to_string};
 use super::resolve::PathIndex;
@@ -238,7 +239,7 @@ fn delete_children(conn: &Connection, id: i64) -> rusqlite::Result<()> {
         "DELETE FROM props WHERE file_id = ?1",
         "DELETE FROM prop_items WHERE file_id = ?1",
         "DELETE FROM tags WHERE file_id = ?1",
-        "DELETE FROM links WHERE src_id = ?1",
+        "DELETE FROM edges WHERE src_id = ?1",
         "DELETE FROM tasks WHERE file_id = ?1",
         "DELETE FROM headings WHERE file_id = ?1",
     ] {
@@ -257,8 +258,8 @@ pub(crate) struct WriteReport {
 }
 
 /// Upsert records inside the caller's transaction. When `resolver` is given,
-/// new links are resolved immediately; otherwise they are left NULL for a
-/// later [`resolve_links`] pass.
+/// new edges are resolved immediately; otherwise they are left unresolved for a
+/// later [`edges::resolve_edges`] pass.
 ///
 /// Each record runs in its own savepoint: one note whose rows the database rejects must never
 /// roll back the batch. Its savepoint is undone, the note is logged once, and its `files` row
@@ -432,21 +433,7 @@ fn write_children(
     for t in &note.tags {
         st.execute(params![id, t.tag, t.source])?;
     }
-    let mut st = conn.prepare_cached(
-        "INSERT INTO links(src_id,raw,target_path,kind,in_fm,display,subpath) VALUES(?1,?2,?3,?4,?5,?6,?7)",
-    )?;
-    for l in &note.links {
-        let target = resolver.and_then(|r| r.resolve(path, &l.link.raw, l.link.kind));
-        st.execute(params![
-            id,
-            l.link.raw,
-            target,
-            l.link.kind.as_str(),
-            l.in_fm,
-            l.link.display,
-            l.link.subpath
-        ])?;
-    }
+    edges::write_edges(conn, id, path, &note.links, resolver)?;
     let mut st =
         conn.prepare_cached("INSERT INTO tasks(file_id,line,status,text) VALUES(?1,?2,?3,?4)")?;
     for t in &note.tasks {
@@ -458,53 +445,6 @@ fn write_children(
         st.execute(params![id, h.level, h.text, h.line])?;
     }
     Ok(())
-}
-
-/// Recompute `links.target_path`, optionally only for links sourced from
-/// `only_src`. Writes only rows whose target changed. Returns rows updated.
-pub(crate) fn resolve_links(
-    conn: &Connection,
-    paths: &PathIndex,
-    only_src: Option<&[i64]>,
-) -> Result<usize, IndexError> {
-    use super::markdown::LinkKind;
-    let kind_of = |k: &str| match k {
-        "embed" => LinkKind::Embed,
-        "markdown" => LinkKind::Markdown,
-        "markdown_embed" => LinkKind::MarkdownEmbed,
-        _ => LinkKind::Wikilink,
-    };
-    let mut updates: Vec<(i64, Option<String>)> = Vec::new();
-    let mut collect = |sql: &str, args: &[&dyn rusqlite::ToSql]| -> Result<(), IndexError> {
-        let mut st = conn.prepare_cached(sql)?;
-        let mut rows = st.query(args)?;
-        while let Some(r) = rows.next()? {
-            let rowid: i64 = r.get(0)?;
-            let src: String = r.get(1)?;
-            let raw: String = r.get(2)?;
-            let kind: String = r.get(3)?;
-            let old: Option<String> = r.get(4)?;
-            let new = paths.resolve(&src, &raw, kind_of(&kind));
-            if new != old {
-                updates.push((rowid, new));
-            }
-        }
-        Ok(())
-    };
-    const BASE: &str = "SELECT l.rowid, f.path, l.raw, l.kind, l.target_path FROM links l JOIN files f ON f.id = l.src_id";
-    match only_src {
-        None => collect(BASE, &[])?,
-        Some(ids) => {
-            for id in ids {
-                collect(&format!("{BASE} WHERE l.src_id = ?1"), &[id])?;
-            }
-        }
-    }
-    let mut st = conn.prepare_cached("UPDATE links SET target_path = ?2 WHERE rowid = ?1")?;
-    for (rowid, target) in &updates {
-        st.execute(params![rowid, target])?;
-    }
-    Ok(updates.len())
 }
 
 pub(crate) struct ScanOutcome {
@@ -525,6 +465,13 @@ pub(crate) fn scan(
     shared
         .scanned
         .store(0, std::sync::atomic::Ordering::Relaxed);
+    // A cold build loads every edge into an index-less table and builds the indexes once at the
+    // end; any other scan makes sure a cold build that was cut short left none missing.
+    conn.execute_batch(if was_empty {
+        super::schema::DROP_EDGE_INDEXES
+    } else {
+        super::schema::EDGE_INDEXES
+    })?;
 
     let (tx, rx) = sync_channel::<Item>(512);
     let root = shared.root.clone();
@@ -602,16 +549,16 @@ pub(crate) fn scan(
 
     let flush = |conn: &mut Connection,
                  batch: &mut Vec<Box<FileRecord>>|
-     -> Result<Vec<(String, String)>, IndexError> {
-        if batch.is_empty() {
-            return Ok(Vec::new());
-        }
+     -> Result<WriteReport, IndexError> {
         let tx = conn.transaction()?;
         let report = write_records(&tx, batch, None)?;
         tx.commit()?;
         batch.clear();
-        Ok(report.failed)
+        Ok(report)
     };
+    // Files written and files that did not exist before: what the edge resolution below needs.
+    let mut written_ids: Vec<i64> = Vec::new();
+    let mut added: Vec<String> = Vec::new();
 
     for item in rx.iter() {
         if write_error.is_some() {
@@ -666,10 +613,16 @@ pub(crate) fn scan(
                     }
                 }
                 changed.push(rec.path.clone());
+                if !rec.existed {
+                    added.push(rec.path.clone());
+                }
                 batch.push(rec);
                 if batch.len() >= BATCH_SIZE {
                     match flush(conn, &mut batch) {
-                        Ok(failed) => push_failures(&mut stats, failed),
+                        Ok(report) => {
+                            written_ids.extend(report.ids);
+                            push_failures(&mut stats, report.failed);
+                        }
                         Err(e) => write_error = Some(e),
                     }
                 }
@@ -685,7 +638,11 @@ pub(crate) fn scan(
     if shared.cancelled() {
         return Err(IndexError::Cancelled);
     }
-    push_failures(&mut stats, flush(conn, &mut batch)?);
+    if !batch.is_empty() {
+        let report = flush(conn, &mut batch)?;
+        written_ids.extend(report.ids);
+        push_failures(&mut stats, report.failed);
+    }
 
     // Deletions: only valid because the walk completed.
     let gone: Vec<&String> = existing.keys().filter(|p| !seen.contains(*p)).collect();
@@ -693,11 +650,24 @@ pub(crate) fn scan(
     let tx = conn.transaction()?;
     super::fts::delete_files(&tx, &gone)?;
     tx.commit()?;
-    changed.extend(gone.into_iter().cloned());
+    let removed: Vec<String> = gone.into_iter().cloned().collect();
+    changed.extend(removed.iter().cloned());
 
     *paths = load_path_index(conn)?;
     let tx = conn.transaction()?;
-    resolve_links(&tx, paths, None)?;
+    if was_empty {
+        edges::resolve_edges(&tx, paths, edges::Scope::All)?;
+        tx.execute_batch(super::schema::EDGE_INDEXES)?;
+    } else {
+        // The edges of the notes just written were left unresolved; the others only move when a
+        // file of their target name appeared or vanished.
+        edges::resolve_after_changes(
+            &tx,
+            paths,
+            &written_ids,
+            added.iter().chain(&removed).map(String::as_str),
+        )?;
+    }
     super::schema::set_meta(&tx, "built_at", &now_ms().to_string())?;
     tx.commit()?;
 
@@ -834,7 +804,18 @@ pub(crate) fn index_paths(
     // Per-note failures are isolated, logged and marked inside `write_records`.
     write_records(&tx, &records, Some(paths))?;
     if set_changed {
-        resolve_links(&tx, paths, None)?;
+        // Edges of the notes written above were resolved against the new file set already.
+        edges::resolve_after_changes(
+            &tx,
+            paths,
+            &[],
+            removed.iter().map(String::as_str).chain(
+                records
+                    .iter()
+                    .filter(|r| !r.existed)
+                    .map(|r| r.path.as_str()),
+            ),
+        )?;
     }
     tx.commit()?;
 

@@ -4,7 +4,7 @@
 
 use super::args::Args;
 use super::CliError;
-use super::{cmd_files, cmd_notes, cmd_query, cmd_skills, Ctx};
+use super::{cmd_files, cmd_graph, cmd_notes, cmd_query, cmd_skills, Ctx};
 
 pub type Handler = fn(&Ctx, &Args, &CommandSpec) -> Result<String, CliError>;
 
@@ -64,6 +64,7 @@ const RELOCATE_FLAGS: &[(&str, &str)] = &[
 pub(crate) const NO_FLAGS: &[(&str, &str)] = &[];
 pub(crate) const NO_PARAMS: &[ParamSpec] = &[];
 pub(crate) const NO_FORMATS: &[&str] = &[];
+const GRAPH_FORMATS: &[&str] = &["text", "json", "tsv"];
 
 macro_rules! cmd {
     ($name:expr, $group:expr, $summary:expr, $params:expr, $flags:expr, $formats:expr, $default:expr, $run:expr) => {
@@ -489,6 +490,125 @@ pub static COMMANDS: &[CommandSpec] =
             &["json", "tsv", "csv"],
             Some("tsv"),
             cmd_query::backlinks
+        ),
+        // Graph (SPECs/note-graph-spec.md 8.1)
+        cmd!(
+            "graph:neighbors",
+            "Graph",
+            "Notes within a few links of a note, with how each is reached",
+            &[
+                FILE,
+                PATH,
+                p("depth", "1 to 4 (default 2)"),
+                p("kind", "link | embed | property (comma separated)"),
+                p("label", "only this property name"),
+                p("direction", "in | out | both (default both)"),
+                p("limit", "most notes (default 50)"),
+                p("format", "text | json | tsv")
+            ],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::neighbors
+        ),
+        cmd!(
+            "graph:path",
+            "Graph",
+            "The shortest chain of links between two notes",
+            &[
+                req("from", "start note, resolved like a wikilink"),
+                req("to", "end note"),
+                p("maxdepth", "most links to follow (default 6)"),
+                p("format", "text | json | tsv")
+            ],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::path
+        ),
+        cmd!(
+            "graph:relationships",
+            "Graph",
+            "Property links (manager: [[X]]); with no file or label, the property names in use",
+            &[
+                FILE,
+                PATH,
+                p("label", "only this property name"),
+                p("format", "text | json | tsv")
+            ],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::relationships
+        ),
+        cmd!(
+            "graph:backlinks",
+            "Graph",
+            "Notes linking to a note, with kind, property, section and optionally the line",
+            &[
+                FILE,
+                PATH,
+                p("limit", "most links (default 20, 50 with context)"),
+                p("format", "text | json | tsv")
+            ],
+            &[(
+                "context",
+                "add the line holding each link (capped, read from the note)"
+            )],
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::backlinks
+        ),
+        cmd!(
+            "graph:related",
+            "Graph",
+            "Notes not linked to a note but sharing linked notes with it",
+            &[
+                FILE,
+                PATH,
+                p("limit", "most notes (default 10)"),
+                p("format", "text | json | tsv")
+            ],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::related
+        ),
+        cmd!(
+            "graph:hubs",
+            "Graph",
+            "The most linked notes",
+            &[
+                p("limit", "most notes (default 20)"),
+                p("format", "text | json | tsv")
+            ],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::hubs
+        ),
+        cmd!(
+            "graph:components",
+            "Graph",
+            "Groups of connected notes, largest first, with one example each",
+            &[
+                p("limit", "most groups (default 20)"),
+                p("format", "text | json | tsv")
+            ],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::components
+        ),
+        cmd!(
+            "graph:orphans",
+            "Graph",
+            "Notes with no link in or out (orphans means no incoming link)",
+            &[p("limit", "most notes"), p("format", "text | json | tsv")],
+            NO_FLAGS,
+            GRAPH_FORMATS,
+            Some("text"),
+            cmd_graph::orphans
         ),
         cmd!(
             "unresolved",

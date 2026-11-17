@@ -1,0 +1,28 @@
+{
+  "id": "graph",
+  "name": "Graph",
+  "version": "1.0.0",
+  "description": "A graph of notes and links: a global graph tab, a local graph panel that follows the active note, color groups and group by property.",
+  "enabledByDefault": true,
+  "activation": ["onView:graph"],
+  "memory": {
+    "level": "medium",
+    "note": "The graph tab and the local panel load their chunk (WebGL renderer and layout) when first shown; a force layout runs in a web worker only while a graph is visible and settling."
+  },
+  "rust": {
+    "commands": ["graph_config_read", "graph_config_write", "graph_slice", "graph_stats"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "graph.open",
+        "label": "Open graph",
+        "description": "Command",
+        "when": "workspace-window"
+      }
+    ],
+    "sidebarPanels": ["graph.local"],
+    "sidebarActions": ["graph.open-action"],
+    "slots": ["graph.graph-tab"]
+  }
+}

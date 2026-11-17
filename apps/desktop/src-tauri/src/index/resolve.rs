@@ -14,6 +14,11 @@
 //!    components shared with the source), then the shortest path (fewest
 //!    components, then fewest characters), then lexicographic order.
 //!    A unique match is always taken. No match: unresolved (`None`).
+//!
+//! Every rule matches on the last path segment (rules 3 to 5 reach a file only through its own
+//! name), so a link can only start or stop resolving when a file with the bucket key
+//! ([`bucket_key`]) of its target appears or disappears: the argument behind the bucketed
+//! re-resolution in `edges.rs`.
 
 use super::markdown::LinkKind;
 use std::collections::{HashMap, HashSet};
@@ -32,6 +37,32 @@ pub struct PathIndex {
 pub(crate) fn lower(s: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     s.nfc().collect::<String>().to_lowercase()
+}
+
+/// The re-resolution bucket of a link target or a file name: the NFC-lowercase last path
+/// segment with a `.md` suffix removed. A link resolves to a file only if both share this key, so
+/// a vault change that adds or removes files can affect exactly the links whose key it touches.
+/// Empty only for an empty target (a same-file link such as `[[#Heading]]`).
+pub fn bucket_key(target: &str) -> String {
+    let target = target.trim();
+    if target.is_empty() {
+        return String::new();
+    }
+    let key = lower(target);
+    let (_, last) = split_name(&key);
+    // `[[folder/]]` has no last segment; keep the whole text so the key is never empty.
+    let last = if last.is_empty() { key.as_str() } else { last };
+    strip_md(last).to_string()
+}
+
+/// A resolved link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolution {
+    pub path: String,
+    /// More than one file matched the link text as written; the nearest-folder rule picked
+    /// `path`. A bare `[[index]]` that suddenly changes target when a same-named note is
+    /// created is exactly this case.
+    pub ambiguous: bool,
 }
 
 fn split_name(path: &str) -> (&str, &str) {
@@ -163,9 +194,23 @@ impl PathIndex {
     }
 
     pub fn resolve(&self, src_path: &str, raw: &str, kind: LinkKind) -> Option<String> {
+        self.resolve_detailed(src_path, raw, kind).map(|r| r.path)
+    }
+
+    /// [`Self::resolve`] plus whether the link text matched several files.
+    pub fn resolve_detailed(
+        &self,
+        src_path: &str,
+        raw: &str,
+        kind: LinkKind,
+    ) -> Option<Resolution> {
         let raw = raw.trim();
+        let explicit = |path: String| Resolution {
+            path,
+            ambiguous: false,
+        };
         if raw.is_empty() {
-            return Some(src_path.to_string());
+            return Some(explicit(src_path.to_string()));
         }
         let (src_dir, _) = split_name(src_path);
 
@@ -175,21 +220,33 @@ impl PathIndex {
             } else {
                 format!("{src_dir}/{raw}")
             };
-            return normalize(&joined).and_then(|p| self.exact(&p));
+            return normalize(&joined)
+                .and_then(|p| self.exact(&p))
+                .map(explicit);
         }
-        let is_markdown = matches!(kind, LinkKind::Markdown | LinkKind::MarkdownEmbed);
-        if is_markdown && !src_dir.is_empty() {
+        if kind.is_markdown() && !src_dir.is_empty() {
             if let Some(p) = normalize(&format!("{src_dir}/{raw}")).and_then(|p| self.exact(&p)) {
-                return Some(p);
+                return Some(explicit(p));
             }
         }
         let rooted = raw.trim_start_matches('/');
         let rooted = normalize(rooted)?;
+        let cands = self.candidates(&rooted);
         if let Some(p) = self.exact(&rooted) {
-            return Some(p);
+            // A full path names its file; a bare name that also matches others is ambiguous.
+            return Some(Resolution {
+                path: p,
+                ambiguous: !rooted.contains('/') && cands.len() > 1,
+            });
         }
+        let ambiguous = cands.len() > 1;
+        Self::best(cands, src_dir).map(|path| Resolution { path, ambiguous })
+    }
 
-        let key = lower(&rooted);
+    /// Files the link text `rooted` can name by its last segment (and its folders, when it has
+    /// some), in no particular order.
+    fn candidates(&self, rooted: &str) -> Vec<&String> {
+        let key = lower(rooted);
         let (_, last) = split_name(&key);
         let mut cands: Vec<&String> = Vec::new();
         let mut seen = HashSet::new();
@@ -211,7 +268,7 @@ impl PathIndex {
                 lp.ends_with(&want_full) || strip_md(&lp).ends_with(&want_md)
             });
         }
-        Self::best(cands, src_dir)
+        cands
     }
 }
 
@@ -354,6 +411,88 @@ mod tests {
         assert_eq!(r("A Fancy Title"), None);
         // a note never answers to a name with a different extension
         assert_eq!(r("Twin.png"), None);
+    }
+
+    #[test]
+    fn bucket_key_is_the_normalised_last_segment() {
+        assert_eq!(bucket_key("Note"), "note");
+        assert_eq!(bucket_key("a/B/Note.MD"), "note");
+        assert_eq!(bucket_key("../x/Pic.PNG"), "pic.png");
+        assert_eq!(
+            bucket_key("Fran\u{63}\u{327}ois"),
+            bucket_key("Fran\u{e7}ois")
+        );
+        assert_eq!(bucket_key(""), "");
+        assert_eq!(bucket_key("  "), "");
+        assert_eq!(bucket_key("folder/"), "folder/");
+    }
+
+    #[test]
+    fn a_link_only_resolves_to_files_sharing_its_bucket_key() {
+        // The incremental re-resolution rests on this: whatever the link text, the target's
+        // own bucket key is the link's.
+        let files = [
+            "Note.md",
+            "a/Note.md",
+            "a/b/Note.md",
+            "x/note.MD",
+            "img/pic.png",
+            "pic.png.md",
+            "docs/Spec.PDF",
+            "b/n.md",
+            "n.md",
+            "Ünï/çö.md",
+            "c/Makefile",
+        ];
+        let i = idx(&files);
+        let links = [
+            "note",
+            "Note.md",
+            "a/note",
+            "b/Note",
+            "pic.png",
+            "pic",
+            "spec.pdf",
+            "n",
+            "b/n",
+            "./n",
+            "../n",
+            "ÇÖ",
+            "Ünï/çö",
+            "makefile",
+            "nope",
+            "a/",
+            "..",
+        ];
+        for src in ["s.md", "a/s.md", "a/b/s.md", "z/y/s.md"] {
+            for raw in links {
+                for kind in [LinkKind::Wikilink, LinkKind::Markdown] {
+                    if let Some(path) = i.resolve(src, raw, kind) {
+                        assert_eq!(
+                            bucket_key(split_name(&path).1),
+                            bucket_key(raw),
+                            "{src} -> [[{raw}]] -> {path}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ambiguity_is_reported_for_bare_names_that_match_several_files() {
+        let i = idx(&["a/n.md", "b/n.md", "u/only.md", "n.md"]);
+        let d = |src: &str, raw: &str| i.resolve_detailed(src, raw, LinkKind::Wikilink).unwrap();
+        // Nearest folder picks one, but the name is shared.
+        assert!(d("a/s.md", "n").ambiguous);
+        assert_eq!(d("a/s.md", "n").path, "n.md"); // exact root path wins
+        assert!(!d("a/s.md", "a/n").ambiguous, "a path names its file");
+        assert!(!d("a/s.md", "only").ambiguous);
+        let j = idx(&["a/n.md", "b/n.md"]);
+        let r = j
+            .resolve_detailed("b/s.md", "n", LinkKind::Wikilink)
+            .unwrap();
+        assert_eq!((r.path.as_str(), r.ambiguous), ("b/n.md", true));
     }
 
     #[test]

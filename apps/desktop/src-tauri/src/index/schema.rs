@@ -1,4 +1,4 @@
-//! Schema v2 (v1 + the `notes_fts` full-text table), open-or-rebuild.
+//! Schema v4 (`edges`, the note-graph table, replaces the v1 `links` table), open-or-rebuild.
 
 use super::IndexError;
 use rusqlite::{Connection, OpenFlags};
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 /// The core schema's version. The version stored in `meta` and compared on open is
 /// [`schema_version`]: this plus the suffix for the DDL features contribute.
-pub const SCHEMA_VERSION: &str = "2";
+pub const SCHEMA_VERSION: &str = "4";
 
 /// Core version plus `features::index_schema_suffix` (empty while no feature adds DDL), so a
 /// feature adding or changing a table rebuilds the rebuildable cache from its own folder.
@@ -17,7 +17,7 @@ pub fn schema_version() -> &'static str {
 }
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
-pub const PARSER_VERSION: &str = "2";
+pub const PARSER_VERSION: &str = "3";
 
 const SCHEMA: &str = "
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -53,13 +53,25 @@ CREATE TABLE tags(
   UNIQUE(file_id, tag, source)
 );
 CREATE INDEX tags_tag ON tags(tag);
-CREATE TABLE links(
+-- The note graph (SPECs/note-graph-spec.md 4.2): one row per link occurrence. `dst_id` NULL is
+-- unresolved. `dst_key` is `resolve::bucket_key` of the target, so a change to the set of vault
+-- files can find the edges it affects. STRICT (new table, SQLite 3.37+, bundled 3.54).
+CREATE TABLE edges(
+  id INTEGER PRIMARY KEY,
   src_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  raw TEXT NOT NULL, target_path TEXT, kind TEXT NOT NULL, in_fm INTEGER NOT NULL,
-  display TEXT, subpath TEXT
-);
-CREATE INDEX links_src ON links(src_id);
-CREATE INDEX links_target ON links(target_path);
+  dst_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+  dst_key TEXT NOT NULL,
+  target TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  syntax TEXT NOT NULL,
+  label TEXT,
+  ambiguous INTEGER NOT NULL DEFAULT 0,
+  ord INTEGER NOT NULL,
+  line INTEGER,
+  section TEXT,
+  display TEXT,
+  subpath TEXT
+) STRICT;
 CREATE TABLE tasks(
   file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
   line INTEGER NOT NULL, status TEXT NOT NULL, text TEXT NOT NULL
@@ -70,6 +82,23 @@ CREATE TABLE headings(
   level INTEGER NOT NULL, text TEXT NOT NULL, line INTEGER NOT NULL
 );
 CREATE INDEX headings_file ON headings(file_id);
+";
+
+/// The `edges` indexes: out-neighbours, backlinks (partial: resolved only), re-resolution by
+/// target name, and relationships by property name. Kept apart from [`SCHEMA`] because a cold
+/// build drops them for the bulk load and recreates them once (much cheaper than maintaining
+/// them per row); `IF NOT EXISTS` makes the creation safe to repeat.
+pub(crate) const EDGE_INDEXES: &str = "
+CREATE INDEX IF NOT EXISTS edges_src ON edges(src_id, dst_id);
+CREATE INDEX IF NOT EXISTS edges_dst ON edges(dst_id, src_id) WHERE dst_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS edges_key ON edges(dst_key);
+CREATE INDEX IF NOT EXISTS edges_label ON edges(label, src_id) WHERE label IS NOT NULL;
+";
+pub(crate) const DROP_EDGE_INDEXES: &str = "
+DROP INDEX IF EXISTS edges_src;
+DROP INDEX IF EXISTS edges_dst;
+DROP INDEX IF EXISTS edges_key;
+DROP INDEX IF EXISTS edges_label;
 ";
 
 pub struct Opened {
@@ -145,6 +174,7 @@ fn create_fresh(db_path: &Path, root: &str) -> Result<Connection, IndexError> {
     let conn = Connection::open(db_path)?;
     apply_pragmas(&conn)?;
     conn.execute_batch(SCHEMA)?;
+    conn.execute_batch(EDGE_INDEXES)?;
     conn.execute_batch(super::fts::FTS_DDL)?;
     for ddl in crate::features::index_ddl() {
         conn.execute_batch(ddl)?;

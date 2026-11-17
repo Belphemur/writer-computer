@@ -54,8 +54,10 @@ describe("app CSP (tauri.conf.json)", () => {
     ]);
   });
 
-  it("does not widen anything else (no blob:, no remote script or connect origins)", () => {
+  it("does not widen anything else (no blob:, workers only from 'self', no remote script or connect origins)", () => {
+    // The graph feature's layout worker is our own bundled file (`features/graph/web/layout.worker.ts`).
     expect(csp).not.toMatch(/blob:/);
+    expect(directive("worker-src")).toEqual(["'self'"]);
     expect(directive("connect-src")).toEqual(["'self'", "ipc:", "http://ipc.localhost"]);
     expect(directive("default-src")).toEqual(["'self'"]);
     for (const name of ["style-src", "font-src"])

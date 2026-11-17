@@ -16,6 +16,7 @@ pub mod args;
 mod clipboard;
 pub(crate) mod cmd_bases;
 mod cmd_files;
+mod cmd_graph;
 mod cmd_notes;
 mod cmd_query;
 mod cmd_skills;

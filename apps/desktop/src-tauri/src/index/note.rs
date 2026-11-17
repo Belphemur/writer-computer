@@ -12,11 +12,21 @@ pub struct TagRow {
     pub source: &'static str,
 }
 
+/// A link of a note with its origin, in document order (frontmatter first).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkRow {
     pub link: ParsedLink,
     pub in_fm: bool,
+    /// Frontmatter links: the property key (see [`frontmatter::FmLink::label`]); body links: None.
+    pub label: Option<String>,
+    /// 1-based line in the file, when known.
+    pub line: Option<u32>,
+    /// Nearest heading text at or above a body link; None for frontmatter links.
+    pub section: Option<String>,
 }
+
+/// The first frontmatter line after the opening fence.
+const FM_FIRST_LINE: u32 = 2;
 
 #[derive(Debug, Default)]
 pub struct ParsedNote {
@@ -66,11 +76,13 @@ pub fn parse_note(content: &str) -> ParsedNote {
                 push_tags(&mut note, &tag, "frontmatter");
             }
         }
-        note.links.extend(
-            data.links
-                .into_iter()
-                .map(|link| LinkRow { link, in_fm: true }),
-        );
+        note.links.extend(data.links.into_iter().map(|l| LinkRow {
+            link: l.link,
+            in_fm: true,
+            label: l.label,
+            line: l.line.map(|n| n + FM_FIRST_LINE - 1),
+            section: None,
+        }));
     }
 
     let body = &content[split.body_start..];
@@ -78,11 +90,13 @@ pub fn parse_note(content: &str) -> ParsedNote {
     for tag in &scan.tags {
         push_tags(&mut note, tag, "body");
     }
-    note.links.extend(
-        scan.links
-            .into_iter()
-            .map(|link| LinkRow { link, in_fm: false }),
-    );
+    note.links.extend(scan.links.into_iter().map(|l| LinkRow {
+        link: l.link,
+        in_fm: false,
+        label: None,
+        line: Some(l.line),
+        section: l.section,
+    }));
     note.tasks = scan.tasks;
     note.headings = scan.headings;
     note.words = scan.words;
@@ -142,8 +156,69 @@ mod tests {
         );
         assert_eq!(n.links.len(), 2);
         assert!(n.links[0].in_fm && !n.links[1].in_fm);
+        assert_eq!(n.links[0].label.as_deref(), Some("rel"));
         assert_eq!(n.tasks[0].line, 6);
         assert_eq!(n.words, 4);
+    }
+
+    #[test]
+    fn property_links_carry_their_key_and_line() {
+        let n = parse_note(
+            "---\nmanager: \"[[Daniel]]\"\nteam:\n  - \"[[Ana]]\"\n  - \"[[Ben|b]]\"\nmeta:\n  lead: \"[[Cho]]\"\nnote: see [[Dee]] and [[Eve]]\n---\nbody [[Fay]]\n",
+        );
+        let got: Vec<_> = n
+            .links
+            .iter()
+            .map(|l| (l.link.raw.as_str(), l.label.as_deref(), l.line))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("Daniel", Some("manager"), Some(2)),
+                ("Ana", Some("team"), Some(3)),
+                ("Ben", Some("team"), Some(3)),
+                ("Cho", Some("meta.lead"), Some(6)),
+                ("Dee", Some("note"), Some(8)),
+                ("Eve", Some("note"), Some(8)),
+                ("Fay", None, Some(10)),
+            ]
+        );
+    }
+
+    #[test]
+    fn body_links_carry_line_and_nearest_heading() {
+        let n = parse_note(
+            "first [[A]]\n# One\ntext [[B]]\n```\n[[no]]\n```\n## Two\n[[C]]\n\n[[D]] x\n",
+        );
+        let got: Vec<_> = n
+            .links
+            .iter()
+            .map(|l| (l.link.raw.as_str(), l.line, l.section.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("A", Some(1), None),
+                ("B", Some(3), Some("One")),
+                ("C", Some(8), Some("Two")),
+                ("D", Some(10), Some("Two")),
+            ]
+        );
+    }
+
+    #[test]
+    fn broken_frontmatter_links_are_labelled_by_the_nearest_key() {
+        let n = parse_note("---\nkey: [oops\nboss: : [[Boss]]\n---\n[[Body]]\n");
+        assert!(n.fm_error.is_some());
+        let got: Vec<_> = n
+            .links
+            .iter()
+            .map(|l| (l.link.raw.as_str(), l.label.as_deref(), l.line))
+            .collect();
+        assert_eq!(
+            got,
+            vec![("Boss", Some("boss"), Some(3)), ("Body", None, Some(5))]
+        );
     }
 
     #[test]
