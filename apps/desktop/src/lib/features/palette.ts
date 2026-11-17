@@ -15,3 +15,15 @@ export interface FeaturePaletteCommand {
 }
 
 export const featurePaletteCommands = new OwnedRegistry<FeaturePaletteCommand>();
+
+/** Commands a feature computes each time the palette opens (the Obsidian host's plugin commands,
+ *  whose availability runs plugin code). Core lists them after the built-ins and never lets one
+ *  take a built-in's id. */
+export interface PaletteCommandSource {
+  owner: string;
+  /** `<feature id>.<name>`. */
+  id: string;
+  list: (ctx: CommandContext) => readonly Omit<FeaturePaletteCommand, "owner">[];
+}
+
+export const featurePaletteSources = new OwnedRegistry<PaletteCommandSource>();

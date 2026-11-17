@@ -22,7 +22,8 @@ const features = [{ manifest, definition: tables }];
 const counts = () => [
   featurePaletteCommands.list().filter((c: { owner: string }) => c.owner === "builtin:tables")
     .length,
-  editorExtensionContributions.size,
+  editorExtensionContributions.list().filter((c: { owner: string }) => c.owner === "builtin:tables")
+    .length,
   menuContributions.size,
 ];
 

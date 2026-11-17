@@ -5,9 +5,9 @@ import { BaseView } from "@/components/base-view";
 import { CodeEditorPane } from "@/components/code-editor/code-editor-pane";
 import { ManagedSkillBanner } from "@/components/code-editor/managed-skill-banner";
 import { ImageViewer, ImageViewerFooter } from "@/components/image-viewer/image-viewer";
-import { PluginFileTab } from "@/components/plugins/plugin-file-tab";
-import { PluginViewTab } from "@/components/plugins/plugin-view-tab";
+import { FeatureSlot } from "@/components/feature-slot";
 import { SettingsPanel } from "@/components/settings-panel";
+import type { PageViewProps } from "@/lib/features/slots";
 import type { Location } from "./index";
 import type { BaseLocation } from "./base";
 import type { CodeLocation } from "./code";
@@ -41,6 +41,15 @@ const FileTabBody = ({ location, isActive }: { location: FileLocation; isActive:
   </>
 );
 
+// A kind whose body a feature supplies (the plugin page kinds of the Obsidian host): the slot
+// `page-view:<kind>` renders it while the feature is on, nothing while it is off.
+function featureView<K extends Location["kind"]>(kind: K) {
+  const Component = (props: PageViewProps<Extract<Location, { kind: K }>>) => (
+    <FeatureSlot slot={`page-view:${kind}`} {...props} />
+  );
+  return { Component };
+}
+
 const views = {
   file: {
     Component: FileTabBody,
@@ -62,12 +71,8 @@ const views = {
   settings: {
     Component: SettingsPanel,
   } satisfies PageKindView<SettingsLocation>,
-  "plugin-view": {
-    Component: PluginViewTab,
-  } satisfies PageKindView<PluginViewLocation>,
-  "plugin-file": {
-    Component: PluginFileTab,
-  } satisfies PageKindView<PluginFileLocation>,
+  "plugin-view": featureView("plugin-view") satisfies PageKindView<PluginViewLocation>,
+  "plugin-file": featureView("plugin-file") satisfies PageKindView<PluginFileLocation>,
 } as const;
 
 /** Resolve a location to its registered view. Throws on an unknown kind —

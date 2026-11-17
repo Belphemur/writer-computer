@@ -14,7 +14,7 @@ import { SettingsPanel } from "../src/components/settings-panel";
 import { pluginSectionId } from "../src/components/settings-panel/settings-sections";
 import { syncSettingsPages } from "../features/obsidian-host/web/settings-pages";
 import { SETTINGS_SCHEMA } from "../src/lib/settings-schema";
-import { usePluginsStore } from "../src/stores/plugins-store";
+import { usePluginsStore } from "../features/obsidian-host/web/stores/plugins-store";
 import { useSettingsStore } from "../src/stores/settings-store";
 import { useUIStore } from "../src/stores/ui-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";

@@ -14,13 +14,8 @@ import {
 } from "@/lib/prosemark-core/main";
 import * as editorApi from "@/hooks/editor-api";
 import { featureEditorExtensions } from "@/lib/features/editor-extensions";
-import {
-  getPluginCompartmentValue,
-  pluginConfigGuard,
-  pluginExtensionCompartment,
-} from "@/lib/obsidian-host/editor-bridge";
+import { editorNotePath } from "@/lib/editor-views";
 import { baseEmbedDecorations } from "./base-embed-decorations";
-import { pluginMarkdownDecorations } from "./plugin-markdown-decorations";
 import { calloutDecorations } from "./callout-decorations";
 import { dragFreezeExtensions } from "./drag-selection-gate";
 import { editorBodyContextMenuExtension } from "./editor-body-menu";
@@ -129,13 +124,15 @@ export function createEditorExtensions(
     prosemarkBaseThemeSetup(),
     headingWeightHighlight,
     viewportParsePlugin,
-    // Contributed by built-in features (tables, ...): loaded lazily, switchable live.
+    // The note this editor shows, for contributed extensions that need it.
+    editorNotePath.of(getFilePath),
+    // Contributed by built-in features (tables, the Obsidian host's plugin extensions and
+    // markdown processors, ...): loaded lazily, switchable live.
     featureEditorExtensions(),
     calloutDecorations(getFilePath),
     htmlBlockDecorations(),
     mermaidDecorations(),
     baseEmbedDecorations(getFilePath),
-    pluginMarkdownDecorations(getFilePath),
     mathDecorations(),
     headingDecorations,
     imageSrcResolver(getFilePath),
@@ -145,8 +142,5 @@ export function createEditorExtensions(
     editorClipboardExtension(getFilePath),
     imageInsertExtension(getFilePath, isDisposed),
     focusOnRevealExtension(isDisposed),
-    pluginConfigGuard,
-    // Extensions community plugins registered; reconfigured on plugin enable/disable.
-    pluginExtensionCompartment.of(getPluginCompartmentValue()),
   ];
 }

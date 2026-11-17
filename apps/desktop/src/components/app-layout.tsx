@@ -8,7 +8,7 @@ import { WelcomeScreen } from "./welcome";
 import { DockPane } from "./dock-pane";
 import { FeatureHealthNotices } from "./feature-health-notices";
 import { useDockWidth, useExclusiveDocks, useOpenDockId } from "@/hooks/use-docks";
-import { PluginStatusBar } from "./plugins/plugin-strips";
+import { FeatureSlot } from "./feature-slot";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useWorkspaceChromeMode, useWorkspaceRoot } from "@/hooks/use-workspace";
 import { resolveAppView } from "@/lib/app-view";
@@ -182,7 +182,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
 
           <div className="relative min-w-0 flex-1 bg-bg">
             {showWelcome ? <WelcomeScreen /> : <EditorArea />}
-            <PluginStatusBar />
+            <FeatureSlot slot="editor-status" />
           </div>
           {dockId ? <DockPane id={dockId} /> : null}
         </div>

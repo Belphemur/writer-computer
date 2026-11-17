@@ -1,6 +1,6 @@
 ---
 name: writer-feature
-description: How to create, move or change a built-in feature (first-party "plugin") of the Writer repo, the folders under apps/desktop/features/<id>/ with feature.json, defineFeature, contribution points (sidebar panels, docks, menus, settings pages, secrets), the Rust Feature trait and the kill switch. Use before adding, extracting or editing such a feature. Not for Obsidian community plugins (lib/obsidian-host).
+description: How to create, move or change a built-in feature (first-party "plugin") of the Writer repo, the folders under apps/desktop/features/<id>/ with feature.json, defineFeature, contribution points (sidebar panels, docks, menus, settings pages, secrets), the Rust Feature trait and the kill switch. Use before adding, extracting or editing such a feature. Not for Obsidian community plugins (`features/obsidian-host/web/host`).
 ---
 
 # Writer built-in features
@@ -51,6 +51,9 @@ Required: `id`, `name`, `version`, `description`, `enabledByDefault`, `memory: {
 | `settingsSection` | none (a page)                                           | `settingsSection: { id, label, order, load }`                                                                                  |
 | `secrets`         | `[{ key: "features.<id>.<name>", label, description }]` | `ctx.secrets.get/set/delete(key)`                                                                                              |
 | editor extensions | none                                                    | `editorExtensions: [{ id, when?, load }]`                                                                                      |
+| `slots`           | none                                                    | `slots: [{ id, slot, load }]` (`sidebar-ribbon`, `editor-status`, `page-view:<kind>`; `lib/features/slots.ts`)                 |
+| palette sources   | none                                                    | `commandSources: [{ id, list(ctx) }]` (commands computed when the palette opens)                                               |
+| core events       | none                                                    | `workspaceListeners: [{ id, onFileChanged?, onSecretChanged?, onSecretsReady? }]`                                              |
 
 Feature items are always grouped after core items behind a separator (in the Settings sidebar, feature pages are grouped under a "Features" label after the core groups; every settings group is labelled): surfaces call `withFeatureDivider` (`src/lib/features/origin.ts`), never hand-place a divider; a new surface or point must use it and add a test that the divider shows only when a feature item exists.
 

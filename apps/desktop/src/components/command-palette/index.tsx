@@ -37,7 +37,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import * as logActions from "@/lib/log-actions";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
-import { usePluginCommands } from "@/hooks/use-plugins";
 import { ContentSearchPalette } from "./content-search-palette";
 import { resolveCommands } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
@@ -122,7 +121,6 @@ function FilePalette() {
   const { toggleTheme } = useTheme();
   const openSettingsTab = useOpenSettingsTab();
   const isCompactFileMode = useIsCompactFileMode();
-  const pluginCommands = usePluginCommands();
 
   const isCreateIntent = intent === "create-file";
   const trimmedSearch = search.trim();
@@ -175,51 +173,48 @@ function FilePalette() {
   // Resolved only while open: plugin availability checks run plugin code.
   const commands = !isOpen
     ? []
-    : resolveCommands(
-        {
-          hasWorkspace: root !== null,
-          isCompactFileMode,
-          activeFilePath,
-          hasActiveTab: activeTabId !== null,
-          tabCount: tabs.length,
-          unpinnedTabCount,
-          activeTabPin,
-          hasClosedTabs,
-          close,
-          toggleSidebar,
-          openCreateFile: () => openCommandPalette("create-file"),
-          openSearchNotes: () => openCommandPalette("search-notes"),
-          openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
-          pinActiveTab: () => {
-            if (activeTabId) pinTab(activeTabId);
-          },
-          unpinActiveTab: () => {
-            if (activeTabId) unpinTab(activeTabId);
-          },
-          closeActiveTab,
-          reopenClosedTab: () => void reopenClosedTab(),
-          closeAllTabs,
-          openWorkspace: handleOpenWorkspace,
-          closeWorkspace,
-          toggleTheme,
-          zoomIn,
-          zoomOut,
-          resetZoom,
-          openSettings: openSettingsTab,
-          openLogFolder: () => {
-            logActions
-              .openLogFolder()
-              .catch((e) => showEditorNotice(`Could not open the log folder: ${String(e)}`));
-          },
-          copyRecentErrors: () => {
-            logActions
-              .copyRecentErrors()
-              .then((n) => showEditorNotice(logActions.copyResultMessage(n)))
-              .catch((e) => showEditorNotice(`Could not copy the logs: ${String(e)}`));
-          },
+    : resolveCommands({
+        hasWorkspace: root !== null,
+        isCompactFileMode,
+        activeFilePath,
+        hasActiveTab: activeTabId !== null,
+        tabCount: tabs.length,
+        unpinnedTabCount,
+        activeTabPin,
+        hasClosedTabs,
+        close,
+        toggleSidebar,
+        openCreateFile: () => openCommandPalette("create-file"),
+        openSearchNotes: () => openCommandPalette("search-notes"),
+        openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
+        pinActiveTab: () => {
+          if (activeTabId) pinTab(activeTabId);
         },
-        pluginCommands,
-      );
+        unpinActiveTab: () => {
+          if (activeTabId) unpinTab(activeTabId);
+        },
+        closeActiveTab,
+        reopenClosedTab: () => void reopenClosedTab(),
+        closeAllTabs,
+        openWorkspace: handleOpenWorkspace,
+        closeWorkspace,
+        toggleTheme,
+        zoomIn,
+        zoomOut,
+        resetZoom,
+        openSettings: openSettingsTab,
+        openLogFolder: () => {
+          logActions
+            .openLogFolder()
+            .catch((e) => showEditorNotice(`Could not open the log folder: ${String(e)}`));
+        },
+        copyRecentErrors: () => {
+          logActions
+            .copyRecentErrors()
+            .then((n) => showEditorNotice(logActions.copyResultMessage(n)))
+            .catch((e) => showEditorNotice(`Could not copy the logs: ${String(e)}`));
+        },
+      });
 
   // An empty query lists recent files (opened first, then modified) above the commands.
   const visibleFiles: SearchResult[] = !isCreateIntent && !isCompactFileMode ? results : [];

@@ -10,6 +10,9 @@ import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu"
 import type { DirEntry } from "@/types/fs";
 import type { Keybinding } from "@/lib/keybindings/registry";
 import type { FeatureSecrets } from "@/stores/feature-secrets-store";
+import type { PaletteCommandSource } from "./palette";
+import type { SlotContribution } from "./slots";
+import type { WorkspaceListenerContribution } from "./workspace-events";
 
 export type Dispose = () => void;
 
@@ -196,6 +199,14 @@ export interface OverlayContribution {
   load: () => Promise<ComponentType>;
 }
 
+/** Palette commands computed each time the palette opens (a source of dynamic commands). */
+export interface CommandSourceContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  /** Called while the palette is open; return only what can run now. */
+  list: PaletteCommandSource["list"];
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
@@ -207,6 +218,11 @@ export interface Contributions {
   sidebarActions?: readonly SidebarActionContribution[];
   statusItems?: readonly StatusItemContribution[];
   overlays?: readonly OverlayContribution[];
+  /** Components mounted in named places of core UI (`lib/features/slots.ts`). */
+  slots?: readonly SlotContribution[];
+  commandSources?: readonly CommandSourceContribution[];
+  /** Listeners for what core tells features about the workspace (`workspace-events.ts`). */
+  workspaceListeners?: readonly WorkspaceListenerContribution[];
   // Declared by the spec, no host registry yet (lands with its first pilot).
   settingsBlocks?: Record<string, ComponentType>;
 }

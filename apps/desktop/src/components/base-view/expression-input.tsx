@@ -8,7 +8,7 @@ import {
   type CompletionEnv,
 } from "@/lib/bases/completion";
 import type { VaultProperty } from "@/lib/bases/types";
-import { getPopupLayer, trackPopup } from "@/lib/obsidian-host/popup-layer";
+import { getPopupLayer, trackPopup } from "@/lib/popup-layer";
 import { rectOf } from "@/lib/popup-position";
 import { FIELD } from "./toolbar-menu";
 import { useFunctionRegistry } from "./use-function-registry";

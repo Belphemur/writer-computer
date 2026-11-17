@@ -1,4 +1,4 @@
-import { CommunityPluginsSection } from "@/components/plugins/community-plugins-section";
+import { CommunityPluginsSection } from "./components/community-plugins-section";
 import { CategoryBlock } from "@/components/settings-panel/settings-blocks";
 import { COMMUNITY_PLUGINS_CATEGORY } from "@/components/settings-panel/settings-sections";
 

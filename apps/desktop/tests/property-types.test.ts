@@ -19,7 +19,7 @@ import {
   rowFitsType,
   typeOfRow,
 } from "../src/lib/property-types";
-import { MetadataTypeManager } from "../src/lib/obsidian-host/api/app";
+import { MetadataTypeManager } from "../features/obsidian-host/web/host/api/app";
 import { usePropertyTypesStore } from "../src/stores/property-types-store";
 
 function rows(fm: string): Record<string, PropertyRow> {

@@ -189,7 +189,7 @@ describe("the palette shows the registry's shortcut", () => {
       },
       { get: (t, k) => (k in t ? (t as never)[k] : noop) },
     ) as never;
-    const list = resolveCommands(ctx, []);
+    const list = resolveCommands(ctx);
     const bound = new Set(CORE_BINDINGS.map((b) => b.id));
     for (const c of list) {
       expect(c.shortcut, c.id).toBe(keybindings.shortcutFor(c.id));

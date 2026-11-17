@@ -6,9 +6,9 @@
 import { getWorkspaceChromeMode } from "@/lib/compact-mode";
 import { failFeature } from "@/lib/features/health";
 import type { Dispose } from "@/lib/features/types";
-import { usePluginsStore } from "@/stores/plugins-store";
-import { useUpdatesStore } from "@/stores/plugin-updates-store";
-import { useUIStore } from "@/stores/ui-store";
+import { usePluginsStore } from "./stores/plugins-store";
+import { useUpdatesStore } from "./stores/plugin-updates-store";
+import { usePluginBrowserStore } from "./stores/plugin-browser-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
 export const OBSIDIAN_HOST_ID = "obsidian-host";
@@ -65,7 +65,7 @@ export function startHostLifecycle({
         stopChecks();
         void updates.getState().attachRoot(null);
         void plugins.getState().detach();
-        useUIStore.getState().closePluginBrowser();
+        usePluginBrowserStore.getState().close();
       },
     };
   };

@@ -1,10 +1,13 @@
-// Command registry for the palette. Built-ins are data (id, label, availability, action) and
-// plugin commands are merged in from the host's command registry: adding a command means adding
-// one entry here, not another branch in the component.
-import { featurePaletteCommands } from "@/lib/features/palette";
+// Command registry for the palette. Built-ins are data (id, label, availability, action), and
+// features add commands as data or as sources (the Obsidian host's plugin commands): adding a
+// command means adding one entry here, not another branch in the component.
+import {
+  featurePaletteCommands,
+  featurePaletteSources,
+  type FeaturePaletteCommand,
+} from "@/lib/features/palette";
 import "@/lib/keybindings/core-bindings";
 import { keybindings } from "@/lib/keybindings/registry";
-import type { RegisteredCommand } from "@/lib/obsidian-host/api/core";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
 import { PROJECT_PALETTE_COMMANDS } from "./project-commands";
 import { TITLE_PALETTE_COMMANDS } from "./title-commands";
@@ -179,38 +182,29 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
 ];
 
 /**
- * Built-ins (and feature-contributed commands) available in `ctx`, then the plugin commands that can run right now
- * (`checkCallback` / `editorCheckCallback` / editor requirements are evaluated here).
+ * Built-ins (and feature-contributed commands) available in `ctx`, then the commands the features'
+ * sources list right now (the Obsidian host's plugin commands evaluate `checkCallback` /
+ * `editorCheckCallback` / editor requirements here). A source never takes a built-in's id.
  */
-export function resolveCommands(
-  ctx: CommandContext,
-  pluginCommands: readonly RegisteredCommand[],
-): PaletteCommand[] {
+export function resolveCommands(ctx: CommandContext): PaletteCommand[] {
+  const toPalette = (c: Omit<FeaturePaletteCommand, "owner">): PaletteCommand => ({
+    id: c.id,
+    label: c.label,
+    description: c.description,
+    shortcut: keybindings.shortcutFor(c.id),
+    run: () => {
+      c.run(ctx);
+      if (!c.keepOpen) ctx.close();
+    },
+  });
   const builtins = [...BUILTIN_COMMANDS, ...featurePaletteCommands.list()]
     .filter((c) => c.when?.(ctx) ?? true)
-    .map((c): PaletteCommand => ({
-      id: c.id,
-      label: c.label,
-      description: c.description,
-      shortcut: keybindings.shortcutFor(c.id),
-      run: () => {
-        c.run(ctx);
-        if (!c.keepOpen) ctx.close();
-      },
-    }));
+    .map(toPalette);
   const taken = new Set(builtins.map((c) => c.id));
-  const plugins = pluginCommands
-    .filter((c) => !taken.has(c.id) && c.isAvailable())
-    .map((c): PaletteCommand => ({
-      id: c.id,
-      label: c.name,
-      description: "Plugin command",
-      run: () => {
-        ctx.close();
-        // After the palette dialog has released focus, so a command that opens a modal or
-        // focuses the editor is not undone by the dialog's focus restore.
-        setTimeout(() => c.run(), 0);
-      },
-    }));
-  return [...builtins, ...plugins];
+  const sourced = featurePaletteSources
+    .list()
+    .flatMap((s) => s.list(ctx))
+    .filter((c) => !taken.has(c.id) && (c.when?.(ctx) ?? true))
+    .map(toPalette);
+  return [...builtins, ...sourced];
 }

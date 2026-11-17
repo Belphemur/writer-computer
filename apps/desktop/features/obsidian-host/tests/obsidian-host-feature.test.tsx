@@ -18,16 +18,24 @@ vi.mock("../../../src/lib/preferences", () => ({
 import { syncBuiltinFeatures } from "../../../src/lib/features/builtin";
 import { dockContributions } from "../../../src/lib/features/docks";
 import { overlayContributions } from "../../../src/lib/features/overlays";
-import { featurePaletteCommands } from "../../../src/lib/features/palette";
+import { editorExtensionContributions } from "../../../src/lib/features/editor-extensions";
+import { featurePaletteCommands, featurePaletteSources } from "../../../src/lib/features/palette";
+import { slotContributions } from "../../../src/lib/features/slots";
+import {
+  emitFileChanged,
+  emitSecretChanged,
+  emitSecretsReady,
+  workspaceListeners,
+} from "../../../src/lib/features/workspace-events";
 import { createFeatureHost, featureHost } from "../../../src/lib/features/registry";
 import { settingsSectionContributions } from "../../../src/lib/features/settings-sections";
 import { buildSettingsNav } from "../../../src/components/settings-panel/settings-sections";
 import { resolveCommands } from "../../../src/components/command-palette/commands";
 import { useFeatureHealth, isOffForSession } from "../../../src/stores/feature-health-store";
-import { usePluginsStore } from "../../../src/stores/plugins-store";
-import { useUpdatesStore } from "../../../src/stores/plugin-updates-store";
+import { usePluginsStore } from "../web/stores/plugins-store";
+import { useUpdatesStore } from "../web/stores/plugin-updates-store";
 import { useSettingsStore } from "../../../src/stores/settings-store";
-import { useUIStore } from "../../../src/stores/ui-store";
+import { usePluginBrowserStore } from "../web/stores/plugin-browser-store";
 import { useWorkspaceStore } from "../../../src/stores/workspace-store";
 import manifest from "../feature.json";
 import obsidianHost from "../web/index";
@@ -39,15 +47,24 @@ const features = [{ manifest, definition: obsidianHost }];
 function mine<T extends { owner: string }>(xs: T[]): T[] {
   return xs.filter((x) => x.owner === "builtin:obsidian-host");
 }
+/** The registries' types do not resolve in the test program (core imports through `@/`). */
+const asContributions = (xs: object[]) =>
+  xs as unknown as { id: string; slot: string; load: () => Promise<never> }[];
 const hostSections = () =>
   settingsSectionContributions
     .list()
     .filter((x: { owner: string }) => x.owner === "builtin:obsidian-host");
+// Commands, docks, overlays, Settings pages, slots, palette sources, workspace listeners, editor
+// extensions: everything the feature puts into a registry.
 const counts = () => [
   mine(featurePaletteCommands.list()).length,
   mine(dockContributions.list()).length,
   mine(overlayContributions.list()).length,
   hostSections().length,
+  mine(slotContributions.list()).length,
+  mine(featurePaletteSources.list()).length,
+  mine(workspaceListeners.list()).length,
+  mine(editorExtensionContributions.list()).length,
 ];
 
 const attach = vi.fn(async () => {});
@@ -81,25 +98,57 @@ afterEach(async () => {
 describe("registration", () => {
   it("registers its commands, dock and overlay, and removes exactly them", async () => {
     host.register(obsidianHost);
-    expect(counts()).toEqual([2, 1, 1, 0]);
+    expect(counts()).toEqual([2, 1, 1, 0, 4, 1, 1, 1]);
     expect(manifest.contributes.docks).toEqual(["obsidian-host.pane"]);
     await host.activate("obsidian-host");
     expect(counts()[3]).toBe(1); // Manage plugins
     await host.unregister("obsidian-host");
-    expect(counts()).toEqual([0, 0, 0, 0]);
+    expect(counts()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
   });
 
   it("contributes the two palette commands under the feature prefix", () => {
     host.register(obsidianHost);
     useWorkspaceStore.setState({ root: "/v" });
     const ctx = { hasWorkspace: true, isCompactFileMode: false, activeFilePath: null } as never;
-    const ids = resolveCommands(ctx, []).map((c) => c.id);
+    const ids = resolveCommands(ctx).map((c) => c.id);
     expect(ids).toContain("obsidian-host.browse-plugins");
     // the pane toggle needs a plugin leaf
     expect(ids).not.toContain("obsidian-host.toggle-pane");
     usePluginsStore.setState({ leaves: [{}] } as never);
-    expect(resolveCommands(ctx, []).map((c) => c.id)).toContain("obsidian-host.toggle-pane");
+    expect(resolveCommands(ctx).map((c) => c.id)).toContain("obsidian-host.toggle-pane");
     usePluginsStore.setState({ leaves: [] } as never);
+  });
+
+  it("lists the plugin commands that can run, after the built-ins, and runs them on the next tick", () => {
+    vi.useFakeTimers();
+    try {
+      host.register(obsidianHost);
+      const run = vi.fn();
+      usePluginsStore.setState({
+        commands: [
+          { id: "p:go", name: "Plug: Go", isAvailable: () => true, run },
+          { id: "p:off", name: "Plug: Off", isAvailable: () => false, run: vi.fn() },
+        ],
+      } as never);
+      const close = vi.fn();
+      const ctx = {
+        hasWorkspace: true,
+        isCompactFileMode: false,
+        activeFilePath: null,
+        close,
+      } as never;
+      const list = resolveCommands(ctx);
+      expect(list.map((c) => c.id)).toContain("p:go");
+      expect(list.map((c) => c.id)).not.toContain("p:off");
+      list.find((c) => c.id === "p:go")!.run();
+      expect(close).toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      usePluginsStore.setState({ commands: [] } as never);
+      vi.useRealTimers();
+    }
   });
 
   it("opens the plugin browser from its command", () => {
@@ -111,10 +160,10 @@ describe("registration", () => {
       activeFilePath: null,
       close: () => {},
     } as never;
-    resolveCommands(ctx, [])
+    resolveCommands(ctx)
       .find((c) => c.id === "obsidian-host.browse-plugins")!
       .run();
-    return vi.waitFor(() => expect(useUIStore.getState().isPluginBrowserOpen).toBe(true));
+    return vi.waitFor(() => expect(usePluginBrowserStore.getState().isOpen).toBe(true));
   });
 });
 
@@ -173,7 +222,7 @@ describe("kill switch", () => {
       () => true,
     );
     expect(host.list()).toEqual([]);
-    expect(counts()).toEqual([0, 0, 0, 0]);
+    expect(counts()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
     expect(attach).not.toHaveBeenCalled();
   });
 
@@ -189,7 +238,7 @@ describe("kill switch", () => {
       );
     on();
     await vi.waitFor(() => expect(attach).toHaveBeenCalled());
-    useUIStore.getState().openPluginBrowser();
+    usePluginBrowserStore.getState().open();
     syncBuiltinFeatures(
       host,
       features,
@@ -198,8 +247,74 @@ describe("kill switch", () => {
       () => true,
     );
     await vi.waitFor(() => expect(detach).toHaveBeenCalled());
-    expect(useUIStore.getState().isPluginBrowserOpen).toBe(false);
-    expect(counts()).toEqual([0, 0, 0, 0]);
+    expect(usePluginBrowserStore.getState().isOpen).toBe(false);
+    expect(counts()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe("contributions to core UI", () => {
+  it("mounts the ribbon, the status strip and the tab bodies of the plugin page kinds in their slots", () => {
+    host.register(obsidianHost);
+    expect(
+      asContributions(mine(slotContributions.list()))
+        .map((s) => s.slot)
+        .sort(),
+    ).toEqual([
+      "editor-status",
+      "page-view:plugin-file",
+      "page-view:plugin-view",
+      "sidebar-ribbon",
+    ]);
+  });
+
+  it("forwards what core tells features to the plugins store, only while it is on", async () => {
+    const notifyExternal = vi.fn(async () => {});
+    const syncSecret = vi.fn();
+    const retrySecrets = vi.fn(async () => {});
+    usePluginsStore.setState({ notifyExternal, syncSecret, retrySecrets } as never);
+    await emitFileChanged("modify", "/v/a.md");
+    expect(notifyExternal).not.toHaveBeenCalled();
+    host.register(obsidianHost);
+    await emitFileChanged("modify", "/v/a.md");
+    await emitSecretChanged("k", "v");
+    await emitSecretChanged("k", null);
+    await emitSecretsReady();
+    expect(notifyExternal).toHaveBeenCalledWith("modify", "/v/a.md");
+    expect(syncSecret.mock.calls).toEqual([
+      ["k", "v"],
+      ["k", null],
+    ]);
+    expect(retrySecrets).toHaveBeenCalledTimes(1);
+  });
+
+  it("contributes the plugin editor extension, built on demand with the shared compartment", async () => {
+    host.register(obsidianHost);
+    const [contribution] = asContributions(mine(editorExtensionContributions.list()));
+    expect(contribution?.id).toBe("obsidian-host.editor");
+    const { pluginExtensionCompartment } = await import("../web/host/editor-bridge");
+    const { EditorState } = await import("@codemirror/state");
+    const extension = await contribution!.load();
+    const state = EditorState.create({ extensions: extension });
+    expect(pluginExtensionCompartment.get(state)).toBeDefined();
+  });
+});
+
+describe("running plugins published to core", () => {
+  it("lists the enabled plugins while the feature is active and clears them when it stops", async () => {
+    const { isCommunityPluginRunning } = await import("../../../src/lib/community-plugins");
+    const status = (id: string, state: string) => ({ [id]: { state } });
+    usePluginsStore.setState({
+      snapshot: { status: { ...status("a", "enabled"), ...status("b", "failed") } },
+    } as never);
+    host.register(obsidianHost);
+    await host.activate("obsidian-host");
+    expect(isCommunityPluginRunning("a")).toBe(true);
+    expect(isCommunityPluginRunning("b")).toBe(false);
+    usePluginsStore.setState({ snapshot: { status: status("b", "enabled") } } as never);
+    expect(isCommunityPluginRunning("a")).toBe(false);
+    expect(isCommunityPluginRunning("b")).toBe(true);
+    await host.unregister("obsidian-host");
+    expect(isCommunityPluginRunning("b")).toBe(false);
   });
 });
 
@@ -224,7 +339,7 @@ describe("guard on a failing host boot", () => {
     expect(useFeatureHealth.getState().failures["obsidian-host"]?.boundary).toBe("boot");
     sync(); // what the loader does when the health store changes
     await vi.waitFor(() => expect(host.list()).toEqual([]));
-    expect(counts()).toEqual([0, 0, 0, 0]);
+    expect(counts()).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
     expect(detach).toHaveBeenCalled();
   });
 
@@ -281,12 +396,31 @@ describe("Settings pages", () => {
 });
 
 describe("boundaries", () => {
-  it("core never imports the feature, and the feature never imports the shim's API files", async () => {
-    const { execSync } = await import("node:child_process");
-    const grep = (pattern: string, dir: string) =>
-      execSync(`grep -rlE '${pattern}' ${dir} || true`, { encoding: "utf8" }).trim();
-    expect(grep("features/obsidian-host", "src")).toBe("");
-    expect(grep("obsidian-host/api/", "features/obsidian-host/web")).toBe("");
+  it("core names no part of the feature, and the feature's UI never imports the shim's API files", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const sources = (dir: string, skip = ""): string[] =>
+      readdirSync(dir, { withFileTypes: true, recursive: true })
+        .filter((e) => e.isFile() && /\.(ts|tsx)$/.test(e.name))
+        .map((e) => `${e.parentPath}/${e.name}`)
+        .filter((f) => !skip || !f.includes(skip));
+    // An import specifier (static, dynamic or a mock) that reaches `what`; `import type` is
+    // erased, so a type-only import never loads code and is not counted.
+    const reaches = (file: string, what: RegExp) =>
+      [
+        ...readFileSync(file, "utf8")
+          .replace(/import type[^;]*;/g, "")
+          .matchAll(/(?:from|import\()\s*["'`]([^"'`]+)["'`]/g),
+      ].some((m) => what.test(m[1]!));
+    expect(sources("src").filter((f) => reaches(f, /obsidian-host/))).toEqual([]);
+    // Another feature reaches the host's state through core (`lib/community-plugins.ts`).
+    expect(
+      ["features/agent/web", "features/tables/web"]
+        .flatMap((d) => sources(d))
+        .filter((f) => reaches(f, /obsidian-host/)),
+    ).toEqual([]);
+    expect(
+      sources("features/obsidian-host/web", "/host/").filter((f) => reaches(f, /host\/api\//)),
+    ).toEqual([]);
   });
 
   it("the manifest lists the palette commands the definition registers", () => {

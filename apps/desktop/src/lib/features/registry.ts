@@ -19,7 +19,9 @@ import { editorExtensionContributions } from "./editor-extensions";
 import { dockContributions } from "./docks";
 import { menuContributions, menuKey } from "./menus";
 import { overlayContributions } from "./overlays";
-import { featurePaletteCommands } from "./palette";
+import { featurePaletteCommands, featurePaletteSources } from "./palette";
+import { slotContributions } from "./slots";
+import { workspaceListeners } from "./workspace-events";
 import { settingsSectionContributions } from "./settings-sections";
 import { sidebarActionContributions, sidebarPanelContributions } from "./sidebar";
 import { statusItemContributions } from "./status-items";
@@ -50,6 +52,9 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.sidebarActions ?? []),
     ...(c.statusItems ?? []),
     ...(c.overlays ?? []),
+    ...(c.slots ?? []),
+    ...(c.commandSources ?? []),
+    ...(c.workspaceListeners ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
@@ -142,6 +147,9 @@ export function createFeatureHost({
     sidebarActionContributions.removeOwner(ownerOf(id));
     statusItemContributions.removeOwner(ownerOf(id));
     overlayContributions.removeOwner(ownerOf(id));
+    slotContributions.removeOwner(ownerOf(id));
+    featurePaletteSources.removeOwner(ownerOf(id));
+    workspaceListeners.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -213,6 +221,15 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.overlays ?? []) {
           overlayContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.slots ?? []) {
+          slotContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.commandSources ?? []) {
+          featurePaletteSources.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.workspaceListeners ?? []) {
+          workspaceListeners.add(x.id, { ...x, owner: o });
         }
         const section = def.contributes?.settingsSection;
         if (section) settingsSectionContributions.add(section.id, { ...section, owner: o });

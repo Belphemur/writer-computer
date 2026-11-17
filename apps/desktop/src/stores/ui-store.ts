@@ -13,7 +13,6 @@ interface UIState {
   isCommandPaletteOpen: boolean;
   commandPaletteIntent: CommandPaletteIntent;
   commandPaletteSearch: string;
-  isPluginBrowserOpen: boolean;
   /** Selected Settings section id (see settings-sections.ts); remembered across restarts. */
   settingsSection: string;
   /** Selected left sidebar panel id: `files` (core) or a feature's panel; not remembered. */
@@ -22,8 +21,6 @@ interface UIState {
   selectSidebarPanel: (id: string) => void;
   selectSettingsSection: (id: string) => void;
   hydrateSettingsSection: () => Promise<void>;
-  openPluginBrowser: () => void;
-  closePluginBrowser: () => void;
   openCommandPalette: (intent?: CommandPaletteIntent) => void;
   closeCommandPalette: () => void;
   setCommandPaletteSearch: (search: string) => void;
@@ -33,7 +30,6 @@ export const useUIStore = create<UIState>((set, get) => ({
   isCommandPaletteOpen: false,
   commandPaletteIntent: "search",
   commandPaletteSearch: "",
-  isPluginBrowserOpen: false,
   settingsSection: DEFAULT_SETTINGS_SECTION,
   sidebarPanel: FILES_PANEL_ID,
 
@@ -49,8 +45,6 @@ export const useUIStore = create<UIState>((set, get) => ({
     if (typeof stored === "string" && stored && get().settingsSection === DEFAULT_SETTINGS_SECTION)
       set({ settingsSection: stored });
   },
-  openPluginBrowser: () => set({ isPluginBrowserOpen: true }),
-  closePluginBrowser: () => set({ isPluginBrowserOpen: false }),
   openCommandPalette: (intent = "search") =>
     set({ isCommandPaletteOpen: true, commandPaletteIntent: intent, commandPaletteSearch: "" }),
   closeCommandPalette: () =>

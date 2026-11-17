@@ -1,7 +1,7 @@
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import * as editorApi from "@/hooks/editor-api";
-import { findEditorView } from "@/lib/obsidian-host/editor-bridge";
+import { findEditorView } from "@/lib/editor-views";
 import { consumePendingLine, setPendingLine } from "@/lib/pending-anchor";
 import { findOuterScroller, scrollPosToSafeTop } from "./editor-scroll";
 

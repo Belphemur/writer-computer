@@ -93,7 +93,7 @@ describe("registration is cheap and lazy", () => {
   it("activates on the first command from the palette, once", async () => {
     const { def, activate, ran } = demo();
     host.register(def);
-    const cmd = resolveCommands(ctx, []).find((c) => c.id === "demo.run")!;
+    const cmd = resolveCommands(ctx).find((c) => c.id === "demo.run")!;
     cmd.run();
     cmd.run();
     await flush();
@@ -211,7 +211,7 @@ describe("a feature's keybinding shows in the palette", () => {
         },
       }),
     );
-    const cmd = resolveCommands(ctx, []).find((c) => c.id === "shown.go")!;
+    const cmd = resolveCommands(ctx).find((c) => c.id === "shown.go")!;
     expect(cmd.shortcut).toBe(keybindings.shortcutFor("shown.go"));
     expect(cmd.shortcut).toBeTruthy();
   });

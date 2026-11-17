@@ -1,6 +1,6 @@
 /* The one cascade-layer order. Declared before Tailwind's own declaration so `plugins` sits
    between components and utilities: Obsidian community plugin CSS (injected inside
-   `@layer plugins`, lib/obsidian-host/loader.ts) beats Writer's base and components but loses to
+   `@layer plugins`, features/obsidian-host/web/host/loader.ts) beats Writer's base and components but loses to
    its utilities, so a plugin's generic `.hidden { display: none }` cannot override `md:block`. */
 @layer theme, base, components, plugins, utilities;
 @import "tailwindcss";
@@ -745,6 +745,12 @@ button.agent-pill:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.agent-pill-mark {
+  flex: none;
+  font-size: 0.8em;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 .agent-pill[data-pill-kind="active-note"] {
   color: var(--link-color);

@@ -47,7 +47,7 @@ import {
   createCodeEditorExtensions,
   loadLanguageExtension,
 } from "../src/components/code-editor/code-editor-extensions";
-import { createTauriVaultIo } from "../src/lib/obsidian-host/api/vault-io-tauri";
+import { createTauriVaultIo } from "../features/obsidian-host/web/host/api/vault-io-tauri";
 import type { DirEntry } from "../src/types/fs";
 
 const mockedInvoke = vi.mocked(invoke);

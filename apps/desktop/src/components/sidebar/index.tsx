@@ -1,5 +1,5 @@
 import { WorkspaceSwitcher } from "./workspace-switcher";
-import { PluginRibbon } from "@/components/plugins/plugin-strips";
+import { FeatureSlot } from "@/components/feature-slot";
 import { useWorkspaceGeneration } from "@/hooks/use-workspace";
 import { useAutoRevealActiveFile } from "@/hooks/use-auto-reveal-active-file";
 import { useSidebarSurface } from "./use-sidebar-surface";
@@ -47,7 +47,7 @@ function SidebarSurface() {
           />
         </div>
         <div data-sidebar-surface-bottom className="shrink-0 px-3 py-3">
-          <PluginRibbon />
+          <FeatureSlot slot="sidebar-ribbon" />
           <WorkspaceSwitcher />
         </div>
       </div>

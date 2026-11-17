@@ -8,9 +8,9 @@ import { settingsSectionContributions } from "@/lib/features/settings-sections";
 import { ownerOf } from "@/lib/features/id";
 import type { Dispose } from "@/lib/features/types";
 import { pluginSectionId } from "@/components/settings-panel/settings-sections";
-import { usePluginsStore } from "@/stores/plugins-store";
-import { useUpdatesStore } from "@/stores/plugin-updates-store";
-import { useUIStore } from "@/stores/ui-store";
+import { usePluginsStore } from "./stores/plugins-store";
+import { useUpdatesStore } from "./stores/plugin-updates-store";
+import { usePluginBrowserStore } from "./stores/plugin-browser-store";
 import { OBSIDIAN_HOST_ID } from "./lifecycle";
 
 export const MANAGE_PLUGINS_ID = "community-plugins";
@@ -52,7 +52,7 @@ export function syncSettingsPages(): Dispose {
         group: "Community plugins",
         requiresWorkspace: true,
         ...(badge ? { badge } : {}),
-        footer: { label: "Browse plugins…", run: () => useUIStore.getState().openPluginBrowser() },
+        footer: { label: "Browse plugins…", run: () => usePluginBrowserStore.getState().open() },
         load: loaderFor(MANAGE_PLUGINS_ID, () =>
           import("./manage-plugins-page").then((m) => m.ManagePluginsPage),
         ),

@@ -44,7 +44,7 @@ import {
   type MarkdownTable,
   type TableCursor,
 } from "./markdown-table";
-import { usePluginsStore } from "@/stores/plugins-store";
+import { isCommunityPluginRunning } from "@/lib/community-plugins";
 import { getTableEditorView, setTableContextProbe, setTableEditorView } from "./active";
 import {
   focusInlineCell,
@@ -67,9 +67,7 @@ export const ADVANCED_TABLES_PLUGIN_ID = "table-editor-obsidian";
  * and the palette entries stay available.
  */
 export function isAdvancedTablesPluginActive(): boolean {
-  return (
-    usePluginsStore.getState().snapshot?.status[ADVANCED_TABLES_PLUGIN_ID]?.state === "enabled"
-  );
+  return isCommunityPluginRunning(ADVANCED_TABLES_PLUGIN_ID);
 }
 
 let yieldProbe: () => boolean = isAdvancedTablesPluginActive;

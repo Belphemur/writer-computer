@@ -2,7 +2,11 @@
 // has no way to read one. Tests fake `SecretsClient`; the default uses Tauri's `invoke`.
 import { invoke } from "@tauri-apps/api/core";
 
-export { isValidSecretId } from "@/lib/obsidian-host/api/secret-storage";
+/** Obsidian's rule for secret ids: lowercase letters, digits and dashes. The Rust command
+ *  `secrets_set` (Settings > Secrets) enforces the same rule; the plugin host's `SecretStorage`
+ *  imports this one definition. */
+export const SECRET_ID_RE = /^[a-z0-9-]+$/;
+export const isValidSecretId = (id: string): boolean => SECRET_ID_RE.test(id);
 
 export interface SecretsClient {
   listIds(): Promise<string[]>;

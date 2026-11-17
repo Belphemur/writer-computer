@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { usePluginsStore } from "@/stores/plugins-store";
+import { emitFileChanged, type FileChangeKind } from "@/lib/features/workspace-events";
 import * as editorApi from "./editor-api";
 import * as tauri from "@/lib/tauri";
 import { syncImageFromDisk } from "@/lib/image-disk-sync";
@@ -24,9 +24,9 @@ interface IndexCompletePayload {
 
 const WATCHER_DEBUG = import.meta.env.DEV;
 
-/** Watcher kinds mapped to the plugin vault's. A rename reports the new path: `create` also
+/** Watcher kinds mapped to what features see. A rename reports the new path: `create` also
  *  drops a node whose file is gone, so both halves of a rename are covered. */
-function pluginEventKind(kind: FileChangePayload["kind"] | undefined) {
+function featureEventKind(kind: FileChangePayload["kind"] | undefined): FileChangeKind {
   if (kind === "deleted") return "delete";
   if (kind === "modified") return "modify";
   return "create";
@@ -39,7 +39,7 @@ export function useFileWatcher() {
       if (!isWorkspaceEventCurrent(workspace, getWorkspaceEventIdentity())) return;
       if (WATCHER_DEBUG) console.debug("[watcher] fs:file-changed", kind, path);
       useWorkspaceStore.getState().bumpSidebarMetadataVersion();
-      void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
+      void emitFileChanged(featureEventKind(kind), path);
       syncImageFromDisk(path, kind);
       const openFiles = editorApi.getOpenFiles();
       const file = openFiles.get(path);
@@ -82,7 +82,7 @@ export function useFileWatcher() {
       const { path, kind, workspace } = event.payload;
       if (!isWorkspaceEventCurrent(workspace, getWorkspaceEventIdentity())) return;
       if (WATCHER_DEBUG) console.debug("[watcher] fs:directory-changed", path);
-      void usePluginsStore.getState().notifyExternal(pluginEventKind(kind), path);
+      void emitFileChanged(featureEventKind(kind), path);
       const { root, expandedDirs, invalidatePath, refreshDirectory, bumpSidebarMetadataVersion } =
         useWorkspaceStore.getState();
       bumpSidebarMetadataVersion();

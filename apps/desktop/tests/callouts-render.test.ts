@@ -2,18 +2,20 @@
 // Callouts in MarkdownRenderer output: documented DOM, sanitizer retention, fold toggle.
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-vi.mock("../src/lib/obsidian-host/node/external-links", () => ({ openExternalUrl: () => true }));
+vi.mock("../features/obsidian-host/web/host/node/external-links", () => ({
+  openExternalUrl: () => true,
+}));
 
-import { createApp } from "../src/lib/obsidian-host/api/app";
-import { Component, createHostServices } from "../src/lib/obsidian-host/api/core";
-import { MarkdownRenderer } from "../src/lib/obsidian-host/api/markdown";
-import { setMarkdownRenderer } from "../src/lib/obsidian-host/api/functions";
+import { createApp } from "../features/obsidian-host/web/host/api/app";
+import { Component, createHostServices } from "../features/obsidian-host/web/host/api/core";
+import { MarkdownRenderer } from "../features/obsidian-host/web/host/api/markdown";
+import { setMarkdownRenderer } from "../features/obsidian-host/web/host/api/functions";
 import {
   createMarkdownRenderer,
   markdownToSafeHtml,
-} from "../src/lib/obsidian-host/api/markdown-render";
-import { detachedBridge } from "../src/lib/obsidian-host/api/views";
-import { createMemoryVaultIo } from "../src/lib/obsidian-host/testing";
+} from "../features/obsidian-host/web/host/api/markdown-render";
+import { detachedBridge } from "../features/obsidian-host/web/host/api/views";
+import { createMemoryVaultIo } from "../features/obsidian-host/web/host/testing";
 import { applyCustomCalloutIcons } from "../src/lib/callouts/dom";
 
 let render: (md: string) => Promise<HTMLElement>;

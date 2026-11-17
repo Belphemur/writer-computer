@@ -14,7 +14,7 @@ export default defineConfig({
       "apps/desktop/features/*/web/bindings.ts",
       "apps/desktop/src-tauri/src/agent/fixtures/**",
       "apps/desktop/tests/fixtures/agent-chat-notes/**",
-      "apps/desktop/tests/fixtures/excalidraw/**",
+      "apps/desktop/features/obsidian-host/tests/fixtures/**",
     ],
   },
   lint: {

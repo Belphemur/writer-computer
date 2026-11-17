@@ -4,7 +4,7 @@
 // plugin's getSecret/SecretComponent sees it without a restart.
 import { create } from "zustand";
 import { tauriSecretsClient, type SecretsClient } from "@/lib/secrets-client";
-import { usePluginsStore } from "@/stores/plugins-store";
+import { emitSecretChanged, emitSecretsReady } from "@/lib/features/workspace-events";
 
 const messageOf = (e: unknown): string =>
   (e instanceof Error ? e.message : String(e)).replace(/^IO error:\s*/i, "");
@@ -61,7 +61,7 @@ export const useSecretsStore = create<SecretsState>((set, get) => {
         const ids = await client.listIds();
         if (mine === seq) set({ ids, status: "ready", error: null });
         // The Rust side has the document now, so a host that hydrated empty can fill its cache.
-        await usePluginsStore.getState().retrySecrets();
+        await emitSecretsReady();
       } catch (e) {
         if (mine === seq) set({ status: "error", error: messageOf(e) });
       }
@@ -69,12 +69,12 @@ export const useSecretsStore = create<SecretsState>((set, get) => {
     save: (id, value) =>
       write(
         () => client.set(id, value),
-        () => usePluginsStore.getState().syncSecret(id, value),
+        () => void emitSecretChanged(id, value),
       ),
     remove: (id) =>
       write(
         () => client.delete(id),
-        () => usePluginsStore.getState().syncSecret(id, null),
+        () => void emitSecretChanged(id, null),
       ),
   };
 });

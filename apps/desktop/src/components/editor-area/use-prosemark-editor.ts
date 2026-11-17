@@ -8,7 +8,7 @@ import { createEditorExtensions } from "./editor-extensions";
 import { findHeadingBySlug } from "./link-navigation";
 import { advanceViewportParse } from "./viewport-parse";
 import * as editorApi from "@/hooks/editor-api";
-import { registerEditorView } from "@/lib/obsidian-host/editor-bridge";
+import { registerEditorView } from "@/lib/editor-views";
 import { useReloadVersion } from "@/hooks/use-tabs";
 import { getFileName } from "@/lib/paths";
 import { consumePendingAnchor } from "@/lib/pending-anchor";

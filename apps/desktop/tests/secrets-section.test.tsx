@@ -9,10 +9,10 @@ vi.mock("../src/lib/tauri", () => ({ confirmAction: vi.fn(async () => true) }));
 import { SecretsSection } from "../src/components/settings-panel/secrets-section";
 import { confirmAction } from "../src/lib/tauri";
 import { setSecretsClient, useSecretsStore } from "../src/stores/secrets-store";
-import { usePluginsStore } from "../src/stores/plugins-store";
-import { SecretStorage } from "../src/lib/obsidian-host/api/secret-storage";
-import { SecretComponent } from "../src/lib/obsidian-host/api/ui";
-import { installDomHelpers } from "../src/lib/obsidian-host/api/dom";
+import { workspaceListeners } from "../src/lib/features/workspace-events";
+import { SecretStorage } from "../features/obsidian-host/web/host/api/secret-storage";
+import { SecretComponent } from "../features/obsidian-host/web/host/api/ui";
+import { installDomHelpers } from "../features/obsidian-host/web/host/api/dom";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -162,12 +162,20 @@ describe("Settings > Secrets", () => {
 describe("one store for the section and plugins' SecretComponent", () => {
   it("a secret saved in Settings reaches a running plugin's storage, and back", async () => {
     const storage = new SecretStorage();
-    const syncSecret = vi.fn((id: string, v: string | null) => storage.applyExternal(id, v));
-    usePluginsStore.setState({ syncSecret });
-    await useSecretsStore.getState().save("gamma", "g1");
-    expect(storage.getSecret("gamma")).toBe("g1");
-    await useSecretsStore.getState().remove("gamma");
-    expect(storage.getSecret("gamma")).toBeNull();
+    // What the Obsidian host feature registers, without activating the feature itself.
+    const off = workspaceListeners.add("t.secrets", {
+      owner: "t",
+      id: "t.secrets",
+      onSecretChanged: (id: string, v: string | null) => storage.applyExternal(id, v),
+    });
+    try {
+      await useSecretsStore.getState().save("gamma", "g1");
+      expect(storage.getSecret("gamma")).toBe("g1");
+      await useSecretsStore.getState().remove("gamma");
+      expect(storage.getSecret("gamma")).toBeNull();
+    } finally {
+      off();
+    }
   });
 
   it("SecretComponent picks from listSecrets, creates through setSecret, and returns only the name", () => {
