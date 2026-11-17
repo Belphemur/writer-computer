@@ -24,6 +24,7 @@ vi.mock("../src/lib/tauri", () => ({
   openLogFolder: vi.fn(),
 }));
 
+import { composerView, composerText, pressKey, typeInComposer } from "./helpers/agent-composer";
 import { AgentPane } from "../src/components/agent/agent-pane";
 import type { DiskSkill } from "../src/lib/agent/events";
 import { createMockAgentClient, type Goldens } from "../src/lib/agent/mock-client";
@@ -57,25 +58,9 @@ describe("@activenote and the Skills chip", () => {
   const $$ = (sel: string) => [...container.querySelectorAll<HTMLElement>(sel)];
   const flush = async (ms = 0) =>
     act(async () => void (await new Promise((r) => setTimeout(r, ms))));
-  function type(el: HTMLTextAreaElement, value: string) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set as (
-      this: HTMLTextAreaElement,
-      v: string,
-    ) => void;
-    act(() => {
-      setter.call(el, value);
-      el.setSelectionRange(value.length, value.length);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  }
-  const key = (el: Element, k: string) =>
-    act(
-      () =>
-        void el.dispatchEvent(
-          new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }),
-        ),
-    );
-  const ta = () => $("textarea") as HTMLTextAreaElement;
+  const type = typeInComposer;
+  const key = pressKey;
+  const ta = () => composerView(container);
   const id = () => useAgentStore.getState().activeChatId!;
   const draft = () => useAgentStore.getState().drafts[id()]!;
 
@@ -138,7 +123,7 @@ describe("@activenote and the Skills chip", () => {
     await flush();
     expect(draft().activeNote).toBe(true);
     expect($("[data-agent-chip]")!.textContent).toContain("Plan");
-    expect(ta().value).toBe("@activenote ");
+    expect(composerText(ta())).toBe("@activenote ");
   });
 
   it("typing @activenote verbatim sends the active note even with the chip removed", async () => {
@@ -172,25 +157,25 @@ describe("@activenote and the Skills chip", () => {
     await flush(5);
     key(ta(), "Enter");
     await flush();
-    type(ta(), `${ta().value}with @Notes/B`);
+    type(ta(), `${composerText(ta())}with @Notes/B`);
     await flush(5);
     const rows = $$("[role=option]").map((o) => o.textContent!);
     const b = rows.findIndex((r) => r.includes("B"));
     for (let i = 0; i < b; i++) key(ta(), "ArrowDown");
     key(ta(), "Enter");
     await flush();
-    expect(ta().value).toBe("compare @A with @B ");
+    expect(composerText(ta())).toBe("compare @A with @B ");
     expect(draft().mentions).toEqual([
       { kind: "note", path: "Notes/A.md", label: "A" },
       { kind: "note", path: "Notes/B.md", label: "B" },
     ]);
-    type(ta(), `${ta().value}and @Notes/A`);
+    type(ta(), `${composerText(ta())}and @Notes/A`);
     await flush(5);
     key(ta(), "Enter");
     await flush();
     expect(draft().mentions).toHaveLength(2);
     act(() => $("[aria-label='Remove A']")!.click());
-    expect(ta().value).toContain("@A");
+    expect(composerText(ta())).toContain("@A");
     hoisted.search.mockResolvedValue([] as never);
   });
 
@@ -223,10 +208,10 @@ describe("@activenote and the Skills chip", () => {
     type(ta(), "@Pla");
     await flush(5);
     await pick(0);
-    type(ta(), `${ta().value}and @Pla`);
+    type(ta(), `${composerText(ta())}and @Pla`);
     await flush(5);
     await pick(1);
-    expect(ta().value).toBe("@Plan and @Team/Plan ");
+    expect(composerText(ta())).toBe("@Plan and @Team/Plan ");
     expect(draft().mentions).toEqual([
       { kind: "note", path: "Alpha/Plan.md", label: "Plan" },
       { kind: "note", path: "Team/Plan.md", label: "Team/Plan" },

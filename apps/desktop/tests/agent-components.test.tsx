@@ -26,6 +26,7 @@ import { AgentPane } from "../src/components/agent/agent-pane";
 import { PermissionCard } from "../src/components/agent/permission-card";
 import { createMockAgentClient, type Goldens } from "../src/lib/agent/mock-client";
 import { configureAgentRuntimeForTests, useAgentStore } from "../src/stores/agent-store";
+import { composerText, composerView, pressKey, typeInComposer } from "./helpers/agent-composer";
 import { goldens } from "./helpers/agent-goldens";
 import type { Block, PermissionView } from "../src/lib/agent/transcript";
 
@@ -47,19 +48,10 @@ const button = (name: string | RegExp) =>
       : name.test(b.textContent ?? "") || name.test(b.getAttribute("aria-label") ?? ""),
   )!;
 
-function type(el: HTMLTextAreaElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set as (
-    this: HTMLTextAreaElement,
-    v: string,
-  ) => void;
-  const set = (target: HTMLTextAreaElement, v: string) => setter.call(target, v);
-  act(() => {
-    set(el, value);
-    el.setSelectionRange(value.length, value.length);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
+const type = (_el: unknown, value: string, caret?: number) =>
+  typeInComposer(composerView(container), value, caret);
 function key(el: Element, k: string, init: KeyboardEventInit = {}) {
+  if (el.hasAttribute("data-agent-composer")) return pressKey(composerView(container), k, init);
   act(
     () =>
       void el.dispatchEvent(
@@ -107,8 +99,13 @@ describe("AgentPane", () => {
     expect($("[role=tablist]")).not.toBeNull();
     expect($$("[role=tab]")).toHaveLength(1);
     expect($("[data-agent-empty]")).not.toBeNull();
-    const ta = $("textarea")!;
-    expect(ta.getAttribute("placeholder")).toBe("Ask anything, @ to add context, / for commands");
+    const ta = $("[data-agent-composer]")!;
+    expect($(".cm-placeholder")!.textContent).toBe(
+      "Ask anything, @ to add context, / for commands",
+    );
+    expect(ta.getAttribute("role")).toBe("textbox");
+    expect(ta.getAttribute("aria-multiline")).toBe("true");
+    expect(ta.getAttribute("aria-label")).toBe("Message the agent");
     expect(document.activeElement).toBe(ta);
   });
 
@@ -120,8 +117,8 @@ describe("AgentPane", () => {
   it("a suggestion fills the composer; Enter sends; Shift+Enter does not", async () => {
     await openPane();
     act(() => button(/Summarize the note/).click());
-    const ta = $("textarea") as HTMLTextAreaElement;
-    expect(ta.value).toContain("Summarize");
+    const ta = $("[data-agent-composer]")!;
+    expect(composerText(composerView(container))).toContain("Summarize");
     key(ta, "Enter", { shiftKey: true });
     expect(chat().turns).toHaveLength(0);
     key(ta, "Enter");
@@ -137,7 +134,7 @@ describe("AgentPane", () => {
   it("opens an @ menu from the search, picks a note into a removable chip", async () => {
     hoisted.search.mockResolvedValue([{ relative_path: "Notes/Plan.md" }]);
     await openPane();
-    const ta = $("textarea") as HTMLTextAreaElement;
+    const ta = $("[data-agent-composer]")!;
     type(ta, "see @pl");
     await flush(5);
     expect(hoisted.search).toHaveBeenCalledWith("pl", 40);
@@ -148,7 +145,7 @@ describe("AgentPane", () => {
     expect(get().drafts[get().activeChatId!]!.mentions).toEqual([
       { kind: "note", path: "Notes/Plan.md", label: "Plan" },
     ]);
-    expect(ta.value).toBe("see @Plan ");
+    expect(composerText(composerView(container))).toBe("see @Plan ");
     const chip = $("[data-agent-chip]")!;
     expect(chip.textContent).toContain("Plan");
     act(() => button("Remove Plan").click());
@@ -158,7 +155,7 @@ describe("AgentPane", () => {
   it("Esc closes the menu first, and does not stop anything", async () => {
     hoisted.search.mockResolvedValue([{ relative_path: "a.md" }]);
     await openPane();
-    const ta = $("textarea") as HTMLTextAreaElement;
+    const ta = $("[data-agent-composer]")!;
     type(ta, "@");
     await flush(5);
     expect($("[role=listbox]")).not.toBeNull();
@@ -171,7 +168,7 @@ describe("AgentPane", () => {
     await act(async () => await get().sendMessage("hello"));
     await act(async () => mock.idle(get().activeChatId!));
     await flush(5);
-    const ta = $("textarea") as HTMLTextAreaElement;
+    const ta = $("[data-agent-composer]")!;
     type(ta, "/co");
     expect($$("[role=option]").map((o) => o.textContent)).toEqual(["//compactCommandfrom Claude"]);
   });
@@ -192,7 +189,7 @@ describe("AgentPane", () => {
     await flush(10);
     expect(chat().state).toBe("awaiting-permission");
     expect(button("Stop")).toBeDefined();
-    key($("textarea")!, "Escape");
+    key($("[data-agent-composer]")!, "Escape");
     await flush(10);
     await act(async () => mock.idle(get().activeChatId!));
     await flush(10);
@@ -217,7 +214,7 @@ describe("AgentPane", () => {
         };
       }),
     );
-    expect(($("textarea") as HTMLTextAreaElement).disabled).toBe(true);
+    expect($("[data-agent-composer]")!.getAttribute("contenteditable")).toBe("false");
     expect($("[data-agent-error=binary-not-found]")!.textContent).toContain("Choose binary");
   });
 
@@ -253,7 +250,7 @@ describe("AgentPane", () => {
     expect(second!.getAttribute("aria-selected")).toBe("true");
     key(second!, "ArrowLeft");
     expect($$("[role=tab]")[0]!.getAttribute("aria-selected")).toBe("true");
-    key($("textarea")!, "N", { metaKey: true, shiftKey: true });
+    key($("[data-agent-composer]")!, "N", { metaKey: true, shiftKey: true });
     expect($$("[role=tab]")).toHaveLength(3);
     expect(first).toBeDefined();
   });
@@ -406,10 +403,76 @@ describe("transcript timeline", () => {
     expect($("[data-agent-tool]")!.textContent).toContain("Waiting for permission");
     expect($("[data-agent-permission]")).not.toBeNull();
     // the card precedes the composer in DOM order, so Tab from the composer's start reaches it
-    const pos = $("[data-agent-permission]")!.compareDocumentPosition($("textarea")!);
+    const pos = $("[data-agent-permission]")!.compareDocumentPosition($("[data-agent-composer]")!);
     expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(document.activeElement).toBe($("textarea"));
+    expect(document.activeElement).toBe($("[data-agent-composer]"));
     await act(async () => get().stop());
     await act(async () => mock.idle(get().activeChatId!));
+  });
+
+  describe("composer pills", () => {
+    const draft = () => get().drafts[get().activeChatId!]!;
+    const pills = () => $$("[data-agent-composer] .agent-pill");
+    async function pickPlanInMiddle() {
+      hoisted.search.mockResolvedValue([{ relative_path: "Notes/Plan.md" }]);
+      await openPane();
+      type(null, "see @pl and more", 7);
+      await flush(5);
+      expect($$("[role=option]")).not.toHaveLength(0); // the menu opens from a caret inside text
+      key($("[data-agent-composer]")!, "Enter");
+      await flush();
+    }
+
+    it("a pick replaces the token under the caret with a pill, text stays the token", async () => {
+      await pickPlanInMiddle();
+      expect(composerText(composerView(container))).toBe("see @Plan and more");
+      expect(pills().map((p) => p.textContent)).toEqual(["Plan"]);
+      expect(pills()[0]!.getAttribute("aria-label")).toBe("Note: Plan");
+      expect(draft().mentions).toEqual([{ kind: "note", path: "Notes/Plan.md", label: "Plan" }]);
+    });
+
+    it("Backspace removes the whole pill and detaches its chip; undo brings both back", async () => {
+      await pickPlanInMiddle();
+      const view = composerView(container);
+      act(() => view.dispatch({ selection: { anchor: "see @Plan".length } }));
+      key($("[data-agent-composer]")!, "Backspace");
+      await flush();
+      expect(composerText(view)).toBe("see  and more");
+      expect(pills()).toHaveLength(0);
+      expect(draft().mentions).toEqual([]);
+      expect($("[data-agent-chip]")).toBeNull();
+      key($("[data-agent-composer]")!, "z", { ctrlKey: true }); // Mod+Z (Ctrl under jsdom)
+      await flush();
+      expect(composerText(view)).toBe("see @Plan and more");
+      expect(pills()).toHaveLength(1);
+      expect(draft().mentions).toHaveLength(1);
+      expect($("[data-agent-chip]")!.textContent).toContain("Plan");
+    });
+
+    it("Cmd+Z right after a pick restores the typed token", async () => {
+      await pickPlanInMiddle();
+      key($("[data-agent-composer]")!, "z", { ctrlKey: true });
+      await flush(5);
+      expect(composerText(composerView(container))).toBe("see @pl and more");
+      expect(pills()).toHaveLength(0);
+      expect(draft().mentions).toEqual([]);
+    });
+
+    it("a token with no attached note is a muted pill once the caret leaves it", async () => {
+      await openPane();
+      type(null, "see @Ghost");
+      expect(pills()).toHaveLength(0);
+      act(() => composerView(container).dispatch({ selection: { anchor: 0 } }));
+      expect(pills().map((p) => [p.textContent, p.dataset.resolved])).toEqual([["Ghost", "false"]]);
+      expect($("[data-agent-unattached-hint]")).not.toBeNull();
+    });
+
+    it("Shift+Enter keeps typing on a new line and sends nothing", async () => {
+      await openPane();
+      type(null, "one");
+      key($("[data-agent-composer]")!, "Enter", { shiftKey: true });
+      expect(composerText(composerView(container))).toBe("one\n");
+      expect(chat().turns).toHaveLength(0);
+    });
   });
 });

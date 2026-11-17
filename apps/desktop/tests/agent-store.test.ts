@@ -164,11 +164,11 @@ describe("agent store: a turn against the recorded backend", () => {
     const id = get().activeChatId!;
     const send = vi.spyOn(mock, "send");
     get().setDraft(id, {
-      text: "x",
+      text: "see @a.md",
       mentions: [{ kind: "note", path: "a.md" }],
       activeNote: false,
     });
-    await get().sendMessage("x");
+    await get().sendMessage("see @a.md");
     expect(send.mock.calls[0]![0].context).toEqual([{ kind: "note", path: "a.md" }]);
     expect(get().drafts[id]!.mentions).toEqual([]);
     await mock.idle(id);

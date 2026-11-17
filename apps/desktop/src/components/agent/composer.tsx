@@ -1,4 +1,5 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isolateHistory } from "@codemirror/commands";
+import { useId, useMemo, useRef, useState } from "react";
 import {
   decideAgentPermission,
   hasPendingAgentPermission,
@@ -43,6 +44,9 @@ import { fuzzySearch } from "@/lib/tauri";
 import { ComposerActions } from "./composer-actions";
 import { ContextChips } from "./context-chips";
 import { SuggestionMenu, type Suggestion } from "./suggestion-menu";
+import { pillRanges, type PillContext } from "@/lib/agent/pill";
+import { openVaultPath } from "./agent-links";
+import { useComposerView } from "./use-composer-view";
 import { useFocusOnTick } from "./use-focus-on-tick";
 import { useLoadSkillsOnMount } from "./use-load-skills";
 
@@ -80,21 +84,16 @@ export function Composer({
   hasQueued?: boolean;
 }) {
   const chatId = chat.chatId;
-  const area = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
   const [menu, setMenu] = useState<Menu | null>(null);
   const searchSeq = useRef(0);
   const composing = useRef(false);
   const dismissed = useRef<string | null>(null);
-  const pendingCaret = useRef<number | null>(null);
-  /** The last pick, so Cmd+Z right after it restores the typed token. */
-  const lastPick = useRef<{ before: string; caret: number; after: string } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   /** Tokens whose "not attached" hint the user closed (the hint never blocks sending). */
   const [hintClosed, setHintClosed] = useState<ReadonlySet<string>>(new Set());
   const menuRef = useRef<HTMLDivElement>(null);
   const focusTick = useFocusComposerTick();
-  useFocusOnTick(area, focusTick);
 
   const activeNote = useActiveNoteRelative();
   const attachByDefault = useAttachActiveNoteSetting();
@@ -128,14 +127,26 @@ export function Composer({
   const busy = isBusy(chat);
   const text = draft.text;
 
-  function grow(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`;
-  }
+  /** What the pills of the draft are checked against: the attached refs (the active note's
+   *  included) and the known skills (undefined until some are listed: nothing is judged). */
+  const pills = useMemo<PillContext>(
+    () => ({
+      refs: [
+        ...(activeNote ? [{ kind: "active-note" as const, path: activeNote, inline: false }] : []),
+        ...draft.mentions,
+      ],
+      skills: allSlash.length > 0 ? new Set(allSlash.map((i) => i.name.toLowerCase())) : undefined,
+    }),
+    [activeNote, draft.mentions, allSlash],
+  );
 
   /** Opens, updates or closes the menu for the token the caret is in. */
-  function refresh(value: string, caret: number) {
-    const trigger = findTrigger(value, caret, composing.current);
+  function refresh(value: string, caret: number, isComposing = false) {
+    // A pill the caret touches is a finished reference, not a token being typed: no menu for it.
+    const onPill = pillRanges(value, pills).some(
+      (p) => p.model.attached && caret >= p.from && caret <= p.to,
+    );
+    const trigger = onPill ? null : findTrigger(value, caret, composing.current || isComposing);
     if (!trigger || dismissed.current === tokenKey(trigger)) {
       if (!trigger) dismissed.current = null;
       searchSeq.current++;
@@ -175,15 +186,24 @@ export function Composer({
     setMenu(null);
   }
 
-  /** Puts `replacement` in place of the token under the caret and the caret after it. */
+  /** Puts `replacement` in place of the token under the caret and the caret after it. One
+   *  isolated history event, so Cmd+Z right after a pick gives the typed token back. The refs go
+   *  to the store first; the editor's change then reconciles them with the new text. */
   function replaceToken(t: Trigger, replacement: string, extra: Partial<Draft> = {}) {
-    const next = applyTrigger(text, t, replacement);
-    lastPick.current = { before: text, caret: t.start + 1 + t.query.length, after: next.text };
-    pendingCaret.current = next.caret;
-    setAgentDraft(chatId, { text: next.text, ...extra });
+    const v = view.current;
+    if (!v) return;
+    const before = v.state.doc.toString();
+    const next = applyTrigger(before, t, replacement);
+    setAgentDraft(chatId, extra);
     searchSeq.current++;
     setMenu(null);
-    area.current?.focus();
+    v.dispatch({
+      changes: { from: 0, to: before.length, insert: next.text },
+      selection: { anchor: next.caret },
+      userEvent: "input.complete",
+      annotations: isolateHistory.of("full"),
+    });
+    v.focus();
   }
 
   function pickMention(c: MentionCandidate) {
@@ -210,21 +230,6 @@ export function Composer({
     if (menu?.kind !== "slash") return;
     replaceToken(menu.trigger, `/${s.id}`);
   }
-
-  useLayoutEffect(() => {
-    const caret = pendingCaret.current;
-    if (caret !== null && area.current) {
-      area.current.setSelectionRange(caret, caret);
-      pendingCaret.current = null;
-    }
-  });
-
-  usePopoverDismiss(menuRef, area, closeMenu, menu !== null);
-  const placement = usePopoverPlacement(wrapRef, menu !== null, {
-    width: 520,
-    maxHeight: 224,
-    side: "top",
-  });
 
   // Shortcuts (`@activenote`) come first, then folders and notes from the search.
   const mentionCandidates: MentionCandidate[] =
@@ -263,11 +268,11 @@ export function Composer({
     if (!text.trim() || disabled) return;
     setMenu(null);
     void sendAgentMessage(text);
-    if (area.current) area.current.style.height = "auto";
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.nativeEvent.isComposing) return;
+  /** Composer keys; true when consumed. Everything else reaches the editor's own keymap
+   *  (arrows and Backspace over whole pills, undo, Shift+Enter for a newline). */
+  function onKey(e: KeyboardEvent): boolean {
     const mod = e.metaKey || e.ctrlKey;
 
     // Permission shortcuts work from the composer while a card is showing (spec 3.6).
@@ -276,12 +281,12 @@ export function Composer({
       if (req && e.key === "Enter") {
         e.preventDefault();
         void decideAgentPermission(req.requestId, "allow", e.shiftKey ? "project" : undefined);
-        return;
+        return true;
       }
       if (req && e.key === "Backspace") {
         e.preventDefault();
         void decideAgentPermission(req.requestId, "deny");
-        return;
+        return true;
       }
     }
 
@@ -293,51 +298,36 @@ export function Composer({
           ...menu,
           active: (menu.active + d + suggestions.length) % suggestions.length,
         } as Menu);
-        return;
+        return true;
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
         pickActive();
-        return;
-      }
-    }
-
-    // Cmd+Z right after a pick gives the typed token back (a programmatic edit has no native undo).
-    if (mod && !e.shiftKey && e.key.toLowerCase() === "z") {
-      const pick = lastPick.current;
-      if (pick && pick.after === text) {
-        e.preventDefault();
-        lastPick.current = null;
-        pendingCaret.current = pick.caret;
-        setAgentDraft(chatId, { text: pick.before });
-        refresh(pick.before, pick.caret);
-        return;
+        return true;
       }
     }
 
     if (e.key === "Escape") {
       // In order: close an open menu, clear a queued chip, stop the turn, return to the editor.
+      e.preventDefault();
       if (menu) {
-        e.preventDefault();
         e.stopPropagation();
         closeMenu();
       } else if (hasQueued) {
-        e.preventDefault();
         removeQueuedMessage(chatId);
       } else if (busy && chat.state !== "cancelling") {
-        e.preventDefault();
         void stopAgent();
       } else {
-        e.currentTarget.blur();
-        document.querySelector<HTMLElement>(".cm-content")?.focus();
+        view.current?.contentDOM.blur();
+        document.querySelector<HTMLElement>(".cm-content:not([data-agent-composer])")?.focus();
       }
-      return;
+      return true;
     }
 
     if (e.key === "Enter" && !e.shiftKey && !mod) {
       e.preventDefault();
       send();
-      return;
+      return true;
     }
 
     if (e.key === "ArrowUp" && text === "" && !mod) {
@@ -345,9 +335,61 @@ export function Composer({
       if (last) {
         e.preventDefault();
         setAgentDraft(chatId, { text: last.text });
+        return true;
       }
     }
+    return false;
   }
+
+  const { host, view, contentRef } = useComposerView({
+    text,
+    pills,
+    disabled,
+    placeholder: placeholder(chat),
+    aria: {
+      "aria-autocomplete": "list",
+      "aria-haspopup": "listbox",
+      ...(menu ? { "aria-controls": listId } : {}),
+      ...(menu && suggestions.length
+        ? { "aria-activedescendant": `${listId}-${menu.active}` }
+        : {}),
+    },
+    handlers: {
+      onKey,
+      open: openVaultPath,
+      onChange: (value, caret, isComposing) => {
+        setAgentDraft(chatId, { text: value });
+        refresh(value, caret, isComposing);
+      },
+      onCompositionStart: () => {
+        composing.current = true;
+        closeMenu();
+      },
+      onCompositionEnd: () => {
+        composing.current = false;
+        dismissed.current = null;
+        const v = view.current;
+        if (v) refresh(v.state.doc.toString(), v.state.selection.main.head);
+      },
+    },
+  });
+  useFocusOnTick(contentRef, focusTick);
+  usePopoverDismiss(menuRef, contentRef, closeMenu, menu !== null);
+  const placement = usePopoverPlacement(wrapRef, menu !== null, {
+    width: 520,
+    maxHeight: 224,
+    side: "top",
+    watch: menu?.trigger.start,
+    anchorX: () => {
+      const v = view.current;
+      if (!v || !menu) return null;
+      try {
+        return v.coordsAtPos(menu.trigger.start)?.left ?? null;
+      } catch {
+        return null; // no layout (not rendered yet)
+      }
+    },
+  });
 
   return (
     <div ref={wrapRef} className="relative">
@@ -376,37 +418,11 @@ export function Composer({
       )}
       <div className="m-3 mt-2 rounded-xl border border-[var(--line-subtle)] bg-[var(--surface-input)] focus-within:border-[var(--focus-border)]">
         <ContextChips chatId={chatId} draft={draft} />
-        <textarea
-          ref={area}
-          value={text}
-          disabled={disabled}
-          rows={2}
-          aria-label="Message the agent"
-          aria-autocomplete="list"
-          aria-expanded={menu !== null}
-          aria-controls={menu ? listId : undefined}
-          aria-activedescendant={
-            menu && suggestions.length ? `${listId}-${menu.active}` : undefined
-          }
-          role="combobox"
-          placeholder={placeholder(chat)}
-          onChange={(e) => {
-            grow(e.currentTarget);
-            setAgentDraft(chatId, { text: e.currentTarget.value });
-            refresh(e.currentTarget.value, e.currentTarget.selectionStart);
-          }}
-          onSelect={(e) => refresh(e.currentTarget.value, e.currentTarget.selectionStart)}
-          onCompositionStart={() => {
-            composing.current = true;
-            closeMenu();
-          }}
-          onCompositionEnd={(e) => {
-            composing.current = false;
-            dismissed.current = null;
-            refresh(e.currentTarget.value, e.currentTarget.selectionStart);
-          }}
-          onKeyDown={onKeyDown}
-          className="block max-h-[40vh] w-full resize-none bg-transparent px-3 py-2.5 text-[14px] leading-snug text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
+        <div
+          ref={host}
+          data-agent-composer-editor
+          data-disabled={disabled || undefined}
+          className="agent-composer-editor"
         />
         <ComposerActions
           chat={chat}

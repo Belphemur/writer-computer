@@ -47,10 +47,11 @@ async function openPane() {
 
 /** Type into the composer and press Enter. */
 async function send(text) {
-  const box = await $('textarea[aria-label="Message the agent"]');
+  // The composer is a CodeMirror contenteditable (role=textbox), not a textarea.
+  const box = await $('[data-agent-composer][aria-label="Message the agent"]');
   await box.waitForExist({ timeout: 8_000 });
   await box.click();
-  await box.setValue(text);
+  await box.addValue(text);
   await browser.keys("Enter");
 }
 

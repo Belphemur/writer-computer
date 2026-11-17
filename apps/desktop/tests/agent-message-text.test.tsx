@@ -40,16 +40,14 @@ describe("user message tokens", () => {
         { kind: "note", path: "My Plan.md" },
       ],
     );
-    expect(tokens().map((t) => [t.dataset.agentToken, t.textContent])).toEqual([
-      ["mention", "@Projects/Plan.md"],
-      ["mention", "@activenote"],
-      ["mention", "@Docs"],
-      ["mention", '@"My Plan.md"'],
-      ["skill", "/summarize"],
+    // pills show the readable label; the typed token text is the composer document's, not the DOM's
+    expect(tokens().map((t) => [t.dataset.agentToken, t.dataset.pillKind, t.textContent])).toEqual([
+      ["mention", "note", "Plan"],
+      ["mention", "active-note", "Today"],
+      ["mention", "folder", "Docs"],
+      ["mention", "note", "My Plan"],
+      ["skill", "skill", "/summarize"],
     ]);
-    expect(container.querySelector("p")!.textContent).toBe(
-      'compare @Projects/Plan.md with @activenote and @Docs and @"My Plan.md" then /summarize',
-    );
     act(() => tokens()[0]!.click());
     expect(open).toHaveBeenLastCalledWith("Projects/Plan.md");
     act(() => tokens()[1]!.click());
@@ -64,14 +62,15 @@ describe("user message tokens", () => {
     const path = "Management/2026-11-16 - Daniel Plan.md";
     render('prep @"Daniel Plan"', [{ kind: "note", path, label: "Daniel Plan" }]);
     const t = tokens()[0]!;
-    expect(t.textContent).toBe('@"Daniel Plan"');
+    expect(t.textContent).toBe("Daniel Plan");
     expect(t.title).toBe(path);
     act(() => t.click());
     expect(open).toHaveBeenLastCalledWith(path);
   });
 
   it("leaves @activenote inert when the note it meant is unknown (a reopened chat)", () => {
-    render("see @activenote", []);
+    render("see @activenote and @Nothing", []);
     expect(tokens()[0]!.tagName).toBe("SPAN");
+    expect(tokens().map((t) => t.dataset.resolved)).toEqual(["false", "false"]); // muted
   });
 });

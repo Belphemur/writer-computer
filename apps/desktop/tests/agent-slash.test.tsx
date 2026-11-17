@@ -19,6 +19,7 @@ vi.mock("../src/lib/tauri", () => ({
   openLogFolder: vi.fn(),
 }));
 
+import { composerView, composerText, pressKey, typeInComposer } from "./helpers/agent-composer";
 import { AgentPane } from "../src/components/agent/agent-pane";
 import type { DiskSkill } from "../src/lib/agent/events";
 import { createMockAgentClient, type Goldens } from "../src/lib/agent/mock-client";
@@ -162,25 +163,8 @@ describe("the / menu in the composer", () => {
   const $$ = (sel: string) => [...container.querySelectorAll<HTMLElement>(sel)];
   const flush = async (ms = 0) =>
     act(async () => void (await new Promise((r) => setTimeout(r, ms))));
-  function type(el: HTMLTextAreaElement, value: string) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set as (
-      this: HTMLTextAreaElement,
-      v: string,
-    ) => void;
-    act(() => {
-      setter.call(el, value);
-      el.setSelectionRange(value.length, value.length);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  }
-  const key = (el: Element, k: string) =>
-    act(
-      () =>
-        void el.dispatchEvent(
-          new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }),
-        ),
-    );
-
+  const type = typeInComposer;
+  const key = pressKey;
   beforeEach(async () => {
     disk = DISK;
     mock = createMockAgentClient({ goldens: goldens as unknown as Goldens });
@@ -211,7 +195,7 @@ describe("the / menu in the composer", () => {
     act(() => root.unmount());
     container.remove();
   });
-  const ta = () => $("textarea") as HTMLTextAreaElement;
+  const ta = () => composerView(container);
   const rows = () => $$("[role=option]").map((o) => o.textContent);
 
   it("typing / lists the skills found on disk with a description and a source tag, before any session", async () => {
@@ -255,18 +239,7 @@ describe("the / menu in the composer", () => {
     expect(send.mock.calls[0]![0].text).toBe("/writer-cli list notes");
   });
 
-  const typeAt = (value: string, caret: number) => {
-    const el = ta();
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set as (
-      this: HTMLTextAreaElement,
-      v: string,
-    ) => void;
-    act(() => {
-      setter.call(el, value);
-      el.setSelectionRange(caret, caret);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  };
+  const typeAt = (value: string, caret: number) => typeInComposer(ta(), value, caret);
   const draftText = () =>
     useAgentStore.getState().drafts[useAgentStore.getState().activeChatId!]!.text;
 
@@ -296,7 +269,7 @@ describe("the / menu in the composer", () => {
     key(ta(), "Enter");
     await flush();
     expect(draftText()).toBe("first /writer-cli and then /rel later");
-    expect(ta().selectionStart).toBe("first /writer-cli ".length);
+    expect(ta().state.selection.main.head).toBe("first /writer-cli ".length);
     typeAt(draftText().replace("/rel", "/re"), "first /writer-cli and then /re".length);
     await flush(5);
     key(ta(), "Enter");
@@ -315,17 +288,8 @@ describe("the / menu in the composer", () => {
     key(ta(), "Tab");
     await flush();
     expect(draftText()).toBe("run /writer-cli ");
-    act(
-      () =>
-        void ta().dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: "z",
-            metaKey: true,
-            bubbles: true,
-            cancelable: true,
-          }),
-        ),
-    );
+    // jsdom reports no Mac platform, so CodeMirror's Mod is Ctrl here (the app accepts both)
+    key(ta(), "z", { ctrlKey: true });
     expect(draftText()).toBe("run /writer-c");
   });
 

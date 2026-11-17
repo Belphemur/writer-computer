@@ -10,6 +10,12 @@ describe("computePlacement", () => {
     expect(p).toMatchObject({ left: 0, width: 224 });
   });
 
+  it("opens at a caret x (relative to the anchor) and still stays inside the pane", () => {
+    expect(computePlacement(anchorAt(10), pane, 800, { width: 200, x: 90 }).left).toBe(80);
+    const p = computePlacement(anchorAt(10), pane, 800, { width: 200, x: 400 });
+    expect(10 + p.left + p.width).toBe(412);
+  });
+
   it("slides left when the popover would cross the pane's right edge", () => {
     // Anchor at x=300, width 320: right edge would be 620 > 412, so it ends at the margin.
     const p = computePlacement(anchorAt(300), pane, 800, { width: 320 });

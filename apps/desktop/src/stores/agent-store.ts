@@ -42,6 +42,7 @@ import {
 import { applyTitleSummary, shouldAutoTitle, type RegenerateOutcome } from "@/lib/agent/auto-title";
 import { buildPrompt } from "@/lib/agent/context-text";
 import { mentionsActiveNote } from "@/lib/agent/mentions";
+import { reconcileRefs } from "@/lib/agent/draft-refs";
 import { createRefIo, prepareRefs, type RefIo } from "@/lib/agent/ref-resolve";
 import { chatFromNote } from "@/lib/agent/chat-from-note";
 import { parseChatNote } from "@/lib/agent/chat-note";
@@ -77,6 +78,8 @@ export type Draft = {
   mentions: ContextRef[];
   /** False once the user removed the active-note chip for this chat. */
   activeNote: boolean;
+  /** Refs whose last token left the text (`draft-refs.ts`); undo or a paste brings them back. */
+  parked?: ContextRef[];
 };
 
 export type QueuedMessage = { text: string; context: ContextRef[] };
@@ -676,9 +679,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
       get().selectChat(order[(i + delta + order.length) % order.length]!);
     },
     setDraft: (chatId, patch) =>
-      set((s) => ({
-        drafts: { ...s.drafts, [chatId]: { ...(s.drafts[chatId] ?? EMPTY_DRAFT), ...patch } },
-      })),
+      set((s) => {
+        const next = { ...(s.drafts[chatId] ?? EMPTY_DRAFT), ...patch };
+        // Refs follow the text: the one place a text change attaches or detaches a ref.
+        if ("text" in patch) {
+          const refs = reconcileRefs(next.text, next.mentions, next.parked ?? []);
+          next.mentions = refs.mentions;
+          next.parked = refs.parked;
+        }
+        return { drafts: { ...s.drafts, [chatId]: next } };
+      }),
 
     sendMessage: async (rawText) => {
       const chatId = get().activeChatId;
@@ -687,7 +697,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       if (!chatId || !chat || !text || isComposerDisabled(chat)) return;
       const context = contextForSend(get().drafts[chatId] ?? EMPTY_DRAFT, text);
       // Clear the draft now; the mentions are consumed, the active-note choice persists.
-      get().setDraft(chatId, { text: "", mentions: [] });
+      get().setDraft(chatId, { text: "", mentions: [], parked: [] });
       if (isBusy(chat)) {
         set((s) => {
           const q = s.queued[chatId];

@@ -63,19 +63,33 @@ export function middleTruncate(path: string, max = 48): string {
  *  are not `@activenote`, and they do not look like a typed path (those resolve, or stay
  *  literal, at send). Claude gets no path for them, which the composer says. */
 export function unattachedMentions(text: string, attached: readonly ContextRef[]): string[] {
-  const owned = new Set(
-    attached.flatMap((r) =>
-      r.kind === "note" || r.kind === "folder" ? [r.path, r.label ?? r.path] : [],
-    ),
-  );
   const out: string[] = [];
   for (const seg of tokenizeMessage(text)) {
-    if (seg.kind !== "mention" || isActiveNoteToken(seg) || owned.has(seg.path)) continue;
-    if (seg.path.includes("/") || /\.[^/.]+$/.test(seg.path)) continue;
+    if (seg.kind !== "mention" || isActiveNoteToken(seg) || refForToken(seg.path, attached))
+      continue;
+    if (isTypedPath(seg.path)) continue;
     if (!out.includes(seg.raw)) out.push(seg.raw);
   }
   return out;
 }
+
+/** The note or folder ref a token's text names: its readable label (what a pick put in the text)
+ *  or its full path. The one ownership rule: a token with an owner is attached, and a ref
+ *  without a token is detached from the draft (`draft-refs.ts`). */
+export function refForToken(
+  tokenPath: string,
+  refs: readonly ContextRef[],
+): Extract<ContextRef, { kind: "note" | "folder" }> | undefined {
+  return refs.find(
+    (r): r is Extract<ContextRef, { kind: "note" | "folder" }> =>
+      (r.kind === "note" || r.kind === "folder") &&
+      (r.path === tokenPath || (r.label ?? r.path) === tokenPath),
+  );
+}
+
+/** A token that looks like a typed vault path (a folder separator or an extension): it resolves,
+ *  or stays literal, at send, so it is not "unattached". A bare name is. */
+export const isTypedPath = (p: string) => p.includes("/") || /\.[^/.]+$/.test(p);
 
 export const ACTIVE_NOTE_TOKEN = "activenote";
 
