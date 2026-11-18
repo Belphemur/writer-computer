@@ -3,7 +3,17 @@
 // component per node). Per-level styling comes from the one level-of-detail table (`lod.ts`):
 // overview, structure, detail, close-up. The same attribute set yields the same style, so these are
 // tested without WebGL.
-import { atLeast, edgeLabelShown, hubLimit, nodeLabel, type LabelMode, type LodLevel } from "./lod";
+import {
+  atLeast,
+  EDGE_DIM,
+  EDGE_LOOK,
+  edgeLabelShown,
+  edgeOpacity,
+  hubLimit,
+  nodeLabel,
+  type LabelMode,
+  type LodLevel,
+} from "./lod";
 import type { EdgeAttrs, NodeAttrs, NodeKind } from "./model";
 import { labelColor, type GraphTheme } from "./theme";
 
@@ -174,48 +184,48 @@ export function edgeStyle(a: EdgeAttrs, source: string, target: string, s: ViewS
     }
   }
   const detailed = atLeast(s.level, "detail");
+  const look = EDGE_LOOK[s.level];
+  const touches = (k: string) => k === s.hovered || k === s.focus || s.selection.has(k);
+  const touching = touches(source) || touches(target);
+  const active = s.hovered !== null || s.focus !== null || s.selection.size > 0;
   const style: EdgeStyle = {
     color: edgeColor(a, s),
-    size: detailed ? edgeSize(a.count) : 0.4,
-    opacity: detailed ? (a.kind === "tag" ? 0.5 : 0.85) : 0.3,
+    size: look.width ?? edgeSize(a.count),
+    opacity: edgeOpacity(s.level, active, touching),
     // Below detail the kinds differ by color only: no dashes, no arrows.
     ...(detailed && a.kind === "embed" ? DASHED : SOLID),
   };
-  if (detailed && a.kind !== "tag") style.head = "arrow";
-  const touches = (k: string) => k === s.hovered || k === s.focus || s.selection.has(k);
-  if (
-    a.kind === "property" &&
-    a.label &&
-    edgeLabelShown(s.labelMode, s.level, touches(source) || touches(target))
-  ) {
-    style.label = a.label;
+  // One arrow, only when every link of the pair runs the same way.
+  if (detailed && a.kind !== "tag" && a.directed) style.head = "arrow";
+  if (touching && edgeLabelShown(s.labelMode, s.level, touching)) {
+    style.label = edgeTitle(a);
     style.labelVisibility = "visible";
   }
-
-  if (s.hovered !== null) {
-    const incident = source === s.hovered || target === s.hovered;
-    if (incident) {
-      style.opacity = 1;
-      style.size = (style.size ?? 1) * 1.6;
-      style.zIndex = 1;
-      if (a.kind === "link" || a.kind === "embed") style.color = s.theme.edgeStrong;
-    } else {
-      style.opacity = 0.06;
-    }
-  } else if (s.matches) {
+  if (touching && active) {
+    style.size = (style.size ?? 1) * 1.6;
+    style.zIndex = 1;
+    if (a.kind === "link" || a.kind === "embed") style.color = s.theme.edgeStrong;
+  } else if (!active && s.matches) {
     const hit = s.matches.has(source) || s.matches.has(target);
-    if (!hit) style.opacity = 0.06;
+    if (!hit) style.opacity = EDGE_DIM;
   }
   style.opacity = (style.opacity ?? 1) * s.fade;
   return style;
 }
 
-/** The tooltip text of an edge on hover (spec 3.2): "links to", "embeds" or the property label. */
-export function edgeTitle(a: EdgeAttrs): string {
-  if (a.kind === "property") return a.label ?? "property";
-  if (a.kind === "embed") return "embeds";
-  if (a.kind === "tag") return "tagged";
-  return "links to";
+const partTitle = (kind: EdgeAttrs["kind"], label: string | null) =>
+  kind === "property"
+    ? (label ?? "property")
+    : kind === "embed"
+      ? "embeds"
+      : kind === "tag"
+        ? "tagged"
+        : "links to";
+
+/** What makes the link, one terse line (spec 3.2): "links to · embeds · owner", each kind once. */
+export function edgeTitle(a: Pick<EdgeAttrs, "kind" | "label" | "parts">): string {
+  const parts = a.parts?.length ? a.parts : [{ kind: a.kind, label: a.label }];
+  return [...new Set(parts.map((p) => partTitle(p.kind, p.label)))].join(" · ");
 }
 
 /** The neighbours of `key` in the model, out and in. */

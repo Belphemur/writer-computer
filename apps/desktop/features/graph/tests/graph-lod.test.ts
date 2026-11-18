@@ -5,6 +5,7 @@ import { aggregate } from "../web/aggregate";
 import { CardsLayer, MAX_CARD_TAGS, pickCards } from "../web/cards-layer";
 import {
   CARD_CAP,
+  EDGE_LOOK,
   LOD_HYSTERESIS,
   LOD_TABLE,
   fadeAt,
@@ -100,8 +101,8 @@ describe("aggregate", () => {
       Other: 1,
     });
     // Ana -> Ben (x2 links, same group) is inside People; Ana embeds Plan and Ben's property
-    // edge points back at Ana (inside).
-    expect(o.links).toEqual([{ a: "Notes", b: "People", count: 1 }]);
+    // edge points at Plan: two links between the groups.
+    expect(o.links).toEqual([{ a: "Notes", b: "People", count: 2 }]);
   });
 
   it("falls back to the hubs mode with fewer than two groups", () => {
@@ -228,7 +229,10 @@ describe("reducers per level", () => {
     expect(d).toMatchObject({ dash: 5, gap: 4, head: "arrow" });
     expect(d.label).toBeUndefined();
     const prop = edge("property");
-    expect(edgeStyle(prop.a, prop.s, prop.t, view({ level: "closeup" }))).toMatchObject({
+    expect(edgeStyle(prop.a, prop.s, prop.t, view({ level: "closeup" })).label).toBeUndefined();
+    expect(
+      edgeStyle(prop.a, prop.s, prop.t, view({ level: "closeup", hovered: prop.s })),
+    ).toMatchObject({
       label: "manager",
       labelVisibility: "visible",
     });
@@ -239,7 +243,9 @@ describe("reducers per level", () => {
     expect(nodeStyle("Lonely.md", attrs("Lonely.md"), v).labelVisibility).toBe("hidden");
     expect(nodeStyle("Lonely.md", attrs("Lonely.md"), view({ fade: 0.5 })).opacity).toBe(0.5);
     const link = edge("link");
-    expect(edgeStyle(link.a, link.s, link.t, view({ fade: 0.5 })).opacity).toBeCloseTo(0.425);
+    expect(edgeStyle(link.a, link.s, link.t, view({ fade: 0.5 })).opacity).toBeCloseTo(
+      EDGE_LOOK.detail.opacity * 0.5,
+    );
   });
 });
 

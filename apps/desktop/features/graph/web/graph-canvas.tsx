@@ -8,11 +8,13 @@ import "@react-sigma/core/lib/style.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
 import type { GraphCamera } from "@/components/editor-area/page-kinds";
+import { logger } from "@/lib/logger";
 import { keyIntent, type LinkIntent } from "@/lib/link-activation";
 import { nodeClick, nodeMenu, intentOf, type MenuHandlers } from "./actions";
 import { syncGroups, type GroupsResult } from "./groups";
 import type { Overview } from "./aggregate";
 import { CardsLayer, pickCards, type CardData } from "./cards-layer";
+import { anyInView, createFollow, fitTarget, sameTarget, type Point } from "./camera-fit";
 import { attachHulls } from "./hulls";
 import {
   atLeast,
@@ -104,6 +106,7 @@ function Controller(
   const overviewLayer = useRef<ReturnType<typeof attachOverview> | null>(null);
   const [cards, setCards] = useState<CardData[]>([]);
   const fadeFrame = useRef<number | null>(null);
+  const follow = useRef(createFollow());
 
   const patchView = (patch: Partial<ViewState>) => {
     view.current = { ...view.current, ...patch };
@@ -130,7 +133,7 @@ function Controller(
 
   // Layout supervisor and hulls: one each per sigma instance.
   useEffect(() => {
-    layout.current = createLayout(model, latest.current.forces);
+    layout.current = createLayout(model, latest.current.forces, { onSettle: () => settle() });
     layout.current.setAnimate(latest.current.animate);
     hulls.current = attachHulls(sigma, model, {
       // Clusters keep their hull, name and count from the structure level up (the overview level
@@ -186,7 +189,11 @@ function Controller(
       groupedOverview: p.overview?.mode === "groups",
     });
     updateLevel();
-    if (applied.structural || anchors) layout.current?.start();
+    const restoring = first && model.order > 0 && p.camera !== undefined;
+    if (applied.structural || anchors) {
+      if (!restoring) follow.current.newLayout();
+      layout.current?.start();
+    }
     hulls.current?.redraw();
     if (model.order > 0) {
       const drawn = p.spec;
@@ -195,10 +202,10 @@ function Controller(
     if (first && model.order > 0) {
       loaded.current = true;
       const camera = sigma.getCamera();
-      if (p.camera) camera.setState({ ...camera.getState(), ...p.camera });
-      else if (p.center && model.hasNode(p.center))
-        requestAnimationFrame(() => centerOn(p.center!));
-      else void camera.reset({ duration: 0 });
+      if (p.camera) {
+        camera.setState({ ...camera.getState(), ...p.camera });
+        follow.current.restore();
+      } else void camera.reset({ duration: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.spec, p.groups, p.propertyLabels, p.overview]);
@@ -220,6 +227,11 @@ function Controller(
     if (sigma.getSetting("renderEdgeLabels") !== on) sigma.setSetting("renderEdgeLabels", on);
   };
 
+  const fit = () => {
+    follow.current.newLayout();
+    fitCamera(latest.current.animate);
+  };
+
   const centerOn = (key: string) => {
     const d = sigma.getNodeDisplayData(key);
     if (!d) return;
@@ -228,6 +240,75 @@ function Controller(
     if (latest.current.animate) void camera.animate(target, { duration: 300 });
     else camera.setState({ ...camera.getState(), ...target });
   };
+
+  /** The notes (hidden group anchors excluded) in the camera's framed space, or in pixels. */
+  const notePoints = (to: "framed" | "viewport"): Point[] => {
+    const out: Point[] = [];
+    model.forEachNode((_key, a) => {
+      if (a.anchor) return;
+      out.push(
+        to === "framed"
+          ? sigma.graphToFramedGraph({ x: a.x, y: a.y })
+          : sigma.graphToViewport({ x: a.x, y: a.y }),
+      );
+    });
+    return out;
+  };
+
+  /** THE fit: the camera takes in every note with padding (animated unless reduced motion; the
+   *  follow during a layout is instant). Used by the layout's follow, its settle, the toolbar's Fit
+   *  and the F key. */
+  const fitCamera = (animate: boolean) => {
+    const camera = sigma.getCamera();
+    const target = fitTarget(notePoints("framed"));
+    if (!target) return void camera.reset({ duration: 0 });
+    const now = camera.getState();
+    if (sameTarget(target, now)) return;
+    if (animate) void camera.animate(target, { duration: 300 });
+    else camera.setState({ ...now, ...target });
+  };
+
+  /** The layout settled: fit for good if the camera follows, or if the saved view shows nothing. */
+  const settle = () => {
+    const { width, height } = sigma.getDimensions();
+    const empty = !anyInView(notePoints("viewport"), width, height);
+    logger.log(
+      "debug",
+      "app",
+      `graph settled: ${model.order} nodes, camera ratio ${sigma.getCamera().getState().ratio.toFixed(3)}, level ${view.current.level}, following ${follow.current.isFollowing()}, empty view ${empty}`,
+    );
+    if (follow.current.isFollowing() || empty) {
+      fitCamera(latest.current.animate);
+      follow.current.newLayout();
+    }
+  };
+
+  // While a layout runs the camera follows the growing box until the user takes over.
+  useEffect(() => {
+    const onRender = () => {
+      if (follow.current.isFollowing() && layout.current?.isRunning()) fitCamera(false);
+    };
+    sigma.on("afterRender", onRender);
+    return () => {
+      sigma.off("afterRender", onRender);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigma]);
+
+  // Sigma resizes on window resize only: a pane, tab or side panel that changes the container
+  // would leave the canvas the wrong size, so the container is observed.
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      sigma.resize();
+      sigma.scheduleRefresh();
+      updateLevel();
+      if (follow.current.isFollowing()) fitCamera(false);
+    });
+    ro.observe(sigma.getContainer());
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigma]);
 
   useEffect(() => {
     if (p.centerRequest) centerOn(p.centerRequest.key);
@@ -330,6 +411,8 @@ function Controller(
     let saveTimer: ReturnType<typeof setTimeout> | null = null;
     const onUpdate = () => {
       const { x, y, ratio } = camera.getState();
+      // A tooltip of an edge that moved or was hidden would otherwise stay (no leave event).
+      latest.current.onEdgeHover?.(null);
       updateLevel();
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(
@@ -396,8 +479,13 @@ function Controller(
         event.preventSigmaDefault();
         latest.current.onOpenNode(nodeAt(node), "current");
       },
-      downNode: () => undefined,
-      nodeDragStart: () => layout.current?.stop(),
+      downNode: () => follow.current.userMoved(),
+      downStage: () => follow.current.userMoved(),
+      wheelStage: () => follow.current.userMoved(),
+      nodeDragStart: () => {
+        follow.current.userMoved();
+        layout.current?.stop();
+      },
       nodeDragEnd: ({ node }) => {
         const a = nodeAt(node);
         layout.current?.pin(node, a.x, a.y);
@@ -456,8 +544,7 @@ function Controller(
         latest.current.onSelection?.([]);
         latest.current.onFocusNode?.(null);
       } else if (e.key === "f" || e.key === "F") {
-        if (!e.metaKey && !e.ctrlKey)
-          void sigma.getCamera().reset({ duration: latest.current.animate ? 300 : 0 });
+        if (!e.metaKey && !e.ctrlKey) fit();
       }
     };
     el.addEventListener("keydown", onKey);
@@ -468,7 +555,7 @@ function Controller(
   useEffect(() => {
     if (!p.apiRef) return;
     p.apiRef.current = {
-      fit: () => void sigma.getCamera().reset({ duration: latest.current.animate ? 300 : 0 }),
+      fit,
       centerOn,
       unpinAll: () => {
         layout.current?.unpinAll();

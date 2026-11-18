@@ -109,9 +109,12 @@ describe("edge labels", () => {
     expect(edgeStyle(a, s, t, view({ hovered: "Lonely.md" })).label).toBeUndefined();
   });
 
-  it("zoom mode: every property edge, in close-up only", () => {
+  it("zoom mode: only edges touching the hovered or selected node, in close-up only", () => {
     const { a, s, t } = prop();
-    expect(edgeStyle(a, s, t, view({ labelMode: "zoom", level: "closeup" })).label).toBe(a.label);
+    expect(edgeStyle(a, s, t, view({ labelMode: "zoom", level: "closeup" })).label).toBeUndefined();
+    expect(
+      edgeStyle(a, s, t, view({ labelMode: "zoom", level: "closeup", hovered: s })).label,
+    ).toBe(a.label);
     expect(edgeStyle(a, s, t, view({ labelMode: "zoom", level: "detail" })).label).toBeUndefined();
   });
 

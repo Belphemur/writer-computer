@@ -17,10 +17,14 @@ export interface Forces {
 
 export const DEFAULT_FORCES: Forces = { center: 20, repel: 10, linkDistance: 50, groupPull: 40 };
 
-/** Settings sliders (0 to 100) to ForceAtlas2 parameters, tuned so clusters separate: strong
- *  repulsion and a gentle gravity (the cluster anchors pull each group together, `groups.ts`). A
- *  higher link distance lowers how much edge weight pulls; large graphs use the Barnes-Hut
- *  approximation. */
+/** Settings sliders (0 to 100) to ForceAtlas2 parameters. Bounded by construction: the gravity
+ *  term pulls every node to the origin in proportion to its mass, so positions cannot grow without
+ *  limit (measured: a 250-note graph settles inside +-450 units), and `adjustSizes` stays off (its
+ *  overlap term is the one that can blow up). Clusters separate from the seed, not from exotic
+ *  modes: the layout starts as islands (`seedGroups`, `groups.ts`), the anchors keep each group
+ *  together and links across groups pull a quarter as hard (`INTER_GROUP_WEIGHT`). `linLogMode`
+ *  was measured and rejected: it spread each cluster 6x wider. A higher link distance lowers how
+ *  much edge weight pulls; large graphs use the Barnes-Hut approximation. */
 export function forcesToSettings(f: Forces, order: number): FA2Settings {
   return {
     gravity: f.center / 40,
@@ -28,6 +32,8 @@ export function forcesToSettings(f: Forces, order: number): FA2Settings {
     edgeWeightInfluence: Math.max(0, (100 - f.linkDistance) / 50),
     barnesHutOptimize: order > 500,
     slowDown: 1 + Math.log10(Math.max(1, order)),
+    linLogMode: false,
+    outboundAttractionDistribution: false,
   };
 }
 
@@ -48,6 +54,8 @@ export interface LayoutDeps {
   /** Injected for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (id: unknown) => void;
+  /** The layout settled (its time budget ran out): the moment to fit the camera for good. */
+  onSettle?: () => void;
 }
 
 /** Time the layout runs after a change before it is stopped as settled. */
@@ -104,6 +112,7 @@ export function createLayout(graph: GraphModel, initial: Forces, deps: LayoutDep
         timer = null;
         wanted = false;
         supervisor?.stop();
+        deps.onSettle?.();
       },
       settleBudgetMs(graph.order, animate),
     );

@@ -132,7 +132,12 @@ describe("edge style", () => {
 
   it("hides the helper edges of groups", () => {
     expect(
-      edgeStyle({ kind: "group", label: null, count: 1, weight: 1 }, "a", "b", view()).visibility,
+      edgeStyle(
+        { kind: "group", label: null, count: 1, parts: [], directed: false, weight: 1 },
+        "a",
+        "b",
+        view(),
+      ).visibility,
     ).toBe("hidden");
   });
 });

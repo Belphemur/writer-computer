@@ -83,6 +83,25 @@ export function cardPriorityKeys(
   return new Set(keys.filter((k): k is string => k !== null));
 }
 
+/** How an edge looks at each level (one table): faint and thin when zoomed out so a dense graph is
+ *  not a grey ball, full strength from close-up. `width` is null where the link count sets it. */
+export const EDGE_LOOK = {
+  overview: { opacity: 0.12, width: 0.3 },
+  structure: { opacity: 0.18, width: 0.4 },
+  detail: { opacity: 0.55, width: null },
+  closeup: { opacity: 0.85, width: null },
+} as const satisfies Record<LodLevel, { opacity: number; width: number | null }>;
+
+/** Opacity of the edges that do not touch the hovered, focused or selected node. */
+export const EDGE_DIM = 0.05;
+
+/** The edge opacity: with something hovered, focused or selected only its edges keep full
+ *  strength (`touches`) and the rest is dimmed; without one the level's own look applies. */
+export function edgeOpacity(level: LodLevel, active: boolean, touches: boolean): number {
+  if (!active) return EDGE_LOOK[level].opacity;
+  return touches ? 1 : EDGE_DIM;
+}
+
 export const levelIndex = (level: LodLevel): number =>
   LOD_TABLE.findIndex((r) => r.level === level);
 export const atLeast = (level: LodLevel, min: LodLevel): boolean =>

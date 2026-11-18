@@ -28,6 +28,26 @@ export interface NodeSpec {
   cardValue: string | null;
 }
 
+/** One relationship between two notes, before the pair is merged into one drawn edge. */
+export interface EdgePart {
+  kind: EdgeKind;
+  /** The property name of a `property` part. */
+  label: string | null;
+  from: string;
+  to: string;
+  count: number;
+}
+
+/** One link of one kind between a pair, as the slice has it (merged by `mergePairs`). */
+export interface RawEdge extends EdgePart {
+  key: string;
+  source: string;
+  target: string;
+}
+
+/** The one edge drawn between two notes, whatever links them (every kind, both directions). `kind`
+ *  and `label` are the pair's own only when every part shares them (else a plain `link`), so the
+ *  colour is neutral unless the whole edge is one property. */
 export interface EdgeSpec {
   key: string;
   source: string;
@@ -36,6 +56,10 @@ export interface EdgeSpec {
   label: string | null;
   /** How many links between the pair this one edge stands for. */
   count: number;
+  /** What makes the link, for the hover line. */
+  parts: EdgePart[];
+  /** Every part runs from `source` to `target`: the only case that draws an arrow. */
+  directed: boolean;
 }
 
 export interface GraphSpec {
@@ -63,7 +87,9 @@ export interface EdgeAttrs {
   kind: EdgeKind | "group";
   label: string | null;
   count: number;
-  /** ForceAtlas2 weight. */
+  parts: EdgePart[];
+  directed: boolean;
+  /** ForceAtlas2 weight (the link count; the layout lowers it between clusters). */
   weight: number;
 }
 
@@ -153,7 +179,7 @@ export function buildSpec(
   }
 
   // Edges between kept nodes, one per (pair, kind, label).
-  const edges = new Map<string, EdgeSpec>();
+  const edges = new Map<string, RawEdge>();
   for (const e of slice.edges) {
     if (e.dst === null || e.src === e.dst) continue;
     const src = byId.get(e.src);
@@ -165,7 +191,17 @@ export function buildSpec(
     const key = `${source}\u0000${target}\u0000${e.kind}\u0000${label ?? ""}`;
     const had = edges.get(key);
     if (had) had.count += 1;
-    else edges.set(key, { key, source, target, kind: e.kind, label, count: 1 });
+    else
+      edges.set(key, {
+        key,
+        source,
+        target,
+        from: source,
+        to: target,
+        kind: e.kind,
+        label,
+        count: 1,
+      });
   }
 
   let keep = new Set([...byId.values()].map(nodeKey));
@@ -190,9 +226,10 @@ export function buildSpec(
   const kept = [...edges.values()].filter((e) => nodes.has(e.source) && nodes.has(e.target));
 
   if (filters.tags) addTags(nodes, kept);
+  const merged = mergePairs(kept);
 
   const linked = new Set<string>();
-  for (const e of kept) {
+  for (const e of merged) {
     linked.add(e.source);
     linked.add(e.target);
   }
@@ -202,14 +239,47 @@ export function buildSpec(
   const shownKeys = new Set(shown.map((n) => n.key));
   return {
     nodes: shown,
-    edges: kept.filter((e) => shownKeys.has(e.source) && shownKeys.has(e.target)),
+    edges: merged.filter((e) => shownKeys.has(e.source) && shownKeys.has(e.target)),
   };
+}
+
+const KIND_ORDER: readonly EdgeKind[] = ["link", "embed", "property", "tag"];
+
+/** One edge per pair of notes: every kind and both directions collapse into it (the part list keeps
+ *  what each was). The single place that decides what an edge stands for; the reducers and the
+ *  layout read the result. */
+export function mergePairs(raw: readonly RawEdge[]): EdgeSpec[] {
+  const pairs = new Map<string, RawEdge[]>();
+  for (const e of raw) {
+    const key =
+      e.source < e.target ? `${e.source}\u0000${e.target}` : `${e.target}\u0000${e.source}`;
+    (pairs.get(key) ?? pairs.set(key, []).get(key)!).push(e);
+  }
+  const out: EdgeSpec[] = [];
+  for (const [key, group] of pairs) {
+    const first = group[0]!;
+    const parts: EdgePart[] = group
+      .map(({ kind, label, from, to, count }) => ({ kind, label, from, to, count }))
+      .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+    const same = parts.every((p) => p.kind === first.kind && p.label === first.label);
+    out.push({
+      key,
+      source: first.source,
+      target: first.target,
+      kind: same ? first.kind : "link",
+      label: same ? first.label : null,
+      count: parts.reduce((n, p) => n + p.count, 0),
+      parts,
+      directed: parts.every((p) => p.from === first.source && p.to === first.target),
+    });
+  }
+  return out;
 }
 
 /** Matching notes and the notes linked with them. */
 function searchScope(
   byId: ReadonlyMap<number, GraphNode>,
-  edges: ReadonlyMap<string, EdgeSpec>,
+  edges: ReadonlyMap<string, RawEdge>,
   query: ReturnType<typeof parseQuery>,
   props: PropsByPath | undefined,
   center: string | null | undefined,
@@ -233,7 +303,7 @@ function searchScope(
 }
 
 /** Tag nodes (one per tag, nested tags linked child to parent) and the note-to-tag edges. */
-function addTags(nodes: Map<string, NodeSpec>, edges: EdgeSpec[]): void {
+function addTags(nodes: Map<string, NodeSpec>, edges: RawEdge[]): void {
   const counts = new Map<string, number>();
   const add = (source: string, tag: string) => {
     const key = `#${tag}`;
@@ -242,6 +312,8 @@ function addTags(nodes: Map<string, NodeSpec>, edges: EdgeSpec[]): void {
       key: `${source}\u0000${key}\u0000tag\u0000`,
       source,
       target: key,
+      from: source,
+      to: key,
       kind: "tag",
       label: null,
       count: 1,
@@ -276,6 +348,8 @@ function addTags(nodes: Map<string, NodeSpec>, edges: EdgeSpec[]): void {
         key: `${key}\u0000#${parent}\u0000tag\u0000`,
         source: key,
         target: `#${parent}`,
+        from: key,
+        to: `#${parent}`,
         kind: "tag",
         label: null,
         count: 1,
@@ -293,7 +367,7 @@ export function filtersNeedProps(filters: GraphFilters): boolean {
 // -- spec to graph, in place --------------------------------------------------------------------
 
 /** FNV-1a: a stable pseudo-random source, so a node placed at first sight lands in the same spot. */
-function hash(s: string): number {
+export function hash(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
   return h >>> 0;
@@ -375,7 +449,19 @@ export function applySpec(graph: GraphModel, spec: GraphSpec): ApplyResult {
 
   let edgesAdded = false;
   for (const e of spec.edges) {
-    const attrs = { kind: e.kind, label: e.label, count: e.count, weight: 1 };
+    const attrs = {
+      kind: e.kind,
+      label: e.label,
+      count: e.count,
+      parts: e.parts,
+      directed: e.directed,
+      weight: e.count,
+    };
+    // The pair's drawn direction follows its first part: a flip rebuilds the edge.
+    if (graph.hasEdge(e.key) && graph.source(e.key) !== e.source) {
+      graph.dropEdge(e.key);
+      edgesDropped = true;
+    }
     if (graph.hasEdge(e.key)) graph.mergeEdgeAttributes(e.key, attrs);
     else {
       graph.addEdgeWithKey(e.key, e.source, e.target, attrs);

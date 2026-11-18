@@ -65,7 +65,7 @@ describe("buildSpec", () => {
 
   it("search keeps matches and the notes they link with", () => {
     const spec = buildSpec(smallSlice(), filters({ query: "plan" }));
-    expect(keys(spec)).toEqual(["Notes/Plan.md", "People/Ana.md"]);
+    expect(keys(spec)).toEqual(["Notes/Plan.md", "People/Ana.md", "People/Ben.md"]);
     expect(
       buildSpec(smallSlice(), filters({ query: "tag:team" })).nodes.some(
         (n) => n.key === "People/Ana.md",

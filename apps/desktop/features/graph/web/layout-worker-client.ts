@@ -2,8 +2,10 @@
 // each batch of positions to the graph and asks for the next, until stopped. A change to the graph's
 // structure while it runs makes the matrices stale: the run stops (the owner, `layout.ts`, starts a
 // fresh one after every structural change). Same contract as `FA2Layout`: start, stop, kill, running.
+import { logger } from "@/lib/logger";
 import {
   applyPositions,
+  nonFinitePositions,
   buildMatrices,
   type FA2Settings,
   type Matrices,
@@ -37,6 +39,14 @@ export function createWorkerSupervisor(
   const onMessage = (event: MessageEvent<WorkerResponse>) => {
     if (!running || !matrices || !("nodes" in event.data)) return;
     const nodes = event.data.nodes;
+    // A divergent step must not reach the canvas (one NaN blanks it): keep the last good
+    // positions, stop, and say so (counts only).
+    const bad = nonFinitePositions(nodes);
+    if (bad > 0) {
+      logger.warn("app", `graph layout stopped: ${bad} of ${graph.order} positions not finite`);
+      running = false;
+      return;
+    }
     if (stale || !applyPositions(graph, matrices.keys, nodes)) {
       running = false;
       return;

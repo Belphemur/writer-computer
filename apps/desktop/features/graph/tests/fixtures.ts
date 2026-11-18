@@ -27,7 +27,7 @@ export function edge(
   return { id, src, dst, kind, target: `t${dst}`, ...(label ? { label } : {}) };
 }
 
-/** a -> b, a embeds c, b --manager--> a, plus a lonely note and a base file. */
+/** a -> b, a embeds c, b --manager--> c, plus a lonely note and a base file. */
 export function smallSlice(): GraphSlice {
   return {
     nodes: [
@@ -40,7 +40,7 @@ export function smallSlice(): GraphSlice {
     edges: [
       edge(1, 1, 2),
       edge(2, 1, 3, "embed"),
-      edge(3, 2, 1, "property", "manager"),
+      edge(3, 2, 3, "property", "manager"),
       edge(4, 1, 2),
     ],
     truncated: false,

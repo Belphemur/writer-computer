@@ -5,7 +5,7 @@
 // custom force (the "group pull" setting is that edge's weight). Hull geometry is here too, so it
 // is testable without a canvas.
 import type { ColorRule, GroupBy } from "./config";
-import type { GraphModel, NodeAttrs } from "./model";
+import { hash, type GraphModel, type NodeAttrs } from "./model";
 import { matches, parseQuery, valuesOf, type Matchable, type Query } from "./query";
 import { groupColor } from "./theme";
 
@@ -121,9 +121,11 @@ export const anchorWeight = (pull: number) => Math.max(0, pull) / 40;
  *  layout for a rebuild. */
 export function syncGroups(graph: GraphModel, result: GroupsResult, pull: number): boolean {
   let structural = false;
+  let regrouped = false;
   graph.forEachNode((key, a) => {
     if (a.anchor) return;
     const info = result.nodes.get(a.path);
+    if ((info?.group ?? null) !== a.group) regrouped = true;
     graph.mergeNodeAttributes(key, {
       color: info?.color ?? null,
       group: info?.group ?? null,
@@ -162,10 +164,48 @@ export function syncGroups(graph: GraphModel, result: GroupsResult, pull: number
   for (const [member, anchor] of members) {
     const key = `${member}\u0000${anchor}\u0000group`;
     if (graph.hasEdge(key)) continue;
-    graph.addEdgeWithKey(key, member, anchor, { kind: "group", label: null, count: 1, weight });
+    graph.addEdgeWithKey(key, member, anchor, {
+      kind: "group",
+      label: null,
+      count: 1,
+      parts: [],
+      directed: false,
+      weight,
+    });
     structural = true;
   }
+  if (regrouped) seedGroups(graph, result);
   return structural;
+}
+
+/** Ring radius per sqrt(node count) and island radius per sqrt(group size), in layout units: sized
+ *  near where ForceAtlas2 settles so a run starts close to its answer instead of exploding. */
+const SEED_RING = 14;
+const SEED_ISLAND = 8;
+
+/** Seeds a new grouping so the layout starts with separate islands: each group's centre on a ring
+ *  around the origin, its members scattered (by a stable hash) around the centre, its anchor on the
+ *  centre. Pinned notes keep their place. Groups are known before the layout runs for the new
+ *  grouping, which is what lets it end with clusters apart instead of one overlapping ball. */
+export function seedGroups(graph: GraphModel, result: GroupsResult): void {
+  const k = result.groups.length;
+  if (k === 0) return;
+  const ring = k > 1 ? Math.sqrt(graph.order) * SEED_RING : 0;
+  result.groups.forEach((g, i) => {
+    const angle = (i / k) * Math.PI * 2;
+    const cx = Math.cos(angle) * ring;
+    const cy = Math.sin(angle) * ring;
+    const anchor = `${ANCHOR_PREFIX}${g.key}`;
+    if (graph.hasNode(anchor)) graph.mergeNodeAttributes(anchor, { x: cx, y: cy });
+    const radius = Math.sqrt(g.size) * SEED_ISLAND;
+    graph.forEachNode((key, a) => {
+      if (a.anchor || a.fixed || a.group !== g.key) return;
+      const h = hash(key);
+      const theta = ((h & 0xffff) / 0xffff) * Math.PI * 2;
+      const r = Math.sqrt((h >>> 16) / 0xffff) * radius;
+      graph.mergeNodeAttributes(key, { x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r });
+    });
+  });
 }
 
 function anchorAttrs(group: string): NodeAttrs {

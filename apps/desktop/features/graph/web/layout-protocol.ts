@@ -14,7 +14,15 @@ export interface FA2Settings {
   edgeWeightInfluence: number;
   barnesHutOptimize: boolean;
   slowDown: number;
+  /** Attraction grows with the log of the distance: tight clusters, wide gaps between them. */
+  linLogMode: boolean;
+  /** Hubs pull their neighbours less (attraction shared by degree). */
+  outboundAttractionDistribution: boolean;
 }
+
+/** Layout weight of an edge between two different groups, against 1 within a group (the count
+ *  still multiplies it): links inside a cluster pull harder than links across clusters. */
+export const INTER_GROUP_WEIGHT = 0.25;
 
 /** Iterations the worker runs before it posts positions (one frame's worth of work). */
 export const BATCH_ITERATIONS = 4;
@@ -59,14 +67,29 @@ export function buildMatrices(graph: GraphModel): Matrices {
   graph.forEachEdge((_key, a, source, target) => {
     const s = index.get(source)!;
     const t = index.get(target)!;
-    nodes[s + 6] += a.weight;
-    nodes[t + 6] += a.weight;
+    const gs = graph.getNodeAttribute(source, "group");
+    const gt = graph.getNodeAttribute(target, "group");
+    const w =
+      a.kind !== "group" && gs !== null && gt !== null && gs !== gt
+        ? a.weight * INTER_GROUP_WEIGHT
+        : a.weight;
+    nodes[s + 6] += w;
+    nodes[t + 6] += w;
     edges[j] = s;
     edges[j + 1] = t;
-    edges[j + 2] = a.weight;
+    edges[j + 2] = w;
     j += PPE;
   });
   return { nodes, edges, keys };
+}
+
+/** How many nodes of `matrix` have a non-finite position. */
+export function nonFinitePositions(matrix: Float32Array): number {
+  let bad = 0;
+  for (let i = 0; i < matrix.length; i += PPN) {
+    if (!Number.isFinite(matrix[i]) || !Number.isFinite(matrix[i + 1])) bad++;
+  }
+  return bad;
 }
 
 /** Writes the positions of `matrix` back into the graph; pinned nodes keep theirs. Returns false
