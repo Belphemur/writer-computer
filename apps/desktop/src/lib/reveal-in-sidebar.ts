@@ -1,3 +1,4 @@
+import { scrollIntoScroller, scrollParent } from "@/lib/scroll-into";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
@@ -8,14 +9,6 @@ interface RevealOptions {
   /** Scroll only when the row is off-screen, and then center it (auto-reveal).
    *  Default keeps the minimal `nearest` scroll of the explicit action. */
   center?: boolean;
-}
-
-function scrollParent(el: HTMLElement): HTMLElement | null {
-  for (let p = el.parentElement; p; p = p.parentElement) {
-    const overflowY = getComputedStyle(p).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") return p;
-  }
-  return null;
 }
 
 function isRowVisible(row: HTMLElement): boolean {
@@ -99,8 +92,8 @@ export async function revealPathInSidebar(path: string, opts: RevealOptions = {}
   if (token !== latestToken) return;
   if (!row) return;
   if (opts.center) {
-    if (!isRowVisible(row)) row.scrollIntoView({ behavior: "auto", block: "center" });
+    if (!isRowVisible(row)) scrollIntoScroller(row, { block: "center" });
     return;
   }
-  row.scrollIntoView({ behavior: "auto", block: "nearest" });
+  scrollIntoScroller(row, { block: "nearest" });
 }

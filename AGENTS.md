@@ -55,6 +55,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - [docs/zustand.md](./docs/zustand.md) — side effect timing, selectors, bail-out patterns
 - [docs/editor.md](./docs/editor.md) — CodeMirror layout-model APIs, scroll-handler ownership, block-widget patterns (decoration shape, range-select to enter edit mode, posAtDOM boundary handling, button focus race, scrollSnapshot for heightmap shifts)
 - [docs/vite-plus.md](./docs/vite-plus.md) — `vp` CLI usage and common pitfalls
+- [docs/design.md](./docs/design.md) — layout and UI rules, each with its enforcing test: the window frame (`--chrome-bar-height`, frame containers `overflow: clip`), the page-kind contract (everything mounts in `PageBody`, one scroller per page), scroll ownership (`scrollIntoScroller`, never DOM `scrollIntoView`), overlays and modals, opaque canvas colours, terse UI text, links
 - [SPECs/link-activation-spec.md](./SPECs/link-activation-spec.md) — every clickable note/file/chat/URL reference behaves like a browser link (middle click and Cmd/Ctrl+click open a new background tab); one implementation in `src/lib/link-activation.ts` with React, DOM and CodeMirror bindings, never a hand-written `auxclick`/`button === 1`
 - [docs/keyboard-shortcuts.md](./docs/keyboard-shortcuts.md) — canonical shortcut map, also published as the website's shortcuts page (user-facing prose; implementation notes go in HTML comments)
 

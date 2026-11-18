@@ -17,7 +17,7 @@ function EditorArea({ showFooter = true }: EditorAreaProps) {
   useOsImageDrop();
 
   return (
-    <div className="relative h-full overflow-hidden">
+    <div className="relative h-full overflow-clip">
       <PageBody>
         {tabs.map((tab) => {
           const k = pageKind(tab.location);

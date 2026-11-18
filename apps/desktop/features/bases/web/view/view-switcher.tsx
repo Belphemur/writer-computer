@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import { createPortal } from "react-dom";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -240,7 +241,7 @@ function ViewPopover({
   const active = matches.length === 0 ? -1 : Math.min(highlight, matches.length - 1);
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`);
-    el?.scrollIntoView?.({ block: "nearest" });
+    if (el) scrollIntoScroller(el, { block: "nearest" });
   }, [active]);
 
   const move = (to: number) => {

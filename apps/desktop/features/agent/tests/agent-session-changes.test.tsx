@@ -324,10 +324,20 @@ describe("the changed-notes row and the Session changes tab", () => {
   it("the tab shows each note against its first-touch version and scrolls to the chosen one", async () => {
     sessionChanges.mockResolvedValue(detail());
     setChat(chatWith(sc([A, GONE])));
-    const scrolled: string[] = [];
+    // The DOM scrollIntoView would also scroll the window frame: it must never run.
     const proto = HTMLElement.prototype as { scrollIntoView?: () => void };
-    proto.scrollIntoView = function (this: HTMLElement) {
-      scrolled.push(this.dataset.sessionChangeFile ?? "");
+    const domScroll = vi.fn();
+    proto.scrollIntoView = domScroll;
+    const frame = document.createElement("div");
+    document.body.append(frame);
+    frame.append(container);
+    const rectAt = (top: number) => () => ({ top, bottom: top + 40, height: 40 }) as DOMRect;
+    const protoRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.hasAttribute("data-session-changes")) return rectAt(0)() as DOMRect;
+      if ((this as HTMLElement).dataset.sessionChangeFile === "Old/gone.md")
+        return rectAt(300)() as DOMRect;
+      return protoRect.call(this);
     };
     await act(async () => root.render(tab("Old/gone.md")));
     await flush();
@@ -339,8 +349,13 @@ describe("the changed-notes row and the Session changes tab", () => {
     expect(container.textContent).toContain("old first touch");
     expect(container.textContent).toContain("removed text"); // a deleted note shows its text
     expect($("[data-session-changes-restart]")).toBeNull();
-    expect(scrolled).toEqual(["Old/gone.md"]);
+    expect(domScroll).not.toHaveBeenCalled();
+    expect($("[data-session-changes]")!.scrollTop).toBe(300); // its own scroller moved
+    expect(frame.scrollTop).toBe(0); // nothing above it did
+    expect(container.scrollTop).toBe(0);
+    Element.prototype.getBoundingClientRect = protoRect;
     delete proto.scrollIntoView;
+    frame.remove();
   });
 
   it("after a restart the list stays, with the mark instead of the diff of an untouched note", async () => {

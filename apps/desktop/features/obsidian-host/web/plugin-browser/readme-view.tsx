@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import { bindLinkActivation, type LinkTarget } from "@/lib/link-activation";
 import { classifyLink } from "./link-action";
 import { renderReadme } from "./render-readme";
@@ -25,7 +26,7 @@ export function ReadmeView({ markdown, repo }: { markdown: string; repo: string 
           // Ids are only ever set by renderReadme (`readme-<slug>`); compare, never CSS-escape.
           const wanted = `readme-${action.id.toLowerCase()}`;
           const el = Array.from(root.querySelectorAll("[id]")).find((n) => n.id === wanted);
-          el?.scrollIntoView?.({ block: "start" });
+          if (el instanceof HTMLElement) scrollIntoScroller(el, { block: "start" });
         },
       };
     });

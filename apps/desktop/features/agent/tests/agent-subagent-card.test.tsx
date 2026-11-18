@@ -221,8 +221,17 @@ describe("the Changes card links to the sub-agent that made the edit", () => {
       ...createMockAgentClient({ goldens: goldens as unknown as Goldens }),
       turnChanges: async () => ({ turnId: "t1", files: [] }),
     });
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    // The DOM scrollIntoView would also move the window frame: only the transcript's scroller moves.
+    const domScroll = vi.fn();
+    Element.prototype.scrollIntoView = domScroll;
+    container.style.overflowY = "auto";
+    const rectOf = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this === container) return { top: 0, height: 100, bottom: 100 } as DOMRect;
+      if (this.getAttribute("data-agent-subagent") === "toolu_wk")
+        return { top: 500, height: 40, bottom: 540 } as DOMRect;
+      return rectOf.call(this);
+    };
     await act(async () =>
       root.render(
         <>
@@ -235,7 +244,9 @@ describe("the Changes card links to the sub-agent that made the edit", () => {
     expect(links).toHaveLength(1);
     expect($$("span[data-agent-change-by]")).toHaveLength(1);
     act(() => links[0]!.click());
-    expect(scroll).toHaveBeenCalled();
+    Element.prototype.getBoundingClientRect = rectOf;
+    expect(domScroll).not.toHaveBeenCalled();
+    expect(container.scrollTop).toBe(470); // the card's middle to the middle of the transcript
     expect(document.activeElement).toBe(headerOf(card("toolu_wk")));
   });
 });

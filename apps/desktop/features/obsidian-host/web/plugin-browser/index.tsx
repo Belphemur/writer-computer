@@ -1,4 +1,5 @@
 import { useCallback, type KeyboardEvent } from "react";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import type { StoreEntry } from "../host/store-client";
 import { PluginDetail } from "./plugin-detail";
 import { nextSelectionId } from "./list-nav";
@@ -147,7 +148,7 @@ function PluginRow({
   // Runs when the row mounts selected (dialog re-open) or becomes selected (keyboard, click).
   const ref = useCallback(
     (el: HTMLLIElement | null) => {
-      if (selected) el?.scrollIntoView?.({ block: "nearest" });
+      if (selected && el) scrollIntoScroller(el, { block: "nearest" });
     },
     [selected],
   );

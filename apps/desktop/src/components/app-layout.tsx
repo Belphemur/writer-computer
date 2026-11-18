@@ -123,7 +123,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
   );
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-transparent text-text-primary">
+    <div className="relative h-screen w-screen overflow-clip bg-transparent text-text-primary">
       <div
         data-tauri-drag-region
         className="absolute inset-x-0 top-0 z-30"
@@ -160,7 +160,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex min-h-0 flex-1">
           <div
-            className="shrink-0 overflow-hidden"
+            className="shrink-0 overflow-clip"
             style={{
               width: isSidebarCollapsed ? 0 : draftSidebarWidth,
               transition: isSidebarDragging ? "none" : "width 140ms ease-out",

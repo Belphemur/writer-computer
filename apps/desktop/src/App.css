@@ -187,7 +187,9 @@ html,
 body,
 #root {
   height: 100%;
-  overflow: hidden;
+  /* `clip`, not `hidden`: a hidden box can still be scrolled by script, which drags the whole window
+     frame (docs/design.md, Scroll ownership). */
+  overflow: clip;
   background: transparent;
 }
 

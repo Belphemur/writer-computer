@@ -1,4 +1,5 @@
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import { createPortal } from "react-dom";
 import {
   applyCandidate,
@@ -51,7 +52,7 @@ function Option({
       aria-selected={active}
       data-completion-kind={candidate.kind}
       ref={(el) => {
-        if (active) el?.scrollIntoView?.({ block: "nearest" });
+        if (active) if (el) scrollIntoScroller(el, { block: "nearest" });
       }}
       onClick={() => onPick(candidate)}
       className={`flex cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1 ${

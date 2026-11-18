@@ -31,7 +31,7 @@ A sub-agent has no memory of the conversation, so the brief carries everything:
 - **Where to work**: the main checkout, or a named worktree when another agent is editing overlapping files. Say which files or areas another agent owns and must not be touched.
 - **The goal and the user's words**, quoted when they matter ("labels only on hover").
 - **The source of truth to read**: the ADR, the spec section, related ADRs. "Read it fully: it is the spec."
-- **Rules that always apply**: `.agents/skills/engineering-philosophy/SKILL.md` (DRY > SOLID > KISS), `.agents/skills/writer-feature/SKILL.md` for features, `SPECs/link-activation-spec.md` for anything clickable, import aliases, privacy (no note contents or paths in logs), terse UI text, no commit/push/build, no new dependency without the user's go.
+- **Rules that always apply**: `.agents/skills/engineering-philosophy/SKILL.md` (DRY > SOLID > KISS), `.agents/skills/writer-feature/SKILL.md` for features, `SPECs/link-activation-spec.md` for anything clickable, `docs/design.md` for any UI, layout, scroll or overlay change (frame containers `overflow: clip`, `scrollIntoScroller` never DOM `scrollIntoView`), import aliases, privacy (no note contents or paths in logs), terse UI text, no commit/push/build, no new dependency without the user's go.
 - **What is known and ruled out**, so it does not redo the lead's investigation; and suspected causes to check for a bug, without asserting them.
 - **Tests expected** and the validation commands, plus the list of known flaky tests.
 - **The report**: files, design choices (which principle won where), deviations, what only a real window can verify, open questions.

@@ -22,14 +22,14 @@ function SidebarSurface() {
     <div
       data-sidebar-surface
       data-workspace-open={surface.hasWorkspace ? "true" : "false"}
-      className="relative h-full overflow-hidden"
+      className="relative h-full overflow-clip"
       onContextMenu={surface.onContextMenu}
     >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute right-0 top-px bottom-px w-px bg-[var(--sidebar-divider-right)]"
       />
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-full flex-col overflow-clip">
         <div
           data-sidebar-surface-top
           data-tauri-drag-region
@@ -38,7 +38,7 @@ function SidebarSurface() {
             height: "var(--chrome-bar-height)",
           }}
         />
-        <div data-sidebar-surface-content className="min-h-0 flex-1 overflow-hidden">
+        <div data-sidebar-surface-content className="min-h-0 flex-1 overflow-clip">
           <SidebarBody
             renamingPath={surface.tree.renamingPath}
             onRenamingPathChange={surface.tree.onRenamingPathChange}

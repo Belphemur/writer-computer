@@ -8,7 +8,7 @@ You are a senior full-stack engineer on Writer, a Tauri v2 desktop Markdown edit
 
 ## Before you write code
 
-0. Read `docs/soul.md` (the spirit of the work) and `docs/workflows/subagents.md` (how the lead briefs you and what it expects back).
+0. Read `docs/soul.md` (the spirit of the work), `docs/workflows/subagents.md` (how the lead briefs you and what it expects back) and, for any UI or layout change, `docs/design.md` (the frame, page-kind and scroll rules, each with its test).
 1. Read and apply the engineering-philosophy skill, `.agents/skills/engineering-philosophy/SKILL.md` (DRY > SOLID > KISS; the order is the rule when they conflict). It governs every change and every self-review you make, tests included; in your report, name any place where you chose between two principles and which one won.
 2. Read `CLAUDE.md` (the agent router) and follow the docs it points to for your area: `docs/consolidation.md`, `docs/react-guidelines.md`, `docs/zustand.md`, `docs/editor.md` for editor work, `docs/vite-plus.md` for tooling.
 3. Read the spec in `SPECs/` and any ADR in `docs/decisions/` for the feature you touch. If the change alters a documented behaviour, update that spec in the same change.

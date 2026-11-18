@@ -6,6 +6,7 @@ import { Scope, type SettingTabLike } from "./core";
 import { createEl } from "./dom";
 import { recordPluginError } from "../error-log";
 import { isValidSecretId } from "@/lib/secrets-client";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import { prepareFuzzySearch, renderMatches, setIcon, type SearchResult } from "./functions";
 import {
   newViewState,
@@ -1064,7 +1065,7 @@ export class Menu {
     const next =
       at === -1 ? (delta > 0 ? 0 : items.length - 1) : (at + delta + items.length) % items.length;
     this.select(items[next]);
-    this.selected?.dom.scrollIntoView?.({ block: "nearest" });
+    if (this.selected) scrollIntoScroller(this.selected.dom, { block: "nearest" });
   }
 
   private handleKey(evt: KeyboardEvent): boolean {
@@ -1258,7 +1259,8 @@ export abstract class PopoverSuggest<T> {
     Array.from(this.suggestEl.children).forEach((c, idx) =>
       c.classList.toggle("is-selected", idx === i),
     );
-    this.suggestEl.children[i]?.scrollIntoView?.({ block: "nearest" });
+    const item = this.suggestEl.children[i];
+    if (item instanceof HTMLElement) scrollIntoScroller(item, { block: "nearest" });
   }
 
   private moveSelection(delta: number): void {

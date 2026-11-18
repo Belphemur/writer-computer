@@ -12,7 +12,7 @@ export function PageBody({ children }: { children: ReactNode }) {
   return (
     <div
       data-testid="page-body"
-      className="absolute inset-x-0 bottom-0 min-h-0 overflow-hidden"
+      className="absolute inset-x-0 bottom-0 min-h-0 overflow-clip"
       style={{ top: "var(--chrome-bar-height)" }}
     >
       {children}

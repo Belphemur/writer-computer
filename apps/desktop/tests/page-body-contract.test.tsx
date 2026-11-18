@@ -5,7 +5,10 @@
 // allowlisted overlays below.
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
+import { DESKTOP } from "./helpers/import-graph";
 import { PageBody } from "@/components/editor-area/page-body";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -17,7 +20,7 @@ describe("PageBody", () => {
     act(() => root.render(<PageBody>x</PageBody>));
     const body = el.querySelector<HTMLElement>("[data-testid=page-body]")!;
     expect(body.className).toMatch(/\babsolute\b/);
-    expect(body.className).toMatch(/\boverflow-hidden\b/);
+    expect(body.className).toMatch(/\boverflow-clip\b/);
     expect(body.className).toMatch(/\bbottom-0\b/);
     expect(body.style.top).toBe("var(--chrome-bar-height)");
     act(() => root.unmount());
@@ -76,5 +79,38 @@ describe("page kind bodies stay inside the page body", () => {
     );
     expect(bodies.length).toBe(4);
     for (const [p, src] of bodies) expect(src, p).not.toMatch(/\bpt-(10|12|14|16)\b/);
+  });
+});
+
+// The window frame never scrolls, not even by script: `overflow: hidden` still lets
+// `scrollIntoView`/`scrollTop` shift the box and drag the page over the tab strip, `clip` does not.
+// docs/design.md, Scroll ownership.
+describe("frame containers are overflow: clip", () => {
+  const read = (rel: string) => readFileSync(join(DESKTOP, rel), "utf8");
+  const FRAME_FILES = [
+    "src/components/app-layout.tsx",
+    "src/components/editor-area/index.tsx",
+    "src/components/editor-area/page-body.tsx",
+    "src/components/sidebar/index.tsx",
+  ];
+
+  it("no frame file uses overflow-hidden, and each uses overflow-clip", () => {
+    for (const rel of FRAME_FILES) {
+      const src = read(rel);
+      expect(src, rel).not.toMatch(/\boverflow-(x-|y-)?hidden\b/);
+      expect(src, rel).toMatch(/\boverflow-clip\b/);
+    }
+  });
+
+  it("the compact layout's window root clips (its leaf ellipsis spans may stay hidden)", () => {
+    expect(read("src/components/compact-file-layout.tsx")).toMatch(
+      /h-screen w-screen overflow-clip/,
+    );
+  });
+
+  it("the document root, body and #root clip", () => {
+    const css = read("src/App.css");
+    const rule = /^html,\s*body,\s*#root\s*\{([^}]*)\}/m.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/overflow:\s*clip\s*;/);
   });
 });

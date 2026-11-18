@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import {
   Alert02Icon,
   ArrowDown01Icon,
@@ -64,7 +65,7 @@ export function revealSubagentCard(callId: string): void {
     (el) => el.dataset.agentSubagent === callId,
   );
   if (!card) return;
-  card.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  scrollIntoScroller(card, { block: "center", behavior: "smooth" });
   card.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
 }
 

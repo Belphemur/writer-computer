@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { scrollIntoScroller } from "@/lib/scroll-into";
 import type { PageViewProps } from "@/lib/features/slots";
 import type { SessionChangesLocation } from "@/components/editor-area/page-kinds";
 import type { SessionFileChange } from "@features/agent/web/lib/events";
@@ -52,9 +53,12 @@ export function SessionChangesTab({ location }: PageViewProps<SessionChangesLoca
   const ready = detail.status === "ready";
   useEffect(() => {
     if (!location.focus || !ready) return;
-    root.current
-      ?.querySelector<HTMLElement>(`[data-session-change-file="${CSS.escape(location.focus)}"]`)
-      ?.scrollIntoView?.({ block: "start" });
+    const scroller = root.current;
+    const row = scroller?.querySelector<HTMLElement>(
+      `[data-session-change-file="${CSS.escape(location.focus)}"]`,
+    );
+    // This page's own scroller only: the DOM scrollIntoView would also move the window frame.
+    if (row) scrollIntoScroller(row, { block: "start", scroller });
   }, [location.focus, ready]);
 
   if (!view) return <div className="p-6 text-[13px] text-text-muted">No changes</div>;
