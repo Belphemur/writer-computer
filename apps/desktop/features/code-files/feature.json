@@ -1,0 +1,17 @@
+{
+  "id": "code-files",
+  "name": "Code files",
+  "version": "1.0.0",
+  "description": "Code and text files in the vault: listed in the sidebar and quick open, opened in a code editor with syntax highlighting, and the agent skill folders (.agents/skills, .claude/skills).",
+  "enabledByDefault": true,
+  "activation": ["onFileKind:code"],
+  "memory": {
+    "level": "low",
+    "note": "The code editor and its language data load when the first code file opens; nothing runs in the background. Switching applies at once to the editor, the file watcher and rename; folders already shown in the sidebar re-list when you reopen them, quick open and the index follow the next time the workspace opens."
+  },
+  "provides": ["code-files.rules"],
+  "contributes": {
+    "slots": ["code-files.code-tab"],
+    "services": ["code-files.rules"]
+  }
+}

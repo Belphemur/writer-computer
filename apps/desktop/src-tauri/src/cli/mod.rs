@@ -379,6 +379,10 @@ pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
 pub fn run_main(argv: &[String], cwd: &Path) -> u8 {
     use std::io::Write;
     let env = Env::system();
+    // The CLI process has no settings layer: the code-files switch comes from the config file.
+    if let Ok(dir) = env.data_dir() {
+        crate::features::code_files::apply_for_cli(&dir);
+    }
     let out = execute(argv, cwd, &env);
     if out.code != 0 {
         // The command name only: the arguments can carry note text.

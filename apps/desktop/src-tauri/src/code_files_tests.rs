@@ -326,6 +326,113 @@ fn relocating_a_code_file_leaves_links_alone() {
     );
 }
 
+// ------------------------------------------------------------------ feature off
+// The feature `code-files` off is the notes-only policy (`Policy::notes_only`), run through the
+// same seam as the default: each test compares what core lists with the feature on and off.
+
+mod feature_off {
+    use super::*;
+    use crate::code_files::{self as cf, with_policy_for_test, Policy};
+
+    fn off<T>(f: impl FnOnce() -> T) -> T {
+        with_policy_for_test(Policy::notes_only(), f)
+    }
+
+    fn on<T>(f: impl FnOnce() -> T) -> T {
+        with_policy_for_test(Policy::default(), f)
+    }
+
+    #[test]
+    fn the_sidebar_lists_notes_and_images_only_without_the_skills_folders() {
+        let (_d, root) = vault();
+        for f in [
+            "note.md",
+            "tasks.base",
+            "logo.png",
+            "run.py",
+            "Dockerfile",
+            "build/inside.md",
+            "dist/a.js",
+            ".agents/skills/x/SKILL.md",
+        ] {
+            touch(&root, f, "x");
+        }
+        let listed_on = on(|| names(&root, ""));
+        for n in [
+            "note.md",
+            "tasks.base",
+            "logo.png",
+            "run.py",
+            "Dockerfile",
+            ".agents",
+        ] {
+            assert!(listed_on.contains(&n.to_string()), "on: {n}");
+        }
+        // the ignored-folder list hides `build` with the feature on
+        assert!(!listed_on.contains(&"build".to_string()));
+
+        let listed_off = off(|| names(&root, ""));
+        for n in ["note.md", "tasks.base", "logo.png", "build"] {
+            assert!(listed_off.contains(&n.to_string()), "off: {n}");
+        }
+        for n in ["run.py", "Dockerfile", ".agents", "dist"] {
+            assert!(!listed_off.contains(&n.to_string()), "off hides {n}");
+        }
+        // images are core: their own setting still hides them
+        let no_images = Policy {
+            show_images: false,
+            ..Policy::notes_only()
+        };
+        let listed = with_policy_for_test(no_images, || names(&root, ""));
+        assert!(!listed.contains(&"logo.png".to_string()));
+    }
+
+    #[test]
+    fn opening_a_code_file_is_the_plain_read_not_the_guarded_one() {
+        let (_d, root) = vault();
+        let file = root.join("bin.py");
+        fs::write(&file, b"abc\0def").unwrap();
+        let path = file.to_string_lossy().to_string();
+        assert!(on(|| read_file_impl(&path)).is_err());
+        assert!(off(|| read_file_impl(&path)).is_ok());
+        assert!(!off(|| cf::is_code_path(&file)));
+    }
+
+    #[test]
+    fn quick_open_and_the_name_index_list_notes_bases_and_images_only() {
+        off(|| {
+            let sql = cf::listed_sql_predicate();
+            assert!(sql.contains("'md'") && sql.contains("'base'") && sql.contains("'png'"));
+            assert!(!sql.contains("'py'") && !sql.contains("'Dockerfile'"));
+            assert!(cf::is_listed_name("a.md") && cf::is_listed_name("a.png"));
+            assert!(!cf::is_listed_name("a.py") && !cf::is_listed_name("Makefile"));
+            assert!(cf::is_listed_row("a.md", "md") && !cf::is_listed_row("a.py", "py"));
+            assert!(!cf::is_listed_row("Dockerfile", "") && !cf::is_code_name("a.json"));
+        });
+        on(|| {
+            assert!(cf::is_listed_name("a.py") && cf::is_listed_name("Makefile"));
+            assert!(cf::listed_sql_predicate().contains("'Dockerfile'"));
+        });
+    }
+
+    #[test]
+    fn relocating_a_code_named_file_rewrites_its_links_when_it_is_not_code() {
+        use crate::index::Index;
+        let (_d, root) = vault();
+        let data = TempDir::new().unwrap();
+        touch(&root, "tools/run.py", "print(1)\n");
+        touch(&root, "Note.md", "see [x](tools/run.py)\n");
+        let index = Index::open_for_cli(&root, Some(data.path())).unwrap();
+        let plan = |p: Policy| {
+            with_policy_for_test(p, || {
+                crate::relocate::plan(&root, &index, "tools/run.py", "tools/go.py", true).unwrap()
+            })
+        };
+        assert!(plan(Policy::default()).edits.is_empty());
+        assert!(!plan(Policy::notes_only()).edits.is_empty());
+    }
+}
+
 // ------------------------------------------------------------------ symlinks
 // Rule (`fs_entry`): a link is followed only to a target inside the vault; the index never
 // follows links, so the real path is the one indexed.

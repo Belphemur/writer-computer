@@ -13,47 +13,58 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
 import { invoke } from "@tauri-apps/api/core";
-import schema from "../shared/settings.schema.json";
+import fragment from "../settings.schema.json";
+import { agentSkillDir, codeIconFamily, isAgentFolderPath, isCodePath } from "@/lib/code-files";
 import {
   CODE_MAX_BYTES,
   CODE_READ_ONLY_BYTES,
-  DEFAULT_CODE_EXTENSIONS,
-  agentSkillDir,
-  codeIconFamily,
   codeLanguageFor,
-  configureCodeFiles,
   defaultIndentFor,
   detectIndent,
-  isAgentFolderPath,
-  isCodePath,
   isOverReadOnlyLimit,
-  isSecretName,
-} from "../src/lib/code-files";
+} from "../web/lib/code-language";
+import { DEFAULT_CODE_EXTENSIONS, isSecretName } from "../web/rules";
+import codeFiles from "../web";
+import { createFeatureHost } from "@/lib/features/registry";
+import { useSettingsStore } from "@/stores/settings-store";
 import {
   deserializeLocation,
   locationForPath,
   opensAsDocument,
   pageKind,
   serializeLocation,
-} from "../src/components/editor-area/page-kinds";
-import { noteLabel } from "../src/lib/note-title";
+} from "@/components/editor-area/page-kinds";
+import { noteLabel } from "@/lib/note-title";
 import { candidatesFromResults } from "@features/agent/web/lib/mentions";
-import { useEditorStore } from "../src/stores/editor-store";
-import { flattenTree } from "../src/components/sidebar/flatten-tree";
-import { FileIcon } from "../src/components/sidebar/file-tree-icons";
-import { managedSkillDirFor } from "../src/lib/managed-skills";
+import { useEditorStore } from "@/stores/editor-store";
+import { flattenTree } from "@/components/sidebar/flatten-tree";
+import { FileIcon } from "@/components/sidebar/file-tree-icons";
+import { managedSkillDirFor } from "@/lib/managed-skills";
 import {
   createCodeEditorCompartments,
   createCodeEditorExtensions,
   loadLanguageExtension,
-} from "../src/components/code-editor/code-editor-extensions";
-import { createTauriVaultIo } from "../features/obsidian-host/web/host/api/vault-io-tauri";
-import type { DirEntry } from "../src/types/fs";
+} from "../web/components/code-editor-extensions";
+import { createTauriVaultIo } from "@features/obsidian-host/web/host/api/vault-io-tauri";
+import type { DirEntry } from "@/types/fs";
 
 const mockedInvoke = vi.mocked(invoke);
 
-beforeEach(() => configureCodeFiles(undefined));
-afterEach(() => configureCodeFiles(undefined));
+// Core finds the rules through the `code-files.rules` service, so the feature is registered for
+// every test (the off behaviour is in code-files-feature.test.tsx).
+const host = createFeatureHost({ onError: () => {} });
+const configureCodeFiles = (list: unknown) =>
+  useSettingsStore.setState({
+    settings: list === undefined ? {} : { "code-files.extensions": list },
+  });
+beforeEach(() => {
+  configureCodeFiles(undefined);
+  host.register(codeFiles);
+});
+afterEach(async () => {
+  for (const id of host.list()) await host.unregister(id);
+  configureCodeFiles(undefined);
+});
 
 describe("which paths open as code", () => {
   it("claims the default extensions and the Dockerfile/Makefile names", () => {
@@ -96,7 +107,7 @@ describe("which paths open as code", () => {
     expect(isSecretName(".env")).toBe(true);
   });
 
-  it("follows files.code-extensions and never lets a setting enable secrets", () => {
+  it("follows code-files.extensions and never lets a setting enable secrets", () => {
     configureCodeFiles([".PY", "rs", "env", "pem", "md"]);
     expect(isCodePath("/v/a.py")).toBe(true);
     expect(isCodePath("/v/a.rs")).toBe(true);
@@ -108,14 +119,16 @@ describe("which paths open as code", () => {
 
   it("takes its defaults from the schema and the shared file", () => {
     expect(DEFAULT_CODE_EXTENSIONS).toEqual(
-      schema.settings.find((s) => s.key === "files.code-extensions")!.default,
+      fragment.settings.find((s) => s.key === "code-files.extensions")!.default,
     );
-    const ignored = schema.settings.find((s) => s.key === "files.ignored-folders")!;
+    const ignored = fragment.settings.find((s) => s.key === "code-files.ignored-folders")!;
     expect(ignored.default).toEqual(
       expect.arrayContaining(["node_modules", "target", "dist", "build", ".venv", "__pycache__"]),
     );
-    expect(schema.settings.find((s) => s.key === "files.show-agent-folders")!.default).toBe(true);
-    expect(schema.settings.find((s) => s.key === "editor.code-word-wrap")!.default).toBe(false);
+    expect(fragment.settings.find((s) => s.key === "code-files.show-agent-folders")!.default).toBe(
+      true,
+    );
+    expect(fragment.settings.find((s) => s.key === "code-files.word-wrap")!.default).toBe(false);
     expect(CODE_MAX_BYTES).toBe(20 * 1024 * 1024);
     expect(CODE_READ_ONLY_BYTES).toBe(2 * 1024 * 1024);
     expect(isOverReadOnlyLimit("x".repeat(CODE_READ_ONLY_BYTES))).toBe(false);

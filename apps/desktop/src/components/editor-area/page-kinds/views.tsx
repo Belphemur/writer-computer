@@ -2,8 +2,7 @@ import type { ReactNode } from "react";
 import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
-import { CodeEditorPane } from "@/components/code-editor/code-editor-pane";
-import { ManagedSkillBanner } from "@/components/code-editor/managed-skill-banner";
+import { ManagedSkillBanner } from "../managed-skill-banner";
 import { ImageViewer, ImageViewerFooter } from "@/components/image-viewer/image-viewer";
 import { FeatureOffPage } from "@/components/feature-off-page";
 import { FeatureSlot } from "@/components/feature-slot";
@@ -67,29 +66,35 @@ function featureView<K extends Location["kind"]>(
   return { Component };
 }
 
+// The way out of a feature's off page for a file kind (`.base`, code files): open it as text.
+function OpenAsTextButton({ path }: { path: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => void openFileAsTextInNewTab(path)}
+      className="rounded-md border border-[var(--line-subtle)] px-2.5 py-1 text-[var(--text-primary)] hover:bg-[var(--item-hover-bg)]"
+    >
+      Open as text
+    </button>
+  );
+}
+
 const views = {
   file: {
     Component: FileTabBody,
     renderFooter: (l) => <DocumentFooter filePath={l.path} />,
   } satisfies PageKindView<FileLocation>,
-  code: {
-    Component: CodeEditorPane,
-  } satisfies PageKindView<CodeLocation>,
+  code: featureView("code", {
+    feature: "code-files",
+    actions: (location) => <OpenAsTextButton path={location.path} />,
+  }) satisfies PageKindView<CodeLocation>,
   image: {
     Component: ImageViewer,
     renderFooter: (l) => <ImageViewerFooter path={l.path} />,
   } satisfies PageKindView<ImageLocation>,
   base: featureView("base", {
     feature: "bases",
-    actions: (location) => (
-      <button
-        type="button"
-        onClick={() => void openFileAsTextInNewTab(location.path)}
-        className="rounded-md border border-[var(--line-subtle)] px-2.5 py-1 text-[var(--text-primary)] hover:bg-[var(--item-hover-bg)]"
-      >
-        Open as text
-      </button>
-    ),
+    actions: (location) => <OpenAsTextButton path={location.path} />,
   }) satisfies PageKindView<BaseLocation>,
   graph: featureView("graph", { feature: "graph" }) satisfies PageKindView<GraphLocation>,
   launcher: {

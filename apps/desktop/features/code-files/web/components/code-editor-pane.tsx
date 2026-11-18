@@ -12,7 +12,7 @@ import {
   defaultIndentFor,
   detectIndent,
   isOverReadOnlyLimit,
-} from "@/lib/code-files";
+} from "../lib/code-language";
 import { getFileName } from "@/lib/paths";
 import type { CodeLocation } from "@/components/editor-area/page-kinds/code";
 import {
@@ -23,7 +23,7 @@ import {
   readOnlyExtension,
   wrapExtension,
 } from "./code-editor-extensions";
-import { ManagedSkillBanner } from "./managed-skill-banner";
+import { ManagedSkillBanner } from "@/components/editor-area/managed-skill-banner";
 import "@/components/editor-area/prosemark-theme.css";
 import "./code-editor.css";
 
@@ -36,7 +36,7 @@ function CodeEditorView({ path, isActive }: { path: string; isActive: boolean })
   pathRef.current = path;
   const reloadVersion = useReloadVersion(path);
   const lastReloadRef = useRef(reloadVersion);
-  const wrap = useBooleanSetting("editor.code-word-wrap", false);
+  const wrap = useBooleanSetting("code-files.word-wrap", false);
   const wrapRef = useRef(wrap);
   wrapRef.current = wrap;
   const activeRef = useRef(isActive);

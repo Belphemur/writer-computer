@@ -27,7 +27,7 @@ import { generalSyntaxHighlights } from "@/lib/prosemark-core/syntaxHighlighting
 import { editorSearchExtensions } from "@/components/editor-area/editor-search-extensions";
 import { useEditorSearchStore } from "@/components/editor-area/editor-search-store";
 import * as editorApi from "@/hooks/editor-api";
-import { type IndentStyle } from "@/lib/code-files";
+import { type IndentStyle } from "../lib/code-language";
 
 /** The per-view compartments the pane reconfigures: language, indentation, wrapping, read-only, history. */
 export interface CodeEditorCompartments {

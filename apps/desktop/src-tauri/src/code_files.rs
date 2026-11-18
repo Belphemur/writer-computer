@@ -9,6 +9,14 @@
 //!
 //! Tauri-free. The policy is process-wide (one app, any number of windows) and
 //! the app pushes the settings into it; the `writer` CLI uses the defaults.
+//!
+//! This module is the one seam between core and the built-in feature `code-files`
+//! (`features/code-files/`, spec `SPECs/builtin-plugins-spec.md` section 15). Every caller (the
+//! sidebar listing, the index walker, the watcher, `NameCache`, `relocate`, the agent's change
+//! snapshots) asks the functions below and never reads a setting or the feature switch; the
+//! feature's Rust half derives the [`Policy`] from the settings and the switch and pushes it
+//! here. Switched off, the policy is [`Policy::notes_only`]: notes, bases and images only,
+//! the skills folders hidden, no ignored-folder list: what Writer listed before code files.
 
 use parking_lot::RwLock;
 use std::collections::HashSet;
@@ -33,11 +41,13 @@ static SHARED: LazyLock<Shared> = LazyLock::new(|| {
         .expect("shared/code-files.json is valid")
 });
 
-/// The defaults of the list settings come from the settings schema, the one place they live.
+/// The defaults of the list settings come from the feature's settings fragment, the one place
+/// they live (the web side reads the same file).
 fn schema_default_list(key: &str) -> Vec<String> {
-    let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../../shared/settings.schema.json"))
-            .expect("settings.schema.json is valid");
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../features/code-files/settings.schema.json"
+    ))
+    .expect("code-files settings.schema.json is valid");
     schema["settings"]
         .as_array()
         .and_then(|all| all.iter().find(|s| s["key"] == key))
@@ -59,9 +69,10 @@ pub fn read_only_bytes() -> u64 {
     SHARED.read_only_bytes
 }
 
-pub const SETTING_EXTENSIONS: &str = "files.code-extensions";
-pub const SETTING_IGNORED: &str = "files.ignored-folders";
-pub const SETTING_AGENT_FOLDERS: &str = "files.show-agent-folders";
+pub const SETTING_EXTENSIONS: &str = "code-files.extensions";
+pub const SETTING_IGNORED: &str = "code-files.ignored-folders";
+pub const SETTING_AGENT_FOLDERS: &str = "code-files.show-agent-folders";
+/// Images are core (the image viewer and attachments), not a code-files setting.
 pub const SETTING_IMAGES: &str = "files.show-images";
 
 /// Folders that are hidden whatever the setting says.
@@ -69,6 +80,9 @@ const ALWAYS_HIDDEN: &[&str] = &["node_modules", ".DS_Store"];
 
 #[derive(Debug, Clone)]
 pub struct Policy {
+    /// List and open code/text files (the feature `code-files` is on). Off: no extension and no
+    /// file name counts as code, whatever the lists below say.
+    pub code: bool,
     pub extensions: HashSet<String>,
     pub ignored_folders: HashSet<String>,
     pub show_agent_folders: bool,
@@ -76,9 +90,24 @@ pub struct Policy {
     pub show_images: bool,
 }
 
+impl Policy {
+    /// What is listed with the feature `code-files` off: notes, bases and (setting on) images.
+    /// No code, no skills folders, no ignored-folder list (`node_modules` stays hidden).
+    pub fn notes_only() -> Self {
+        Policy {
+            code: false,
+            extensions: HashSet::new(),
+            ignored_folders: HashSet::new(),
+            show_agent_folders: false,
+            show_images: true,
+        }
+    }
+}
+
 impl Default for Policy {
     fn default() -> Self {
         Policy {
+            code: true,
             extensions: schema_default_list(SETTING_EXTENSIONS)
                 .into_iter()
                 .collect(),
@@ -91,21 +120,60 @@ impl Default for Policy {
 
 static POLICY: LazyLock<RwLock<Policy>> = LazyLock::new(|| RwLock::new(Policy::default()));
 
+#[cfg(test)]
+thread_local! {
+    /// A policy for the calling thread only, so a test can run under the off policy without
+    /// racing the tests that read the process-wide one.
+    static TEST_POLICY: std::cell::RefCell<Option<Policy>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with `policy` as this thread's policy (tests only).
+#[cfg(test)]
+pub(crate) fn with_policy_for_test<T>(policy: Policy, f: impl FnOnce() -> T) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_POLICY.with(|p| *p.borrow_mut() = None);
+        }
+    }
+    TEST_POLICY.with(|p| *p.borrow_mut() = Some(policy));
+    let _reset = Reset;
+    f()
+}
+
+/// Run `f` over the current policy without cloning it.
+fn with_current<T>(f: impl FnOnce(&Policy) -> T) -> T {
+    #[cfg(test)]
+    if let Some(p) = TEST_POLICY.with(|p| p.borrow().clone()) {
+        return f(&p);
+    }
+    f(&POLICY.read())
+}
+
 pub fn policy() -> Policy {
-    POLICY.read().clone()
+    with_current(Policy::clone)
 }
 
 pub fn set_policy(policy: Policy) {
     *POLICY.write() = policy;
 }
 
-/// Build a policy from the raw setting values; `None` keeps the default for that key.
+/// Build a policy from the raw setting values; `None` keeps the default for that key. With the
+/// feature off (`enabled` false) only `show_images` (a core setting) counts: [`Policy::notes_only`].
 pub fn policy_from_settings(
+    enabled: bool,
     extensions: Option<Vec<String>>,
     ignored: Option<Vec<String>>,
     show_agent_folders: Option<bool>,
     show_images: Option<bool>,
 ) -> Policy {
+    if !enabled {
+        let mut p = Policy::notes_only();
+        if let Some(b) = show_images {
+            p.show_images = b;
+        }
+        return p;
+    }
     let mut p = Policy::default();
     if let Some(list) = extensions {
         p.extensions = list
@@ -166,6 +234,9 @@ pub fn is_secret_name(name: &str) -> bool {
 
 /// Does `name` (a file name, not a path) open as a code/text file under `policy`?
 pub fn is_code_name_with(policy: &Policy, name: &str) -> bool {
+    if !policy.code {
+        return false;
+    }
     if name.starts_with('.') && name.len() > 1 && ext_of(name).is_none() {
         // dotfiles without an extension (`.env`, `.gitignore`, `.bashrc`) are never code files
         return false;
@@ -180,7 +251,7 @@ pub fn is_code_name_with(policy: &Policy, name: &str) -> bool {
 }
 
 pub fn is_code_name(name: &str) -> bool {
-    is_code_name_with(&POLICY.read(), name)
+    with_current(|p| is_code_name_with(p, name))
 }
 
 pub fn is_code_path(path: &Path) -> bool {
@@ -201,8 +272,7 @@ pub fn is_listed_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower.ends_with(".md")
         || lower.ends_with(".base")
-        || is_code_name(name)
-        || is_image_name_with(&POLICY.read(), name)
+        || with_current(|p| is_code_name_with(p, name) || is_image_name_with(p, name))
 }
 
 /// [`is_listed_name`] for a path (its file name).
@@ -214,15 +284,17 @@ pub fn is_listed_path(path: &Path) -> bool {
 
 /// SQL predicate over `files.ext` / `files.name` selecting the listed rows (md, base, code, images).
 pub fn listed_sql_predicate() -> String {
-    listed_sql_predicate_with(&POLICY.read())
+    with_current(listed_sql_predicate_with)
 }
 
 /// [`listed_sql_predicate`] under an explicit policy.
 pub fn listed_sql_predicate_with(p: &Policy) -> String {
     let mut exts: Vec<String> = vec!["md".into(), "base".into()];
-    let mut code: Vec<&String> = p.extensions.iter().collect();
-    code.sort();
-    exts.extend(code.into_iter().cloned());
+    if p.code {
+        let mut code: Vec<&String> = p.extensions.iter().collect();
+        code.sort();
+        exts.extend(code.into_iter().cloned());
+    }
     if p.show_images {
         exts.extend(crate::attachments::render_extensions().iter().cloned());
     }
@@ -231,8 +303,8 @@ pub fn listed_sql_predicate_with(p: &Policy) -> String {
         .map(|e| format!("'{}'", e.replace('\'', "''")))
         .collect::<Vec<_>>()
         .join(",");
-    let names = SHARED
-        .file_names
+    let code_names: &[String] = if p.code { &SHARED.file_names } else { &[] };
+    let names = code_names
         .iter()
         .map(|n| format!("'{}'", n.replace('\'', "''")))
         .collect::<Vec<_>>()
@@ -243,7 +315,7 @@ pub fn listed_sql_predicate_with(p: &Policy) -> String {
 /// True when the SQL row (`name`, lowercase `ext`) is listed. The Rust twin of
 /// [`listed_sql_predicate`], used by tests and in-memory filters.
 pub fn is_listed_row(name: &str, ext: &str) -> bool {
-    is_listed_row_with(&POLICY.read(), name, ext)
+    with_current(|p| is_listed_row_with(p, name, ext))
 }
 
 /// [`is_listed_row`] under an explicit policy.
@@ -258,19 +330,19 @@ pub fn is_listed_row_with(p: &Policy, name: &str, ext: &str) -> bool {
     {
         return true;
     }
-    if is_secret_name(name) {
+    if !p.code || is_secret_name(name) {
         return false;
     }
     SHARED.file_names.iter().any(|n| n == name) || p.extensions.contains(ext)
 }
 
 /// Is a vault-relative path (`.agents/skills/x/run.py`) visible: no hidden segment except the
-/// `skills` subtree of `.agents` / `.claude` (when `files.show-agent-folders`), nothing in the
+/// `skills` subtree of `.agents` / `.claude` (when `code-files.show-agent-folders`), nothing in the
 /// ignored-folder list, never `node_modules`.
 ///
 /// `is_dir` only matters for the top-level `.agents` / `.claude` directory itself.
 pub fn rel_is_visible(rel: &Path) -> bool {
-    rel_is_visible_with(&POLICY.read(), rel)
+    with_current(|p| rel_is_visible_with(p, rel))
 }
 
 /// [`rel_is_visible`] under an explicit policy.
@@ -308,12 +380,13 @@ pub fn rel_is_visible_with(p: &Policy, rel: &Path) -> bool {
     true
 }
 
-/// Does any segment of `rel` name an ignored folder (the `files.ignored-folders` list)?
+/// Does any segment of `rel` name an ignored folder (the `code-files.ignored-folders` list)?
 pub fn rel_in_ignored_folder(rel: &Path) -> bool {
-    let p = POLICY.read();
-    rel.components().any(|c| {
-        p.ignored_folders
-            .contains(c.as_os_str().to_string_lossy().as_ref())
+    with_current(|p| {
+        rel.components().any(|c| {
+            p.ignored_folders
+                .contains(c.as_os_str().to_string_lossy().as_ref())
+        })
     })
 }
 
@@ -431,6 +504,7 @@ mod tests {
     #[test]
     fn settings_cannot_enable_secrets_or_notes() {
         let p = policy_from_settings(
+            true,
             Some(vec![".PEM".into(), "env".into(), "py".into(), "md".into()]),
             None,
             None,
@@ -473,18 +547,18 @@ mod tests {
 
     #[test]
     fn agent_exception_follows_the_setting() {
-        let off = policy_from_settings(None, None, Some(false), None);
+        let off = policy_from_settings(true, None, None, Some(false), None);
         assert!(!rel_is_visible_with(
             &off,
             Path::new(".agents/skills/x/run.py")
         ));
-        let on = policy_from_settings(None, None, Some(true), None);
+        let on = policy_from_settings(true, None, None, Some(true), None);
         assert!(rel_is_visible_with(
             &on,
             Path::new(".agents/skills/x/run.py")
         ));
         // a custom ignore list replaces the default one
-        let custom = policy_from_settings(None, Some(vec!["gen".into()]), None, None);
+        let custom = policy_from_settings(true, None, Some(vec!["gen".into()]), None, None);
         assert!(!rel_is_visible_with(&custom, Path::new("a/gen/x.py")));
         assert!(rel_is_visible_with(&custom, Path::new("a/dist/x.py")));
     }
@@ -525,8 +599,8 @@ mod tests {
 
     #[test]
     fn images_are_listed_only_while_the_setting_is_on() {
-        let on = policy_from_settings(None, None, None, Some(true));
-        let off = policy_from_settings(None, None, None, Some(false));
+        let on = policy_from_settings(true, None, None, None, Some(true));
+        let off = policy_from_settings(true, None, None, None, Some(false));
         for n in [
             "a.png", "B.JPG", "x.jpeg", "a.gif", "a.webp", "a.svg", "a.avif", "a.bmp",
         ] {

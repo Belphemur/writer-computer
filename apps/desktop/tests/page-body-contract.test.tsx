@@ -26,9 +26,9 @@ describe("PageBody", () => {
 
 const sources = import.meta.glob<string>(
   [
-    "../src/components/{editor-area,code-editor,image-viewer,settings-panel}/**/*.{ts,tsx}",
+    "../src/components/{editor-area,image-viewer,settings-panel}/**/*.{ts,tsx}",
     "../src/components/{feature-off-page,feature-pane}.tsx",
-    "../features/{graph,bases}/web/**/*.{ts,tsx}",
+    "../features/{graph,bases,code-files}/web/**/*.{ts,tsx}",
     "../features/obsidian-host/web/components/**/*.{ts,tsx}",
   ],
   { query: "?raw", import: "default", eager: true },

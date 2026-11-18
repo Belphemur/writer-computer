@@ -158,6 +158,49 @@ fn bump_mtime(path: &Path) {
         .unwrap();
 }
 
+/// The scan walks folders under one policy snapshot (`walk_builder_with`): with the feature
+/// `code-files` off the skills folders are not walked and the ignored-folder list is not applied.
+/// (The index worker thread reads the process-wide policy, so this goes through the builder.)
+#[test]
+fn the_walker_follows_the_code_files_policy_for_folders() {
+    use crate::code_files::Policy;
+    let vault = TempDir::new().unwrap();
+    let r = vault.path();
+    for f in [
+        "a.md",
+        "run.py",
+        "dist/a.js",
+        ".agents/skills/x/run.sh",
+        ".obsidian/app.json",
+    ] {
+        write(r, f, "x");
+    }
+    let walked = |p: Policy| {
+        let mut v: Vec<String> = build::walk_builder_with(r, p)
+            .build()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+            .map(|e| {
+                e.path()
+                    .strip_prefix(r)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(
+        walked(Policy::default()),
+        [".agents/skills/x/run.sh", "a.md", "run.py"].map(String::from)
+    );
+    assert_eq!(
+        walked(Policy::notes_only()),
+        ["a.md", "dist/a.js", "run.py"].map(String::from)
+    );
+}
+
 #[test]
 fn cold_build_counts_and_ignore_rules() {
     let fx = build_fixture();

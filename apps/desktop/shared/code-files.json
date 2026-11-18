@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared by src-tauri/src/code_files.rs and src/lib/code-files.ts (spec: SPECs/code-files-spec.md). The default extension and ignored-folder lists are the defaults of files.code-extensions and files.ignored-folders in settings.schema.json.",
+  "$comment": "Shared by src-tauri/src/code_files.rs and src/lib/code-files.ts (spec: SPECs/code-files-spec.md). The default extension and ignored-folder lists are the defaults of code-files.extensions and code-files.ignored-folders in features/code-files/settings.schema.json.",
   "maxReadBytes": 20971520,
   "readOnlyBytes": 2097152,
   "binarySniffBytes": 8192,

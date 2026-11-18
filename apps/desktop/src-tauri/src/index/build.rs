@@ -163,6 +163,12 @@ fn process_file(
 }
 
 pub(crate) fn walk_builder(root: &Path) -> WalkBuilder {
+    walk_builder_with(root, crate::code_files::policy())
+}
+
+/// [`walk_builder`] under one policy snapshot, so a scan sees a single policy even when a
+/// setting changes meanwhile (and the walker threads need not ask for it).
+pub(crate) fn walk_builder_with(root: &Path, policy: crate::code_files::Policy) -> WalkBuilder {
     let mut b = WalkBuilder::new(root);
     let walk_root = root.to_path_buf();
     // Hidden entries are filtered by `code_files::rel_is_visible` (not the walker's own
@@ -176,7 +182,10 @@ pub(crate) fn walk_builder(root: &Path) -> WalkBuilder {
         .filter_entry(move |e| {
             e.path()
                 .strip_prefix(&walk_root)
-                .map(|rel| rel.as_os_str().is_empty() || crate::code_files::rel_is_visible(rel))
+                .map(|rel| {
+                    rel.as_os_str().is_empty()
+                        || crate::code_files::rel_is_visible_with(&policy, rel)
+                })
                 .unwrap_or(true)
         });
     b
@@ -477,11 +486,12 @@ pub(crate) fn scan(
     let root = shared.root.clone();
     let walker_shared = Arc::clone(shared);
     let walker_existing = Arc::clone(&existing);
+    let policy = crate::code_files::policy();
     let walker = std::thread::spawn(move || {
         let threads = std::thread::available_parallelism()
             .map(|n| n.get().min(8))
             .unwrap_or(4);
-        walk_builder(&root)
+        walk_builder_with(&root, policy.clone())
             .threads(threads)
             .build_parallel()
             .run(|| {
@@ -489,6 +499,7 @@ pub(crate) fn scan(
                 let root = root.clone();
                 let shared = Arc::clone(&walker_shared);
                 let existing = Arc::clone(&walker_existing);
+                let policy = policy.clone();
                 Box::new(move |entry| {
                     if shared.cancelled() {
                         return WalkState::Quit;
@@ -506,7 +517,7 @@ pub(crate) fn scan(
                     let Ok(rel) = entry.path().strip_prefix(&root) else {
                         return WalkState::Continue;
                     };
-                    if !is_indexable_rel(rel) {
+                    if !crate::code_files::rel_is_visible_with(&policy, rel) {
                         return WalkState::Continue;
                     }
                     let Some(rel_str) = rel_to_string(rel) else {

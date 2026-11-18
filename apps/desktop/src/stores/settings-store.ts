@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import * as tauri from "@/lib/tauri";
 import { applyCssVarBindings, applyTheme } from "@/lib/theme";
-import { configureCodeFiles } from "@/lib/code-files";
 import type { SettingsMap, SettingKey } from "@/lib/settings-schema";
 
 interface SettingsState {
@@ -27,7 +26,6 @@ interface SettingsState {
 function applySettingsSideEffects(settings: Record<string, unknown>) {
   applyTheme(settings["appearance.theme"], settings);
   applyCssVarBindings(settings);
-  configureCodeFiles(settings["files.code-extensions"]);
 }
 
 interface PersistedSettingValue {

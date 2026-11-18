@@ -384,6 +384,7 @@ impl Settings {
         settings.migrate_theme_fonts()?;
         settings.migrate_editor_width()?;
         settings.migrate_agent_cheap_tier()?;
+        settings.migrate_code_files_keys()?;
 
         Ok(settings)
     }
@@ -493,6 +494,30 @@ impl Settings {
             if self.global.contains_key(key) {
                 self.reset_global(key)?;
             }
+        }
+        Ok(())
+    }
+
+    /// One-time migration: the code-file settings moved into the feature `code-files` fragment and
+    /// took its prefix (`files.code-extensions` -> `code-files.extensions`, ...). Unless the new key
+    /// is already set, adopt the old value, then drop the old key. Only the global file moves; a
+    /// workspace override of `editor.code-word-wrap` is not renamed. A failed write keeps the old
+    /// key so a later launch can retry.
+    fn migrate_code_files_keys(&mut self) -> std::io::Result<()> {
+        const RENAMED: [(&str, &str); 4] = [
+            ("files.code-extensions", "code-files.extensions"),
+            ("files.ignored-folders", "code-files.ignored-folders"),
+            ("files.show-agent-folders", "code-files.show-agent-folders"),
+            ("editor.code-word-wrap", "code-files.word-wrap"),
+        ];
+        for (old, new) in RENAMED {
+            let Some(value) = self.global.get(old).cloned() else {
+                continue;
+            };
+            if !self.global.contains_key(new) {
+                self.set_global(new, value)?;
+            }
+            self.reset_global(old)?;
         }
         Ok(())
     }
@@ -949,6 +974,61 @@ mod tests {
         assert!(!raw().contains("agent.subagent-model"));
         let again = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(cheap(&again), Some(ConfigValue::String("opus".into())));
+    }
+
+    #[test]
+    fn test_code_files_keys_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config");
+        let raw = || std::fs::read_to_string(&config_path).unwrap();
+
+        // Old keys are adopted under the feature's prefix and dropped.
+        std::fs::write(
+            &config_path,
+            "files.code-extensions = py\nfiles.code-extensions = rs\nfiles.show-agent-folders = false\neditor.code-word-wrap = true\n",
+        )
+        .unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            settings.get("code-files.extensions"),
+            Some(&ConfigValue::List(vec!["py".into(), "rs".into()]))
+        );
+        assert_eq!(
+            settings.get("code-files.show-agent-folders"),
+            Some(&ConfigValue::Bool(false))
+        );
+        assert_eq!(
+            settings.get("code-files.word-wrap"),
+            Some(&ConfigValue::Bool(true))
+        );
+        for old in [
+            "files.code-extensions",
+            "files.show-agent-folders",
+            "editor.code-word-wrap",
+        ] {
+            assert!(
+                !raw().lines().any(|l| l.starts_with(old)),
+                "{old} was not dropped"
+            );
+        }
+
+        // A key already set under the new name wins; idempotent on the next start.
+        std::fs::write(
+            &config_path,
+            "code-files.word-wrap = false\neditor.code-word-wrap = true\n",
+        )
+        .unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            settings.get("code-files.word-wrap"),
+            Some(&ConfigValue::Bool(false))
+        );
+        assert!(!raw().contains("editor.code-word-wrap"));
+        let again = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            again.get("code-files.word-wrap"),
+            Some(&ConfigValue::Bool(false))
+        );
     }
 
     #[test]

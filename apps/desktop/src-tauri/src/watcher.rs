@@ -630,6 +630,25 @@ mod tests {
     }
 
     #[test]
+    fn with_the_feature_off_skills_are_not_watched_and_generated_folders_are() {
+        use crate::code_files::{with_policy_for_test, Policy};
+        let root = Path::new(ROOT);
+        let ignored = |p: &str| should_ignore(Path::new(&format!("{ROOT}/{p}")), root);
+        with_policy_for_test(Policy::notes_only(), || {
+            assert!(ignored(".agents/skills/x/run.py"));
+            assert!(ignored(".claude/skills/x/SKILL.md"));
+            assert!(!ignored("web/dist/a.js"));
+            assert!(!ignored("web/target/a.rs"));
+            // dot-folders and node_modules stay out whatever the feature says
+            assert!(ignored(".hidden/a.md") && ignored("web/node_modules/a.js"));
+        });
+        with_policy_for_test(Policy::default(), || {
+            assert!(!ignored(".agents/skills/x/run.py"));
+            assert!(ignored("web/dist/a.js"));
+        });
+    }
+
+    #[test]
     fn agent_skills_are_watched_and_generated_folders_are_not() {
         let root = Path::new(ROOT);
         assert!(!should_ignore(
