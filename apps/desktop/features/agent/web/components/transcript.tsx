@@ -25,8 +25,8 @@ function lastFinalText(chat: Chat): string {
 
 export function Transcript({ chat }: { chat: Chat }) {
   const last = chat.turns[chat.turns.length - 1];
-  const { ref, onScroll } = useStickToBottom(chat);
-  useCopySelection(ref);
+  const { scrollRef, contentRef } = useStickToBottom();
+  useCopySelection(scrollRef);
   const windowed = chat.turns.length > WINDOW_AFTER_TURNS;
   return (
     <>
@@ -35,47 +35,48 @@ export function Transcript({ chat }: { chat: Chat }) {
         {lastFinalText(chat)}
       </div>
       <div
-        ref={ref}
-        onScroll={onScroll}
+        ref={scrollRef}
         role="log"
         aria-live="off"
         aria-label="Agent conversation"
         data-agent-transcript
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
       >
-        {chat.turns.map((turn, i) => (
-          <div
-            key={turn.id}
-            data-agent-turn
-            className="space-y-2"
-            style={
-              windowed && i < chat.turns.length - 1
-                ? { contentVisibility: "auto", containIntrinsicSize: "auto 240px" }
-                : undefined
-            }
-          >
-            {turn.user && <UserTurnCard message={turn.user} />}
-            <SegmentList segments={segmentTurn(turn)} running={turn.status === "running"} />
-            <TurnChangesCard chatId={chat.chatId} turn={turn} />
-            <TurnFooter turn={turn} />
-          </div>
-        ))}
-        {chat.banner && (
-          <p role="status" data-agent-banner className="px-1 text-[12.5px] text-text-muted">
-            {chat.banner}
-          </p>
-        )}
-        {chat.localNotice && (
-          <p role="status" data-agent-local-notice className="px-1 text-[12.5px] text-text-muted">
-            {chat.localNotice}
-          </p>
-        )}
-        {chat.state === "starting" && !last?.blocks.length && (
-          <p role="status" className="px-1 text-[12.5px] text-text-muted">
-            Starting Claude…
-          </p>
-        )}
-        <ErrorCard chat={chat} />
+        <div ref={contentRef} className="space-y-4">
+          {chat.turns.map((turn, i) => (
+            <div
+              key={turn.id}
+              data-agent-turn
+              className="space-y-2"
+              style={
+                windowed && i < chat.turns.length - 1
+                  ? { contentVisibility: "auto", containIntrinsicSize: "auto 240px" }
+                  : undefined
+              }
+            >
+              {turn.user && <UserTurnCard message={turn.user} />}
+              <SegmentList segments={segmentTurn(turn)} running={turn.status === "running"} />
+              <TurnChangesCard chatId={chat.chatId} turn={turn} />
+              <TurnFooter turn={turn} />
+            </div>
+          ))}
+          {chat.banner && (
+            <p role="status" data-agent-banner className="px-1 text-[12.5px] text-text-muted">
+              {chat.banner}
+            </p>
+          )}
+          {chat.localNotice && (
+            <p role="status" data-agent-local-notice className="px-1 text-[12.5px] text-text-muted">
+              {chat.localNotice}
+            </p>
+          )}
+          {chat.state === "starting" && !last?.blocks.length && (
+            <p role="status" className="px-1 text-[12.5px] text-text-muted">
+              Starting Claude…
+            </p>
+          )}
+          <ErrorCard chat={chat} />
+        </div>
       </div>
     </>
   );

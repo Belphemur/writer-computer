@@ -125,6 +125,18 @@ describe("ThinkingRow", () => {
 
   it("follows the stream to the bottom", () => {
     const view = { scrollHeight: 0 };
+    // growth after React committed is followed by the content's resize observer, not by a render
+    const callbacks: Array<() => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          callbacks.push(cb);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
       configurable: true,
       get: () => view.scrollHeight,
@@ -133,9 +145,10 @@ describe("ThinkingRow", () => {
       render(live("a"));
       toggle();
       view.scrollHeight = 500;
-      render(live("a\n\nb"));
+      act(() => callbacks.forEach((cb) => cb()));
       expect(body()!.scrollTop).toBe(500);
     } finally {
+      vi.unstubAllGlobals();
       delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
     }
   });

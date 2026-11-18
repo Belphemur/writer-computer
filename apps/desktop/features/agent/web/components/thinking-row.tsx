@@ -51,17 +51,21 @@ export function ThinkingRow({ block }: { block: ThinkingBlock }) {
 /** The summary as light markdown in a capped box that follows the stream until the user
  *  scrolls up. */
 function ReasoningText({ block, done }: { block: ThinkingBlock; done: boolean }) {
-  const { ref, onScroll } = useStickToBottom(block.text);
+  const { scrollRef, contentRef } = useStickToBottom();
   const html = useMemo(() => renderBlockHtml(block, done), [block, done]);
   return (
     <div
-      ref={ref}
-      onScroll={onScroll}
+      ref={scrollRef}
       data-agent-thinking-text
       data-streaming={!done || undefined}
-      className="agent-markdown max-h-48 overflow-y-auto italic opacity-90"
-      // Sanitised by renderAgentMarkdown (shared strict DOMPurify allowlist).
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+      className="max-h-48 overflow-y-auto italic opacity-90"
+    >
+      <div
+        ref={contentRef}
+        className="agent-markdown"
+        // Sanitised by renderAgentMarkdown (shared strict DOMPurify allowlist).
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
   );
 }

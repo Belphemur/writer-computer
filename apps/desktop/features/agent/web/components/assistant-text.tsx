@@ -18,9 +18,27 @@ export function liveHtml(block: Pick<TextBlock, "id" | "text">, now: number): st
     live.set(block.id, entry);
   }
   const tail = block.text.slice(entry.len);
-  return tail
-    ? `${entry.html}<span ${MD_RANGE_ATTR}="${mdRange(entry.len, block.text.length)}" style="white-space:pre-wrap">${escapeText(tail)}</span>`
-    : entry.html;
+  if (!tail) return entry.html;
+  const span = `<span ${MD_RANGE_ATTR}="${mdRange(entry.len, block.text.length)}" style="white-space:pre-wrap">${escapeText(tail)}</span>`;
+  return withTail(entry.html, tail, span);
+}
+
+const OPEN_PARAGRAPH = /<\/p>\s*$/;
+const OPEN_ITEM = /(<\/p>)?\s*<\/li>\s*<\/(?:ul|ol)>\s*$/;
+
+/** Puts the plain tail inside the block it continues (the last paragraph or list item) instead
+ *  of after it. `.agent-markdown > :last-child` has no bottom margin, so a tail placed after the
+ *  block made that margin appear and vanish at every markdown pass: the stream bounced by 0.6em
+ *  each 120 ms. Any other shape (a new block starts, a heading, a fence) keeps the tail after. */
+function withTail(html: string, tail: string, span: string): string {
+  const startsBlock = /^[ \t]*\n[ \t]*\n/.test(tail);
+  if (!startsBlock) {
+    const p = OPEN_PARAGRAPH.exec(html);
+    if (p) return html.slice(0, p.index) + span + html.slice(p.index);
+    const li = !tail.includes("\n") && OPEN_ITEM.exec(html);
+    if (li) return html.slice(0, li.index) + span + html.slice(li.index);
+  }
+  return html + span;
 }
 
 /** The one markdown pass for a block of streamed text (assistant text, reasoning): throttled
