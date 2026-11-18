@@ -37,12 +37,16 @@ What exists; do not add a layer.
 - A canvas (graph, any `<canvas>`) cannot parse `color-mix()` and a translucent plate is see-through, so it resolves theme colours to opaque `rgb()` composited over the theme's base, with fallbacks (`features/graph/web/theme.ts`). Never hand a raw token to a canvas. Not test-enforced (jsdom has no canvas): review it.
 - Every surface that draws content over another (a card on a page, a label plate) states its background: do not rely on a translucent parent.
 
-## 6. UI text
+## 6. Text selection
+
+- The app is not selectable by default (`src/App.css`): chrome, rows and buttons do not catch a drag. Text a user reads and may copy (the agent pane, the Session changes tab, any future reading surface) opts in with `data-selectable` on its root; buttons, tabs and icons inside stay non-selectable. Editors, inputs and plugin content are already selectable. Never a per-component `select-text` patch for a whole surface. Enforced by: `apps/desktop/tests/text-selection-contract.test.ts` (jsdom applies no CSS, so a selection test alone cannot catch it).
+
+## 7. UI text
 
 - Terse labels, sentence case, no explanatory prose; at most a one-line hint. Settings and panels: short label, a straightforward control, no paragraph. If a screen needs a paragraph, the screen is wrong ([`docs/soul.md`](./soul.md)).
 - Shortcuts live in the keybinding registry and `docs/keyboard-shortcuts.md` (a test ties them).
 
-## 7. Links
+## 8. Links
 
 - Every clickable note, file, chat or URL reference behaves like a browser link (middle click and Cmd/Ctrl+click open a new background tab) through `src/lib/link-activation.ts`, never a hand-written `auxclick` or `button === 1`. Enforced by: `tests/link-activation-inventory.test.ts`. Spec: [`SPECs/link-activation-spec.md`](../SPECs/link-activation-spec.md).
 
@@ -53,4 +57,5 @@ What exists; do not add a layer.
 3. Does a new container clip? `overflow-clip` if it is part of the frame.
 4. A popup or modal? Use the existing one.
 5. A colour on a canvas? Opaque.
-6. Is the label as short as it can be?
+6. Text people read and copy? `data-selectable` on its root.
+7. Is the label as short as it can be?

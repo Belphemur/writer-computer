@@ -193,11 +193,14 @@ body,
   background: transparent;
 }
 
-/* Prevent text selection everywhere except editor, form inputs and plugin-hosted content
-   (the plugin pane / editor-tab leaves, plugin modals and rendered markdown). The plugin subtree
+/* Prevent text selection everywhere except editor, form inputs, areas marked `data-selectable`
+   (the agent pane, docs/design.md "Text selection") and plugin-hosted content (the plugin pane /
+   editor-tab leaves, plugin modals and rendered markdown). The plugin subtree
    is excluded from the rule above instead of out-ranked, so no specificity or !important race. */
 *:not(.cm-editor):not(.cm-content):not(.cm-line):not(textarea):not(input):not(
     :is(
+      [data-selectable],
+      [data-selectable] *,
       [data-plugin-leaf-host],
       [data-plugin-leaf-host] *,
       .modal-container,
@@ -212,6 +215,8 @@ body,
   user-select: none;
 }
 
+[data-selectable],
+[data-selectable] *,
 [data-plugin-leaf-host],
 [data-plugin-leaf-host] *,
 .modal-container,
@@ -225,6 +230,7 @@ body,
 }
 
 /* Controls inside plugin content stay non-selectable like the app's own chrome. */
+[data-selectable] :is(button, [role="button"], [role="tab"], svg),
 [data-plugin-leaf-host]
   :is(button, [role="button"], .clickable-icon, .view-header, .view-actions, svg),
 .modal-container :is(button, [role="button"], .clickable-icon, .modal-close-button) {

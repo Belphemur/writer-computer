@@ -63,7 +63,12 @@ export function SessionChangesTab({ location }: PageViewProps<SessionChangesLoca
 
   if (!view) return <div className="p-6 text-[13px] text-text-muted">No changes</div>;
   return (
-    <div ref={root} data-session-changes className="h-full overflow-y-auto px-4 py-3">
+    <div
+      ref={root}
+      data-session-changes
+      data-selectable
+      className="h-full overflow-y-auto px-4 py-3"
+    >
       <header className="mb-3 flex items-center gap-2 text-[13px]">
         <h1 className="font-medium text-text-primary">Session changes</h1>
         <Counts added={view.added} removed={view.removed} />
