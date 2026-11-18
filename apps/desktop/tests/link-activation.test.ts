@@ -6,11 +6,17 @@ import { createElement, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-const h = vi.hoisted(() => ({ navigate: vi.fn(), newTab: vi.fn(), openUrl: vi.fn() }));
+const h = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  newTab: vi.fn(),
+  openUrl: vi.fn(),
+  active: vi.fn<() => string | null>(() => null),
+}));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: h.openUrl }));
 vi.mock("../src/hooks/editor-api", () => ({
   navigateToFile: h.navigate,
   openFileInNewTab: h.newTab,
+  getActiveFilePath: h.active,
 }));
 
 import {
@@ -20,9 +26,11 @@ import {
   linkActivationExtension,
   linkHandlers,
   linkIntent,
+  openPathAtAnchor,
   type LinkIntent,
   type LinkTarget,
 } from "../src/lib/link-activation";
+import { consumePendingAnchor, registerAnchorReveal } from "../src/lib/pending-anchor";
 import { dispatchMouse } from "@tests/helpers/events";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -204,5 +212,58 @@ describe("CodeMirror binding: linkActivationExtension", () => {
     dispatchMouse(view.contentDOM, "auxclick", { button: 1 }); // not a link
     expect(h.newTab).not.toHaveBeenCalled();
     view.destroy();
+  });
+});
+
+describe("openPathAtAnchor: a heading link reveals its heading", () => {
+  const reveal = vi.fn<(path: string, anchor: string) => boolean>();
+  registerAnchorReveal(reveal);
+  afterEach(() => {
+    reveal.mockReset();
+    h.active.mockReturnValue(null);
+    consumePendingAnchor("/v/a.md");
+  });
+
+  it("scrolls the note already showing in place, without navigating", async () => {
+    h.active.mockReturnValue("/v/a.md");
+    reveal.mockReturnValue(true);
+    await openPathAtAnchor("/v/a.md", "intro", "current");
+    expect(reveal).toHaveBeenCalledWith("/v/a.md", "intro");
+    expect(h.navigate).not.toHaveBeenCalled();
+    expect(consumePendingAnchor("/v/a.md")).toBeUndefined();
+  });
+
+  it("parks the anchor for the editor that loads another note, which takes it exactly once", async () => {
+    await openPathAtAnchor("/v/a.md", "intro", "current");
+    expect(h.navigate).toHaveBeenCalledWith("/v/a.md");
+    expect(consumePendingAnchor("/v/a.md")).toBe("intro");
+    expect(consumePendingAnchor("/v/a.md")).toBeUndefined();
+  });
+
+  it.each([
+    ["new-tab-background", false],
+    ["new-tab-active", true],
+  ] as const)(
+    "%s opens a tab and keeps the anchor until the tab is shown",
+    async (intent, activate) => {
+      h.active.mockReturnValue("/v/a.md"); // the note is showing, but a new tab is asked for
+      await openPathAtAnchor("/v/a.md", "intro", intent);
+      expect(reveal).not.toHaveBeenCalled();
+      expect(h.newTab).toHaveBeenCalledWith("/v/a.md", { activate });
+      // Nothing consumed it yet: the background tab's editor does when it mounts on activation.
+      expect(consumePendingAnchor("/v/a.md")).toBe("intro");
+    },
+  );
+
+  it("without an anchor it is a plain open", async () => {
+    await openPathAtAnchor("/v/a.md", null, "current");
+    expect(h.navigate).toHaveBeenCalledWith("/v/a.md");
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it("drops the anchor when the open fails", async () => {
+    h.navigate.mockRejectedValueOnce(new Error("boom"));
+    await expect(openPathAtAnchor("/v/a.md", "intro", "current")).rejects.toThrow("boom");
+    expect(consumePendingAnchor("/v/a.md")).toBeUndefined();
   });
 });

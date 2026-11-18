@@ -1,4 +1,5 @@
 import { RENDERABLE_IMAGE_EXTENSIONS } from "./attachments";
+import { slugifyHeading } from "./heading-slug";
 import { noteLabel } from "./note-title";
 import { getFileStem, getParentDir, isBasePath, normalizePath } from "./paths";
 import type { SearchResult } from "@/types/fs";
@@ -7,7 +8,8 @@ export type WikiLinkTarget =
   | {
       kind: "internal";
       path: string;
-      /** The `#fragment` of a link to a `.base` file: the view name to select. */
+      /** What to reveal once the file shows (`linkAnchor`): the heading slug for a note, the view
+       *  name for a `.base` file. Absent when the link has no usable fragment. */
       fragment?: string;
     }
   | { kind: "unresolved" };
@@ -123,6 +125,23 @@ export function normalizeWikiTarget(raw: string): string {
 }
 
 /**
+ * The anchor a link's `#fragment` asks for in the file it opens: the view name of a `.base` file,
+ * otherwise the slug of the heading (`#A#B` means the last segment, matched case-insensitively
+ * like Obsidian; the slug is the one `findHeadingBySlug` indexes). `#^block` ids and empty
+ * fragments have no anchor (the note opens at its top).
+ */
+export function linkAnchor(target: string, fragment: string | null): string | null {
+  if (!fragment) return null;
+  if (isBasePath(target)) return fragment;
+  const last = fragment
+    .split("#")
+    .filter((segment) => segment.trim() !== "")
+    .pop();
+  if (!last || last.startsWith("^")) return null;
+  return slugifyHeading(last) || null;
+}
+
+/**
  * Asks the backend (the vault index's file-name resolver, `index/resolve.rs`) for the
  * absolute path a link target written in `sourcePath` points to, or null.
  */
@@ -149,17 +168,15 @@ export async function resolveWikiLink(
   const link = parseWikiLink(raw);
   const target = link.path;
   if (!target && link.fragment && currentFilePath) {
-    return { kind: "internal", path: currentFilePath };
+    const anchor = linkAnchor(currentFilePath, link.fragment);
+    return { kind: "internal", path: currentFilePath, ...(anchor ? { fragment: anchor } : {}) };
   }
   if (!target) return { kind: "unresolved" };
 
   const path = await resolveLink(target, currentFilePath);
   if (!path) return { kind: "unresolved" };
-  // `[[x.base#View]]`: the fragment selects the view of a base.
-  if (isBasePath(target) && link.fragment) {
-    return { kind: "internal", path, fragment: link.fragment };
-  }
-  return { kind: "internal", path };
+  const anchor = linkAnchor(target, link.fragment);
+  return { kind: "internal", path, ...(anchor ? { fragment: anchor } : {}) };
 }
 
 // Image formats supported by Obsidian-style embeds (`![[image.png]]`),

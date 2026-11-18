@@ -75,3 +75,12 @@ Today each of these handles the middle button on its own, or not at all:
 - The compact recents list is bound too; a compact window has no tabs, so every gesture opens the file in place. Prosemark embeds (`![[image]]`, note embeds) have no click behaviour today, so there is nothing to bind.
 - Swept (2026-11-17): every click that opens a note, file or URL goes through a binding or `openPath`. Backlinks, outline, search panel and breadcrumbs are not note-link surfaces in this tree; the new-tab page and welcome screen open the palette or a file dialog, not a link. A chat as a link target (`kind: "chat"`) is still not needed.
 - Guard: `tests/link-activation-inventory.test.ts` (no `button === 1` / `auxclick` outside the module and the tabs; no direct `openFileInNewTab(` / `navigateToFile(` call outside the store, its wrapper, the module and the two intent adapters); behaviour: `tests/link-activation.test.ts`.
+
+## 7. Heading fragments (2026-11-17)
+
+`[[Note#Heading]]`, `[[#Heading]]` and `openLinkText("Note#Heading")` open the note at the heading, for every gesture of the table, through the same path as a Markdown `note.md#slug` link:
+
+- `linkAnchor(target, fragment)` (`src/lib/wiki-links.ts`) is the one rule for what a `#fragment` asks for: the view name for a `.base` file, otherwise the slug (`slugifyHeading`, the slug `findHeadingBySlug` indexes) of the **last** `#` segment, so the match ignores case and punctuation and `#A#B` goes to `B`. `#^block` and empty fragments have no anchor. `resolveWikiLink` returns it as `fragment`, also for `[[#Heading]]` (the current note).
+- `openPathAtAnchor(path, anchor, intent)` (`src/lib/link-activation.ts`) is the one open-with-anchor: a note showing in the current tab (`intent: "current"`) is scrolled in place (`registerAnchorReveal`, registered by `link-navigation.ts`, the same smooth scroll as a same-document `#slug` link); every other case parks the anchor with `setPendingAnchor` and opens, and the editor that loads the file takes it exactly once (`consumePendingAnchor`) when it is shown, so a background tab scrolls when it is activated. A failed open drops the parked anchor. Markdown links with a `#slug` (`followLink`) and the Obsidian host (`bridge.openFile(path, { anchor })`) use the same function.
+- A heading that does not exist opens the note at the top with the existing "Heading not found" editor notice (no error).
+- Not done: `#^block` scrolling (block ids are not indexed).

@@ -14,6 +14,21 @@ export function consumePendingAnchor(path: string): string | undefined {
   return anchor;
 }
 
+/** Scrolls the live editor showing `path` to the heading `anchor` (a slug) and says whether one
+ *  did. The editor area registers it; core callers (`openPathAtAnchor`) reach it without
+ *  importing a component. */
+type AnchorReveal = (path: string, anchor: string) => boolean;
+
+let reveal: AnchorReveal | null = null;
+
+export function registerAnchorReveal(fn: AnchorReveal): void {
+  reveal = fn;
+}
+
+export function revealAnchorInPlace(path: string, anchor: string): boolean {
+  return reveal?.(path, anchor) ?? false;
+}
+
 // A 1-based line to reveal after a file opens (content search). Same lifecycle as the heading
 // anchors above: set before navigation, consumed exactly once by the editor that shows the file.
 const pendingLines = new Map<string, number>();

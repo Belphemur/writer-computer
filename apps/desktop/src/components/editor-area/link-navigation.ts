@@ -7,13 +7,14 @@ import { buildSlugIndex, parseDocumentHeadings } from "@/hooks/use-document-head
 import type { DocumentHeading } from "@/hooks/use-document-headings";
 import {
   openExternal,
-  openPath,
+  openPathAtAnchor,
   type LinkIntent,
   type LinkTarget,
   linkActivationExtension,
 } from "@/lib/link-activation";
 import { resolveLinkTarget } from "@/lib/paths";
-import { setPendingAnchor } from "@/lib/pending-anchor";
+import { findEditorView } from "@/lib/editor-views";
+import { registerAnchorReveal } from "@/lib/pending-anchor";
 import { linkUrlAt, rawUrlAt } from "@/lib/prosemark-core/links";
 import * as tauri from "@/lib/tauri";
 import { findOuterScroller, scrollPosToSafeTop } from "./editor-scroll";
@@ -37,6 +38,14 @@ function scrollSameDocAnchor(view: EditorView, filePath: string, anchor: string)
   scrollPosToSafeTop(view, scroller, heading.pos, "smooth");
 }
 
+// The in-place half of `openPathAtAnchor`: the same scroll a same-document `#slug` link does.
+registerAnchorReveal((path, anchor) => {
+  const view = findEditorView(path);
+  if (!view) return false;
+  scrollSameDocAnchor(view, path, anchor);
+  return true;
+});
+
 /** Navigate to `href` as written in the document: same-document anchors
  *  scroll, workspace files open in the tab (with a pending anchor), external
  *  URLs and other paths hand off to the OS. */
@@ -59,12 +68,7 @@ export async function followLink(
   }
 
   if (target.kind === "internal") {
-    if (target.anchor && target.path === filePath) {
-      scrollSameDocAnchor(view, filePath, target.anchor);
-      return;
-    }
-    if (target.anchor) setPendingAnchor(target.path, target.anchor);
-    await openPath(target.path, intent);
+    await openPathAtAnchor(target.path, target.anchor, intent);
     return;
   }
 

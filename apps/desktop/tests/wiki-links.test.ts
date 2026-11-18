@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import {
   canonicalWikiTarget,
   isWikiLink,
+  linkAnchor,
   matchWikiLinkAtStart,
   parseWikiLinkValue,
   WIKI_SUGGEST_TRIGGER,
@@ -150,7 +151,7 @@ describe("resolveWikiLink", () => {
     expect(resolve).toHaveBeenLastCalledWith("Figure 1.png", null);
   });
 
-  test("a base link carries its #view fragment, a note link does not", async () => {
+  test("a base link carries its #view name, a note link its heading slug", async () => {
     expect(await resolveWikiLink("Tasks.base#Active", null, resolver("/vault/Tasks.base"))).toEqual(
       {
         kind: "internal",
@@ -161,6 +162,7 @@ describe("resolveWikiLink", () => {
     expect(await resolveWikiLink("Note#Heading", null, resolver("/vault/Note.md"))).toEqual({
       kind: "internal",
       path: "/vault/Note.md",
+      fragment: "heading",
     });
   });
 
@@ -445,5 +447,48 @@ describe("the [[ ]] grammar helpers", () => {
     expect(WIKI_SUGGEST_TRIGGER.exec("see [[Pla")?.[1]).toBe("Pla");
     expect(WIKI_SUGGEST_TRIGGER.exec("see [[Plan#")).toBeNull();
     expect(WIKI_SUGGEST_TRIGGER.exec("see [[Plan]] x")).toBeNull();
+  });
+});
+
+describe("linkAnchor: what a #fragment asks for", () => {
+  test.each([
+    ["Note", "Intro", "intro"],
+    ["Note", "Getting Started!", "getting-started"],
+    ["Note", "A#Deep Dive", "deep-dive"],
+    ["Note", "A#", "a"],
+    ["Note", "^block-id", null],
+    ["Note", "A#^block-id", null],
+    ["Note", "", null],
+    ["Note", null, null],
+    ["Tasks.base", "Open Tasks", "Open Tasks"],
+  ])("%s#%s", (target, fragment, expected) => {
+    expect(linkAnchor(target, fragment)).toBe(expected);
+  });
+});
+
+describe("resolveWikiLink fragments", () => {
+  const resolve = async (target: string) => `/v/${target}.md`;
+
+  test("a heading link carries the heading slug", async () => {
+    expect(await resolveWikiLink("Note#Big Idea", "/v/a.md", resolve)).toEqual({
+      kind: "internal",
+      path: "/v/Note.md",
+      fragment: "big-idea",
+    });
+  });
+
+  test("a link to the current note carries its heading", async () => {
+    expect(await resolveWikiLink("#Big Idea", "/v/a.md", resolve)).toEqual({
+      kind: "internal",
+      path: "/v/a.md",
+      fragment: "big-idea",
+    });
+  });
+
+  test("a block link opens the note without a fragment", async () => {
+    expect(await resolveWikiLink("Note#^abc", "/v/a.md", resolve)).toEqual({
+      kind: "internal",
+      path: "/v/Note.md",
+    });
   });
 });

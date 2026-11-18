@@ -8,9 +8,9 @@ import type { EditorView } from "@codemirror/view";
 import { EditorView as CMEditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { navigateToFile, openFileInNewTab } from "@/hooks/editor-api";
+import { getActiveFilePath, navigateToFile, openFileInNewTab } from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
-import { setPendingAnchor } from "@/lib/pending-anchor";
+import { consumePendingAnchor, revealAnchorInPlace, setPendingAnchor } from "@/lib/pending-anchor";
 import { detectPlatform, type Platform } from "@/lib/platform";
 import * as tauri from "@/lib/tauri";
 import { resolveWikiLink, type WikiLinkTarget } from "@/lib/wiki-links";
@@ -64,6 +64,28 @@ export async function openPath(path: string, intent: LinkIntent): Promise<void> 
   else await openFileInNewTab(path, { activate: intent === "new-tab-active" });
 }
 
+/** A note or file path with the anchor its link asked for (a heading slug, a base view name).
+ *  The file showing in the current tab is revealed in place; otherwise the anchor is parked for
+ *  the editor that loads the file, which takes it when the tab is shown (so a background tab
+ *  scrolls when it is activated). */
+export async function openPathAtAnchor(
+  path: string,
+  anchor: string | null | undefined,
+  intent: LinkIntent,
+): Promise<void> {
+  if (!anchor) return openPath(path, intent);
+  if (intent === "current" && getActiveFilePath() === path && revealAnchorInPlace(path, anchor)) {
+    return;
+  }
+  setPendingAnchor(path, anchor);
+  try {
+    await openPath(path, intent);
+  } catch (e) {
+    consumePendingAnchor(path); // never leave a stale anchor for a later open
+    throw e;
+  }
+}
+
 /** A URL in the system browser, whatever the gesture: the one caller of the opener plugin's
  *  `openUrl`. Core links are not filtered to `EXTERNAL_PROTOCOLS` here (a document may link to
  *  `obsidian://` or `tel:`); the opener's capability scope is the gate. The Obsidian plugin host
@@ -86,7 +108,7 @@ export function resolveVaultLink(raw: string, sourcePath: string | null): Promis
 }
 
 /** The target of a wiki link written as `raw` (`Note`, `Note#Heading`, `[[`-less): it resolves
- *  against the note, queues the heading for the opened note, then opens for the gesture. The one
+ *  against the note, then opens it at the link's heading for the gesture. The one
  *  path for the editor, rendered cells, the agent pane, property values and Bases cells. */
 export function wikiLinkTarget(
   raw: string,
@@ -106,8 +128,9 @@ export function wikiLinkTarget(
         (result) => {
           if (isDisposed()) return;
           if (result.kind !== "internal") return fail("unresolved");
-          if (result.fragment) setPendingAnchor(result.path, result.fragment);
-          return openPath(result.path, intent).catch((e: unknown) => fail("open-failed", e));
+          return openPathAtAnchor(result.path, result.fragment, intent).catch((e: unknown) =>
+            fail("open-failed", e),
+          );
         },
         (e: unknown) => fail("resolve-failed", e),
       );

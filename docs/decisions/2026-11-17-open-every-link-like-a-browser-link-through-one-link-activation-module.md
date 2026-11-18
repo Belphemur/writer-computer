@@ -89,3 +89,5 @@ Chosen option: **A**.
 ## More Information
 
 Spec: [`SPECs/link-activation-spec.md`](../../SPECs/link-activation-spec.md) (gesture table, surface inventory, implementation notes). Implemented in commits 920d068 and f534ab9. Also listed in `AGENTS.md` (Guidelines). Revisit if Writer gains multiple windows (`Shift`+click) or a surface needs a gesture the table does not have.
+
+Addendum 2026-11-17: the `#fragment` of a wiki link (`[[Note#Heading]]`, `[[#Heading]]`, `openLinkText` with a subpath) follows the same single path: `linkAnchor` turns it into a heading slug and `openPathAtAnchor` in `link-activation.ts` opens the note and reveals it (in place for the current note, through the pending anchor otherwise, so every gesture and every surface gets it). See the spec's section 7.

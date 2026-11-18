@@ -26,7 +26,7 @@ class DiffView extends ItemView {
 interface Rig {
   app: App;
   io: ReturnType<typeof createMemoryVaultIo>;
-  opened: { path: string; newLeaf: boolean }[];
+  opened: { path: string; newLeaf: boolean; activate?: boolean; anchor?: string }[];
   mounted: { leaf: WorkspaceLeaf; placement: string }[];
   state: { active: string | null; pluginLeaf: WorkspaceLeaf | null };
 }
@@ -145,8 +145,19 @@ describe("opening notes in the main editor", () => {
       { path: "b.md", newLeaf: true },
       { path: "dir/c.md", newLeaf: true },
       { path: "a.md", newLeaf: true },
-      { path: "a.md", newLeaf: false },
+      { path: "a.md", newLeaf: false, anchor: "heading" },
     ]);
+  });
+
+  it("openLinkText passes the heading of a #subpath as an anchor (last segment, no blocks)", async () => {
+    const ws = rig.app.workspace;
+    await ws.openLinkText("b#Intro#Deep Dive", "", true, { active: false });
+    await ws.openLinkText("b#^block-1", "", true);
+    expect(rig.opened).toMatchObject([
+      { path: "b.md", newLeaf: true, activate: false, anchor: "deep-dive" },
+      { path: "b.md", newLeaf: true },
+    ]);
+    expect(rig.opened[1]).not.toHaveProperty("anchor");
   });
 
   it("openLinkText to a missing note rejects explicitly", async () => {

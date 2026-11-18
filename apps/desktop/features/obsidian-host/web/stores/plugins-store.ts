@@ -20,6 +20,7 @@ import type {
 } from "../host";
 import type { LeafPlacement, WorkspaceBridge, WorkspaceLeaf } from "../host/api/views";
 import { findEditorView } from "@/lib/editor-views";
+import { openPathAtAnchor } from "@/lib/link-activation";
 import { setPluginEditorExtensions } from "../host/editor-bridge";
 import { recordPluginError } from "../host/error-log";
 import {
@@ -205,10 +206,12 @@ const appWorkspace: AppWorkspace = {
   getActiveFilePath: editorApi.getActiveFilePath,
   getEditorView: findEditorView,
   // `navigateToFile` never replaces a plugin view's tab (it opens a new tab instead).
-  openFile: (path, { newLeaf, activate }) =>
-    newLeaf
-      ? editorApi.openFileInNewTab(path, { activate: activate !== false })
-      : editorApi.navigateToFile(path),
+  openFile: (path, { newLeaf, activate, anchor }) =>
+    openPathAtAnchor(
+      path,
+      anchor,
+      !newLeaf ? "current" : activate === false ? "new-tab-background" : "new-tab-active",
+    ),
 };
 
 /** The path a leaf's file view shows, for the views that are file views (`FileView.file`). */

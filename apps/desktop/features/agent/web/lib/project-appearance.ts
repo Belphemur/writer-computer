@@ -28,9 +28,12 @@ export const NO_APPEARANCE: ProjectAppearance = { icon: null, color: null };
 
 /** The CSS color of a project color name; the current accent for none or an unknown name. */
 export function projectColorVar(color: string | null | undefined): string {
-  return color && PROJECT_COLORS.includes(color)
-    ? `var(--project-color-${color})`
-    : "var(--accent)";
+  return isProjectColor(color) ? `var(--project-color-${color})` : "var(--accent)";
+}
+
+/** Whether `color` names one of `shared/project-colors.json`. */
+export function isProjectColor(color: string | null | undefined): color is string {
+  return !!color && PROJECT_COLORS.includes(color);
 }
 
 export const appearanceOf = (p: Pick<ProjectDetail, "icon" | "color"> | undefined) =>

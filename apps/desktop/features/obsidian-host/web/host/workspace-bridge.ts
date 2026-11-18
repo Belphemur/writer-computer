@@ -32,8 +32,12 @@ export interface AppWorkspace {
   /** The CodeMirror view showing `absPath`. */
   getEditorView(absPath: string | null): EditorView | null;
   /** Opens `absPath` in the current tab, or in a new tab (a background one when `activate` is
-   *  false; the default is to activate it). */
-  openFile(absPath: string, opts: { newLeaf: boolean; activate?: boolean }): Promise<void>;
+   *  false; the default is to activate it), then reveals `anchor` (a heading slug or base view
+   *  name, `linkAnchor`) when given. */
+  openFile(
+    absPath: string,
+    opts: { newLeaf: boolean; activate?: boolean; anchor?: string },
+  ): Promise<void>;
 }
 
 export function toVaultPath(root: string, absPath: string): string | null {

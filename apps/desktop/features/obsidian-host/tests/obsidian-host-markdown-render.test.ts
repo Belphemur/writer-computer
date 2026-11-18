@@ -232,9 +232,9 @@ describe("markdown render: clicks", () => {
     await Promise.resolve();
     expect(rig.tabs).toEqual([
       { path: "Note.md", newLeaf: true },
-      { path: "dir/Other.md", newLeaf: true, activate: false }, // Ctrl (jsdom is not macOS)
+      { path: "dir/Other.md", newLeaf: true, activate: false, anchor: "h" }, // Ctrl (jsdom is not macOS)
       { path: "Note.md", newLeaf: true }, // Meta alone is a plain click here
-      { path: "dir/Other.md", newLeaf: true, activate: false }, // middle button
+      { path: "dir/Other.md", newLeaf: true, activate: false, anchor: "h" }, // middle button
     ]);
   });
 

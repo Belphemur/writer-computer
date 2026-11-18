@@ -54,6 +54,27 @@ describe("project badge", () => {
     expect(container.querySelector(BADGE)).toBeNull();
   });
 
+  it("keeps the tree's muted grey without a project color, and uses the color when set", async () => {
+    await render(dir("/v/Projects/Acme"));
+    const badge = container.querySelector<HTMLElement>(BADGE)!;
+    expect(badge.style.color).toBe("");
+    expect(badge.className).toContain("text-[var(--text-icon-muted)]");
+
+    useProjectsStore.setState({
+      folderPaths: new Map([["/v/Projects/Acme", { icon: null, color: "chartreuse" }]]),
+    });
+    await render(dir("/v/Projects/Acme"));
+    expect(container.querySelector<HTMLElement>(BADGE)!.style.color).toBe("");
+
+    useProjectsStore.setState({
+      folderPaths: new Map([["/v/Projects/Acme", { icon: null, color: "blue" }]]),
+    });
+    await render(dir("/v/Projects/Acme"));
+    expect(container.querySelector<HTMLElement>(BADGE)!.style.color).toBe(
+      "var(--project-color-blue)",
+    );
+  });
+
   it("is gone when the agent feature is off", async () => {
     await render(dir("/v/Projects/Acme"));
     expect(container.querySelector(BADGE)).not.toBeNull();

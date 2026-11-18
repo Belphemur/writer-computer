@@ -9,6 +9,7 @@ import { recordPluginError } from "../error-log";
 import { TFile } from "./vault";
 import type { App } from "./app";
 import type { EditorView } from "@codemirror/view";
+import { linkAnchor } from "@/lib/wiki-links";
 
 // ---------------------------------------------------------------- host boundary
 
@@ -47,7 +48,10 @@ export interface WorkspaceBridge {
   getActiveEditor(): EditorBackend | null;
   /** The plugin leaf whose tab is the active one in the main area, or null (a document or no tab). */
   getActivePluginLeaf(): WorkspaceLeaf | null;
-  openFile(path: string, opts: { newLeaf: boolean; activate?: boolean }): Promise<void>;
+  openFile(
+    path: string,
+    opts: { newLeaf: boolean; activate?: boolean; anchor?: string },
+  ): Promise<void>;
   /** `Workspace.updateOptions()`: re-apply the registered editor extensions to every editor. */
   reapplyEditorOptions(): void;
   /**
@@ -1173,7 +1177,8 @@ export class Workspace extends Events {
   /**
    * Opens the note a link points at in the main editor: a new tab (in the background when `openState.active` is false) when `newLeaf` is truthy
    * (`true`, `"tab"`, `"split"`, `"window"`), the current tab otherwise. A link to a missing note
-   * rejects (Obsidian would create it); a `#heading` suffix is ignored.
+   * rejects (Obsidian would create it); a `#heading` suffix scrolls to that heading (a `#^block` one
+   * is ignored).
    */
   async openLinkText(
     linktext: string,
@@ -1185,8 +1190,10 @@ export class Workspace extends Events {
     const path = hash < 0 ? linktext : linktext.slice(0, hash);
     const file = this.app.metadataCache.getFirstLinkpathDest(path, sourcePath);
     if (!file) throw new Error(`Cannot open "${linktext}": no such note`);
+    const anchor = linkAnchor(file.path, hash < 0 ? null : linktext.slice(hash + 1));
     await this.bridge.openFile(file.path, {
       newLeaf: !!newLeaf,
+      ...(anchor ? { anchor } : {}),
       ...(openState?.active === false ? { activate: false } : {}),
     });
   }
