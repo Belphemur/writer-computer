@@ -1,6 +1,7 @@
 import { InformationCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState } from "react";
+import { ModalShell } from "@/components/modal-shell";
 import { useSetSetting } from "@/hooks/use-settings";
 import * as tauri from "@/lib/tauri";
 
@@ -21,9 +22,6 @@ const NOT_COLLECTED = [
   "Search queries or workspace contents",
   "Your location",
 ];
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -100,7 +98,6 @@ export function TelemetryConsentDialog() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setSetting = useSetSetting();
-  const cardRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const resolveRef = useRef<(accepted: boolean) => void>(() => {});
@@ -115,48 +112,12 @@ export function TelemetryConsentDialog() {
     };
   }, []);
 
-  // Keyboard modality. The backdrop only blocks the pointer; without this,
-  // Tab walks into the editor behind the card and Cmd+P opens the palette on
-  // top of it. Registered at the capture phase on `document` so it runs
-  // before the window-level shortcut handler in `useKeyboardShortcuts`.
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const card = cardRef.current;
-      if (!card) return;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        resolveRef.current(false);
-        return;
-      }
-
-      if (event.key === "Tab") {
-        const focusable = Array.from(card.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        const active = document.activeElement;
-        const inside = active instanceof Node && card.contains(active);
-        if (!inside || (event.shiftKey && active === first)) {
-          event.preventDefault();
-          (event.shiftKey ? last : first).focus();
-        } else if (!event.shiftKey && active === last) {
-          event.preventDefault();
-          first.focus();
-        }
-        return;
-      }
-
-      // Modifier shortcuts belong to the app underneath, not to a modal that
-      // is waiting for a decision. Stopping propagation leaves native editing
-      // defaults (paste into the email field) intact.
-      if (event.metaKey || event.ctrlKey) event.stopPropagation();
-    };
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [isOpen]);
+  // Modifier shortcuts belong to the app underneath, not to a modal that is waiting for a
+  // decision. Stopping propagation leaves native editing defaults (paste into the email field)
+  // intact.
+  function keepShortcutsOut(event: KeyboardEvent) {
+    if (event.metaKey || event.ctrlKey) event.stopPropagation();
+  }
 
   // `isSubmitting` guards against a double answer (Escape landing between the
   // click and the awaited writes) resolving the prompt twice.
@@ -222,170 +183,167 @@ export function TelemetryConsentDialog() {
   if (!isOpen) return null;
 
   return (
-    <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center px-6 py-6"
-      role="presentation"
+    // No card surface: the backdrop is the surface. The dialog is the only thing on screen while it
+    // is open, so a panel outline would only add a second edge inside the window's own. The copy
+    // still scrolls within a fixed height so the buttons stay reachable at the 500px minimum.
+    // Nothing is focused on open (Enter in the email field is deliberate), and the backdrop does
+    // not answer: only the buttons and Escape do.
+    <ModalShell
+      labelledBy="telemetry-consent-title"
+      describedBy="telemetry-consent-description"
+      onClose={() => resolveRef.current(false)}
+      dismissOnBackdrop={false}
+      initialFocus={false}
+      onKeyDown={keepShortcutsOut}
+      className="flex max-h-[calc(100vh-3rem)] w-full max-w-[440px] flex-col"
     >
-      {/* No card: the backdrop is the surface. The dialog is the only thing on
-          screen while it is open, so a panel outline would only add a second
-          edge inside the window's own. The copy still scrolls within a fixed
-          height so the buttons stay reachable at the 500px minimum. */}
-      <div
-        ref={cardRef}
-        className="relative flex max-h-[calc(100vh-3rem)] w-full max-w-[440px] flex-col outline-none"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="telemetry-consent-title"
-        aria-describedby="telemetry-consent-description"
-      >
-        {/* `overflow-y: auto` also clips horizontally, which cut the email field
+      {/* `overflow-y: auto` also clips horizontally, which cut the email field
             off mid-shake. The padding gives the animation room to move into and
             the negative margin gives it back, so the copy sits where it did. */}
-        <div className="-mx-2 min-h-0 overflow-y-auto px-2">
-          <h2
-            id="telemetry-consent-title"
-            className="text-[15px] font-semibold text-[var(--text-primary)]"
-          >
-            Stay in touch?
-          </h2>
-          <p
-            id="telemetry-consent-description"
-            className="mt-2 text-[13px] leading-relaxed text-[var(--text-muted)]"
-          >
-            Writer is made by one person. Leave your email for release news, and share light usage
-            data. Both change in Preferences.
-          </p>
+      <div className="-mx-2 min-h-0 overflow-y-auto px-2">
+        <h2
+          id="telemetry-consent-title"
+          className="text-[15px] font-semibold text-[var(--text-primary)]"
+        >
+          Stay in touch?
+        </h2>
+        <p
+          id="telemetry-consent-description"
+          className="mt-2 text-[13px] leading-relaxed text-[var(--text-muted)]"
+        >
+          Writer is made by one person. Leave your email for release news, and share light usage
+          data. Both change in Preferences.
+        </p>
 
-          <label className="mt-5 block">
-            <span className="text-[12px] font-medium text-[var(--text-secondary)]">Email</span>
-            <input
-              ref={emailRef}
-              type="email"
-              required
-              value={email}
-              placeholder="you@example.com"
-              autoComplete="email"
-              onKeyDown={(event) => {
-                // Enter is safe here now that nothing is focused when the
-                // dialog opens: reaching the field is deliberate, so finishing
-                // in it should be too.
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                void resolvePrompt(true);
-              }}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                // Also clears the rejected state when reduced motion left it
-                // standing, since there is no animation end to clear it there.
-                event.currentTarget.classList.remove("input-shake");
-                if (error) setError(null);
-              }}
-              className="mt-1.5 h-9 w-full rounded-lg border border-transparent bg-[var(--surface-input)] px-3 text-[13px] text-[var(--text-secondary)] font-[inherit] outline-none focus:border-[var(--focus-border)] focus-visible:outline-none"
-            />
-            <span className="mt-1.5 block text-[12px] leading-relaxed text-[var(--text-muted)]">
-              Only used to tell you about new releases and to ask what you want next.
-            </span>
-          </label>
+        <label className="mt-5 block">
+          <span className="text-[12px] font-medium text-[var(--text-secondary)]">Email</span>
+          <input
+            ref={emailRef}
+            type="email"
+            required
+            value={email}
+            placeholder="you@example.com"
+            autoComplete="email"
+            onKeyDown={(event) => {
+              // Enter is safe here now that nothing is focused when the
+              // dialog opens: reaching the field is deliberate, so finishing
+              // in it should be too.
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              void resolvePrompt(true);
+            }}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              // Also clears the rejected state when reduced motion left it
+              // standing, since there is no animation end to clear it there.
+              event.currentTarget.classList.remove("input-shake");
+              if (error) setError(null);
+            }}
+            className="mt-1.5 h-9 w-full rounded-lg border border-transparent bg-[var(--surface-input)] px-3 text-[13px] text-[var(--text-secondary)] font-[inherit] outline-none focus:border-[var(--focus-border)] focus-visible:outline-none"
+          />
+          <span className="mt-1.5 block text-[12px] leading-relaxed text-[var(--text-muted)]">
+            Only used to tell you about new releases and to ask what you want next.
+          </span>
+        </label>
 
-          <div className="mt-5 rounded-lg border border-[var(--line-subtle)] p-3">
-            <div className="flex items-start justify-between gap-4">
-              <span
-                id="telemetry-usage-label"
-                className="text-[12px] font-medium text-[var(--text-secondary)]"
-              >
-                Share light usage data
-                <span className="mt-1 block font-normal leading-relaxed text-[var(--text-muted)]">
-                  Which features get used and how often, tied to the email above. Never what you
-                  write, and never a file name.
-                </span>
+        <div className="mt-5 rounded-lg border border-[var(--line-subtle)] p-3">
+          <div className="flex items-start justify-between gap-4">
+            <span
+              id="telemetry-usage-label"
+              className="text-[12px] font-medium text-[var(--text-secondary)]"
+            >
+              Share light usage data
+              <span className="mt-1 block font-normal leading-relaxed text-[var(--text-muted)]">
+                Which features get used and how often, tied to the email above. Never what you
+                write, and never a file name.
               </span>
-              {/* Same switch as Preferences renders for a boolean setting, so the
+            </span>
+            {/* Same switch as Preferences renders for a boolean setting, so the
                   control the user meets here is the one they will find later. */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={shareUsage}
-                aria-labelledby="telemetry-usage-label"
-                onClick={() => setShareUsage((shared) => !shared)}
-                className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                style={{
-                  backgroundColor: shareUsage ? "var(--link-color)" : "var(--border-color)",
-                }}
-              >
-                <span
-                  className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ease-out"
-                  style={{ transform: shareUsage ? "translateX(16px)" : "translateX(0)" }}
-                />
-              </button>
-            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={shareUsage}
+              aria-labelledby="telemetry-usage-label"
+              onClick={() => setShareUsage((shared) => !shared)}
+              className="relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+              style={{
+                backgroundColor: shareUsage ? "var(--link-color)" : "var(--border-color)",
+              }}
+            >
+              <span
+                className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ease-out"
+                style={{ transform: shareUsage ? "translateX(16px)" : "translateX(0)" }}
+              />
+            </button>
+          </div>
 
-            {/* Hover (or focus) rather than a click: the full list is reference
+          {/* Hover (or focus) rather than a click: the full list is reference
                 material, not a step in the decision, and pushing it into a layer
                 keeps the dialog to one screen. */}
-            <div
-              className="relative mt-2 inline-block"
-              onMouseEnter={openDetails}
-              onMouseLeave={() => setDetailsAt(null)}
+          <div
+            className="relative mt-2 inline-block"
+            onMouseEnter={openDetails}
+            onMouseLeave={() => setDetailsAt(null)}
+          >
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-describedby="telemetry-consent-details"
+              onFocus={openDetails}
+              onBlur={() => setDetailsAt(null)}
+              className="flex items-center gap-1 text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
             >
-              <button
-                ref={triggerRef}
-                type="button"
-                aria-describedby="telemetry-consent-details"
-                onFocus={openDetails}
-                onBlur={() => setDetailsAt(null)}
-                className="flex items-center gap-1 text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+              <HugeiconsIcon
+                icon={InformationCircleIcon}
+                size={13}
+                color="currentColor"
+                strokeWidth={1.8}
+              />
+              <span className="underline decoration-dotted underline-offset-2">
+                What&rsquo;s collected
+              </span>
+            </button>
+
+            {detailsAt && (
+              <div
+                id="telemetry-consent-details"
+                role="tooltip"
+                style={{ ...detailsAt, width: "max-content", maxWidth: POPOVER_MAX_WIDTH }}
+                className="popover-outline fixed z-10 grid gap-3 rounded-lg bg-[var(--surface-primary)] p-3 shadow-lg"
               >
-                <HugeiconsIcon
-                  icon={InformationCircleIcon}
-                  size={13}
-                  color="currentColor"
-                  strokeWidth={1.8}
-                />
-                <span className="underline decoration-dotted underline-offset-2">
-                  What&rsquo;s collected
-                </span>
-              </button>
-
-              {detailsAt && (
-                <div
-                  id="telemetry-consent-details"
-                  role="tooltip"
-                  style={{ ...detailsAt, width: "max-content", maxWidth: POPOVER_MAX_WIDTH }}
-                  className="popover-outline fixed z-10 grid gap-3 rounded-lg bg-[var(--surface-primary)] p-3 shadow-lg"
-                >
-                  <DisclosureList title="Sent" items={COLLECTED} />
-                  <DisclosureList title="Never sent" items={NOT_COLLECTED} />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {error && (
-            <p role="alert" className="mt-4 text-[12px] leading-relaxed text-[var(--text-error)]">
-              {error}
-            </p>
-          )}
-
-          <div className="mt-6 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => void resolvePrompt(false)}
-              className="rounded-lg border border-[var(--line-subtle)] px-4 py-2 text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)] disabled:opacity-60"
-            >
-              Not now
-            </button>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => void resolvePrompt(true)}
-              className="rounded-lg bg-[var(--text-primary)] px-4 py-2 text-[13px] font-medium text-[var(--surface-primary)] transition-opacity hover:opacity-90 disabled:opacity-60"
-            >
-              Subscribe
-            </button>
+                <DisclosureList title="Sent" items={COLLECTED} />
+                <DisclosureList title="Never sent" items={NOT_COLLECTED} />
+              </div>
+            )}
           </div>
         </div>
+
+        {error && (
+          <p role="alert" className="mt-4 text-[12px] leading-relaxed text-[var(--text-error)]">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => void resolvePrompt(false)}
+            className="rounded-lg border border-[var(--line-subtle)] px-4 py-2 text-[13px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)] disabled:opacity-60"
+          >
+            Not now
+          </button>
+          <button
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => void resolvePrompt(true)}
+            className="rounded-lg bg-[var(--text-primary)] px-4 py-2 text-[13px] font-medium text-[var(--surface-primary)] transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            Subscribe
+          </button>
+        </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { MODAL_PANEL, ModalShell } from "@/components/modal-shell";
 import {
   applyNoteTitle,
   readNoteTitleOverride,
@@ -60,17 +61,6 @@ function DialogBody({ path, startCleared }: { path: string; startCleared: boolea
     };
   }, [path, startCleared]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      closeNoteTitleDialog();
-    };
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, []);
-
   const trimmed = value.trim();
   const unchanged = current !== undefined && (current ?? "") === trimmed;
   const multiline = /[\r\n]/.test(value);
@@ -112,97 +102,87 @@ function DialogBody({ path, startCleared }: { path: string; startCleared: boolea
   const linkCount = preview?.links ?? 0;
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
   return (
-    <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center px-6 py-6"
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) closeNoteTitleDialog();
-      }}
+    <ModalShell
+      labelledBy="note-title-heading"
+      onClose={closeNoteTitleDialog}
+      initialFocus={inputRef}
+      className={`w-full max-w-[460px] ${MODAL_PANEL} px-5 pb-4 pt-5`}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="note-title-heading"
-        className="relative w-full max-w-[460px] rounded-xl border border-[var(--border-color)] bg-[var(--surface-card)] px-5 pb-4 pt-5"
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!busy && !unchanged && !multiline) void submit(trimmed === "" ? null : trimmed);
+        }}
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!busy && !unchanged && !multiline) void submit(trimmed === "" ? null : trimmed);
-          }}
+        <h2
+          id="note-title-heading"
+          className="text-[15px] font-semibold text-[var(--text-primary)]"
         >
-          <h2
-            id="note-title-heading"
-            className="text-[15px] font-semibold text-[var(--text-primary)]"
-          >
-            Set display title
-          </h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
-            File: <span className="text-[var(--text-secondary)]">{fileName}</span>. This does not
-            rename the file. Links keep pointing to {fileName}. The title is saved as the{" "}
-            <code>title</code> property.
-          </p>
-          <label className="mt-4 block">
-            <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-              Display title
-            </span>
+          Set display title
+        </h2>
+        <p className="mt-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
+          File: <span className="text-[var(--text-secondary)]">{fileName}</span>. This does not
+          rename the file. Links keep pointing to {fileName}. The title is saved as the{" "}
+          <code>title</code> property.
+        </p>
+        <label className="mt-4 block">
+          <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+            Display title
+          </span>
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            disabled={current === undefined}
+            placeholder="Shown instead of the file name"
+            onChange={(e) => {
+              setValue(e.target.value);
+              if (error) setError(null);
+            }}
+            className={`${FIELD} mt-1.5 h-9`}
+          />
+        </label>
+        {current !== null && current !== undefined && linkCount > 0 ? (
+          <label className="mt-3 flex items-start gap-2 text-[12px] text-[var(--text-secondary)]">
             <input
-              ref={inputRef}
-              type="text"
-              value={value}
-              disabled={current === undefined}
-              placeholder="Shown instead of the file name"
-              onChange={(e) => {
-                setValue(e.target.value);
-                if (error) setError(null);
-              }}
-              className={`${FIELD} mt-1.5 h-9`}
-              // eslint-disable-next-line jsx-a11y/no-autofocus
-              autoFocus
+              type="checkbox"
+              checked={updateLinks}
+              onChange={(e) => setUpdateLinks(e.target.checked)}
+              className="mt-0.5"
             />
-          </label>
-          {current !== null && current !== undefined && linkCount > 0 ? (
-            <label className="mt-3 flex items-start gap-2 text-[12px] text-[var(--text-secondary)]">
-              <input
-                type="checkbox"
-                checked={updateLinks}
-                onChange={(e) => setUpdateLinks(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Update links that show the old title
-                <span className="block text-[var(--text-muted)]">
-                  {plural(linkCount, "link")} in {plural(preview?.files ?? 0, "note")} show &ldquo;
-                  {current}&rdquo; (as [[{fileName.replace(/\.md$/i, "")}|{current}]]).
-                </span>
+            <span>
+              Update links that show the old title
+              <span className="block text-[var(--text-muted)]">
+                {plural(linkCount, "link")} in {plural(preview?.files ?? 0, "note")} show &ldquo;
+                {current}&rdquo; (as [[{fileName.replace(/\.md$/i, "")}|{current}]]).
               </span>
-            </label>
-          ) : null}
-          {error ? (
-            <p role="alert" className="mt-3 text-[12px] text-[var(--text-muted)]">
-              {error}
-            </p>
-          ) : null}
-          <div className="mt-4 flex items-center justify-end gap-2">
-            {current ? (
-              <button
-                type="button"
-                className={`${BUTTON} mr-auto`}
-                disabled={busy}
-                onClick={() => void submit(null)}
-              >
-                Clear display title
-              </button>
-            ) : null}
-            <button type="button" className={BUTTON} onClick={closeNoteTitleDialog}>
-              Cancel
+            </span>
+          </label>
+        ) : null}
+        {error ? (
+          <p role="alert" className="mt-3 text-[12px] text-[var(--text-muted)]">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-4 flex items-center justify-end gap-2">
+          {current ? (
+            <button
+              type="button"
+              className={`${BUTTON} mr-auto`}
+              disabled={busy}
+              onClick={() => void submit(null)}
+            >
+              Clear display title
             </button>
-            <button type="submit" className={PRIMARY} disabled={busy || unchanged || multiline}>
-              {trimmed === "" ? "Clear" : "Set title"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          ) : null}
+          <button type="button" className={BUTTON} onClick={closeNoteTitleDialog}>
+            Cancel
+          </button>
+          <button type="submit" className={PRIMARY} disabled={busy || unchanged || multiline}>
+            {trimmed === "" ? "Clear" : "Set title"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
   );
 }

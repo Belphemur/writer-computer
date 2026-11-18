@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { MODAL_PANEL, ModalShell } from "@/components/modal-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSetSetting, useSetting } from "@/hooks/use-settings";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -97,8 +98,6 @@ export function AgentConfigureDialog({
   const path = useSetting("agent.binary-path") ?? "";
   const setSetting = useSetSetting();
   const [draft, setDraft] = useState(path);
-  const card = useRef<HTMLDivElement>(null);
-  useEffect(() => card.current?.focus(), []);
 
   function commit(value: string) {
     void setSetting("agent.binary-path", value.trim());
@@ -114,59 +113,45 @@ export function AgentConfigureDialog({
   }
 
   return (
-    <div
-      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center px-6 py-6"
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <ModalShell
+      labelledBy="agent-configure-title"
+      onClose={onClose}
+      className={`flex max-h-[calc(100vh-3rem)] w-full max-w-[520px] flex-col overflow-y-auto ${MODAL_PANEL} p-5`}
     >
-      <div
-        ref={card}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-configure-title"
-        tabIndex={-1}
-        onKeyDown={(e) => e.key === "Escape" && onClose()}
-        className="flex max-h-[calc(100vh-3rem)] w-full max-w-[520px] flex-col overflow-y-auto rounded-xl border border-[var(--border-color)] bg-[var(--surface-card)] p-5 outline-none"
+      <h2
+        id="agent-configure-title"
+        className="text-[15px] font-semibold text-[var(--text-primary)]"
       >
-        <h2
-          id="agent-configure-title"
-          className="text-[15px] font-semibold text-[var(--text-primary)]"
-        >
-          Configure Claude
-        </h2>
-        <label className="mt-4 block">
-          <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-            Claude program
-          </span>
-          <div className="mt-1.5 flex gap-2">
-            <input
-              type="text"
-              value={draft}
-              aria-label="Claude program path"
-              placeholder="Auto-detect"
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => draft.trim() !== path && commit(draft)}
-              onKeyDown={(e) => e.key === "Enter" && commit(draft)}
-              className="h-9 min-w-0 flex-1 rounded-lg border border-transparent bg-[var(--surface-input)] px-3 font-mono text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--focus-border)]"
-            />
-            <button type="button" className={BUTTON} onClick={() => void locate()}>
-              Locate…
-            </button>
-          </div>
-          <span className="mt-1 block text-[12px] text-[var(--text-muted)]">
-            An absolute path to an executable file. Leave blank to search PATH, your login shell and
-            the usual install folders.
-          </span>
-        </label>
-        <SavedRules />
-        <div className="mt-5 flex justify-end">
-          <button type="button" className={BUTTON} onClick={onClose}>
-            Done
+        Configure Claude
+      </h2>
+      <label className="mt-4 block">
+        <span className="text-[12px] font-medium text-[var(--text-secondary)]">Claude program</span>
+        <div className="mt-1.5 flex gap-2">
+          <input
+            type="text"
+            value={draft}
+            aria-label="Claude program path"
+            placeholder="Auto-detect"
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => draft.trim() !== path && commit(draft)}
+            onKeyDown={(e) => e.key === "Enter" && commit(draft)}
+            className="h-9 min-w-0 flex-1 rounded-lg border border-transparent bg-[var(--surface-input)] px-3 font-mono text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--focus-border)]"
+          />
+          <button type="button" className={BUTTON} onClick={() => void locate()}>
+            Locate…
           </button>
         </div>
+        <span className="mt-1 block text-[12px] text-[var(--text-muted)]">
+          An absolute path to an executable file. Leave blank to search PATH, your login shell and
+          the usual install folders.
+        </span>
+      </label>
+      <SavedRules />
+      <div className="mt-5 flex justify-end">
+        <button type="button" className={BUTTON} onClick={onClose}>
+          Done
+        </button>
       </div>
-    </div>
+    </ModalShell>
   );
 }

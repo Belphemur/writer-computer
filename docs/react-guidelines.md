@@ -76,6 +76,7 @@ Perform side effects at the action or event level, not by watching for state cha
 - **Prefer CSS over JS listeners.** `@media` queries, `:has()`, attribute selectors handle what would otherwise be JS event subscriptions.
 - **Ref callbacks over `useRef` + `useEffect`.** For imperative DOM setup/teardown, callback refs are idiomatic and don't require effects.
 - **External event listeners register once.** Keyboard shortcuts, Tauri events, and other external listeners register on mount with `[]` deps and read current state at event time.
+- **A modal renders `<ModalShell>`** (`src/components/modal-shell.tsx`): backdrop, `role="dialog"`/`aria-modal`, Escape, the Tab trap, initial focus and focus restore live there only; `tests/modal-inventory.test.ts` fails on a hand-written one.
 
 ## Persistence — Use Tauri Store, Not localStorage
 
