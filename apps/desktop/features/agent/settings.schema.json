@@ -238,6 +238,15 @@
       "default": true
     },
     {
+      "key": "agent.copy-on-select",
+      "label": "Copy selection",
+      "description": "Copy the Markdown of text you select in a chat.",
+      "category": "Agent",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
       "key": "agent.pane-width",
       "label": "Agent pane width",
       "description": "Width of the agent pane in pixels. Dragging the pane edge changes it too.",

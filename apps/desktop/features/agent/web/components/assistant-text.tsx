@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef } from "react";
-import { renderAgentMarkdown } from "@features/agent/web/lib/markdown";
+import { MD_RANGE_ATTR, mdRange, renderAgentMarkdown } from "@features/agent/web/lib/markdown";
 import type { TextBlock } from "@features/agent/web/lib/transcript";
-import { useMarkdownLinks } from "./agent-links";
+import { useMarkdownHost } from "./markdown-host";
 
 const THROTTLE_MS = 120;
 /** Live blocks: last markdown pass per block id (spec 3.5: at most one pass per 120 ms). */
@@ -19,7 +19,7 @@ export function liveHtml(block: Pick<TextBlock, "id" | "text">, now: number): st
   }
   const tail = block.text.slice(entry.len);
   return tail
-    ? `${entry.html}<span style="white-space:pre-wrap">${escapeText(tail)}</span>`
+    ? `${entry.html}<span ${MD_RANGE_ATTR}="${mdRange(entry.len, block.text.length)}" style="white-space:pre-wrap">${escapeText(tail)}</span>`
     : entry.html;
 }
 
@@ -35,15 +35,18 @@ export function renderBlockHtml(block: Pick<TextBlock, "id" | "text">, final: bo
 export const AssistantText = memo(function AssistantText({ block }: { block: TextBlock }) {
   const html = useMemo(() => renderBlockHtml(block, block.final), [block]);
   const host = useRef<HTMLDivElement>(null);
-  useMarkdownLinks(host);
+  const buttons = useMarkdownHost(host, block.text, html);
   return (
-    <div
-      ref={host}
-      data-agent-text
-      data-streaming={!block.final || undefined}
-      className="agent-markdown px-1 text-[14px] leading-relaxed text-text-primary"
-      // Sanitised by renderAgentMarkdown (shared strict DOMPurify allowlist).
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <div
+        ref={host}
+        data-agent-text
+        data-streaming={!block.final || undefined}
+        className="agent-markdown px-1 text-[14px] leading-relaxed text-text-primary"
+        // Sanitised by renderAgentMarkdown (shared strict DOMPurify allowlist).
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {buttons}
+    </>
   );
 });

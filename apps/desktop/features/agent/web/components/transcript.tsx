@@ -4,6 +4,7 @@ import { ErrorCard } from "./error-card";
 import { SegmentList } from "./subagent-card";
 import { TurnChangesCard } from "./turn-changes-card";
 import { TurnFooter } from "./turn-footer";
+import { useCopySelection } from "@features/agent/web/hooks/use-copy-selection";
 import { useStickToBottom } from "./use-stick-to-bottom";
 import { UserTurnCard } from "./user-turn-card";
 
@@ -25,6 +26,7 @@ function lastFinalText(chat: Chat): string {
 export function Transcript({ chat }: { chat: Chat }) {
   const last = chat.turns[chat.turns.length - 1];
   const { ref, onScroll } = useStickToBottom(chat);
+  useCopySelection(ref);
   const windowed = chat.turns.length > WINDOW_AFTER_TURNS;
   return (
     <>

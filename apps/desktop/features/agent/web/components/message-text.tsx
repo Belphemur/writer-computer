@@ -3,7 +3,7 @@ import type { ContextRef } from "@features/agent/web/lib/events";
 import { renderAgentMarkdown } from "@features/agent/web/lib/markdown";
 import { pillFor, type PillModel } from "@features/agent/web/lib/pill";
 import { tokenizeMessage } from "@features/agent/web/lib/trigger";
-import { useMarkdownLinks } from "./agent-links";
+import { useMarkdownHost } from "./markdown-host";
 import { mountPill } from "./pill-view";
 
 // Private-use characters carry a token through the Markdown pass (no Markdown meaning, not
@@ -27,20 +27,40 @@ export function renderUserMessage(text: string, context: readonly ContextRef[]):
   const pills: PillModel[] = [];
   const raws: string[] = [];
   let source = "";
+  // [offset in `source`, offset in `text`, length in `source`, length in `text`] per segment
+  const spans: [number, number, number, number][] = [];
+  let original = 0;
   for (const seg of tokenizeMessage(text)) {
-    if (seg.kind === "text") source += seg.text;
-    else {
+    const from = source.length;
+    if (seg.kind === "text") {
+      source += seg.text;
+      spans.push([from, original, seg.text.length, seg.text.length]);
+      original += seg.text.length;
+    } else {
       source += `${OPEN}${pills.length}${CLOSE}`;
       pills.push(pillFor(seg, { refs: context }));
       raws.push(seg.raw);
+      spans.push([from, original, source.length - from, seg.raw.length]);
+      original += seg.raw.length;
     }
   }
-  const html = renderAgentMarkdown(source, { breaks: true })
+  /** An offset in the rendered source back to `text` (a pill is one unit). */
+  const sourceOffset = (n: number) => {
+    const span = spans.filter(([from]) => from <= n).pop();
+    if (!span) return n;
+    const [from, orig, len, origLen] = span;
+    return len === origLen ? orig + (n - from) : orig + (n > from ? origLen : 0);
+  };
+  const html = renderAgentMarkdown(source, { breaks: true, sourceOffset })
     .split(/(<[^>]*>)/)
     .map((part) =>
       part.startsWith("<")
         ? part.replace(MARKER, (_, i: string) => escapeHtml(raws[Number(i)] ?? ""))
-        : part.replace(MARKER, (_, i: string) => `<span data-pill-slot="${i}"></span>`),
+        : part.replace(
+            MARKER,
+            (_, i: string) =>
+              `<span data-pill-slot="${i}" data-md-raw="${escapeHtml(raws[Number(i)] ?? "")}"></span>`,
+          ),
     )
     .join("");
   return { html, pills };
@@ -63,13 +83,16 @@ export function MessageText({ text, context }: { text: string; context: readonly
       if (model) mountPill(slot, model, true);
     });
   }, [html, pills]);
-  useMarkdownLinks(host);
+  const buttons = useMarkdownHost(host, text, html);
   return (
-    <div
-      ref={host}
-      className="agent-markdown"
-      // Sanitised by renderAgentMarkdown; the only markup added after is the pill slots.
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <div
+        ref={host}
+        className="agent-markdown"
+        // Sanitised by renderAgentMarkdown; the only markup added after is the pill slots.
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {buttons}
+    </>
   );
 }

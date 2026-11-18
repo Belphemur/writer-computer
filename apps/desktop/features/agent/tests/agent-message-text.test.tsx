@@ -128,7 +128,7 @@ describe("user message tokens", () => {
   it("plain text stays plain: same words, pills in place, no stray markup", () => {
     render("just a plain line with @Docs", [{ kind: "folder", path: "Docs" }]);
     expect(container.querySelector(".agent-markdown")!.innerHTML).toMatch(
-      /^<p>just a plain line with <span data-pill-slot="0">.*<\/span><\/p>\n?$/s,
+      /^<p data-md="[^"]*">just a plain line with <span data-pill-slot="0"[^>]*>.*<\/span><\/p>\n?$/s,
     );
   });
 });
@@ -139,7 +139,7 @@ describe("renderUserMessage", () => {
       { kind: "note", path: "my_file_name_*x*.md" },
     ]);
     expect(r.pills).toHaveLength(2);
-    expect(r.html).toContain('<span data-pill-slot="0"></span>');
+    expect(r.html).toMatch(/<span data-pill-slot="0" data-md-raw="[^"]*"><\/span>/);
     expect(r.html).not.toContain("<em>");
     expect(r.html).not.toMatch(/[\uE000\uE001]/);
   });

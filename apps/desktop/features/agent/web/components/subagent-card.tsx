@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import {
   Alert02Icon,
   ArrowDown01Icon,
@@ -6,6 +6,7 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { segmentBlocks, formatDuration, type Segment } from "@features/agent/web/lib/timeline";
+import { setMarkdownSource } from "@features/agent/web/lib/selection-markdown";
 import { shortModelName } from "@features/agent/web/lib/model-label";
 import {
   subagentCounts,
@@ -109,6 +110,11 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
   const label = subagentLabel(run);
   const task = subagentTask(run);
   const summary = subagentSummary(run);
+  const summaryEl = useRef<HTMLParagraphElement>(null);
+  // the report is Markdown shown as written: a selection of it copies its own text
+  useLayoutEffect(() => {
+    if (summaryEl.current) setMarkdownSource(summaryEl.current, summary);
+  }, [summary]);
   const model = run.meta?.model;
   // the sub-agent's closing text is the summary: not shown twice
   const children = run.children.filter(
@@ -176,6 +182,7 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
       </button>
       {summary && (
         <p
+          ref={summaryEl}
           data-agent-subagent-summary
           className={`px-2 pb-1.5 text-[12.5px] whitespace-pre-wrap text-text-secondary ${open ? "" : "line-clamp-2"}`}
         >

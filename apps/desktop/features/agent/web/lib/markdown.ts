@@ -4,7 +4,7 @@
  * untrusted model output. `[[wikilinks]]` become `#wikilink:<target>` anchors that the pane
  * resolves through the vault index on click; `http(s)`/`mailto` links open in the system browser.
  */
-import { Marked } from "marked";
+import { Lexer, Marked, Parser } from "marked";
 import { externalOrAnchorUriRegExp } from "@/lib/external-url";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 import { matchWikiLinkAtStart, parseWikiLink } from "@/lib/wiki-links";
@@ -57,14 +57,48 @@ function hook(node: Element) {
   if (node.tagName === "IMG") node.remove();
 }
 
+/** Where a rendered top-level block came from: `data-md="start-end"`, character offsets in the
+ *  source (`sourceOffset` maps them when the rendered text was a transformed copy of it). The
+ *  selection copy reads them to give back the exact Markdown of the blocks a selection covers. */
+export const MD_RANGE_ATTR = "data-md";
+// The value is `#start-end`: the sanitiser only lets a value through that matches the URI
+// allowlist (which accepts `#...`), whatever the attribute is.
+export const mdRange = (start: number, end: number) => `#${start}-${end}`;
+export const parseMdRange = (value: string): [number, number] =>
+  value.slice(1).split("-").map(Number) as [number, number];
+
 /** `breaks`: a single newline is a line break (the user's own messages, typed in a composer where
  *  Shift+Enter means "next line"); assistant text keeps CommonMark's soft breaks. */
-export function renderAgentMarkdown(markdown: string, opts: { breaks?: boolean } = {}): string {
+export function renderAgentMarkdown(
+  markdown: string,
+  opts: { breaks?: boolean; sourceOffset?: (offset: number) => number } = {},
+): string {
   const source = markdown.length > MAX_CHARS ? markdown.slice(0, MAX_CHARS) : markdown;
-  const html = marked.parse(source, { async: false, breaks: opts.breaks ?? false });
+  const breaks = opts.breaks ?? false;
+  const map = opts.sourceOffset ?? ((n: number) => n);
+  // the static lexer and parser take the instance's options (renderer, extensions) explicitly
+  const options = { ...marked.defaults, breaks, async: false as const };
+  const tokens = Lexer.lex(source, options);
+  // one pass per top-level token (the same output as one pass over all) to stamp its range
+  let html = "";
+  let pos = 0;
+  for (const token of tokens) {
+    const out = Parser.parse([token], options);
+    const range = mdRange(map(pos), map(pos + token.raw.trimEnd().length));
+    pos += token.raw.length;
+    html +=
+      token.type === "space"
+        ? out
+        : out.replace(/^<([a-z][a-z0-9]*)/, `<$1 ${MD_RANGE_ATTR}="${range}"`);
+  }
+  if (pos !== source.length) html = marked.parse(source, { async: false, breaks }) as string;
   return sanitizeHtml(
     html,
-    { tags: SAFE_TAGS, attrs: SAFE_ATTR.filter((a) => a !== "target"), uriRegexp: URI_REGEXP },
+    {
+      tags: SAFE_TAGS,
+      attrs: [...SAFE_ATTR.filter((a) => a !== "target"), MD_RANGE_ATTR],
+      uriRegexp: URI_REGEXP,
+    },
     hook,
   );
 }

@@ -66,6 +66,7 @@ describe("agent.* settings contract", () => {
       "agent.claude.model-standard": "sonnet",
       "agent.claude.model-strong": "default",
       "agent.restore-chats": true,
+      "agent.copy-on-select": true,
       "agent.pane-width": 420,
       "agent.pane-open": false,
     });

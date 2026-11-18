@@ -694,6 +694,35 @@ body.tree-dragging [data-tree-path] {
   background: none;
   padding: 0;
 }
+/* The copy button of a code block (markdown-host.tsx): on hover and keyboard focus, always on touch. */
+.agent-markdown pre {
+  position: relative;
+}
+.agent-code-copy {
+  position: absolute;
+  top: 0.3em;
+  right: 0.3em;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 0.25em;
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  opacity: 0;
+  user-select: none;
+}
+.agent-markdown pre:hover .agent-code-copy,
+.agent-code-copy:focus-visible {
+  opacity: 1;
+}
+.agent-code-copy:hover {
+  color: var(--text-primary);
+}
+@media (hover: none) {
+  .agent-code-copy {
+    opacity: 1;
+  }
+}
 .agent-markdown a {
   color: var(--link-color);
   text-decoration: underline;
