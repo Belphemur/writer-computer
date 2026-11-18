@@ -54,6 +54,7 @@ describe("agent event contract", () => {
       "permission-resolved",
       "model-refused",
       "turn-changes",
+      "session-changes", // the runner reads the files
       "session-reloaded",
       "steer-undelivered", // the runner's watchdog
       "subagent-started", // the runner resolves the role and the model
@@ -98,6 +99,8 @@ describe("agent event contract", () => {
           return e.kind;
         case "turn-changes":
           return e.turnId;
+        case "session-changes":
+          return String(e.files.length);
         case "session-ended":
           return e.reason;
         case "session-reloaded":

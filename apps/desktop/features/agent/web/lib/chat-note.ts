@@ -14,6 +14,7 @@ import type {
   ContextRef,
   TitleSource,
   ToolOutcome,
+  FileChangeSummary,
   TurnChangesSummary,
   TurnFinishReason,
 } from "./events";
@@ -125,6 +126,9 @@ export type ChatNoteDoc = {
   messages: ChatNoteMessage[];
   /** Messages dropped by the size bound. */
   trimmed: number;
+  /** The notes the chat changed (paths and counts, never text): `writer:session-changes`, before
+   *  the first message. */
+  sessionChanges?: FileChangeSummary[];
   /** Raw frontmatter blocks the user added; written back verbatim. */
   extraFrontmatter: string;
 };
@@ -284,6 +288,8 @@ export function serializeChatNote(doc: ChatNoteDoc): string {
   const parts: string[] = [];
   if (doc.trimmed > 0)
     parts.push(`<!-- writer:trimmed ${commentJson({ messages: doc.trimmed })} -->`);
+  if (doc.sessionChanges && doc.sessionChanges.length > 0)
+    parts.push(`<!-- writer:session-changes ${commentJson({ files: doc.sessionChanges })} -->`);
   for (const m of doc.messages) parts.push(serializeMessage(m));
   const head = `---\n${lines.join("\n")}\n---\n`;
   return parts.length > 0 ? `${head}\n${parts.join("\n\n")}\n` : head;
@@ -424,9 +430,14 @@ function parseSection(index: number, role: "user" | "assistant", when: string, r
   return message;
 }
 
-export function parseBody(body: string): { trimmed: number; messages: ChatNoteMessage[] } {
+export function parseBody(body: string): {
+  trimmed: number;
+  sessionChanges?: FileChangeSummary[];
+  messages: ChatNoteMessage[];
+} {
   const lines = body.replace(/\r\n/g, "\n").split("\n");
   let trimmed = 0;
+  let sessionChanges: FileChangeSummary[] | undefined;
   const sections: { role: "user" | "assistant"; when: string; lines: string[] }[] = [];
   for (const line of lines) {
     const h = /^## (user|assistant) ·(.*)$/.exec(line);
@@ -437,10 +448,13 @@ export function parseBody(body: string): { trimmed: number; messages: ChatNoteMe
     } else {
       const t = jsonOr<{ messages?: number }>(payload(line, "trimmed"));
       if (t && typeof t.messages === "number") trimmed = t.messages;
+      const c = jsonOr<{ files?: unknown }>(payload(line, "session-changes"));
+      if (c && Array.isArray(c.files)) sessionChanges = c.files as FileChangeSummary[];
     }
   }
   return {
     trimmed,
+    ...(sessionChanges ? { sessionChanges } : {}),
     messages: sections.map((s, i) => parseSection(i, s.role, s.when, s.lines)),
   };
 }
@@ -463,8 +477,14 @@ export function parseChatNote(text: string): ChatNoteDoc {
     .filter((b) => !isOurs(b.key))
     .map((b) => b.raw)
     .join("\n");
-  const { trimmed, messages } = parseBody(normalized.slice(m[0].length));
-  return { meta, messages, trimmed, extraFrontmatter: extra };
+  const { trimmed, sessionChanges, messages } = parseBody(normalized.slice(m[0].length));
+  return {
+    meta,
+    messages,
+    trimmed,
+    ...(sessionChanges ? { sessionChanges } : {}),
+    extraFrontmatter: extra,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------

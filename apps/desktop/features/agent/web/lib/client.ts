@@ -36,6 +36,7 @@ export interface AgentClient {
   reload(args: Args<"agent_reload">): Promise<Result<"agent_reload">>;
   close(args: Args<"agent_close">): Promise<void>;
   turnChanges(args: Args<"agent_turn_changes">): Promise<Result<"agent_turn_changes">>;
+  sessionChanges(args: Args<"agent_session_changes">): Promise<Result<"agent_session_changes">>;
   revertChanges(args: Args<"agent_revert_changes">): Promise<Result<"agent_revert_changes">>;
   listSkills(args: Args<"agent_list_skills">): Promise<Result<"agent_list_skills">>;
   snapshot(args: Args<"agent_snapshot">): Promise<Result<"agent_snapshot">>;
@@ -59,6 +60,7 @@ export function createTauriAgentClient(): AgentClient {
     reload: (a) => call("agent_reload", a),
     close: (a) => done(call("agent_close", a)),
     turnChanges: (a) => call("agent_turn_changes", a),
+    sessionChanges: (a) => call("agent_session_changes", a),
     revertChanges: (a) => call("agent_revert_changes", a),
     listSkills: (a) => call("agent_list_skills", a),
     snapshot: (a) => call("agent_snapshot", a),

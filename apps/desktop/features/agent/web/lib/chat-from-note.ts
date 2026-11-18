@@ -8,6 +8,7 @@ import { imageRef } from "./chat-images";
 import type { ChatSummary } from "./events";
 import { createChat } from "./reduce";
 import type { Chat, SubagentMeta, ToolBlock, Turn, UserMessage } from "./transcript";
+import { restoreSessionChanges } from "./session-changes";
 
 function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
   return (m.tools ?? []).map((t) => ({
@@ -113,5 +114,6 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
     turns,
     resumeSessionId: doc.meta.sessionId ?? doc.meta.chatId,
     totalCostUsd: doc.meta.usage?.costUsd ?? 0,
+    ...(doc.sessionChanges ? { sessionChanges: restoreSessionChanges(doc.sessionChanges) } : {}),
   };
 }

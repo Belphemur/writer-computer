@@ -319,6 +319,19 @@ pub async fn agent_turn_changes<R: Runtime>(
     blocking(move || Ok(sessions(&app).changes().detail(&chat_id, &turn_id, &root))).await
 }
 
+/// The chat's session diff: every note it changed against its first-touch version since Writer
+/// started (`null`: the chat has touched no file since). Spec "Turn changes".
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_session_changes<R: Runtime>(
+    chat_id: ChatId,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<Option<SessionChanges>, AppError> {
+    let root = root_of(&app, &webview)?;
+    blocking(move || Ok(sessions(&app).changes().session_detail(&chat_id, &root))).await
+}
+
 /// Undo: restore the pre-turn content of `paths`. One outcome per path; a file that changed since
 /// the turn ended is refused, never overwritten. `null` when the snapshot is gone.
 #[tauri::command]

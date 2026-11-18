@@ -5,6 +5,12 @@
  */
 import type { AgentEvent, ContextRef } from "./events";
 import {
+  foldSessionChanges,
+  restoreSessionChanges,
+  sessionChangesFiles,
+  type SessionChangesState,
+} from "./session-changes";
+import {
   type ChatNoteDoc,
   type ChatNoteMessage,
   type ChatNoteMeta,
@@ -24,6 +30,8 @@ export type NoteState = {
   messages: ChatNoteMessage[];
   trimmed: number;
   extraFrontmatter: string;
+  /** The notes the chat changed (paths and counts), written before the first message. */
+  sessionChanges?: SessionChangesState;
   /** Events of the turn in flight, folded into the assistant message at `turn-finished`. */
   pending: AgentEvent[];
   /** Steers sent into the turn in flight: they join the note after that turn's assistant message
@@ -47,6 +55,7 @@ export function noteStateFromDoc(doc: ChatNoteDoc): NoteState {
     messages: doc.messages,
     trimmed: doc.trimmed,
     extraFrontmatter: doc.extraFrontmatter,
+    ...(doc.sessionChanges ? { sessionChanges: restoreSessionChanges(doc.sessionChanges) } : {}),
     pending: [],
   };
 }
@@ -96,6 +105,13 @@ export function recordEvents(
         next = { ...next, messages };
         finished = true;
       }
+      continue;
+    }
+    if (ev.type === "session-changes") {
+      // not part of a message: the list the note keeps before the first one. A write is due
+      // only between turns (the turn's own end writes the note when one is in flight)
+      next = { ...next, sessionChanges: foldSessionChanges(next.sessionChanges, ev) };
+      if (next.pending.length === 0) finished = true;
       continue;
     }
     if (ev.type === "subagent-status") {
@@ -197,6 +213,7 @@ export function buildNote(
     messages: note.messages,
     trimmed: note.trimmed,
     extraFrontmatter: note.extraFrontmatter,
+    sessionChanges: note.sessionChanges ? sessionChangesFiles(note.sessionChanges) : undefined,
   };
   return { markdown: serializeChatNote(doc), titleHint };
 }

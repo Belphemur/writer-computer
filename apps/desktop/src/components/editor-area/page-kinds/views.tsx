@@ -20,6 +20,7 @@ import type { ImageLocation } from "./image";
 import type { LauncherLocation } from "./launcher";
 import type { PluginFileLocation } from "./plugin-file";
 import type { PluginViewLocation } from "./plugin-view";
+import type { SessionChangesLocation } from "./session-changes";
 import type { SettingsLocation } from "./settings";
 import type { PageKindView } from "./types";
 
@@ -99,6 +100,9 @@ const views = {
   } satisfies PageKindView<SettingsLocation>,
   "plugin-view": featureView("plugin-view") satisfies PageKindView<PluginViewLocation>,
   "plugin-file": featureView("plugin-file") satisfies PageKindView<PluginFileLocation>,
+  "session-changes": featureView("session-changes", {
+    feature: "agent",
+  }) satisfies PageKindView<SessionChangesLocation>,
 } as const;
 
 /** Resolve a location to its registered view. Throws on an unknown kind —

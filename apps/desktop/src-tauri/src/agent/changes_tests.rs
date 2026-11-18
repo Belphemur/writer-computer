@@ -446,3 +446,191 @@ fn memory_writes_are_not_changes_but_note_edits_in_the_same_turn_are() {
     assert_eq!(s.files.len(), 1);
     assert_eq!(file(&s, "a.md").status, ChangeStatus::Modified);
 }
+
+// ---- the chat's session: first-touch baselines across turns (ADR 2026-11-18, changed notes row) ----
+
+fn sess(store: &ChangeStore, root: &Path) -> SessionChangesSummary {
+    store.session_summary(CHAT, root).unwrap()
+}
+
+fn sess_file<'a>(s: &'a SessionChangesSummary, rel: &str) -> &'a FileChangeSummary {
+    s.files.iter().find(|f| f.path == rel).unwrap()
+}
+
+#[test]
+fn the_first_touch_is_the_baseline_across_turns_and_later_turns_do_not_move_it() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    assert!(store.session_summary(CHAT, &root).is_none(), "no write yet");
+    std::fs::write(root.join("a.md"), "one\ntwo\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "one\nTWO\n").unwrap();
+    finish(&store).unwrap();
+    assert_eq!(sess_file(&sess(&store, &root), "a.md").added, 1);
+    // turn 2 edits the same file again: the turn card diffs against turn 2's pre-image only,
+    // the session still against the text before turn 1
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "one\nTWO\nthree\n").unwrap();
+    let turn2 = finish(&store).unwrap();
+    assert_eq!((turn2.files[0].added, turn2.files[0].removed), (1, 0));
+    let s = sess(&store, &root);
+    assert_eq!(s.files.len(), 1);
+    assert_eq!(
+        (sess_file(&s, "a.md").added, sess_file(&s, "a.md").removed),
+        (2, 1)
+    );
+    // and the live list needs no turn end: the disk is read when asked
+    std::fs::write(root.join("a.md"), "one\ntwo\n").unwrap();
+    assert!(
+        sess(&store, &root).files.is_empty(),
+        "edited back: not changed"
+    );
+}
+
+#[test]
+fn a_sub_agent_edit_counts_and_the_first_author_is_kept() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "x\n").unwrap();
+    let worker = Author {
+        label: "worker".into(),
+        call_id: "toolu_agent1".into(),
+    };
+    store.capture_by(
+        CHAT,
+        &root,
+        &root,
+        "Write",
+        &json!({ "file_path": path(&root, "a.md") }),
+        Some(&worker),
+    );
+    std::fs::write(root.join("a.md"), "x\ny\n").unwrap();
+    finish(&store).unwrap();
+    // the main agent edits it later: the session keeps the first author
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "x\ny\nz\n").unwrap();
+    let f = sess(&store, &root).files.remove(0);
+    assert_eq!((f.added, f.removed), (2, 0));
+    assert_eq!(f.by.as_deref(), Some("worker"));
+    assert_eq!(f.by_call.as_deref(), Some("toolu_agent1"));
+}
+
+#[test]
+fn the_session_knows_created_modified_deleted_and_renamed_files() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("mod.md"), "a\n").unwrap();
+    std::fs::write(root.join("gone.md"), "bye\n").unwrap();
+    std::fs::write(root.join("old.md"), "same\n").unwrap();
+    for (tool, rel) in [
+        ("Edit", "mod.md"),
+        ("Write", "new.md"),
+        ("Edit", "gone.md"),
+        ("Edit", "old.md"),
+        ("Write", "moved.md"),
+    ] {
+        cap(&store, &root, tool, rel);
+    }
+    std::fs::write(root.join("mod.md"), "b\n").unwrap();
+    std::fs::write(root.join("new.md"), "n1\nn2\n").unwrap();
+    std::fs::remove_file(root.join("gone.md")).unwrap();
+    std::fs::rename(root.join("old.md"), root.join("moved.md")).unwrap();
+    let s = sess(&store, &root);
+    assert_eq!(sess_file(&s, "mod.md").status, ChangeStatus::Modified);
+    assert_eq!(sess_file(&s, "new.md").status, ChangeStatus::Added);
+    assert_eq!(sess_file(&s, "new.md").added, 2);
+    assert_eq!(sess_file(&s, "gone.md").status, ChangeStatus::Deleted);
+    let moved = sess_file(&s, "moved.md");
+    assert_eq!(moved.status, ChangeStatus::Renamed);
+    assert_eq!(moved.old_path.as_deref(), Some("old.md"));
+    assert_eq!(s.files.len(), 4);
+}
+
+#[test]
+fn the_session_detail_diffs_each_file_against_its_first_touch_version() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "keep\nold\n").unwrap();
+    std::fs::write(root.join("gone.md"), "removed text\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    cap(&store, &root, "Write", "n.md");
+    cap(&store, &root, "Edit", "gone.md");
+    std::fs::write(root.join("a.md"), "keep\nmid\n").unwrap();
+    finish(&store).unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "keep\nnew\n").unwrap();
+    std::fs::write(root.join("n.md"), "fresh\n").unwrap();
+    std::fs::remove_file(root.join("gone.md")).unwrap();
+    let d = store.session_detail(CHAT, &root).unwrap();
+    let rows = |rel: &str| {
+        let f = d.files.iter().find(|f| f.summary.path == rel).unwrap();
+        f.rows
+            .iter()
+            .map(|r| (r.kind, r.text.clone()))
+            .collect::<Vec<_>>()
+    };
+    // "mid" never shows: the baseline is the text before the first turn
+    assert_eq!(
+        rows("a.md"),
+        vec![
+            (DiffRowKind::Context, "keep".into()),
+            (DiffRowKind::Del, "old".into()),
+            (DiffRowKind::Add, "new".into())
+        ]
+    );
+    assert_eq!(rows("n.md"), vec![(DiffRowKind::Add, "fresh".into())]);
+    assert_eq!(
+        rows("gone.md"),
+        vec![(DiffRowKind::Del, "removed text".into())]
+    );
+}
+
+#[test]
+fn session_limits_and_exclusions_are_those_of_the_card() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    // binary and over-size files are listed without a diff
+    std::fs::write(root.join("bin.dat"), [0u8, 1, 2]).unwrap();
+    std::fs::write(root.join("big.md"), vec![b'x'; MAX_FILE_BYTES as usize + 1]).unwrap();
+    cap(&store, &root, "Write", "bin.dat");
+    cap(&store, &root, "Write", "big.md");
+    std::fs::write(root.join("bin.dat"), [0u8, 9, 9, 9]).unwrap();
+    std::fs::write(root.join("big.md"), vec![b'y'; MAX_FILE_BYTES as usize + 2]).unwrap();
+    // memory folders, outside paths and `..` are never tracked
+    cap(&store, &root, "Write", ".writer/memory/MEMORY.md");
+    let outside = TempDir::new().unwrap();
+    std::fs::write(outside.path().join("o.md"), "o").unwrap();
+    store.capture(
+        CHAT,
+        &root,
+        &root,
+        "Write",
+        &json!({ "file_path": outside.path().join("o.md").to_string_lossy() }),
+    );
+    cap(&store, &root, "Write", "../escape.md");
+    let s = sess(&store, &root);
+    assert_eq!(s.files.len(), 2);
+    assert!(s.files.iter().all(|f| f.no_diff));
+    let d = store.session_detail(CHAT, &root).unwrap();
+    assert!(d.files.iter().all(|f| f.rows.is_empty()));
+    // a baseline over the session budget keeps a fingerprint: listed, no diff
+    let small = ChangeStore::with_cap(10);
+    std::fs::write(root.join("a.md"), "x".repeat(50)).unwrap();
+    cap(&small, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "y".repeat(51)).unwrap();
+    assert!(sess(&small, &root).files[0].no_diff);
+}
+
+#[test]
+fn a_session_is_per_chat_and_per_vault() {
+    let (_d, root) = vault();
+    let (_d2, other) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "1\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "2\n").unwrap();
+    assert!(store.session_summary("chat-2", &root).is_none());
+    assert!(store.session_summary(CHAT, &other).is_none());
+    assert!(store.session_detail("chat-2", &root).is_none());
+    assert_eq!(sess(&store, &root).files.len(), 1);
+}

@@ -207,6 +207,14 @@ export function createPluginFileTab(
   return { id, location: { kind: "plugin-file", ...target }, back: [], forward: [] };
 }
 
+/** A tab for the diff of a chat's changed notes, scrolled to `focus`. */
+export function createSessionChangesTab(
+  target: { chatId: string; focus?: string },
+  id = createTabId(),
+): Tab {
+  return { id, location: { kind: "session-changes", ...target }, back: [], forward: [] };
+}
+
 const EMPTY_STATS: DocumentStats = { words: 0, characters: 0, paragraphs: 0 };
 
 /** A copy of `files` with a loading entry for `path`, or `undefined` when none is needed:

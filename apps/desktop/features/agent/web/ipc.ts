@@ -91,6 +91,8 @@ export interface AgentCommands {
   agent_snapshot: Command<"agent_snapshot", { chatId: string; afterSeq: number }>;
   /** The diffs of a finished turn; `null` once the in-memory snapshot is gone (app restart). */
   agent_turn_changes: Command<"agent_turn_changes", { chatId: string; turnId: string }>;
+  /** The chat's session diff (every note it changed against its first touch); `null`: none yet. */
+  agent_session_changes: Command<"agent_session_changes", { chatId: string }>;
   /** Undo: restore the pre-turn content; one outcome per path; `null` when the snapshot is gone. */
   agent_revert_changes: Command<
     "agent_revert_changes",

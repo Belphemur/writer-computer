@@ -3,6 +3,7 @@ import {
   createGraphTab,
   createPluginFileTab,
   createPluginViewTab,
+  createSessionChangesTab,
   createSettingsTab,
   useEditorStore,
 } from "@/stores/editor-store";
@@ -76,6 +77,22 @@ export function openGraphTab(target: { center?: string; depth?: number } = {}) {
     (tab) => tab.location.kind === "graph",
     () => createGraphTab(target),
   );
+}
+
+/** Opens (or focuses) the Session changes tab of a chat, scrolled to `focus` (a vault-relative
+ *  path). One tab per chat: a second "Diff" re-targets it. */
+export function openSessionChangesTab(target: { chatId: string; focus?: string }) {
+  const matches = (tab: { location: Location }) =>
+    tab.location.kind === "session-changes" && tab.location.chatId === target.chatId;
+  const store = useEditorStore.getState();
+  if (store.tabs.some(matches)) {
+    useEditorStore.setState((state) => ({
+      tabs: state.tabs.map((tab) =>
+        matches(tab) ? { ...tab, location: { kind: "session-changes", ...target } } : tab,
+      ),
+    }));
+  }
+  store.openOrFocus(matches, () => createSessionChangesTab(target));
 }
 
 /** Persist a graph tab's camera and pins in its location (restored with the session). */

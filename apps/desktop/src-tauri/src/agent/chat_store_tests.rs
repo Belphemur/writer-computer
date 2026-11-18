@@ -629,3 +629,16 @@ what is this?\n\n\
     assert_eq!(plain.turns[0].text, "![[x.png]]");
     assert_eq!(plain.turns[0].images, None);
 }
+
+#[test]
+fn bound_note_keeps_the_session_changes_list_it_trims_around() {
+    let list = r#"<!-- writer:session-changes {"files":[{"path":"a.md","status":"modified","added":1,"removed":0}]} -->"#;
+    let mut t = big_note(700);
+    let before_first_message = t.find("\n## user").unwrap();
+    t.insert_str(before_first_message, &format!("\n{list}\n"));
+    let b = bound_note(&t, 20_000);
+    assert!(b.len() <= 20_000);
+    assert!(b.contains("writer:trimmed"));
+    assert!(b.contains(list), "the list survives a trim");
+    assert!(parse_note(&b).is_ok());
+}

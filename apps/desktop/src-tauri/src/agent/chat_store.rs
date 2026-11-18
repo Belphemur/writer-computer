@@ -35,6 +35,9 @@
 //!
 //! `writer:changes` (optional, assistant messages, always last) is the "Changes" card's compact
 //! summary: paths, status and +/- counts, never file contents. Notes without it are unchanged.
+//! `<!-- writer:session-changes {"files":[...]} -->` (optional, before the first message, after
+//! `writer:trimmed`) is the same kind of list for the whole chat (the row above the composer);
+//! `bound_note` keeps it when it trims.
 //!
 //! A message line that would read as structure (`## user ·`, `## assistant ·`, `> context:`,
 //! `<!-- writer:`) is stored with a leading U+200B and unescaped on read, so splitting the file on
@@ -923,10 +926,17 @@ pub fn bound_note(text: &str, max: usize) -> String {
     let Some(&first) = starts.first() else {
         return cut_at_boundary(text, max);
     };
-    let already = parse_body(&text[body_start..first]).trimmed;
+    let before = &text[body_start..first];
+    let already = parse_body(before).trimmed;
+    // the chat's changed-notes list (paths and counts) sits before the first message too
+    let session = before
+        .lines()
+        .find(|l| comment_payload(l, "session-changes").is_some())
+        .map(|l| format!("{l}\n"))
+        .unwrap_or_default();
     let head = &text[..body_start];
     // Keep the longest suffix of whole sections that fits with the marker.
-    let reserve = head.len() + 80;
+    let reserve = head.len() + 80 + session.len();
     let mut keep_from = starts.len() - 1;
     let mut size = text.len() - starts[keep_from];
     while keep_from > 0 {
@@ -944,7 +954,7 @@ pub fn bound_note(text: &str, max: usize) -> String {
         out.push('\n');
     }
     out.push_str(&format!(
-        "\n<!-- writer:trimmed {{\"messages\":{dropped}}} -->\n\n"
+        "\n<!-- writer:trimmed {{\"messages\":{dropped}}} -->\n{session}\n"
     ));
     out.push_str(&text[starts[keep_from]..]);
     if out.len() > max {

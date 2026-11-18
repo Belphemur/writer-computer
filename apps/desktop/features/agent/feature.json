@@ -41,6 +41,7 @@
       "agent_revert_changes",
       "agent_save_chat",
       "agent_save_chat_image",
+      "agent_session_changes",
       "agent_send",
       "agent_set_model",
       "agent_set_permission_mode",

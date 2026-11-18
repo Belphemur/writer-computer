@@ -59,6 +59,7 @@ import { reconcileRefs } from "@features/agent/web/lib/draft-refs";
 import { createRefIo, prepareRefs, type RefIo } from "@features/agent/web/lib/ref-resolve";
 import { chatFromNote } from "@features/agent/web/lib/chat-from-note";
 import { parseChatNote } from "@features/agent/web/lib/chat-note";
+import { hideSessionChanges } from "@features/agent/web/lib/session-changes";
 import { createChatSaver, type ChatSaver } from "@features/agent/web/lib/chat-saver";
 import {
   chatHistoryClient,
@@ -167,6 +168,8 @@ interface AgentState {
    *  queued messages are (one merged message, the chip clears). */
   sendNow: (text: string) => Promise<void>;
   removeQueued: (chatId: ChatId) => void;
+  /** The x of the changed-notes row: hidden until the list changes again. */
+  hideSessionChanges: (chatId: ChatId) => void;
   stop: () => Promise<void>;
   decidePermission: (
     requestId: string,
@@ -955,6 +958,15 @@ export const useAgentStore = create<AgentState>((set, get) => {
       get().removeQueued(chatId);
       await deliver(chatId, queued.text, queued.context, { steer: canSteer(chat) });
     },
+    hideSessionChanges: (chatId) =>
+      set((s) => {
+        const chat = s.chats[chatId];
+        if (!chat?.sessionChanges) return s;
+        return withChat(s, chatId, {
+          ...chat,
+          sessionChanges: hideSessionChanges(chat.sessionChanges),
+        });
+      }),
     removeQueued: (chatId) =>
       set((s) => {
         const { [chatId]: _q, ...queued } = s.queued;
@@ -1105,9 +1117,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     ingest: (chatId, incoming, lastSeq) => {
       if (!get().chats[chatId]) return;
-      // `agent.show-turn-changes` off: the card (and its note summary) never appears
+      // `agent.show-turn-changes` off: the card (and its note summary) and the changed-notes
+      // row never appear
       const showChanges = useSettingsStore.getState().settings["agent.show-turn-changes"] !== false;
-      const events = showChanges ? incoming : incoming.filter((e) => e.type !== "turn-changes");
+      const events = showChanges
+        ? incoming
+        : incoming.filter((e) => e.type !== "turn-changes" && e.type !== "session-changes");
       const now = Date.now();
       let finished = false;
       const refused = refusedModelFrom(events);

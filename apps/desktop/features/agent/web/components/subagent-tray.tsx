@@ -4,8 +4,19 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   Cancel01Icon,
+  Edit02Icon,
+  File02Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
+import { openSessionChangesTab } from "@/hooks/editor-api";
+import { useAgentStore } from "@features/agent/web/stores/agent-store";
+import {
+  changedNotesLabel,
+  noteParts,
+  selectSessionChanges,
+  STATUS_MARK,
+  type SessionChangesView,
+} from "@features/agent/web/lib/session-changes";
 import { formatDuration, segmentBlocks } from "@features/agent/web/lib/timeline";
 import { shortModelName } from "@features/agent/web/lib/model-label";
 import {
@@ -22,6 +33,8 @@ import {
 } from "@features/agent/web/lib/subagents";
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { Ico, Spinner } from "./agent-icon";
+import { vaultLinkHandlers } from "./agent-links";
+import { Counts } from "./change-parts";
 import { roleIcon } from "./role-icons";
 import { SegmentList, STATE_TEXT } from "./subagent-card";
 
@@ -143,14 +156,109 @@ function TrayLine({
   );
 }
 
+/** One note of the changed-notes row: its name opens it like a link (middle and Cmd/Ctrl+click
+ *  open a new tab), "Diff" opens the Session changes tab scrolled to it. */
+function ChangedNote({ chatId, f }: { chatId: string; f: SessionChangesView["files"][number] }) {
+  const { name, folder } = noteParts(f.path);
+  const mark = STATUS_MARK[f.status];
+  const deleted = f.status === "deleted";
+  return (
+    <li
+      data-agent-changed-note={f.path}
+      className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] hover:bg-[var(--item-hover-bg)]"
+    >
+      <Ico icon={File02Icon} size={13} className="shrink-0 text-text-icon-muted" />
+      {deleted ? (
+        <span className="min-w-0 truncate text-text-muted line-through" title={f.path}>
+          {name}
+        </span>
+      ) : (
+        <button
+          type="button"
+          title={f.path}
+          aria-label={`Open ${f.path}`}
+          {...vaultLinkHandlers(f.path)}
+          className="min-w-0 truncate text-left text-text-primary underline-offset-2 hover:underline"
+        >
+          {name}
+        </button>
+      )}
+      {folder && (
+        <span className="min-w-0 flex-1 truncate text-[11px] text-text-muted">{folder}</span>
+      )}
+      {mark && (
+        <span data-agent-changed-mark={mark} className="shrink-0 text-[11px] text-text-muted">
+          {mark}
+        </span>
+      )}
+      {!f.noDiff && <Counts added={f.added} removed={f.removed} />}
+      <button
+        type="button"
+        aria-label={`Diff of ${f.path}`}
+        onClick={() => openSessionChangesTab({ chatId, focus: f.path })}
+        className="ml-auto shrink-0 rounded-md border border-border px-1.5 py-0 text-[11px] text-text-secondary hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
+      >
+        Diff
+      </button>
+    </li>
+  );
+}
+
+/** "Changed N notes +A −D": every note this chat changed (all turns, sub-agents included),
+ *  one line that expands into one row per note; the x hides it until the list changes again.
+ *  Reads the chat's one session-changes selector, the same the Session changes tab reads. */
+function ChangedNotesRow({ chat, view }: { chat: Chat; view: SessionChangesView }) {
+  const [open, setOpen] = useState(false);
+  const hide = useAgentStore((s) => s.hideSessionChanges);
+  const listId = useId();
+  return (
+    <div data-agent-changed-notes className="rounded-md">
+      <div className="flex items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[12px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
+        >
+          <Ico icon={Edit02Icon} size={13} className="shrink-0 text-text-icon-muted" />
+          <span data-agent-changed-label className="min-w-0 truncate">
+            {changedNotesLabel(view.files.length)}
+          </span>
+          <Counts added={view.added} removed={view.removed} />
+          <Ico icon={open ? ArrowDown01Icon : ArrowRight01Icon} size={12} className="ml-auto" />
+        </button>
+        <button
+          type="button"
+          aria-label="Hide changed notes"
+          onClick={() => hide(chat.chatId)}
+          className="shrink-0 rounded-md p-1 text-text-icon-muted hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
+        >
+          <Ico icon={Cancel01Icon} size={12} />
+        </button>
+      </div>
+      {open && (
+        <ul id={listId} aria-label="Changed notes" className="max-h-48 space-y-0.5 overflow-y-auto">
+          {view.files.map((f) => (
+            <ChangedNote key={f.path} chatId={chat.chatId} f={f} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
- * The sub-agent tray, just above the composer (spec "Sub-agent tray", ADR 2026-11-18): one line
- * per run still going or ended since the user's last message (they clear at the next send). From
- * three runs on it folds into one summary line that expands. Reads the chat's own sub-agent state,
- * the same the transcript reads. A list; status changes are announced politely.
+ * The tray just above the composer (spec "Sub-agent tray" and "Changed notes row", ADRs
+ * 2026-11-18): one line per sub-agent run still going or ended since the user's last message
+ * (they clear at the next send; from three runs on they fold into one summary line that
+ * expands), and below them the changed-notes row. Reads the chat's own state, the same the
+ * transcript and the Session changes tab read. A list; status changes are announced politely.
  */
 export function SubagentTray({ chat }: { chat: Chat }) {
   const runs = useMemo(() => trayRuns(chat), [chat]);
+  const sessionChanges = chat.sessionChanges;
+  const changes = useMemo(() => selectSessionChanges({ sessionChanges }), [sessionChanges]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [unfolded, setUnfolded] = useState(false);
   const now = useNow(runs.some((r) => r.state === "running"));
@@ -159,40 +267,46 @@ export function SubagentTray({ chat }: { chat: Chat }) {
     .filter((r) => r.state !== "running")
     .map((r) => `${subagentTask(r) || subagentLabel(r)}: ${STATE_TEXT[r.state]}`)
     .join(". ");
-  if (runs.length === 0) return null;
+  const row = changes && !changes.hidden ? changes : null;
+  if (runs.length === 0 && !row) return null;
   const folded = runs.length >= FOLD_AT && !unfolded;
   return (
-    <section data-agent-tray aria-label="Sub-agents" className="px-3 pt-1.5">
-      <div role="status" aria-live="polite" className="sr-only" data-agent-tray-live>
-        {announce}
-      </div>
-      {runs.length >= FOLD_AT && (
-        <button
-          type="button"
-          aria-expanded={!folded}
-          aria-controls={folded ? undefined : listId}
-          data-agent-tray-summary
-          onClick={() => setUnfolded(folded)}
-          className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[12px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
-        >
-          {runs.some((r) => r.state === "running") && <Spinner size={12} />}
-          <span className="min-w-0 flex-1 truncate">{summaryText(runs)}</span>
-          <Ico icon={folded ? ArrowRight01Icon : ArrowDown01Icon} size={12} />
-        </button>
+    <section data-agent-tray className="px-3 pt-1.5">
+      {runs.length > 0 && (
+        <div aria-label="Sub-agents" role="group">
+          <div role="status" aria-live="polite" className="sr-only" data-agent-tray-live>
+            {announce}
+          </div>
+          {runs.length >= FOLD_AT && (
+            <button
+              type="button"
+              aria-expanded={!folded}
+              aria-controls={folded ? undefined : listId}
+              data-agent-tray-summary
+              onClick={() => setUnfolded(folded)}
+              className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[12px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
+            >
+              {runs.some((r) => r.state === "running") && <Spinner size={12} />}
+              <span className="min-w-0 flex-1 truncate">{summaryText(runs)}</span>
+              <Ico icon={folded ? ArrowRight01Icon : ArrowDown01Icon} size={12} />
+            </button>
+          )}
+          {!folded && (
+            <ul id={listId} className="space-y-0.5" aria-label="Sub-agent runs">
+              {runs.map((run) => (
+                <TrayLine
+                  key={run.id}
+                  run={run}
+                  now={now}
+                  open={openId === run.id}
+                  onToggle={() => setOpenId(openId === run.id ? null : run.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
       )}
-      {!folded && (
-        <ul id={listId} className="space-y-0.5" aria-label="Sub-agent runs">
-          {runs.map((run) => (
-            <TrayLine
-              key={run.id}
-              run={run}
-              now={now}
-              open={openId === run.id}
-              onToggle={() => setOpenId(openId === run.id ? null : run.id)}
-            />
-          ))}
-        </ul>
-      )}
+      {row && <ChangedNotesRow chat={chat} view={row} />}
     </section>
   );
 }

@@ -254,6 +254,10 @@ pub enum AgentEvent {
     /// Runner-originated, right after `turn-finished`: the vault files the agent changed during
     /// the turn (compact, no contents). Only sent when something changed. See `changes.rs`.
     TurnChanges(TurnChangesSummary),
+    /// Runner-originated: every note this chat has changed so far (the row above the composer),
+    /// sent when an edit's tool call ends and at the end of a turn (only when the list changed). Never
+    /// stored in the transcript; the chat note keeps the list (paths and counts). See `changes.rs`.
+    SessionChanges(SessionChangesSummary),
     SessionEnded {
         reason: SessionEndReason,
         exit_code: Option<i32>,
@@ -402,6 +406,14 @@ pub struct TurnChangesSummary {
     pub bash: bool,
 }
 
+/// The whole chat's changed notes against their first-touch versions, in first-touch order.
+/// Paths and counts only; the entries are [`FileChangeSummary`] (`by` is the first author).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionChangesSummary {
+    pub files: Vec<FileChangeSummary>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiffRowKind {
@@ -443,6 +455,24 @@ pub struct FileChange {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
     pub undo: UndoState,
+}
+
+/// One note of the session diff: its summary and the diff against the first-touch version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionFileChange {
+    #[serde(flatten)]
+    pub summary: FileChangeSummary,
+    pub rows: Vec<DiffRow>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// Reply of `agent_session_changes`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionChanges {
+    pub files: Vec<SessionFileChange>,
 }
 
 /// Reply of `agent_turn_changes`: the summary plus every diff.
@@ -893,6 +923,7 @@ mod tests {
                 exit_code: None,
                 signal: Some("SIGTERM".into()),
             },
+            AgentEvent::SessionChanges(SessionChangesSummary { files: vec![] }),
             AgentEvent::TurnChanges(TurnChangesSummary {
                 turn_id: "t1".into(),
                 files: vec![FileChangeSummary {

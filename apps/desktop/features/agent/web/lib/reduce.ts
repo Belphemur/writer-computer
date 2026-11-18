@@ -17,6 +17,7 @@ import type {
   SubagentRunStatus,
 } from "./events";
 import { contextTokensOf } from "./context-usage";
+import { foldSessionChanges } from "./session-changes";
 import type {
   Block,
   Chat,
@@ -573,6 +574,9 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       turns[i] = { ...turn, changes: summary };
       return { ...chat, turns };
     }
+
+    case "session-changes":
+      return { ...chat, sessionChanges: foldSessionChanges(chat.sessionChanges, event) };
 
     case "error": {
       const error = {

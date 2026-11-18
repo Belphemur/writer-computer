@@ -45,6 +45,11 @@ export const commands = {
 	 */
 	agentTurnChanges: (chatId: string, turnId: string, options?: InvokeOptions) => __TAURI_INVOKE<TurnChanges | null>("plugin:agent|agent_turn_changes", { chatId, turnId }, options),
 	/**
+	 *  The chat's session diff: every note it changed against its first-touch version since Writer
+	 *  started (`null`: the chat has touched no file since). Spec "Turn changes".
+	 */
+	agentSessionChanges: (chatId: string, options?: InvokeOptions) => __TAURI_INVOKE<SessionChanges | null>("plugin:agent|agent_session_changes", { chatId }, options),
+	/**
 	 *  Undo: restore the pre-turn content of `paths`. One outcome per path; a file that changed since
 	 *  the turn ended is refused, never overwritten. `null` when the snapshot is gone.
 	 */
@@ -166,7 +171,15 @@ model?: string | null }) & { apiDurationMs?: never; blockIndex?: never; by?: nev
  */
 {
 	type: "turn-changes",
-} & TurnChangesSummary | ({ type: "session-ended"; reason: SessionEndReason; exitCode: number | null; signal: string | null }) & { apiDurationMs?: never; blockIndex?: never; by?: never; cacheCreationTokens?: never; cacheReadTokens?: never; cliVersion?: never; contextWindow?: never; costUsd?: never; cwd?: never; decisionReason?: never; description?: never; displayName?: never; durationMs?: never; errors?: never; estimatedTokens?: never; input?: never; inputTokens?: never; isError?: never; kind?: never; mcpServers?: never; message?: never; messageId?: never; model?: never; name?: never; numTurns?: never; outcome?: never; output?: never; outputTokens?: never; parentToolCallId?: never; partialJson?: never; permissionMode?: never; phase?: never; report?: never; requestId?: never; requested?: never; resetsAt?: never; resolution?: never; result?: never; retryable?: never; role?: never; scope?: never; sessionId?: never; skills?: never; slashCommands?: never; status?: never; suggestions?: never; text?: never; tool?: never; toolCallId?: never; tools?: never; truncated?: never; using?: never } | 
+} & TurnChangesSummary | 
+/**
+ *  Runner-originated: every note this chat has changed so far (the row above the composer),
+ *  sent when an edit's tool call ends and at the end of a turn (only when the list changed). Never
+ *  stored in the transcript; the chat note keeps the list (paths and counts). See `changes.rs`.
+ */
+{
+	type: "session-changes",
+} & SessionChangesSummary | ({ type: "session-ended"; reason: SessionEndReason; exitCode: number | null; signal: string | null }) & { apiDurationMs?: never; blockIndex?: never; by?: never; cacheCreationTokens?: never; cacheReadTokens?: never; cliVersion?: never; contextWindow?: never; costUsd?: never; cwd?: never; decisionReason?: never; description?: never; displayName?: never; durationMs?: never; errors?: never; estimatedTokens?: never; input?: never; inputTokens?: never; isError?: never; kind?: never; mcpServers?: never; message?: never; messageId?: never; model?: never; name?: never; numTurns?: never; outcome?: never; output?: never; outputTokens?: never; parentToolCallId?: never; partialJson?: never; permissionMode?: never; phase?: never; report?: never; requestId?: never; requested?: never; resetsAt?: never; resolution?: never; result?: never; retryable?: never; role?: never; scope?: never; sessionId?: never; skills?: never; slashCommands?: never; status?: never; suggestions?: never; text?: never; tool?: never; toolCallId?: never; tools?: never; truncated?: never; using?: never } | 
 /**
  *  Runner-originated: the process was replaced (the user's `agent_reload`, or Writer after a
  *  config change, `config_sync.rs`) so it re-reads skills, MCP servers, settings and
@@ -553,7 +566,26 @@ export type RevertOutcome = {
 
 export type RevertResult = "reverted" | "changed-since" | "unavailable" | "failed";
 
+/**  Reply of `agent_session_changes`. */
+export type SessionChanges = {
+	files: SessionFileChange[],
+};
+
+/**
+ *  The whole chat's changed notes against their first-touch versions, in first-touch order.
+ *  Paths and counts only; the entries are [`FileChangeSummary`] (`by` is the first author).
+ */
+export type SessionChangesSummary = {
+	files: FileChangeSummary[],
+};
+
 export type SessionEndReason = "exit" | "killed" | "closed" | "vault-switched";
+
+/**  One note of the session diff: its summary and the diff against the first-touch version. */
+export type SessionFileChange = {
+	rows: DiffRow[],
+	truncated?: boolean,
+} & FileChangeSummary;
 
 export type SnapshotReply = {
 	state: AgentSessionState,

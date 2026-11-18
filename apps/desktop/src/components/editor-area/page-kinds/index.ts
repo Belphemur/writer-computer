@@ -6,6 +6,7 @@ import { imageKind, type ImageLocation } from "./image";
 import { launcherKind, type LauncherLocation } from "./launcher";
 import { pluginFileKind, type PluginFileLocation } from "./plugin-file";
 import { pluginViewKind, type PluginViewLocation } from "./plugin-view";
+import { sessionChangesKind, type SessionChangesLocation } from "./session-changes";
 import { settingsKind, type SettingsLocation } from "./settings";
 import { isFeatureActive } from "@/lib/features/active";
 import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
@@ -27,6 +28,7 @@ const kinds = [
   settingsKind,
   pluginViewKind,
   pluginFileKind,
+  sessionChangesKind,
 ] as const;
 
 export type Location =
@@ -38,7 +40,8 @@ export type Location =
   | LauncherLocation
   | SettingsLocation
   | PluginViewLocation
-  | PluginFileLocation;
+  | PluginFileLocation
+  | SessionChangesLocation;
 
 const byKind: Map<string, AnyPageKind> = new Map(
   kinds.map((k) => [k.kind, k as unknown as AnyPageKind]),
@@ -107,3 +110,4 @@ export type { LauncherLocation } from "./launcher";
 export type { SettingsLocation } from "./settings";
 export type { PluginViewLocation } from "./plugin-view";
 export type { PluginFileLocation } from "./plugin-file";
+export type { SessionChangesLocation } from "./session-changes";

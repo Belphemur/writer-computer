@@ -56,11 +56,11 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] The row appears on the chat's first write and counts across turns, sub-agent edits included.
-- [ ] Closing it, then a new write, brings it back.
-- [ ] "Diff" opens a Session changes tab showing each note against its first-touch version.
-- [ ] After reopening the chat, the list and counts remain and the diff is marked "since Writer restarted".
-- [ ] No note text is written to disk or logged.
+- [x] The row appears on the chat's first write and counts across turns, sub-agent edits included.
+- [x] Closing it, then a new write, brings it back.
+- [x] "Diff" opens a Session changes tab showing each note against its first-touch version.
+- [x] After reopening the chat, the list and counts remain and the diff is marked "since Writer restarted".
+- [x] No note text is written to disk or logged.
 
 ## Pros and Cons of the Options
 

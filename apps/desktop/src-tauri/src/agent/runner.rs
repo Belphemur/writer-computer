@@ -15,7 +15,7 @@
 //! environment values (spec section 8).
 
 use super::binary::is_older_than_verified;
-use super::changes::{ChangeStore, ClosedTurn};
+use super::changes::{is_edit_tool, ChangeStore, ClosedTurn};
 use super::claude_stream::{
     build_args, encode_control_error, encode_interrupt, encode_permission_allow,
     encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_steer_message,
@@ -215,6 +215,8 @@ struct Inner {
     /// (late sub-agent edits join it) until a later `turn-finished` finds none working, or the
     /// process ends.
     changes_deferred: bool,
+    /// The last `session-changes` event sent, so an unchanged list is not sent again.
+    last_session: Option<SessionChangesSummary>,
     pending: HashMap<String, PendingPerm>,
     turn_active: bool,
     queue: VecDeque<Outgoing>,
@@ -420,6 +422,7 @@ impl Session {
                 tool_names: HashMap::new(),
                 subs: SubTracker::default(),
                 changes_deferred: false,
+                last_session: None,
                 pending: HashMap::new(),
                 turn_active: false,
                 queue: VecDeque::new(),
@@ -747,6 +750,8 @@ impl Session {
         // snapshots to take and the turn to finish happen after the lock is released (file IO)
         let mut captures: Vec<(String, Value, Option<Author>)> = Vec::new();
         let mut closed: Option<ClosedTurn> = None;
+        // an edit call ended: the session's counts may have changed
+        let mut edit_ended = false;
         {
             let mut g = self.inner.lock();
             if g.live_gen != Some(gen) {
@@ -801,6 +806,12 @@ impl Session {
                             captures.push((tool.clone(), input.clone(), by));
                         }
                     }
+                    AgentEvent::ToolCallFinished { tool_call_id, .. } => {
+                        edit_ended |= g
+                            .tool_names
+                            .get(tool_call_id)
+                            .is_some_and(|t| is_edit_tool(t));
+                    }
                     // the permission request may come first: the tool has not run yet either
                     AgentEvent::PermissionRequest {
                         tool,
@@ -848,14 +859,34 @@ impl Session {
                 by.as_ref(),
             );
         }
+        let ended_turn = closed.is_some();
         if let Some(turn) = closed {
             if let Some(summary) = self.changes.finish(turn) {
                 self.log.push(AgentEvent::TurnChanges(summary));
             }
         }
+        if edit_ended || ended_turn {
+            self.push_session_changes();
+        }
         if let Some(info) = started {
             self.ports.chats().session_started(&self.root, &info);
         }
+    }
+
+    /// Publishes the chat's changed notes (the row above the composer) unless nothing changed
+    /// since the last one. Reads files: call it without the lock.
+    fn push_session_changes(&self) {
+        let Some(summary) = self.changes.session_summary(&self.chat_id, &self.root) else {
+            return;
+        };
+        {
+            let mut g = self.inner.lock();
+            if g.last_session.as_ref() == Some(&summary) {
+                return;
+            }
+            g.last_session = Some(summary.clone());
+        }
+        self.log.push(AgentEvent::SessionChanges(summary));
     }
 
     /// Fold one mapped event into the state machine, then publish it.
@@ -1194,8 +1225,12 @@ impl Session {
                 }
             }
         }
+        let ended_card = closed.is_some();
         if let Some(summary) = closed.and_then(|turn| self.changes.finish(turn)) {
             self.log.push(AgentEvent::TurnChanges(summary));
+        }
+        if ended_card {
+            self.push_session_changes();
         }
         if let Some((replay, replaced_from)) = respawn {
             let me = Arc::clone(self);

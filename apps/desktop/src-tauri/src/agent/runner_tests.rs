@@ -1607,6 +1607,65 @@ fn a_sub_agent_edit_is_snapshotted_before_it_runs_and_attributed_to_its_role() {
     assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\nline\n");
 }
 
+/// ADR 2026-11-18 (changed notes row): the chat's changed notes are sent live when a sub-agent's
+/// edit call ends (not only at turn end), against the text from before the edit, and the command
+/// behind the "Session changes" tab answers with the diff.
+#[test]
+fn a_sub_agent_edit_sends_the_session_changes_live_and_the_detail_diffs_it() {
+    let mut h = Harness::new(&["subagent-edit"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-edit", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "edit it");
+    h.next(CHAT, "its complete input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_write1")
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\nadded\n").unwrap();
+    h.go();
+
+    let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+        matches!(e, AgentEvent::SessionChanges(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(live.files.len(), 1);
+    let f = &live.files[0];
+    assert_eq!(f.path, "notes.txt");
+    assert_eq!((f.added, f.removed), (2, 1));
+    assert_eq!(f.by.as_deref(), Some("worker"));
+    h.turn_finished(CHAT);
+    h.drain();
+    let seq_of = |h: &Harness, pred: fn(&AgentEvent) -> bool| {
+        h.seen.iter().find(|e| pred(&e.event)).map(|e| e.seq)
+    };
+    assert!(
+        seq_of(&h, |e| matches!(e, AgentEvent::SessionChanges(_)))
+            < seq_of(&h, |e| matches!(e, AgentEvent::TurnFinished { .. })),
+        "sent when the edit ended, before the turn did"
+    );
+    assert_eq!(
+        h.seen
+            .iter()
+            .filter(|e| matches!(e.event, AgentEvent::SessionChanges(_)))
+            .count(),
+        1,
+        "an unchanged list is not sent again at turn end"
+    );
+    let detail = h.sessions.changes().session_detail(CHAT, &h.root).unwrap();
+    let kinds: Vec<_> = detail.files[0].rows.iter().map(|r| r.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            DiffRowKind::Del,
+            DiffRowKind::Add,
+            DiffRowKind::Context,
+            DiffRowKind::Add
+        ]
+    );
+}
+
 /// The UI never resolves a model: `subagent-started` follows the launch call's input with the role
 /// and the model of its tier (the setting the process started with), from the same code that
 /// wrote the `--agents` JSON; a tier that inherits shows the chat's own model.

@@ -34,6 +34,7 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             session::agent_resume::<Wry>,
             session::agent_snapshot::<Wry>,
             session::agent_turn_changes::<Wry>,
+            session::agent_session_changes::<Wry>,
             session::agent_revert_changes::<Wry>,
             skills::agent_list_skills::<Wry>,
             memory::agent_memory_list::<Wry>,

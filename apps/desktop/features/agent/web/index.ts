@@ -131,6 +131,15 @@ export default defineFeature({
         },
       ],
     },
+    // The body of the Session changes tab (the `session-changes` page kind lives in core; this
+    // feature supplies its view, and while the feature is off the tab shows "turned off").
+    slots: [
+      {
+        id: "agent.session-changes",
+        slot: "page-view:session-changes",
+        load: () => import("./components/session-changes-tab").then((m) => m.SessionChangesTab),
+      },
+    ],
     // What other features use to attach notes to the chat (the graph's "Attach to agent chat").
     services: [{ id: AGENT_CONTEXT, service: agentContextService }],
     // The badge on a folder that holds a project.

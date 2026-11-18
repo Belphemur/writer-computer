@@ -20,6 +20,14 @@
 //! the total is exceeded the oldest turn is dropped first. Paths are confined to the vault root
 //! (`vault_ops::confine`: no `..`, no symlink out, no `.git`/`.obsidian`). The agent's memory
 //! folders (`memory::is_memory_rel`) are never tracked: not in the card, not undoable.
+//!
+//! The session. The same capture also keeps, per chat, the first pre-image of every path as that
+//! chat's session baseline (ADR 2026-11-18 "Show a chat's changed notes in a compact row ..."):
+//! [`ChangeStore::session_summary`] and [`ChangeStore::session_detail`] diff the baselines against
+//! the files as they are now, so the row above the composer and the "Session changes" tab read
+//! the one store the turn card reads. Same rules and the same exclusions; the baselines are
+//! memory only and have their own budget of [`MAX_TOTAL_BYTES`] (a baseline that does not fit
+//! keeps a fingerprint: listed, no diff). They live until Writer exits.
 
 use super::events::*;
 use super::line_diff::{counts, diff_lines, split_lines, Edit};
@@ -48,6 +56,11 @@ const MAX_DIFF_LINES: usize = 200_000;
 const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 const PATH_KEYS: [&str; 3] = ["file_path", "notebook_path", "path"];
 const SHELL_TOOL: &str = "Bash";
+
+/// Whether `tool` edits a file (its end is when the session's counts change).
+pub fn is_edit_tool(tool: &str) -> bool {
+    EDIT_TOOLS.contains(&tool)
+}
 
 /// One side of a file: its text, or only a fingerprint when the text cannot be kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,9 +147,27 @@ pub struct ClosedTurn {
     turn: OpenTurn,
 }
 
+/// A chat's first-touch version of one path.
+struct SessionFile {
+    by: Option<Author>,
+    rel: String,
+    abs: PathBuf,
+    base: Snap,
+}
+
+struct Session {
+    root: PathBuf,
+    /// In first-touch order.
+    files: Vec<SessionFile>,
+}
+
 struct Inner {
     finished: VecDeque<Arc<TurnRec>>,
     open: HashMap<String, OpenTurn>,
+    sessions: HashMap<String, Session>,
+    /// Bytes of the session baselines (a budget apart from `used`: a long chat must not starve
+    /// the turn card's pre-images).
+    session_used: usize,
     /// Bytes of every kept snapshot, open and finished.
     used: usize,
     counter: u64,
@@ -297,6 +328,14 @@ fn rows_of(pre: &Snap, end: &Snap) -> (Vec<DiffRow>, bool) {
     (rows, false)
 }
 
+/// The diff rows of an entry (none for a rename, whose content is equal).
+fn rows_for(files: &[FileRec], e: &Entry) -> (Vec<DiffRow>, bool) {
+    match e.status {
+        ChangeStatus::Renamed => (Vec::new(), false),
+        _ => rows_of(&files[e.main].pre, &files[e.main].end),
+    }
+}
+
 /// Whether `f` could be reverted if the disk still matched the end image.
 fn restorable(f: &FileRec) -> bool {
     matches!(f.pre, Snap::Text(_)) && !matches!(f.end, Snap::Opaque(None))
@@ -330,6 +369,8 @@ impl ChangeStore {
             inner: Mutex::new(Inner {
                 finished: VecDeque::new(),
                 open: HashMap::new(),
+                sessions: HashMap::new(),
+                session_used: 0,
                 used: 0,
                 counter: 0,
             }),
@@ -427,6 +468,31 @@ impl ChangeStore {
         }
         if !shell && kept.is_empty() {
             return;
+        }
+        let inner = &mut *g;
+        let session = inner
+            .sessions
+            .entry(chat_id.to_string())
+            .or_insert_with(|| Session {
+                root: root.clone(),
+                files: Vec::new(),
+            });
+        for f in &kept {
+            if session.files.iter().any(|s| s.abs == f.abs) {
+                continue;
+            }
+            let base = if inner.session_used + f.pre.bytes() <= self.max_total {
+                f.pre.clone()
+            } else {
+                read_snap(&f.abs, false)
+            };
+            inner.session_used += base.bytes();
+            session.files.push(SessionFile {
+                by: f.by.clone(),
+                rel: f.rel.clone(),
+                abs: f.abs.clone(),
+                base,
+            });
         }
         g.counter += 1;
         let ms = SystemTime::now()
@@ -531,11 +597,7 @@ impl ChangeStore {
         let files = plan(&t.files)
             .iter()
             .map(|e| {
-                let f = &t.files[e.main];
-                let (rows, truncated) = match e.status {
-                    ChangeStatus::Renamed => (Vec::new(), false),
-                    _ => rows_of(&f.pre, &f.end),
-                };
+                let (rows, truncated) = rows_for(&t.files, e);
                 FileChange {
                     summary: summary_of(&t.files, e),
                     rows,
@@ -549,6 +611,59 @@ impl ChangeStore {
             files,
             bash: t.bash,
         })
+    }
+
+    /// The chat's first-touch versions against the files now, as records the turn code reads
+    /// (`pre` = baseline, `end` = disk). Files are read outside the lock. `None`: this chat has
+    /// no session in this vault.
+    fn session_recs(&self, chat_id: &str, root: &Path) -> Option<Vec<FileRec>> {
+        let root = root.canonicalize().ok()?;
+        let items: Vec<(Option<Author>, String, PathBuf, Snap)> = {
+            let g = self.inner.lock();
+            let s = g.sessions.get(chat_id).filter(|s| s.root == root)?;
+            s.files
+                .iter()
+                .map(|f| (f.by.clone(), f.rel.clone(), f.abs.clone(), f.base.clone()))
+                .collect()
+        };
+        Some(
+            items
+                .into_iter()
+                .map(|(by, rel, abs, pre)| FileRec {
+                    by,
+                    rel,
+                    end: read_snap(&abs, true),
+                    abs,
+                    pre,
+                    reverted: AtomicBool::new(false),
+                })
+                .collect(),
+        )
+    }
+
+    /// Every note this chat changed, compact (the row above the composer). `None` when the chat
+    /// has touched no file. A note edited back to its first version drops out.
+    pub fn session_summary(&self, chat_id: &str, root: &Path) -> Option<SessionChangesSummary> {
+        let recs = self.session_recs(chat_id, root)?;
+        let files = plan(&recs).iter().map(|e| summary_of(&recs, e)).collect();
+        Some(SessionChangesSummary { files })
+    }
+
+    /// The session's diffs (the "Session changes" tab), each note against its first-touch version.
+    pub fn session_detail(&self, chat_id: &str, root: &Path) -> Option<SessionChanges> {
+        let recs = self.session_recs(chat_id, root)?;
+        let files = plan(&recs)
+            .iter()
+            .map(|e| {
+                let (rows, truncated) = rows_for(&recs, e);
+                SessionFileChange {
+                    summary: summary_of(&recs, e),
+                    rows,
+                    truncated,
+                }
+            })
+            .collect();
+        Some(SessionChanges { files })
     }
 
     /// Restores the pre-turn content of `paths` (a rename restores both sides). Per path: refused

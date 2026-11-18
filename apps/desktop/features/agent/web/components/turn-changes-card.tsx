@@ -4,7 +4,6 @@ import type { FileChange, FileChangeSummary } from "@features/agent/web/lib/even
 import {
   defaultExpanded,
   filesChangedLabel,
-  middleTruncate,
   STATUS_LABEL,
   totals,
 } from "@features/agent/web/lib/diff-rows";
@@ -13,25 +12,7 @@ import { changesKey, useTurnChangesStore } from "@features/agent/web/stores/turn
 import { useSettingsStore } from "@/stores/settings-store";
 import { revealSubagentCard } from "./subagent-card";
 import { Ico } from "./agent-icon";
-import { vaultLinkHandlers } from "./agent-links";
-import { DiffView } from "./diff-view";
-
-const MINUS = "−";
-
-function Counts({ added, removed }: { added: number; removed: number }) {
-  return (
-    <span
-      className="shrink-0 font-[var(--mono-font)] text-[11.5px]"
-      aria-label={`${added} added, ${removed} removed`}
-    >
-      <span className="text-[var(--success)]">+{added}</span>{" "}
-      <span className="text-[var(--danger)]">
-        {MINUS}
-        {removed}
-      </span>
-    </span>
-  );
-}
+import { Counts, FileDiffBody, FileName } from "./change-parts";
 
 const btn =
   "rounded-md border border-border px-2 py-0.5 text-[11.5px] text-text-secondary hover:bg-[var(--item-hover-bg)] hover:text-text-primary disabled:opacity-50";
@@ -233,60 +214,6 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
       )}
     </section>
   );
-}
-
-function FileName({ f }: { f: FileChangeSummary }) {
-  const shown = middleTruncate(f.path);
-  const text = f.oldPath ? `${middleTruncate(f.oldPath, 28)} → ${shown}` : shown;
-  const cls = "min-w-0 text-left font-[var(--mono-font)] text-[12px] break-all";
-  if (f.status === "deleted")
-    return (
-      <span className={`${cls} text-text-muted line-through`} title={f.path}>
-        {text}
-      </span>
-    );
-  return (
-    <button
-      type="button"
-      title={f.path}
-      aria-label={`Open ${f.path}`}
-      {...vaultLinkHandlers(f.path)}
-      className={`${cls} text-text-primary underline-offset-2 hover:underline`}
-    >
-      {text}
-    </button>
-  );
-}
-
-function FileDiffBody({
-  f,
-  d,
-  status,
-  error,
-}: {
-  f: FileChangeSummary;
-  d: FileChange | undefined;
-  status: "loading" | "ready" | "unavailable" | "error" | undefined;
-  error: string | null | undefined;
-}) {
-  if (status === "unavailable")
-    return <p className="text-[11.5px] text-text-muted">Diff no longer available after restart</p>;
-  if (status === "error")
-    return (
-      <p role="alert" className="text-[11.5px] text-[var(--danger)]">
-        Could not load the diff: {error ?? "unknown error"}
-      </p>
-    );
-  if (!d) return <p className="text-[11.5px] text-text-muted">Loading diff…</p>;
-  if (f.noDiff)
-    return (
-      <p className="text-[11.5px] text-text-muted">
-        Binary or very large file: listed without a diff
-      </p>
-    );
-  if (f.status === "renamed")
-    return <p className="text-[11.5px] text-text-muted">Renamed from {f.oldPath}, content equal</p>;
-  return <DiffView rows={d.rows} truncated={d.truncated} label={`Diff of ${f.path}`} />;
 }
 
 function ConfirmBar({

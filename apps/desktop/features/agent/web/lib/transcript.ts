@@ -2,6 +2,7 @@
  * The transcript model the agent pane renders (spec section 3.3). Plain data only: the reducer
  * (`reduce.ts`) folds `AgentEvent`s into it, components read it, nothing here has behaviour.
  */
+import type { SessionChangesState } from "./session-changes";
 import type {
   AgentErrorKind,
   AgentSessionState,
@@ -220,4 +221,7 @@ export type Chat = {
   resumeSessionId: string | null;
   /** The last save failed: the message, shown under the composer. */
   saveError: string | null;
+  /** The notes this chat changed (the tray row and the Session changes tab). Read through
+   *  `selectSessionChanges`. */
+  sessionChanges?: SessionChangesState;
 };
