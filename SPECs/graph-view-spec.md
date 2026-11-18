@@ -4,7 +4,7 @@ Status: **web half implemented 2026-11-17 (phases 3 to 6), Rust half and `.write
 
 ## 1. Decisions (user, 2026-11-17)
 
-1. **Two entry points**: a global graph as an editor tab, and a local graph as a sidebar panel that follows the active note.
+1. **One entry point**: the graph as an editor tab, on the current note's local graph or the whole vault. (The sidebar panel that followed the active note was removed 2026-11-18, section 14.)
 2. **Default content**: notes and links only. Tags, attachments, `.base` files and unresolved (missing) notes are off, each with a toggle.
 3. **Grouping by any property**, not only tags: a "Group by" control picks a property (tags, folder or any frontmatter key); notes sharing a value cluster together and get that group's color. Off by default.
 4. **Edges styled by kind**, label on hover: body link solid and thin, embed dashed, property link colored per property name; arrows when zoomed in. Relationship-property edges are off by default (section 13).
@@ -14,16 +14,13 @@ Status: **web half implemented 2026-11-17 (phases 3 to 6), Rust half and `.write
 
 ### 2.1 Global graph tab
 
-- Opened by the palette command "Open graph", a sidebar action (graph icon) and `writer://graph` style tab restore. One tab kind `graph` (page kind contributed by the feature); the tab survives restart with its filters and camera.
+- Opened by the palette command "Open graph", the one sidebar header action (graph icon) and `writer://graph` style tab restore. One tab kind `graph` (the page kind declares the tab icon, the same icon as the action); the tab survives restart with its filters and camera.
 - One compact icon toolbar above the canvas: search (highlights matches, `Enter` centers the best match), Whole vault or local, node list, Fit (`F`), panel. One side panel to the right of the canvas (Display, Clusters, Filters, section 13). Nothing floats over the canvas but the info card of a selected node.
 - The tab opens on the current note's local graph at the remembered depth (2 by default); with no note open it shows the whole vault. "Whole vault" drops the depth, the toggle returns to it.
 
-### 2.2 Local graph panel
+### 2.2 Local graph (in the tab)
 
-- A sidebar panel (contribution point `sidebarPanels`) showing the neighbourhood of the active note: depth slider 1 to 5 (default 2, remembered), the same panel, filter and display settings as the global graph but stored separately.
-- The active note is the center node, drawn larger with a ring. Switching notes animates to the new neighbourhood (nodes already present keep their place).
-- "Open in graph tab" button opens the global graph centered on the same note.
-- With no active note: an empty state "Open a note to see its links".
+- The tab centered on a note with a depth (slider 1 to 5, default 2, remembered in `display.depth`): the neighbourhood of that note, drawn larger with a ring. "Focus here" recenters it. There is no sidebar panel (section 14).
 
 ## 3. What is drawn
 
@@ -60,7 +57,7 @@ Two independent tools that combine:
 
 ## 4. Interaction
 
-- **Click a node**: open the note, following the link-activation rule (left click current tab; middle click and `Cmd`/`Ctrl`+click a background tab; `Cmd`/`Ctrl`+`Shift`+click a new active tab). In the local panel, a left click opens the note and recenters on it.
+- **Click a node**: open the note, following the link-activation rule (left click current tab; middle click and `Cmd`/`Ctrl`+click a background tab; `Cmd`/`Ctrl`+`Shift`+click a new active tab).
 - **Drag a node**: moves it and pins it there until double-click or "Unpin all"; pins are per graph tab and keyed by path.
 - **Right click a node**: Open, Open in new tab, Reveal in sidebar, Focus here (global graph: set as center with depth), Copy link, Attach to agent chat (when the agent feature is on).
 - **Canvas**: scroll to zoom, drag to pan, `F` fit, `Esc` clears search and focus, arrow keys move between neighbours of the focused node, `Enter` opens it. Every node is reachable by keyboard and screen readers get a list fallback ("Nodes" list of the visible slice).
@@ -75,7 +72,7 @@ Two independent tools that combine:
 ## 6. Settings and persistence
 
 - The feature `graph` (kill switch `features.graph.enabled`) contributes a settings page: default depth of the local graph, label zoom threshold, forces (center, repel, link distance, group pull), animation on or off (also off when the OS asks for reduced motion).
-- Filters, color rules and group-by are saved per vault in `.writer/graph.json` (Writer's own folder; never `.obsidian/graph.json`). The local panel and the global tab each have their own section.
+- Filters, color rules and group-by are saved per vault in `.writer/graph.json` (Writer's own folder; never `.obsidian/graph.json`). The file keeps the one `global` section; a `local` section left by an older version is ignored.
 - Camera and pins are per tab state (session restore), not in the vault file.
 
 ## 7. Agent integration
@@ -88,7 +85,7 @@ Two independent tools that combine:
 1. Data layer phases 1 to 3 of `note-graph-spec.md` (edges, readers, `writer graph:*`, `petgraph` snapshot): no UI.
 2. `graph_slice` and `graph_stats` commands (8.5), library ADR.
 3. Global graph tab: nodes, edges by kind, click and hover, filters, search.
-4. Local graph panel.
+4. Local graph (a depth in the tab; the sidebar panel of this phase was dropped, section 14).
 5. Groups: color rules, then group by property with hulls.
 6. Agent attach, keyboard navigation polish, list fallback.
 
@@ -105,7 +102,7 @@ None. Decided 2026-11-17 (proposed defaults taken); superseded 2026-11-18 (secti
 ## 11. Implementation notes (web half, 2026-11-17)
 
 - Code: `apps/desktop/features/graph/` (`feature.json`, `settings.schema.json`, `web/`, `tests/`). The page kind `graph` is core's (`page-kinds/graph.ts`, `Location` is a closed union, like `base`); its body is the lazy slot `page-view:graph`; the tab keeps camera and pins in its location (session), the vault keeps filters, color rules and Group by.
-- One model (`model.ts`: slice to `GraphSpec` with the filters applied, then `applySpec` in place keyed by path), pure reducers (`reducers.ts`), the ForceAtlas2 worker supervisor (`layout.ts`, factory injected), groups and hull geometry (`groups.ts`, `hulls.ts`), one surface hook shared by the tab and the panel (`use-graph-surface.ts`).
+- One model (`model.ts`: slice to `GraphSpec` with the filters applied, then `applySpec` in place keyed by path), pure reducers (`reducers.ts`), the ForceAtlas2 worker supervisor (`layout.ts`, factory injected), groups and hull geometry (`groups.ts`, `hulls.ts`), one surface hook (`use-graph-surface.ts`).
 - Group pull is a hidden anchor node per group with weighted edges from its members (ForceAtlas2 has no custom force). Tag nodes are built client-side from `GraphNode.tags` (the slice contract has no tag nodes). Property-based color rules and Group by read frontmatter through the core `index_get_metadata`, only when a rule or the property needs it.
 - "Attach to agent chat" goes through the service `agent.context` (`features/agent/web/api.ts`), absent while the agent is off.
 - At 10,000 nodes labels are hidden below the zoom threshold, and sigma's label grid (largest, so highest degree, first) limits the rest; hover, focus, search and center always label; edge hover hit-testing turns off when zoomed out past a camera ratio of 3.
@@ -114,7 +111,7 @@ None. Decided 2026-11-17 (proposed defaults taken); superseded 2026-11-18 (secti
 
 ## 12. Level of detail (semantic zoom)
 
-The graph shows more the further you zoom in and less the further you zoom out. One function (`features/graph/web/lod.ts`) turns the camera into one of four levels; the tab and the panel share it because it lives in the shared stage.
+The graph shows more the further you zoom in and less the further you zoom out. One function (`features/graph/web/lod.ts`) turns the camera into one of four levels; it lives in the stage.
 
 **Measure.** The on-screen spacing between neighbouring nodes in pixels: `min(width, height) / (sqrt(nodes) * cameraRatio)`. A 40-note graph at "fit" is already in Detail; a 10,000-node graph at "fit" is in Overview. The setting "Label zoom" scales the spacing, moving every boundary at once.
 
@@ -152,3 +149,11 @@ ADR: [`2026-11-18-cluster-the-graph-by-detected-communities-and-open-it-on-the-c
 **Interaction.** Hover dims all but the node and its neighbours; a click selects and shows the info card (title, folder, tags, Open, New tab, Focus, Unpin while pinned); middle and Cmd/Ctrl clicks open through the link gesture table; a double click opens; dragging pins; Escape or a click on the background clears the selection.
 
 Not verified in a real window: hulls and bubble look, label density, the card position, drag-to-pin, 10,000-node frame rate. The detection measured about 100 ms for 10,000 notes and 30,000 links in the unit benchmark (off the main thread in the app).
+
+## 14. Tab only, loading progress and tab icon (2026-11-18)
+
+**Tab only.** The "Local graph" sidebar panel is removed (contribution, component, the `local` config section). The one entry besides the palette command is the sidebar header action "Open graph" (a graph icon at the top right of the sidebar); it opens the tab on the active note's local graph, or the whole vault without one. The panel switcher shows only when another feature adds a panel.
+
+**Progress** (`progress.ts`, `graph-progress.tsx`; the phase comes from `useGraphSurface`, which sequences the fetch, the clusters and the layout). Until a first frame is drawn, a centred spinner with one status line, by phase: "Loading notes..." (the `graph_slice` fetch), "Finding clusters..." (the Louvain worker), "Laying out..." (until the canvas reports a drawn frame of the current spec), plus "1,284 notes - 3,902 links" once known. After the first frame, a change of depth, Whole vault, filters or Cluster by shows the same status line as a small pill at the top and keeps the drawn graph. The quiet refetch after an index change shows nothing. An error shows inline with Retry. Without WebGL (list fallback) the layout phase is not shown.
+
+**Tab icon.** A page kind declares `icon` once (`PageKindInput.icon`); the tab strip draws it before the title for any kind. The graph kind's icon is the one the sidebar action uses (`GRAPH_ICON`).

@@ -91,3 +91,5 @@ Chosen option: **A**.
 ## More Information
 
 Spec: [`SPECs/graph-view-spec.md`](../../SPECs/graph-view-spec.md). Supersedes the Overview folder-bubble rule in the render ADR's 2026-11-17 level-of-detail addendum (the four zoom levels stay). Package facts checked on the npm registry on 2026-11-18. Revisit if detection exceeds the budget at 10k notes or clusters prove unstable across small edits.
+
+**Addendum 2026-11-18 (sidebar panel removed).** After use, the "Local graph" sidebar panel was dropped: the graph exists only as the Graph tab, whose local mode (a center note and a depth) already shows the neighbourhood of a note. The `graph.local` panel contribution, its component and the `local` section of `.writer/graph.json` (ignored when an older file has it) are gone; the sidebar header action "Open graph" and the palette command stay as the entry points. The tab also gained loading progress (phases, counts, Retry) and a page-kind tab icon; see spec section 14.

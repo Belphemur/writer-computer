@@ -1,7 +1,7 @@
 // The Groups panel (spec 3.4): ordered color rules (a query and a color each, first match wins,
 // reorderable) and Group by (none, tags, folder or any frontmatter key, with the nested level).
 import { useEffect, useState } from "react";
-import type { ColorRule, GroupBy, SurfaceId } from "./config";
+import type { ColorRule, GroupBy } from "./config";
 import { vaultPropertyNames } from "./ipc";
 import { PALETTE } from "./theme";
 import { useGraphConfig } from "./store";
@@ -21,15 +21,7 @@ export function moveRule<T>(list: readonly T[], from: number, to: number): T[] {
   return next;
 }
 
-export function GroupsPanel({
-  surface,
-  rules,
-  groupBy,
-}: {
-  surface: SurfaceId;
-  rules: readonly ColorRule[];
-  groupBy: GroupBy;
-}) {
+export function GroupsPanel({ rules, groupBy }: { rules: readonly ColorRule[]; groupBy: GroupBy }) {
   const update = useGraphConfig((s) => s.update);
   const [properties, setProperties] = useState<string[]>([]);
   useEffect(() => {
@@ -42,9 +34,9 @@ export function GroupsPanel({
       stale = true;
     };
   }, []);
-  const setRules = (next: ColorRule[]) => update(surface, (s) => ({ ...s, rules: next }));
+  const setRules = (next: ColorRule[]) => update((s) => ({ ...s, rules: next }));
   const setGroupBy = (patch: Partial<GroupBy>) =>
-    update(surface, (s) => ({ ...s, groupBy: { ...s.groupBy, ...patch } }));
+    update((s) => ({ ...s, groupBy: { ...s.groupBy, ...patch } }));
   const patchRule = (i: number, patch: Partial<ColorRule>) =>
     setRules(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const addRule = () => {
@@ -104,14 +96,11 @@ export function GroupsPanel({
       <button type="button" className={`${BTN} self-start`} onClick={addRule}>
         New rule
       </button>
-      <div
-        className="mt-2 text-[11px] font-medium text-[var(--text-muted)]"
-        id={`gg-by-${surface}`}
-      >
+      <div className="mt-2 text-[11px] font-medium text-[var(--text-muted)]" id="gg-by">
         Group by
       </div>
       <select
-        aria-labelledby={`gg-by-${surface}`}
+        aria-labelledby="gg-by"
         className={INPUT}
         value={groupBy.property ?? ""}
         onChange={(e) => setGroupBy({ property: e.target.value || null })}

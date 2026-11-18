@@ -1,14 +1,8 @@
-// The one side panel of a surface (nothing floats over the canvas): Filters, Display and Clusters
+// The one side panel of the graph tab (nothing floats over the canvas): Filters, Display and Clusters
 // (the legend: colour, name and count of each cluster, largest first). Every change goes through
-// the config store's one write path. Shared by the tab and the local panel.
+// the config store's one write path.
 import type { ReactNode } from "react";
-import {
-  MAX_DEPTH,
-  type Depth,
-  type GraphFilters,
-  type SurfaceConfig,
-  type SurfaceId,
-} from "./config";
+import { MAX_DEPTH, type Depth, type GraphFilters, type SurfaceConfig } from "./config";
 import { FiltersPanel } from "./filters-panel";
 import type { GroupsResult } from "./groups";
 import { GroupsPanel } from "./groups-panel";
@@ -61,12 +55,10 @@ export const legendClusters = (groups: GroupsResult["groups"]) =>
   [...groups].sort((a, b) => b.size - a.size || a.key.localeCompare(b.key));
 
 function DisplaySection({
-  surface,
   config,
   labels,
   depth,
 }: {
-  surface: SurfaceId;
   config: SurfaceConfig;
   labels: readonly string[];
   depth: DepthControl | null;
@@ -75,9 +67,9 @@ function DisplaySection({
   const d = config.display;
   const f = config.filters;
   const setDisplay = (patch: Partial<SurfaceConfig["display"]>) =>
-    update(surface, (s) => ({ ...s, display: { ...s.display, ...patch } }));
+    update((s) => ({ ...s, display: { ...s.display, ...patch } }));
   const setFilters = (patch: Partial<GraphFilters>) =>
-    update(surface, (s) => ({ ...s, filters: { ...s.filters, ...patch } }));
+    update((s) => ({ ...s, filters: { ...s.filters, ...patch } }));
   return (
     <div className="flex flex-col px-3 pb-2" data-testid="graph-display">
       <Row label="Labels">
@@ -146,11 +138,9 @@ function DisplaySection({
 }
 
 function ClustersSection({
-  surface,
   config,
   groups,
 }: {
-  surface: SurfaceId;
   config: SurfaceConfig;
   groups: GroupsResult["groups"];
 }) {
@@ -182,20 +172,18 @@ function ClustersSection({
         <summary className="cursor-pointer select-none py-1 text-[12px] text-[var(--text-muted)]">
           Group by and colors
         </summary>
-        <GroupsPanel surface={surface} rules={config.rules} groupBy={config.groupBy} />
+        <GroupsPanel rules={config.rules} groupBy={config.groupBy} />
       </details>
     </div>
   );
 }
 
 export function SidePanel({
-  surface,
   config,
   labels,
   groups,
   depth,
 }: {
-  surface: SurfaceId;
   config: SurfaceConfig;
   /** Property labels of the slice (for the colour of their edges and the Properties list). */
   labels: readonly string[];
@@ -206,13 +194,13 @@ export function SidePanel({
   return (
     <div className="h-full overflow-y-auto" data-testid="graph-side-panel">
       <Section title="Display" open>
-        <DisplaySection surface={surface} config={config} labels={labels} depth={depth} />
+        <DisplaySection config={config} labels={labels} depth={depth} />
       </Section>
       <Section title="Clusters" open>
-        <ClustersSection surface={surface} config={config} groups={groups} />
+        <ClustersSection config={config} groups={groups} />
       </Section>
       <Section title="Filters">
-        <FiltersPanel surface={surface} filters={config.filters} />
+        <FiltersPanel filters={config.filters} />
       </Section>
     </div>
   );

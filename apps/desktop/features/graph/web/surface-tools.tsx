@@ -1,5 +1,4 @@
-// The icon buttons of a surface's toolbar (search, Whole vault or local, Fit, panel), shared by the
-// tab and the local panel so the two stay in step. Icons carry an accessible name and a tooltip.
+// The icon buttons of the graph toolbar (search, Whole vault or local, Fit, panel). Icons carry an accessible name and a tooltip.
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
 

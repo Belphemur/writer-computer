@@ -24,10 +24,15 @@ describe("normalizeConfig", () => {
   it("keeps valid options, clamps the depth and drops the rest", () => {
     const c = normalizeConfig({
       global: { display: { labels: "always", clusterBy: "folder", depth: 9 } },
-      local: { display: { labels: "loud", clusterBy: 3, depth: "x" } },
     });
     expect(c.global.display).toEqual({ labels: "always", clusterBy: "folder", depth: 5 });
-    expect(c.local.display).toEqual(DEFAULT_DISPLAY);
+    expect(
+      normalizeConfig({ global: { display: { labels: "loud", clusterBy: 3, depth: "x" } } }).global
+        .display,
+    ).toEqual(DEFAULT_DISPLAY);
+    expect(normalizeConfig({ global: {}, local: { display: { depth: 4 } } })).toEqual(
+      DEFAULT_CONFIG,
+    );
     expect(normalizeConfig({ global: { display: { depth: 0 } } }).global.display.depth).toBe(1);
   });
 
@@ -39,7 +44,7 @@ describe("normalizeConfig", () => {
 });
 
 describe("slice request", () => {
-  const args = { surface: "global" as const, center: "A.md", depth: 2 as const };
+  const args = { center: "A.md", depth: 2 as const };
 
   it("does not ask for property edges until they are enabled", () => {
     expect(sliceArgs(args, DEFAULT_SURFACE).kinds).toEqual(["link", "embed"]);

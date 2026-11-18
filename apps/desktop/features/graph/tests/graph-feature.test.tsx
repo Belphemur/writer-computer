@@ -34,7 +34,6 @@ import { readGraphSettings } from "../web/settings";
 const host = createFeatureHost({ onError: () => {} });
 const mine = (xs: { owner: string }[]) => xs.filter((x) => x.owner === "builtin:graph").length;
 const counts = () => [
-  mine(sidebarPanelContributions.list()),
   mine(sidebarActionContributions.list()),
   mine(slotContributions.list()),
   mine(featurePaletteCommands.list()),
@@ -51,9 +50,10 @@ afterEach(async () => {
 describe("registration", () => {
   it("registers every contribution and removes exactly them on unregister", async () => {
     host.register(graph);
-    expect(counts().slice(0, 3)).toEqual([1, 1, 1]);
+    expect(counts().slice(0, 2)).toEqual([1, 1]);
+    expect(mine(sidebarPanelContributions.list())).toBe(0);
     await host.unregister("graph");
-    expect(counts()).toEqual([0, 0, 0, 0]);
+    expect(counts()).toEqual([0, 0, 0]);
   });
 });
 
@@ -61,13 +61,12 @@ describe("manifest contract", () => {
   it("lists the ids the definition registers, all prefixed", () => {
     const c = graph.contributes!;
     expect(graph.id).toBe(manifest.id);
-    expect(manifest.contributes.sidebarPanels).toEqual(c.sidebarPanels!.map((x) => x.id));
+    expect(Object.keys(c).sort()).toEqual(["commands", "sidebarActions", "slots"]);
+    expect(manifest.contributes).not.toHaveProperty("sidebarPanels");
     expect(manifest.contributes.sidebarActions).toEqual(c.sidebarActions!.map((x) => x.id));
     expect(manifest.contributes.slots).toEqual(c.slots!.map((x) => x.id));
     expect(manifest.contributes.commands.map((x) => x.id)).toEqual(c.commands!.map((x) => x.id));
-    const ids = [...c.sidebarPanels!, ...c.sidebarActions!, ...c.slots!, ...c.commands!].map(
-      (x) => x.id,
-    );
+    const ids = [...c.sidebarActions!, ...c.slots!, ...c.commands!].map((x) => x.id);
     expect(ids.every((id) => id.startsWith("graph."))).toBe(true);
     expect(c.slots![0]!.slot).toBe("page-view:graph");
     expect(c.commands![0]!.label).toBe("Open graph");
@@ -149,9 +148,9 @@ describe("libraries", () => {
         .map((i) => i.spec),
     );
     expect(specs.filter((s) => LIBS.test(s))).toEqual([]);
-    expect(
-      reached.map(rel).filter((f) => /graph-canvas|layout|hulls|graph-view|local-panel/.test(f)),
-    ).toEqual([]);
+    expect(reached.map(rel).filter((f) => /graph-canvas|layout|hulls|graph-view/.test(f))).toEqual(
+      [],
+    );
   });
 
   for (const entry of [
@@ -168,9 +167,7 @@ describe("libraries", () => {
       );
       expect(specs.filter((s) => LIBS.test(s))).toEqual([]);
       expect(
-        reached
-          .map(rel)
-          .filter((f) => /features\/graph\/web\/(graph-|layout|hulls|local-)/.test(f)),
+        reached.map(rel).filter((f) => /features\/graph\/web\/(graph-|layout|hulls)/.test(f)),
       ).toEqual([]);
     });
   }

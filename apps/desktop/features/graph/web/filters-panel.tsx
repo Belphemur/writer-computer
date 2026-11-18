@@ -1,6 +1,6 @@
 // The Filters section (spec 3.3): search query, node kinds, orphans and folder include/exclude
 // lists (the edge kinds are in Display). Every change goes through the config store's one write path.
-import type { GraphFilters, SurfaceId } from "./config";
+import type { GraphFilters } from "./config";
 import { Check } from "./panel-controls";
 import { FIELD } from "./panel-style";
 import { useGraphConfig } from "./store";
@@ -13,10 +13,10 @@ const lines = (text: string) =>
     .map((l) => l.trim().replace(/\/+$/, ""))
     .filter(Boolean);
 
-export function FiltersPanel({ surface, filters }: { surface: SurfaceId; filters: GraphFilters }) {
+export function FiltersPanel({ filters }: { filters: GraphFilters }) {
   const update = useGraphConfig((s) => s.update);
   const set = (patch: Partial<GraphFilters>) =>
-    update(surface, (s) => ({ ...s, filters: { ...s.filters, ...patch } }));
+    update((s) => ({ ...s, filters: { ...s.filters, ...patch } }));
   return (
     <div className="flex flex-col gap-2 p-3" data-testid="graph-filters">
       <input

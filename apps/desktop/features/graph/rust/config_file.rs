@@ -73,12 +73,10 @@ fn validate_display(surface: &str, display: &serde_json::Value) -> Result<(), Co
 }
 
 fn validate(config: &serde_json::Value) -> Result<(), ConfigError> {
-    for surface in ["global", "local"] {
-        if let Some(display) = config.get(surface).and_then(|s| s.get("display")) {
-            validate_display(surface, display)?;
-        }
+    match config.get("global").and_then(|s| s.get("display")) {
+        Some(display) => validate_display("global", display),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Replace the file with `content` (valid JSON, at most [`MAX_BYTES`]).
@@ -144,11 +142,10 @@ mod tests {
     #[test]
     fn display_options_are_validated_on_write() {
         let vault = tempfile::tempdir().unwrap();
-        let ok = r#"{"global":{"display":{"labels":"hover","clusterBy":"folder","depth":5}},"local":{}}"#;
+        let ok = r#"{"global":{"display":{"labels":"hover","clusterBy":"folder","depth":5}}}"#;
         write(vault.path(), ok).unwrap();
         for bad in [
             r#"{"global":{"display":{"labels":"loud"}}}"#,
-            r#"{"local":{"display":{"clusterBy":"tags"}}}"#,
             r#"{"global":{"display":{"depth":6}}}"#,
             r#"{"global":{"display":{"depth":0}}}"#,
             r#"{"global":{"display":{"depth":"2"}}}"#,

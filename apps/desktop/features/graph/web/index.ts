@@ -1,10 +1,9 @@
 // The graph feature (SPECs/graph-view-spec.md): the global graph tab (the body of the `graph` page
-// kind, `page-view:graph`), the local graph sidebar panel, the "Open graph" command and sidebar
-// action. This file is loaded at startup, so it imports only `defineFeature`, the manifest and
+// kind, `page-view:graph`), the "Open graph" command and the sidebar header action. This file is loaded at startup, so it imports only `defineFeature`, the manifest and
 // `import()` thunks: sigma, graphology and ForceAtlas2 live in the lazy chunks (a test keeps them
 // out of the startup graph). The page kind itself is core's (the `Location` union is closed); off,
 // the tab shows the "turned off" page.
-import { HierarchyCircle01Icon } from "@hugeicons/core-free-icons";
+import { GRAPH_ICON } from "@/components/editor-area/page-kinds/graph";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { getActiveFilePath } from "@/hooks/editor-api";
 import { defineFeature } from "@/lib/features/registry";
@@ -40,18 +39,9 @@ export default defineFeature({
       {
         id: "graph.open-action",
         label: "Open graph",
-        icon: HierarchyCircle01Icon,
+        icon: GRAPH_ICON,
         order: 60,
         run: () => openGraph(),
-      },
-    ],
-    sidebarPanels: [
-      {
-        id: "graph.local",
-        label: "Local graph",
-        icon: HierarchyCircle01Icon,
-        order: 60,
-        load: () => import("./local-panel").then((m) => m.LocalGraphPanel),
       },
     ],
     slots: [

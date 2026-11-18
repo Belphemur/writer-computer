@@ -1,6 +1,6 @@
 // The surfaces with the canvas mocked (jsdom has no WebGL): the list fallback opens notes from the
-// keyboard and with every gesture, the truncated banner names the 10,000 cap, the local panel
-// follows the active note and the config store saves through one debounced write.
+// keyboard and with every gesture, the truncated banner names the 10,000 cap, the open-graph
+// entry opens the tab, the loading phases show in order and the config store saves through one debounced write.
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -34,16 +34,28 @@ const ipc = vi.hoisted(() => ({
   onIndexChanged: vi.fn(),
 }));
 vi.mock("../web/ipc", () => ipc);
+// The mocked canvas reports its first frame only when a test says so (`probe.frame()`).
+const probe = vi.hoisted(() => ({ frame: () => {} }));
 vi.mock("../web/graph-canvas", () => ({
-  GraphCanvas: (p: { spec: { nodes: unknown[] } }) => (
-    <div data-testid="canvas" data-nodes={p.spec.nodes.length} />
-  ),
+  GraphCanvas: (p: { spec: { nodes: unknown[] }; onFrame?: (spec: unknown) => void }) => {
+    probe.frame = () => p.onFrame?.(p.spec);
+    return <div data-testid="canvas" data-nodes={p.spec.nodes.length} />;
+  },
   webglAvailable: () => true,
 }));
 
+// Community detection answers at once unless a test holds it (`detect.release()`).
+const detect = vi.hoisted(() => ({
+  hold: false,
+  release: () => {},
+}));
 vi.mock("../web/layout-worker-client", () => ({
   detectInWorker: (order: number) => ({
-    result: Promise.resolve(new Int32Array(order)),
+    result: detect.hold
+      ? new Promise<Int32Array>((resolve) => {
+          detect.release = () => resolve(new Int32Array(order));
+        })
+      : Promise.resolve(new Int32Array(order)),
     cancel: () => {},
   }),
 }));
@@ -53,7 +65,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { DEFAULT_CONFIG } from "../web/config";
 import { openGlobalGraph } from "../web/actions";
 import { NodeCard } from "../web/node-card";
-import { LocalGraphPanel } from "../web/local-panel";
+import graph from "../web";
 import { GraphView } from "../web/graph-view";
 import { NodeList } from "../web/node-list";
 import { applySpec, buildSpec, createModel } from "../web/model";
@@ -73,6 +85,7 @@ const flush = () =>
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  detect.hold = false;
   ipc.graphSlice.mockResolvedValue(smallSlice());
   ipc.graphStats.mockResolvedValue({ notes: 25000, edges: 1, unresolved: 0, components: 1 });
   ipc.onIndexChanged.mockResolvedValue(() => {});
@@ -165,7 +178,7 @@ describe("global graph tab", () => {
     expect(ipc.graphConfigWrite).toHaveBeenCalledTimes(1);
     const saved = JSON.parse((ipc.graphConfigWrite.mock.calls as unknown as [string][])[0]![0]);
     expect(saved.global.filters).toMatchObject({ tags: true, bases: true });
-    expect(saved.local).toEqual(DEFAULT_CONFIG.local);
+    expect(saved).not.toHaveProperty("local");
   });
 });
 
@@ -255,12 +268,27 @@ describe("global graph tab chrome", () => {
 });
 
 describe("opening the graph", () => {
+  it("has no sidebar panel; the one sidebar entry and the command open the graph tab", async () => {
+    const c = graph.contributes!;
+    expect(Object.keys(c).sort()).toEqual(["commands", "sidebarActions", "slots"]);
+    expect(c.sidebarActions).toHaveLength(1);
+    expect(c.sidebarActions![0]!.label).toBe("Open graph");
+    await act(async () => {
+      await c.sidebarActions![0]!.run();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(nav.openGraphTab).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await c.commands![0]!.run();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(nav.openGraphTab).toHaveBeenCalledTimes(2);
+  });
+
   it("opens on the current note's local graph at depth 2, or the remembered depth", async () => {
     await openGlobalGraph("People/Ana.md");
     expect(nav.openGraphTab).toHaveBeenLastCalledWith({ center: "People/Ana.md", depth: 2 });
-    useGraphConfig
-      .getState()
-      .update("global", (s) => ({ ...s, display: { ...s.display, depth: 4 } }));
+    useGraphConfig.getState().update((s) => ({ ...s, display: { ...s.display, depth: 4 } }));
     await openGlobalGraph("People/Ana.md");
     expect(nav.openGraphTab).toHaveBeenLastCalledWith({ center: "People/Ana.md", depth: 4 });
     await openGlobalGraph();
@@ -320,31 +348,6 @@ describe("node info card", () => {
   });
 });
 
-describe("local graph panel", () => {
-  it("shows an empty state without an active note and follows the active note at the remembered depth, 2 by default", async () => {
-    useWorkspaceStore.setState({ root: "/vault" });
-    useEditorStore.setState({ activeFilePath: null });
-    act(() => root.render(<LocalGraphPanel />));
-    expect(el.textContent).toContain("Open a note to see its links");
-
-    act(() => useEditorStore.setState({ activeFilePath: "/vault/People/Ana.md" }));
-    await flush();
-    await flush();
-    expect(ipc.graphSlice).toHaveBeenLastCalledWith(
-      expect.objectContaining({ center: "People/Ana.md", depth: 2 }),
-    );
-    act(() =>
-      [...el.querySelectorAll("button")]
-        .find((b) => b.getAttribute("aria-label") === "Panel")!
-        .click(),
-    );
-    const slider = el.querySelector<HTMLInputElement>("input[type=range]")!;
-    expect(slider.value).toBe("2");
-    expect(slider.max).toBe("5");
-    expect(el.querySelector("[aria-label='Open in graph tab']")).not.toBeNull();
-  });
-});
-
 describe("live updates", () => {
   it("refetches only for batches that concern the slice", () => {
     expect(batchAffects({ full: true, paths: [] }, new Set(), true)).toBe(true);
@@ -369,5 +372,87 @@ describe("live updates", () => {
       await vi.advanceTimersByTimeAsync(REFETCH_DEBOUNCE_MS + 10);
     });
     expect(ipc.graphSlice.mock.calls.length).toBe(before + 1);
+  });
+});
+
+describe("graph progress", () => {
+  const render = (
+    location: { kind: "graph"; depth?: number; center?: string } = { kind: "graph" },
+  ) => act(() => root.render(<GraphView location={location} isActive tabId="t1" />));
+  const status = () => el.querySelector("[data-testid=graph-progress]")?.textContent ?? null;
+
+  it("shows Loading notes, Finding clusters (with the counts), Laying out, then nothing", async () => {
+    let resolveSlice: (v: ReturnType<typeof smallSlice>) => void = () => {};
+    ipc.graphSlice.mockReturnValue(new Promise((r) => (resolveSlice = r)));
+    detect.hold = true;
+    render();
+    await flush();
+    expect(status()).toBe("Loading notes…");
+
+    resolveSlice(smallSlice());
+    await flush();
+    await flush();
+    expect(status()).toContain("Finding clusters…");
+    expect(status()).toMatch(/4 notes · \d+ links?/);
+
+    await act(async () => {
+      detect.release();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(status()).toContain("Laying out…");
+    expect(status()).toMatch(/4 notes · /);
+
+    act(() => probe.frame());
+    expect(status()).toBeNull();
+  });
+
+  it("shows the error with Retry, and Retry loads again", async () => {
+    ipc.graphSlice.mockRejectedValueOnce(new Error("index busy"));
+    render();
+    await flush();
+    await flush();
+    expect(el.querySelector("[role=alert]")?.textContent).toContain("index busy");
+    expect(status()).toBeNull();
+    const retry = [...el.querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
+    act(() => retry.click());
+    expect(status()).toBe("Loading notes…");
+    await flush();
+    await flush();
+    expect(el.querySelector("[role=alert]")).toBeNull();
+    expect(ipc.graphSlice).toHaveBeenCalledTimes(2);
+  });
+
+  it("a new depth shows a quiet indicator and keeps the drawn graph", async () => {
+    render({ kind: "graph", center: "People/Ana.md", depth: 2 });
+    await flush();
+    await flush();
+    act(() => probe.frame());
+    expect(status()).toBeNull();
+
+    ipc.graphSlice.mockReturnValue(new Promise(() => {}));
+    render({ kind: "graph", center: "People/Ana.md", depth: 3 });
+    await flush();
+    expect(status()).toBe("Loading notes…");
+    expect(el.querySelector("[data-testid=canvas]")).not.toBeNull();
+    // The pill, not the centred overlay: no counts line.
+    expect(el.querySelector("[data-testid=graph-progress] p")).toBeNull();
+  });
+
+  it("a background refetch after an index change shows no indicator", async () => {
+    let fire: (b: { full: boolean; paths: string[] }) => void = () => {};
+    ipc.onIndexChanged.mockImplementation(async (h) => {
+      fire = h;
+      return () => {};
+    });
+    render();
+    await flush();
+    await flush();
+    act(() => probe.frame());
+    ipc.graphSlice.mockReturnValue(new Promise(() => {}));
+    fire({ full: true, paths: [] });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFETCH_DEBOUNCE_MS + 10);
+    });
+    expect(status()).toBeNull();
   });
 });

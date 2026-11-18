@@ -163,7 +163,7 @@ describe("config file", () => {
     expect(c.global.filters.orphans).toBe(false);
     expect(c.global.rules).toHaveLength(1);
     expect(c.global.groupBy).toEqual({ property: "tags", nestedLevel: 1 });
-    expect(c.local).toEqual(DEFAULT_CONFIG.local);
+    expect(Object.keys(c)).toEqual(["version", "global"]);
     expect(() => parseConfig("{nope")).toThrow();
     expect(parseConfig(serializeConfig(c))).toEqual(c);
   });

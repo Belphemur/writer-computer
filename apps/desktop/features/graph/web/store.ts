@@ -1,4 +1,4 @@
-// The saved view config (filters, color rules, Group by) of both surfaces, per vault in
+// The saved view config (filters, color rules, Group by, Display) of the graph tab, per vault in
 // `.writer/graph.json`. One store, one write path: every change goes through `update`, which
 // replaces the state and schedules a single debounced save. Loading and saving go through an
 // injectable port (the default is `ipc.ts`), so a failure is reported once and the view keeps
@@ -11,7 +11,6 @@ import {
   serializeConfig,
   type GraphConfig,
   type SurfaceConfig,
-  type SurfaceId,
 } from "./config";
 import { graphConfigRead, graphConfigWrite } from "./ipc";
 
@@ -35,7 +34,7 @@ interface ConfigState {
   /** Why the file could not be read or saved (shown as a quiet note), or null. */
   error: string | null;
   load: () => Promise<void>;
-  update: (surface: SurfaceId, change: (s: SurfaceConfig) => SurfaceConfig) => void;
+  update: (change: (s: SurfaceConfig) => SurfaceConfig) => void;
   reset: () => void;
 }
 
@@ -69,8 +68,8 @@ export const useGraphConfig = create<ConfigState>()((set, get) => ({
       });
     return loading;
   },
-  update: (surface, change) => {
-    set((s) => ({ config: { ...s.config, [surface]: change(s.config[surface]) } }));
+  update: (change) => {
+    set((s) => ({ config: { ...s.config, global: change(s.config.global) } }));
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;

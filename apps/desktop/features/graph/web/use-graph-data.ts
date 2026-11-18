@@ -38,11 +38,13 @@ export function useGraphData(args: GraphSliceArgs | null): GraphData {
   const argsRef = useRef(args);
   argsRef.current = args;
 
-  const fetchNow = useCallback(() => {
+  /** `visible`: a request the user asked for (a new slice, Retry) shows as loading; the quiet
+   *  refetch after an index change does not. */
+  const fetchNow = useCallback((visible: boolean) => {
     const a = argsRef.current;
     if (!a) return;
     const mine = ++seq.current;
-    setState((s) => ({ ...s, loading: true }));
+    setState((s) => ({ ...s, loading: visible, error: null }));
     graphSlice(a).then(
       (slice) => {
         if (mine !== seq.current) return;
@@ -62,7 +64,7 @@ export function useGraphData(args: GraphSliceArgs | null): GraphData {
 
   // Refetch when the request changes.
   useEffect(() => {
-    fetchNow();
+    fetchNow(true);
     return () => {
       seq.current++;
     };
@@ -78,7 +80,7 @@ export function useGraphData(args: GraphSliceArgs | null): GraphData {
       if (!identity || getWorkspaceEventIdentity()?.root !== identity.root) return;
       if (!batchAffects(batch, nodePaths.current, argsRef.current?.center !== undefined)) return;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(fetchNow, REFETCH_DEBOUNCE_MS);
+      timer = setTimeout(() => fetchNow(false), REFETCH_DEBOUNCE_MS);
     }).then((u) => {
       if (dead) u();
       else unlisten = u;
@@ -90,5 +92,6 @@ export function useGraphData(args: GraphSliceArgs | null): GraphData {
     };
   }, [fetchNow]);
 
-  return { ...state, refetch: fetchNow };
+  const refetch = useCallback(() => fetchNow(true), [fetchNow]);
+  return { ...state, refetch };
 }

@@ -1,4 +1,4 @@
-// The global graph tab (spec 2.1): one compact icon toolbar (search, Whole vault or local, Fit, panel),
+// The graph tab (spec 2.1): one compact icon toolbar (search, Whole vault or local, Fit, panel),
 // the stage and one side panel (Display, Clusters, Filters) beside it. The tab opens on the current
 // note's local graph (`center` and `depth` in its location); "Whole vault" drops both. Camera and
 // pins are the tab's own state; filters, Display and Group by are the vault's (`store.ts`).
@@ -28,7 +28,7 @@ import { useNoteProps } from "./use-note-props";
 export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLocation>) {
   const settings = useGraphSettings();
   const depth = clampDepth(location.depth);
-  const surface = useGraphSurface({ surface: "global", center: location.center ?? null, depth });
+  const surface = useGraphSurface({ center: location.center ?? null, depth });
   const [search, setSearch] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -62,9 +62,7 @@ export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLoca
   const setDepth = (next: number) => {
     const d = clampDepth(next)!;
     setGraphTabState(tabId, { depth: d });
-    useGraphConfig
-      .getState()
-      .update("global", (s) => ({ ...s, display: { ...s.display, depth: d } }));
+    useGraphConfig.getState().update((s) => ({ ...s, display: { ...s.display, depth: d } }));
   };
 
   return (
@@ -147,7 +145,6 @@ export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLoca
         {panelOpen && (
           <div className="w-[260px] shrink-0 border-l border-[var(--line-subtle)]">
             <SidePanel
-              surface="global"
               config={surface.config}
               labels={surface.labels}
               groups={surface.groups.groups}

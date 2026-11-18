@@ -2,7 +2,7 @@
 // `GraphSlice` becomes a plain `GraphSpec` (pure; the filters of the view are applied here, so the
 // layout only sees what is shown), and `applySpec` brings a graphology `Graph` to that spec IN
 // PLACE, keyed by path: nodes that are still there keep their position and pin, removed ones are
-// dropped, new ones are added next to their neighbours. Used by the tab and the panel alike.
+// dropped, new ones are added next to their neighbours. Used by the graph tab.
 // Everything the renderer needs per node and edge (kind, size, label) lives in attributes; style
 // is decided by the sigma reducers (`reducers.ts`), never here.
 import Graph from "graphology";

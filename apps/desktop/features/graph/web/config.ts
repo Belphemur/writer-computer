@@ -1,12 +1,9 @@
 // The saved view config of the graph (`.writer/graph.json`, SPECs/graph-view-spec.md section 6):
-// filters, ordered color rules and Group by, once for the global tab and once for the local
-// panel. Pure: shapes, defaults and `normalizeConfig`, which turns whatever the file held into a
+// filters, ordered color rules, Group by and Display of the graph tab. Pure: shapes, defaults and `normalizeConfig`, which turns whatever the file held into a
 // valid config (a hand-edited or newer file never breaks the view).
 
 import type { GraphEdgeKind } from "./ipc";
 import { DEFAULT_LABEL_MODE, isLabelMode, type LabelMode } from "./lod";
-
-export type SurfaceId = "global" | "local";
 
 export type GraphFilters = {
   /** Search query: only matches and their links are shown (syntax in `query.ts`). */
@@ -67,7 +64,8 @@ export type SurfaceConfig = {
   display: Display;
 };
 
-export type GraphConfig = { version: 1; global: SurfaceConfig; local: SurfaceConfig };
+/** `global` is the key of the one saved view (the graph tab); it keeps the name the file always had. */
+export type GraphConfig = { version: 1; global: SurfaceConfig };
 
 export const DEFAULT_FILTERS: GraphFilters = {
   query: "",
@@ -102,7 +100,6 @@ export const DEFAULT_SURFACE: SurfaceConfig = {
 export const DEFAULT_CONFIG: GraphConfig = {
   version: 1,
   global: DEFAULT_SURFACE,
-  local: DEFAULT_SURFACE,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -174,7 +171,7 @@ export function normalizeSurface(v: unknown): SurfaceConfig {
 
 export function normalizeConfig(v: unknown): GraphConfig {
   const c = isRecord(v) ? v : {};
-  return { version: 1, global: normalizeSurface(c.global), local: normalizeSurface(c.local) };
+  return { version: 1, global: normalizeSurface(c.global) };
 }
 
 /** The text of `.writer/graph.json` as a config; invalid JSON is an error (the caller reports it

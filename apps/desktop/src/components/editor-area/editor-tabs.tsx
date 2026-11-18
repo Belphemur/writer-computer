@@ -129,6 +129,17 @@ function EditorTabButton({
           className={`shrink-0 ${isActive ? "text-[var(--text-secondary)]" : "text-[var(--text-icon-muted)]"}`}
         />
       ) : null}
+      {kind.icon ? (
+        <HugeiconsIcon
+          icon={kind.icon}
+          size={13}
+          strokeWidth={2}
+          color="currentColor"
+          aria-hidden="true"
+          data-tab-icon={kind.kind}
+          className={`shrink-0 ${pinned ? "" : "mr-1.5"} ${isActive ? "text-[var(--text-secondary)]" : "text-[var(--text-icon-muted)]"}`}
+        />
+      ) : null}
       <span
         className={`truncate ${pinned ? "" : "group-hover:[mask-image:linear-gradient(to_right,black,black_calc(100%_-_28px),transparent)] group-hover:[-webkit-mask-image:linear-gradient(to_right,black,black_calc(100%_-_32px),transparent_calc(100%_-_8px))]"} ${isLoading ? "animate-pulse opacity-60" : ""} ${titleOverride ? "italic" : ""}`}
       >

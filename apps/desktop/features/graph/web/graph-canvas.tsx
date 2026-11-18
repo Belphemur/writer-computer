@@ -82,6 +82,8 @@ export interface GraphCanvasProps {
   apiRef?: React.MutableRefObject<CanvasApi | null>;
   /** Bumped to center the camera on `centerRequest.key`. */
   centerRequest?: { key: string; n: number } | null;
+  /** A frame of `spec` was drawn (the end of the layout phase, `progress.ts`). */
+  onFrame?: (spec: GraphSpec) => void;
 }
 
 const CAMERA_SAVE_MS = 400;
@@ -186,6 +188,10 @@ function Controller(
     updateLevel();
     if (applied.structural || anchors) layout.current?.start();
     hulls.current?.redraw();
+    if (model.order > 0) {
+      const drawn = p.spec;
+      sigma.once("afterRender", () => latest.current.onFrame?.(drawn));
+    }
     if (first && model.order > 0) {
       loaded.current = true;
       const camera = sigma.getCamera();

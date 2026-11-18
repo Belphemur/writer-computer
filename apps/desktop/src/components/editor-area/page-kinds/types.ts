@@ -1,3 +1,4 @@
+import type { IconSvgElement } from "@hugeicons/react";
 import type { ComponentType, ReactNode } from "react";
 
 /**
@@ -30,6 +31,9 @@ export interface PageKindInput<K extends string, L extends { kind: K }> {
    *  command palette and other places that want a subtitle for the kind. */
   description: string;
 
+  /** The glyph before the tab title (and wherever the kind is shown). Default: none; file-like
+   *  kinds are told apart by their title. The one place a kind's icon is declared. */
+  icon?: IconSvgElement;
   /** Stays mounted when inactive? Default: `false`. */
   keepAlive?: boolean;
   /** Whether file-only context-menu items appear on this tab. Default: `false`. */
@@ -73,6 +77,7 @@ export interface PageKind<K extends string = string, L extends { kind: K } = { k
   kind: K;
   title: (location: L) => string;
   description: string;
+  icon: IconSvgElement | undefined;
   keepAlive: boolean;
   supportsFileContextMenu: boolean;
   fromPayload: (data: SerializedLocation) => L | null;
@@ -109,6 +114,7 @@ export function definePageKind<K extends string, L extends { kind: K }>(
   input: PageKindInput<K, L>,
 ): PageKind<K, L> {
   return {
+    icon: undefined,
     keepAlive: false,
     supportsFileContextMenu: false,
     fromPayload: () => ({ kind: input.kind }) as L,

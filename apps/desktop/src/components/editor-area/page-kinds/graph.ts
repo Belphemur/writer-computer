@@ -1,4 +1,8 @@
+import { HierarchyCircle01Icon } from "@hugeicons/core-free-icons";
 import { definePageKind } from "./types";
+
+/** The graph's icon: the tab, the sidebar action and the palette show this one. */
+export const GRAPH_ICON = HierarchyCircle01Icon;
 
 /** The camera of a graph tab (sigma's normalised camera state), restored with the session. */
 export type GraphCamera = { x: number; y: number; ratio: number };
@@ -48,6 +52,7 @@ export const graphKind = definePageKind<"graph", GraphLocation>({
   kind: "graph",
   title: () => "Graph",
   description: "Graph of notes and links",
+  icon: GRAPH_ICON,
   keepAlive: true,
   loadsDocument: false,
   feature: "graph",

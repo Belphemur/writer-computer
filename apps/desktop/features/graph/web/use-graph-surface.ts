@@ -1,9 +1,8 @@
-// Everything the global tab and the local panel share (one source of truth for both): the saved
-// config of the surface, the slice request it implies, the slice, the frontmatter the config needs,
-// and the spec and groups the canvas draws. The two surfaces differ only in the arguments.
-import { useEffect, useMemo } from "react";
+// Everything the graph tab draws from: the saved config, the slice request it implies, the slice,
+// the frontmatter the config needs, and the spec and groups the canvas draws.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { GraphSliceArgs } from "./ipc";
-import { EDGE_KINDS, KIND_FILTER, type Depth, type SurfaceConfig, type SurfaceId } from "./config";
+import { EDGE_KINDS, KIND_FILTER, type Depth, type SurfaceConfig } from "./config";
 import { aggregate, type Overview } from "./aggregate";
 import { surfaceGroups } from "./clusters";
 import type { GroupsResult } from "./groups";
@@ -14,9 +13,9 @@ import { useGraphConfig } from "./store";
 import { useGraphData, type GraphData } from "./use-graph-data";
 import { useCommunities } from "./use-clusters";
 import { useNoteProps } from "./use-note-props";
+import { derivePhase, type GraphPhase } from "./progress";
 
 export interface SurfaceArgs {
-  surface: SurfaceId;
   /** Vault-relative center note; with `depth` the slice is its neighbourhood. */
   center: string | null;
   depth?: Depth;
@@ -31,6 +30,12 @@ export interface GraphSurface {
   overview: Overview;
   labels: string[];
   loaded: boolean;
+  /** Where the graph is on its way to a first drawn frame (`progress.ts`); the one source. */
+  phase: GraphPhase;
+  /** A frame was drawn at least once: later phases are redraws that keep the graph on screen. */
+  drawn: boolean;
+  /** The canvas reports a drawn frame of `spec`. */
+  onFrame: (spec: GraphSpec) => void;
 }
 
 /** The slice request of a surface's filters (what the backend can narrow; the rest is `buildSpec`). */
@@ -55,7 +60,7 @@ export function sliceArgs(
 
 export function useGraphSurface(a: SurfaceArgs): GraphSurface {
   const loaded = useGraphConfig((s) => s.loaded);
-  const config = useGraphConfig((s) => s.config[a.surface]);
+  const config = useGraphConfig((s) => s.config.global);
   useEffect(() => {
     void useGraphConfig.getState().load();
   }, []);
@@ -64,7 +69,7 @@ export function useGraphSurface(a: SurfaceArgs): GraphSurface {
   const args = useMemo(
     () => (loaded ? sliceArgs(a, config, cardKey ? cardKey.split(",") : []) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, a.surface, a.center, a.depth, config.filters, cardKey],
+    [loaded, a.center, a.depth, config.filters, cardKey],
   );
   const data = useGraphData(args);
 
@@ -83,7 +88,7 @@ export function useGraphSurface(a: SurfaceArgs): GraphSurface {
         : { nodes: [], edges: [] },
     [data.slice, config.filters, a.center, props],
   );
-  const communities = useCommunities(
+  const { communities, pending: clustersPending } = useCommunities(
     spec,
     config.groupBy.property === null && config.display.clusterBy === "communities",
   );
@@ -101,5 +106,30 @@ export function useGraphSurface(a: SurfaceArgs): GraphSurface {
     );
   }, [spec, groups]);
   const labels = useMemo(() => (data.slice ? propertyLabels(data.slice) : []), [data.slice]);
-  return { data, config, spec, groups, overview, labels, loaded };
+  const [frame, setFrame] = useState<{ spec: GraphSpec | null; ever: boolean }>({
+    spec: null,
+    ever: false,
+  });
+  const onFrame = useCallback((drawn: GraphSpec) => setFrame({ spec: drawn, ever: true }), []);
+  const phase = derivePhase({
+    configLoaded: loaded,
+    slice: data.slice,
+    fetching: data.loading,
+    error: data.error,
+    clustersPending,
+    nodes: spec.nodes.length,
+    framed: frame.spec === spec,
+  });
+  return {
+    data,
+    config,
+    spec,
+    groups,
+    overview,
+    labels,
+    loaded,
+    phase,
+    drawn: frame.ever,
+    onFrame,
+  };
 }

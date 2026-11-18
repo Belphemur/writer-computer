@@ -1,6 +1,6 @@
-// The drawing area both surfaces share: the WebGL canvas, the list fallback (WebGL unavailable, a
+// The drawing area of the graph tab: the WebGL canvas, the list fallback (WebGL unavailable, a
 // lost context with "Reload graph", or the Nodes toggle for screen readers), the truncated banner,
-// the info card of the selected node and the edge tooltip. A surface supplies its data and what a click does.
+// the info card of the selected node and the edge tooltip.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphCamera } from "@/components/editor-area/page-kinds";
 import type { LinkIntent } from "@/lib/link-activation";
@@ -10,6 +10,8 @@ import { graphStats, type GraphStats } from "./ipc";
 import { NodeCard } from "./node-card";
 import type { NodeAttrs, NodeSpec } from "./model";
 import { NodeList } from "./node-list";
+import { GraphProgress } from "./graph-progress";
+import { visiblePhase } from "./progress";
 import { type GraphSettings } from "./settings";
 import type { GraphSurface } from "./use-graph-surface";
 
@@ -23,13 +25,10 @@ export interface GraphStageProps {
   pins?: Record<string, [number, number]>;
   onCameraChange?: (c: GraphCamera) => void;
   onPinsChange?: (p: Record<string, [number, number]>) => void;
-  /** What a left click does besides opening (the local panel recenters through the active note). */
-  onOpenNode?: (node: NodeAttrs, intent: LinkIntent) => void;
   focusHere?: (path: string) => void;
   apiRef?: React.MutableRefObject<CanvasApi | null>;
   centerRequest?: { key: string; n: number } | null;
-  showBanner?: boolean;
-  /** Whether the Nodes list toggle is offered (the panel keeps its chrome small). */
+  /** The Nodes list toggle is on (also the fallback when WebGL is missing). */
   listOpen: boolean;
 }
 
@@ -64,8 +63,7 @@ export function GraphStage(p: GraphStageProps) {
 
   const open = (node: NodeAttrs | NodeSpec, intent: LinkIntent) => {
     if ("anchor" in node) return;
-    if (p.onOpenNode && "x" in node) p.onOpenNode(node, intent);
-    else void openNode(node, intent);
+    void openNode(node, intent);
   };
 
   const [, redraw] = useState(0);
@@ -102,6 +100,7 @@ export function GraphStage(p: GraphStageProps) {
     onContextLost: () => setLost(true),
     apiRef,
     centerRequest: p.centerRequest,
+    onFrame: surface.onFrame,
   };
 
   return (
@@ -142,7 +141,7 @@ export function GraphStage(p: GraphStageProps) {
           <NodeList nodes={surface.spec.nodes} onOpen={(n, i) => void openNode(n, i)} />
         </div>
       )}
-      {p.showBanner !== false && truncated && (
+      {truncated && (
         <div
           role="status"
           className="absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border border-[var(--line-subtle)] bg-[var(--surface-card)] px-3 py-1 text-[12px] text-[var(--text-secondary)]"
@@ -170,14 +169,14 @@ export function GraphStage(p: GraphStageProps) {
           {edgeHover.title}
         </div>
       )}
-      {surface.data.error && (
-        <p
-          role="alert"
-          className="absolute inset-x-0 top-2 text-center text-[12px] text-[var(--danger)]"
-        >
-          Could not load the graph: {surface.data.error}
-        </p>
-      )}
+      <GraphProgress
+        phase={visiblePhase(surface.phase, !unavailable && !lost)}
+        drawn={surface.drawn}
+        nodes={surface.spec.nodes.length}
+        links={surface.spec.edges.length}
+        error={surface.data.error}
+        onRetry={surface.data.refetch}
+      />
     </div>
   );
 }
