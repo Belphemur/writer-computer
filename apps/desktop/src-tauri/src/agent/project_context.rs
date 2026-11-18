@@ -593,6 +593,27 @@ pub struct BundleInput<'a> {
     pub memory: Option<MemoryNote<'a>>,
 }
 
+/// The Writer system block for a chat: the vault's folder name and, for a project chat, its name
+/// and vault-relative folder (never the absolute path).
+fn writer_block(input: &BundleInput) -> String {
+    let vault = input
+        .root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    writer_prompt::render(&writer_prompt::PromptInput {
+        writer_cli: input.writer_cli,
+        orchestration: input.orchestration,
+        memory: input.memory,
+        place: writer_prompt::Place {
+            vault,
+            project: input
+                .project
+                .map(|p| (p.info.name.as_str(), p.info.path.as_str())),
+        },
+    })
+}
+
 /// Build the per-spawn context. Text only, no note bodies (a shadowed `AGENTS.md` is the one
 /// file whose text is included, by design).
 pub fn build(input: &BundleInput) -> std::io::Result<ContextBundle> {
@@ -639,11 +660,7 @@ pub fn build(input: &BundleInput) -> std::io::Result<ContextBundle> {
         .filter(|t| !t.is_empty());
 
     // The Writer system block opens every prompt, before the instruction files and the project.
-    let mut sections: Vec<String> = vec![writer_prompt::render(
-        input.writer_cli,
-        input.orchestration,
-        input.memory,
-    )];
+    let mut sections: Vec<String> = vec![writer_block(input)];
     let injected: Vec<&InstructionAudit> = instructions
         .iter()
         .filter(|a| matches!(a.status, InstructionStatus::Injected { .. }))
@@ -796,6 +813,32 @@ mod tests {
                 paths,
             })
         }
+    }
+
+    /// The Writer block as `build` renders it for a bare chat (no orchestration, no memory).
+    fn expected_block(root: &Path, project: Option<&ProjectDetail>, writer_cli: bool) -> String {
+        writer_block(&BundleInput {
+            root,
+            project,
+            mode: InjectMode::Auto,
+            cli_version: None,
+            index: None,
+            writer_cli,
+            orchestration: None,
+            memory: None,
+        })
+    }
+
+    #[test]
+    fn the_block_names_the_vault_folder_and_the_project_by_relative_path() {
+        let (_d, root, p) = project_with(&[], &[]);
+        let vault = root.file_name().unwrap().to_str().unwrap();
+        let text = expected_block(&root, Some(&p), false);
+        assert!(text.contains(&format!(
+            "Vault: {vault}. Working in project P (`Projects/P`).\n"
+        )));
+        assert!(!text.contains(root.to_str().unwrap()), "no absolute path");
+        assert!(expected_block(&root, None, false).contains("Working at the vault root."));
     }
 
     fn project_with(
@@ -951,7 +994,7 @@ mod tests {
         };
         assert_eq!(
             lib.append_system_prompt(&ctx2).unwrap(),
-            Some(writer_prompt::render(false, None, None))
+            Some(expected_block(&root, None, false))
         );
     }
 
@@ -1101,7 +1144,7 @@ mod tests {
             let b = build(&input(cli)).unwrap();
             assert_eq!(
                 b.append_system_prompt.unwrap(),
-                writer_prompt::render(cli, None, None)
+                expected_block(&root, None, cli)
             );
         }
         // A project with a native-loaded AGENTS.md: the block, then the header, no instruction text.
@@ -1118,7 +1161,7 @@ mod tests {
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
-        assert!(s.starts_with(&writer_prompt::render(false, None, None)));
+        assert!(s.starts_with(&expected_block(&root2, Some(&p), false)));
         assert!(s.contains("## Project: P") && !s.contains("Be brief."));
     }
 
@@ -1142,7 +1185,7 @@ mod tests {
         .unwrap();
         let expected = format!(
             "{}\nThe following instruction files are not loaded automatically; follow them. Later instructions take precedence over earlier ones.\n\n### AGENTS.md\n\nvault rules\n\n## Project: P\nDesc\nProject folder: Projects/P\n",
-            writer_prompt::render(true, None, None)
+            expected_block(&root, Some(&p), true)
         );
         assert_eq!(b.append_system_prompt.unwrap(), expected);
     }
