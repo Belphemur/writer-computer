@@ -1779,6 +1779,95 @@ fn the_card_stays_open_while_a_sub_agent_works_so_late_edits_land_on_it() {
     assert!(!all.contains("Async agent") && !all.contains("a1b2c3"));
 }
 
+/// Captured from the real CLI (2.1.326, `fixtures/subagent-real-*.jsonl`, sanitized): a
+/// foreground sub-agent's `Edit` reaches Writer only as a complete `assistant` message carrying
+/// `parent_tool_use_id` (no `stream_event`s, no `tool_use_result`), so that line is the only moment
+/// the pre-image can be taken. The row and the card both list the edit, attributed to the role.
+#[test]
+fn a_real_foreground_sub_agent_edit_is_in_the_session_row_and_the_card() {
+    let mut h = Harness::new(&["subagent-real-foreground"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-real-foreground", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "edit it");
+    h.next(CHAT, "the sub-agent's Edit input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { input, .. } if input.get("old_string").is_some())
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\n").unwrap();
+    h.go();
+
+    let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+        matches!(e, AgentEvent::SessionChanges(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(live.files.len(), 1);
+    assert_eq!(live.files[0].by.as_deref(), Some("worker"));
+    assert_eq!((live.files[0].added, live.files[0].removed), (1, 1));
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let card = turn_changes(&mut h);
+    assert_eq!(card.files.len(), 1);
+    assert_eq!(card.files[0].by.as_deref(), Some("worker"));
+    assert_eq!((card.files[0].added, card.files[0].removed), (1, 1));
+}
+
+/// Captured from the real CLI with the stdio permission tool (the app's mode): a background
+/// sub-agent's `Write` comes after the first `result` (the CLI keeps running, then wakes the main
+/// agent with a second `init` ... `result`). The row updates live when the write ends, the card
+/// stays open and lists it once the woken turn ends.
+#[test]
+fn a_real_background_sub_agent_write_after_the_result_updates_the_row_and_the_card() {
+    let mut h = Harness::new(&["subagent-real-background"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "one\n").unwrap();
+    h.use_fixture_for("subagent-real-background", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "write it in the background");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+    assert!(
+        !h.seen
+            .iter()
+            .any(|e| matches!(e.event, AgentEvent::TurnChanges(_))),
+        "no card yet: the sub-agent still works"
+    );
+    h.go();
+    let (request_id, by) = match h.next(CHAT, "the late write's permission request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    }) {
+        AgentEvent::PermissionRequest { request_id, by, .. } => (request_id, by),
+        _ => unreachable!(),
+    };
+    assert_eq!(by.as_deref(), Some("worker"));
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "hello background").unwrap();
+    h.sessions
+        .permission(
+            "w",
+            CHAT,
+            &request_id,
+            PermissionDecision::Allow,
+            None,
+            None,
+        )
+        .unwrap();
+    h.go();
+
+    let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+        matches!(e, AgentEvent::SessionChanges(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(live.files.len(), 1);
+    assert_eq!(live.files[0].by.as_deref(), Some("worker"));
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let card = turn_changes(&mut h);
+    assert_eq!(card.files.len(), 1);
+    assert_eq!(card.files[0].by.as_deref(), Some("worker"));
+}
+
 /// Item 5d: in manual mode the sub-agent's edit raises a permission card that says who asks and
 /// that the user can answer; the answer reaches the CLI and the edit lands on the card.
 #[test]
