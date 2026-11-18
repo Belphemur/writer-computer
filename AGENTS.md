@@ -44,6 +44,8 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - [docs/workflows/agent-loop.md](./docs/workflows/agent-loop.md) — repeatable autonomous task execution loop
 - [docs/workflows/agent-review.md](./docs/workflows/agent-review.md) — review personas, findings format, quality checklist, escalation rules
 - [docs/workflows/worktrees.md](./docs/workflows/worktrees.md) — creating and managing parallel worktrees
+- [docs/workflows/subagents.md](./docs/workflows/subagents.md) — the lead orchestrates, the `writer-engineer` sub-agent (`.claude/agents/writer-engineer.md`) implements: decide with the user and write the ADR first, brief fully, parallel lanes in worktrees, lead validates, commits, builds
+- [docs/soul.md](./docs/soul.md) — the character every agent brings: care for the user's work, privacy, truth over comfort, one source of truth, quiet interfaces
 
 **Guidelines**
 
@@ -79,6 +81,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - Write an ADR in [`docs/decisions/`](./docs/decisions/README.md) for a decision that changes how the system is built or operated, is hard to reverse, affects later contributors, and had real alternatives (new dependency, new architectural pattern, trust or storage model). Use the `adr-skill` (`.agents/skills/adr-skill/`): the filename is `YYYY-MM-DD-<slug>.md` with the decision date (never a sequence number), the `date` front matter matches it, and the index (`docs/decisions/README.md`) is updated in the same change. Link the ADR from the spec or `TODOS.md` item that motivated it, and check consistency with `node scripts/check-adr.cjs --dir docs/decisions`. Consult the ADRs before changing an area they govern; supersede an accepted ADR with a new one instead of editing it.
 - Load only docs relevant to the current task and scope.
 - If a behavior or rule changes in practice, update the owning doc in the same task.
+- Delegation: the lead session orchestrates and delegates implementation to `writer-engineer` sub-agents per [docs/workflows/subagents.md](./docs/workflows/subagents.md); sub-agents never commit, push, build or add dependencies.
 - In autonomous/loop mode, complete exactly one task at a time and commit immediately. Do not batch unless the user explicitly asks.
 - When coding or reviewing, follow the Engineering Guardrails below and the guidelines in linked docs.
 - Agent skills: third-party skills (like `adr-skill`) are pinned in `skills-lock.json` and installed with `npx skills experimental_install`; they are git-ignored. Our own skills live in `.agents/skills/<name>/` and are whitelisted in `.gitignore`.

@@ -8,6 +8,7 @@ You are a senior full-stack engineer on Writer, a Tauri v2 desktop Markdown edit
 
 ## Before you write code
 
+0. Read `docs/soul.md` (the spirit of the work) and `docs/workflows/subagents.md` (how the lead briefs you and what it expects back).
 1. Read and apply the engineering-philosophy skill, `.agents/skills/engineering-philosophy/SKILL.md` (DRY > SOLID > KISS; the order is the rule when they conflict). It governs every change and every self-review you make, tests included; in your report, name any place where you chose between two principles and which one won.
 2. Read `CLAUDE.md` (the agent router) and follow the docs it points to for your area: `docs/consolidation.md`, `docs/react-guidelines.md`, `docs/zustand.md`, `docs/editor.md` for editor work, `docs/vite-plus.md` for tooling.
 3. Read the spec in `SPECs/` and any ADR in `docs/decisions/` for the feature you touch. If the change alters a documented behaviour, update that spec in the same change.
@@ -22,10 +23,11 @@ You are a senior full-stack engineer on Writer, a Tauri v2 desktop Markdown edit
 - **No release builds**: do not run `tauri build`; the lead does.
 - **Privacy**: never log note contents, vault paths or secrets (`log::` macros in Rust, `logger` from `src/lib/logger.ts` in TS; never `eprintln!` or `console.log` in shipped code). Tests use fixture vaults, never the user's real vault.
 - **Obsidian clean-room**: never copy or inspect Obsidian's own code, CSS or binaries; work from public docs only. Never patch community plugins to make them work; fix the host shim. Never write into a vault's `.obsidian/` folder.
-- **Agent tests** use the fake `claude` binary and the goldens (`WRITER_UPDATE_GOLDEN=1 cargo test golden` to regenerate deliberately), never the real CLI.
+- **Agent tests** use the fake `claude` binary and the goldens (`WRITER_UPDATE_GOLDEN=1 cargo test golden` to regenerate deliberately). The real `claude` CLI may run only inside a temporary directory to record real stream shapes as sanitized fixtures; never in the user's vault, never reading `~/.claude`.
 - **Rust**: Tauri-free cores (`index/`, `bases/`, `cli/`, `relocate/`, `agent/` mappers) stay free of `tauri` types; IPC handlers in `commands/` are thin and use `commands::blocking` for IO. Register new commands in `lib.rs` and keep the allowlist tests green.
 - **React/TS**: typed IPC through the existing `src/lib/tauri.ts` wrappers; selectors over whole-store subscriptions; side effects owned in one place.
-- **Settings**: a new setting goes in `apps/desktop/shared/settings.schema.json` with a description and default, plus its settings section and tests (Rust count tests in `config.rs` included).
+- **Settings**: a new setting goes in `apps/desktop/shared/settings.schema.json` (or its feature's `settings.schema.json` fragment) with a description and default, plus its settings section and tests (Rust count tests in `config.rs` included).
+- **UI text**: terse labels, no explanatory prose; at most a one-line hint.
 - **Docs**: user-visible change gets one line in `CHANGELOG.md`; shortcut changes update `docs/keyboard-shortcuts.md` (a test ties it to the registry).
 
 ## Validation (all must pass before you report)
