@@ -30,6 +30,17 @@ export const FALLBACK_THEME: GraphTheme = {
   background: "#ffffff",
 };
 
+export const DARK_FALLBACK_THEME: GraphTheme = {
+  accent: "#8b7cf8",
+  edge: "#6b6b76",
+  edgeStrong: "#a0a0aa",
+  label: "#b8b8c2",
+  text: "#ececf1",
+  labelBackground: "#1e1e22",
+  muted: "#7a7a85",
+  background: "#1e1e22",
+};
+
 /** Mid-lightness hues that read on light and dark backgrounds: the one palette of group rules and
  *  property labels. */
 export const PALETTE = [
@@ -49,24 +60,70 @@ const VARS: Record<keyof GraphTheme, string> = {
   edgeStrong: "--text-muted",
   label: "--text-secondary",
   text: "--text-primary",
-  labelBackground: "--surface-card",
+  labelBackground: "--surface-primary",
   muted: "--text-icon-muted",
   background: "--surface-primary",
 };
 
-/** Resolve the theme variables on `el` to concrete colors. Falls back per color when the browser
- *  gives nothing usable (an unset variable, a test DOM). */
+/** The opaque base a translucent theme colour is composited over: the window can be translucent
+ *  (macOS vibrancy) and `--surface-card` is a `color-mix()` with `transparent`, so a plate drawn in
+ *  that colour on the canvas would be see-through or, unparsed, fall back to white. */
+const DARK_BASE = "rgb(30, 30, 34)";
+const LIGHT_BASE = "rgb(255, 255, 255)";
+
+/** `css` (any colour the engine understands: `rgb()`, `color(srgb ...)`, `oklch()`, a resolved
+ *  `color-mix()`) composited over the opaque `base` and read back as `rgb()`; null when the canvas
+ *  is unavailable (a test DOM). One 1x1 canvas, reused. */
+let scratch: CanvasRenderingContext2D | null | undefined;
+function opaque(css: string, base: string): string | null {
+  if (scratch === undefined) {
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = 1;
+      scratch = c.getContext("2d", { willReadFrequently: true });
+    } catch {
+      scratch = null;
+    }
+  }
+  if (!scratch) return null;
+  scratch.globalCompositeOperation = "source-over";
+  scratch.fillStyle = base;
+  scratch.fillRect(0, 0, 1, 1);
+  scratch.fillStyle = css;
+  scratch.fillRect(0, 0, 1, 1);
+  const [r, g, b] = scratch.getImageData(0, 0, 1, 1).data;
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** Relative luminance (0..1) of an `rgb(r, g, b)` string, or null. */
+function luminance(rgb: string): number | null {
+  const m = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(rgb);
+  if (!m) return null;
+  return (0.2126 * Number(m[1]) + 0.7152 * Number(m[2]) + 0.0722 * Number(m[3])) / 255;
+}
+
+/** Resolve the theme variables on `el` to concrete, opaque colors. A light primary text colour
+ *  means a dark theme, which picks the dark base and fallbacks; the label plate is the opaque
+ *  background so plates never draw white on a dark canvas. */
 export function readTheme(el: HTMLElement): GraphTheme {
   const probe = document.createElement("span");
   probe.style.display = "none";
   el.appendChild(probe);
   try {
-    const out = { ...FALLBACK_THEME };
+    const computed = (name: string) => {
+      probe.style.color = `var(${name})`;
+      return getComputedStyle(probe).color;
+    };
+    const textRaw = computed(VARS.text);
+    const dark = (luminance(opaque(textRaw, LIGHT_BASE) ?? textRaw) ?? 0) > 0.5;
+    const base = dark ? DARK_BASE : LIGHT_BASE;
+    const out: GraphTheme = dark ? { ...DARK_FALLBACK_THEME } : { ...FALLBACK_THEME };
     for (const key of Object.keys(VARS) as (keyof GraphTheme)[]) {
-      probe.style.color = `var(${VARS[key]})`;
-      const c = getComputedStyle(probe).color;
-      if (/^(rgb|#)/i.test(c)) out[key] = c;
+      const raw = computed(VARS[key]);
+      const c = opaque(raw, base) ?? (/^(rgb|#)/i.test(raw) ? raw : null);
+      if (c) out[key] = c;
     }
+    out.labelBackground = out.background;
     return out;
   } finally {
     probe.remove();

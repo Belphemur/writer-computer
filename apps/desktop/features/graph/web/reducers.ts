@@ -102,6 +102,11 @@ export function nodeStyle(key: string, a: NodeAttrs, s: ViewState): NodeStyle {
     opacity: a.kind === "missing" ? 0.55 : 1,
     labelVisibility: "hidden",
     labelColor: s.theme.label,
+    // Sigma's hover backdrop defaults to a white box; draw it in the theme's plate colour.
+    backdropColor: s.theme.labelBackground,
+    backdropBorderColor: s.theme.edge,
+    backdropBorderWidth: 1,
+    backdropShadowBlur: 0,
   };
 
   const hoverActive = s.hovered !== null;
