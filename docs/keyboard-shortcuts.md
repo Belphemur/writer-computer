@@ -4,6 +4,10 @@
 
 Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃.
 
+These are the defaults. You can change any shortcut, and give one to any command, in Settings > Hotkeys; your keys are stored per operating system.
+
+<!-- Settings > Hotkeys (SPECs/hotkeys-spec.md): the registry's effective keys are the defaults below with the user's `hotkeys.json` on top. The tables and `tests/keybindings.test.ts` keep reading the defaults. -->
+
 ## Global
 
 These work anywhere in the window, whether or not you are typing in a note.

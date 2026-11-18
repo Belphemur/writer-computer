@@ -186,6 +186,7 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
     keys: digits("Mod+"),
     description: "Jump to Nth tab",
     category: "Tabs",
+    rebindable: false, // `run` reads the digit from the key
     run: (e) => {
       if (isCompactFileMode()) return;
       const { tabs, setActiveTab } = useEditorStore.getState();

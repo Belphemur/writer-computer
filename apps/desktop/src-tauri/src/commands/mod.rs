@@ -1,6 +1,7 @@
 pub mod features;
 pub mod fonts;
 pub mod fs;
+pub mod hotkeys;
 pub mod images;
 pub mod index;
 pub mod logs;

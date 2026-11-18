@@ -1,0 +1,29 @@
+{
+  "comment": "Key chord syntax shared by src/lib/keybindings/chord.ts (parseChord) and src-tauri/src/hotkeys.rs (validate): modifiers Mod, Meta, Ctrl, Alt, Shift joined by +, then one key (a single character or a name like ArrowLeft). Both tests read this file.",
+  "valid": [
+    "Mod+T",
+    "Mod+Shift+T",
+    "Alt+ArrowLeft",
+    "Ctrl+Tab",
+    "Meta+[",
+    "Mod++",
+    "Mod+Shift++",
+    "Mod+\\",
+    "Mod+,",
+    "F5",
+    "a",
+    "Shift+Enter",
+    "Mod+ ",
+    "+"
+  ],
+  "invalid": [
+    "",
+    "Cmd+P",
+    "Mod+",
+    "Mod+Shift+",
+    "Mod+Ab c",
+    "Mod+Shift+Tab+",
+    "mod+t+u",
+    "Mod+1a-b"
+  ]
+}

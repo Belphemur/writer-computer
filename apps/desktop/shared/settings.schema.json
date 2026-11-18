@@ -603,6 +603,15 @@
       "scope": "global"
     },
     {
+      "key": "features.hotkeys.enabled",
+      "label": "Hotkeys",
+      "description": "Turns the Hotkeys feature on or off.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
       "key": "features.obsidian-host.enabled",
       "label": "Obsidian plugins",
       "description": "Turns the Obsidian plugins feature on or off.",

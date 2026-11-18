@@ -20,6 +20,23 @@ export function featuresRestartNormally(): Promise<void> {
   return invoke("features_restart_normally");
 }
 
+// Keyboard shortcut overrides (`hotkeys.json` in the app data dir, validated by Rust; the registry
+// side is `lib/keybindings/overrides.ts`).
+/** The file's text, or null when the user has changed nothing. Rejects when the file is invalid. */
+export function hotkeysRead(): Promise<string | null> {
+  return invoke("hotkeys_read");
+}
+
+/** Validates, replaces the file atomically and tells every window to reload. */
+export function hotkeysWrite(content: string): Promise<void> {
+  return invoke("hotkeys_write", { content });
+}
+
+/** The open vault's `.obsidian/hotkeys.json` text (read-only), or null when it has none. */
+export function hotkeysReadObsidian(): Promise<string | null> {
+  return invoke("hotkeys_read_obsidian");
+}
+
 export function readRecentFiles(limit: number, offset: number): Promise<DirEntry[]> {
   return invoke("read_recent_files", { limit, offset });
 }

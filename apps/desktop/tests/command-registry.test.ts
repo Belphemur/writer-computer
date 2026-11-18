@@ -80,6 +80,7 @@ describe("palette built-in commands", () => {
       "agent.archive-project",
       "agent.unarchive-project",
       "graph.open",
+      "hotkeys.open",
     ]);
   });
 

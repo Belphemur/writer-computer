@@ -206,3 +206,55 @@ export function resolveCommands(ctx: CommandContext): PaletteCommand[] {
     .map(toPalette);
   return [...builtins, ...sourced];
 }
+
+// ---------------------------------------------------------------- keys for commands
+// The palette and the keybinding registry meet here: every command above (built-in or contributed
+// by a feature) gets an entry in the registry, so the user can give it a key in Settings > Hotkeys,
+// and a key bound to one runs it through the same availability and action rules as the palette.
+// A command that already has a binding of its own id (`core-bindings.ts`, a feature's keybinding)
+// keeps that one. The Obsidian host adds its plugin commands itself (it owns their lifetime).
+
+let contextProvider: (() => CommandContext) | null = null;
+
+/** The mounted palette hands over how to build a `CommandContext` (null on unmount). */
+export function setCommandContextProvider(provider: (() => CommandContext) | null): void {
+  contextProvider = provider;
+}
+
+/** Runs a palette command by id when it is available now; does nothing otherwise. */
+export function runCommand(id: string): void {
+  const ctx = contextProvider?.();
+  if (!ctx) return;
+  resolveCommands(ctx)
+    .find((c) => c.id === id)
+    ?.run();
+}
+
+/** Would the palette list this command now? (Its `when`; a key on an unavailable command falls through.) */
+function isCommandAvailable(id: string): boolean {
+  const ctx = contextProvider?.();
+  if (!ctx) return false;
+  const c = [...BUILTIN_COMMANDS, ...featurePaletteCommands.list()].find((x) => x.id === id);
+  return c?.when?.(ctx) ?? true;
+}
+
+/** The palette's name for a command, or undefined when the palette has none (a bare binding). */
+export function commandLabel(id: string): string | undefined {
+  return BUILTIN_COMMANDS.find((c) => c.id === id)?.label ?? featurePaletteCommands.get(id)?.label;
+}
+
+function addCommandEntries(): void {
+  const entry = (owner: string, c: { id: string; label: string }) =>
+    keybindings.addCommand(owner, {
+      id: c.id,
+      description: c.label,
+      run: () => runCommand(c.id),
+      available: () => isCommandAvailable(c.id),
+    });
+  for (const c of BUILTIN_COMMANDS) entry("core", c);
+  for (const c of featurePaletteCommands.list()) entry(c.owner, c);
+}
+
+addCommandEntries();
+// A feature registered later adds its commands (its owner's removal takes the entries with it).
+featurePaletteCommands.subscribe(addCommandEntries);

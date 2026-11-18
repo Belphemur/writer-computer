@@ -12,6 +12,7 @@ mod dock_menu;
 mod error;
 mod features;
 pub mod fs_entry;
+mod hotkeys;
 mod ignore;
 pub mod index;
 pub mod logging;
@@ -692,6 +693,9 @@ pub fn run() {
             commands::workspace::open_file_in_standalone_window,
             commands::workspace::watch_standalone_file,
             commands::fonts::list_system_fonts,
+            commands::hotkeys::hotkeys_read,
+            commands::hotkeys::hotkeys_write,
+            commands::hotkeys::hotkeys_read_obsidian,
             commands::recents::record_recent_file,
             commands::recents::remove_recent_file,
             commands::recents::get_recent_files_global,

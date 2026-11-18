@@ -39,7 +39,7 @@ import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import * as logActions from "@/lib/log-actions";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
 import { ContentSearchPalette } from "./content-search-palette";
-import { resolveCommands } from "./commands";
+import { resolveCommands, setCommandContextProvider, type CommandContext } from "./commands";
 import { useFuzzySearch } from "./use-fuzzy-search";
 import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
 import { openStandaloneFile } from "@/hooks/use-open-drop";
@@ -193,51 +193,57 @@ function FilePalette() {
     close();
   }
 
+  // What a command may read or do. Built when the palette resolves its list, and handed to
+  // `runCommand` so a key bound to a command runs it the same way.
+  const buildContext = (): CommandContext => ({
+    hasWorkspace: root !== null,
+    isCompactFileMode,
+    activeFilePath,
+    hasActiveTab: activeTabId !== null,
+    tabCount: tabs.length,
+    unpinnedTabCount,
+    activeTabPin,
+    hasClosedTabs,
+    close,
+    toggleSidebar,
+    openCreateFile: () => openCommandPalette("create-file"),
+    openSearchNotes: () => openCommandPalette("search-notes"),
+    openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
+    pinActiveTab: () => {
+      if (activeTabId) pinTab(activeTabId);
+    },
+    unpinActiveTab: () => {
+      if (activeTabId) unpinTab(activeTabId);
+    },
+    closeActiveTab,
+    reopenClosedTab: () => void reopenClosedTab(),
+    closeAllTabs,
+    openWorkspace: handleOpenWorkspace,
+    closeWorkspace,
+    toggleTheme,
+    zoomIn,
+    zoomOut,
+    resetZoom,
+    openSettings: openSettingsTab,
+    openLogFolder: () => {
+      logActions
+        .openLogFolder()
+        .catch((e) => showEditorNotice(`Could not open the log folder: ${String(e)}`));
+    },
+    copyRecentErrors: () => {
+      logActions
+        .copyRecentErrors()
+        .then((n) => showEditorNotice(logActions.copyResultMessage(n)))
+        .catch((e) => showEditorNotice(`Could not copy the logs: ${String(e)}`));
+    },
+  });
+  useEffect(() => {
+    setCommandContextProvider(buildContext);
+    return () => setCommandContextProvider(null);
+  });
+
   // Resolved only while open: plugin availability checks run plugin code.
-  const commands = !isOpen
-    ? []
-    : resolveCommands({
-        hasWorkspace: root !== null,
-        isCompactFileMode,
-        activeFilePath,
-        hasActiveTab: activeTabId !== null,
-        tabCount: tabs.length,
-        unpinnedTabCount,
-        activeTabPin,
-        hasClosedTabs,
-        close,
-        toggleSidebar,
-        openCreateFile: () => openCommandPalette("create-file"),
-        openSearchNotes: () => openCommandPalette("search-notes"),
-        openFileInCompactWindow: (path) => void tauri.openFileInStandaloneWindow(path),
-        pinActiveTab: () => {
-          if (activeTabId) pinTab(activeTabId);
-        },
-        unpinActiveTab: () => {
-          if (activeTabId) unpinTab(activeTabId);
-        },
-        closeActiveTab,
-        reopenClosedTab: () => void reopenClosedTab(),
-        closeAllTabs,
-        openWorkspace: handleOpenWorkspace,
-        closeWorkspace,
-        toggleTheme,
-        zoomIn,
-        zoomOut,
-        resetZoom,
-        openSettings: openSettingsTab,
-        openLogFolder: () => {
-          logActions
-            .openLogFolder()
-            .catch((e) => showEditorNotice(`Could not open the log folder: ${String(e)}`));
-        },
-        copyRecentErrors: () => {
-          logActions
-            .copyRecentErrors()
-            .then((n) => showEditorNotice(logActions.copyResultMessage(n)))
-            .catch((e) => showEditorNotice(`Could not copy the logs: ${String(e)}`));
-        },
-      });
+  const commands = !isOpen ? [] : resolveCommands(buildContext());
 
   // An empty query lists recent files (opened first, then modified) above the commands.
   const visibleFiles: SearchResult[] = !isCreateIntent && !isCompactFileMode ? results : [];

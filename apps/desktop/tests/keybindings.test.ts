@@ -23,6 +23,7 @@ import {
   KeybindingConflictError,
   KeybindingRegistry,
   keybindings,
+  resolveKeys,
   type Keybinding,
 } from "../src/lib/keybindings/registry";
 import { useEditorStore } from "../src/stores/editor-store";
@@ -124,7 +125,9 @@ describe("conflict detection", () => {
     const ids = new Set(keybindings.list().map((b) => b.id));
     expect(CORE_BINDINGS.every((b) => ids.has(b.id))).toBe(true);
     const chords = CORE_BINDINGS.flatMap((b) =>
-      b.keys.map((k) => `${b.when ?? ""}|${b.phase ?? ""}|${normalizeChord(k)}`),
+      resolveKeys(b.keys, "mac").map(
+        (k) => `${b.when ?? ""}|${b.phase ?? ""}|${normalizeChord(k)}`,
+      ),
     );
     expect(new Set(chords).size).toBe(chords.length);
   });
@@ -151,7 +154,7 @@ function documentedGlobalChords(): string[] {
 describe("docs/keyboard-shortcuts.md Global table", () => {
   // Core bindings plus what the built-in features contribute (Cmd+Shift+A is the agent's).
   const registryChords = () =>
-    new Set(keybindings.list().flatMap((b) => b.keys.map(normalizeChord)));
+    new Set(keybindings.list().flatMap((b) => keybindings.defaultKeys(b.id)));
 
   it("has a registry entry for every documented shortcut", () => {
     const docs = documentedGlobalChords();

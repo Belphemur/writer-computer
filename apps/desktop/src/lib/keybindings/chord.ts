@@ -34,7 +34,9 @@ export interface ChordMatchOptions {
 
 const KEY = /^(?:.|[A-Za-z][A-Za-z0-9]+)$/;
 const isLetter = (s: string) => /^[a-z]$/i.test(s);
+const isDigit = (s: string) => /^[0-9]$/.test(s);
 
+/** The grammar is pinned by `shared/chord-vectors.json` (the Rust validation reads the same file). */
 export function parseChord(chord: string): Chord {
   const c: Chord = { mod: false, meta: false, ctrl: false, alt: false, shift: false, key: "" };
   let rest = chord;
@@ -65,7 +67,7 @@ export function normalizeChord(chord: string): string {
 /** What the user sees: `⌘⇧T` on macOS, `Ctrl+Shift+T` elsewhere. */
 export function formatChord(chord: string, platform: Platform): string {
   const c = parseChord(chord);
-  const key = c.key.startsWith("Arrow") ? c.key.slice(5) : c.key;
+  const key = c.key === " " ? "Space" : c.key.startsWith("Arrow") ? c.key.slice(5) : c.key;
   if (platform === "macos") {
     return `${c.ctrl ? "⌃" : ""}${c.alt ? "⌥" : ""}${c.shift ? "⇧" : ""}${c.mod || c.meta ? "⌘" : ""}${key}`;
   }
@@ -98,5 +100,57 @@ export function chordMatches(
     // A non-Latin layout reports another letter as `key`; the physical key is still the one.
     return !!layoutIndependent && !isLetter(e.key) && e.code === `Key${c.key}`;
   }
-  return false;
+  // Option+digit types a symbol on macOS: the digit row is the physical key.
+  return !!layoutIndependent && isDigit(c.key) && e.code === `Digit${c.key}`;
+}
+
+/** Keys that are only a modifier (or a lock): pressing one alone is not a chord. */
+const LONE_KEYS = new Set([
+  "Meta",
+  "Control",
+  "Alt",
+  "AltGraph",
+  "Shift",
+  "CapsLock",
+  "Fn",
+  "FnLock",
+  "OS",
+  "Super",
+  "Hyper",
+  "Dead",
+  "Unidentified",
+]);
+
+/**
+ * The chord a key press spells, for the recorder: `Mod` is the platform's own key (Cmd on macOS,
+ * Ctrl elsewhere), the other one stays `Ctrl` / `Meta`. Null for a lone modifier. With Alt held the
+ * physical letter or digit is used, because Option+A types `å` on macOS.
+ */
+export function eventToChord(
+  e: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
+  platform: Platform,
+): string | null {
+  if (LONE_KEYS.has(e.key)) return null;
+  let key = e.key;
+  if (e.altKey) {
+    const physical = /^Key([A-Z])$/.exec(e.code) ?? /^Digit([0-9])$/.exec(e.code);
+    if (physical) key = physical[1]!;
+  }
+  if (!KEY.test(key)) return null;
+  const mac = platform === "macos";
+  const mods = [
+    ...(mac ? (e.metaKey ? ["Mod"] : []) : e.ctrlKey ? ["Mod"] : []),
+    ...(mac && e.ctrlKey ? ["Ctrl"] : []),
+    ...(!mac && e.metaKey ? ["Meta"] : []),
+    ...(e.altKey ? ["Alt"] : []),
+    ...(e.shiftKey ? ["Shift"] : []),
+  ];
+  return normalizeChord([...mods, key].join("+"));
+}
+
+/** Does the chord carry a modifier other than Shift, or is it a function key? A bare letter would
+ *  swallow typing everywhere, so nothing else may be bound. */
+export function isBindableChord(chord: string): boolean {
+  const c = parseChord(chord);
+  return c.mod || c.meta || c.ctrl || c.alt || /^F\d{1,2}$/.test(c.key);
 }

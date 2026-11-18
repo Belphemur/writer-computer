@@ -59,12 +59,12 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] Every palette command is listed, grouped by owner, with its effective key.
+- [x] Every palette command is listed, grouped by owner, with its effective key.
 - [ ] A recorded key works at once and survives a restart; it is stored under the current OS only.
-- [ ] A conflict offers Reassign, which removes the key from the other command.
-- [ ] Reserved chords are refused.
-- [ ] An Obsidian plugin's hotkey can be changed and the plugin reads the new key.
-- [ ] Import from Obsidian applies the vault's `.obsidian/hotkeys.json` without writing it.
+- [x] A conflict offers Reassign, which removes the key from the other command.
+- [x] Reserved chords are refused.
+- [x] An Obsidian plugin's hotkey can be changed and the plugin reads the new key.
+- [x] Import from Obsidian applies the vault's `.obsidian/hotkeys.json` without writing it.
 
 ## Pros and Cons of the Options
 

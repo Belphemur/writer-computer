@@ -18,6 +18,7 @@ import { createApp, type App } from "./api/app";
 import { Editor, type WorkspaceBridge } from "./api/views";
 import { editorBackendFor, setEditorInfoResolver } from "./editor-bridge";
 import { toVaultPath } from "./workspace-bridge";
+import { bridgeCommandHotkeys } from "./command-hotkeys";
 import { createHostServices, Plugin, type HostServices, type PluginManifest } from "./api/core";
 import { createTauriVaultIo } from "./api/vault-io-tauri";
 import type { VaultIo } from "./api/vault";
@@ -196,6 +197,8 @@ export class PluginHost {
   private starting: Promise<void> | null = null;
   private seq = 0;
   private snapshot: HostSnapshot;
+  /** Stops mirroring plugin commands into the keybinding registry (`command-hotkeys.ts`). */
+  private readonly stopHotkeys: () => void;
   private uninstallDom: (() => void) | null = null;
   private uninstallLegacyGlobals: (() => void) | null = null;
   private uninstallMediaTrace: (() => void) | null = null;
@@ -230,6 +233,11 @@ export class PluginHost {
       write: (id, data) => this.ipc.dataWrite(id, JSON.stringify(data === undefined ? null : data)),
     });
     this.app = createApp({ io: options.io, services: this.services, bridge: options.bridge });
+    this.stopHotkeys = bridgeCommandHotkeys(
+      this.services.commands,
+      this.app.hotkeyManager,
+      (id) => this.manifests.get(id)?.name ?? id,
+    );
     this.snapshot = this.buildSnapshot();
     const base = options.io.basePath;
     setEditorInfoResolver((view, absPath) => {
@@ -391,6 +399,7 @@ export class PluginHost {
       [...this.records.keys()].map((id) => this.queue(id, () => this.teardown(id))),
     );
     this.app.metadataCache.dispose();
+    this.stopHotkeys();
     setEditorInfoResolver(null);
     setMarkdownProcessorHost(null);
   }

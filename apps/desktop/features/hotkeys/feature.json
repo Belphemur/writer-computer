@@ -1,0 +1,26 @@
+{
+  "id": "hotkeys",
+  "name": "Hotkeys",
+  "version": "1.0.0",
+  "description": "The Hotkeys page of Settings: every command with its key, changeable per OS, with conflict checks and import from Obsidian.",
+  "enabledByDefault": true,
+  "activation": ["onCommand:hotkeys.open"],
+  "memory": {
+    "level": "low",
+    "note": "Loads its page when Settings > Hotkeys opens; no background work. The keys themselves stay in force when the feature is off."
+  },
+  "rust": {
+    "commands": [],
+    "events": []
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "hotkeys.open",
+        "label": "Open hotkeys",
+        "description": "Command",
+        "when": "workspace-window"
+      }
+    ]
+  }
+}
