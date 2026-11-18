@@ -3,6 +3,7 @@
 // docs/decisions/2026-11-17-render-the-graph-view-...). Redrawn after every sigma render, so pan,
 // zoom and layout all follow. A note with several values draws a thin line to the other hulls.
 import type Sigma from "sigma";
+import { canvasLayer } from "./canvas-layer";
 import { centroid, convexHull, type Point } from "./groups";
 import type { EdgeAttrs, GraphModel, NodeAttrs } from "./model";
 
@@ -92,23 +93,11 @@ export function attachHulls(
   graph: GraphModel,
   source: HullSource,
 ) {
-  const canvas = sigma.createCanvas(LAYER, {
-    beforeLayer: "stage",
-    style: { inset: "0", pointerEvents: "none" },
-  });
+  const layer = canvasLayer(sigma, LAYER, { beforeLayer: "stage" });
   const redraw = () => {
-    const { width, height } = sigma.getDimensions();
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-    }
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    const frame = layer.begin();
+    if (!frame) return;
+    const { ctx } = frame;
     const groups = source.groups();
     if (groups.length === 0) return;
     drawHulls(ctx, graph, (x, y) => sigma.graphToViewport({ x, y }), groups, source.labelColor());
@@ -118,7 +107,7 @@ export function attachHulls(
     redraw,
     dispose() {
       sigma.off("afterRender", redraw);
-      sigma.killLayer(LAYER);
+      layer.dispose();
     },
   };
 }

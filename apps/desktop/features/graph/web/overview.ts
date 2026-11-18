@@ -5,6 +5,7 @@
 // only places a bubble at its members' centroid. A click on a bubble zooms into the group.
 import type Sigma from "sigma";
 import type { Overview } from "./aggregate";
+import { canvasLayer } from "./canvas-layer";
 import type { LodLevel } from "./lod";
 import type { EdgeAttrs, GraphModel, NodeAttrs } from "./model";
 
@@ -125,28 +126,16 @@ export function attachOverview(
   graph: GraphModel,
   source: OverviewSource,
 ) {
-  const canvas = sigma.createCanvas(LAYER, {
-    afterLayer: "stage",
-    style: { inset: "0", pointerEvents: "none" },
-  });
+  const layer = canvasLayer(sigma, LAYER, { afterLayer: "stage" });
   let geoms: BubbleGeometry[] = [];
   const active = () => {
     const o = source.overview();
     return source.level() === "overview" && o?.mode === "groups" ? o : null;
   };
   const redraw = () => {
-    const { width, height } = sigma.getDimensions();
-    const dpr = window.devicePixelRatio || 1;
-    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-    }
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    const frame = layer.begin();
+    if (!frame) return;
+    const { ctx } = frame;
     const o = active();
     if (!o) {
       geoms = [];
@@ -161,7 +150,7 @@ export function attachOverview(
     hit: (x: number, y: number) => (active() ? hitBubble(geoms, x, y) : null),
     dispose() {
       sigma.off("afterRender", redraw);
-      sigma.killLayer(LAYER);
+      layer.dispose();
     },
   };
 }
