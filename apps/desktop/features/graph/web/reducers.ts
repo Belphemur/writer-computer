@@ -21,6 +21,9 @@ export interface ViewState {
   hovered: string | null;
   /** Neighbours of `hovered` (itself excluded). */
   hoverNeighbors: ReadonlySet<string>;
+  /** The cluster whose hull area the pointer is over (no note hovered); its notes stay, the rest
+   *  fade like on a note hover. */
+  hoveredCluster: string | null;
   /** The node the keyboard is on. */
   focus: string | null;
   /** The note the graph is centered on (drawn larger, with a ring). */
@@ -130,6 +133,7 @@ export function nodeStyle(key: string, a: NodeAttrs, s: ViewState): NodeStyle {
 
   let dimmed = false;
   if (hoverActive && !related) dimmed = true;
+  if (!hoverActive && s.hoveredCluster !== null && a.group !== s.hoveredCluster) dimmed = true;
   if (s.matches && !matched && !emphasised && !related) dimmed = true;
   if (dimmed) {
     style.opacity = DIM_OPACITY;

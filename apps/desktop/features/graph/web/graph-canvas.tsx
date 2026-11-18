@@ -15,7 +15,7 @@ import { syncGroups, type GroupsResult } from "./groups";
 import type { Overview } from "./aggregate";
 import { CardsLayer, pickCards, type CardData } from "./cards-layer";
 import { anyInView, createFollow, fitTarget, sameTarget, type Point } from "./camera-fit";
-import { activeGroupKeys, attachHulls } from "./hulls";
+import { activeGroupKeys, attachHulls, groupPoints } from "./hulls";
 import {
   atLeast,
   cardPriorityKeys,
@@ -111,9 +111,9 @@ function Controller(
   const fadeFrame = useRef<number | null>(null);
   const follow = useRef(createFollow());
 
-  const patchView = (patch: Partial<ViewState>) => {
+  const patchView = (patch: Partial<ViewState>, opts?: { skipIndexation?: boolean }) => {
     view.current = { ...view.current, ...patch };
-    sigma.scheduleRefresh();
+    sigma.scheduleRefresh(opts);
   };
 
   // Theme: resolved from the app's CSS variables, again when the theme flips.
@@ -141,11 +141,8 @@ function Controller(
     hulls.current = attachHulls(sigma, model, {
       // Clusters keep their hull, name and count from the structure level up (the overview level
       // draws one bubble per cluster instead).
-      groups: () => {
-        if (!atLeast(view.current.level, "structure")) return [];
-        const active = activeGroupKeys(model, view.current);
-        return latest.current.groups.groups.filter((g) => active.has(g.key));
-      },
+      groups: () => (atLeast(view.current.level, "structure") ? latest.current.groups.groups : []),
+      active: () => activeGroupKeys(model, view.current),
       labelColor: () => theme.current.label,
     });
     overviewLayer.current = attachOverview(sigma, model, {
@@ -413,6 +410,51 @@ function Controller(
     else camera.setState({ ...camera.getState(), ...target });
   };
 
+  /** Click on a cluster's hull area: the camera takes in the cluster's notes (the one fit). */
+  const fitGroup = (key: string) => {
+    const target = fitTarget(groupPoints(model, key, (x, y) => sigma.graphToFramedGraph({ x, y })));
+    if (!target) return;
+    follow.current.userMoved();
+    const camera = sigma.getCamera();
+    if (latest.current.animate) void camera.animate(target, { duration: 400 });
+    else camera.setState({ ...camera.getState(), ...target });
+  };
+
+  // Pointer over a cluster's area (no note under it): one hit test per animation frame against
+  // the hull geometry of the last render, then a style-only refresh when the cluster changed.
+  useEffect(() => {
+    const at = { x: 0, y: 0 };
+    let frame: number | null = null;
+    const hit = () => {
+      frame = null;
+      const key =
+        view.current.hovered === null ? (hulls.current?.hullAt(at.x, at.y) ?? null) : null;
+      if (key === view.current.hoveredCluster) return;
+      patchView({ hoveredCluster: key }, { skipIndexation: true });
+      if (view.current.hovered === null) sigma.getContainer().style.cursor = key ? "pointer" : "";
+    };
+    const onMove = ({ event }: { event: { x: number; y: number } }) => {
+      at.x = event.x;
+      at.y = event.y;
+      frame ??= requestAnimationFrame(hit);
+    };
+    const onLeave = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      if (view.current.hoveredCluster === null) return;
+      patchView({ hoveredCluster: null }, { skipIndexation: true });
+      sigma.getContainer().style.cursor = "";
+    };
+    sigma.on("moveBody", onMove);
+    sigma.on("leaveStage", onLeave);
+    return () => {
+      sigma.off("moveBody", onMove);
+      sigma.off("leaveStage", onLeave);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigma]);
+
   // Camera: the level of detail and the saved state.
   useEffect(() => {
     const camera = sigma.getCamera();
@@ -444,7 +486,11 @@ function Controller(
     const nodeAt = (key: string) => model.getNodeAttributes(key);
     register({
       enterNode: ({ node }) =>
-        patchView({ hovered: node, hoverNeighbors: neighborsOf(model, node) }),
+        patchView({
+          hovered: node,
+          hoverNeighbors: neighborsOf(model, node),
+          hoveredCluster: null, // a note under the pointer wins over its cluster's area
+        }),
       leaveNode: () => patchView({ hovered: null, hoverNeighbors: new Set() }),
       enterEdge: ({ edge, event }) =>
         latest.current.onEdgeHover?.({
@@ -455,7 +501,9 @@ function Controller(
       leaveEdge: () => latest.current.onEdgeHover?.(null),
       clickStage: ({ event }) => {
         const group = overviewLayer.current?.hit(event.x, event.y);
+        const hull = group ? null : hulls.current?.hullAt(event.x, event.y);
         if (group) zoomToGroup(group);
+        else if (hull) fitGroup(hull);
         else if (view.current.selection.size > 0) {
           patchView({ selection: new Set() });
           latest.current.onSelection?.([]);
@@ -633,6 +681,7 @@ function defaultView(
   return {
     hovered: null,
     hoverNeighbors: new Set(),
+    hoveredCluster: null,
     focus: null,
     center: p.center,
     matches: p.matches,

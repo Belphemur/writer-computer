@@ -45,6 +45,7 @@ const edges = (...r: RawEdge[]): EdgeSpec[] => mergePairs(r);
 
 const view = (patch: Partial<ViewState> = {}): ViewState => ({
   hovered: null,
+  hoveredCluster: null,
   hoverNeighbors: new Set(),
   focus: null,
   center: null,
@@ -212,12 +213,27 @@ describe("search labels and hulls", () => {
     const model = createModel();
     applySpec(model, spec);
     for (const k of model.nodes()) model.setNodeAttribute(k, "group", groupOf(k));
-    const none = activeGroupKeys(model, { hovered: null, focus: null, selection: new Set() });
+    const none = activeGroupKeys(model, {
+      hovered: null,
+      hoveredCluster: null,
+      focus: null,
+      selection: new Set(),
+    });
     expect(none.size).toBe(0);
     expect([
-      ...activeGroupKeys(model, { hovered: "a1", focus: null, selection: new Set() }),
+      ...activeGroupKeys(model, {
+        hovered: "a1",
+        hoveredCluster: null,
+        focus: null,
+        selection: new Set(),
+      }),
     ]).toEqual(["A"]);
-    const both = activeGroupKeys(model, { hovered: "a1", focus: null, selection: new Set(["b2"]) });
+    const both = activeGroupKeys(model, {
+      hovered: "a1",
+      hoveredCluster: null,
+      focus: null,
+      selection: new Set(["b2"]),
+    });
     expect([...both].sort()).toEqual(["A", "B"]);
   });
 });

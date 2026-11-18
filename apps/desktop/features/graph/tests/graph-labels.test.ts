@@ -23,6 +23,7 @@ applySpec(model, buildSpec(smallSlice(), WITH_PROPERTIES));
 const attrs = (k: string): NodeAttrs => model.getNodeAttributes(k);
 const view = (patch: Partial<ViewState> = {}): ViewState => ({
   hovered: null,
+  hoveredCluster: null,
   hoverNeighbors: new Set(),
   focus: null,
   center: null,

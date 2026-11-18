@@ -20,6 +20,7 @@ applySpec(model, buildSpec(smallSlice(), WITH_PROPERTIES));
 
 const view = (patch: Partial<ViewState> = {}): ViewState => ({
   hovered: null,
+  hoveredCluster: null,
   hoverNeighbors: new Set(),
   focus: null,
   center: null,
