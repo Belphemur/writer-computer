@@ -55,6 +55,7 @@ const ACTIONS: Record<string, (c: Availability) => void | Promise<void>> = {
     api.openAgentPane();
   },
   "agent.new-project": async () => (await projectActions()).openNewProject(),
+  "agent.projects": async () => (await projectActions()).openProjectsList(),
   "agent.archive-project": async () => (await projectActions()).openArchiveProject(),
   "agent.unarchive-project": async () => (await projectActions()).openArchivedProjects(),
   "agent.make-project-from-folder": async (c) =>
@@ -105,6 +106,12 @@ export default defineFeature({
       {
         id: "agent.new-project-dialog",
         load: () => import("./components/new-project-dialog").then((m) => m.NewProjectDialog),
+      },
+      // The "Archive project?" confirmation (menus and the palette set `archiveTarget`).
+      {
+        id: "agent.archive-project-dialog",
+        load: () =>
+          import("./components/archive-project-dialog").then((m) => m.ArchiveProjectDialog),
       },
     ],
     // "Make project" in a folder's context menu in the sidebar.

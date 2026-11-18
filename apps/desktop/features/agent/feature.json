@@ -93,6 +93,12 @@
         "when": "workspace-window"
       },
       {
+        "id": "agent.projects",
+        "label": "Agent: Projects",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
         "id": "agent.archive-project",
         "label": "Agent: Archive project",
         "description": "Command",
@@ -120,7 +126,7 @@
       }
     ],
     "docks": ["agent.pane"],
-    "overlays": ["agent.new-project-dialog"],
+    "overlays": ["agent.new-project-dialog", "agent.archive-project-dialog"],
     "menus": {
       "sidebar-folder": ["agent.make-project"]
     },

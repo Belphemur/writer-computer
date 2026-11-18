@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { openPath } from "@/lib/link-activation";
-import {
-  openNewProjectDialog,
-  setAgentView,
-  startNewAgentChat,
-} from "@features/agent/web/hooks/agent-api";
+import { startNewAgentChat } from "@features/agent/web/hooks/agent-api";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
-import { useSetting } from "@/hooks/use-settings";
 import {
   projectClient,
   type ManifestPreview,
@@ -15,9 +10,8 @@ import {
 } from "@features/agent/web/lib/project-client";
 import { sourceKindLabel } from "@features/agent/web/lib/project-sources";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
-import { useProjectAppearance, useProjectsStore } from "@features/agent/web/stores/projects-store";
-import { ArchivedProjects } from "./archived-projects";
-import { ProjectActionsMenu } from "./project-actions-menu";
+import { useProjectAppearance } from "@features/agent/web/stores/projects-store";
+import { ProjectsList } from "./projects-list";
 import { ProjectIconPopover } from "./project-icon-picker";
 import { ProjectIcon } from "./project-icon";
 
@@ -50,16 +44,10 @@ export function ProjectHome({
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [manifest, setManifest] = useState<ManifestPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmArchive, setConfirmArchive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const moreRef = useRef<HTMLButtonElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLButtonElement>(null);
   const appearance = useProjectAppearance(projectPath);
-  const archiveFolder =
-    String(useSetting("agent.projects-archive-folder") ?? "").trim() || "Archive/Projects";
-  const archiveRequested = useProjectsStore((s) => s.archiveRequested);
 
   const load = useCallback(
     async (isStale: () => boolean = () => false) => {
@@ -87,9 +75,7 @@ export function ProjectHome({
     setProject(null);
     setManifest(null);
     setError(null);
-    setConfirmArchive(false);
     setPickerOpen(false);
-    setMenuOpen(false);
     let stale = false;
     void load(() => stale);
     return () => {
@@ -97,28 +83,7 @@ export function ProjectHome({
     };
   }, [load]);
 
-  // The palette's "Archive project" opens the confirm step once the project has loaded.
-  useEffect(() => {
-    if (!archiveRequested || !project) return;
-    useProjectsStore.getState().setArchiveRequested(false);
-    setConfirmArchive(true);
-  }, [archiveRequested, project]);
-
-  if (!projectPath) {
-    return (
-      <div data-agent-slot="project-home" className="min-h-0 flex-1 overflow-y-auto p-4">
-        <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">No project</h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-[var(--text-muted)]">
-          Chats run in the vault root. A project gives the agent its own instructions, context
-          sources and chats.
-        </p>
-        <button type="button" className={`${PRIMARY} mt-3`} onClick={() => openNewProjectDialog()}>
-          New project
-        </button>
-        <ArchivedProjects client={client} />
-      </div>
-    );
-  }
+  if (!projectPath) return <ProjectsList client={client} />;
 
   const absolute = (file: string) => (root ? `${root}/${projectPath}/${file}` : null);
   const openNote = (file: string) => {
@@ -138,51 +103,28 @@ export function ProjectHome({
     }
   }
 
-  async function archive() {
-    setBusy(true);
-    try {
-      await client.archive(projectPath!, true);
-      await useProjectsStore.getState().refresh();
-      useAgentStore.setState({ currentProjectPath: null });
-      setAgentView("chat");
-    } catch (e) {
-      setError(describe(e));
-      setBusy(false);
-      setConfirmArchive(false);
-    }
-  }
-
   return (
     <div data-agent-slot="project-home" className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-      <div ref={headerRef} className="relative flex items-center gap-2">
-        <ProjectIcon icon={appearance.icon} color={appearance.color} size={18} />
+      <div className="relative flex items-center gap-2">
+        <button
+          ref={iconRef}
+          type="button"
+          aria-label="Change icon"
+          title="Change icon…"
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen((o) => !o)}
+          className="rounded-md p-1 hover:bg-[var(--item-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-border)]"
+        >
+          <ProjectIcon icon={appearance.icon} color={appearance.color} size={18} />
+        </button>
         <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[var(--text-primary)]">
           {project?.name ?? projectPath.split("/").pop()}
         </h2>
-        <button
-          ref={moreRef}
-          type="button"
-          className={BUTTON}
-          aria-label="Project actions"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((o) => !o)}
-        >
-          …
-        </button>
-        {menuOpen ? (
-          <ProjectActionsMenu
-            projectPath={projectPath}
-            anchorRef={moreRef}
-            label={`Actions for ${project?.name ?? projectPath}`}
-            onChangeIcon={() => setPickerOpen(true)}
-            onClose={() => setMenuOpen(false)}
-          />
-        ) : null}
         {pickerOpen ? (
           <ProjectIconPopover
             projectPath={projectPath}
-            anchorRef={headerRef}
+            anchorRef={iconRef}
             onClose={() => setPickerOpen(false)}
           />
         ) : null}
@@ -279,31 +221,8 @@ export function ProjectHome({
             </h3>
             {recentChats ?? <OpenProjectChats projectPath={projectPath} />}
           </section>
-
-          {confirmArchive ? (
-            <section className="mt-5">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] text-[var(--text-muted)]">
-                  Moves the folder to {archiveFolder} and hides the project from pickers. Notes and
-                  chats move with it; Unarchive brings it back.
-                </span>
-                <button
-                  type="button"
-                  className={BUTTON}
-                  disabled={busy}
-                  onClick={() => void archive()}
-                >
-                  Archive
-                </button>
-                <button type="button" className={BUTTON} onClick={() => setConfirmArchive(false)}>
-                  Cancel
-                </button>
-              </div>
-            </section>
-          ) : null}
         </>
       ) : null}
-      <ArchivedProjects client={client} />
     </div>
   );
 }

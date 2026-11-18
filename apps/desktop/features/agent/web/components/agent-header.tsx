@@ -10,10 +10,10 @@ import { openSettings } from "@/hooks/editor-api";
 import {
   closeAgentPane,
   openAgentHistory,
-  openNewProjectDialog,
   reloadAgentSession,
   setAgentView,
 } from "@features/agent/web/hooks/agent-api";
+import { openProjectsList } from "@features/agent/web/lib/project-actions";
 import { useAgentView } from "@features/agent/web/hooks/use-agent";
 import { Ico } from "./agent-icon";
 import { ProjectSwitcherSlot } from "./slots";
@@ -55,9 +55,9 @@ export function AgentHeader({ projectPath }: { projectPath: string | null }) {
       <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1">
         {view !== "chat" && (
           <HeaderButton
-            label="Back to chat"
+            label={view === "project" ? "Back to projects" : "Back to chat"}
             icon={ArrowLeft01Icon}
-            onClick={() => setAgentView("chat")}
+            onClick={() => setAgentView(view === "project" ? "projects" : "chat")}
           />
         )}
         <ProjectSwitcherSlot projectPath={projectPath} />
@@ -71,11 +71,7 @@ export function AgentHeader({ projectPath }: { projectPath: string | null }) {
           />
         )}
         <HeaderButton label="Chat history" icon={Clock01Icon} onClick={openAgentHistory} />
-        <HeaderButton
-          label="New project"
-          icon={Folder01Icon}
-          onClick={() => openNewProjectDialog()}
-        />
+        <HeaderButton label="Projects" icon={Folder01Icon} onClick={openProjectsList} />
         <HeaderButton
           label="Agent settings"
           icon={Settings01Icon}

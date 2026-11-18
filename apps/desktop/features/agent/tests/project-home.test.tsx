@@ -96,8 +96,6 @@ const menuItem = (label: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")].find(
     (b) => b.textContent === label,
   )!;
-const actionsButton = () =>
-  container.querySelector<HTMLButtonElement>("button[aria-label='Project actions']")!;
 
 describe("ProjectHome", () => {
   it("shows description, resolved sources with warnings, and a recent-chats slot", async () => {
@@ -141,18 +139,21 @@ describe("ProjectHome", () => {
     expect(c.make).toHaveBeenCalledWith({ path: "Projects/Acme", createAgentsMd: true });
   });
 
-  it("archives after a confirmation step", async () => {
-    const c = client();
-    await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
+  it("has no actions menu and no Archive; the icon opens the icon picker", async () => {
+    await act(async () =>
+      root.render(<ProjectHome projectPath="Projects/Acme" client={client()} />),
+    );
     await act(async () => {});
-    await act(async () => actionsButton().click());
-    await act(async () => menuItem("Archive project…").click());
-    expect(c.archive).not.toHaveBeenCalled();
-    await act(async () => button("Archive").click());
-    expect(c.archive).toHaveBeenCalledWith("Projects/Acme", true);
+    expect(container.querySelector("[aria-label='Project actions']")).toBeNull();
+    expect(container.textContent).not.toContain("Archive");
+    const icon = container.querySelector<HTMLButtonElement>("button[aria-label='Change icon']")!;
+    expect(icon.title).toBe("Change icon…");
+    await act(async () => icon.click());
+    await act(async () => {});
+    expect(document.querySelector("input[aria-label='Search icons']")).not.toBeNull();
   });
 
-  it("with no project offers New project", async () => {
+  it("with no project shows the Projects list with New project", async () => {
     await act(async () => root.render(<ProjectHome projectPath={null} client={client()} />));
     await act(async () => button("New project").click());
     expect(useAgentStore.getState().newProjectDialog.open).toBe(true);

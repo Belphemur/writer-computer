@@ -76,6 +76,7 @@ describe("palette built-in commands", () => {
       "agent.history",
       "agent.use-demo-backend",
       "agent.new-project",
+      "agent.projects",
       "agent.archive-project",
       "agent.unarchive-project",
       "graph.open",

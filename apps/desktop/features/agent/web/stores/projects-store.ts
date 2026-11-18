@@ -16,12 +16,17 @@ interface ProjectsState {
   folderPaths: Map<string, ProjectAppearance>;
   loadedRoot: string | null;
   refresh: () => Promise<void>;
-  /** Palette intents: "Archive project" asks the project home to show its confirm step,
-   *  "Unarchive project..." asks the project browser to expand its Archived section. The view
-   *  that owns the control reads and clears them. */
-  archiveRequested: boolean;
+  /** The project (vault-relative path) whose "Archive project?" confirmation is open, or null.
+   *  Menus and the palette set it; `ArchiveProjectDialog` renders it and clears it. */
+  archiveTarget: string | null;
+  setArchiveTarget: (path: string | null) => void;
+  /** Palette intent: "Unarchive project..." asks the project browser to expand its Archived
+   *  section. The view that owns the control reads it. */
   archivedExpanded: boolean;
-  setArchiveRequested: (v: boolean) => void;
+  /** The project the detail view (`view === "project"`) shows; null shows the pane's current
+   *  project. Set by `openProjectDetail`. */
+  detailPath: string | null;
+  setDetailPath: (path: string | null) => void;
   setArchivedExpanded: (v: boolean) => void;
   /** The one write of a project's icon and color (spec 4.8): `project.md` through
    *  `agent_update_project`, then the list entry is replaced by what was written. `null` removes
@@ -41,9 +46,11 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
   archived: [],
   folderPaths: new Map(),
   loadedRoot: null,
-  archiveRequested: false,
+  archiveTarget: null,
+  setArchiveTarget: (archiveTarget) => set({ archiveTarget }),
   archivedExpanded: false,
-  setArchiveRequested: (archiveRequested) => set({ archiveRequested }),
+  detailPath: null,
+  setDetailPath: (detailPath) => set({ detailPath }),
   setArchivedExpanded: (archivedExpanded) => set({ archivedExpanded }),
   refresh: async () => {
     const root = useWorkspaceStore.getState().root;

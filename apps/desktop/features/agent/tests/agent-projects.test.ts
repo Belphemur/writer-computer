@@ -107,21 +107,23 @@ describe("entry points all open the one dialog", () => {
   it("palette: New project and Make project from this folder", async () => {
     const create = featurePaletteCommands.get("agent.new-project")!;
     const make = featurePaletteCommands.get("agent.make-project-from-folder")!;
-    const settle = () => new Promise((r) => setTimeout(r, 0));
     expect(create.label).toBe("New project");
     expect(create.when!(ctx({}))).toBe(true);
     expect(create.when!(ctx({ hasWorkspace: false }))).toBe(false);
     create.run(ctx({}));
-    await settle();
-    expect(useAgentStore.getState().newProjectDialog).toEqual({ open: true, folder: null });
+    // The command loads its module on first use (more modules than a tick).
+    await vi.waitFor(() =>
+      expect(useAgentStore.getState().newProjectDialog).toEqual({ open: true, folder: null }),
+    );
 
     expect(make.label).toBe("Make project from this folder");
     expect(make.when!(ctx({ activeFilePath: "/vault/n.md" }))).toBe(false);
     expect(make.when!(ctx({ activeFilePath: null }))).toBe(false);
     expect(make.when!(ctx({ activeFilePath: "/vault/Docs/n.md" }))).toBe(true);
     make.run(ctx({ activeFilePath: "/vault/Docs/n.md" }));
-    await settle();
-    expect(useAgentStore.getState().newProjectDialog).toEqual({ open: true, folder: "Docs" });
+    await vi.waitFor(() =>
+      expect(useAgentStore.getState().newProjectDialog).toEqual({ open: true, folder: "Docs" }),
+    );
   });
 });
 

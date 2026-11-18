@@ -13,6 +13,7 @@
  * The new-project dialog (`new-project-dialog.tsx`, lane 3) is mounted once in `App.tsx` and renders
  * from the store's `newProjectDialog` state (set by `openNewProjectDialog`).
  */
+import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { openSavedAgentChat } from "@features/agent/web/hooks/agent-api";
 import {
   useActiveChatId,
@@ -34,7 +35,8 @@ export function ProjectHomeSlot() {
   const activeId = useActiveChatId();
   const chat = useAgentChat(activeId);
   const fallback = useAgentProjectPath();
-  const projectPath = chat?.projectPath ?? fallback;
+  const detailPath = useProjectsStore((s) => s.detailPath);
+  const projectPath = detailPath ?? chat?.projectPath ?? fallback;
   return (
     <ProjectHome
       projectPath={projectPath}

@@ -301,6 +301,37 @@ pub fn parse_sources(raw: &str) -> (Vec<ProjectSource>, Vec<String>) {
     (sources, unsupported)
 }
 
+/// Copilot writes folder and note entries percent-encoded (`Management%2FEmployee/`,
+/// `Weekly%20Sync.md`). Decodes every valid `%XX` escape; an entry without one, or whose decoded
+/// bytes are not UTF-8, is returned unchanged. The file is never rewritten: `raw` keeps the
+/// original text.
+fn decode_percent(s: &str) -> std::borrow::Cow<'_, str> {
+    let bytes = s.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    let mut changed = false;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                changed = true;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    if !changed {
+        return s.into();
+    }
+    match String::from_utf8(out) {
+        Ok(decoded) => decoded.into(),
+        Err(_) => s.into(),
+    }
+}
+
 fn safe_rel_path(p: &str) -> Option<String> {
     let p = p.trim().trim_start_matches("./");
     if p.is_empty() || p.starts_with('/') || p.contains('\\') {
@@ -325,7 +356,7 @@ fn parse_source(entry: &str) -> Option<ProjectSource> {
     }
     if let Some(link) = crate::index::markdown::parse_whole_wikilink(entry) {
         // `[[Note|alias]]`, `[[Note#Heading]]`: the target is the note, never the alias or heading.
-        let target = safe_rel_path(&link.raw)?;
+        let target = safe_rel_path(&decode_percent(&link.raw))?;
         let path = if target.to_ascii_lowercase().ends_with(".md") {
             target
         } else {
@@ -358,7 +389,7 @@ fn parse_source(entry: &str) -> Option<ProjectSource> {
         return None;
     }
     let is_folder_form = entry.ends_with('/');
-    let path = safe_rel_path(entry)?;
+    let path = safe_rel_path(&decode_percent(entry))?;
     let last = path.rsplit('/').next().unwrap_or("");
     if path.to_ascii_lowercase().ends_with(".md") && !is_folder_form {
         return Some(ProjectSource::Note { path, raw });
@@ -1513,6 +1544,42 @@ custom: value\n---\nfree notes\n";
         // list finds it, archived hidden by default
         assert!(list(&root, false).unwrap().is_empty());
         assert_eq!(list(&root, true).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn copilot_percent_encoded_sources_are_decoded() {
+        let (s, u) = parse_sources(
+            "Management%2FEmployee/, Meetings%2FRecurring%2FSRE%20Sync%2F2025/, Weekly%20Sync.md, 100%/, [[My%20Note]]",
+        );
+        assert!(u.is_empty());
+        let paths: Vec<String> = s
+            .iter()
+            .map(|x| match x {
+                ProjectSource::Folder { path, .. } | ProjectSource::Note { path, .. } => {
+                    path.clone()
+                }
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "Management/Employee",
+                "Meetings/Recurring/SRE Sync/2025",
+                "Weekly Sync.md",
+                "100%",
+                "My Note.md"
+            ]
+        );
+        // The original text is kept for writes, and a decoded `..` is still refused.
+        assert!(
+            matches!(&s[0], ProjectSource::Folder { raw, .. } if raw == "Management%2FEmployee/")
+        );
+        let (s, u) = parse_sources("a%2F..%2Fb/");
+        assert!(s.is_empty());
+        assert_eq!(u.len(), 1);
+        assert_eq!(decode_percent("%ZZ%4"), "%ZZ%4");
+        assert_eq!(decode_percent("%FF"), "%FF");
     }
 
     #[test]

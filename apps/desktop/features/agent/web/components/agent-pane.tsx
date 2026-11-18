@@ -24,6 +24,7 @@ import { ChatTabs, requestCloseChat } from "./chat-tabs";
 import { Composer } from "./composer";
 import { EmptyState } from "./empty-state";
 import { PinnedStack } from "./pinned-stack";
+import { ProjectsList } from "./projects-list";
 import { HistorySlot, ProjectHomeSlot } from "./slots";
 import { Transcript } from "./transcript";
 import { UsageLine } from "./usage-line";
@@ -140,7 +141,9 @@ export function AgentPane() {
         aria-labelledby={chatId ? `agent-tab-${chatId}` : undefined}
         className="flex min-h-0 flex-1 flex-col"
       >
-        {view === "project" ? (
+        {view === "projects" ? (
+          <ProjectsList />
+        ) : view === "project" ? (
           <ProjectHomeSlot />
         ) : view === "history" ? (
           <HistorySlot />

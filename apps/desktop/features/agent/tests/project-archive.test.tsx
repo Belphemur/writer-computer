@@ -22,10 +22,15 @@ vi.mock("@/hooks/editor-api", () => ({
 }));
 
 import { ProjectHome } from "@features/agent/web/components/project-home";
+import { ArchiveProjectDialog } from "@features/agent/web/components/archive-project-dialog";
 import { ProjectSwitcher } from "@features/agent/web/components/project-switcher";
 import { isArchivedProject, splitProjects } from "@features/agent/web/lib/project-archive";
 import type { ProjectClient, ProjectDetail } from "@features/agent/web/lib/project-client";
-import { openArchivedProjects, openArchiveProject } from "@features/agent/web/lib/project-actions";
+import {
+  openArchivedProjects,
+  openArchiveProject,
+  openProjectsList,
+} from "@features/agent/web/lib/project-actions";
 import { useProjectBadge } from "@features/agent/web/project-badge";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectsStore } from "@features/agent/web/stores/projects-store";
@@ -100,7 +105,7 @@ beforeEach(() => {
   navigated.length = 0;
   useWorkspaceStore.setState({ root: "/vault" });
   useProjectsStore.getState().clear();
-  useProjectsStore.setState({ archiveRequested: false, archivedExpanded: false });
+  useProjectsStore.setState({ archiveTarget: null, archivedExpanded: false, detailPath: null });
   usePaneStore.setState({ open: false });
   useAgentStore.setState({
     chats: {},
@@ -118,15 +123,15 @@ afterEach(() => {
   container.remove();
 });
 
-const button = (text: string) =>
-  [...container.querySelectorAll("button")].find((b) => b.textContent?.trim().includes(text))!;
+const button = (text: string, label?: string) =>
+  [...container.querySelectorAll("button")].find((b) =>
+    label ? b.getAttribute("aria-label") === label : b.textContent?.trim().includes(text),
+  )!;
 
 const menuItem = (label: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")].find(
     (b) => b.textContent === label,
   )!;
-const actionsButton = () =>
-  container.querySelector<HTMLButtonElement>("button[aria-label='Project actions']")!;
 const menuLabels = () =>
   [...document.querySelectorAll("[role=menuitem]")].map((b) => b.textContent);
 
@@ -192,7 +197,10 @@ describe("Archived section", () => {
     await act(async () => button("Archived").click());
     expect(container.textContent).toContain("Old");
     expect(container.textContent).toContain("Archive/Projects/Old");
-    expect(container.textContent).not.toContain("Acme");
+    // Acme is in the active list above, not in the Archived group.
+    expect(container.querySelector("[data-agent-archived-projects]")!.textContent).not.toContain(
+      "Acme",
+    );
   });
 
   it("a row opens the project note like a link (Cmd+click in a new tab)", async () => {
@@ -214,7 +222,8 @@ describe("Archived section", () => {
     const c = await renderBrowser();
     backendHas(active, { ...archived, path: "Projects/Old", archivedAt: null });
     invokeMock.mockClear();
-    await act(async () => button("Unarchive").click());
+    await act(async () => button("", "Actions for Old").click());
+    await act(async () => menuItem("Unarchive").click());
     expect(c.archive).toHaveBeenCalledWith("Archive/Projects/Old", false);
     expect(invokeMock).toHaveBeenCalledWith("plugin:agent|agent_list_projects", {
       includeArchived: true,
@@ -234,7 +243,8 @@ describe("Archived section", () => {
       }),
     });
     await renderBrowser(c);
-    await act(async () => button("Unarchive").click());
+    await act(async () => button("", "Actions for Old").click());
+    await act(async () => menuItem("Unarchive").click());
     expect(container.querySelector("[role=alert]")!.textContent).toContain("busy");
     expect(container.textContent).toContain("Old");
   });
@@ -248,78 +258,127 @@ describe("Archived section", () => {
   });
 });
 
-describe("Archive from the project home", () => {
-  it("says where the folder goes, archives, refreshes and leaves the project", async () => {
-    const c = client();
+const dialog = () => document.querySelector<HTMLElement>("[role=alertdialog]");
+const dialogButton = (text: string) =>
+  [...dialog()!.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!;
+const key = (target: Element | Document, k: string) =>
+  act(async () => {
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+  });
+const BUSY = "1 chat of this project is busy: stop or finish it first";
+
+describe("Archive confirmation modal", () => {
+  async function renderDialog(c = client()) {
+    await useProjectsStore.getState().refresh();
     useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
-    await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
-    await act(async () => {});
-    await act(async () => actionsButton().click());
-    await act(async () => menuItem("Archive project…").click());
-    expect(container.textContent).toContain("Moves the folder to Archive/Projects");
+    await act(async () => root.render(<ArchiveProjectDialog client={c} />));
+    return c;
+  }
+  const ask = (path = "Projects/Acme") => act(async () => openArchiveProject(path));
+
+  it("is closed until asked, then names the project and the archive folder", async () => {
+    await renderDialog();
+    expect(dialog()).toBeNull();
+    await ask();
+    expect(dialog()!.textContent).toContain("Archive project?");
+    expect(dialog()!.textContent).toContain("Acme");
+    expect(dialog()!.textContent).toContain("Archive/Projects");
+    expect(dialog()!.querySelector("button[aria-busy]")).toBe(document.activeElement);
+  });
+
+  it("Cancel and Escape close it and do nothing", async () => {
+    const c = await renderDialog();
+    await ask();
+    await act(async () => dialogButton("Cancel").click());
+    expect(dialog()).toBeNull();
+    await ask();
+    await key(document, "Escape");
+    expect(dialog()).toBeNull();
+    expect(c.archive).not.toHaveBeenCalled();
+  });
+
+  it("Archive archives once, refreshes, closes and leaves the pane where it was", async () => {
+    const c = await renderDialog();
+    useAgentStore.setState({ view: "chat" });
+    await ask("Projects/Other");
     invokeMock.mockClear();
-    await act(async () => button("Archive").click());
-    expect(c.archive).toHaveBeenCalledWith("Projects/Acme", true);
+    await act(async () => dialogButton("Archive").click());
+    expect(c.archive).toHaveBeenCalledTimes(1);
+    expect(c.archive).toHaveBeenCalledWith("Projects/Other", true);
     expect(invokeMock).toHaveBeenCalledWith("plugin:agent|agent_list_projects", {
       includeArchived: true,
     });
-    expect(useAgentStore.getState().currentProjectPath).toBeNull();
-    expect(useAgentStore.getState().view).toBe("chat");
+    expect(dialog()).toBeNull();
+    const a = useAgentStore.getState();
+    expect(a.view).toBe("chat");
+    expect(a.currentProjectPath).toBe("Projects/Acme");
+    expect(a.order).toEqual([]);
   });
 
-  it("shows a refusal (a busy chat) and keeps the project", async () => {
-    const c = client({
-      archive: vi.fn(async () => {
-        throw new Error("1 chat of this project is busy: stop or finish it first");
+  it("Enter confirms", async () => {
+    const c = await renderDialog();
+    await ask();
+    await key(dialog()!, "Enter");
+    expect(c.archive).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the busy refusal inside the dialog and stays open", async () => {
+    const c = await renderDialog(
+      client({
+        archive: vi.fn(async () => {
+          throw new Error(BUSY);
+        }),
       }),
-    });
-    useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
-    await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
-    await act(async () => {});
-    await act(async () => actionsButton().click());
-    await act(async () => menuItem("Archive project…").click());
-    await act(async () => button("Archive").click());
-    expect(container.querySelector("[role=alert], p")!.textContent).toBeTruthy();
-    expect(container.textContent).toContain("busy");
+    );
+    await ask();
+    await act(async () => dialogButton("Archive").click());
+    expect(dialog()!.querySelector("[role=alert]")!.textContent).toContain("busy");
+    expect(c.archive).toHaveBeenCalledTimes(1);
     expect(useAgentStore.getState().currentProjectPath).toBe("Projects/Acme");
+  });
+
+  it("archiving the current project falls back to no project; its detail returns to the list", async () => {
+    await renderDialog();
+    useProjectsStore.setState({ detailPath: "Projects/Acme" });
+    useAgentStore.setState({ view: "project" });
+    await ask();
+    await act(async () => dialogButton("Archive").click());
+    expect(useAgentStore.getState().currentProjectPath).toBeNull();
+    expect(useAgentStore.getState().view).toBe("projects");
+    expect(useProjectsStore.getState().detailPath).toBeNull();
   });
 });
 
 describe("palette commands", () => {
-  it("Archive project opens the pane on the project home with the confirm step", async () => {
-    useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
+  it("Archive project opens the modal for the current project and navigates nowhere", () => {
+    useAgentStore.setState({ currentProjectPath: "Projects/Acme", view: "chat" });
     openArchiveProject();
-    expect(usePaneStore.getState().open).toBe(true);
-    expect(useAgentStore.getState().view).toBe("project");
-    await act(async () =>
-      root.render(<ProjectHome projectPath="Projects/Acme" client={client()} />),
-    );
-    await act(async () => {});
-    expect(container.textContent).toContain("Moves the folder to");
-    expect(useProjectsStore.getState().archiveRequested).toBe(false);
+    expect(useProjectsStore.getState().archiveTarget).toBe("Projects/Acme");
+    expect(useAgentStore.getState().view).toBe("chat");
+    expect(usePaneStore.getState().open).toBe(false);
   });
 
-  it("Unarchive project... opens the browser with the Archived section expanded", () => {
+  it("Archive project without a project does nothing", () => {
+    openArchiveProject();
+    expect(useProjectsStore.getState().archiveTarget).toBeNull();
+  });
+
+  it("Projects opens the pane on the Projects list", () => {
+    openProjectsList();
+    expect(usePaneStore.getState().open).toBe(true);
+    expect(useAgentStore.getState().view).toBe("projects");
+  });
+
+  it("Unarchive project... opens the list with the Archived group expanded", () => {
     openArchivedProjects();
     expect(usePaneStore.getState().open).toBe(true);
-    expect(useAgentStore.getState().view).toBe("project");
+    expect(useAgentStore.getState().view).toBe("projects");
     expect(useProjectsStore.getState().archivedExpanded).toBe(true);
   });
 });
 
-describe("Project actions menu (home header and switcher rows)", () => {
+describe("Project menus (switcher rows and Projects list rows)", () => {
   const pickerOpen = () => document.querySelector("input[aria-label='Search icons']") !== null;
-  const key = (target: Element, k: string) =>
-    act(async () => {
-      target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
-    });
-
-  async function renderHome(c = client()) {
-    useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
-    await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
-    await act(async () => {});
-    return c;
-  }
 
   async function openSwitcherMenu(viaRightClick = false) {
     await useProjectsStore.getState().refresh();
@@ -343,18 +402,15 @@ describe("Project actions menu (home header and switcher rows)", () => {
     }
   }
 
-  it("the home header has no bottom Archive button, only the menu", async () => {
-    await renderHome();
-    expect(container.textContent).not.toContain("Archive project");
-    await act(async () => actionsButton().click());
+  it("a switcher row's … offers Change icon… and a danger Archive project…", async () => {
+    await openSwitcherMenu();
     expect(menuLabels()).toEqual(["Change icon…", "Archive project…"]);
     expect(menuItem("Archive project…").className).toContain("--danger");
     expect(menuItem("Change icon…").className).not.toContain("--danger");
   });
 
   it("keyboard: the first item has focus, arrows wrap, Esc closes", async () => {
-    await renderHome();
-    await act(async () => actionsButton().click());
+    await openSwitcherMenu();
     expect(document.activeElement).toBe(menuItem("Change icon…"));
     const menu = document.querySelector("[role=menu]")!;
     await key(menu, "ArrowDown");
@@ -369,18 +425,8 @@ describe("Project actions menu (home header and switcher rows)", () => {
     expect(document.querySelector("[role=menu]")).toBeNull();
   });
 
-  it("Change icon… from the home menu opens the picker", async () => {
-    await renderHome();
-    await act(async () => actionsButton().click());
-    await act(async () => menuItem("Change icon…").click());
-    await act(async () => {});
-    expect(document.querySelector("[role=menu]")).toBeNull();
-    expect(pickerOpen()).toBe(true);
-  });
-
-  it("the switcher row's ... opens the same menu; Change icon… opens the picker", async () => {
+  it("Change icon… from a switcher row opens the picker", async () => {
     await openSwitcherMenu();
-    expect(menuLabels()).toEqual(["Change icon…", "Archive project…"]);
     await act(async () => menuItem("Change icon…").click());
     await act(async () => {});
     expect(pickerOpen()).toBe(true);
@@ -391,18 +437,69 @@ describe("Project actions menu (home header and switcher rows)", () => {
     expect(menuLabels()).toEqual(["Change icon…", "Archive project…"]);
   });
 
-  it("Archive project… from the switcher opens that project's home with the confirm open", async () => {
+  it("Archive project… from the switcher opens the modal in place: no switch, no chat", async () => {
+    useAgentStore.setState({ view: "chat", currentProjectPath: null });
     await openSwitcherMenu();
     await act(async () => menuItem("Archive project…").click());
+    expect(useProjectsStore.getState().archiveTarget).toBe("Projects/Acme");
+    const a = useAgentStore.getState();
+    expect(a.view).toBe("chat");
+    expect(a.currentProjectPath).toBeNull();
+    expect(a.order).toEqual([]);
+    expect(usePaneStore.getState().open).toBe(false);
+  });
+
+  it("the switcher's Show all projects opens the list", async () => {
+    await useProjectsStore.getState().refresh();
+    await act(async () => root.render(<ProjectSwitcher projectPath={null} />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-haspopup=listbox]")!.click(),
+    );
+    await act(async () => button("Show all projects").click());
+    expect(useAgentStore.getState().view).toBe("projects");
+  });
+
+  async function renderList(c = client()) {
+    await useProjectsStore.getState().refresh();
+    await act(async () => root.render(<ProjectHome projectPath={null} client={c} />));
+  }
+
+  it("a Projects list row opens that project; its … has Open details, Change icon… and Archive", async () => {
+    await renderList();
+    expect(container.querySelector("[data-agent-slot=projects-list]")).not.toBeNull();
+    await act(async () => button("", "Actions for Acme").click());
+    expect(menuLabels()).toEqual(["Open details", "Change icon…", "Archive project…"]);
+    await act(async () => menuItem("Archive project…").click());
+    expect(useProjectsStore.getState().archiveTarget).toBe("Projects/Acme");
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await act(async () => button("", "Actions for Acme").click());
+    await act(async () => menuItem("Open details").click());
     expect(useAgentStore.getState().view).toBe("project");
-    expect(usePaneStore.getState().open).toBe(true);
-    expect(useProjectsStore.getState().archiveRequested).toBe(true);
-    expect(useAgentStore.getState().currentProjectPath).toBe("Projects/Acme");
-    const c = client();
-    await renderHome(c);
-    expect(container.textContent).toContain("Moves the folder to Archive/Projects");
-    expect(useProjectsStore.getState().archiveRequested).toBe(false);
-    await act(async () => button("Archive").click());
-    expect(c.archive).toHaveBeenCalledWith("Projects/Acme", true);
+    expect(useProjectsStore.getState().detailPath).toBe("Projects/Acme");
+    expect(useAgentStore.getState().currentProjectPath).toBeNull();
+  });
+
+  it("clicking a list row picks the project and starts a chat in it", async () => {
+    await renderList();
+    const row = [...container.querySelectorAll("li button")].find((b) =>
+      b.textContent?.includes("Projects/Acme"),
+    ) as HTMLButtonElement;
+    await act(async () => row.click());
+    const s = useAgentStore.getState();
+    expect(s.view).toBe("chat");
+    expect(s.currentProjectPath).toBe("Projects/Acme");
+    expect(s.chats[s.activeChatId!]!.projectPath).toBe("Projects/Acme");
+  });
+
+  it("the filter narrows the list", async () => {
+    await renderList();
+    const input = container.querySelector<HTMLInputElement>("input[aria-label='Filter projects']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "zzz");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("No matching project");
   });
 });

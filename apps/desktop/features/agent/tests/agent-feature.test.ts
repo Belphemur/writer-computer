@@ -179,10 +179,14 @@ describe("core and the agent feature", () => {
   });
 
   it("contributes the project entry points: dialog, folder menu item, tree badge", () => {
-    expect(manifest.contributes.overlays).toEqual(["agent.new-project-dialog"]);
+    expect(manifest.contributes.overlays).toEqual([
+      "agent.new-project-dialog",
+      "agent.archive-project-dialog",
+    ]);
     expect(manifest.contributes.menus).toEqual({ "sidebar-folder": ["agent.make-project"] });
     expect(manifest.contributes.fileTreeDecorations).toEqual(["agent.project-badge"]);
     expect(overlayContributions.has("agent.new-project-dialog")).toBe(true);
+    expect(overlayContributions.has("agent.archive-project-dialog")).toBe(true);
     expect(fileTreeDecorationContributions.has("agent.project-badge")).toBe(true);
     expect(menuContributions.has(menuKey("sidebar-folder", "agent.make-project"))).toBe(true);
   });
@@ -191,6 +195,7 @@ describe("core and the agent feature", () => {
     useSettingsStore.setState({ settings: { "features.agent.enabled": false } });
     await new Promise((r) => setTimeout(r, 0));
     expect(overlayContributions.has("agent.new-project-dialog")).toBe(false);
+    expect(overlayContributions.has("agent.archive-project-dialog")).toBe(false);
     expect(fileTreeDecorationContributions.has("agent.project-badge")).toBe(false);
     expect(menuContributions.has(menuKey("sidebar-folder", "agent.make-project"))).toBe(false);
   });

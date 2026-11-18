@@ -80,7 +80,7 @@ export type SkillsEntry = {
 };
 export const skillsKey = (projectPath: string | null) => projectPath ?? "";
 
-export type AgentView = "chat" | "history" | "project";
+export type AgentView = "chat" | "history" | "projects" | "project";
 export type AgentBackend = "tauri" | "mock";
 
 /** What the user typed and attached but has not sent; kept per chat so tab switches lose nothing. */

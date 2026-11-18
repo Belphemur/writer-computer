@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { startNewAgentChat } from "@features/agent/web/hooks/agent-api";
+import { chooseProject } from "@features/agent/web/lib/project-actions";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import {
   projectClient,
@@ -40,8 +40,7 @@ function describe(error: unknown): string {
 
 /** What the dialog does when it finishes: show the project in the pane with a fresh chat. */
 export function openProjectInPane(project: ProjectDetail): void {
-  useAgentStore.setState({ currentProjectPath: project.path, view: "chat" });
-  startNewAgentChat(project.path);
+  chooseProject(project.path);
 }
 
 /**

@@ -2,18 +2,19 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { ArrowDown01Icon, Folder01Icon } from "@hugeicons/core-free-icons";
+import { openNewProjectDialog } from "@features/agent/web/hooks/agent-api";
 import {
-  openNewProjectDialog,
-  setAgentView,
-  startNewAgentChat,
-} from "@features/agent/web/hooks/agent-api";
+  chooseProject,
+  openProjectDetail,
+  openProjectsList,
+} from "@features/agent/web/lib/project-actions";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
-import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { Ico } from "./agent-icon";
 import { ProjectActionsMenu } from "./project-actions-menu";
 import { ProjectIconPopover } from "./project-icon-picker";
 import { ProjectPathIcon } from "./project-icon";
+import { ProjectRowLabel } from "./project-row";
 
 /**
  * The header title as a project switcher (spec 4.6). `projectPath` is the active chat's project
@@ -74,8 +75,7 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
   }
 
   function choose(path: string | null) {
-    useAgentStore.setState({ currentProjectPath: path });
-    startNewAgentChat(path);
+    chooseProject(path);
     setOpen(false);
     setFilter("");
   }
@@ -156,17 +156,17 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
                   i === active ? "bg-[var(--item-hover-bg)]" : ""
                 }`}
               >
-                <span className="self-center">
-                  {o.path ? (
-                    <ProjectPathIcon path={o.path} />
-                  ) : (
-                    <Ico icon={Folder01Icon} size={14} className="text-text-icon-muted" />
-                  )}
-                </span>
-                <span className="truncate text-[var(--text-primary)]">{o.text}</span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-muted)]">
-                  {o.detail}
-                </span>
+                <ProjectRowLabel
+                  icon={
+                    o.path ? (
+                      <ProjectPathIcon path={o.path} />
+                    ) : (
+                      <Ico icon={Folder01Icon} size={14} className="text-text-icon-muted" />
+                    )
+                  }
+                  name={o.text}
+                  detail={o.detail}
+                />
                 {o.path ? (
                   <button
                     type="button"
@@ -197,7 +197,7 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
               <button
                 type="button"
                 onClick={() => {
-                  setAgentView("project");
+                  openProjectDetail(projectPath);
                   setOpen(false);
                 }}
                 className="w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[var(--item-hover-bg)]"
@@ -205,6 +205,16 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
                 Project home
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                openProjectsList();
+              }}
+              className="w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[var(--item-hover-bg)]"
+            >
+              Show all projects
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -221,6 +231,7 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
       {menuFor ? (
         <ProjectActionsMenu
           projectPath={menuFor}
+          place="switcher"
           anchorRef={wrapRef}
           label={`Actions for ${projects.find((p) => p.path === menuFor)?.name ?? menuFor}`}
           onChangeIcon={() => setPickerFor(menuFor)}
