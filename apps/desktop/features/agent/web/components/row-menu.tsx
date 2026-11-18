@@ -8,16 +8,18 @@ export type RowMenuItem = {
   disabled?: boolean;
   /** Tooltip; explains a disabled entry. */
   hint?: string;
+  /** Destructive entry (archive, delete): drawn in the danger colour. */
+  destructive?: boolean;
 };
 
 const ENABLED = "[role=menuitem]:not(:disabled)";
 
-/** The per-chat actions menu of the history list (opened by the row's "..." button or a right
- *  click on the row): arrow keys move, Enter picks, Esc and a click outside close it (the shared
+/** The shared row actions menu (the history list's per-chat menu and the per-project menu of the
+ *  project home and switcher), opened by a "..." button or a right click: arrow keys move, Enter picks, Esc and a click outside close it (the shared
  *  popover dismiss hook), and it is placed inside the window (`AnchoredPopover`). Focus goes to
  *  the first enabled entry on open and back to the anchor on close
  *  (unless the user moved it elsewhere). */
-export function ChatRowMenu({
+export function RowMenu({
   items,
   anchorRef,
   label,
@@ -78,7 +80,9 @@ export function ChatRowMenu({
               onClose();
               item.onSelect();
             }}
-            className="block w-full rounded-md px-2 py-1.5 text-left text-[12.5px] text-[var(--text-secondary)] hover:bg-[var(--item-hover-bg)] focus:bg-[var(--item-hover-bg)] focus:outline-none disabled:opacity-50 disabled:hover:bg-transparent"
+            className={`block w-full rounded-md px-2 py-1.5 text-left text-[12.5px] ${
+              item.destructive ? "text-[var(--danger)]" : "text-[var(--text-secondary)]"
+            } hover:bg-[var(--item-hover-bg)] focus:bg-[var(--item-hover-bg)] focus:outline-none disabled:opacity-50 disabled:hover:bg-transparent`}
           >
             {item.label}
           </button>

@@ -121,6 +121,15 @@ afterEach(() => {
 const button = (text: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent?.trim().includes(text))!;
 
+const menuItem = (label: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")].find(
+    (b) => b.textContent === label,
+  )!;
+const actionsButton = () =>
+  container.querySelector<HTMLButtonElement>("button[aria-label='Project actions']")!;
+const menuLabels = () =>
+  [...document.querySelectorAll("[role=menuitem]")].map((b) => b.textContent);
+
 describe("the one archived rule", () => {
   it("splits by archivedAt and treats a missing value as active", () => {
     expect(isArchivedProject(archived)).toBe(true);
@@ -245,7 +254,8 @@ describe("Archive from the project home", () => {
     useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
     await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
     await act(async () => {});
-    await act(async () => button("Archive project").click());
+    await act(async () => actionsButton().click());
+    await act(async () => menuItem("Archive project…").click());
     expect(container.textContent).toContain("Moves the folder to Archive/Projects");
     invokeMock.mockClear();
     await act(async () => button("Archive").click());
@@ -266,7 +276,8 @@ describe("Archive from the project home", () => {
     useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
     await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
     await act(async () => {});
-    await act(async () => button("Archive project").click());
+    await act(async () => actionsButton().click());
+    await act(async () => menuItem("Archive project…").click());
     await act(async () => button("Archive").click());
     expect(container.querySelector("[role=alert], p")!.textContent).toBeTruthy();
     expect(container.textContent).toContain("busy");
@@ -293,5 +304,105 @@ describe("palette commands", () => {
     expect(usePaneStore.getState().open).toBe(true);
     expect(useAgentStore.getState().view).toBe("project");
     expect(useProjectsStore.getState().archivedExpanded).toBe(true);
+  });
+});
+
+describe("Project actions menu (home header and switcher rows)", () => {
+  const pickerOpen = () => document.querySelector("input[aria-label='Search icons']") !== null;
+  const key = (target: Element, k: string) =>
+    act(async () => {
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+    });
+
+  async function renderHome(c = client()) {
+    useAgentStore.setState({ currentProjectPath: "Projects/Acme" });
+    await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
+    await act(async () => {});
+    return c;
+  }
+
+  async function openSwitcherMenu(viaRightClick = false) {
+    await useProjectsStore.getState().refresh();
+    await act(async () => root.render(<ProjectSwitcher projectPath={null} />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-haspopup=listbox]")!.click(),
+    );
+    if (viaRightClick) {
+      const row = [...container.querySelectorAll("[role=option]")].find((o) =>
+        o.textContent?.includes("Acme"),
+      )!;
+      await act(async () => {
+        row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      });
+    } else {
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>("button[aria-label='Actions for Acme']")!
+          .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })),
+      );
+    }
+  }
+
+  it("the home header has no bottom Archive button, only the menu", async () => {
+    await renderHome();
+    expect(container.textContent).not.toContain("Archive project");
+    await act(async () => actionsButton().click());
+    expect(menuLabels()).toEqual(["Change icon…", "Archive project…"]);
+    expect(menuItem("Archive project…").className).toContain("--danger");
+    expect(menuItem("Change icon…").className).not.toContain("--danger");
+  });
+
+  it("keyboard: the first item has focus, arrows wrap, Esc closes", async () => {
+    await renderHome();
+    await act(async () => actionsButton().click());
+    expect(document.activeElement).toBe(menuItem("Change icon…"));
+    const menu = document.querySelector("[role=menu]")!;
+    await key(menu, "ArrowDown");
+    expect(document.activeElement).toBe(menuItem("Archive project…"));
+    await key(menu, "ArrowDown");
+    expect(document.activeElement).toBe(menuItem("Change icon…"));
+    await key(menu, "ArrowUp");
+    expect(document.activeElement).toBe(menuItem("Archive project…"));
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.querySelector("[role=menu]")).toBeNull();
+  });
+
+  it("Change icon… from the home menu opens the picker", async () => {
+    await renderHome();
+    await act(async () => actionsButton().click());
+    await act(async () => menuItem("Change icon…").click());
+    await act(async () => {});
+    expect(document.querySelector("[role=menu]")).toBeNull();
+    expect(pickerOpen()).toBe(true);
+  });
+
+  it("the switcher row's ... opens the same menu; Change icon… opens the picker", async () => {
+    await openSwitcherMenu();
+    expect(menuLabels()).toEqual(["Change icon…", "Archive project…"]);
+    await act(async () => menuItem("Change icon…").click());
+    await act(async () => {});
+    expect(pickerOpen()).toBe(true);
+  });
+
+  it("a right click on a switcher row opens the same menu", async () => {
+    await openSwitcherMenu(true);
+    expect(menuLabels()).toEqual(["Change icon…", "Archive project…"]);
+  });
+
+  it("Archive project… from the switcher opens that project's home with the confirm open", async () => {
+    await openSwitcherMenu();
+    await act(async () => menuItem("Archive project…").click());
+    expect(useAgentStore.getState().view).toBe("project");
+    expect(usePaneStore.getState().open).toBe(true);
+    expect(useProjectsStore.getState().archiveRequested).toBe(true);
+    expect(useAgentStore.getState().currentProjectPath).toBe("Projects/Acme");
+    const c = client();
+    await renderHome(c);
+    expect(container.textContent).toContain("Moves the folder to Archive/Projects");
+    expect(useProjectsStore.getState().archiveRequested).toBe(false);
+    await act(async () => button("Archive").click());
+    expect(c.archive).toHaveBeenCalledWith("Projects/Acme", true);
   });
 });

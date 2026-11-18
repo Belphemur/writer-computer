@@ -92,6 +92,13 @@ afterEach(() => {
 const button = (text: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!;
 
+const menuItem = (label: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")].find(
+    (b) => b.textContent === label,
+  )!;
+const actionsButton = () =>
+  container.querySelector<HTMLButtonElement>("button[aria-label='Project actions']")!;
+
 describe("ProjectHome", () => {
   it("shows description, resolved sources with warnings, and a recent-chats slot", async () => {
     await act(async () =>
@@ -138,7 +145,8 @@ describe("ProjectHome", () => {
     const c = client();
     await act(async () => root.render(<ProjectHome projectPath="Projects/Acme" client={c} />));
     await act(async () => {});
-    await act(async () => button("Archive project").click());
+    await act(async () => actionsButton().click());
+    await act(async () => menuItem("Archive project…").click());
     expect(c.archive).not.toHaveBeenCalled();
     await act(async () => button("Archive").click());
     expect(c.archive).toHaveBeenCalledWith("Projects/Acme", true);

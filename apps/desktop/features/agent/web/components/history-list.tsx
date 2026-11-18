@@ -26,7 +26,7 @@ import {
 } from "@features/agent/web/lib/chat-history-client";
 import type { ChatSummary } from "@features/agent/web/lib/events";
 import { formatRelativeTime } from "@/lib/relative-time";
-import { ChatRowMenu, type RowMenuItem } from "./chat-row-menu";
+import { RowMenu, type RowMenuItem } from "./row-menu";
 import { Spinner } from "./agent-icon";
 import { ProjectPathIcon } from "./project-icon";
 
@@ -212,7 +212,7 @@ function ChatRow(p: RowProps) {
         </div>
       )}
       {p.menuOpen && (
-        <ChatRowMenu
+        <RowMenu
           items={actions}
           anchorRef={moreRef}
           label={`Actions for ${chat.title}`}

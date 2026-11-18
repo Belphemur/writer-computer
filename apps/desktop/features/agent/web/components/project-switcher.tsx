@@ -11,6 +11,7 @@ import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { Ico } from "./agent-icon";
+import { ProjectActionsMenu } from "./project-actions-menu";
 import { ProjectIconPopover } from "./project-icon-picker";
 import { ProjectPathIcon } from "./project-icon";
 
@@ -29,6 +30,8 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
   const [active, setActive] = useState(0);
   /** The project whose icon and color the picker is editing (it replaces the list popover). */
   const [pickerFor, setPickerFor] = useState<string | null>(null);
+  /** The project whose "…" actions menu is open (it also replaces the list popover). */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
@@ -63,6 +66,12 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
     }
     return rows;
   }, [filter, projects, vaultName]);
+
+  function openMenu(path: string) {
+    setOpen(false);
+    setFilter("");
+    setMenuFor(path);
+  }
 
   function choose(path: string | null) {
     useAgentStore.setState({ currentProjectPath: path });
@@ -134,6 +143,11 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
                 role="option"
                 aria-selected={o.path === projectPath}
                 onMouseEnter={() => setActive(i)}
+                onContextMenu={(e) => {
+                  if (!o.path) return;
+                  e.preventDefault();
+                  openMenu(o.path);
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   choose(o.path);
@@ -157,14 +171,13 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
                   <button
                     type="button"
                     tabIndex={-1}
-                    aria-label={`Change icon for ${o.text}`}
-                    title="Change icon…"
+                    aria-label={`Actions for ${o.text}`}
+                    aria-haspopup="menu"
+                    title="Project actions"
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setOpen(false);
-                      setFilter("");
-                      setPickerFor(o.path);
+                      openMenu(o.path!);
                     }}
                     className="shrink-0 self-center rounded px-1 text-[12px] text-[var(--text-muted)] opacity-0 hover:bg-[var(--item-hover-bg)] group-hover/row:opacity-100"
                   >
@@ -204,6 +217,15 @@ export function ProjectSwitcher({ projectPath }: { projectPath: string | null })
             </button>
           </div>
         </div>
+      ) : null}
+      {menuFor ? (
+        <ProjectActionsMenu
+          projectPath={menuFor}
+          anchorRef={wrapRef}
+          label={`Actions for ${projects.find((p) => p.path === menuFor)?.name ?? menuFor}`}
+          onChangeIcon={() => setPickerFor(menuFor)}
+          onClose={() => setMenuFor(null)}
+        />
       ) : null}
       {pickerFor ? (
         <ProjectIconPopover

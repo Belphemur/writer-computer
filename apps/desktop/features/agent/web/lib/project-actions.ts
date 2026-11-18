@@ -41,10 +41,19 @@ function showProjectBrowser(): void {
   a.setView("project");
 }
 
-/** Palette "Archive project": the pane's project home with the Archive confirm step open (the
- *  move itself is the home's button, one path). Without a project it only shows the browser. */
-export function openArchiveProject(): void {
-  if (currentProject()) useProjectsStore.getState().setArchiveRequested(true);
+/** "Archive project" (palette, project menu): the pane's project home with the Archive confirm
+ *  step open (the move itself is the home's button, one path). `path` defaults to the current
+ *  project; another project becomes the pane's (a fresh chat in it, like picking it in the
+ *  switcher). Without a project it only shows the browser. */
+export function openArchiveProject(path: string | null = currentProject()): void {
+  if (path) {
+    const a = useAgentStore.getState();
+    if (path !== currentProject()) {
+      useAgentStore.setState({ currentProjectPath: path });
+      a.newChat(path);
+    }
+    useProjectsStore.getState().setArchiveRequested(true);
+  }
   showProjectBrowser();
 }
 

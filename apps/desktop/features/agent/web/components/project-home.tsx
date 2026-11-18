@@ -17,6 +17,7 @@ import { sourceKindLabel } from "@features/agent/web/lib/project-sources";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectAppearance, useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { ArchivedProjects } from "./archived-projects";
+import { ProjectActionsMenu } from "./project-actions-menu";
 import { ProjectIconPopover } from "./project-icon-picker";
 import { ProjectIcon } from "./project-icon";
 
@@ -52,6 +53,8 @@ export function ProjectHome({
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const appearance = useProjectAppearance(projectPath);
   const archiveFolder =
@@ -86,6 +89,7 @@ export function ProjectHome({
     setError(null);
     setConfirmArchive(false);
     setPickerOpen(false);
+    setMenuOpen(false);
     let stale = false;
     void load(() => stale);
     return () => {
@@ -156,14 +160,25 @@ export function ProjectHome({
           {project?.name ?? projectPath.split("/").pop()}
         </h2>
         <button
+          ref={moreRef}
           type="button"
           className={BUTTON}
-          aria-haspopup="dialog"
-          aria-expanded={pickerOpen}
-          onClick={() => setPickerOpen((o) => !o)}
+          aria-label="Project actions"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
         >
-          Change icon…
+          …
         </button>
+        {menuOpen ? (
+          <ProjectActionsMenu
+            projectPath={projectPath}
+            anchorRef={moreRef}
+            label={`Actions for ${project?.name ?? projectPath}`}
+            onChangeIcon={() => setPickerOpen(true)}
+            onClose={() => setMenuOpen(false)}
+          />
+        ) : null}
         {pickerOpen ? (
           <ProjectIconPopover
             projectPath={projectPath}
@@ -265,8 +280,8 @@ export function ProjectHome({
             {recentChats ?? <OpenProjectChats projectPath={projectPath} />}
           </section>
 
-          <section className="mt-5">
-            {confirmArchive ? (
+          {confirmArchive ? (
+            <section className="mt-5">
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-[var(--text-muted)]">
                   Moves the folder to {archiveFolder} and hides the project from pickers. Notes and
@@ -284,12 +299,8 @@ export function ProjectHome({
                   Cancel
                 </button>
               </div>
-            ) : (
-              <button type="button" className={BUTTON} onClick={() => setConfirmArchive(true)}>
-                Archive project
-              </button>
-            )}
-          </section>
+            </section>
+          ) : null}
         </>
       ) : null}
       <ArchivedProjects client={client} />
