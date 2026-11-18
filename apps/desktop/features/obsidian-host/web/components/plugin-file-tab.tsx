@@ -43,7 +43,7 @@ export function PluginFileTab({
   const hidden = isActive ? "" : "hidden";
   if (leaf && entry?.status === "ready") {
     return (
-      <div data-plugin-file-tab={path} className={`h-full min-h-0 pt-12 ${hidden}`}>
+      <div data-plugin-file-tab={path} className={`h-full min-h-0 ${hidden}`}>
         <MountedElement element={leaf.containerEl} />
       </div>
     );
@@ -56,7 +56,7 @@ export function PluginFileTab({
     <div
       data-plugin-file-tab-pending={path}
       role="status"
-      className={`flex h-full flex-col items-start gap-3 p-6 pt-16 text-[13px] text-text-muted ${hidden}`}
+      className={`flex h-full flex-col items-start gap-3 p-6 text-[13px] text-text-muted ${hidden}`}
     >
       <span>{message}</span>
       {entry?.status === "error" ? (

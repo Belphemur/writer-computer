@@ -1,7 +1,6 @@
 // The layout supervisor with a fake worker (jsdom has none): it starts, stops when settled or
 // hidden, rebuilds on change, and pinned nodes are fixed in the graph the worker reads.
 import { describe, expect, it } from "vite-plus/test";
-import { DEFAULT_FILTERS } from "../web/config";
 import {
   createLayout,
   forcesToSettings,
@@ -10,11 +9,11 @@ import {
   type Supervisor,
 } from "../web/layout";
 import { applySpec, buildSpec, createModel } from "../web/model";
-import { smallSlice } from "./fixtures";
+import { smallSlice, WITH_PROPERTIES } from "./fixtures";
 
 function setup() {
   const model = createModel();
-  applySpec(model, buildSpec(smallSlice(), DEFAULT_FILTERS));
+  applySpec(model, buildSpec(smallSlice(), WITH_PROPERTIES));
   const made: (Supervisor & { running: boolean; fixedAtStart: string[] })[] = [];
   const timers: { fn: () => void; ms: number }[] = [];
   const layout = createLayout(model, DEFAULT_FORCES, {
@@ -96,8 +95,8 @@ describe("layout supervisor", () => {
 
   it("maps the sliders to ForceAtlas2 and shortens the run without animation", () => {
     expect(forcesToSettings(DEFAULT_FORCES, 100)).toMatchObject({
-      gravity: 1,
-      scalingRatio: 2,
+      gravity: 0.5,
+      scalingRatio: 4,
       barnesHutOptimize: false,
     });
     expect(forcesToSettings(DEFAULT_FORCES, 5000).barnesHutOptimize).toBe(true);

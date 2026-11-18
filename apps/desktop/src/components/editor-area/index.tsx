@@ -1,6 +1,7 @@
 import { useActiveTab, useActiveTabId, useOpenTabs } from "@/hooks/use-tabs";
 import { pageKind } from "./page-kinds";
 import { pageKindView } from "./page-kinds/views";
+import { PageBody } from "./page-body";
 import { EditorSearchOverlay } from "./editor-search-overlay";
 import { EditorNoticeBanner } from "./editor-notice-banner";
 import { useOsImageDrop } from "./use-os-image-drop";
@@ -17,7 +18,7 @@ function EditorArea({ showFooter = true }: EditorAreaProps) {
 
   return (
     <div className="relative h-full overflow-hidden">
-      <div className="relative h-full min-h-0 overflow-hidden">
+      <PageBody>
         {tabs.map((tab) => {
           const k = pageKind(tab.location);
           const isActive = tab.id === activeTabId;
@@ -31,7 +32,7 @@ function EditorArea({ showFooter = true }: EditorAreaProps) {
             <Component key={tab.id} location={tab.location} isActive={isActive} tabId={tab.id} />
           );
         })}
-      </div>
+      </PageBody>
       {showFooter && activeTab
         ? pageKindView(activeTab.location).renderFooter?.(activeTab.location)
         : null}

@@ -2,7 +2,6 @@
 // search dimming, the center ring, labels by zoom.
 import { describe, expect, it } from "vite-plus/test";
 import { applySpec, buildSpec, createModel, type EdgeAttrs, type NodeAttrs } from "../web/model";
-import { DEFAULT_FILTERS } from "../web/config";
 import {
   CENTER_SCALE,
   DASHED,
@@ -14,10 +13,10 @@ import {
   type ViewState,
 } from "../web/reducers";
 import { FALLBACK_THEME, labelColor } from "../web/theme";
-import { smallSlice } from "./fixtures";
+import { smallSlice, WITH_PROPERTIES } from "./fixtures";
 
 const model = createModel();
-applySpec(model, buildSpec(smallSlice(), DEFAULT_FILTERS));
+applySpec(model, buildSpec(smallSlice(), WITH_PROPERTIES));
 
 const view = (patch: Partial<ViewState> = {}): ViewState => ({
   hovered: null,
@@ -27,6 +26,7 @@ const view = (patch: Partial<ViewState> = {}): ViewState => ({
   matches: null,
   selection: new Set(),
   level: "detail",
+  labelMode: "zoom",
   groupedOverview: false,
   hubRank: new Map(),
   order: 4,

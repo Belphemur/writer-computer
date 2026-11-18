@@ -4,6 +4,7 @@
 // valid config (a hand-edited or newer file never breaks the view).
 
 import type { GraphEdgeKind } from "./ipc";
+import { DEFAULT_LABEL_MODE, isLabelMode, type LabelMode } from "./lod";
 
 export type SurfaceId = "global" | "local";
 
@@ -38,7 +39,33 @@ export type ColorRule = { id: string; query: string; color: string };
 /** `property` is `tags`, `folder`, any frontmatter key, or null for no grouping. */
 export type GroupBy = { property: string | null; nestedLevel: 1 | 2 | 3 };
 
-export type SurfaceConfig = { filters: GraphFilters; rules: ColorRule[]; groupBy: GroupBy };
+/** What the automatic clusters are: detected communities (Louvain) or the top-level folders. An
+ *  explicit Group by wins over both. */
+export const CLUSTER_BY = ["communities", "folder"] as const;
+export type ClusterBy = (typeof CLUSTER_BY)[number];
+export const isClusterBy = (v: unknown): v is ClusterBy =>
+  (CLUSTER_BY as readonly unknown[]).includes(v);
+
+export type Depth = 1 | 2 | 3 | 4 | 5;
+export const MAX_DEPTH = 5;
+export const DEFAULT_DEPTH: Depth = 2;
+
+/** A depth from a tab location or a slider; `undefined` (the whole vault) stays `undefined`. */
+export function clampDepth(d: number | undefined): Depth | undefined {
+  return d === undefined || !Number.isFinite(d)
+    ? undefined
+    : (Math.min(MAX_DEPTH, Math.max(1, Math.round(d))) as Depth);
+}
+
+/** The Display section of the side panel. */
+export type Display = { labels: LabelMode; clusterBy: ClusterBy; depth: Depth };
+
+export type SurfaceConfig = {
+  filters: GraphFilters;
+  rules: ColorRule[];
+  groupBy: GroupBy;
+  display: Display;
+};
 
 export type GraphConfig = { version: 1; global: SurfaceConfig; local: SurfaceConfig };
 
@@ -51,16 +78,25 @@ export const DEFAULT_FILTERS: GraphFilters = {
   orphans: true,
   links: true,
   embeds: true,
-  properties: true,
+  // Every relationship property is an edge kind of its own (dozens in a real vault): off until
+  // enabled in the panel, and then never fetched.
+  properties: false,
   hiddenLabels: [],
   includeFolders: [],
   excludeFolders: [],
+};
+
+export const DEFAULT_DISPLAY: Display = {
+  labels: DEFAULT_LABEL_MODE,
+  clusterBy: "communities",
+  depth: DEFAULT_DEPTH,
 };
 
 export const DEFAULT_SURFACE: SurfaceConfig = {
   filters: DEFAULT_FILTERS,
   rules: [],
   groupBy: { property: null, nestedLevel: 1 },
+  display: DEFAULT_DISPLAY,
 };
 
 export const DEFAULT_CONFIG: GraphConfig = {
@@ -116,12 +152,23 @@ function normalizeGroupBy(v: unknown): GroupBy {
   return { property, nestedLevel: level };
 }
 
+function normalizeDisplay(v: unknown): Display {
+  const d = isRecord(v) ? v : {};
+  const depth = typeof d.depth === "number" ? Math.round(d.depth) : DEFAULT_DEPTH;
+  return {
+    labels: isLabelMode(d.labels) ? d.labels : DEFAULT_DISPLAY.labels,
+    clusterBy: isClusterBy(d.clusterBy) ? d.clusterBy : DEFAULT_DISPLAY.clusterBy,
+    depth: Math.min(MAX_DEPTH, Math.max(1, depth)) as Depth,
+  };
+}
+
 export function normalizeSurface(v: unknown): SurfaceConfig {
   const s = isRecord(v) ? v : {};
   return {
     filters: normalizeFilters(s.filters),
     rules: normalizeRules(s.rules),
     groupBy: normalizeGroupBy(s.groupBy),
+    display: normalizeDisplay(s.display),
   };
 }
 

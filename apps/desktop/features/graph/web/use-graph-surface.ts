@@ -3,21 +3,23 @@
 // and the spec and groups the canvas draws. The two surfaces differ only in the arguments.
 import { useEffect, useMemo } from "react";
 import type { GraphSliceArgs } from "./ipc";
-import { EDGE_KINDS, KIND_FILTER, type SurfaceConfig, type SurfaceId } from "./config";
+import { EDGE_KINDS, KIND_FILTER, type Depth, type SurfaceConfig, type SurfaceId } from "./config";
 import { aggregate, type Overview } from "./aggregate";
-import { computeGroups, type GroupsResult } from "./groups";
+import { surfaceGroups } from "./clusters";
+import type { GroupsResult } from "./groups";
 import { buildSpec, filtersNeedProps, propertyLabels, type GraphSpec } from "./model";
 import { needsProps, parseQuery } from "./query";
 import { useGraphSettings } from "./settings";
 import { useGraphConfig } from "./store";
 import { useGraphData, type GraphData } from "./use-graph-data";
+import { useCommunities } from "./use-clusters";
 import { useNoteProps } from "./use-note-props";
 
 export interface SurfaceArgs {
   surface: SurfaceId;
   /** Vault-relative center note; with `depth` the slice is its neighbourhood. */
   center: string | null;
-  depth?: 1 | 2 | 3;
+  depth?: Depth;
 }
 
 export interface GraphSurface {
@@ -81,26 +83,23 @@ export function useGraphSurface(a: SurfaceArgs): GraphSurface {
         : { nodes: [], edges: [] },
     [data.slice, config.filters, a.center, props],
   );
-  const groups = useMemo(
-    () => computeGroups(spec.nodes, { rules: config.rules, groupBy: config.groupBy, props }),
-    [spec, config.rules, config.groupBy, props],
+  const communities = useCommunities(
+    spec,
+    config.groupBy.property === null && config.display.clusterBy === "communities",
   );
-  // Overview bubbles: by the chosen property, else by folder; one group or none means hubs.
+  const groups = useMemo(
+    () => surfaceGroups(spec, config, props, communities),
+    [spec, config, props, communities],
+  );
+  // Overview bubbles: one per cluster; fewer than two clusters means hubs.
   const overview = useMemo(() => {
-    const by = config.groupBy.property
-      ? groups
-      : computeGroups(spec.nodes, {
-          rules: [],
-          groupBy: { property: "folder", nestedLevel: config.groupBy.nestedLevel },
-          props,
-        });
-    const colors = new Map(by.groups.map((g) => [g.key, g.color]));
+    const colors = new Map(groups.groups.map((g) => [g.key, g.color]));
     return aggregate(
       spec,
-      (path) => by.nodes.get(path)?.group ?? null,
+      (path) => groups.nodes.get(path)?.group ?? null,
       (key) => colors.get(key) ?? "#8a8a96",
     );
-  }, [spec, groups, config.groupBy, props]);
+  }, [spec, groups]);
   const labels = useMemo(() => (data.slice ? propertyLabels(data.slice) : []), [data.slice]);
   return { data, config, spec, groups, overview, labels, loaded };
 }

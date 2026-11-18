@@ -106,6 +106,8 @@
 
   --chrome-control-height: 32px;
   --chrome-control-padding: 12px;
+  /* The window chrome row (tab strip, sidebar header): the one height the editor body starts below. */
+  --chrome-bar-height: calc(var(--chrome-control-height) + var(--chrome-control-padding) * 2);
   --chrome-drag-height: 72px;
   --writer-editor-max-width: 734px;
   /* One gap around the note: the same distance from the top edge and from
@@ -114,7 +116,12 @@
      tall, narrow window keeps its text column; the top gap never shrinks
      for that reason. */
   --writer-editor-padding: clamp(3rem, 12vh, 9rem);
-  --writer-editor-top-padding: var(--writer-editor-padding);
+  /* The body starts below the chrome bar, so the note's text lands where it did when the body
+     started at the window top. */
+  --writer-editor-top-padding: max(
+    0px,
+    calc(var(--writer-editor-padding) - var(--chrome-bar-height))
+  );
   --writer-editor-side-padding: min(var(--writer-editor-padding), clamp(1.5rem, 8vw, 9rem));
   --writer-editor-outer-width: calc(
     var(--writer-editor-max-width) + var(--writer-editor-side-padding) +

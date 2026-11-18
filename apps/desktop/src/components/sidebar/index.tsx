@@ -35,7 +35,7 @@ function SidebarSurface() {
           data-tauri-drag-region
           className="shrink-0"
           style={{
-            height: "calc(var(--chrome-control-height) + var(--chrome-control-padding) * 2)",
+            height: "var(--chrome-bar-height)",
           }}
         />
         <div data-sidebar-surface-content className="min-h-0 flex-1 overflow-hidden">

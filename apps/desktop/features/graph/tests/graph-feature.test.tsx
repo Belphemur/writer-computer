@@ -82,10 +82,8 @@ describe("manifest contract", () => {
       scope: "global",
     });
     expect(fragment.settings.every((s) => s.key.startsWith("graph."))).toBe(true);
-    expect(readGraphSettings({}, false)).toMatchObject({ localDepth: 1, animate: true });
-    expect(
-      readGraphSettings({ "graph.local-depth": 3, "graph.animate": true }, true),
-    ).toMatchObject({ localDepth: 3, animate: false });
+    expect(readGraphSettings({}, false)).toMatchObject({ animate: true });
+    expect(readGraphSettings({ "graph.animate": true }, true)).toMatchObject({ animate: false });
   });
 });
 

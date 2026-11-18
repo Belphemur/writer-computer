@@ -9,18 +9,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
 import type { GraphCamera } from "@/components/editor-area/page-kinds";
 import { keyIntent, type LinkIntent } from "@/lib/link-activation";
-import { nodeMenu, intentOf, type MenuHandlers } from "./actions";
+import { nodeClick, nodeMenu, intentOf, type MenuHandlers } from "./actions";
 import { syncGroups, type GroupsResult } from "./groups";
 import type { Overview } from "./aggregate";
 import { CardsLayer, pickCards, type CardData } from "./cards-layer";
 import { attachHulls } from "./hulls";
 import {
   atLeast,
+  cardPriorityKeys,
+  edgeLabelsRendered,
   fadeAt,
   hubRanks,
   LOD_HYSTERESIS,
   LOD_TABLE,
   levelFor,
+  type LabelMode,
   ratioForSpacing,
   spacingPx,
 } from "./lod";
@@ -44,6 +47,9 @@ export interface CanvasApi {
   fit(): void;
   centerOn(key: string): void;
   unpinAll(): void;
+  unpin(key: string): void;
+  /** Pinned notes (vault-relative path) of the layout. */
+  isPinned(key: string): boolean;
 }
 
 export interface GraphCanvasProps {
@@ -53,6 +59,8 @@ export interface GraphCanvasProps {
   animate: boolean;
   /** Scales the level-of-detail boundaries (the "Label zoom" setting; above 1 shows detail sooner). */
   labelRatio: number;
+  /** How node labels show (`lod.ts`, the Display section of the panel). */
+  labelMode: LabelMode;
   /** The aggregated overview (group bubbles), or null when the flat hubs overview applies. */
   overview: Overview | null;
   center: string | null;
@@ -123,8 +131,9 @@ function Controller(
     layout.current = createLayout(model, latest.current.forces);
     layout.current.setAnimate(latest.current.animate);
     hulls.current = attachHulls(sigma, model, {
-      // Hulls are visible from the detail level up.
-      groups: () => (atLeast(view.current.level, "detail") ? latest.current.groups.groups : []),
+      // Clusters keep their hull, name and count from the structure level up (the overview level
+      // draws one bubble per cluster instead).
+      groups: () => (atLeast(view.current.level, "structure") ? latest.current.groups.groups : []),
       labelColor: () => theme.current.label,
     });
     overviewLayer.current = attachOverview(sigma, model, {
@@ -190,6 +199,21 @@ function Controller(
 
   useEffect(() => patchView({ matches: p.matches }), [p.matches]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The label mode changes what is drawn, never the layout or the data: a view patch and a refresh.
+  useEffect(() => {
+    patchView({ labelMode: p.labelMode });
+    syncEdgeLabels();
+    if (p.labelMode !== "hover") return;
+    setCards([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.labelMode]);
+
+  /** Sigma draws edge labels (property names) per label mode and level; the reducer picks edges. */
+  const syncEdgeLabels = () => {
+    const on = edgeLabelsRendered(view.current.labelMode, view.current.level);
+    if (sigma.getSetting("renderEdgeLabels") !== on) sigma.setSetting("renderEdgeLabels", on);
+  };
+
   const centerOn = (key: string) => {
     const d = sigma.getNodeDisplayData(key);
     if (!d) return;
@@ -214,8 +238,8 @@ function Controller(
     const detailed = atLeast(level, "detail");
     if (sigma.getSetting("enableEdgeEvents") !== detailed)
       sigma.setSetting("enableEdgeEvents", detailed);
-    sigma.setSetting("renderEdgeLabels", level === "closeup");
     startFade({ level });
+    syncEdgeLabels();
     if (level !== "closeup") setCards([]);
     hulls.current?.redraw();
     overviewLayer.current?.redraw();
@@ -249,12 +273,9 @@ function Controller(
       const p = sigma.graphToViewport({ x: attrs.x, y: attrs.y });
       nodes.push({ key, attrs, x: p.x, y: p.y });
     });
-    const priority = new Set(
-      [view.current.center, view.current.hovered, view.current.focus].filter(
-        (k): k is string => k !== null,
-      ),
-    );
-    const next = pickCards(nodes, width, height, priority);
+    const mode = view.current.labelMode;
+    const priority = cardPriorityKeys(mode, view.current);
+    const next = pickCards(nodes, width, height, priority, undefined, mode === "hover");
     setCards(next);
     const keys = next.map((c) => c.key).join("\u0000");
     if (keys !== [...view.current.cardKeys].join("\u0000")) {
@@ -338,19 +359,22 @@ function Controller(
       clickStage: ({ event }) => {
         const group = overviewLayer.current?.hit(event.x, event.y);
         if (group) zoomToGroup(group);
+        else if (view.current.selection.size > 0) {
+          patchView({ selection: new Set() });
+          latest.current.onSelection?.([]);
+        }
       },
       clickNode: ({ node, event }) => {
         const intent = intentOf(event.original);
         if (!intent) return;
         const a = nodeAt(node);
-        if (intent === "current" && event.original.shiftKey) {
-          const next = new Set(view.current.selection);
-          if (!next.delete(a.path)) next.add(a.path);
-          patchView({ selection: next });
-          latest.current.onSelection?.([...next]);
+        const result = nodeClick(intent, event.original.shiftKey, view.current.selection, a.path);
+        if ("open" in result) {
+          latest.current.onOpenNode(a, result.open);
           return;
         }
-        latest.current.onOpenNode(a, intent);
+        patchView({ selection: result.selection });
+        latest.current.onSelection?.([...result.selection]);
       },
       rightClickNode: ({ node, event }) => {
         event.original.preventDefault();
@@ -364,8 +388,7 @@ function Controller(
       },
       doubleClickNode: ({ node, event }) => {
         event.preventSigmaDefault();
-        layout.current?.unpin(node);
-        emitPins();
+        latest.current.onOpenNode(nodeAt(node), "current");
       },
       downNode: () => undefined,
       nodeDragStart: () => layout.current?.stop(),
@@ -445,6 +468,11 @@ function Controller(
         layout.current?.unpinAll();
         emitPins();
       },
+      unpin: (key) => {
+        layout.current?.unpin(key);
+        emitPins();
+      },
+      isPinned: (key) => model.hasNode(key) && model.getNodeAttribute(key, "fixed") === true,
     };
     return () => {
       if (p.apiRef) p.apiRef.current = null;
@@ -497,7 +525,7 @@ export function GraphCanvas(props: GraphCanvasProps) {
 }
 
 function defaultView(
-  p: Pick<GraphCanvasProps, "center" | "matches" | "propertyLabels">,
+  p: Pick<GraphCanvasProps, "center" | "matches" | "propertyLabels" | "labelMode">,
 ): ViewState {
   return {
     hovered: null,
@@ -507,6 +535,7 @@ function defaultView(
     matches: p.matches,
     selection: new Set(),
     level: "detail",
+    labelMode: p.labelMode,
     groupedOverview: false,
     hubRank: new Map(),
     order: 0,

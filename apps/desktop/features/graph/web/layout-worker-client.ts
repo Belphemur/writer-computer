@@ -35,7 +35,7 @@ export function createWorkerSupervisor(
   };
 
   const onMessage = (event: MessageEvent<WorkerResponse>) => {
-    if (!running || !matrices) return;
+    if (!running || !matrices || !("nodes" in event.data)) return;
     const nodes = event.data.nodes;
     if (stale || !applyPositions(graph, matrices.keys, nodes)) {
       running = false;
@@ -81,3 +81,27 @@ export function createWorkerSupervisor(
 /** The real worker, a module worker bundled as its own file. */
 export const spawnLayoutWorker = (): WorkerLike =>
   new Worker(new URL("./layout.worker.ts", import.meta.url), { type: "module" }) as WorkerLike;
+
+/** Runs community detection in a fresh worker (the same module as the layout, so the CSP needs
+ *  nothing new), then ends it. Resolves with the community of each node. */
+export function detectInWorker(
+  order: number,
+  edges: Float32Array,
+  spawn: () => WorkerLike = spawnLayoutWorker,
+): { result: Promise<Int32Array>; cancel: () => void } {
+  const worker = spawn();
+  let cancel = () => worker.terminate();
+  const result = new Promise<Int32Array>((resolve, reject) => {
+    worker.addEventListener("message", (event) => {
+      worker.terminate();
+      if ("communities" in event.data) resolve(event.data.communities);
+      else reject(new Error("unexpected worker reply"));
+    });
+    cancel = () => {
+      worker.terminate();
+      reject(new Error("cancelled"));
+    };
+    worker.postMessage({ type: "cluster", order, edges }, [edges.buffer]);
+  });
+  return { result, cancel: () => cancel() };
+}

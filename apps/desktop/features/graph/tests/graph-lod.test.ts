@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { aggregate } from "../web/aggregate";
 import { CardsLayer, MAX_CARD_TAGS, pickCards } from "../web/cards-layer";
-import { DEFAULT_FILTERS } from "../web/config";
 import {
   CARD_CAP,
   LOD_HYSTERESIS,
@@ -20,7 +19,7 @@ import { applySpec, buildSpec, createModel, type NodeAttrs } from "../web/model"
 import { bubbleGeometry, bubbleRadius, hitBubble, linkWidth } from "../web/overview";
 import { edgeStyle, nodeStyle, type ViewState } from "../web/reducers";
 import { FALLBACK_THEME } from "../web/theme";
-import { bigSlice, smallSlice } from "./fixtures";
+import { bigSlice, smallSlice, WITH_PROPERTIES } from "./fixtures";
 
 const [, STRUCTURE, DETAIL, CLOSEUP] = LOD_TABLE.map((r) => r.minSpacing) as [
   number,
@@ -89,7 +88,7 @@ describe("levelFor", () => {
 });
 
 describe("aggregate", () => {
-  const spec = buildSpec(smallSlice(), DEFAULT_FILTERS);
+  const spec = buildSpec(smallSlice(), WITH_PROPERTIES);
   const byFolder = (p: string) => (p.includes("/") ? p.split("/")[0]! : null);
 
   it("counts notes per group and sums links between groups, ignoring links inside one", () => {
@@ -116,7 +115,7 @@ describe("aggregate", () => {
   });
 
   it("aggregates a 10,000-note vault quickly", () => {
-    const big = buildSpec(bigSlice(10_000), DEFAULT_FILTERS);
+    const big = buildSpec(bigSlice(10_000), WITH_PROPERTIES);
     const start = performance.now();
     const o = aggregate(
       big,
@@ -152,7 +151,7 @@ describe("aggregate", () => {
 
 describe("reducers per level", () => {
   const model = createModel();
-  applySpec(model, buildSpec(smallSlice(), DEFAULT_FILTERS));
+  applySpec(model, buildSpec(smallSlice(), WITH_PROPERTIES));
   const attrs = (k: string): NodeAttrs => model.getNodeAttributes(k);
   const view = (patch: Partial<ViewState> = {}): ViewState => ({
     hovered: null,
@@ -162,6 +161,7 @@ describe("reducers per level", () => {
     matches: null,
     selection: new Set(),
     level: "detail",
+    labelMode: "zoom",
     groupedOverview: false,
     hubRank: hubRanks(
       [...model.nodes()].map((k) => ({ key: k, degree: model.getNodeAttribute(k, "degree") })),

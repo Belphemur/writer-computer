@@ -14,7 +14,7 @@ vi.mock("@/hooks/editor-api", () => ({
 vi.mock("@/hooks/workspace-api", () => ({ getWorkspaceRoot: () => "/vault" }));
 vi.mock("@/lib/platform", () => ({ detectPlatform: () => "macos" }));
 
-import { intentOf, openNode, attachToAgent } from "../web/actions";
+import { intentOf, nodeClick, openNode, attachToAgent } from "../web/actions";
 
 const node = { kind: "note" as const, path: "People/Ana.md", label: "Ana" };
 const click = (init: MouseEventInit) => new MouseEvent("click", init);
@@ -37,6 +37,21 @@ describe("node click gestures", () => {
       expect(nav.openFileInNewTab).toHaveBeenCalledWith(abs, {
         activate: expected === "new-tab-active",
       });
+  });
+
+  it("a plain click selects, Shift+click toggles, modified clicks open", () => {
+    const none = new Set<string>();
+    expect(nodeClick("current", false, new Set(["b.md"]), "a.md")).toEqual({
+      selection: new Set(["a.md"]),
+    });
+    expect(nodeClick("current", true, new Set(["b.md"]), "a.md")).toEqual({
+      selection: new Set(["b.md", "a.md"]),
+    });
+    expect(nodeClick("current", true, new Set(["a.md"]), "a.md")).toEqual({ selection: none });
+    expect(nodeClick("new-tab-background", false, none, "a.md")).toEqual({
+      open: "new-tab-background",
+    });
+    expect(nodeClick("new-tab-active", false, none, "a.md")).toEqual({ open: "new-tab-active" });
   });
 
   it("a right click is not an open", () => {

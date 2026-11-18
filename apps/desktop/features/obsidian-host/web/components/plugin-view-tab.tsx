@@ -16,7 +16,7 @@ export function PluginViewTab({ location }: { location: PluginViewLocation; isAc
     );
   }
   return (
-    <div data-plugin-view-tab={leaf.id} className="h-full min-h-0 pt-12">
+    <div data-plugin-view-tab={leaf.id} className="h-full min-h-0">
       <MountedElement element={leaf.containerEl} />
     </div>
   );

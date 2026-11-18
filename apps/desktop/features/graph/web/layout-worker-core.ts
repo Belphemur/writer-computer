@@ -4,6 +4,7 @@
 // bundle holds a real worker file and the CSP needs no `blob:`. `layout.worker.ts` only wires it to
 // `self`; tests call it directly.
 import defaults from "graphology-layout-forceatlas2/defaults.js";
+import { detectCommunities } from "./communities";
 import iterate from "graphology-layout-forceatlas2/iterate.js";
 import {
   BATCH_ITERATIONS,
@@ -19,6 +20,11 @@ export function createLayoutHandler(post: Post, batch = BATCH_ITERATIONS) {
   let settings: Record<string, unknown> = { ...defaults };
 
   return function handle(request: WorkerRequest): void {
+    if (request.type === "cluster") {
+      const communities = detectCommunities(request.order, request.edges);
+      post({ communities }, [communities.buffer]);
+      return;
+    }
     let nodes: Float32Array;
     if (request.type === "init") {
       edges = request.edges;

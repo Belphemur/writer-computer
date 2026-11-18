@@ -2,7 +2,6 @@
 // nodes, keeps pinned ones fixed, posts a transferable Float32Array; and the supervisor over a fake
 // worker applies the batches, ignores a stale run and shuts down cleanly.
 import { describe, expect, it, vi } from "vite-plus/test";
-import { DEFAULT_FILTERS } from "../web/config";
 import { DEFAULT_FORCES, forcesToSettings } from "../web/layout";
 import {
   PPN,
@@ -14,11 +13,11 @@ import {
 import { createLayoutHandler } from "../web/layout-worker-core";
 import { createWorkerSupervisor, type WorkerLike } from "../web/layout-worker-client";
 import { applySpec, buildSpec, createModel } from "../web/model";
-import { smallSlice } from "./fixtures";
+import { smallSlice, WITH_PROPERTIES } from "./fixtures";
 
 function model() {
   const m = createModel();
-  applySpec(m, buildSpec(smallSlice(), DEFAULT_FILTERS));
+  applySpec(m, buildSpec(smallSlice(), WITH_PROPERTIES));
   return m;
 }
 const settings = forcesToSettings(DEFAULT_FORCES, 4);
@@ -56,7 +55,7 @@ describe("worker handler", () => {
 
     handle({ type: "init", nodes, edges, settings });
     expect(posted).toHaveLength(1);
-    const out = posted[0]!.message.nodes;
+    const out = (posted[0]!.message as { nodes: Float32Array }).nodes;
     expect(out).toBeInstanceOf(Float32Array);
     expect(posted[0]!.transfer).toEqual([out.buffer]);
     const at = (k: string) => keys.indexOf(k) * PPN;
@@ -71,7 +70,7 @@ describe("worker handler", () => {
     // The next batch continues from the matrix handed back, with the edges the worker kept.
     handle({ type: "step", nodes: out });
     expect(posted).toHaveLength(2);
-    expect(posted[1]!.message.nodes[at("People/Ana.md")]).toBe(5);
+    expect((posted[1]!.message as { nodes: Float32Array }).nodes[at("People/Ana.md")]).toBe(5);
   });
 });
 

@@ -5,7 +5,6 @@
 // out of the startup graph). The page kind itself is core's (the `Location` union is closed); off,
 // the tab shows the "turned off" page.
 import { HierarchyCircle01Icon } from "@hugeicons/core-free-icons";
-import { openGraphTab } from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { getActiveFilePath } from "@/hooks/editor-api";
 import { defineFeature } from "@/lib/features/registry";
@@ -23,7 +22,8 @@ function openGraph() {
     prefix && active?.startsWith(prefix) && /\.md$/i.test(active)
       ? active.slice(prefix.length)
       : undefined;
-  openGraphTab(center ? { center } : {});
+  // The actions module (stores, IPC) loads on first use, keeping this entry light.
+  void import("./actions").then((m) => m.openGlobalGraph(center));
 }
 
 export default defineFeature({

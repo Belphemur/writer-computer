@@ -17,12 +17,14 @@ export interface Forces {
 
 export const DEFAULT_FORCES: Forces = { center: 20, repel: 10, linkDistance: 50, groupPull: 40 };
 
-/** Settings sliders (0 to 100) to ForceAtlas2 parameters. A higher link distance lowers how much
- *  edge weight pulls; large graphs use the Barnes-Hut approximation. */
+/** Settings sliders (0 to 100) to ForceAtlas2 parameters, tuned so clusters separate: strong
+ *  repulsion and a gentle gravity (the cluster anchors pull each group together, `groups.ts`). A
+ *  higher link distance lowers how much edge weight pulls; large graphs use the Barnes-Hut
+ *  approximation. */
 export function forcesToSettings(f: Forces, order: number): FA2Settings {
   return {
-    gravity: f.center / 20,
-    scalingRatio: Math.max(0.2, f.repel / 5),
+    gravity: f.center / 40,
+    scalingRatio: Math.max(0.5, f.repel / 2.5),
     edgeWeightInfluence: Math.max(0, (100 - f.linkDistance) / 50),
     barnesHutOptimize: order > 500,
     slowDown: 1 + Math.log10(Math.max(1, order)),

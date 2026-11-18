@@ -324,7 +324,7 @@ export function CompactFileLayout() {
       <div
         className="pointer-events-none absolute left-0 top-0 z-50 flex items-center"
         style={{
-          height: "calc(var(--chrome-control-height) + var(--chrome-control-padding) * 2)",
+          height: "var(--chrome-bar-height)",
           padding: "var(--chrome-control-padding) 12px var(--chrome-control-padding) 92px",
         }}
       >
@@ -333,7 +333,7 @@ export function CompactFileLayout() {
       <div
         className="pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center"
         style={{
-          height: "calc(var(--chrome-control-height) + var(--chrome-control-padding) * 2)",
+          height: "var(--chrome-bar-height)",
           paddingBlock: "var(--chrome-control-padding)",
         }}
       >

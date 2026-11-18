@@ -96,7 +96,7 @@ export function BaseView({
       data-base-view={location.path}
       className={`${
         isActive ? "relative z-10 h-full" : "absolute inset-0 invisible pointer-events-none h-full"
-      } flex min-h-0 flex-col pt-16`}
+      } flex min-h-0 flex-col`}
       aria-hidden={!isActive}
     >
       <BaseToolbar

@@ -27,7 +27,7 @@ export function FileBrowser({
         <div
           className="flex items-center"
           style={{
-            height: "calc(var(--chrome-control-height) + var(--chrome-control-padding) * 2)",
+            height: "var(--chrome-bar-height)",
             padding: "var(--chrome-control-padding) 0",
           }}
         >

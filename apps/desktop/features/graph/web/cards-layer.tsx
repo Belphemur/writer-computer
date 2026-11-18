@@ -23,6 +23,7 @@ export function pickCards(
   height: number,
   priority: ReadonlySet<string>,
   cap = CARD_CAP,
+  priorityOnly = false,
 ): CardData[] {
   const usable = nodes.filter((n) => !n.attrs.anchor && n.attrs.kind !== "tag");
   const candidates: CardCandidate[] = usable.map((n) => ({
@@ -33,7 +34,7 @@ export function pickCards(
     priority: priority.has(n.key),
   }));
   const byKey = new Map(usable.map((n) => [n.key, n.attrs]));
-  return cardsInView(candidates, width, height, cap).map((c) => {
+  return cardsInView(candidates, width, height, cap, undefined, priorityOnly).map((c) => {
     const a = byKey.get(c.key)!;
     return {
       ...c,

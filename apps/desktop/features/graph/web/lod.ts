@@ -2,7 +2,9 @@
 // the user has zoomed, in four levels from one table. The measure is the on-screen spacing between
 // neighbouring nodes in pixels (`min(width, height) / (sqrt(nodes) * cameraRatio)`), not the raw
 // camera ratio, so a 50-note graph and a 10,000-note graph both show detail when notes are far
-// enough apart to read. Hysteresis keeps the view from flickering at a boundary. Pure.
+// enough apart to read. Hysteresis keeps the view from flickering at a boundary. The label mode
+// (setting `graph.labels`) decides how much of the level's text is drawn at all: this module is the
+// one place that answers "which labels, which edge labels, which cards". Pure.
 
 export type LodLevel = "overview" | "structure" | "detail" | "closeup";
 
@@ -23,6 +25,63 @@ export const HUB_MIN = { overview: 5, structure: 10 } as const;
 
 /** At most this many cards in the close-up level. */
 export const CARD_CAP = 150;
+
+/** How node labels show: only around the pointer and the selection (`hover`, the default), as the
+ *  zoom level allows (`zoom`), or every node the label grid has room for (`always`). */
+export const LABEL_MODES = ["hover", "zoom", "always"] as const;
+export type LabelMode = (typeof LABEL_MODES)[number];
+export const DEFAULT_LABEL_MODE: LabelMode = "hover";
+
+export const isLabelMode = (v: unknown): v is LabelMode =>
+  (LABEL_MODES as readonly unknown[]).includes(v);
+
+export type LabelVisibility = "auto" | "visible" | "hidden";
+
+/** The label of a plain node (no hover, selection or search involved): by mode and level. `hub` is
+ *  whether the node is a hub at the level (overview and structure show hubs); `card` whether the
+ *  close-up overlay already shows its title. Hovered, selected, focused, center and matching nodes
+ *  are labelled by the reducer on top of this. */
+export function nodeLabel(
+  mode: LabelMode,
+  level: LodLevel,
+  hub: boolean,
+  card: boolean,
+): LabelVisibility {
+  if (mode === "hover") return "hidden";
+  switch (level) {
+    case "overview":
+    case "structure":
+      return hub ? "visible" : mode === "always" ? "auto" : "hidden";
+    case "detail":
+      return "auto";
+    case "closeup":
+      return card ? "hidden" : "auto";
+  }
+}
+
+/** Whether sigma draws edge labels (property names) at all: in `hover` from the detail level, with
+ *  the reducer limiting them to the edges of the hovered or selected node; otherwise in close-up. */
+export const edgeLabelsRendered = (mode: LabelMode, level: LodLevel): boolean =>
+  mode === "hover" ? atLeast(level, "detail") : level === "closeup";
+
+/** Whether an edge draws its label: in `hover` only when it touches the hovered or selected node. */
+export const edgeLabelShown = (mode: LabelMode, level: LodLevel, touchesFocus: boolean): boolean =>
+  edgeLabelsRendered(mode, level) && (mode !== "hover" || touchesFocus);
+
+/** The notes a close-up card is for first: in `hover` only the hovered, focused and selected ones
+ *  (nothing else gets a card), otherwise those plus the center, topped up to `CARD_CAP`. */
+export function cardPriorityKeys(
+  mode: LabelMode,
+  s: {
+    center: string | null;
+    hovered: string | null;
+    focus: string | null;
+    selection: ReadonlySet<string>;
+  },
+): Set<string> {
+  const keys = [s.hovered, s.focus, ...s.selection, ...(mode === "hover" ? [] : [s.center])];
+  return new Set(keys.filter((k): k is string => k !== null));
+}
 
 export const levelIndex = (level: LodLevel): number =>
   LOD_TABLE.findIndex((r) => r.level === level);
@@ -82,16 +141,22 @@ export interface CardCandidate {
 }
 
 /** The nodes that get a card: those inside the viewport (with `margin` px), priority nodes first,
- *  then by degree, at most `cap`. */
+ *  then by degree, at most `cap`; with `priorityOnly` the priority nodes alone. */
 export function cardsInView(
   nodes: readonly CardCandidate[],
   width: number,
   height: number,
   cap = CARD_CAP,
   margin = 40,
+  priorityOnly = false,
 ): CardCandidate[] {
   const inside = nodes.filter(
-    (n) => n.x >= -margin && n.y >= -margin && n.x <= width + margin && n.y <= height + margin,
+    (n) =>
+      (n.priority || !priorityOnly) &&
+      n.x >= -margin &&
+      n.y >= -margin &&
+      n.x <= width + margin &&
+      n.y <= height + margin,
   );
   inside.sort((a, b) => Number(b.priority) - Number(a.priority) || b.degree - a.degree);
   return inside.slice(0, cap);

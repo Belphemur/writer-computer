@@ -3,7 +3,7 @@
 // component per node). Per-level styling comes from the one level-of-detail table (`lod.ts`):
 // overview, structure, detail, close-up. The same attribute set yields the same style, so these are
 // tested without WebGL.
-import { atLeast, hubLimit, type LodLevel } from "./lod";
+import { atLeast, edgeLabelShown, hubLimit, nodeLabel, type LabelMode, type LodLevel } from "./lod";
 import type { EdgeAttrs, NodeAttrs, NodeKind } from "./model";
 import { labelColor, type GraphTheme } from "./theme";
 
@@ -20,6 +20,8 @@ export interface ViewState {
   selection: ReadonlySet<string>;
   /** The level of detail the zoom asks for (`lod.ts`). */
   level: LodLevel;
+  /** How node labels show (setting `graph.labels`, decided in `lod.ts`). */
+  labelMode: LabelMode;
   /** Overview with Group by (or folders): bubbles replace nodes and note-level edges. */
   groupedOverview: boolean;
   /** Hub rank per node, 0 the highest degree (`hubRanks`). */
@@ -88,27 +90,19 @@ export function nodeStyle(key: string, a: NodeAttrs, s: ViewState): NodeStyle {
   const matched = s.matches?.has(key) ?? false;
   const emphasised = isCenter || key === s.focus || s.selection.has(key);
 
-  // Per level: what labels and weight a plain node gets.
-  switch (s.level) {
-    case "overview": {
-      // Flat overview: the top hubs alone at full weight, faint dots for the rest.
-      if (isHub(key, s, "overview")) style.labelVisibility = "visible";
-      else {
-        style.opacity = FAINT_OPACITY;
-        style.size = (a.size ?? 1) * 0.5;
-      }
-      break;
-    }
-    case "structure":
-      if (isHub(key, s, "structure")) style.labelVisibility = "visible";
-      break;
-    case "detail":
-      style.labelVisibility = "auto";
-      break;
-    case "closeup":
-      style.labelVisibility = s.cardKeys.has(key) ? "hidden" : "auto";
-      break;
+  // Per level and label mode: what label and weight a plain node gets.
+  const hub = (kind: "overview" | "structure") => isHub(key, s, kind);
+  if (s.level === "overview" && !hub("overview")) {
+    // Flat overview: the top hubs alone at full weight, faint dots for the rest.
+    style.opacity = FAINT_OPACITY;
+    style.size = (a.size ?? 1) * 0.5;
   }
+  style.labelVisibility = nodeLabel(
+    s.labelMode,
+    s.level,
+    s.level === "overview" || s.level === "structure" ? hub(s.level) : false,
+    s.cardKeys.has(key),
+  );
 
   let dimmed = false;
   if (hoverActive && !related) dimmed = true;
@@ -188,7 +182,12 @@ export function edgeStyle(a: EdgeAttrs, source: string, target: string, s: ViewS
     ...(detailed && a.kind === "embed" ? DASHED : SOLID),
   };
   if (detailed && a.kind !== "tag") style.head = "arrow";
-  if (s.level === "closeup" && a.kind === "property" && a.label) {
+  const touches = (k: string) => k === s.hovered || k === s.focus || s.selection.has(k);
+  if (
+    a.kind === "property" &&
+    a.label &&
+    edgeLabelShown(s.labelMode, s.level, touches(source) || touches(target))
+  ) {
     style.label = a.label;
     style.labelVisibility = "visible";
   }

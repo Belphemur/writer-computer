@@ -1,16 +1,15 @@
 // The drawing area both surfaces share: the WebGL canvas, the list fallback (WebGL unavailable, a
 // lost context with "Reload graph", or the Nodes toggle for screen readers), the truncated banner,
-// the legend and the edge tooltip. A surface supplies its data and what a click does.
+// the info card of the selected node and the edge tooltip. A surface supplies its data and what a click does.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GraphCamera } from "@/components/editor-area/page-kinds";
 import type { LinkIntent } from "@/lib/link-activation";
 import { openNode } from "./actions";
 import { GraphCanvas, webglAvailable, type CanvasApi, type GraphCanvasProps } from "./graph-canvas";
 import { graphStats, type GraphStats } from "./ipc";
-import { Legend } from "./legend";
+import { NodeCard } from "./node-card";
 import type { NodeAttrs, NodeSpec } from "./model";
 import { NodeList } from "./node-list";
-import { FALLBACK_THEME } from "./theme";
 import { type GraphSettings } from "./settings";
 import type { GraphSurface } from "./use-graph-surface";
 
@@ -29,7 +28,6 @@ export interface GraphStageProps {
   focusHere?: (path: string) => void;
   apiRef?: React.MutableRefObject<CanvasApi | null>;
   centerRequest?: { key: string; n: number } | null;
-  showLegend?: boolean;
   showBanner?: boolean;
   /** Whether the Nodes list toggle is offered (the panel keeps its chrome small). */
   listOpen: boolean;
@@ -70,6 +68,14 @@ export function GraphStage(p: GraphStageProps) {
     else void openNode(node, intent);
   };
 
+  const [, redraw] = useState(0);
+  const ownApi = useRef<CanvasApi | null>(null);
+  const apiRef = p.apiRef ?? ownApi;
+  const selected =
+    selection.length === 1
+      ? (surface.spec.nodes.find((n) => n.path === selection[0]) ?? null)
+      : null;
+
   const menuHandlers = useMemo(() => ({ focusHere: p.focusHere }), [p.focusHere]);
   const showList = unavailable || lost || p.listOpen;
 
@@ -79,6 +85,7 @@ export function GraphStage(p: GraphStageProps) {
     forces: settings.forces,
     animate: settings.animate,
     labelRatio: settings.labelRatio,
+    labelMode: surface.config.display.labels,
     overview: surface.overview,
     center: p.center,
     propertyLabels: surface.labels,
@@ -93,7 +100,7 @@ export function GraphStage(p: GraphStageProps) {
     onEdgeHover: setEdgeHover,
     onSelection: setSelection,
     onContextLost: () => setLost(true),
-    apiRef: p.apiRef,
+    apiRef,
     centerRequest: p.centerRequest,
   };
 
@@ -144,11 +151,15 @@ export function GraphStage(p: GraphStageProps) {
           refine with filters
         </div>
       )}
-      {p.showLegend && !showList && (
-        <Legend
-          propertyLabels={surface.labels}
-          groups={surface.groups.groups}
-          edgeColor={FALLBACK_THEME.edge}
+      {selected && !showList && (
+        <NodeCard
+          node={selected}
+          pinned={apiRef.current?.isPinned(selected.key) ?? false}
+          onFocus={p.focusHere ? () => p.focusHere!(selected.path) : undefined}
+          onUnpin={() => {
+            apiRef.current?.unpin(selected.key);
+            redraw((n) => n + 1);
+          }}
         />
       )}
       {edgeHover && !showList && (

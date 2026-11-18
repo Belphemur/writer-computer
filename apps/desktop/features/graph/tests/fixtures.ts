@@ -1,4 +1,5 @@
 // Shared slices for the graph tests (synthetic names only; never a real vault).
+import { DEFAULT_FILTERS, type GraphFilters } from "../web/config";
 import type { GraphEdge, GraphNode, GraphSlice } from "../web/ipc";
 
 export function node(id: number, path: string, extra: Partial<GraphNode> = {}): GraphNode {
@@ -65,3 +66,6 @@ export function bigSlice(n: number): GraphSlice {
   }
   return { nodes, edges, truncated: n >= 10_000, limit: 10_000, epoch: 1 };
 }
+
+/** The default filters with the relationship-property edges on (they are off by default). */
+export const WITH_PROPERTIES: GraphFilters = { ...DEFAULT_FILTERS, properties: true };

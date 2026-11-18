@@ -7,7 +7,7 @@ Status: **web half implemented 2026-11-17 (phases 3 to 6), Rust half and `.write
 1. **Two entry points**: a global graph as an editor tab, and a local graph as a sidebar panel that follows the active note.
 2. **Default content**: notes and links only. Tags, attachments, `.base` files and unresolved (missing) notes are off, each with a toggle.
 3. **Grouping by any property**, not only tags: a "Group by" control picks a property (tags, folder or any frontmatter key); notes sharing a value cluster together and get that group's color. Off by default.
-4. **Edges styled by kind**, label on hover: body link solid and thin, embed dashed, property link colored per property name with a legend; arrows when zoomed in.
+4. **Edges styled by kind**, label on hover: body link solid and thin, embed dashed, property link colored per property name; arrows when zoomed in. Relationship-property edges are off by default (section 13).
 5. **Color groups you define**: an ordered list of rules mapped to colors, first match wins; node size follows link count.
 
 ## 2. Surfaces
@@ -15,12 +15,12 @@ Status: **web half implemented 2026-11-17 (phases 3 to 6), Rust half and `.write
 ### 2.1 Global graph tab
 
 - Opened by the palette command "Open graph", a sidebar action (graph icon) and `writer://graph` style tab restore. One tab kind `graph` (page kind contributed by the feature); the tab survives restart with its filters and camera.
-- Canvas fills the tab. Top-left: a search field (highlights matches, `Enter` centers the best match). Top-right: buttons Filters, Groups, Fit (`F`), and a settings cog for forces. Bottom-left: a small legend (edge kinds, property labels, groups), collapsible.
-- Opening the tab with an active note centers on it, without filtering.
+- One compact icon toolbar above the canvas: search (highlights matches, `Enter` centers the best match), Whole vault or local, node list, Fit (`F`), panel. One side panel to the right of the canvas (Display, Clusters, Filters, section 13). Nothing floats over the canvas but the info card of a selected node.
+- The tab opens on the current note's local graph at the remembered depth (2 by default); with no note open it shows the whole vault. "Whole vault" drops the depth, the toggle returns to it.
 
 ### 2.2 Local graph panel
 
-- A sidebar panel (contribution point `sidebarPanels`) showing the neighbourhood of the active note: depth slider 1 to 3 (default 1), the same filter and group settings as the global graph but stored separately.
+- A sidebar panel (contribution point `sidebarPanels`) showing the neighbourhood of the active note: depth slider 1 to 5 (default 2, remembered), the same panel, filter and display settings as the global graph but stored separately.
 - The active note is the center node, drawn larger with a ring. Switching notes animates to the new neighbourhood (nodes already present keep their place).
 - "Open in graph tab" button opens the global graph centered on the same note.
 - With no active note: an empty state "Open a note to see its links".
@@ -29,7 +29,7 @@ Status: **web half implemented 2026-11-17 (phases 3 to 6), Rust half and `.write
 
 ### 3.1 Nodes
 
-- A note is a circle; its label is the file name without `.md`, shown when zoomed in past a threshold or on hover, always for the center and for search matches.
+- A note is a circle; its label is the file name without `.md`, shown by the label mode (section 13: on hover by default), always for the center, selected notes and search matches.
 - Size: `base + k * sqrt(degreeIn + degreeOut)`, capped.
 - Optional nodes, each a toggle in Filters: **Tags** (a tag node per tag, edges from notes; nested tags link child to parent), **Attachments** (images and other files, square), **Bases** (`.base`, diamond), **Missing notes** (unresolved targets, hollow and dimmed; clicking one offers "Create note").
 - **Orphans** (no edges) toggle, on by default in the global graph.
@@ -100,7 +100,7 @@ Two independent tools that combine:
 
 ## 10. Open questions
 
-None. Decided 2026-11-17 (proposed defaults taken): a click in the global graph follows the link-activation rule as is; the local graph panel defaults to depth 1. ForceAtlas2 stays on 0.10.1; 0.11.0-rc1 (`backgroundIterations`) only if layout settling is measured too slow.
+None. Decided 2026-11-17 (proposed defaults taken); superseded 2026-11-18 (section 13): a click selects and shows an info card, the gestures of the link table open, the local graph defaults to depth 2. ForceAtlas2 stays on 0.10.1; 0.11.0-rc1 (`backgroundIterations`) only if layout settling is measured too slow.
 
 ## 11. Implementation notes (web half, 2026-11-17)
 
@@ -127,7 +127,7 @@ The graph shows more the further you zoom in and less the further you zoom out. 
 | Detail    | 28 px        | As today                                                                           | Style by kind (dashed embeds), arrowheads                                        | Every node in view, within sigma's label grid density  | Edge hover with its label; hulls visible |
 | Close-up  | 110 px       | Cards                                                                              | As Detail, and property labels drawn on the edges                                | Titles are on the cards                                | Missing notes show "Create note"         |
 
-**Overview grouping.** By "Group by" when it is set; else by folder (top folders, the nested level control applies) when the vault has at least two groups; else the flat hubs mode (1.5% of the nodes by degree, at least 5). Notes with no value join "Other". The aggregation (counts, group-to-group link counts) is computed once per slice or grouping change (`aggregate.ts`); a frame only places each bubble at the centroid of its members (`overview.ts`, a canvas layer over the stage) while the reducers hide the sigma nodes and edges.
+**Overview grouping.** One bubble per cluster (section 13: Group by, else folders or communities) when there are at least two; else the flat hubs mode (1.5% of the nodes by degree, at least 5). Notes with no value join "Other". The aggregation (counts, group-to-group link counts) is computed once per slice or grouping change (`aggregate.ts`); a frame only places each bubble at the centroid of its members (`overview.ts`, a canvas layer over the stage) while the reducers hide the sigma nodes and edges.
 
 **Close-up cards.** An HTML overlay (`cards-layer.tsx`) for at most 150 nodes in view (center, hovered and focused first, then by degree): title, up to 3 tags, the note's type or status value. Chosen over a sigma node program because the cost is bounded by the cap however big the graph is, the browser lays out and keeps the text crisp, and a node program would need a text atlas and GLSL for tags and statuses. The overlay takes no pointer events; clicks and hover still reach sigma's picking.
 
@@ -136,3 +136,19 @@ The graph shows more the further you zoom in and less the further you zoom out. 
 **Transitions.** At a level change the scene fades in (opacity from 0.3 to 1 over about 220 ms, nodes, edges and bubbles alike); instant when "Animate" is off or the system asks for reduced motion.
 
 **Performance.** The overview draws at most a few hundred bubbles and 400 lines, or about 150 hubs with faint dots (sigma only), so 10,000 notes stay smooth zoomed out; real frame rate is a manual check.
+
+## 13. Clusters, label modes and the side panel (2026-11-18)
+
+ADR: [`2026-11-18-cluster-the-graph-by-detected-communities-and-open-it-on-the-current-notes-local-graph`](../docs/decisions/2026-11-18-cluster-the-graph-by-detected-communities-and-open-it-on-the-current-notes-local-graph.md). All options live in the surface's `display` object of `.writer/graph.json` (`labels`, `clusterBy`, `depth`); `graph_config_write` refuses an unknown value.
+
+**Clusters.** Cluster by `communities` (default) or `folder` (top-level folder); an explicit Group by wins. Communities are Louvain (`graphology-communities-louvain`, fixed seed, run in the layout worker module on a fresh worker when a slice loads, `communities.ts`, `use-clusters.ts`). The name is the cluster's most-linked note, the tooltip subtitle its most common tag; clusters under 3 notes join "Other" (`clusters.ts`). The result is an ordinary group set, so hulls (name and count, from the structure level up), the overview bubbles (name and count; a click zooms in) and the Clusters list need no special case. ForceAtlas2 is tuned to separate clusters (repulsion `repel / 2.5`, gravity `center / 40`, the cluster anchors pull members together).
+
+**Label modes** (`display.labels`, decided only in `lod.ts`): `hover` (default) labels the hovered node and its neighbours, the selected, focused and centered notes and search matches; `zoom` is the level-driven behaviour of section 12; `always` lets sigma's label grid place every node (hubs first). Edge labels (property names): in `hover` only on edges touching the hovered, focused or selected node, from the detail level; otherwise close-up only. Close-up cards: in `hover` only for the hovered, focused and selected notes; in `zoom` and `always` the 150-card cap. Hover is a view-state patch and a sigma refresh: no layout, no refetch.
+
+**Edge kinds.** Links and embeds are on; Properties is off until enabled in Display (with one checkbox per label), and the `graph_slice` request carries only the enabled kinds. The slice depth goes to 5 (`MAX_SLICE_DEPTH`).
+
+**Side panel** (`side-panel.tsx`): Display (Labels, Cluster by, Depth when local, edge kinds), Clusters (colour, name and count, largest first; Group by and colour rules under "Group by and colors"), Filters (search, node kinds, folders). No explanatory text.
+
+**Interaction.** Hover dims all but the node and its neighbours; a click selects and shows the info card (title, folder, tags, Open, New tab, Focus, Unpin while pinned); middle and Cmd/Ctrl clicks open through the link gesture table; a double click opens; dragging pins; Escape or a click on the background clears the selection.
+
+Not verified in a real window: hulls and bubble look, label density, the card position, drag-to-pin, 10,000-node frame rate. The detection measured about 100 ms for 10,000 notes and 30,000 links in the unit benchmark (off the main thread in the app).

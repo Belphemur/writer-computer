@@ -10,7 +10,6 @@ const DEFAULTS = Object.fromEntries(
 ) as Record<string, unknown>;
 
 export interface GraphSettings {
-  localDepth: 1 | 2 | 3;
   /** Camera ratio under which every label may show (a larger zoom percent means a smaller ratio). */
   labelRatio: number;
   forces: Forces;
@@ -37,13 +36,11 @@ export function readGraphSettings(
   settings: Record<string, unknown>,
   reducedMotion: boolean,
 ): GraphSettings {
-  const depth = Math.round(num(settings, "graph.local-depth"));
   const animate =
     typeof settings["graph.animate"] === "boolean"
       ? (settings["graph.animate"] as boolean)
       : (DEFAULTS["graph.animate"] as boolean);
   return {
-    localDepth: depth <= 1 ? 1 : depth >= 3 ? 3 : 2,
     labelRatio: 100 / Math.max(20, num(settings, "graph.label-zoom")),
     forces: {
       center: num(settings, "graph.force-center"),

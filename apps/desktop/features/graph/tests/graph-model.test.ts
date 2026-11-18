@@ -6,6 +6,7 @@ import { bigSlice, smallSlice } from "./fixtures";
 
 const filters = (patch: Partial<GraphFilters> = {}): GraphFilters => ({
   ...DEFAULT_FILTERS,
+  properties: true,
   ...patch,
 });
 const keys = (spec: { nodes: { key: string }[] }) => spec.nodes.map((n) => n.key).sort();

@@ -9,6 +9,8 @@ import type { EdgeAttrs, GraphModel, NodeAttrs } from "./model";
 export interface HullGroup {
   key: string;
   color: string;
+  /** Notes in the cluster, shown after its name. */
+  size?: number;
 }
 
 export interface HullSource {
@@ -65,7 +67,7 @@ export function drawHulls(
     const c = centers.get(g.key);
     if (!pts || !c) continue;
     const top = Math.min(...pts.map((p) => p[1]));
-    ctx.fillText(g.key, c[0], top - PAD - 4);
+    ctx.fillText(g.size === undefined ? g.key : `${g.key} \u00b7 ${g.size}`, c[0], top - PAD - 4);
   }
   ctx.lineWidth = 0.6;
   graph.forEachNode((_, a) => {

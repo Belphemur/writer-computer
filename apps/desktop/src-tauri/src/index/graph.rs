@@ -46,6 +46,9 @@ pub const DEFAULT_NEIGHBOR_LIMIT: usize = 50;
 pub const MAX_NEIGHBOR_LIMIT: usize = 5_000;
 /// Deepest neighbourhood any command walks.
 pub const MAX_DEPTH: u32 = 4;
+/// Deepest local graph the graph view asks for (its depth slider goes 1 to 5); commands keep
+/// [`MAX_DEPTH`].
+pub const MAX_SLICE_DEPTH: u32 = 5;
 /// A note with more distinct neighbours than this is shown but not expanded (spec 7).
 pub const HUB_GUARD: usize = 300;
 const ID_CHUNK: usize = 500;
@@ -562,7 +565,7 @@ impl Index {
     /// with the edges among them. The walk is SQL (spec 7: `UNION` over `(id, depth)` bounds it);
     /// the hub guard and each node's first-hop edge are settled on the small result.
     pub fn neighbors(&self, center: &str, q: &NeighborQuery) -> Res<Neighborhood> {
-        let depth = q.depth.clamp(1, MAX_DEPTH);
+        let depth = q.depth.clamp(1, MAX_SLICE_DEPTH);
         let limit = q.limit.clamp(1, MAX_NEIGHBOR_LIMIT);
         let snap = self.graph_snapshot()?;
         self.read(|c| {
@@ -959,7 +962,7 @@ impl Index {
                 let hood = self.neighbors(
                     center,
                     &NeighborQuery {
-                        depth: req.depth.unwrap_or(1).clamp(1, 3),
+                        depth: req.depth.unwrap_or(1).clamp(1, MAX_SLICE_DEPTH),
                         direction: Direction::Both,
                         filter: filter.clone(),
                         limit: limit.saturating_sub(1).max(1),

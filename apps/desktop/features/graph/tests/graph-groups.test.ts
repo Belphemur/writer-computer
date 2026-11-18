@@ -18,7 +18,7 @@ import {
 import { pickNeighbor } from "../web/keyboard";
 import { applySpec, buildSpec, createModel } from "../web/model";
 import { matches, parseQuery } from "../web/query";
-import { smallSlice } from "./fixtures";
+import { smallSlice, WITH_PROPERTIES } from "./fixtures";
 
 const note = (extra = {}) => ({
   path: "People/Ana.md",
@@ -54,7 +54,7 @@ describe("query", () => {
 });
 
 describe("groups", () => {
-  const spec = buildSpec(smallSlice(), DEFAULT_FILTERS);
+  const spec = buildSpec(smallSlice(), WITH_PROPERTIES);
 
   it("first matching color rule wins, over the group color", () => {
     const r = computeGroups(spec.nodes, {

@@ -38,6 +38,7 @@
     "cmdk": "catalog:",
     "dompurify": "catalog:",
     "graphology": "catalog:",
+    "graphology-communities-louvain": "catalog:",
     "graphology-layout-forceatlas2": "catalog:",
     "katex": "catalog:",
     "marked": "catalog:",

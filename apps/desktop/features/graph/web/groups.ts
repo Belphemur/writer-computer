@@ -17,6 +17,8 @@ export interface GroupsInput {
   rules: readonly ColorRule[];
   groupBy: GroupBy;
   props: PropsByPath;
+  /** Group of each note path decided elsewhere (detected clusters): replaces `groupBy`. */
+  assign?: ReadonlyMap<string, string>;
 }
 
 const top = (value: string, level: number) => value.split("/").slice(0, level).join("/");
@@ -66,7 +68,7 @@ export interface NodeGroupInfo {
 export interface GroupsResult {
   nodes: Map<string, NodeGroupInfo>;
   /** Sorted group keys with their color (the legend and the hull colors). */
-  groups: { key: string; color: string; size: number }[];
+  groups: { key: string; color: string; size: number; subtitle?: string }[];
 }
 
 /** Assigns every note its color and group. A rule wins over the group color; a note with several
@@ -80,7 +82,12 @@ export function computeGroups(
   const per = new Map<string, { values: string[]; rule: string | null; key: string }>();
   for (const n of nodes) {
     if (n.kind !== "note") continue;
-    const values = groupValues(n, input.groupBy, input.props);
+    const assigned = input.assign?.get(n.path);
+    const values = input.assign
+      ? assigned === undefined
+        ? []
+        : [assigned]
+      : groupValues(n, input.groupBy, input.props);
     const rule = firstRule(rules, {
       path: n.path,
       name: n.label,

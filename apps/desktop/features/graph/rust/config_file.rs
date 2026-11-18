@@ -47,6 +47,40 @@ pub fn read(root: &Path) -> Result<Option<String>, ConfigError> {
     }
 }
 
+/// The `display` options of a surface and the values the web half accepts for them
+/// (`web/config.ts` normalizes whatever a file holds; a write refuses a value it would not keep).
+const LABELS: [&str; 3] = ["hover", "zoom", "always"];
+const CLUSTER_BY: [&str; 2] = ["communities", "folder"];
+const DEPTH: std::ops::RangeInclusive<i64> = 1..=5;
+
+fn validate_display(surface: &str, display: &serde_json::Value) -> Result<(), ConfigError> {
+    let bad = |what: &str| ConfigError::Invalid(format!("{surface}.display.{what} is not valid"));
+    let Some(map) = display.as_object() else {
+        return Err(bad("(an object is expected)"));
+    };
+    let one_of = |key: &str, allowed: &[&str]| match map.get(key) {
+        None => Ok(()),
+        Some(v) if v.as_str().is_some_and(|s| allowed.contains(&s)) => Ok(()),
+        Some(_) => Err(bad(key)),
+    };
+    one_of("labels", &LABELS)?;
+    one_of("clusterBy", &CLUSTER_BY)?;
+    match map.get("depth") {
+        None => Ok(()),
+        Some(v) if v.as_i64().is_some_and(|d| DEPTH.contains(&d)) => Ok(()),
+        Some(_) => Err(bad("depth")),
+    }
+}
+
+fn validate(config: &serde_json::Value) -> Result<(), ConfigError> {
+    for surface in ["global", "local"] {
+        if let Some(display) = config.get(surface).and_then(|s| s.get("display")) {
+            validate_display(surface, display)?;
+        }
+    }
+    Ok(())
+}
+
 /// Replace the file with `content` (valid JSON, at most [`MAX_BYTES`]).
 pub fn write(root: &Path, content: &str) -> Result<(), ConfigError> {
     if content.len() > MAX_BYTES {
@@ -55,8 +89,9 @@ pub fn write(root: &Path, content: &str) -> Result<(), ConfigError> {
             MAX_BYTES / 1024
         )));
     }
-    serde_json::from_str::<serde::de::IgnoredAny>(content)
+    let parsed = serde_json::from_str::<serde_json::Value>(content)
         .map_err(|e| ConfigError::Invalid(format!("the graph config is not valid JSON: {e}")))?;
+    validate(&parsed)?;
     let dir = writer_dir(root)?;
     crate::plugins::write_atomic(&dir, FILE, content.as_bytes()).map_err(ConfigError::Io)
 }
@@ -104,6 +139,27 @@ mod tests {
         assert_eq!(read(vault.path()).unwrap().as_deref(), Some("{\"a\":1}"));
         std::fs::write(vault.path().join(".writer").join(FILE), big).unwrap();
         assert!(matches!(read(vault.path()), Err(ConfigError::Invalid(_))));
+    }
+
+    #[test]
+    fn display_options_are_validated_on_write() {
+        let vault = tempfile::tempdir().unwrap();
+        let ok = r#"{"global":{"display":{"labels":"hover","clusterBy":"folder","depth":5}},"local":{}}"#;
+        write(vault.path(), ok).unwrap();
+        for bad in [
+            r#"{"global":{"display":{"labels":"loud"}}}"#,
+            r#"{"local":{"display":{"clusterBy":"tags"}}}"#,
+            r#"{"global":{"display":{"depth":6}}}"#,
+            r#"{"global":{"display":{"depth":0}}}"#,
+            r#"{"global":{"display":{"depth":"2"}}}"#,
+            r#"{"global":{"display":"hover"}}"#,
+        ] {
+            assert!(
+                matches!(write(vault.path(), bad), Err(ConfigError::Invalid(_))),
+                "{bad}"
+            );
+        }
+        assert_eq!(read(vault.path()).unwrap().as_deref(), Some(ok));
     }
 
     #[cfg(unix)]

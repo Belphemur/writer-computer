@@ -62,14 +62,14 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] The same vault gives the same clusters on reopen.
+- [x] The same vault gives the same clusters on reopen.
 - [ ] Each cluster shows a hull, a name and a count when zoomed out; a click zooms into it.
 - [ ] "Cluster by: folder" groups by top-level folder; an explicit Group by wins.
 - [ ] The graph opens on the current note at depth 2; Whole vault shows the clusters.
-- [ ] Property edge kinds are off by default and not fetched until enabled.
-- [ ] No floating legend; one toolbar and one side panel.
-- [ ] Info card actions follow the link gesture table; double click opens; drag pins.
-- [ ] 10k notes: no main-thread task over 50 ms during detection and layout.
+- [x] Property edge kinds are off by default and not fetched until enabled.
+- [x] No floating legend; one toolbar and one side panel.
+- [x] Info card actions follow the link gesture table; double click opens; drag pins.
+- [ ] 10k notes: no main-thread task over 50 ms during detection and layout. (Detection runs in a worker and took about 100 ms in the unit benchmark; the layout and frame times need a real window.)
 
 ## Pros and Cons of the Options
 

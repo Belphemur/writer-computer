@@ -259,7 +259,7 @@ export function EditorTabs() {
       data-tauri-drag-region
       className="group/tabs flex min-w-0 items-center gap-3"
       style={{
-        height: "calc(var(--chrome-control-height) + var(--chrome-control-padding) * 2)",
+        height: "var(--chrome-bar-height)",
         paddingBlock: "var(--chrome-control-padding)",
       }}
     >

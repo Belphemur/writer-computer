@@ -1,7 +1,9 @@
-// The local graph (spec 2.2): a sidebar panel that follows the active note. A depth slider (1 to 3,
-// the setting's default), the same filters and groups as the tab but stored apart, the active note
-// drawn larger with a ring, and "Open in graph tab". Clicking a note opens it; since the panel
-// follows the active note, it recenters by itself.
+// The local graph (spec 2.2): a sidebar panel that follows the active note. Icon toolbar (node list,
+// panel, open in the graph tab), the same SidePanel as the tab with its depth slider (1 to 5, the
+// remembered depth), filters and Display stored apart from the tab's, and the active note drawn
+// larger with a ring. Clicking a note selects it (the card opens it); since the panel follows the
+// active note, it recenters by itself.
+import { ListViewIcon, SidebarRightIcon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import { useMemo, useState } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -9,10 +11,10 @@ import { openGlobalGraph } from "./actions";
 import { GraphStage } from "./graph-stage";
 import { toRelativePath } from "./paths";
 import { useGraphSettings } from "./settings";
-import { SurfaceTools, TOOL_BUTTON } from "./surface-tools";
+import { SidePanel } from "./side-panel";
+import { ToolbarButton } from "./surface-tools";
+import { useGraphConfig } from "./store";
 import { useGraphSurface } from "./use-graph-surface";
-
-type Depth = 1 | 2 | 3;
 
 export function LocalGraphPanel() {
   const settings = useGraphSettings();
@@ -22,10 +24,10 @@ export function LocalGraphPanel() {
     () => (root && active && /\.md$/i.test(active) ? toRelativePath(root, active) : null),
     [root, active],
   );
-  const [chosen, setChosen] = useState<Depth | null>(null);
-  const depth: Depth = chosen ?? settings.localDepth;
+  const depth = useGraphConfig((s) => s.config.local.display.depth);
   const surface = useGraphSurface({ surface: "local", center, depth });
   const [listOpen, setListOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   if (center === null) {
     return (
@@ -36,29 +38,24 @@ export function LocalGraphPanel() {
   }
   return (
     <div className="flex h-full min-h-[280px] flex-col" data-testid="graph-local">
-      <div className="relative flex flex-wrap items-center gap-1 px-2 py-1.5">
-        <label className="flex items-center gap-1 text-[12px] text-[var(--text-secondary)]">
-          Depth
-          <input
-            type="range"
-            min={1}
-            max={3}
-            step={1}
-            value={depth}
-            aria-label="Depth"
-            onChange={(e) => setChosen(Number(e.target.value) as Depth)}
-          />
-          {depth}
-        </label>
-        <SurfaceTools surface="local" config={surface.config} labels={surface.labels} />
-        <button
-          type="button"
-          className={TOOL_BUTTON}
-          aria-pressed={listOpen}
+      <div className="flex items-center justify-end gap-1 px-2 py-1.5">
+        <ToolbarButton
+          icon={ListViewIcon}
+          label="Node list"
+          pressed={listOpen}
           onClick={() => setListOpen(!listOpen)}
-        >
-          Nodes
-        </button>
+        />
+        <ToolbarButton
+          icon={SidebarRightIcon}
+          label="Panel"
+          pressed={panelOpen}
+          onClick={() => setPanelOpen(!panelOpen)}
+        />
+        <ToolbarButton
+          icon={ArrowUpRight01Icon}
+          label="Open in graph tab"
+          onClick={() => void openGlobalGraph(center)}
+        />
       </div>
       <div className="min-h-0 flex-1">
         <GraphStage
@@ -70,11 +67,23 @@ export function LocalGraphPanel() {
           listOpen={listOpen}
         />
       </div>
-      <div className="border-t border-[var(--line-subtle)] px-2 py-1.5">
-        <button type="button" className={TOOL_BUTTON} onClick={() => openGlobalGraph(center)}>
-          Open in graph tab
-        </button>
-      </div>
+      {panelOpen && (
+        <div className="max-h-[50%] border-t border-[var(--line-subtle)]">
+          <SidePanel
+            surface="local"
+            config={surface.config}
+            labels={surface.labels}
+            groups={surface.groups.groups}
+            depth={{
+              value: depth,
+              onChange: (d) =>
+                useGraphConfig
+                  .getState()
+                  .update("local", (s) => ({ ...s, display: { ...s.display, depth: d } })),
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

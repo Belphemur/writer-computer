@@ -12,6 +12,7 @@ import { revealPathInSidebar } from "@/lib/reveal-in-sidebar";
 import * as tauri from "@/lib/tauri";
 import type { AgentContextService } from "@features/agent/web/api";
 import type { NodeAttrs } from "./model";
+import { useGraphConfig } from "./store";
 
 const AGENT_CONTEXT = "agent.context";
 
@@ -23,6 +24,20 @@ export const absolutePath = (relative: string): string | null => {
 /** The intent of a pointer event on a node (left, middle, Cmd/Ctrl, Cmd/Ctrl+Shift), or null. */
 export const intentOf = (e: MouseEvent | TouchEvent): LinkIntent | null =>
   e instanceof MouseEvent ? linkIntent(e) : "current";
+
+/** What a click on a node does: a plain click selects it (the info card shows), Shift+click adds to
+ *  or removes from the selection, middle and Cmd/Ctrl clicks open it for their intent. */
+export function nodeClick(
+  intent: LinkIntent,
+  shiftKey: boolean,
+  selection: ReadonlySet<string>,
+  path: string,
+): { open: LinkIntent } | { selection: Set<string> } {
+  if (intent !== "current") return { open: intent };
+  const next = new Set(shiftKey ? selection : []);
+  if (!shiftKey || !next.delete(path)) next.add(path);
+  return { selection: next };
+}
 
 /** Opens a node's note or file for `intent`. A missing note is created first (it opens as a new,
  *  empty note); tags have nothing to open. */
@@ -118,5 +133,11 @@ export function nodeMenu(node: NodeAttrs, handlers: MenuHandlers): MenuItemSpec[
   return items;
 }
 
-/** "Open in graph tab" from the local panel. */
-export const openGlobalGraph = (center?: string) => openGraphTab(center ? { center } : {});
+/** Opens the graph tab: on `center`'s local graph at the remembered depth, or on the whole vault
+ *  without a note (the tab's "Whole vault" toggle drops the depth). */
+export async function openGlobalGraph(center?: string) {
+  if (!center) return openGraphTab({});
+  const config = useGraphConfig.getState();
+  await config.load();
+  openGraphTab({ center, depth: useGraphConfig.getState().config.global.display.depth });
+}

@@ -23,11 +23,11 @@ export type WorkerRequest =
   /** First message: both matrices and the settings; the worker keeps the edges. */
   | { type: "init"; nodes: Float32Array; edges: Float32Array; settings: FA2Settings }
   /** Next batch: the node matrix handed back after the main thread read the positions. */
-  | { type: "step"; nodes: Float32Array };
+  | { type: "step"; nodes: Float32Array }
+  /** One-shot community detection over `order` nodes (`PPE` floats per edge). */
+  | { type: "cluster"; order: number; edges: Float32Array };
 
-export interface WorkerResponse {
-  nodes: Float32Array;
-}
+export type WorkerResponse = { nodes: Float32Array } | { communities: Int32Array };
 
 export interface Matrices {
   nodes: Float32Array;
