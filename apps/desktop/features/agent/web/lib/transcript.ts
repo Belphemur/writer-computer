@@ -85,7 +85,7 @@ export type Block = TextBlock | ThinkingBlock | ToolBlock | SteerBlock;
 
 /** What the backend said about one sub-agent run (keyed by its launch call id in
  *  `Turn.subagents`): who it is and the model it runs (`subagent-started`, resolved in Rust), how
- *  it ended when the CLI said so (`subagent-status`: the only end of a background run), and the UI
+ *  how it is going (`subagent-status`, decided in Rust: the only end of a background run), and the UI
  *  clock for its elapsed time. */
 export type SubagentMeta = {
   /** The registry role id (`explorer`); null for a sub-agent type Writer does not define. */
@@ -96,7 +96,7 @@ export type SubagentMeta = {
   status: SubagentRunStatus | null;
   startedAt: number | null;
   endedAt: number | null;
-  /** The run's final answer, kept in the chat note (the launch call's output is not). */
+  /** The run's final report (`subagent-status`), kept in the chat note. */
   summary?: string;
 };
 

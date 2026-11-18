@@ -71,9 +71,33 @@ export type ChatNoteSubagent = {
   /** The sub-agent type as the call named it. */
   name: string;
   model: string | null;
-  /** The run's final answer, cut to 500 characters. */
+  /** How the run ended, as the backend reported it; absent: it never reported (a reopened chat
+   *  shows it as interrupted, never done). */
+  status?: "completed" | "failed" | "stopped";
+  /** The run's final report, cut to 500 characters. */
   summary?: string;
 };
+
+/** Records a `subagent-status` on a note's sub-agent run: a final state once, then its report once.
+ *  The one place that decides what the note keeps of a run's end. */
+export function applySubagentStatus(
+  sub: ChatNoteSubagent,
+  ev: Extract<AgentEvent, { type: "subagent-status" }>,
+): boolean {
+  let changed = false;
+  if (
+    !sub.status &&
+    (ev.status === "completed" || ev.status === "failed" || ev.status === "stopped")
+  ) {
+    sub.status = ev.status;
+    changed = true;
+  }
+  if (ev.report && !sub.summary) {
+    sub.summary = ev.report.slice(0, MAX_SUBAGENT_SUMMARY_CHARS);
+    changed = true;
+  }
+  return changed;
+}
 
 export type ChatNoteMessage = {
   role: "user" | "assistant";
@@ -549,10 +573,12 @@ export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFol
       }
       case "tool-call-finished": {
         const t = tools.get(ev.toolCallId);
-        if (t) {
-          t.outcome = ev.outcome;
-          if (t.sub && ev.output) t.sub.summary = ev.output.slice(0, MAX_SUBAGENT_SUMMARY_CHARS);
-        }
+        if (t) t.outcome = ev.outcome;
+        break;
+      }
+      case "subagent-status": {
+        const t = tools.get(ev.toolCallId);
+        if (t?.sub) applySubagentStatus(t.sub, ev);
         break;
       }
       case "usage":

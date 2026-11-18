@@ -1,0 +1,255 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault",
+    "permissionMode": "default",
+    "tools": [
+      "Agent",
+      "Read",
+      "Bash"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_agent1",
+    "messageId": "msg_a1",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_agent1",
+    "input": {
+      "description": "Sweep the notes",
+      "prompt": "Read them",
+      "subagent_type": "general-purpose"
+    }
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_agent1",
+    "status": "running",
+    "report": null
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_r1",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_read1",
+    "messageId": "msg_r1",
+    "tool": "Read",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_read1",
+    "input": {
+      "file_path": "a.md"
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_read1",
+    "output": "one",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_agent1",
+    "output": "",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_t1",
+    "blockIndex": 0,
+    "text": "launched"
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": null
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 10,
+    "apiDurationMs": 5,
+    "numTurns": 2,
+    "isError": false,
+    "result": "launched",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_r2",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_bash1",
+    "messageId": "msg_r2",
+    "tool": "Bash",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_bash1",
+    "input": {
+      "command": "sleep 1"
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_bash1",
+    "output": "done",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_r3",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_read2",
+    "messageId": "msg_r3",
+    "tool": "Read",
+    "parentToolCallId": "toolu_agent1"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_read2",
+    "input": {
+      "file_path": "b.md"
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_read2",
+    "output": "two",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_agent1",
+    "status": "completed",
+    "report": null
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_agent1",
+    "status": "completed",
+    "report": "Both notes read: one, two."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "text",
+    "messageId": "msg_t2",
+    "blockIndex": 0,
+    "text": "the sweep finished"
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.001,
+    "contextWindow": null
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 10,
+    "apiDurationMs": 5,
+    "numTurns": 2,
+    "isError": false,
+    "result": "done",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

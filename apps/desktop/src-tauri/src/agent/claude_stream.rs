@@ -49,11 +49,47 @@ pub struct MapOutput {
     pub user_echo: Option<String>,
 }
 
-/// A sub-agent task seen on the stream, by the CLI's task id.
+/// A task line of the stream, by the CLI's task id. Facts only: what they mean for a sub-agent's
+/// life is decided in one place, `sub_tracker.rs`. `call` is the launch call the task belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskSignal {
-    Started(String),
-    Ended(String),
+    /// `task_started`; `background` is the CLI's `is_backgrounded`.
+    Started {
+        task: String,
+        call: Option<String>,
+        background: bool,
+    },
+    /// `task_updated` with a final `patch.status`.
+    Updated {
+        task: String,
+        call: Option<String>,
+        status: SubagentRunStatus,
+    },
+    /// `task_notification`: the completion signal. `report` is the sub-agent's own final report
+    /// when the CLI carries it (`handback_report.text`); its `summary` sentence is CLI text and
+    /// never a report.
+    Notified {
+        task: String,
+        call: Option<String>,
+        status: SubagentRunStatus,
+        report: Option<String>,
+    },
+    /// The launch call's result says the run went to the background (`tool_use_result.status`
+    /// `async_launched`, which the CLI also answers for a run it moved to the background by
+    /// itself). The result's text is CLI-internal and is not emitted.
+    AsyncLaunched { call: String },
+}
+
+impl TaskSignal {
+    /// The task id, for the signals that are about a task (not a launch result).
+    pub fn task(&self) -> Option<&str> {
+        match self {
+            Self::Started { task, .. }
+            | Self::Updated { task, .. }
+            | Self::Notified { task, .. } => Some(task),
+            Self::AsyncLaunched { .. } => None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -77,6 +113,12 @@ fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 
 fn u64_of(v: &Value, key: &str) -> u64 {
     v.get(key).and_then(Value::as_u64).unwrap_or(0)
+}
+
+/// The report a `task_notification` carries from the sub-agent itself, bounded.
+fn handback_report(v: &Value) -> Option<String> {
+    let text = v.get("handback_report")?.get("text")?.as_str()?.trim();
+    (!text.is_empty()).then(|| truncate_to_boundary(text.to_string(), MAX_TOOL_OUTPUT_BYTES).0)
 }
 
 fn truncate_to_boundary(mut s: String, max: usize) -> (String, bool) {
@@ -244,17 +286,23 @@ impl ClaudeStreamMapper {
                 });
             }
             // `task_started` / `task_updated` (patch.status) / `task_notification`, verified with a
-            // real claude 2.1.326: a background task outlives the first `result`.
+            // real claude 2.1.326: a background task outlives the first `result`. Nested tasks (a
+            // sub-agent's own `Bash`, `task_type` `local_bash`) carry their tool call's id; the
+            // tracker ignores ids that are not a launch call.
             Some("task_started") => {
                 if let Some(id) = str_of(v, "task_id") {
-                    out.tasks.push(TaskSignal::Started(id.to_string()));
-                    if let Some(call) = str_of(v, "tool_use_id") {
-                        self.task_calls.insert(id.to_string(), call.to_string());
-                        out.events.push(AgentEvent::SubagentStatus {
-                            tool_call_id: call.to_string(),
-                            status: SubagentRunStatus::Running,
-                        });
+                    let call = str_of(v, "tool_use_id").map(String::from);
+                    if let Some(call) = &call {
+                        self.task_calls.insert(id.to_string(), call.clone());
                     }
+                    out.tasks.push(TaskSignal::Started {
+                        task: id.to_string(),
+                        call,
+                        background: v
+                            .get("is_backgrounded")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                    });
                 }
             }
             Some("task_updated") => {
@@ -264,29 +312,26 @@ impl ClaudeStreamMapper {
                     .unwrap_or_default();
                 let status = SubagentRunStatus::from_cli(status);
                 if let (Some(id), true) = (str_of(v, "task_id"), status.is_final()) {
-                    out.tasks.push(TaskSignal::Ended(id.to_string()));
-                    if let Some(call) = self.task_calls.get(id) {
-                        out.events.push(AgentEvent::SubagentStatus {
-                            tool_call_id: call.clone(),
-                            status,
-                        });
-                    }
+                    out.tasks.push(TaskSignal::Updated {
+                        task: id.to_string(),
+                        call: self.task_calls.get(id).cloned(),
+                        status,
+                    });
                 }
             }
             Some("task_notification") => {
                 if let Some(id) = str_of(v, "task_id") {
-                    out.tasks.push(TaskSignal::Ended(id.to_string()));
                     let call = str_of(v, "tool_use_id")
                         .map(String::from)
                         .or_else(|| self.task_calls.get(id).cloned());
-                    if let Some(call_id) = call {
-                        out.events.push(AgentEvent::SubagentStatus {
-                            tool_call_id: call_id,
-                            status: SubagentRunStatus::from_cli(
-                                str_of(v, "status").unwrap_or("completed"),
-                            ),
-                        });
-                    }
+                    out.tasks.push(TaskSignal::Notified {
+                        task: id.to_string(),
+                        call,
+                        status: SubagentRunStatus::from_cli(
+                            str_of(v, "status").unwrap_or("completed"),
+                        ),
+                        report: handback_report(v),
+                    });
                 }
             }
             Some("thinking_tokens") => {
@@ -503,6 +548,9 @@ impl ClaudeStreamMapper {
             return;
         };
         let metas = v.get("tool_result_meta").and_then(Value::as_array);
+        let async_launch = v
+            .get("tool_use_result")
+            .is_some_and(|r| str_of(r, "status") == Some("async_launched"));
         for block in blocks {
             if str_of(block, "type") != Some("tool_result") {
                 continue;
@@ -524,10 +572,18 @@ impl ClaudeStreamMapper {
                     })
                 })
                 .unwrap_or(false);
-            let (output, truncated) = truncate_to_boundary(
-                flatten_tool_result(block.get("content")),
-                MAX_TOOL_OUTPUT_BYTES,
-            );
+            let (output, truncated) = if async_launch {
+                // launch boilerplate with the agent id and the output file: CLI-internal
+                out.tasks.push(TaskSignal::AsyncLaunched {
+                    call: id.to_string(),
+                });
+                (String::new(), false)
+            } else {
+                truncate_to_boundary(
+                    flatten_tool_result(block.get("content")),
+                    MAX_TOOL_OUTPUT_BYTES,
+                )
+            };
             out.events.push(AgentEvent::ToolCallFinished {
                 tool_call_id: id.to_string(),
                 output,
@@ -989,20 +1045,46 @@ mod tests {
             "steer-now-permission" => include_str!("fixtures/steer-now-permission.jsonl"),
             "subagent-parallel" => include_str!("fixtures/subagent-parallel.jsonl"),
             "subagent-background" => include_str!("fixtures/subagent-background.jsonl"),
+            "subagent-auto-background" => {
+                include_str!("fixtures/subagent-auto-background.jsonl")
+            }
             other => panic!("unknown fixture {other}"),
         }
     }
 
+    /// The mapper's events with the tracker's `subagent-status` events in the order the runner
+    /// applies them (a line's task signals first, then each event followed by what it decided).
     fn run(name: &str) -> (Vec<AgentEvent>, Vec<String>) {
         let mut m = ClaudeStreamMapper::new();
+        let mut subs = crate::agent::sub_tracker::SubTracker::default();
         let mut events = Vec::new();
         let mut unsupported = Vec::new();
         for line in fixture(name).lines() {
             let out = m.map_line(line);
-            events.extend(out.events);
+            events.extend(out.tasks.iter().flat_map(|t| subs.on_task(t)));
+            for ev in out.events {
+                let decided = subs.observe(&ev);
+                events.push(ev);
+                events.extend(decided);
+            }
             unsupported.extend(out.unsupported_control_request);
         }
         (events, unsupported)
+    }
+
+    /// The `(launch call, state, report)` of every `subagent-status` event.
+    fn statuses(events: &[AgentEvent]) -> Vec<(&str, SubagentRunStatus, Option<&str>)> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::SubagentStatus {
+                    tool_call_id,
+                    status,
+                    report,
+                } => Some((tool_call_id.as_str(), *status, report.as_deref())),
+                _ => None,
+            })
+            .collect()
     }
 
     fn types(events: &[AgentEvent]) -> Vec<String> {
@@ -1036,6 +1118,7 @@ mod tests {
             "steer-now-permission",
             "subagent-parallel",
             "subagent-background",
+            "subagent-auto-background",
         ] {
             let (events, _) = run(name);
             let actual = serde_json::to_string_pretty(&events).unwrap() + "\n";
@@ -1100,6 +1183,7 @@ mod tests {
     /// `task_*` lines become one status per run keyed by the launch call.
     #[test]
     fn parallel_sub_agents_are_told_apart_by_message_and_by_run() {
+        use SubagentRunStatus::{Completed, Running};
         let (events, _) = run("subagent-parallel");
         let parents: Vec<(&str, &str)> = events
             .iter()
@@ -1123,29 +1207,22 @@ mod tests {
             ],
             "a streamed message is told once (message_start), not again by its assistant line"
         );
-        let statuses: Vec<(&str, SubagentRunStatus)> = events
-            .iter()
-            .filter_map(|e| match e {
-                AgentEvent::SubagentStatus {
-                    tool_call_id,
-                    status,
-                } => Some((tool_call_id.as_str(), *status)),
-                _ => None,
-            })
-            .collect();
-        use SubagentRunStatus::{Completed, Running};
+        let got = statuses(&events);
         assert_eq!(
-            statuses,
+            got.iter().map(|(c, s, _)| (*c, *s)).collect::<Vec<_>>(),
             [
                 ("toolu_ex", Running),
                 ("toolu_wk", Running),
                 ("toolu_ex", Completed),
+                ("toolu_wk", Completed),
                 ("toolu_ex", Completed),
                 ("toolu_wk", Completed),
-                ("toolu_wk", Completed),
             ],
-            "task_updated is mapped through the task id, task_notification by its call id"
+            "task_updated is mapped through the task id; the foreground launch result adds the \
+             report to the end once"
         );
+        assert!(got[..4].iter().all(|(_, _, r)| r.is_none()));
+        assert!(got[4..].iter().all(|(_, _, r)| r.is_some()), "{got:?}");
         let nested: Vec<(&str, Option<&str>)> = events
             .iter()
             .filter_map(|e| match e {
@@ -1162,21 +1239,89 @@ mod tests {
         assert!(nested.contains(&("toolu_w_edit", Some("toolu_wk"))));
     }
 
-    /// A background run's launch call returns at once; only the `task_*` lines end the run.
+    /// A background run's launch call returns at once and is not its end: the run is `running`
+    /// after it, its calls go on, and only the completion notification ends it, with the run's own
+    /// report. The launch boilerplate (agent id, output file) is never emitted.
     #[test]
-    fn a_background_run_ends_by_its_task_lines_not_its_launch_result() {
+    fn a_background_run_ends_by_its_notification_with_its_report_not_its_launch_result() {
         let (events, _) = run("subagent-background");
         let launch_result = events
             .iter()
             .position(|e| matches!(e, AgentEvent::ToolCallFinished { tool_call_id, .. } if tool_call_id == "toolu_agent1"))
             .unwrap();
-        let done = events
+        let AgentEvent::ToolCallFinished { output, .. } = &events[launch_result] else {
+            unreachable!()
+        };
+        assert_eq!(output, "", "the launch text is CLI-internal");
+        let after: Vec<_> = statuses(&events[launch_result..]);
+        assert_eq!(
+            after,
+            [
+                ("toolu_agent1", SubagentRunStatus::Completed, None),
+                (
+                    "toolu_agent1",
+                    SubagentRunStatus::Completed,
+                    Some("The note now says new line added.")
+                ),
+            ],
+            "running from task_started, not ended by the launch result, done by the task's end \
+             lines, the notification adding the report"
+        );
+        assert!(statuses(&events[..launch_result])
             .iter()
-            .position(|e| {
-                matches!(e, AgentEvent::SubagentStatus { status, .. } if *status == SubagentRunStatus::Completed)
-            })
+            .all(|(_, s, _)| *s == SubagentRunStatus::Running));
+        let json = serde_json::to_string(&events).unwrap();
+        for leak in ["Async agent", "agentId", "a1b2c3", "output_file", "/tmp/x"] {
+            assert!(!json.contains(leak), "{leak} reached the UI");
+        }
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ToolCallStarted { tool, .. } if tool == "Write")),
+            "the sub-agent's calls after the launch result are mapped"
+        );
+    }
+
+    /// The CLI can move a run to the background by itself (no `run_in_background` in the call):
+    /// its launch result then says `async_launched`. That is not the end either, and a sub-agent's
+    /// own `Bash` task (`task_type` `local_bash`) never becomes a sub-agent status.
+    #[test]
+    fn a_run_the_cli_moved_to_the_background_stays_running() {
+        let (events, _) = run("subagent-auto-background");
+        assert_eq!(
+            statuses(&events),
+            [
+                ("toolu_agent1", SubagentRunStatus::Running, None),
+                (
+                    "toolu_agent1",
+                    SubagentRunStatus::Completed,
+                    None
+                ),
+                (
+                    "toolu_agent1",
+                    SubagentRunStatus::Completed,
+                    Some("Both notes read: one, two.")
+                ),
+            ],
+            "running through the launch result and the nested Bash task; the report follows the final update"
+        );
+        let launch_result = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ToolCallFinished { tool_call_id, .. } if tool_call_id == "toolu_agent1"))
             .unwrap();
-        assert!(done > launch_result);
+        let first_done = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::SubagentStatus { status, .. } if *status == SubagentRunStatus::Completed))
+            .unwrap();
+        let calls_after_launch = events[launch_result..first_done]
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallStarted { parent_tool_call_id: Some(p), .. } if p == "toolu_agent1"))
+            .count();
+        assert_eq!(
+            calls_after_launch, 2,
+            "the run's calls after the launch result are mapped"
+        );
+        assert!(!serde_json::to_string(&events).unwrap().contains("agentId"));
     }
 
     /// `--thinking-display summarized` (real capture, 2.1.326): the deltas carry the summary text
@@ -1988,29 +2133,54 @@ mod tests {
     }
 
     #[test]
-    fn task_lines_map_to_signals_and_one_status_event_per_state_change() {
+    fn task_lines_map_to_signals_without_deciding_anything() {
         let mut m = ClaudeStreamMapper::new();
         let lines = [
             r#"{"type":"system","subtype":"task_started","task_id":"t1","tool_use_id":"toolu_1","subagent_type":"writer-worker","is_backgrounded":false}"#,
             r#"{"type":"system","subtype":"task_progress","task_id":"t1","tool_use_id":"toolu_1"}"#,
             r#"{"type":"system","subtype":"task_updated","task_id":"t1","patch":{"status":"running"}}"#,
-            r#"{"type":"system","subtype":"task_updated","task_id":"t1","patch":{"status":"completed","end_time":1}}"#,
-            r#"{"type":"system","subtype":"task_notification","task_id":"t1","tool_use_id":"toolu_1","status":"completed"}"#,
+            r#"{"type":"system","subtype":"task_updated","task_id":"t1","patch":{"status":"killed","end_time":1}}"#,
+            r#"{"type":"system","subtype":"task_notification","task_id":"t1","tool_use_id":"toolu_1","status":"failed","summary":"CLI sentence","handback_report":{"text":" the report "}}"#,
+            r#"{"type":"system","subtype":"task_notification","task_id":"t2","tool_use_id":"toolu_2","status":"completed","summary":"CLI sentence"}"#,
         ];
         let out: Vec<_> = lines.iter().map(|l| m.map_line(l)).collect();
-        let status = |status| AgentEvent::SubagentStatus {
-            tool_call_id: "toolu_1".into(),
-            status,
-        };
-        assert_eq!(out[0].events, [status(SubagentRunStatus::Running)]);
-        // progress and a non-final update change nothing; both end lines say how it ended
-        assert!(out[1].events.is_empty() && out[2].events.is_empty());
-        assert_eq!(out[3].events, [status(SubagentRunStatus::Completed)]);
-        assert_eq!(out[4].events, [status(SubagentRunStatus::Completed)]);
-        assert_eq!(out[0].tasks, [TaskSignal::Started("t1".into())]);
+        assert!(
+            out.iter().all(|o| o.events.is_empty()),
+            "no UI event from a task line"
+        );
+        assert_eq!(
+            out[0].tasks,
+            [TaskSignal::Started {
+                task: "t1".into(),
+                call: Some("toolu_1".into()),
+                background: false
+            }]
+        );
         assert!(out[1].tasks.is_empty() && out[2].tasks.is_empty());
-        assert_eq!(out[3].tasks, [TaskSignal::Ended("t1".into())]);
-        assert_eq!(out[4].tasks, [TaskSignal::Ended("t1".into())]);
+        assert_eq!(
+            out[3].tasks,
+            [TaskSignal::Updated {
+                task: "t1".into(),
+                call: Some("toolu_1".into()),
+                status: SubagentRunStatus::Stopped
+            }]
+        );
+        assert_eq!(
+            out[4].tasks,
+            [TaskSignal::Notified {
+                task: "t1".into(),
+                call: Some("toolu_1".into()),
+                status: SubagentRunStatus::Failed,
+                report: Some("the report".into())
+            }]
+        );
+        assert!(
+            matches!(
+                &out[5].tasks[..],
+                [TaskSignal::Notified { report: None, .. }]
+            ),
+            "the CLI's summary sentence is never a report"
+        );
     }
 
     #[test]

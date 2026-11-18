@@ -46,12 +46,13 @@
   {
     "type": "subagent-status",
     "toolCallId": "toolu_agent1",
-    "status": "running"
+    "status": "running",
+    "report": null
   },
   {
     "type": "tool-call-finished",
     "toolCallId": "toolu_agent1",
-    "output": "Async agent launched",
+    "output": "",
     "isError": false,
     "outcome": "ok",
     "truncated": false
@@ -134,12 +135,14 @@
   {
     "type": "subagent-status",
     "toolCallId": "toolu_agent1",
-    "status": "completed"
+    "status": "completed",
+    "report": null
   },
   {
     "type": "subagent-status",
     "toolCallId": "toolu_agent1",
-    "status": "completed"
+    "status": "completed",
+    "report": "The note now says new line added."
   },
   {
     "type": "usage",

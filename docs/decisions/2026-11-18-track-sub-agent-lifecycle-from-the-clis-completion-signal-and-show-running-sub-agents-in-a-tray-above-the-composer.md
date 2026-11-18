@@ -60,12 +60,12 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A background sub-agent stays running after its launch result and its tool count keeps rising.
-- [ ] It becomes done only on the CLI's completion signal, and its card shows the real report.
-- [ ] No launch boilerplate, agent id or output path appears in the UI.
-- [ ] The tray folds at three or more, expands in place, and the finished lines clear on the next send.
-- [ ] The transcript shows a start line and a result card, and no live card.
-- [ ] A restored chat shows interrupted for a sub-agent that never reported.
+- [x] A background sub-agent stays running after its launch result and its tool count keeps rising.
+- [x] It becomes done only on the CLI's completion signal, and its card shows the real report.
+- [x] No launch boilerplate, agent id or output path appears in the UI.
+- [x] The tray folds at three or more, expands in place, and the finished lines clear on the next send.
+- [x] The transcript shows a start line and a result card, and no live card.
+- [x] A restored chat shows interrupted for a sub-agent that never reported.
 
 ## Pros and Cons of the Options
 

@@ -6,36 +6,21 @@
  * (`subagent-started`, `SubagentMeta`), the CLI says how a run ended (`subagent-status`), the
  * stream says which blocks are the sub-agent's (`parentToolCallId`). This module only derives the
  * card's header (status, counts, elapsed time) from those; it never resolves a role or a model.
+ *
+ * One state per chat feeds every view: `Turn.subagents` (the metas) and the turns' blocks. The tray
+ * above the composer (running and just-finished runs, [`trayRuns`]) and the transcript (a start
+ * line and, once finished, a result card) both read it. Whether a run is done is Rust's decision
+ * (`sub-agent` lifecycle, ADR 2026-11-18); nothing here infers it from a launch call's result.
  */
 import { roleLabelOf, roleOf } from "./agent-roles";
-import type { AgentEvent } from "./events";
-import { readsFile, toolKind, asRecord } from "./tool-kinds";
-import type { Block, SubagentMeta, ToolBlock, Turn } from "./transcript";
+import { readsFile, toolKind, toolLabel, asRecord, firstLine, truncate } from "./tool-kinds";
+import type { Block, Chat, SubagentMeta, ToolBlock, Turn } from "./transcript";
 
 /** A launch call: the tool that starts a sub-agent (`Agent`, `Task`), by the tools registry. */
 export const isLaunchCall = (block: Block): block is ToolBlock =>
   block.kind === "tool" && toolKind(block.tool) === "agent";
 
-/** The launch call asked for a background run: its result comes back at once ("launched") and the
- *  run goes on until the CLI says it ended. */
-export const isBackgroundLaunch = (block: ToolBlock): boolean =>
-  asRecord(block.input)?.run_in_background === true;
-
-/** A foreground run ends with its launch call's result. */
-export function launchEnd(
-  meta: SubagentMeta,
-  event: Extract<AgentEvent, { type: "tool-call-finished" }>,
-  now: number,
-): SubagentMeta {
-  if (meta.status !== null && meta.status !== "running") return meta;
-  return {
-    ...meta,
-    status: event.outcome === "ok" ? "completed" : event.outcome === "error" ? "failed" : "stopped",
-    endedAt: meta.endedAt ?? now,
-  };
-}
-
-export type SubagentState = "running" | "done" | "failed" | "stopped";
+export type SubagentState = "running" | "done" | "failed" | "stopped" | "interrupted";
 
 export type SubagentSegmentData = {
   /** The launch call id: what the card, the Changes card and the permission card key by. */
@@ -67,17 +52,28 @@ export function splitRuns(turn: Pick<Turn, "blocks" | "subagents">): {
   return { main, runs };
 }
 
-/** running / done / failed / stopped: the CLI's word when it gave one, else the launch call's
- *  state (a background run whose launch returned stays running until the CLI says it ended). */
+/** The run's state: the backend's word (`subagent-status`). Without one yet, the launch call's own
+ *  state while it runs; a launch that finished with no word at all (an old chat note that kept no
+ *  state) never reported an end, so it is `interrupted`, not done. */
 export function subagentState(run: SubagentSegmentData): SubagentState {
   const { launch, meta } = run;
-  if (meta?.status === "completed") return "done";
-  if (meta?.status === "failed") return "failed";
-  if (meta?.status === "stopped") return "stopped";
+  switch (meta?.status) {
+    case "completed":
+      return "done";
+    case "failed":
+    case "stopped":
+    case "interrupted":
+      return meta.status;
+    case "running":
+      return "running";
+    default:
+      break;
+  }
   if (launch.status === "running" || launch.status === "waiting") return "running";
   if (launch.status === "error") return "failed";
   if (launch.status === "rejected" || launch.status === "interrupted") return "stopped";
-  return meta?.status === "running" ? "running" : "done";
+  // the launch result came but the status word has not yet (same batch), or never will
+  return meta ? "running" : "interrupted";
 }
 
 /** A tool of the run waits for the user's permission. */
@@ -122,9 +118,27 @@ export function subagentTask(run: SubagentSegmentData): string {
   return stringOf(rec?.prompt).split("\n", 1)[0]!.trim();
 }
 
-/** The run's final answer: the launch call's result, else what the chat note kept. */
-export const subagentSummary = (run: SubagentSegmentData): string =>
-  (run.launch.output || run.meta?.summary || "").trim();
+/** The run's final report: what the CLI's completion carried (or the foreground result), else
+ *  what the chat note kept, else the sub-agent's own closing text. Never a launch's result text. */
+export function subagentSummary(run: SubagentSegmentData): string {
+  if (run.meta?.summary?.trim()) return run.meta.summary.trim();
+  for (let i = run.children.length - 1; i >= 0; i--) {
+    const b = run.children[i]!;
+    if (b.kind === "text" && b.text.trim()) return b.text.trim();
+  }
+  return "";
+}
+
+/** The run's latest activity as one line: its last tool row, thinking or text. Empty before it did
+ *  anything. */
+export function subagentActivity(run: SubagentSegmentData): string {
+  const last = run.children[run.children.length - 1];
+  if (!last) return "";
+  if (last.kind === "tool") return toolLabel(last.tool, last.input, last.status === "running");
+  if (last.kind === "thinking") return "Thinking…";
+  if (last.kind === "text") return truncate(firstLine(last.text), 120);
+  return "";
+}
 
 /** Elapsed milliseconds: start to end, or to `now` while it runs; null when never timed (a
  *  restored chat). */
@@ -135,3 +149,25 @@ export function subagentElapsed(run: SubagentSegmentData, now: number): number |
 }
 
 const stringOf = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** A run of the tray: the run and the turn that launched it. */
+export type TrayRun = SubagentSegmentData & { state: SubagentState };
+
+/** The runs the tray shows (spec "Sub-agent tray"): every run still going, in any turn, and every
+ *  run that ended since the user's last send (it goes at their next one). A run with no end time
+ *  (a restored chat) is never shown. Pure, in launch order. */
+export function trayRuns(chat: Pick<Chat, "turns">): TrayRun[] {
+  let lastSend = 0;
+  for (const t of chat.turns) if (t.user) lastSend = t.startedAt;
+  const out: TrayRun[] = [];
+  for (const turn of chat.turns) {
+    if (!turn.subagents) continue;
+    for (const run of splitRuns(turn).runs.values()) {
+      const state = subagentState(run);
+      const endedAt = run.meta?.endedAt ?? null;
+      if (state === "running" || (endedAt !== null && endedAt >= lastSend))
+        out.push({ ...run, state });
+    }
+  }
+  return out;
+}

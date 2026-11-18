@@ -26,8 +26,8 @@ function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
   }));
 }
 
-/** The sub-agent runs a note kept (who, which model, the closing answer); the time and the CLI's
- *  own status are not stored, so a restored card shows neither. */
+/** The sub-agent runs a note kept (who, which model, how it ended, the report). The time is not
+ *  stored; a run the note never saw end is `interrupted`, never done. */
 function subagentsOf(m: ChatNoteMessage): Record<string, SubagentMeta> | null {
   const runs = (m.tools ?? []).filter((t) => t.sub);
   if (runs.length === 0) return null;
@@ -36,7 +36,7 @@ function subagentsOf(m: ChatNoteMessage): Record<string, SubagentMeta> | null {
       t.id,
       {
         ...t.sub!,
-        status: null,
+        status: t.sub!.status ?? "interrupted",
         startedAt: null,
         endedAt: null,
       } satisfies SubagentMeta,

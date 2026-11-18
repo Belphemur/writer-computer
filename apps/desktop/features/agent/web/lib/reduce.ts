@@ -17,7 +17,6 @@ import type {
   SubagentRunStatus,
 } from "./events";
 import { contextTokensOf } from "./context-usage";
-import { isBackgroundLaunch, launchEnd } from "./subagents";
 import type {
   Block,
   Chat,
@@ -156,16 +155,16 @@ const blankSubagent = (): SubagentMeta => ({
   endedAt: null,
 });
 
-/** A run that never reported its end (the process went away): it stopped. */
-function stopRunning(chat: Chat, now: number): Chat {
+/** A run that never reported its end: it ended as `status` (`stopped` when its turn was stopped,
+ *  `interrupted` when the process went away). */
+function endRunning(chat: Chat, now: number, status: "stopped" | "interrupted"): Chat {
   let changed = false;
   const turns = chat.turns.map((turn) => {
     const runs = Object.entries(turn.subagents ?? {}).filter(([, m]) => m.status === "running");
     if (runs.length === 0) return turn;
     changed = true;
     const subagents = { ...turn.subagents };
-    for (const [id, m] of runs)
-      subagents[id] = { ...m, status: "stopped", endedAt: m.endedAt ?? now };
+    for (const [id, m] of runs) subagents[id] = { ...m, status, endedAt: m.endedAt ?? now };
     return { ...turn, subagents };
   });
   return changed ? { ...chat, turns } : chat;
@@ -423,10 +422,8 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
             : b.permission,
       }));
       if (pending) next = afterPermissionChange(next, removePending(next, pending.requestId));
-      // a foreground run ends with its launch call's result, which is also its summary
-      return patchSubagent(next, event.toolCallId, (meta, block) =>
-        meta && !isBackgroundLaunch(block) ? launchEnd(meta, event, now) : meta,
-      );
+      // a sub-agent's end is Rust's word (`subagent-status`), never this result
+      return next;
     }
 
     case "subagent-message":
@@ -447,12 +444,14 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
     case "subagent-status":
       return patchSubagent(chat, event.toolCallId, (meta) => {
         const base = meta ?? blankSubagent();
-        // a run that ended stays ended (the CLI repeats the last status)
-        if (base.status !== null && base.status !== "running") return base;
+        // a run that ended stays ended; its report may follow the end once
+        if (base.status !== null && base.status !== "running")
+          return event.report && !base.summary ? { ...base, summary: event.report } : base;
         const status: SubagentRunStatus = event.status;
         return {
           ...base,
           status,
+          summary: event.report ?? base.summary,
           startedAt: base.startedAt ?? now,
           endedAt: status === "running" ? null : now,
         };
@@ -554,7 +553,7 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
         errors: event.errors,
       });
       // a normal end can leave a background run going; a stopped or failed turn ends its runs
-      const closed = event.reason === "completed" ? finished : stopRunning(finished, now);
+      const closed = event.reason === "completed" ? finished : endRunning(finished, now, "stopped");
       return {
         ...closed,
         pendingPermissions: [],
@@ -591,9 +590,10 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
     case "session-ended": {
       const midTurn = isRunning(chat.turns[chat.turns.length - 1]);
       const lost = midTurn && event.reason === "exit";
-      const closed = stopRunning(
+      const closed = endRunning(
         midTurn ? finishTurns(chat, now, lost ? "error" : "interrupted") : chat,
         now,
+        "interrupted",
       );
       return {
         ...closed,

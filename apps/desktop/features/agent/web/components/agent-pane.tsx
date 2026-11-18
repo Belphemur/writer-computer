@@ -24,6 +24,7 @@ import { ChatTabs, requestCloseChat } from "./chat-tabs";
 import { Composer } from "./composer";
 import { EmptyState } from "./empty-state";
 import { PinnedStack } from "./pinned-stack";
+import { SubagentTray } from "./subagent-tray";
 import { ProjectsList } from "./projects-list";
 import { HistorySlot, ProjectHomeSlot } from "./slots";
 import { Transcript } from "./transcript";
@@ -155,6 +156,7 @@ export function AgentPane() {
               <Transcript chat={chat} />
             )}
             <PinnedStack chat={chat} queued={queued} />
+            <SubagentTray chat={chat} />
             <Composer chat={chat} draft={draft} hasQueued={queued !== undefined} />
             <UsageLine chat={chat} />
           </>

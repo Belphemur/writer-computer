@@ -1686,6 +1686,38 @@ fn the_card_stays_open_while_a_sub_agent_works_so_late_edits_land_on_it() {
             .count(),
         1
     );
+    // the sub-agent's life: running after the first result (the turn ended with it going), done
+    // only by its notification, with its own report, and no launch text anywhere
+    let statuses: Vec<(SubagentRunStatus, Option<String>)> = h
+        .seen
+        .iter()
+        .filter_map(|e| match &e.event {
+            AgentEvent::SubagentStatus { status, report, .. } => Some((*status, report.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(statuses[0], (SubagentRunStatus::Running, None));
+    assert_eq!(
+        statuses.last().unwrap(),
+        &(
+            SubagentRunStatus::Completed,
+            Some("The note now says new line added.".to_string())
+        )
+    );
+    let first_finished = h
+        .seen
+        .iter()
+        .position(|e| matches!(e.event, AgentEvent::TurnFinished { .. }))
+        .unwrap();
+    assert!(
+        h.seen[..first_finished].iter().all(|e| !matches!(
+            &e.event,
+            AgentEvent::SubagentStatus { status, .. } if status.is_final()
+        )),
+        "the first turn's end does not end the background run"
+    );
+    let all = serde_json::to_string(&h.seen.iter().map(|e| &e.event).collect::<Vec<_>>()).unwrap();
+    assert!(!all.contains("Async agent") && !all.contains("a1b2c3"));
 }
 
 /// Item 5d: in manual mode the sub-agent's edit raises a permission card that says who asks and

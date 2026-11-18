@@ -111,30 +111,29 @@ describe("a sub-agent card", () => {
     expect(headerOf(ex).getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("is open while it runs, and each parallel run is its own card", async () => {
+  it("has no live card while it runs: a quiet start line per run, the tray shows the rest", async () => {
     await mount(running());
-    expect($$("[data-agent-subagent]")).toHaveLength(2);
-    for (const id of ["toolu_ex", "toolu_wk"]) {
-      const c = card(id);
-      expect(c.getAttribute("data-state")).toBe("running");
-      expect($("[data-agent-subagent-status]", c)!.textContent).toBe("Running");
-      expect(headerOf(c).getAttribute("aria-expanded")).toBe("true");
-    }
-    // each card holds only its own rows
-    const names = (id: string) => $$("[data-agent-tool]", card(id)).map((t) => t.textContent);
-    expect(names("toolu_ex").join(" ")).toContain("Pricing.md");
-    expect(names("toolu_ex").join(" ")).not.toContain("Plan.md");
-    expect(names("toolu_wk").join(" ")).toContain("Plan.md");
+    expect($$("[data-agent-subagent]")).toHaveLength(0);
+    expect($$("[data-agent-subagent-start]").map((l) => l.textContent)).toEqual([
+      "Started Explorer: Find notes about pricing",
+      "Started Worker: Fix the typo in Plan",
+    ]);
   });
 
-  it("waits for permission inside the card and says so", async () => {
-    const chat = running();
-    const wk = chat.turns[0]!.blocks.find((b) => b.id === "toolu_w_edit");
-    if (wk?.kind === "tool") wk.status = "waiting";
+  it("shows the start line and the result card once finished, never a live one", async () => {
+    await mount(finished());
+    expect($$("[data-agent-subagent-start]")).toHaveLength(2);
+    expect($$("[data-agent-subagent]")).toHaveLength(2);
+    expect(
+      $$("[data-agent-subagent] [data-agent-subagent-status]").map((s) => s.textContent),
+    ).toEqual(["Done", "Done"]);
+  });
+
+  it("shows an interrupted run as interrupted, not done", async () => {
+    const chat = finished();
+    chat.turns[0]!.subagents!.toolu_ex!.status = "interrupted";
     await mount(chat);
-    expect($("[data-agent-subagent-status]", card("toolu_wk"))!.textContent).toBe(
-      "Waiting for permission",
-    );
+    expect($("[data-agent-subagent-status]", card("toolu_ex"))!.textContent).toBe("Interrupted");
   });
 
   it("keeps the main agent's text and the delegation in the main timeline", async () => {

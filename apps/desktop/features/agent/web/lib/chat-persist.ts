@@ -8,6 +8,7 @@ import {
   type ChatNoteDoc,
   type ChatNoteMessage,
   type ChatNoteMeta,
+  applySubagentStatus,
   contextLine,
   emptyMeta,
   foldAssistantEvents,
@@ -97,6 +98,19 @@ export function recordEvents(
       }
       continue;
     }
+    if (ev.type === "subagent-status") {
+      // a background run that ends after its turn was written: its message is updated in place
+      const late = lateSubagent(next.messages, ev.toolCallId);
+      if (late) {
+        if (applySubagentStatus(late.sub, ev)) {
+          const messages = next.messages.slice();
+          messages[late.at] = late.message;
+          next = { ...next, messages };
+          finished = true;
+        }
+        continue;
+      }
+    }
     const pending = [...next.pending, ev];
     if (ev.type !== "turn-finished") {
       next = { ...next, pending };
@@ -133,6 +147,20 @@ export function recordEvents(
     finished = true;
   }
   return { note: next, finished };
+}
+
+/** The note's assistant message holding the sub-agent run launched by `callId` (a copy to edit). */
+function lateSubagent(messages: readonly ChatNoteMessage[], callId: string) {
+  for (let at = messages.length - 1; at >= 0; at--) {
+    const m = messages[at]!;
+    const i = m.tools?.findIndex((t) => t.id === callId && t.sub) ?? -1;
+    if (i < 0) continue;
+    const sub = { ...m.tools![i]!.sub! };
+    const tools = m.tools!.slice();
+    tools[i] = { ...tools[i]!, sub };
+    return { at, message: { ...m, tools }, sub };
+  }
+  return null;
 }
 
 /** Drops the last user message and whatever followed it (a send that never reached a session). */

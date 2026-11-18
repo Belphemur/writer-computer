@@ -293,12 +293,15 @@ pub enum AgentEvent {
         /// The model the sub-agent runs; a tier that inherits shows the chat's model.
         model: Option<String>,
     },
-    /// A sub-agent run changed state, from the CLI's `task_started` / `task_updated` /
-    /// `task_notification` lines. The only source of the end of a background run (its launch call
-    /// returns at once); a foreground run's end is also its launch call's result.
+    /// A sub-agent run changed state. Decided in one place, `sub_tracker.rs`: `running` from the
+    /// launch; a foreground run ends with its launch call's result; a background run (its launch
+    /// result comes back at once and says nothing about the outcome) ends only with the CLI's
+    /// `task_notification`. `report` is the sub-agent's own final report, when there is one (a
+    /// final status can be repeated once to add it); the launch boilerplate is never a report.
     SubagentStatus {
         tool_call_id: ToolCallId,
         status: SubagentRunStatus,
+        report: Option<String>,
     },
 }
 
@@ -311,6 +314,9 @@ pub enum SubagentRunStatus {
     Failed,
     /// Killed, cancelled or stopped.
     Stopped,
+    /// Never reported its end and cannot any more (its process went away, or the chat was
+    /// restored from its note): neither done nor failed.
+    Interrupted,
 }
 
 impl SubagentRunStatus {
@@ -873,6 +879,7 @@ mod tests {
             AgentEvent::SubagentStatus {
                 tool_call_id: "a".into(),
                 status: SubagentRunStatus::Stopped,
+                report: None,
             },
             AgentEvent::SteerUndelivered {
                 message_id: "m".into(),
@@ -947,8 +954,9 @@ mod tests {
             round_trip(&AgentEvent::SubagentStatus {
                 tool_call_id: "a".into(),
                 status: SubagentRunStatus::Completed,
+                report: Some("r".into()),
             }),
-            json!({"type":"subagent-status","toolCallId":"a","status":"completed"})
+            json!({"type":"subagent-status","toolCallId":"a","status":"completed","report":"r"})
         );
         assert_eq!(
             round_trip(&AgentEvent::SubagentMessage {

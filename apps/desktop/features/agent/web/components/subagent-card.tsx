@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import {
   Alert02Icon,
   ArrowDown01Icon,
@@ -15,18 +15,17 @@ import {
   subagentState,
   subagentSummary,
   subagentTask,
-  subagentWaiting,
   type SubagentSegmentData,
   type SubagentState,
 } from "@features/agent/web/lib/subagents";
-import { Ico, Spinner } from "./agent-icon";
+import { Ico } from "./agent-icon";
 import { AssistantText } from "./assistant-text";
 import { roleIcon } from "./role-icons";
 import { TimelineGroup } from "./timeline-group";
 import { UserTurnCard } from "./user-turn-card";
 
 /** Renders the segments of a turn or of a sub-agent run: text, tool/thinking groups, steer cards
- *  and sub-agent cards. One mapping for both, so a run's inside reads like the turn around it. */
+ *  and sub-agent runs (a start line, and a result card once finished). One mapping for both, so a run's inside reads like the turn around it. */
 export function SegmentList({
   segments,
   running,
@@ -47,7 +46,7 @@ export function SegmentList({
         ) : seg.kind === "text" ? (
           <AssistantText key={seg.block.id} block={seg.block} />
         ) : seg.kind === "subagent" ? (
-          <SubagentCard key={seg.run.id} run={seg.run} turnRunning={running} />
+          <SubagentRun key={seg.run.id} run={seg.run} />
         ) : (
           <TimelineGroup key={seg.id} blocks={seg.blocks} running={running} />
         ),
@@ -68,48 +67,44 @@ export function revealSubagentCard(callId: string): void {
   card.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
 }
 
-const STATE_TEXT: Record<SubagentState, string> = {
+export const STATE_TEXT: Record<SubagentState, string> = {
   running: "Running",
   done: "Done",
   failed: "Failed",
   stopped: "Stopped",
+  interrupted: "Interrupted",
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** The clock of a running card: one tick a second while it runs, none once it ended. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [active]);
-  return now;
+/** One delegated run in the transcript (spec "Sub-agent tray"): a quiet line where it started, and
+ *  once it ended its result card. While it runs the tray above the composer shows it, never a
+ *  live card here. */
+function SubagentRun({ run }: { run: SubagentSegmentData }) {
+  const label = subagentLabel(run);
+  const task = subagentTask(run);
+  return (
+    <>
+      <p data-agent-subagent-start className="px-1 text-[12px] text-text-muted">
+        Started {label}
+        {task ? `: ${task}` : ""}
+      </p>
+      {subagentState(run) !== "running" && <SubagentCard run={run} />}
+    </>
+  );
 }
 
 /**
- * One delegated run (spec "Sub-agent cards"): the header says who (the role's name and icon from
- * the registry), which model, what task, how it is going and what it did; the sub-agent's own
- * rows, thinking and text are inside. Expanded while it runs or a tool of it waits for
- * permission, collapsed once it is done; a click overrides. Its final answer is the summary.
+ * The result card of a finished run (spec "Sub-agent tray"): the header says who (the role's name
+ * and icon from the registry), which model, what task, how it ended and what it did; its final
+ * report is the summary and its own rows, thinking and text are inside. Collapsed; a click opens
+ * it.
  */
-export function SubagentCard({
-  run,
-  turnRunning,
-}: {
-  run: SubagentSegmentData;
-  turnRunning: boolean;
-}) {
-  const [override, setOverride] = useState<boolean | null>(null);
+export function SubagentCard({ run }: { run: SubagentSegmentData }) {
+  const [open, setOpen] = useState(false);
   const bodyId = useId();
   const state = subagentState(run);
-  const waiting = subagentWaiting(run);
-  const live = state === "running";
-  const open = override ?? (live || waiting);
-  const now = useNow(live);
-  const elapsed = subagentElapsed(run, now);
+  const elapsed = subagentElapsed(run, 0);
   const counts = subagentCounts(run.children);
   const label = subagentLabel(run);
   const task = subagentTask(run);
@@ -131,7 +126,7 @@ export function SubagentCard({
         type="button"
         aria-expanded={open}
         aria-controls={bodyId}
-        onClick={() => setOverride(!open)}
+        onClick={() => setOpen(!open)}
         className="flex w-full flex-col gap-0.5 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--item-hover-bg)]"
       >
         <span className="flex w-full items-center gap-1.5 text-[12.5px]">
@@ -153,19 +148,11 @@ export function SubagentCard({
             </span>
           )}
           <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-text-muted">
-            {live ? (
-              <Spinner />
-            ) : (
-              <Ico
-                icon={state === "done" ? Tick02Icon : Alert02Icon}
-                className={
-                  state === "failed" ? "text-[var(--agent-error)]" : "text-text-icon-muted"
-                }
-              />
-            )}
-            <span data-agent-subagent-status>
-              {waiting && live ? "Waiting for permission" : STATE_TEXT[state]}
-            </span>
+            <Ico
+              icon={state === "done" ? Tick02Icon : Alert02Icon}
+              className={state === "failed" ? "text-[var(--agent-error)]" : "text-text-icon-muted"}
+            />
+            <span data-agent-subagent-status>{STATE_TEXT[state]}</span>
             {elapsed !== null && (
               <span data-agent-subagent-elapsed>· {formatDuration(elapsed)}</span>
             )}
@@ -187,7 +174,7 @@ export function SubagentCard({
           {plural(counts.edits, "edit", "edits")}
         </span>
       </button>
-      {summary && !live && (
+      {summary && (
         <p
           data-agent-subagent-summary
           className={`px-2 pb-1.5 text-[12.5px] whitespace-pre-wrap text-text-secondary ${open ? "" : "line-clamp-2"}`}
@@ -198,11 +185,9 @@ export function SubagentCard({
       {open && (
         <div id={bodyId} className="space-y-1 border-t border-[var(--line-subtler)] px-2 py-1.5">
           {children.length > 0 ? (
-            <SegmentList segments={segmentBlocks(children)} running={turnRunning && live} />
+            <SegmentList segments={segmentBlocks(children)} running={false} />
           ) : (
-            <p className="text-[12px] text-text-muted">
-              {live ? "Starting…" : "No activity recorded."}
-            </p>
+            <p className="text-[12px] text-text-muted">No activity recorded.</p>
           )}
         </div>
       )}

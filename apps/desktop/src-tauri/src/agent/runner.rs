@@ -765,28 +765,22 @@ impl Session {
                 log::info!(target: "agent", "agent: answered an unsupported control request with an error");
                 self.write(encode_control_error(&id, "unsupported"));
             }
-            for signal in &out.tasks {
-                g.subs.on_task(signal);
-            }
-            for mut ev in out.events {
+            // the lifecycle of the sub-agents, decided by the tracker alone
+            let task_events: Vec<AgentEvent> =
+                out.tasks.iter().flat_map(|s| g.subs.on_task(s)).collect();
+            for mut ev in task_events.into_iter().chain(out.events) {
                 // runner-originated events that follow `ev`
-                let mut extra: Vec<AgentEvent> = Vec::new();
+                let mut extra: Vec<AgentEvent> = g.subs.observe(&ev);
                 match &ev {
                     AgentEvent::ToolCallStarted {
-                        tool_call_id,
-                        tool,
-                        parent_tool_call_id,
-                        ..
+                        tool_call_id, tool, ..
                     } => {
                         g.tool_names.insert(tool_call_id.clone(), tool.clone());
-                        g.subs
-                            .on_started(tool_call_id, tool, parent_tool_call_id.as_deref());
                     }
                     AgentEvent::ToolCallInput {
                         tool_call_id,
                         input,
                     } => {
-                        g.subs.on_input(tool_call_id, input);
                         if g.tool_names
                             .get(tool_call_id)
                             .is_some_and(|t| is_launch_tool(t))
@@ -806,9 +800,6 @@ impl Session {
                             let by = g.subs.author_of(Some(tool_call_id));
                             captures.push((tool.clone(), input.clone(), by));
                         }
-                    }
-                    AgentEvent::ToolCallFinished { tool_call_id, .. } => {
-                        g.subs.on_finished(tool_call_id);
                     }
                     // the permission request may come first: the tool has not run yet either
                     AgentEvent::PermissionRequest {

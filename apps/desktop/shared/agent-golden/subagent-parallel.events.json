@@ -70,12 +70,14 @@
   {
     "type": "subagent-status",
     "toolCallId": "toolu_ex",
-    "status": "running"
+    "status": "running",
+    "report": null
   },
   {
     "type": "subagent-status",
     "toolCallId": "toolu_wk",
-    "status": "running"
+    "status": "running",
+    "report": null
   },
   {
     "type": "subagent-message",
@@ -278,22 +280,14 @@
   {
     "type": "subagent-status",
     "toolCallId": "toolu_ex",
-    "status": "completed"
-  },
-  {
-    "type": "subagent-status",
-    "toolCallId": "toolu_ex",
-    "status": "completed"
+    "status": "completed",
+    "report": null
   },
   {
     "type": "subagent-status",
     "toolCallId": "toolu_wk",
-    "status": "completed"
-  },
-  {
-    "type": "subagent-status",
-    "toolCallId": "toolu_wk",
-    "status": "completed"
+    "status": "completed",
+    "report": null
   },
   {
     "type": "tool-call-finished",
@@ -304,12 +298,24 @@
     "truncated": false
   },
   {
+    "type": "subagent-status",
+    "toolCallId": "toolu_ex",
+    "status": "completed",
+    "report": "Found 2 notes: Plan.md and Pricing.md."
+  },
+  {
     "type": "tool-call-finished",
     "toolCallId": "toolu_wk",
     "output": "Plan.md: fixed teh to the.",
     "isError": false,
     "outcome": "ok",
     "truncated": false
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_wk",
+    "status": "completed",
+    "report": "Plan.md: fixed teh to the."
   },
   {
     "type": "usage",

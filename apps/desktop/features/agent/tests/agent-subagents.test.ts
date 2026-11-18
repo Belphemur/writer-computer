@@ -6,6 +6,7 @@ import {
   serializeChatNote,
 } from "@features/agent/web/lib/chat-note";
 import { chatFromNote } from "@features/agent/web/lib/chat-from-note";
+import { newNoteState, recordEvents, recordSend } from "@features/agent/web/lib/chat-persist";
 import {
   appendUserTurn,
   createChat,
@@ -21,6 +22,7 @@ import {
   subagentState,
   subagentSummary,
   subagentTask,
+  trayRuns,
 } from "@features/agent/web/lib/subagents";
 import { segmentTurn } from "@features/agent/web/lib/timeline";
 import type { AgentEvent } from "@features/agent/web/lib/events";
@@ -117,7 +119,7 @@ describe("running, waiting and parallel runs", () => {
     expect(runs.get("toolu_wk")!.children).toHaveLength(1); // Read
   });
 
-  it("ends a background run by its task lines, not by its launch call's result", () => {
+  it("ends a background run by its notification and its own report, not by its launch result", () => {
     const events = withRunnerStarts(goldens["subagent-background"]!);
     const launchResult = events.findIndex(
       (e) => e.type === "tool-call-finished" && e.toolCallId === "toolu_agent1",
@@ -131,11 +133,15 @@ describe("running, waiting and parallel runs", () => {
     chat = reduceEvents(chat, events.slice(0, launchResult + 1), 100);
     let run = splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!;
     expect(run.launch.status).toBe("ok");
+    expect(run.launch.output).toBe(""); // the launch boilerplate never reaches the transcript
     expect(subagentState(run)).toBe("running");
+    expect(subagentSummary(run)).toBe("");
     chat = reduceEvents(chat, events.slice(launchResult + 1), 900);
     run = splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!;
     expect(subagentState(run)).toBe("done");
     expect(subagentElapsed(run, 5_000)).toBe(800);
+    expect(subagentSummary(run)).toBe("The note now says new line added.");
+    expect(JSON.stringify(chat)).not.toMatch(/Async agent|agentId|output_file/);
     // the late edit joined the run, not the main timeline
     expect(run.children.map((b) => b.kind === "tool" && b.tool)).toContain("Write");
   });
@@ -156,12 +162,13 @@ describe("running, waiting and parallel runs", () => {
       type: "subagent-status",
       toolCallId: "toolu_agent1",
       status: "completed",
+      report: null,
     });
     expect(chat.turns).toHaveLength(turns);
     expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!)).toBe("done");
   });
 
-  it("stops a run that never reported its end when the process goes away", () => {
+  it("marks a run that never reported its end interrupted when the process goes away", () => {
     let chat = appendUserTurn(
       createChat("c"),
       { messageId: "u", text: "go", context: [] },
@@ -179,7 +186,47 @@ describe("running, waiting and parallel runs", () => {
       { type: "session-ended", reason: "killed", exitCode: null, signal: null },
       200,
     );
-    expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!)).toBe("stopped");
+    expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!)).toBe("interrupted");
+  });
+
+  it("keeps a background run running when its turn ends, and the next send does not end it", () => {
+    const events = withRunnerStarts(goldens["subagent-background"]!);
+    const finished = events.findIndex((e) => e.type === "turn-finished");
+    let chat = appendUserTurn(
+      createChat("c"),
+      { messageId: "u", text: "go", context: [] },
+      0,
+      true,
+    );
+    chat = reduceEvents(chat, events.slice(0, finished + 1), 100);
+    const run = () => splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!;
+    expect(subagentState(run())).toBe("running");
+    chat = appendUserTurn(chat, { messageId: "u2", text: "meanwhile", context: [] }, 500, true);
+    expect(subagentState(run())).toBe("running");
+    expect(trayRuns(chat).map((r) => r.id)).toEqual(["toolu_agent1"]);
+  });
+
+  it("follows a run the CLI moved to the background by itself (no flag in the call)", () => {
+    const events = withRunnerStarts(goldens["subagent-auto-background"]!);
+    const launchResult = events.findIndex(
+      (e) => e.type === "tool-call-finished" && e.toolCallId === "toolu_agent1",
+    );
+    let chat = appendUserTurn(
+      createChat("c"),
+      { messageId: "u", text: "go", context: [] },
+      0,
+      true,
+    );
+    chat = reduceEvents(chat, events.slice(0, launchResult + 1), 100);
+    let run = splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!;
+    expect(subagentState(run)).toBe("running");
+    expect(subagentCounts(run.children).toolCalls).toBe(1);
+    chat = reduceEvents(chat, events.slice(launchResult + 1), 900);
+    run = splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!;
+    expect(subagentState(run)).toBe("done");
+    expect(subagentCounts(run.children).toolCalls).toBe(3); // calls after the launch result counted
+    expect(subagentSummary(run)).toBe("Both notes read: one, two.");
+    expect(JSON.stringify(chat)).not.toMatch(/Async agent|agentId|a1b2c3|output_file/);
   });
 
   it("does not let a repeated running status undo an end", () => {
@@ -188,6 +235,7 @@ describe("running, waiting and parallel runs", () => {
       type: "subagent-status",
       toolCallId: "toolu_ex",
       status: "running",
+      report: null,
     });
     expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_ex")!)).toBe("done");
   });
@@ -303,7 +351,62 @@ describe("restored chats", () => {
     expect(subagentSummary(runs.get("toolu_ex")!)).toBe("Found 2 notes: Plan.md and Pricing.md.");
     expect(subagentElapsed(runs.get("toolu_ex")!, 10)).toBeNull();
     expect(subagentState(runs.get("toolu_ex")!)).toBe("done");
+    expect(runs.get("toolu_ex")!.meta?.status).toBe("completed");
     expect(main.filter((b) => b.kind === "tool")).toHaveLength(2); // only the two launch calls
+  });
+
+  it("restores a run the note never saw end as interrupted, never done", () => {
+    const events = withRunnerStarts(goldens["subagent-background"]!);
+    const fold = foldAssistantEvents(
+      events.slice(0, events.findIndex((e) => e.type === "turn-finished") + 1),
+    );
+    const sub = fold.tools.find((t) => t.id === "toolu_agent1")!.sub!;
+    expect(sub.status).toBeUndefined();
+    const doc = parseChatNote(
+      serializeChatNote({
+        meta: emptyMeta("c", 0),
+        trimmed: 0,
+        extraFrontmatter: "",
+        messages: [
+          { role: "user", id: "u", at: 1, text: "go" },
+          { role: "assistant", id: "u-a", at: 2, text: fold.text, tools: fold.tools },
+        ],
+      }),
+    );
+    const chat = chatFromNote(doc, { projectPath: null });
+    const run = splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!;
+    expect(subagentState(run)).toBe("interrupted");
+    expect(trayRuns(chat)).toEqual([]);
+    expect(subagentSummary(run)).toBe("");
+  });
+
+  it("updates the note's run in place when a background run ends after its turn was written", () => {
+    const events = withRunnerStarts(goldens["subagent-background"]!);
+    const finished = events.findIndex((e) => e.type === "turn-finished");
+    let note = recordSend(newNoteState("c", null, 0), {
+      messageId: "u",
+      text: "go",
+      context: [],
+      ts: 1,
+    });
+    note = recordEvents(note, events.slice(0, finished + 1), 2).note;
+    const toolOf = () =>
+      note.messages
+        .find((m) => m.role === "assistant")!
+        .tools!.find((t) => t.id === "toolu_agent1")!;
+    expect(toolOf().sub!.status).toBeUndefined();
+    const late = recordEvents(note, events.slice(finished + 1), 3);
+    note = late.note;
+    expect(late.finished).toBe(true);
+    expect(toolOf().sub).toMatchObject({
+      status: "completed",
+      summary: "The note now says new line added.",
+    });
+    const chat = chatFromNote(
+      { meta: note.meta, messages: note.messages, trimmed: 0, extraFrontmatter: "" },
+      { projectPath: null },
+    );
+    expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!)).toBe("done");
   });
 
   it("reads a note written before cards as a flat history", () => {
