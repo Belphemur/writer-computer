@@ -369,6 +369,27 @@ pub enum ChangeStatus {
     Renamed,
 }
 
+/// How a changed file got on the card, i.e. how far its "before" can be trusted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChangeOrigin {
+    /// An `Edit`/`MultiEdit`/`Write`/`NotebookEdit` call: a trusted pre-image, a diff, Undo.
+    #[default]
+    Edit,
+    /// Changed while a `Bash` call of the chat was running (seen by the file watcher): listed
+    /// only, no diff, no Undo.
+    Command,
+    /// An edit call wrote the file, but the "before" could not be established (the tool ran
+    /// before its pre-image was read and the edit cannot be undone exactly): no diff, no Undo.
+    BeforeUnknown,
+}
+
+impl ChangeOrigin {
+    pub fn is_edit(&self) -> bool {
+        matches!(self, ChangeOrigin::Edit)
+    }
+}
+
 /// One changed file, as sent in `turn-changes` and stored in the chat note (paths and counts only).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -384,6 +405,10 @@ pub struct FileChangeSummary {
     /// Not shown as a diff: binary, too large, or not safely readable. Counts are 0.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_diff: bool,
+    /// Absent: a normal edit. `command` / `before-unknown` files have no diff and no Undo
+    /// (`no_diff` is set with them).
+    #[serde(default, skip_serializing_if = "ChangeOrigin::is_edit")]
+    pub origin: ChangeOrigin,
     /// The sub-agent role that made the edit (`worker`; another sub-agent type as it is named),
     /// shown as a small label on the card. Absent: the main agent. The first edit of the file in
     /// the turn decides (the card's first-snapshot-wins rule).
@@ -933,6 +958,7 @@ mod tests {
                     removed: 0,
                     old_path: Some("b.md".into()),
                     no_diff: false,
+                    origin: ChangeOrigin::Edit,
                     by: None,
                     by_call: None,
                 }],
@@ -962,6 +988,7 @@ mod tests {
                 removed: 1,
                 old_path: None,
                 no_diff: false,
+                origin: ChangeOrigin::Edit,
                 by: Some("worker".into()),
                 by_call: Some("toolu_1".into()),
             }],
@@ -1006,6 +1033,7 @@ mod tests {
                     removed: 0,
                     old_path: None,
                     no_diff: false,
+                    origin: ChangeOrigin::Edit,
                     by: None,
                     by_call: None,
                 },

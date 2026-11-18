@@ -1,5 +1,5 @@
 import type { DiffRow, FileChangeSummary } from "@features/agent/web/lib/events";
-import { middleTruncate } from "@features/agent/web/lib/diff-rows";
+import { middleTruncate, originNote } from "@features/agent/web/lib/diff-rows";
 import { vaultLinkHandlers } from "./agent-links";
 import { DiffView } from "./diff-view";
 
@@ -16,6 +16,22 @@ export function Counts({ added, removed }: { added: number; removed: number }) {
         {MINUS}
         {removed}
       </span>
+    </span>
+  );
+}
+
+/** "by command" / "before unknown": the marker of a file listed without a diff; nothing for an
+ *  ordinary edit. */
+export function OriginMarker({ f }: { f: FileChangeSummary }) {
+  const note = originNote(f);
+  if (!note) return null;
+  return (
+    <span
+      data-agent-change-origin={f.origin}
+      title={note.title}
+      className="shrink-0 rounded-full bg-[var(--surface-subtle)] px-1.5 text-[10.5px] leading-4 text-text-muted"
+    >
+      {note.marker}
     </span>
   );
 }
@@ -63,6 +79,8 @@ export function FileDiffBody({
       </p>
     );
   if (!d) return <p className="text-[11.5px] text-text-muted">Loading diff…</p>;
+  const note = originNote(f);
+  if (note) return <p className="text-[11.5px] text-text-muted">{note.body}</p>;
   if (f.noDiff)
     return (
       <p className="text-[11.5px] text-text-muted">

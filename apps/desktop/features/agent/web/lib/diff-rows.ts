@@ -3,7 +3,7 @@
  * fold behind "Show N lines", the totals of the header and the labels. The diff itself is
  * computed in Rust (`changes.rs`); this only decides what to show.
  */
-import type { ChangeStatus, DiffRow, FileChangeSummary } from "./events";
+import type { ChangeOrigin, ChangeStatus, DiffRow, FileChangeSummary } from "./events";
 
 /** Unchanged lines kept next to a change. */
 export const CONTEXT_LINES = 3;
@@ -70,6 +70,35 @@ export const STATUS_LABEL: Record<ChangeStatus, string> = {
   deleted: "Deleted",
   renamed: "Renamed",
 };
+
+/** The files that have no trusted "before": a small marker, a tooltip and the line shown where a
+ *  diff would be. They have no diff and no Undo (spec "Turn changes"). */
+export const ORIGIN_NOTE: Record<
+  Exclude<ChangeOrigin, "edit">,
+  { marker: string; title: string; body: string }
+> = {
+  command: {
+    marker: "by command",
+    title: "Changed while a command of this chat was running, not necessarily by it",
+    body: "Changed while a shell command was running: listed without a diff",
+  },
+  "before-unknown": {
+    marker: "before unknown",
+    title: "The text from before the edit could not be captured",
+    body: "Edited, but the text from before is not known: listed without a diff",
+  },
+};
+
+/** The note of a file without a trusted before; `undefined` for an ordinary edit. */
+export function originNote(f: Pick<FileChangeSummary, "origin">) {
+  return f.origin && f.origin !== "edit" ? ORIGIN_NOTE[f.origin] : undefined;
+}
+
+/** Status word of a file row: a command-changed file is only known to differ ("Changed"), as
+ *  whether it was created or modified is not known. */
+export function statusLabel(f: Pick<FileChangeSummary, "origin" | "status">): string {
+  return f.origin === "command" && f.status !== "deleted" ? "Changed" : STATUS_LABEL[f.status];
+}
 
 /** Shortens the middle of a long path, keeping the folder start and the file name; the full path
  *  goes in a tooltip. */

@@ -538,6 +538,60 @@ describe("TurnChangesCard", () => {
     expect(container.textContent).toContain("listed without a diff");
   });
 
+  it("a file changed by a command or with an unknown before is marked, has no counts and no Undo", async () => {
+    const files: TurnChangesSummary["files"] = [
+      {
+        path: "run.md",
+        status: "modified",
+        added: 0,
+        removed: 0,
+        noDiff: true,
+        origin: "command",
+        by: "worker",
+        byCall: "toolu_agent1",
+      },
+      {
+        path: "raced.md",
+        status: "modified",
+        added: 0,
+        removed: 0,
+        noDiff: true,
+        origin: "before-unknown",
+      },
+      FILE_A,
+    ];
+    turnChanges.mockResolvedValue({
+      turnId: "t1",
+      files: files.map((f) => ({
+        ...f,
+        rows: f.path === FILE_A.path ? rows : [],
+        undo: f.path === FILE_A.path ? "available" : "unavailable",
+      })),
+    });
+    await mount(turn(summaryOf(files, true)));
+    const mark = (path: string) =>
+      container.querySelector(`[data-agent-change-file="${path}"] [data-agent-change-origin]`)
+        ?.textContent;
+    expect(mark("run.md")).toBe("by command");
+    expect(mark("raced.md")).toBe("before unknown");
+    expect(mark(FILE_A.path)).toBeUndefined();
+    // the sub-agent label of the command's role stays, and there are no +0 -0 counts
+    const run = container.querySelector('[data-agent-change-file="run.md"]')!;
+    expect(run.textContent).toContain("worker");
+    expect(run.textContent).not.toMatch(/\+0/);
+    // the only Undo is the ordinary edit's
+    const undoLabels = $$("button")
+      .map((b) => b.getAttribute("aria-label") ?? "")
+      .filter((l) => l.startsWith("Undo"));
+    expect(undoLabels).toEqual(["Undo changes to Notes/a.md"]);
+    // expanding a file says why there is no diff
+    await act(async () => button("Show diff of run.md").click());
+    expect(container.textContent).toContain("Changed while a shell command was running");
+    await act(async () => button("Show diff of raced.md").click());
+    expect(container.textContent).toContain("the text from before is not known");
+    expect(container.textContent).toContain("Files it changed are listed without a diff");
+  });
+
   it("mentions that shell commands are not tracked only when one ran", async () => {
     await mount(turn(summaryOf([FILE_A], true)));
     expect(container.textContent).toContain("A shell command ran in this turn");

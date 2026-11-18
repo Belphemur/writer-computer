@@ -10,9 +10,22 @@
 //! snapshotted. The end image also is what Undo checks the file against, so Undo never overwrites
 //! a newer edit.
 //!
-//! Tracked: the paths of `Edit`, `MultiEdit`, `Write` and `NotebookEdit` calls (a file created by
-//! `Write` has an absent pre-image). Not tracked: anything a `Bash` call does; the summary only
-//! says that one ran. A file the agent edits only through Bash is not listed.
+//! Tracked with a diff: the paths of `Edit`, `MultiEdit`, `Write` and `NotebookEdit` calls (a file
+//! created by `Write` has an absent pre-image).
+//!
+//! Tracked without a diff. (1) Shell commands: while a `Bash` call of the chat is in flight
+//! ([`command_windows`](super::command_windows): its window and the trade-offs), the vault files
+//! the file watcher reports as changed are recorded as "changed by a command"
+//! ([`ChangeStore::record_command_changes`]): listed, attributed to the role whose command ran,
+//! never with a diff or Undo (there is no pre-image). Only what Writer shows is listed
+//! (`code_files::rel_is_visible` and `is_listed_path`: no hidden folders, no ignored folders, no
+//! unlisted file types; never the memory folders) and a file that an edit call already
+//! snapshotted in the turn keeps that record. (2) The timing gap: when the pre-image read lost the
+//! race against the tool ([`edit_inverse`](super::edit_inverse)), an `Edit`/`MultiEdit` whose
+//! inverse is exact gets the reconstructed pre-image (a normal record), any other raced call is
+//! "before unknown": listed, no diff, no Undo. Detection needs the file to have been modified
+//! within [`RACE_WINDOW`] of the capture, so an old file never looks raced.
+//! Undo exists only for a trusted pre-image: read from disk before the tool ran, or reconstructed.
 //!
 //! Limits. Memory only: snapshots are never written to disk, never into the vault and never
 //! logged. A file over [`MAX_FILE_BYTES`], a binary one or one that no longer fits in
@@ -29,6 +42,8 @@
 //! memory only and have their own budget of [`MAX_TOTAL_BYTES`] (a baseline that does not fit
 //! keeps a fingerprint: listed, no diff). They live until Writer exits.
 
+use super::command_windows::CommandWindows;
+use super::edit_inverse::{settle, Settled};
 use super::events::*;
 use super::line_diff::{counts, diff_lines, split_lines, Edit};
 use super::memory;
@@ -40,7 +55,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 pub const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
@@ -56,10 +71,26 @@ const MAX_DIFF_LINES: usize = 200_000;
 const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 const PATH_KEYS: [&str; 3] = ["file_path", "notebook_path", "path"];
 const SHELL_TOOL: &str = "Bash";
+/// A file modified this recently when its pre-image was read may already hold the tool's edit.
+pub const RACE_WINDOW: Duration = Duration::from_secs(5);
 
 /// Whether `tool` edits a file (its end is when the session's counts change).
 pub fn is_edit_tool(tool: &str) -> bool {
     EDIT_TOOLS.contains(&tool)
+}
+
+/// Whether `tool` is a shell command (its window is when watcher changes are blamed on it).
+pub fn is_shell_tool(tool: &str) -> bool {
+    tool == SHELL_TOOL
+}
+
+/// Why a file has no usable "before" although it was changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unknown {
+    /// Seen by the watcher during a shell command.
+    Command,
+    /// An edit call that the pre-image read raced.
+    Race,
 }
 
 /// One side of a file: its text, or only a fingerprint when the text cannot be kept.
@@ -69,9 +100,19 @@ enum Snap {
     Text(Option<String>),
     /// Size and modification time; `None`: the file does not exist.
     Opaque(Option<(u64, Option<SystemTime>)>),
+    /// A pre-image that does not exist for sure: the file is listed, never diffed or undone.
+    /// Only ever a `pre` side.
+    Unknown(Unknown),
 }
 
 impl Snap {
+    fn origin(&self) -> ChangeOrigin {
+        match self {
+            Snap::Unknown(Unknown::Command) => ChangeOrigin::Command,
+            Snap::Unknown(Unknown::Race) => ChangeOrigin::BeforeUnknown,
+            _ => ChangeOrigin::Edit,
+        }
+    }
     fn bytes(&self) -> usize {
         match self {
             Snap::Text(Some(s)) => s.len(),
@@ -80,6 +121,30 @@ impl Snap {
     }
     fn exists(&self) -> bool {
         !matches!(self, Snap::Text(None) | Snap::Opaque(None))
+    }
+}
+
+/// Modified within [`RACE_WINDOW`] before now: the only files a tool can have just written.
+fn modified_recently(abs: &Path) -> bool {
+    std::fs::metadata(abs)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| SystemTime::now().duration_since(t).ok())
+        .is_some_and(|age| age <= RACE_WINDOW)
+}
+
+/// The pre-image of `tool`'s call on `abs`, from the text read just now.
+fn settled_pre(tool: &str, input: &Value, abs: &Path, snap: Snap) -> Snap {
+    let Snap::Text(Some(text)) = &snap else {
+        return snap;
+    };
+    if !modified_recently(abs) {
+        return snap;
+    }
+    match settle(tool, input, text) {
+        Settled::AsCaptured => snap,
+        Settled::Reconstructed(before) => Snap::Text(Some(before)),
+        Settled::Unknown => Snap::Unknown(Unknown::Race),
     }
 }
 
@@ -116,6 +181,17 @@ struct FileRec {
 }
 
 impl FileRec {
+    fn new(by: Option<Author>, rel: &str, abs: &Path, pre: Snap) -> Self {
+        Self {
+            by,
+            rel: rel.to_string(),
+            abs: abs.to_path_buf(),
+            pre,
+            end: Snap::Opaque(None),
+            reverted: AtomicBool::new(false),
+        }
+    }
+
     /// Compare the disk to the end image the way it was taken.
     fn keeps_text(&self) -> bool {
         !matches!(self.end, Snap::Opaque(_))
@@ -171,6 +247,54 @@ struct Inner {
     /// Bytes of every kept snapshot, open and finished.
     used: usize,
     counter: u64,
+    windows: CommandWindows,
+}
+
+impl Inner {
+    /// Adds `f` to its chat's session baselines unless the chat has the path already (the
+    /// first-touch version wins). Returns whether it was added.
+    fn track_in_session(
+        &mut self,
+        chat_id: &str,
+        root: &Path,
+        f: &FileRec,
+        max_total: usize,
+    ) -> bool {
+        let session = self
+            .sessions
+            .entry(chat_id.to_string())
+            .or_insert_with(|| Session {
+                root: root.to_path_buf(),
+                files: Vec::new(),
+            });
+        if session.files.iter().any(|s| s.abs == f.abs) {
+            return false;
+        }
+        let base = if matches!(f.pre, Snap::Unknown(_))
+            || self.session_used + f.pre.bytes() <= max_total
+        {
+            f.pre.clone()
+        } else {
+            read_snap(&f.abs, false)
+        };
+        self.session_used += base.bytes();
+        session.files.push(SessionFile {
+            by: f.by.clone(),
+            rel: f.rel.clone(),
+            abs: f.abs.clone(),
+            base,
+        });
+        true
+    }
+
+    fn next_turn_id(&mut self) -> String {
+        self.counter += 1;
+        let ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        format!("t{:x}{:x}", ms, self.counter)
+    }
 }
 
 pub struct ChangeStore {
@@ -200,6 +324,14 @@ fn plan(files: &[FileRec]) -> Vec<Entry> {
     let mut entries: Vec<Entry> = Vec::new();
     for (i, f) in files.iter().enumerate() {
         let status = match (f.pre.exists(), f.end.exists()) {
+            // no usable "before": listed whenever the file is there or gone now
+            _ if matches!(f.pre, Snap::Unknown(_)) => {
+                if f.end.exists() {
+                    ChangeStatus::Modified
+                } else {
+                    ChangeStatus::Deleted
+                }
+            }
             (false, false) => continue,
             (false, true) => ChangeStatus::Added,
             (true, false) => ChangeStatus::Deleted,
@@ -242,11 +374,11 @@ fn plan(files: &[FileRec]) -> Vec<Entry> {
 fn diff_of(pre: &Snap, end: &Snap) -> Option<(Vec<Edit>, Vec<String>, Vec<String>)> {
     let old = match pre {
         Snap::Text(t) => t.as_deref().unwrap_or(""),
-        Snap::Opaque(_) => return None,
+        Snap::Opaque(_) | Snap::Unknown(_) => return None,
     };
     let new = match end {
         Snap::Text(t) => t.as_deref().unwrap_or(""),
-        Snap::Opaque(_) => return None,
+        Snap::Opaque(_) | Snap::Unknown(_) => return None,
     };
     let (la, lb) = (split_lines(old), split_lines(new));
     if la.len() + lb.len() > MAX_DIFF_LINES {
@@ -290,6 +422,7 @@ fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
         removed,
         old_path: e.from.map(|i| files[i].rel.clone()),
         no_diff,
+        origin: f.pre.origin(),
         by: f.by.as_ref().map(|a| a.label.clone()),
         by_call: f.by.as_ref().map(|a| a.call_id.clone()),
     }
@@ -363,6 +496,17 @@ fn undo_state(files: &[FileRec], e: &Entry) -> UndoState {
     }
 }
 
+/// A watcher path that may be listed as "changed by a command": inside the vault, a file Writer
+/// shows (see the module doc), not the agent's memory.
+fn trackable_change(root: &Path, path: &Path) -> Option<vault_ops::Confined> {
+    let c = vault_ops::confine(root, &path.to_string_lossy()).ok()?;
+    let rel = Path::new(&c.rel);
+    let shown = !memory::is_memory_rel(&c.rel)
+        && crate::code_files::rel_is_visible(rel)
+        && crate::code_files::is_listed_path(rel);
+    (shown && !c.abs.is_dir()).then_some(c)
+}
+
 impl ChangeStore {
     pub fn with_cap(max_total: usize) -> Self {
         Self {
@@ -373,6 +517,7 @@ impl ChangeStore {
                 session_used: 0,
                 used: 0,
                 counter: 0,
+                windows: CommandWindows::default(),
             }),
             max_total,
             revert_lock: Mutex::new(()),
@@ -434,10 +579,14 @@ impl ChangeStore {
                 .filter(|c| !known.is_some_and(|t| t.files.iter().any(|f| f.abs == c.abs)))
                 .collect()
         };
-        // reading happens outside the lock
+        // reading happens outside the lock; a read that lost the race against the tool is
+        // settled here (reconstructed, or "before unknown")
         let snaps: Vec<(&vault_ops::Confined, Snap)> = fresh
             .into_iter()
-            .map(|c| (c, read_snap(&c.abs, true)))
+            .map(|c| {
+                let snap = read_snap(&c.abs, true);
+                (c, settled_pre(tool, input, &c.abs, snap))
+            })
             .collect();
         let mut g = self.inner.lock();
         // a pre-image that no longer fits (after dropping the oldest turns) keeps a fingerprint
@@ -457,49 +606,15 @@ impl ChangeStore {
                 snap = read_snap(&c.abs, false);
             }
             add_bytes += snap.bytes();
-            kept.push(FileRec {
-                by: by.cloned(),
-                rel: c.rel.clone(),
-                abs: c.abs.clone(),
-                pre: snap,
-                end: Snap::Opaque(None),
-                reverted: AtomicBool::new(false),
-            });
+            kept.push(FileRec::new(by.cloned(), &c.rel, &c.abs, snap));
         }
         if !shell && kept.is_empty() {
             return;
         }
-        let inner = &mut *g;
-        let session = inner
-            .sessions
-            .entry(chat_id.to_string())
-            .or_insert_with(|| Session {
-                root: root.clone(),
-                files: Vec::new(),
-            });
         for f in &kept {
-            if session.files.iter().any(|s| s.abs == f.abs) {
-                continue;
-            }
-            let base = if inner.session_used + f.pre.bytes() <= self.max_total {
-                f.pre.clone()
-            } else {
-                read_snap(&f.abs, false)
-            };
-            inner.session_used += base.bytes();
-            session.files.push(SessionFile {
-                by: f.by.clone(),
-                rel: f.rel.clone(),
-                abs: f.abs.clone(),
-                base,
-            });
+            g.track_in_session(chat_id, &root, f, self.max_total);
         }
-        g.counter += 1;
-        let ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let stamp = format!("t{:x}{:x}", ms, g.counter);
+        let stamp = g.next_turn_id();
         let open = g
             .open
             .entry(chat_id.to_string())
@@ -514,6 +629,65 @@ impl ChangeStore {
         open.files.extend(kept);
         open.bytes += add_bytes;
         g.used += add_bytes;
+    }
+
+    /// A `Bash` call of the chat started (its `tool-call-started`): from now its window explains
+    /// the changes the watcher reports. `by` is the sub-agent that made the call. No file IO.
+    pub fn command_started(&self, chat_id: &str, call_id: &str, by: Option<&Author>, at: Instant) {
+        self.inner
+            .lock()
+            .windows
+            .start(chat_id, call_id, by.cloned(), at);
+    }
+
+    /// The call got its `tool_result` (any tool id may be passed; only `Bash` calls have a window).
+    pub fn command_finished(&self, chat_id: &str, call_id: &str, at: Instant) {
+        self.inner.lock().windows.finish(chat_id, call_id, at);
+    }
+
+    /// The chat's process or turn ended: no command of it runs any more.
+    pub fn commands_ended(&self, chat_id: &str, at: Instant) {
+        self.inner.lock().windows.end_chat(chat_id, at);
+    }
+
+    /// Vault files the watcher reported as changed at `at` (Writer's own writes already removed
+    /// by the caller). While a command window of the chat explains `at` they are recorded as
+    /// "changed by a command" in the open turn and the session, except the ones the turn already
+    /// tracks. Returns whether the chat's session may have changed (publish it). Reads metadata
+    /// only (never file text), so call it off the watcher thread.
+    pub fn record_command_changes(
+        &self,
+        chat_id: &str,
+        root: &Path,
+        paths: &[PathBuf],
+        at: Instant,
+    ) -> bool {
+        let Ok(root) = root.canonicalize() else {
+            return false;
+        };
+        let Some(by) = self.inner.lock().windows.explaining(chat_id, at) else {
+            return false;
+        };
+        let found: Vec<vault_ops::Confined> = paths
+            .iter()
+            .filter_map(|p| trackable_change(&root, p))
+            .collect();
+        if found.is_empty() {
+            return false;
+        }
+        let mut g = self.inner.lock();
+        for c in &found {
+            let rec = |by: &Option<Author>| {
+                FileRec::new(by.clone(), &c.rel, &c.abs, Snap::Unknown(Unknown::Command))
+            };
+            g.track_in_session(chat_id, &root, &rec(&by), self.max_total);
+            if let Some(turn) = g.open.get_mut(chat_id) {
+                if !turn.files.iter().any(|f| f.abs == c.abs) {
+                    turn.files.push(rec(&by));
+                }
+            }
+        }
+        true
     }
 
     /// Takes the chat's open turn out of the store, if any file was snapshotted or a shell ran.
@@ -740,7 +914,7 @@ fn restore(root: &Path, f: &FileRec) -> Result<(), String> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         },
-        Snap::Opaque(_) => return Err("no copy from before the turn".into()),
+        Snap::Opaque(_) | Snap::Unknown(_) => return Err("no copy from before the turn".into()),
     }
     f.reverted.store(true, Ordering::SeqCst);
     Ok(())

@@ -14,7 +14,7 @@ import {
   changedNotesLabel,
   noteParts,
   selectSessionChanges,
-  STATUS_MARK,
+  statusMark,
   type SessionChangesView,
 } from "@features/agent/web/lib/session-changes";
 import { formatDuration, segmentBlocks } from "@features/agent/web/lib/timeline";
@@ -34,7 +34,7 @@ import {
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { Ico, Spinner } from "./agent-icon";
 import { vaultLinkHandlers } from "./agent-links";
-import { Counts } from "./change-parts";
+import { Counts, OriginMarker } from "./change-parts";
 import { roleIcon } from "./role-icons";
 import { SegmentList, STATE_TEXT } from "./subagent-card";
 
@@ -160,7 +160,7 @@ function TrayLine({
  *  open a new tab), "Diff" opens the Session changes tab scrolled to it. */
 function ChangedNote({ chatId, f }: { chatId: string; f: SessionChangesView["files"][number] }) {
   const { name, folder } = noteParts(f.path);
-  const mark = STATUS_MARK[f.status];
+  const mark = statusMark(f);
   const deleted = f.status === "deleted";
   return (
     <li
@@ -191,6 +191,7 @@ function ChangedNote({ chatId, f }: { chatId: string; f: SessionChangesView["fil
           {mark}
         </span>
       )}
+      <OriginMarker f={f} />
       {!f.noDiff && <Counts added={f.added} removed={f.removed} />}
       <button
         type="button"

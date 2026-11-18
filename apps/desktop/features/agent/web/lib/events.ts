@@ -30,6 +30,7 @@ export type {
   AgentPermissionMode,
   AgentSessionState,
   AgentSettings,
+  ChangeOrigin,
   ChangeStatus,
   ChatSummary,
   DiffRow,

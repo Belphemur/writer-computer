@@ -15,7 +15,7 @@
 //! environment values (spec section 8).
 
 use super::binary::is_older_than_verified;
-use super::changes::{is_edit_tool, ChangeStore, ClosedTurn};
+use super::changes::{is_edit_tool, is_shell_tool, ChangeStore, ClosedTurn};
 use super::claude_stream::{
     build_args, encode_control_error, encode_interrupt, encode_permission_allow,
     encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_steer_message,
@@ -161,6 +161,9 @@ struct Steer {
 struct PendingPerm {
     input: Value,
     suggestions: Vec<Value>,
+    /// A `Bash` call waiting for approval: it is not running yet, so its command window
+    /// (`command_windows.rs`) is shut until the user allows it.
+    command_call: Option<String>,
 }
 
 struct Inner {
@@ -781,6 +784,20 @@ impl Session {
                         tool_call_id, tool, ..
                     } => {
                         g.tool_names.insert(tool_call_id.clone(), tool.clone());
+                        // the permission request can come first: then it waits for the user
+                        let waiting = g
+                            .pending
+                            .values()
+                            .any(|p| p.command_call.as_deref() == Some(tool_call_id));
+                        if is_shell_tool(tool) && !waiting {
+                            let by = g.subs.author_of(Some(tool_call_id));
+                            self.changes.command_started(
+                                &self.chat_id,
+                                tool_call_id,
+                                by.as_ref(),
+                                Instant::now(),
+                            );
+                        }
                     }
                     AgentEvent::ToolCallInput {
                         tool_call_id,
@@ -807,6 +824,8 @@ impl Session {
                         }
                     }
                     AgentEvent::ToolCallFinished { tool_call_id, .. } => {
+                        self.changes
+                            .command_finished(&self.chat_id, tool_call_id, Instant::now());
                         edit_ended |= g
                             .tool_names
                             .get(tool_call_id)
@@ -821,6 +840,11 @@ impl Session {
                     } => {
                         let by = g.subs.author_of(tool_call_id.as_deref());
                         captures.push((tool.clone(), input.clone(), by));
+                        if let Some(call) = tool_call_id.as_deref().filter(|_| is_shell_tool(tool))
+                        {
+                            self.changes
+                                .command_finished(&self.chat_id, call, Instant::now());
+                        }
                     }
                     AgentEvent::TurnFinished { reason, .. } => {
                         // A sub-agent still working after a normal end (a background task, woken
@@ -828,6 +852,7 @@ impl Session {
                         let keep_open = *reason == TurnFinishReason::Completed && g.subs.busy();
                         g.changes_deferred = keep_open;
                         if !keep_open {
+                            self.changes.commands_ended(&self.chat_id, Instant::now());
                             g.tool_names.clear();
                             g.subs.clear();
                             // taken before `apply` flushes a queued message that starts the next turn
@@ -870,6 +895,17 @@ impl Session {
         }
         if let Some(info) = started {
             self.ports.chats().session_started(&self.root, &info);
+        }
+    }
+
+    /// The watcher's changed vault paths (Writer's own writes removed), delivered at `at`: the
+    /// files a running shell command of this chat changed join its changes (`changes.rs`).
+    pub(crate) fn vault_paths_changed(&self, paths: &[PathBuf], at: Instant) {
+        if self
+            .changes
+            .record_command_changes(&self.chat_id, &self.root, paths, at)
+        {
+            self.push_session_changes();
         }
     }
 
@@ -935,6 +971,8 @@ impl Session {
             | AgentEvent::ToolCallFinished { .. } => self.mark_running(g),
             AgentEvent::PermissionRequest {
                 request_id,
+                tool,
+                tool_call_id,
                 input,
                 suggestions,
                 ..
@@ -944,6 +982,7 @@ impl Session {
                     PendingPerm {
                         input: input.clone(),
                         suggestions: suggestions.clone(),
+                        command_call: tool_call_id.clone().filter(|_| is_shell_tool(tool)),
                     },
                 );
                 if g.state != AgentSessionState::Cancelling {
@@ -1086,6 +1125,8 @@ impl Session {
             if g.live_gen != Some(gen) {
                 return;
             }
+            // no command of this chat runs once its process is gone
+            self.changes.commands_ended(&self.chat_id, Instant::now());
             // a card kept open for a sub-agent ends with the process: nothing more can arrive
             if std::mem::take(&mut g.changes_deferred) {
                 g.subs.clear();
@@ -1680,6 +1721,12 @@ impl Session {
         };
         g.mapper.permission_answered(request_id);
         g.last_activity = Instant::now();
+        if let (PermissionResolution::Allowed, Some(call)) = (resolution, &p.command_call) {
+            // the command runs from now
+            let by = g.subs.author_of(Some(call));
+            self.changes
+                .command_started(&self.chat_id, call, by.as_ref(), Instant::now());
+        }
         self.write(line);
         self.log.push(AgentEvent::PermissionResolved {
             request_id: request_id.to_string(),

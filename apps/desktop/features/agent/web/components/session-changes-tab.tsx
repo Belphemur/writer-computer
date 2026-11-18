@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageViewProps } from "@/lib/features/slots";
 import type { SessionChangesLocation } from "@/components/editor-area/page-kinds";
 import type { SessionFileChange } from "@features/agent/web/lib/events";
-import { STATUS_LABEL } from "@features/agent/web/lib/diff-rows";
+import { statusLabel } from "@features/agent/web/lib/diff-rows";
 import { selectSessionChanges } from "@features/agent/web/lib/session-changes";
 import { getAgentClient, useAgentStore } from "@features/agent/web/stores/agent-store";
 import { logger } from "@/lib/logger";
-import { Counts, FileDiffBody, FileName } from "./change-parts";
+import { Counts, FileDiffBody, FileName, OriginMarker } from "./change-parts";
 
 const SINCE_RESTART = "since Writer restarted";
 
@@ -79,10 +79,9 @@ export function SessionChangesTab({ location }: PageViewProps<SessionChangesLoca
               className="rounded-lg border border-border"
             >
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-2 py-1.5">
-                <span className="shrink-0 text-[11px] text-text-muted">
-                  {STATUS_LABEL[f.status]}
-                </span>
+                <span className="shrink-0 text-[11px] text-text-muted">{statusLabel(f)}</span>
                 <FileName f={f} />
+                <OriginMarker f={f} />
                 {!f.noDiff && <Counts added={f.added} removed={f.removed} />}
               </div>
               <div className="px-2 py-1.5">

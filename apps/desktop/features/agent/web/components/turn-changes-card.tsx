@@ -4,7 +4,7 @@ import type { FileChange, FileChangeSummary } from "@features/agent/web/lib/even
 import {
   defaultExpanded,
   filesChangedLabel,
-  STATUS_LABEL,
+  statusLabel,
   totals,
 } from "@features/agent/web/lib/diff-rows";
 import type { Turn } from "@features/agent/web/lib/transcript";
@@ -12,7 +12,7 @@ import { changesKey, useTurnChangesStore } from "@features/agent/web/stores/turn
 import { useSettingsStore } from "@/stores/settings-store";
 import { revealSubagentCard } from "./subagent-card";
 import { Ico } from "./agent-icon";
-import { Counts, FileDiffBody, FileName } from "./change-parts";
+import { Counts, FileDiffBody, FileName, OriginMarker } from "./change-parts";
 
 const btn =
   "rounded-md border border-border px-2 py-0.5 text-[11.5px] text-text-secondary hover:bg-[var(--item-hover-bg)] hover:text-text-primary disabled:opacity-50";
@@ -160,9 +160,10 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
                       className="flex shrink-0 items-center gap-1 rounded-md text-text-muted hover:text-text-primary"
                     >
                       <Ico icon={isOpen ? ArrowDown01Icon : ArrowRight01Icon} />
-                      <span className="text-[11px]">{STATUS_LABEL[f.status]}</span>
+                      <span className="text-[11px]">{statusLabel(f)}</span>
                     </button>
                     <FileName f={f} />
+                    <OriginMarker f={f} />
                     {f.by &&
                       (f.byCall ? (
                         <button
@@ -202,7 +203,7 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
           </ul>
           {summary.bash && (
             <p className="border-t border-border px-2 py-1.5 text-[11px] text-text-muted">
-              A shell command ran in this turn. Files it changed are not tracked here.
+              A shell command ran in this turn. Files it changed are listed without a diff.
             </p>
           )}
           {entry?.status === "unavailable" && (

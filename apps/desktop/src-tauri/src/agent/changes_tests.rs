@@ -634,3 +634,546 @@ fn a_session_is_per_chat_and_per_vault() {
     assert!(store.session_detail("chat-2", &root).is_none());
     assert_eq!(sess(&store, &root).files.len(), 1);
 }
+
+// ---- files changed by shell commands (watcher batches inside a Bash window) ----
+
+use super::super::command_windows::COMMAND_TAIL;
+use std::time::{Duration, Instant};
+
+fn bash(store: &ChangeStore) {
+    store.capture(CHAT, Path::new("."), Path::new("."), "Bash", &json!({}));
+}
+
+fn bash_in(store: &ChangeStore, root: &Path) {
+    store.capture(CHAT, root, root, "Bash", &json!({"command": "x"}));
+}
+
+fn seen(store: &ChangeStore, chat: &str, root: &Path, rels: &[&str], at: Instant) -> bool {
+    let paths: Vec<PathBuf> = rels.iter().map(|r| root.join(r)).collect();
+    store.record_command_changes(chat, root, &paths, at)
+}
+
+fn author(label: &str) -> Author {
+    Author {
+        label: label.into(),
+        call_id: format!("agent-{label}"),
+    }
+}
+
+#[test]
+fn a_file_changed_during_a_command_is_listed_with_no_diff_counts_or_undo() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    std::fs::write(root.join("n.md"), "before\n").unwrap();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["n.md"],
+        t + Duration::from_millis(400)
+    ));
+    store.command_finished(CHAT, "b1", t + Duration::from_millis(500));
+    let s = finish(&store).unwrap();
+    let f = file(&s, "n.md");
+    assert_eq!(f.origin, ChangeOrigin::Command);
+    assert!(f.no_diff);
+    assert_eq!((f.added, f.removed), (0, 0));
+    assert_eq!(f.status, ChangeStatus::Modified);
+    assert_eq!(f.by, None, "the main agent's command");
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert!(d.files[0].rows.is_empty());
+    assert_eq!(d.files[0].undo, UndoState::Unavailable);
+    let out = store
+        .revert(CHAT, &s.turn_id, &root, &["n.md".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Unavailable);
+    assert_eq!(
+        std::fs::read_to_string(root.join("n.md")).unwrap(),
+        "after\n"
+    );
+    // the session lists it too, equally without a diff
+    let ss = sess(&store, &root);
+    assert_eq!(sess_file(&ss, "n.md").origin, ChangeOrigin::Command);
+    assert!(sess_file(&ss, "n.md").no_diff);
+}
+
+#[test]
+fn a_file_a_command_deleted_is_listed_as_deleted() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["gone.md"],
+        t + Duration::from_millis(10)
+    ));
+    let s = finish(&store).unwrap();
+    assert_eq!(file(&s, "gone.md").status, ChangeStatus::Deleted);
+}
+
+#[test]
+fn a_sub_agents_command_is_attributed_to_its_role_even_after_the_main_one_ended() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "main", None, t);
+    store.command_finished(CHAT, "main", t + Duration::from_millis(100));
+    // the sub-agent's command outlives the main agent's result (a background run)
+    store.command_started(
+        CHAT,
+        "sub",
+        Some(&author("worker")),
+        t + Duration::from_millis(50),
+    );
+    std::fs::write(root.join("w.md"), "w\n").unwrap();
+    let late = t + Duration::from_millis(100) + COMMAND_TAIL * 5;
+    assert!(seen(&store, CHAT, &root, &["w.md"], late));
+    let s = finish(&store).unwrap();
+    assert_eq!(file(&s, "w.md").by.as_deref(), Some("worker"));
+    assert_eq!(file(&s, "w.md").by_call.as_deref(), Some("agent-worker"));
+}
+
+#[test]
+fn the_window_runs_from_the_call_until_its_result_plus_the_debounce_tail() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    for f in ["early.md", "tail.md", "late.md"] {
+        std::fs::write(root.join(f), "x\n").unwrap();
+    }
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t + Duration::from_millis(100));
+    store.command_finished(CHAT, "b1", t + Duration::from_millis(200));
+    assert!(!seen(
+        &store,
+        CHAT,
+        &root,
+        &["early.md"],
+        t + Duration::from_millis(50)
+    ));
+    // the last batch is still debounced when the result arrives
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["tail.md"],
+        t + Duration::from_millis(200) + COMMAND_TAIL
+    ));
+    assert!(!seen(
+        &store,
+        CHAT,
+        &root,
+        &["late.md"],
+        t + Duration::from_millis(201) + COMMAND_TAIL
+    ));
+    let s = finish(&store).unwrap();
+    assert_eq!(s.files.len(), 1);
+    assert_eq!(file(&s, "tail.md").origin, ChangeOrigin::Command);
+}
+
+#[test]
+fn what_writer_does_not_show_or_the_agent_keeps_to_itself_is_never_listed() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    for dir in [
+        ".git",
+        ".obsidian",
+        ".hidden",
+        ".writer/memory",
+        "node_modules",
+        "dir.md",
+    ] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    for f in [
+        ".git/x.md",
+        ".obsidian/x.md",
+        ".hidden/x.md",
+        ".writer/memory/fact.md",
+        ".writer/chats.md",
+        "node_modules/x.md",
+        "blob.zip",
+    ] {
+        std::fs::write(root.join(f), "x\n").unwrap();
+    }
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    let skipped = [
+        ".git/x.md",
+        ".obsidian/x.md",
+        ".hidden/x.md",
+        ".writer/memory/fact.md",
+        ".writer/chats.md",
+        "node_modules/x.md",
+        "blob.zip",
+        "dir.md",
+    ];
+    assert!(!seen(
+        &store,
+        CHAT,
+        &root,
+        &skipped,
+        t + Duration::from_millis(10)
+    ));
+    // outside the vault
+    let out = tempfile::TempDir::new().unwrap();
+    std::fs::write(out.path().join("o.md"), "x").unwrap();
+    assert!(!store.record_command_changes(
+        CHAT,
+        &root,
+        &[out.path().join("o.md")],
+        t + Duration::from_millis(10)
+    ));
+    assert!(finish(&store).is_none(), "nothing to show");
+    assert!(store.session_summary(CHAT, &root).is_none());
+}
+
+#[test]
+fn a_file_an_edit_call_already_tracked_keeps_its_diff_and_is_not_duplicated() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    std::fs::write(root.join("a.md"), "one\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    std::fs::write(root.join("a.md"), "one\ntwo\n").unwrap();
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["a.md", "b.md"],
+        t + Duration::from_millis(300)
+    ));
+    let s = finish(&store).unwrap();
+    assert_eq!(s.files.iter().filter(|f| f.path == "a.md").count(), 1);
+    assert_eq!(file(&s, "a.md").origin, ChangeOrigin::Edit);
+    assert_eq!(file(&s, "a.md").added, 1);
+    assert_eq!(file(&s, "b.md").origin, ChangeOrigin::Command);
+    // a second batch for the same file adds no second row either
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["b.md"],
+        t + Duration::from_millis(900)
+    ));
+}
+
+#[test]
+fn a_second_batch_for_a_command_file_adds_no_second_row() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    std::fs::write(root.join("b.md"), "1\n").unwrap();
+    seen(
+        &store,
+        CHAT,
+        &root,
+        &["b.md"],
+        t + Duration::from_millis(300),
+    );
+    seen(
+        &store,
+        CHAT,
+        &root,
+        &["b.md"],
+        t + Duration::from_millis(900),
+    );
+    let s = finish(&store).unwrap();
+    assert_eq!(s.files.len(), 1);
+    assert_eq!(sess(&store, &root).files.len(), 1);
+}
+
+#[test]
+fn every_chat_with_a_command_in_flight_lists_the_change_and_the_others_do_not() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    std::fs::write(root.join("shared.md"), "x\n").unwrap();
+    for chat in [CHAT, "chat-2"] {
+        store.capture(chat, &root, &root, "Bash", &json!({}));
+        store.command_started(chat, "b", None, t);
+    }
+    store.capture("chat-3", &root, &root, "Read", &json!({}));
+    let at = t + Duration::from_millis(300);
+    assert!(seen(&store, CHAT, &root, &["shared.md"], at));
+    assert!(seen(&store, "chat-2", &root, &["shared.md"], at));
+    assert!(!seen(&store, "chat-3", &root, &["shared.md"], at));
+    for chat in [CHAT, "chat-2"] {
+        let s = store.finish(store.close_turn(chat).unwrap()).unwrap();
+        assert_eq!(s.files[0].origin, ChangeOrigin::Command);
+    }
+    assert!(store.close_turn("chat-3").is_none());
+}
+
+#[test]
+fn a_late_change_after_the_turn_closed_reaches_the_session_only() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", Some(&author("worker")), t);
+    // the card is finished while the sub-agent's command still runs
+    assert!(finish(&store).is_none());
+    std::fs::write(root.join("late.md"), "x\n").unwrap();
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["late.md"],
+        t + Duration::from_secs(30)
+    ));
+    assert!(store.close_turn(CHAT).is_none());
+    let s = sess(&store, &root);
+    assert_eq!(sess_file(&s, "late.md").by.as_deref(), Some("worker"));
+}
+
+#[test]
+fn a_chat_ending_closes_its_windows() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    store.commands_ended(CHAT, t + Duration::from_millis(100));
+    assert!(!seen(
+        &store,
+        CHAT,
+        &root,
+        &["a.md"],
+        t + Duration::from_millis(101) + COMMAND_TAIL
+    ));
+}
+
+#[test]
+fn a_command_waiting_for_approval_does_not_run_so_its_window_can_be_shut_and_reopened() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    // permission request: shut
+    store.command_finished(CHAT, "b1", t + Duration::from_millis(10));
+    let waiting = t + Duration::from_secs(60);
+    assert!(!seen(&store, CHAT, &root, &["a.md"], waiting));
+    // allowed: opens again, under the same call id
+    store.command_started(CHAT, "b1", None, waiting);
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["a.md"],
+        waiting + Duration::from_millis(50)
+    ));
+}
+
+#[test]
+fn a_command_changed_file_keeps_a_trusted_session_baseline_and_its_diff() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = Instant::now();
+    std::fs::write(root.join("a.md"), "one\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "one\ntwo\n").unwrap();
+    finish(&store).unwrap();
+    // turn 2: a command changes it again
+    bash_in(&store, &root);
+    store.command_started(CHAT, "b1", None, t);
+    std::fs::write(root.join("a.md"), "one\ntwo\nthree\n").unwrap();
+    assert!(seen(
+        &store,
+        CHAT,
+        &root,
+        &["a.md"],
+        t + Duration::from_millis(300)
+    ));
+    let turn2 = finish(&store).unwrap();
+    assert_eq!(file(&turn2, "a.md").origin, ChangeOrigin::Command);
+    let s = sess(&store, &root);
+    assert_eq!(sess_file(&s, "a.md").origin, ChangeOrigin::Edit);
+    assert_eq!(
+        sess_file(&s, "a.md").added,
+        2,
+        "diffed against the text before turn 1"
+    );
+}
+
+// ---- the timing gap: the pre-image read raced the tool ----
+
+fn cap_input(store: &ChangeStore, root: &Path, tool: &str, input: serde_json::Value) {
+    store.capture(CHAT, root, root, tool, &input);
+}
+
+fn edit_input(root: &Path, old: &str, new: &str, all: bool) -> serde_json::Value {
+    json!({"file_path": path(root, "a.md"), "old_string": old, "new_string": new, "replace_all": all})
+}
+
+fn age(root: &Path, rel: &str, secs: u64) {
+    let f = std::fs::File::options()
+        .write(true)
+        .open(root.join(rel))
+        .unwrap();
+    f.set_modified(std::time::SystemTime::now() - Duration::from_secs(secs))
+        .unwrap();
+}
+
+#[test]
+fn an_edit_that_ran_before_the_read_gets_its_exact_pre_image() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    // the file already holds the edit when it is captured
+    std::fs::write(root.join("a.md"), "one\nTWO\nthree\n").unwrap();
+    cap_input(
+        &store,
+        &root,
+        "Edit",
+        edit_input(&root, "two", "TWO", false),
+    );
+    let s = finish(&store).unwrap();
+    let f = file(&s, "a.md");
+    assert_eq!(f.origin, ChangeOrigin::Edit);
+    assert_eq!((f.added, f.removed), (1, 1));
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert_eq!(d.files[0].undo, UndoState::Available);
+    store
+        .revert(CHAT, &s.turn_id, &root, &["a.md".into()])
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("a.md")).unwrap(),
+        "one\ntwo\nthree\n"
+    );
+}
+
+#[test]
+fn replace_all_and_multi_edit_races_are_reconstructed() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "dog and dog\n").unwrap();
+    cap_input(&store, &root, "Edit", edit_input(&root, "cat", "dog", true));
+    let s = finish(&store).unwrap();
+    assert_eq!((file(&s, "a.md").added, file(&s, "a.md").removed), (1, 1));
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert!(d.files[0].rows.iter().any(|r| r.text == "cat and cat"));
+
+    std::fs::write(root.join("b.md"), "x c y\n").unwrap();
+    let multi = json!({"file_path": path(&root, "b.md"), "edits": [
+        {"old_string": "a", "new_string": "b"},
+        {"old_string": "b!", "new_string": "c"},
+    ]});
+    cap_input(&store, &root, "MultiEdit", multi);
+    let s = finish(&store).unwrap();
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert!(d.files[0].rows.iter().any(|r| r.text == "x a! y"));
+    assert_eq!(d.files[0].undo, UndoState::Available);
+}
+
+#[test]
+fn an_edit_that_has_not_run_yet_is_captured_as_it_is() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "one\ntwo\n").unwrap();
+    cap_input(
+        &store,
+        &root,
+        "Edit",
+        edit_input(&root, "two", "TWO", false),
+    );
+    std::fs::write(root.join("a.md"), "one\nTWO\n").unwrap();
+    let s = finish(&store).unwrap();
+    assert_eq!(file(&s, "a.md").origin, ChangeOrigin::Edit);
+    assert_eq!((file(&s, "a.md").added, file(&s, "a.md").removed), (1, 1));
+}
+
+#[test]
+fn an_ambiguous_race_is_listed_as_before_unknown_with_no_diff_and_no_undo() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    // "b" occurs twice after the edit: which one was it?
+    std::fs::write(root.join("a.md"), "b and b\n").unwrap();
+    cap_input(&store, &root, "Edit", edit_input(&root, "x", "b", false));
+    let s = finish(&store).unwrap();
+    let f = file(&s, "a.md");
+    assert_eq!(f.origin, ChangeOrigin::BeforeUnknown);
+    assert!(f.no_diff);
+    assert_eq!(f.status, ChangeStatus::Modified);
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert!(d.files[0].rows.is_empty());
+    assert_eq!(d.files[0].undo, UndoState::Unavailable);
+    let out = store
+        .revert(CHAT, &s.turn_id, &root, &["a.md".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Unavailable);
+    assert_eq!(
+        sess_file(&sess(&store, &root), "a.md").origin,
+        ChangeOrigin::BeforeUnknown
+    );
+}
+
+#[test]
+fn a_write_that_ran_before_the_read_is_kept_as_before_unknown() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "written\n").unwrap();
+    cap_input(
+        &store,
+        &root,
+        "Write",
+        json!({"file_path": path(&root, "a.md"), "content": "written\n"}),
+    );
+    let s = finish(&store).unwrap();
+    let f = file(&s, "a.md");
+    assert_eq!(f.origin, ChangeOrigin::BeforeUnknown);
+    assert!(f.no_diff);
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert_eq!(d.files[0].undo, UndoState::Unavailable);
+    // a Write over different text is a normal record
+    std::fs::write(root.join("b.md"), "old\n").unwrap();
+    cap_input(
+        &store,
+        &root,
+        "Write",
+        json!({"file_path": path(&root, "b.md"), "content": "new\n"}),
+    );
+    std::fs::write(root.join("b.md"), "new\n").unwrap();
+    assert_eq!(
+        file(&finish(&store).unwrap(), "b.md").origin,
+        ChangeOrigin::Edit
+    );
+}
+
+#[test]
+fn an_old_file_never_looks_raced() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    // a failed re-application of an old edit, and a Write of unchanged content: nothing happened
+    std::fs::write(root.join("a.md"), "one\nTWO\n").unwrap();
+    age(&root, "a.md", 3600);
+    std::fs::write(root.join("w.md"), "same\n").unwrap();
+    age(&root, "w.md", 3600);
+    cap_input(
+        &store,
+        &root,
+        "Edit",
+        edit_input(&root, "two", "TWO", false),
+    );
+    cap_input(
+        &store,
+        &root,
+        "Write",
+        json!({"file_path": path(&root, "w.md"), "content": "same\n"}),
+    );
+    assert!(finish(&store).is_none());
+}

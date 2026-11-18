@@ -237,6 +237,29 @@ describe("the changed-notes row and the Session changes tab", () => {
     expect(rows[2]!.querySelector('button[aria-label^="Open"]')).toBeNull();
   });
 
+  it("marks a note changed by a command or with an unknown before: no counts, no hidden status guess", async () => {
+    const CMD: FileChangeSummary = {
+      path: "Notes/run.md",
+      status: "modified",
+      added: 0,
+      removed: 0,
+      noDiff: true,
+      origin: "command",
+      by: "worker",
+    };
+    const UNKNOWN: FileChangeSummary = { ...CMD, path: "u.md", origin: "before-unknown", by: null };
+    setChat(chatWith(sc([A, CMD, UNKNOWN])));
+    await act(async () => root.render(<Connected />));
+    act(() => $("[data-agent-changed-notes] [aria-expanded]")!.click());
+    const rows = $$("[data-agent-changed-note]");
+    expect(
+      rows.map((r) => r.querySelector("[data-agent-change-origin]")?.textContent ?? ""),
+    ).toEqual(["", "by command", "before unknown"]);
+    // no counts for them, the ordinary edit keeps its own
+    expect(rows[1]!.textContent).not.toMatch(/[+−]\d/);
+    expect(rows[0]!.textContent).toContain("+2");
+  });
+
   it("opens a note like a browser link: left click here, middle click a background tab", async () => {
     setChat(chatWith(sc([A])));
     await act(async () => root.render(<Connected />));
@@ -331,6 +354,25 @@ describe("the changed-notes row and the Session changes tab", () => {
     expect(files.map((e) => e.dataset.sessionChangeFile)).toEqual(["Old/gone.md", "Notes/a.md"]);
     expect(files[0]!.textContent).toContain("since Writer restarted");
     expect(files[1]!.textContent).toContain("new text");
+  });
+
+  it("the tab says why a note has no diff", async () => {
+    const CMD: FileChangeSummary = {
+      path: "run.md",
+      status: "modified",
+      added: 0,
+      removed: 0,
+      noDiff: true,
+      origin: "command",
+    };
+    sessionChanges.mockResolvedValue({ files: [{ ...CMD, rows: [] }] });
+    setChat(chatWith(sc([CMD])));
+    await act(async () => root.render(tab()));
+    await flush();
+    const file = $("[data-session-change-file]")!;
+    expect(file.querySelector("[data-agent-change-origin='command']")).not.toBeNull();
+    expect(file.textContent).toContain("Changed");
+    expect(file.textContent).toContain("listed without a diff");
   });
 
   it("with no changes the tab says so", async () => {

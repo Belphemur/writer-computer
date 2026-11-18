@@ -1607,6 +1607,73 @@ fn a_sub_agent_edit_is_snapshotted_before_it_runs_and_attributed_to_its_role() {
     assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\nline\n");
 }
 
+/// A shell command of a sub-agent: the files the watcher reports while it runs are listed in the
+/// session row and the card as "changed by a command" (role of the sub-agent, no diff), except
+/// Writer's own writes, hidden files and the agent's memory.
+#[test]
+fn a_sub_agents_shell_command_lists_the_files_it_changed_without_a_diff() {
+    let mut h = Harness::new(&["subagent-bash"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\n").unwrap();
+    h.use_fixture_for("subagent-bash", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "run it");
+    h.next(CHAT, "the command's complete input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_bash1")
+    });
+    // the fake waits at its pause, as the CLI does while the command runs
+    let mine = h.root.join("mine.md");
+    std::fs::create_dir_all(h.root.join(".writer/memory")).unwrap();
+    let fact = h.root.join(".writer/memory/fact.md");
+    std::fs::write(&notes, "new\n").unwrap();
+    std::fs::write(&mine, "typed in the editor\n").unwrap();
+    std::fs::write(&fact, "a fact\n").unwrap();
+    h.sessions.paths_changed(
+        "w",
+        &h.root,
+        vec![notes.clone(), mine.clone(), fact],
+        vec![mine],
+    );
+    let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+        matches!(e, AgentEvent::SessionChanges(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(live.files.len(), 1, "{:?}", live.files);
+    let f = &live.files[0];
+    assert_eq!(f.path, "notes.txt");
+    assert_eq!(f.origin, ChangeOrigin::Command);
+    assert!(f.no_diff);
+    assert_eq!(f.by.as_deref(), Some("worker"));
+    h.go();
+
+    let summary = turn_changes(&mut h);
+    assert!(summary.bash);
+    assert_eq!(summary.files.len(), 1);
+    assert_eq!(summary.files[0].origin, ChangeOrigin::Command);
+    assert_eq!(summary.files[0].by_call.as_deref(), Some("toolu_agent1"));
+    let detail = h
+        .sessions
+        .changes()
+        .detail(CHAT, &summary.turn_id, &h.root)
+        .unwrap();
+    assert_eq!(detail.files[0].undo, UndoState::Unavailable);
+    assert_eq!(
+        std::fs::read_to_string(&notes).unwrap(),
+        "new\n",
+        "nothing was touched"
+    );
+    // after the result and the tail a later batch is nobody's
+    std::thread::sleep(Duration::from_millis(1100));
+    h.sessions
+        .paths_changed("w", &h.root, vec![h.root.join("late.md")], vec![]);
+    h.drain();
+    assert!(h
+        .seen
+        .iter()
+        .all(|e| !matches!(&e.event, AgentEvent::SessionChanges(s) if s.files.iter().any(|f| f.path == "late.md"))));
+}
+
 /// ADR 2026-11-18 (changed notes row): the chat's changed notes are sent live when a sub-agent's
 /// edit call ends (not only at turn end), against the text from before the edit, and the command
 /// behind the "Session changes" tab answers with the diff.
@@ -2169,10 +2236,11 @@ fn stop_idle_in_closes_the_idle_chats_of_the_folder_and_only_those() {
 // ------------------------------------------------------------------------------ config change
 
 fn skill_change(h: &Harness) {
-    h.sessions.config_paths_changed(
+    h.sessions.paths_changed(
         "w",
         &h.root,
         vec![h.root.join(".claude/skills/new/SKILL.md")],
+        vec![],
     );
 }
 
@@ -2374,10 +2442,11 @@ fn a_burst_of_changes_is_one_restart() {
     let mut h = Harness::new(&["ok-turn"], "normal");
     first_turn(&mut h);
     for i in 0..5 {
-        h.sessions.config_paths_changed(
+        h.sessions.paths_changed(
             "w",
             &h.root,
             vec![h.root.join(format!(".claude/skills/s{i}/SKILL.md"))],
+            vec![],
         );
         std::thread::sleep(Duration::from_millis(30));
     }
@@ -2393,7 +2462,7 @@ fn a_burst_of_changes_is_one_restart() {
 fn an_unrelated_change_restarts_nothing() {
     let mut h = Harness::new(&["ok-turn"], "normal");
     first_turn(&mut h);
-    h.sessions.config_paths_changed(
+    h.sessions.paths_changed(
         "w",
         &h.root,
         vec![
@@ -2403,10 +2472,11 @@ fn an_unrelated_change_restarts_nothing() {
             PathBuf::from("/home/u/.claude/settings.json"),
             PathBuf::from("/home/u/.claude/skills/x/SKILL.md"),
         ],
+        vec![],
     );
     // another window's vault change does not reach this chat either
     h.sessions
-        .config_paths_changed("other", &h.root, vec![h.root.join("AGENTS.md")]);
+        .paths_changed("other", &h.root, vec![h.root.join("AGENTS.md")], vec![]);
     std::thread::sleep(Duration::from_millis(600));
     h.drain();
     assert!(reloads(&h).is_empty());
@@ -2422,7 +2492,7 @@ fn with_auto_reload_off_nothing_restarts_but_the_manual_reload_still_works() {
     h.send(CHAT, "x");
     h.turn_finished(CHAT);
     h.sessions
-        .config_paths_changed("w", &h.root, vec![h.root.join("AGENTS.md")]);
+        .paths_changed("w", &h.root, vec![h.root.join("AGENTS.md")], vec![]);
     std::thread::sleep(Duration::from_millis(600));
     h.drain();
     assert!(reloads(&h).is_empty());

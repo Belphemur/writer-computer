@@ -27,7 +27,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const RING_CAP: usize = 2000;
 
@@ -372,14 +372,17 @@ impl AgentSessions {
         Ok(Self { shared })
     }
 
-    /// The watcher's changed paths of window `label`'s vault `root`: marks the chats whose CLI
-    /// read one of them stale (`config_sync`). Cheap and non-blocking: the watcher thread calls
-    /// it for every batch.
-    pub fn config_paths_changed(&self, label: &str, root: &Path, paths: Vec<PathBuf>) {
+    /// The watcher's changed paths of window `label`'s vault `root` (`own`: the ones Writer wrote
+    /// itself): marks the chats whose CLI read one of them stale (`config_sync`) and lists the
+    /// others in the chats that have a shell command running (`changes`). Cheap and
+    /// non-blocking: the watcher thread calls it for every batch.
+    pub fn paths_changed(&self, label: &str, root: &Path, paths: Vec<PathBuf>, own: Vec<PathBuf>) {
         self.shared.send_config(Msg::Paths {
             label: label.to_string(),
             root: root.to_path_buf(),
             paths,
+            own,
+            at: Instant::now(),
         });
     }
 

@@ -86,6 +86,11 @@ export const STATUS_MARK: Record<ChangeStatus, string | null> = {
   renamed: "renamed",
 };
 
+/** The mark of a row: a command-changed file is only known to differ, not whether it was created. */
+export function statusMark(f: Pick<FileChangeSummary, "origin" | "status">): string | null {
+  return f.origin === "command" && f.status !== "deleted" ? null : STATUS_MARK[f.status];
+}
+
 /** A path as the row shows it: the file name without `.md`, and its folder. */
 export function noteParts(path: string): { name: string; folder: string } {
   const cut = path.lastIndexOf("/");

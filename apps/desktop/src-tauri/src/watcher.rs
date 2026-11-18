@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 const SELF_WRITE_TTL: Duration = Duration::from_secs(2);
-const DEBOUNCE_MS: u64 = 300;
+pub(crate) const DEBOUNCE_MS: u64 = 300;
 
 /// Watcher diagnostics: `debug` level, so they reach the log file only with `WRITER_LOG=debug`
 /// (or the Logs setting) — the investigation path for "external change missed" reports.
@@ -135,8 +135,10 @@ fn event_kind_str(kind: &EventKind) -> Option<&'static str> {
     }
 }
 
-/// Sees the changed paths of every watched workspace: `(window label, vault root, paths)`.
-pub type PathObserver = Box<dyn Fn(&str, &Path, Vec<PathBuf>) + Send + Sync>;
+/// Sees the changed paths of every watched workspace: `(window label, vault root, paths, own)`.
+/// `own` is the part of `paths` that Writer wrote itself a moment ago (the editor's saves, see
+/// [`is_self_write`]).
+pub type PathObserver = Box<dyn Fn(&str, &Path, Vec<PathBuf>, Vec<PathBuf>) + Send + Sync>;
 
 static PATH_OBSERVERS: parking_lot::RwLock<Vec<PathObserver>> =
     parking_lot::RwLock::new(Vec::new());
@@ -144,12 +146,12 @@ static PATH_OBSERVERS: parking_lot::RwLock<Vec<PathObserver>> =
 /// Registers a consumer of the watcher's changed paths (the one source of file changes: no second
 /// watcher). It gets each batch's paths BEFORE any ignore rule (the agent's config files are
 /// hidden dot files the sidebar never lists), created, modified or removed, Writer's own writes
-/// included, and runs on the watcher thread: it must only filter and hand off, never block.
+/// included (and named in `own`), and runs on the watcher thread: it must only filter and hand off, never block.
 pub fn observe_paths(observer: PathObserver) {
     PATH_OBSERVERS.write().push(observer);
 }
 
-fn notify_observers(label: &str, root: &Path, events: &[Event]) {
+fn notify_observers(state: &WorkspaceState, label: &str, root: &Path, events: &[Event]) {
     let observers = PATH_OBSERVERS.read();
     if observers.is_empty() {
         return;
@@ -162,8 +164,13 @@ fn notify_observers(label: &str, root: &Path, events: &[Event]) {
     if paths.is_empty() {
         return;
     }
+    let own: Vec<PathBuf> = paths
+        .iter()
+        .filter(|p| is_self_write(state, p))
+        .cloned()
+        .collect();
     for o in observers.iter() {
-        o(label, root, paths.clone());
+        o(label, root, paths.clone(), own.clone());
     }
 }
 
@@ -243,7 +250,7 @@ pub fn start_watcher(
                 continue;
             }
 
-            notify_observers(&label, &watched_root, &pending);
+            notify_observers(&state, &label, &watched_root, &pending);
 
             let mut rebuild_ignore = false;
             // Paths the vault index must re-read. Collected before the

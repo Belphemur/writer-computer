@@ -281,6 +281,21 @@ export type AgentSettings = {
 
 export type BinarySource = "override" | "path" | "login-path" | "known-dir";
 
+/**  How a changed file got on the card, i.e. how far its "before" can be trusted. */
+export type ChangeOrigin = 
+/**  An `Edit`/`MultiEdit`/`Write`/`NotebookEdit` call: a trusted pre-image, a diff, Undo. */
+"edit" | 
+/**
+ *  Changed while a `Bash` call of the chat was running (seen by the file watcher): listed
+ *  only, no diff, no Undo.
+ */
+"command" | 
+/**
+ *  An edit call wrote the file, but the "before" could not be established (the tool ran
+ *  before its pre-image was read and the edit cannot be undone exactly): no diff, no Undo.
+ */
+"before-unknown";
+
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed";
 
 export type ChatActionName = "rename" | "autotitle" | "pin" | "unpin" | "archive" | "unarchive" | "delete";
@@ -363,6 +378,11 @@ export type FileChangeSummary = {
 	oldPath?: string | null,
 	/**  Not shown as a diff: binary, too large, or not safely readable. Counts are 0. */
 	noDiff?: boolean,
+	/**
+	 *  Absent: a normal edit. `command` / `before-unknown` files have no diff and no Undo
+	 *  (`no_diff` is set with them).
+	 */
+	origin?: ChangeOrigin,
 	/**
 	 *  The sub-agent role that made the edit (`worker`; another sub-agent type as it is named),
 	 *  shown as a small label on the card. Absent: the main agent. The first edit of the file in

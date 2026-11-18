@@ -69,9 +69,9 @@ impl<R: Runtime> Feature<R> for Agent {
         // Config files the running CLIs read at start (skills, `.mcp.json`, settings, CLAUDE.md):
         // the app's one file watcher reports them, `agent::config_sync` decides what is stale.
         let handle = app.clone();
-        crate::watcher::observe_paths(Box::new(move |label, root, paths| {
+        crate::watcher::observe_paths(Box::new(move |label, root, paths, own| {
             if let Some(s) = sessions(&handle) {
-                s.config_paths_changed(label, root, paths);
+                s.paths_changed(label, root, paths, own);
             }
         }));
         Ok(())

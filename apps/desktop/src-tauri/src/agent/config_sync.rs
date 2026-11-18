@@ -331,11 +331,14 @@ impl McpProbe for CliMcpProbe {
 // ------------------------------------------------------------------------------------ worker
 
 pub(crate) enum Msg {
-    /// Changed paths (any kind but access) of one window's vault.
+    /// Changed paths (any kind but access) of one window's vault; `own` are Writer's own writes
+    /// among them; `at` is when the watcher delivered the batch.
     Paths {
         label: String,
         root: PathBuf,
         paths: Vec<PathBuf>,
+        own: Vec<PathBuf>,
+        at: Instant,
     },
     /// An `init` reported servers: `true` when some are not connected (start or keep the
     /// re-check), `false` to stop it.
@@ -382,11 +385,20 @@ impl Worker {
                 return;
             };
             match msg {
-                Ok(Msg::Paths { label, root, paths }) => {
+                Ok(Msg::Paths {
+                    label,
+                    root,
+                    paths,
+                    own,
+                    at,
+                }) => {
+                    let external: Vec<PathBuf> =
+                        paths.iter().filter(|p| !own.contains(p)).cloned().collect();
                     for s in shared.all() {
                         if s.label != label || s.root != root {
                             continue;
                         }
+                        s.vault_paths_changed(&external, at);
                         let hit = paths.iter().find_map(|p| affects_chat(p, &s.cwd, &s.root));
                         if let Some(reason) = hit {
                             if s.config_changed(reason) {
