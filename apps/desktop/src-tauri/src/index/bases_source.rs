@@ -360,6 +360,11 @@ fn sql_op(op: CompareOp) -> Option<&'static str> {
 }
 
 fn comparison_sql(c: &Comparison) -> Option<(String, Vec<SqlValue>)> {
+    // `props.key` is a top-level name: a dotted one may reach into a map (`metadata.version`),
+    // which only the verification pass can see
+    if c.property.contains('.') {
+        return None;
+    }
     let op = sql_op(c.op)?;
     let head = "EXISTS (SELECT 1 FROM props p WHERE p.file_id = f.id AND p.key = ?";
     match &c.value {

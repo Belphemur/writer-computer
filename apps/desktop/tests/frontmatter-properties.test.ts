@@ -14,6 +14,8 @@ import {
   setScalar,
   setTagString,
   summaryTags,
+  EMPTY_OBJECT,
+  initialValue,
   type PropertyRow,
 } from "../src/lib/frontmatter-properties";
 
@@ -77,13 +79,13 @@ describe("parseProperties kinds", () => {
     });
   });
 
-  test("nested maps, multi-line strings, an unquoted wikilink reads as an editable link", () => {
+  test("a map is an editable object, multi-line strings are read-only, an unquoted wikilink is a link", () => {
     const t = "meta:\n  a: 1\n  b: two\nnote: |\n  l1\n  l2\nrel: [[Page]]";
     const r = rows(t);
-    expect(r[0]).toMatchObject({ kind: "map", editable: false });
-    expect(r[0]?.nested).toEqual([
-      { key: "a", text: "1" },
-      { key: "b", text: "two" },
+    expect(r[0]).toMatchObject({ kind: "object", editable: true });
+    expect(r[0]?.entries.map((e) => [e.key, e.kind, e.value])).toEqual([
+      ["a", "number", 1],
+      ["b", "text", "two"],
     ]);
     expect(r[1]).toMatchObject({ kind: "multiline", editable: false });
     expect(r[2]).toMatchObject({ kind: "link", editable: true });
@@ -289,5 +291,21 @@ describe("setList", () => {
   });
   test("refuses a missing property", () => {
     expect(setList("a: 1", "z", ["x"]).ok).toBe(false);
+  });
+});
+
+describe("object properties at the top level", () => {
+  test("a new object property is written as {} and has no entries", () => {
+    expect(initialValue("object")).toBe(EMPTY_OBJECT);
+    expect(text(addProperty("a: 1", "meta", EMPTY_OBJECT))).toBe("a: 1\nmeta: {}");
+    expect(rows("a: 1\nmeta: {}")[1]).toMatchObject({ kind: "object", entries: [] });
+  });
+  test("removing a map drops its lines and leaves the blank line and comment that follow", () => {
+    const doc = "a: 1\nmeta:\n  x: 1\n  deep:\n    y: 2\n\n# next\nb: 2";
+    expect(text(removeProperty(doc, "meta"))).toBe("a: 1\n\n# next\nb: 2");
+  });
+  test("renaming a map property touches the key only", () => {
+    const doc = "meta:\n  x: 1";
+    expect(text(renameProperty(doc, "meta", "info"))).toBe("info:\n  x: 1");
   });
 });

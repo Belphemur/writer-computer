@@ -76,7 +76,7 @@ export function frontmatterMeta(
     if (t === "relationships") {
       const targets = values.flatMap((v) => wikilinkTarget(v) ?? []).map(clip);
       if (targets.length) links.push({ key, targets });
-    } else if ((TYPE_KEYS as readonly string[]).includes(lower) && row.kind !== "map") {
+    } else if ((TYPE_KEYS as readonly string[]).includes(lower) && row.kind !== "object") {
       props.push({ key, value: clip(values.join(", ")) });
     }
   }

@@ -10,7 +10,8 @@
 //!
 //! With no record, the type is inferred from the observed values (the index's `props.vtype`
 //! counts; a property whose every non-empty value is a wikilink or a list of wikilinks is
-//! `relationships`, see [`refine_list_shapes`]). Tauri-free: the Tauri commands, the Bases property pickers and the plugin host's
+//! `relationships`, see [`refine_list_shapes`]; a property whose values are maps is `object`).
+//! Tauri-free: the Tauri commands, the Bases property pickers and the plugin host's
 //! `metadataTypeManager` all read [`report`] through one IPC command.
 
 use crate::index::PropertyCount;
@@ -24,10 +25,11 @@ pub const WRITER_FILE: &str = ".writer/property-types.json";
 pub const OBSIDIAN_FILE: &str = ".obsidian/types.json";
 
 /// Obsidian's type names (`types.json` values), which are also the wire names everywhere, plus
-/// Writer's own `relationships` (a link or a list of links) and `enum` (one string of a recorded
-/// list). Obsidian has neither: they are stored only in `.writer/property-types.json`, an
-/// `.obsidian/types.json` entry of that name is skipped, and plugins see them as `multitext` /
-/// `text` ([`PropertyType::obsidian_name`]).
+/// Writer's own `relationships` (a link or a list of links), `enum` (one string of a recorded
+/// list) and `object` (a map, edited as indented rows up to two levels). Obsidian has none of
+/// them: they are stored only in `.writer/property-types.json`, an `.obsidian/types.json` entry of
+/// that name is skipped, and plugins see them as `multitext` / `text`
+/// ([`PropertyType::obsidian_name`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PropertyType {
@@ -41,6 +43,7 @@ pub enum PropertyType {
     Aliases,
     Relationships,
     Enum,
+    Object,
 }
 
 impl PropertyType {
@@ -57,6 +60,7 @@ impl PropertyType {
             "aliases" => PropertyType::Aliases,
             "relationships" => PropertyType::Relationships,
             "enum" => PropertyType::Enum,
+            "object" => PropertyType::Object,
             _ => return None,
         })
     }
@@ -74,12 +78,16 @@ impl PropertyType {
             PropertyType::Aliases => "aliases",
             PropertyType::Relationships => "relationships",
             PropertyType::Enum => "enum",
+            PropertyType::Object => "object",
         }
     }
 
     /// Types Obsidian does not have: recorded only in Writer's own file.
     pub fn is_writer_only(self) -> bool {
-        matches!(self, PropertyType::Relationships | PropertyType::Enum)
+        matches!(
+            self,
+            PropertyType::Relationships | PropertyType::Enum | PropertyType::Object
+        )
     }
 
     /// Parse a type name from Obsidian's `types.json`: Obsidian has no Writer-only type.
@@ -88,11 +96,12 @@ impl PropertyType {
     }
 
     /// The type name Obsidian (and so a plugin) knows this type by: `relationships` is a
-    /// `multitext` (`multi` is whether the property holds lists) or a `text`; `enum` is a `text`.
+    /// `multitext` (`multi` is whether the property holds lists) or a `text`; `enum` and `object`
+    /// are a `text`.
     pub fn obsidian_name(self, multi: bool) -> &'static str {
         match self {
             PropertyType::Relationships if multi => "multitext",
-            PropertyType::Relationships | PropertyType::Enum => "text",
+            PropertyType::Relationships | PropertyType::Enum | PropertyType::Object => "text",
             other => other.wire_name(),
         }
     }
@@ -106,6 +115,7 @@ impl PropertyType {
             (_, "null")
                 | (PropertyType::Text, "text" | "link")
                 | (PropertyType::Enum, "text")
+                | (PropertyType::Object, "object")
                 | (PropertyType::Number, "number")
                 | (PropertyType::Checkbox, "bool")
                 | (PropertyType::Date, "date")
@@ -277,7 +287,7 @@ impl TypeTable {
 /// non-empty value is a wikilink or a list of wikilinks (`link` / `links`) is `relationships`
 /// (empty values are neutral, one plain-text note breaks it); otherwise the most common observed
 /// value type (`bool` -> checkbox, `number`, `date`, `datetime`, `list` ->
-/// multitext, everything else text).
+/// multitext, `object` -> object, everything else text).
 pub fn infer(name: &str, observed: &BTreeMap<String, i64>) -> PropertyType {
     match normalize(name).as_str() {
         "tags" | "tag" => return PropertyType::Tags,
@@ -302,6 +312,7 @@ pub fn infer(name: &str, observed: &BTreeMap<String, i64>) -> PropertyType {
         Some("date") => PropertyType::Date,
         Some("datetime") => PropertyType::Datetime,
         Some("list") => PropertyType::Multitext,
+        Some("object") => PropertyType::Object,
         _ => PropertyType::Text,
     }
 }
@@ -612,6 +623,48 @@ mod tests {
         assert!(!PropertyType::Number.fits("text"));
         assert!(PropertyType::Text.fits("link") && !PropertyType::Text.fits("list"));
         assert!(PropertyType::Tags.fits("list") && !PropertyType::Checkbox.fits("number"));
+    }
+
+    #[test]
+    fn object_is_inferred_from_maps_and_reads_as_text_for_plugins() {
+        assert_eq!(
+            infer("metadata", &obs(&[("object", 3)])),
+            PropertyType::Object
+        );
+        assert_eq!(
+            infer("metadata", &obs(&[("object", 2), ("null", 4)])),
+            PropertyType::Object
+        );
+        let o = PropertyType::Object;
+        assert!(o.fits("object") && o.fits("null") && !o.fits("text") && !o.fits("list"));
+        assert!(!PropertyType::Text.fits("object"));
+        assert_eq!(o.wire_name(), "object");
+        assert_eq!(PropertyType::parse("object"), Some(o));
+        assert!(o.is_writer_only());
+        assert_eq!(o.obsidian_name(false), "text");
+        assert_eq!(o.obsidian_name(true), "text");
+        // Obsidian has no such type: its own file never yields it, and it is never written there
+        let v = tempfile::tempdir().unwrap();
+        write(
+            v.path(),
+            ".obsidian/types.json",
+            r#"{"types":{"metadata":"object"}}"#,
+        );
+        assert_eq!(TypeTable::load(v.path()).recorded("metadata"), None);
+        set_type(v.path(), "metadata", o, None, vec![]).unwrap();
+        assert_eq!(
+            TypeTable::load(v.path()).recorded("metadata"),
+            Some((o, TypeSource::Writer))
+        );
+        assert_eq!(
+            std::fs::read_to_string(v.path().join(OBSIDIAN_FILE)).unwrap(),
+            r#"{"types":{"metadata":"object"}}"#
+        );
+        let r = report(v.path(), vec![count("metadata", &[("object", 2)])]);
+        assert_eq!(
+            (r[0].ty, r[0].obsidian_type, r[0].mismatched),
+            (o, "text", 0)
+        );
     }
 
     fn count(key: &str, types: &[(&str, i64)]) -> PropertyCount {

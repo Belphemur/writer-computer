@@ -264,6 +264,31 @@ mod tests {
     }
 
     #[test]
+    fn a_dotted_name_edits_a_key_inside_a_map_on_disk() {
+        let (_d, r) = root();
+        let abs = r.join("a/n.md");
+        std::fs::write(&abs, "---\nk: 1\nmeta:\n  v: 1\n  w: x\n---\nbody\n").unwrap();
+        assert!(set_property_file(&abs, "meta.v", &json!(2), None).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&abs).unwrap(),
+            "---\nk: 1\nmeta:\n  v: 2\n  w: x\n---\nbody\n"
+        );
+        assert!(remove_property_file(&abs, "meta.w").unwrap());
+        assert!(remove_property_file(&abs, "meta.v").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&abs).unwrap(),
+            "---\nk: 1\nmeta: {}\n---\nbody\n"
+        );
+        // a flow map is refused and the file is untouched
+        std::fs::write(&abs, "---\nmeta: {v: 1}\n---\nbody\n").unwrap();
+        assert!(set_property_file(&abs, "meta.v", &json!(2), None).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&abs).unwrap(),
+            "---\nmeta: {v: 1}\n---\nbody\n"
+        );
+    }
+
+    #[test]
     fn set_and_remove_round_trip_on_disk() {
         let (_d, r) = root();
         let abs = r.join("a/n.md");

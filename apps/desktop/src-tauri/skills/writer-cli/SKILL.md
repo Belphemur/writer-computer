@@ -90,6 +90,7 @@ Use the `graph:*` commands, with `format=json`, to understand how notes are conn
 - `delete` moves the file to the OS trash; `delete permanent` removes it for good. If the trash fails nothing is deleted.
 - `create` never overwrites unless the `overwrite` flag is given. It always produces a Markdown note (`.md` is appended), so it cannot create a `.base` file; write those with normal file edits.
 - `property:set`, `property:remove` and `task` edit only the targeted frontmatter line or checkbox character, so comments, key order and other text are preserved. Unparsable frontmatter is an error, not a rewrite.
+- A key inside a property's map (a skill's `metadata:`) is a dotted name: `writer property:set file=Recipe name=metadata.version value=2`. A property whose name really contains a dot wins; a flow map or a map deeper than two levels is refused, not rewritten.
 - Writer never reads or writes inside `.obsidian` or `.git`, and refuses paths that leave the vault (`..`, absolute paths elsewhere, symlinks pointing outside).
 - A note that is open in the Writer app with unsaved edits is not coordinated with the CLI; avoid editing the same note from both at once.
 - Writes happen immediately, there is no dry run. Read the target first when unsure.

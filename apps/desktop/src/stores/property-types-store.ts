@@ -64,7 +64,7 @@ export const usePropertyTypesStore = create<PropertyTypesState>((set, get) => ({
       obsidianType:
         type === "relationships"
           ? (before?.obsidianType ?? "text")
-          : type === "enum"
+          : type === "enum" || type === "object"
             ? "text"
             : type,
       // an unseeded enum shows its recorded list (if any) until the refetch brings the seed

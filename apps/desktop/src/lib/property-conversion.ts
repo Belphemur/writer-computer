@@ -22,6 +22,9 @@
 // | link        | unchanged (single)                                                                |
 // | number, checkbox, date, date & time | refused ("Not a link")                                    |
 // | empty       | unchanged                                                                         |
+// Object (a map): a map stays a map; nothing else converts to or from it ("edit it in Source"),
+// an empty value is unchanged.
+//
 // And from it: relationships -> text joins a list with ", " (a single link is already text);
 // relationships -> list keeps the items as quoted link strings (a single link becomes one item).
 import {
@@ -152,6 +155,8 @@ const SCALAR_KINDS: readonly PropertyKind[] = [
   "datetime",
 ];
 
+const IN_SOURCE = "This value cannot be converted here; edit it in Source.";
+
 function refuse(error: string): EditResult {
   return { ok: false, error };
 }
@@ -207,15 +212,18 @@ export function convertProperty(
   linkNames: Readonly<Record<string, string>> = {},
 ): EditResult {
   const toList = to === "multitext" || to === "tags" || to === "aliases";
+  if (row.kind === "object" && to === "object") return { ok: true, text };
   if (row.kind === "empty") return toList ? setList(text, row.key, []) : { ok: true, text };
   if (!row.editable || !(SCALAR_KINDS.includes(row.kind) || LIST_KINDS.includes(row.kind)))
-    return refuse("This value cannot be converted here; edit it in Source.");
+    return refuse(IN_SOURCE);
   if (rowFitsType(row, to) && row.kind !== "tagString") return { ok: true, text };
   const key = row.key;
   const isList = LIST_KINDS.includes(row.kind);
   const raw = scalarText(row);
 
   switch (to) {
+    case "object": // only a map is an object
+      return refuse(IN_SOURCE);
     case "relationships": {
       const refusal = refuse(PROPERTY_TYPES.relationships.warning);
       if (!(isList || row.kind === "text" || row.kind === "url")) return refusal;

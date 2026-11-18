@@ -17,6 +17,7 @@ import {
   type EditResult,
   type PropertyRow,
 } from "@/lib/frontmatter-properties";
+import { addNested, removeNested, renameNested, setNested } from "@/lib/frontmatter-nested";
 import { convertProperty, plainLinkCandidates } from "@/lib/property-conversion";
 import {
   addRelationship,
@@ -35,6 +36,7 @@ import {
 import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { AddPropertyRow } from "./add-property-row";
 import { PropertyTypeControl } from "./property-type-control";
+import { Chevron, RemoveRowButton } from "./property-chip";
 import { PropertyKey, PropertyValue, type PropertyActions } from "./property-value";
 
 interface PropertiesPanelProps {
@@ -44,27 +46,6 @@ interface PropertiesPanelProps {
 const SUMMARY_TAGS = 3;
 const BUTTON =
   "rounded px-1.5 py-0.5 text-[12px] leading-[1.3] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-border)]";
-
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      fill="none"
-      aria-hidden="true"
-      className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-    >
-      <path
-        d="M3.5 1.5L7 5l-3.5 3.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 /**
  * The note's properties as a collapsible panel above the editor. The frontmatter text in the
@@ -104,6 +85,13 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
   };
 
   const actions: PropertyActions = {
+    path: [],
+    nested: {
+      set: (path, value) => apply(setNested(frontmatter, path, value)),
+      add: (path, value) => apply(addNested(frontmatter, path, value)),
+      remove: (path) => apply(removeNested(frontmatter, path)),
+      rename: (path, to) => apply(renameNested(frontmatter, path, to)),
+    },
     setValue: (key, value) => apply(setScalar(frontmatter, key, value)),
     rename: (key, to) => apply(renameProperty(frontmatter, key, to)),
     remove: (key) => {
@@ -255,28 +243,10 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                           {PROPERTY_TYPES[type].warning}
                         </span>
                       )}
-                      <button
-                        type="button"
-                        aria-label={`Remove property ${row.key}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => actions.remove(row.key)}
-                        className="flex h-5 w-5 shrink-0 items-center justify-center self-center rounded text-[var(--text-icon-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
-                      >
-                        <svg
-                          width="10"
-                          height="10"
-                          viewBox="0 0 10 10"
-                          fill="none"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M2 2l6 6M8 2l-6 6"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                      </button>
+                      <RemoveRowButton
+                        label={`Remove property ${row.key}`}
+                        onRemove={() => actions.remove(row.key)}
+                      />
                     </li>
                   );
                 })}

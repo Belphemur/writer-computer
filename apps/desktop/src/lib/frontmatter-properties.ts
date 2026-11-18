@@ -11,9 +11,10 @@
 //
 // Shapes the panel cannot edit safely (unparsable YAML, duplicate keys, a flow-mapping root, a
 // non-mapping root, non-scalar keys) make `parseProperties` return `ok: false` with a message;
-// the panel then offers the raw text only. Single values it cannot edit (nested maps, flow maps
-// such as an unquoted `{{date}}`, aliases, multi-line strings, unquoted `[[wikilink]]` lists)
-// become read-only rows that show their source text.
+// the panel then offers the raw text only. Single values it cannot edit (flow maps such as an
+// unquoted `{{date}}`, aliases, multi-line strings, maps nested deeper than two levels) become
+// read-only rows that show their source text. A property whose value is a block map is an
+// `object` row with `entries` (two levels, `frontmatter-nested.ts` edits them).
 import type { PropertyType } from "./property-types";
 import { isWikiLink } from "./wiki-links";
 import {
@@ -44,7 +45,7 @@ export type PropertyKind =
   | "tagString"
   | "empty"
   | "multiline"
-  | "map"
+  | "object"
   | "raw";
 
 export interface PropertyRow {
@@ -56,9 +57,10 @@ export interface PropertyRow {
   value: string | number | boolean | null;
   /** Items of `list`, `tags` and `tagString` rows. */
   items: string[];
-  /** Nested entries of a `map` row, as display text. */
-  nested: { key: string; text: string }[];
-  /** Source text of a read-only row (`raw`, `multiline`, `map`). */
+  /** The keys of an editable `object` row, as rows of their own (a level-1 map's entries may be
+   *  objects themselves; a level-2 map's are leaves, a map there is read-only). */
+  entries: PropertyRow[];
+  /** Source text of a read-only row (`raw`, `multiline`, a non-editable `object`). */
   source: string;
   /** The value looks like a Templater / Dataview placeholder (`{{...}}`, `<% ... %>`). */
   placeholder: boolean;
@@ -77,7 +79,11 @@ export type ParsedProperties =
 
 export type EditResult = { ok: true; text: string } | { ok: false; error: string };
 
-type ScalarValue = string | number | boolean | null;
+export type ScalarValue = string | number | boolean | null;
+
+/** The value of a new `object` property: an empty map, written `{}` until a key is added. */
+export type EmptyObject = Readonly<Record<string, never>>;
+export const EMPTY_OBJECT: EmptyObject = Object.freeze({});
 
 const PLACEHOLDER_RE = /\{\{.*?\}\}|<%.*?%>/;
 const URL_RE = /^https?:\/\/\S+$/;
@@ -94,7 +100,7 @@ function open(text: string): Document {
   return parseDocument(text, { uniqueKeys: false, logLevel: "silent", prettyErrors: false });
 }
 
-function keyText(pair: Pair): string | null {
+export function keyText(pair: Pair): string | null {
   return isScalar(pair.key) ? String(pair.key.value) : null;
 }
 
@@ -102,7 +108,7 @@ type Opened =
   | { ok: true; doc: Document; map: YAMLMap | null }
   | Extract<ParsedProperties, { ok: false }>;
 
-function openMap(text: string): Opened {
+export function openMap(text: string): Opened {
   if (text.trim() === "") return { ok: true, doc: open(text), map: null };
   const doc = open(text);
   if (doc.errors.length > 0) {
@@ -204,13 +210,18 @@ function baseRow(key: string): PropertyRow {
     editable: false,
     value: null,
     items: [],
-    nested: [],
+    entries: [],
     source: "",
     placeholder: false,
   };
 }
 
-function rowOf(text: string, pair: Pair): PropertyRow {
+/** How many map levels the panel edits: a property's map is level 1, a map in it level 2. A map
+ *  deeper than that is shown as its source. */
+export const MAX_MAP_LEVEL = 2;
+
+/** `depth` 0 is a property; 1 and 2 are the keys of its level-1 and level-2 maps. */
+function rowOf(text: string, pair: Pair, depth = 0): PropertyRow {
   const key = keyText(pair) as string;
   const row = baseRow(key);
   const node = pair.value as Node | null;
@@ -231,7 +242,7 @@ function rowOf(text: string, pair: Pair): PropertyRow {
     if (typeof v === "string") {
       if (node.type === "BLOCK_LITERAL" || node.type === "BLOCK_FOLDED" || v.includes("\n"))
         return { ...row, kind: "multiline" };
-      if (TAG_KEYS.has(key.toLowerCase()) && v.trim() !== "")
+      if (depth === 0 && TAG_KEYS.has(key.toLowerCase()) && v.trim() !== "")
         return { ...row, kind: "tagString", editable: true, items: splitTagString(v), value: v };
       const kind: PropertyKind = isWikiLink(v)
         ? "link"
@@ -252,24 +263,26 @@ function rowOf(text: string, pair: Pair): PropertyRow {
     if (link !== null) return { ...row, kind: "link", editable: true, value: link };
     const items = scalarItems(node);
     if (items === null) return row;
-    const kind: PropertyKind = TAG_KEYS.has(key.toLowerCase()) ? "tags" : "list";
+    const kind: PropertyKind = depth === 0 && TAG_KEYS.has(key.toLowerCase()) ? "tags" : "list";
     return { ...row, kind, editable: true, items };
   }
 
-  if (isMap(node) && !node.flow) {
-    const nested = node.items.map((p) => ({
-      key: isScalar(p.key) ? String(p.key.value) : sourceOf(text, p.key as Node),
-      text: nestedText(text, p.value as Node | null),
-    }));
-    return { ...row, kind: "map", nested };
+  if (isMap(node)) {
+    const keys = node.items.map((p) => (isScalar(p.key) ? String(p.key.value) : null));
+    // a key that is not plain text (an unquoted `{{date}}`) leaves a raw row
+    if (keys.includes(null)) return row;
+    const editable = isEditableMap(node) && depth < MAX_MAP_LEVEL;
+    const entries = editable ? node.items.map((p) => rowOf(text, p, depth + 1)) : [];
+    return { ...row, kind: "object", editable, entries };
   }
   return row;
 }
 
-function nestedText(text: string, node: Node | null): string {
-  if (node === null || node === undefined) return "";
-  if (isScalar(node)) return scalarText(node.value);
-  return sourceOf(text, node);
+/** A map the panel can edit: a block map, or `{}`, without an anchor, with unique plain keys. */
+export function isEditableMap(node: YAMLMap): boolean {
+  if (node.anchor || node.tag || (node.flow && node.items.length > 0)) return false;
+  const keys = node.items.map((p) => (isScalar(p.key) ? String(p.key.value) : null));
+  return !keys.includes(null) && new Set(keys).size === keys.length;
 }
 
 /** Parse the frontmatter text into rows, or say why it can only be edited as source. */
@@ -337,55 +350,62 @@ export function splitTagString(value: string): string[] {
 // Text splices
 // ---------------------------------------------------------------------------
 
-function lineStart(text: string, pos: number): number {
+export function lineStart(text: string, pos: number): number {
   return text.lastIndexOf("\n", pos - 1) + 1;
 }
 
-function lineEnd(text: string, pos: number): number {
+export function lineEnd(text: string, pos: number): number {
   const i = text.indexOf("\n", pos);
   return i < 0 ? text.length : i;
 }
 
-function splice(text: string, from: number, to: number, insert: string): string {
+export function splice(text: string, from: number, to: number, insert: string): string {
   return text.slice(0, from) + insert + text.slice(to);
 }
 
 /** The offset just after the `:` that follows `pair`'s key. */
-function afterColon(text: string, pair: Pair): number {
+export function afterColon(text: string, pair: Pair): number {
   const keyEnd = (pair.key as Node).range?.[1] ?? 0;
   let i = keyEnd;
   while (i < text.length && (text[i] === " " || text[i] === "\t")) i++;
   return text[i] === ":" ? i + 1 : keyEnd;
 }
 
+/** Where a node's last content character is: a block collection ends where its last item does. */
+function nodeContentEnd(text: string, node: Node | null | undefined): number {
+  if (!node?.range) return 0;
+  if (isMap(node) && !node.flow && node.items.length > 0)
+    return pairContentEnd(text, node.items[node.items.length - 1]);
+  if (isSeq(node) && !node.flow && node.items.length > 0)
+    return nodeContentEnd(text, node.items[node.items.length - 1] as Node);
+  const end = node.range[1];
+  return end > 0 && text[end - 1] === "\n" ? end - 1 : end;
+}
+
 /** Where a pair's last content character is (a trailing comment on that line is part of it). */
-function pairContentEnd(text: string, pair: Pair): number {
+export function pairContentEnd(text: string, pair: Pair): number {
   const key = pair.key as Node;
   const value = pair.value as Node | null;
-  let end = value?.range ? value.range[1] : (key.range?.[1] ?? 0);
-  if (isSeq(value) && !value.flow && value.items.length > 0) {
-    end = (value.items[value.items.length - 1] as Node).range?.[1] ?? end;
-  }
-  if (end > 0 && text[end - 1] === "\n") end -= 1;
+  const end = value?.range ? nodeContentEnd(text, value) : (key.range?.[1] ?? 0);
   return Math.max(end, afterColon(text, pair));
 }
 
 /** [from, to) covering the whole lines of a pair, without the final newline. */
-function pairLines(text: string, pair: Pair): [number, number] {
+export function pairLines(text: string, pair: Pair): [number, number] {
   const from = lineStart(text, (pair.key as Node).range?.[0] ?? 0);
   return [from, lineEnd(text, pairContentEnd(text, pair))];
 }
 
-function removeLines(text: string, from: number, to: number): string {
+export function removeLines(text: string, from: number, to: number): string {
   if (to < text.length) return splice(text, from, to + 1, "");
   return from > 0 ? splice(text, from - 1, to, "") : splice(text, from, to, "");
 }
 
-function renderKey(key: string): string {
+export function renderKey(key: string): string {
   return stringify(key, { lineWidth: 0 }).trimEnd();
 }
 
-function renderScalar(value: ScalarValue, like?: Node | null): string | null {
+export function renderScalar(value: ScalarValue, like?: Node | null): string | null {
   if (value === null) return "";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : null;
@@ -397,7 +417,7 @@ function renderScalar(value: ScalarValue, like?: Node | null): string | null {
   return out.includes("\n") ? null : out;
 }
 
-function renderFlow(items: readonly string[]): string | null {
+export function renderFlow(items: readonly string[]): string | null {
   const parts: string[] = [];
   for (const item of items) {
     const r = renderScalar(item);
@@ -411,7 +431,7 @@ function renderFlow(items: readonly string[]): string | null {
 // Verified edits
 // ---------------------------------------------------------------------------
 
-function toObject(doc: Document): Record<string, unknown> {
+export function toObject(doc: Document): Record<string, unknown> {
   try {
     return (doc.toJS({ maxAliasCount: 100 }) ?? {}) as Record<string, unknown>;
   } catch {
@@ -423,10 +443,10 @@ function sameEntries(a: Record<string, unknown>, b: Record<string, unknown>): bo
   return JSON.stringify(Object.entries(a)) === JSON.stringify(Object.entries(b));
 }
 
-const REFUSED = "That change could not be applied without altering other properties.";
+export const REFUSED = "That change could not be applied without altering other properties.";
 
 /** Re-parse `next` and require it to equal `expected`; on a mismatch the edit is refused. */
-function verified(
+export function verified(
   before: Document,
   next: string,
   change: (obj: Record<string, unknown>) => Record<string, unknown>,
@@ -452,7 +472,7 @@ function locate(text: string, key: string): Located | { error: string } {
   return { text, doc: opened.doc, map: opened.map, pair };
 }
 
-function failure(error: string): EditResult {
+export function failure(error: string): EditResult {
   return { ok: false, error };
 }
 
@@ -505,7 +525,7 @@ export function setScalar(
 export function addProperty(
   text: string,
   key: string,
-  value: ScalarValue | readonly string[],
+  value: ScalarValue | readonly string[] | EmptyObject,
 ): EditResult {
   const name = key.trim();
   if (name === "") return failure("A property needs a name.");
@@ -513,8 +533,10 @@ export function addProperty(
   const at = locate(text, name);
   if ("error" in at) return failure(at.error);
   if (at.pair) return failure(`The property "${name}" already exists.`);
+  const empty = value === EMPTY_OBJECT;
   let rendered: string | null;
-  if (Array.isArray(value)) rendered = renderFlow(value);
+  if (empty) rendered = "{}";
+  else if (Array.isArray(value)) rendered = renderFlow(value);
   else rendered = renderScalar(value as ScalarValue);
   if (rendered === null) return failure("That value cannot be written on one line.");
   const line = `${renderKey(name)}:${rendered === "" ? "" : ` ${rendered}`}`;
@@ -522,7 +544,7 @@ export function addProperty(
   const next = `${text}${sep}${line}`;
   return verified(at.doc, next, (o) => ({
     ...o,
-    [name]: Array.isArray(value) ? [...value] : value,
+    [name]: empty ? {} : Array.isArray(value) ? [...value] : value,
   }));
 }
 
@@ -662,7 +684,10 @@ function two(n: number): string {
 }
 
 /** The starting value written for a new property of `type`. */
-export function initialValue(type: PropertyType, now: Date = new Date()): ScalarValue | string[] {
+export function initialValue(
+  type: PropertyType,
+  now: Date = new Date(),
+): ScalarValue | string[] | EmptyObject {
   const date = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   switch (type) {
     case "text":
@@ -681,5 +706,7 @@ export function initialValue(type: PropertyType, now: Date = new Date()): Scalar
     case "tags":
     case "aliases":
       return [];
+    case "object":
+      return EMPTY_OBJECT;
   }
 }

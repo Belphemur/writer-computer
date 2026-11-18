@@ -369,11 +369,8 @@ pub fn property_set(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, C
         // Without type=, keep the type the property already has; a new
         // property is text.
         let text = vault_ops::read_text(&t.abs)?;
-        if let Ok(props) = patch::read_properties(&text) {
-            hint = props
-                .iter()
-                .find(|p| p.name == name)
-                .and_then(|p| ValueType::from_index_type(p.vtype));
+        if let Ok(Some(p)) = patch::read_property(&text, name) {
+            hint = ValueType::from_index_type(p.vtype);
         }
     }
     vault_ops::set_property_file(&t.abs, name, &Json::String(value.to_string()), hint)?;
@@ -385,10 +382,8 @@ pub fn property_read(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, 
     require_markdown(&t.rel)?;
     let name = args.require("name")?;
     let text = vault_ops::read_text(&t.abs)?;
-    let props = patch::read_properties(&text).map_err(|e| CliError::fail(e.to_string()))?;
-    let p = props
-        .into_iter()
-        .find(|p| p.name == name)
+    let p = patch::read_property(&text, name)
+        .map_err(|e| CliError::fail(e.to_string()))?
         .ok_or_else(|| CliError::fail(format!("property not found: {name} in {}", t.rel)))?;
     Ok(match &p.value {
         Json::Array(items) => list_lines(items.iter().map(compact)),

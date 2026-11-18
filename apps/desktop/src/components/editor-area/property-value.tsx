@@ -3,15 +3,29 @@ import { type PropertyRow } from "@/lib/frontmatter-properties";
 import { isWikiLink } from "@/lib/wiki-links";
 import { linkHandlers } from "@/lib/link-activation";
 import { openPropertyUrl } from "./property-links";
-import { CHIP, ChipRemove, FIELD } from "./property-chip";
+import { CHIP, ChipRemove, Chevron, FIELD, RemoveRowButton } from "./property-chip";
 import { useWikiSuggest, WikiLinkButton } from "./property-wikilink";
 import { RelationshipsField } from "./relationships-field";
 import { PropertyEnumSelect } from "./enum-select";
 import type { SearchResult } from "@/types/fs";
 import type { PropertyType } from "@/lib/property-types";
+import type { NestedPath, NestedValue } from "@/lib/frontmatter-nested";
 
-/** What a row can do to the frontmatter text. Each returns whether the edit was applied. */
+/** Edits of one key inside a property's map, by path (`["metadata", "version"]`). */
+export interface NestedActions {
+  set: (path: NestedPath, value: NestedValue) => boolean;
+  add: (path: NestedPath, value: NestedValue) => boolean;
+  remove: (path: NestedPath) => boolean;
+  rename: (path: NestedPath, to: string) => boolean;
+}
+
+/** What a row can do to the frontmatter text. Each returns whether the edit was applied. For the
+ *  keys of an object property the same shape is scoped to the map (`scopeActions`): `key` is then
+ *  the key inside it and `path` the names above it. */
 export interface PropertyActions {
+  /** The property names above the rows these actions edit (empty for top-level rows). */
+  path: readonly string[];
+  nested: NestedActions;
   setValue: (key: string, value: string | number | boolean | null) => boolean;
   rename: (key: string, to: string) => boolean;
   remove: (key: string) => void;
@@ -42,6 +56,11 @@ function commitKeys(commit: (el: HTMLInputElement) => void) {
 interface FieldProps {
   row: PropertyRow;
   actions: PropertyActions;
+}
+
+/** The row's accessible name: its key, with the names above it for a key inside an object. */
+export function rowLabel(row: PropertyRow, actions: PropertyActions): string {
+  return [...actions.path, row.key].join(".");
 }
 
 /** A single-line field committed on blur/Enter. Keyed by the stored value so an outside change
@@ -75,7 +94,7 @@ function TextField({
         key={stored}
         type={type}
         step={step}
-        aria-label={`${row.key} value`}
+        aria-label={`${rowLabel(row, actions)} value`}
         defaultValue={stored}
         placeholder="empty"
         spellCheck={false}
@@ -99,7 +118,7 @@ function DateField({ row, actions, time }: FieldProps & { time: boolean }) {
       key={stored}
       type={time ? "datetime-local" : "date"}
       step={time && seconds ? 1 : undefined}
-      aria-label={`${row.key} value`}
+      aria-label={`${rowLabel(row, actions)} value`}
       defaultValue={shown}
       onChange={(e) => {
         const v = e.currentTarget.value;
@@ -116,7 +135,7 @@ function CheckboxField({ row, actions }: FieldProps) {
   return (
     <input
       type="checkbox"
-      aria-label={`${row.key} value`}
+      aria-label={`${rowLabel(row, actions)} value`}
       checked={row.value === true}
       onChange={(e) => actions.setValue(row.key, e.currentTarget.checked)}
       onKeyDown={(e) => e.stopPropagation()}
@@ -140,7 +159,7 @@ function LinkField({ row, actions }: FieldProps) {
         <input
           ref={focusOnMount}
           type="text"
-          aria-label={`${row.key} value`}
+          aria-label={`${rowLabel(row, actions)} value`}
           defaultValue={value}
           spellCheck={false}
           onInput={suggest.onInput}
@@ -184,7 +203,7 @@ function LinkField({ row, actions }: FieldProps) {
       )}
       <button
         type="button"
-        aria-label={`Edit ${row.key}`}
+        aria-label={`Edit ${rowLabel(row, actions)}`}
         onClick={() => setEditing(true)}
         className="shrink-0 rounded px-1 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
       >
@@ -228,7 +247,7 @@ function ChipsField({ row, actions }: FieldProps) {
       <input
         ref={input}
         type="text"
-        aria-label={`Add to ${row.key}`}
+        aria-label={`Add to ${rowLabel(row, actions)}`}
         placeholder={row.items.length === 0 ? "add" : "+"}
         spellCheck={false}
         onInput={suggest.onInput}
@@ -254,28 +273,120 @@ function ChipsField({ row, actions }: FieldProps) {
   );
 }
 
-function ReadOnlyField({ row }: { row: PropertyRow }) {
-  if (row.kind === "map") {
+/** The actions of the keys of `row` (an object): each edit is a nested edit under its path. */
+function scopeActions(actions: PropertyActions, row: PropertyRow): PropertyActions {
+  const path = [...actions.path, row.key];
+  const at = (key: string) => [...path, key];
+  const items = (key: string) => row.entries.find((e) => e.key === key)?.items ?? [];
+  const { nested } = actions;
+  return {
+    path,
+    nested,
+    setValue: (key, value) => nested.set(at(key), value),
+    rename: (key, to) => nested.rename(at(key), to),
+    remove: (key) => void nested.remove(at(key)),
+    appendItem: (key, item) => nested.set(at(key), [...items(key), item]),
+    removeItem: (key, index) =>
+      nested.set(
+        at(key),
+        items(key).filter((_, i) => i !== index),
+      ),
+    // keys inside an object are never tags or relationships
+    setTags: () => false,
+    addLink: () => Promise.resolve(false),
+    removeLink: () => false,
+  };
+}
+
+/** The name of a key being added to an object: Enter adds it with an empty value, Escape cancels. */
+function AddKeyRow({ onAdd }: { onAdd: (name: string) => boolean }) {
+  const [adding, setAdding] = useState(false);
+  if (!adding)
     return (
-      <dl className="min-w-0 flex-1 space-y-0.5 text-[13px] leading-[1.4]">
-        {row.nested.map((n, i) => (
-          <div key={`${i}:${n.key}`} className="flex gap-2">
-            <dt className="shrink-0 text-[var(--text-muted)]">{n.key}</dt>
-            <dd className="min-w-0 whitespace-pre-wrap break-words text-[var(--text-primary)]">
-              {n.text}
-            </dd>
-          </div>
-        ))}
-        <p className="text-[12px] text-[var(--text-muted)]">Edit nested properties in Source.</p>
-      </dl>
+      <button
+        type="button"
+        onClick={() => setAdding(true)}
+        className="rounded px-1 text-[12px] leading-[1.4] text-[var(--text-muted)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-border)]"
+      >
+        + Add key
+      </button>
     );
-  }
   return (
-    <span
-      title="Edit this value in Source"
-      className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[12px] leading-[1.4] text-[var(--text-primary)]"
-    >
-      {row.source}
+    <input
+      ref={focusOnMount}
+      type="text"
+      aria-label="New key name"
+      placeholder="key"
+      spellCheck={false}
+      onBlur={() => setAdding(false)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const name = e.currentTarget.value.trim();
+          if (name !== "" && onAdd(name)) setAdding(false);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setAdding(false);
+        }
+      }}
+      className={`${FIELD} flex-none`}
+    />
+  );
+}
+
+/** A map (two levels) as indented key/value rows. Each key is a row of its own, edited in place
+ *  by the same fields as a property; a level-2 map nests the same block again. */
+function ObjectField({ row, actions }: FieldProps) {
+  const [open, setOpen] = useState(true);
+  const scoped = scopeActions(actions, row);
+  const count = row.entries.length;
+  const name = rowLabel(row, actions);
+  return (
+    <div className="min-w-0 flex-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${name} keys`}
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded text-left text-[12px] leading-[1.4] text-[var(--text-muted)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-border)]"
+      >
+        <Chevron open={open} />
+        {count === 0 ? "Empty" : `${count} ${count === 1 ? "key" : "keys"}`}
+      </button>
+      {open && (
+        <ul className="mt-0.5 ml-1 border-l border-[var(--border-color)] pl-3">
+          {row.entries.map((entry) => (
+            <li key={entry.key} className="group flex items-baseline gap-3 py-0.5">
+              <PropertyKey row={entry} actions={scoped} />
+              <PropertyValue row={entry} actions={scoped} />
+              <RemoveRowButton
+                label={`Remove ${rowLabel(entry, scoped)}`}
+                onRemove={() => scoped.remove(entry.key)}
+              />
+            </li>
+          ))}
+          <li className="py-0.5">
+            <AddKeyRow onAdd={(key) => scoped.nested.add([...scoped.path, key], null)} />
+          </li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ReadOnlyField({ row }: { row: PropertyRow }) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span
+        title="Edit this value in Source"
+        className="block whitespace-pre-wrap break-words font-mono text-[12px] leading-[1.4] text-[var(--text-primary)]"
+      >
+        {row.source}
+      </span>
+      {row.kind === "object" && (
+        <span className="text-[12px] text-[var(--text-muted)]">Edit in Source</span>
+      )}
     </span>
   );
 }
@@ -309,6 +420,12 @@ export function PropertyValue({ row, actions, type }: FieldProps & { type?: Prop
     case "tags":
     case "tagString":
       return <ChipsField row={row} actions={actions} />;
+    case "object":
+      return row.editable ? (
+        <ObjectField row={row} actions={actions} />
+      ) : (
+        <ReadOnlyField row={row} />
+      );
     case "number":
       return row.editable ? (
         <TextField row={row} actions={actions} type="number" />
@@ -333,7 +450,7 @@ export function PropertyKey({ row, actions }: FieldProps) {
     <input
       key={row.key}
       type="text"
-      aria-label={`Property name ${row.key}`}
+      aria-label={`Property name ${rowLabel(row, actions)}`}
       defaultValue={row.key}
       spellCheck={false}
       onBlur={(e) => commit(e.currentTarget)}

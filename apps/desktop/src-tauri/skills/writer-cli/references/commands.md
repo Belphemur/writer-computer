@@ -35,9 +35,9 @@ One bullet per command: `required` parameters are marked, everything else is opt
 ## Properties
 
 - `properties` — List properties (of one file, or the vault with counts). Params: `file=`, `path=`, `name=` (only this property), `sort=` (count), `format=` (yaml | json | tsv). Flags: `total` (print only the count), `counts` (include occurrence counts), `types` (include each property's type).
-- `property:set` — Set a property in a note's frontmatter. Params: `name=` (required; property name), `value=` (required; value), `type=` (text | list | number | checkbox | date | datetime), `file=`, `path=`.
-- `property:read` — Print a property value. Params: `name=` (required; property name), `file=`, `path=`.
-- `property:remove` — Remove a property. Params: `name=` (required; property name), `file=`, `path=`.
+- `property:set` — Set a property in a note's frontmatter. Params: `name=` (required; property name, or a.b for a key in a map), `value=` (required; value), `type=` (text | list | number | checkbox | date | datetime), `file=`, `path=`.
+- `property:read` — Print a property value. Params: `name=` (required; property name, or a.b for a key in a map), `file=`, `path=`.
+- `property:remove` — Remove a property. Params: `name=` (required; property name, or a.b for a key in a map), `file=`, `path=`.
 - `aliases` — List aliases. Params: `file=`, `path=`. Flags: `total` (print only the count), `verbose` (include file paths).
 
 ## Tags

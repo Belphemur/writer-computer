@@ -187,3 +187,27 @@ describe("from relationships", () => {
     expect(convert('a:\n  - "[[A]]"', "a", "multitext")).toBe('a:\n  - "[[A]]"');
   });
 });
+
+describe("object", () => {
+  const meta = "metadata:\n  version: 1";
+  test("a map is already an object (a flow map too)", () => {
+    expect(convert(meta, "metadata", "object")).toBe(meta);
+    expect(convert("m: {a: 1}", "m", "object")).toBe("m: {a: 1}");
+  });
+  test("a map converts to nothing else: edit it in Source", () => {
+    for (const to of ["text", "multitext", "number", "relationships"] as const)
+      expect(refused(meta, "metadata", to)).toBe(
+        "This value cannot be converted here; edit it in Source.",
+      );
+    expect(refused("m: {a: 1}", "m", "text")).toContain("edit it in Source");
+  });
+  test("a scalar or list cannot become an object", () => {
+    for (const fm of ["a: x", "a: 3", "a: true", "a: [x]"])
+      expect(refused(fm, "a", "object")).toBe(
+        "This value cannot be converted here; edit it in Source.",
+      );
+  });
+  test("an empty value is unchanged", () => {
+    expect(convert("a:", "a", "object")).toBe("a:");
+  });
+});

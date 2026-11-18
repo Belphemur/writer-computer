@@ -148,10 +148,24 @@ impl<'a> Interp<'a> {
     }
 
     /// A frontmatter value with wikilink strings turned into links (U19).
+    /// A note property by name. A dotted name that is not itself a property reaches into a map
+    /// (`metadata.version`, same as `note.metadata.version`): an exact name always wins, so a
+    /// property that really contains a dot keeps working.
     pub fn note_value(&self, ctx: &Rc<dyn RowContext>, key: &str) -> Value {
-        match ctx.property(key) {
-            Some(v) => self.coerce_property(ctx, v),
-            None => Value::Null,
+        if let Some(v) = ctx.property(key) {
+            return self.coerce_property(ctx, v);
+        }
+        let Some((head, rest)) = key.split_once('.') else {
+            return Value::Null;
+        };
+        match ctx.property(head) {
+            Some(first @ Value::Object(_)) => {
+                let inner = rest
+                    .split('.')
+                    .fold(first, |v, part| self.get_field(v, part));
+                self.coerce_property(ctx, inner)
+            }
+            _ => Value::Null,
         }
     }
 

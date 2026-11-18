@@ -22,6 +22,9 @@ use std::ops::Range;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
 use yaml_rust2::scanner::Marker;
 
+mod nested;
+pub use nested::{remove_nested, rename_nested_key, set_nested};
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum PatchError {
     #[error("the frontmatter cannot be parsed ({0}); fix it before editing properties")]
@@ -122,28 +125,91 @@ pub fn read_properties(text: &str) -> Result<Vec<NoteProperty>, PatchError> {
         .collect())
 }
 
+/// One property by name, like [`read_properties`] but a dotted nested name (`metadata.version`) is
+/// found too (an exact top-level name first). `vtype` of a nested value is derived from the value.
+pub fn read_property(text: &str, name: &str) -> Result<Option<NoteProperty>, PatchError> {
+    if let Some(p) = read_properties(text)?.into_iter().find(|p| p.name == name) {
+        return Ok(Some(p));
+    }
+    Ok(nested::read(text, name)?.map(|value| NoteProperty {
+        name: name.to_string(),
+        vtype: json_vtype(&value),
+        value,
+    }))
+}
+
+/// The index value type (`ValueType::from_index_type`) of a plain JSON value.
+fn json_vtype(v: &Json) -> &'static str {
+    match v {
+        Json::Null => "null",
+        Json::Bool(_) => "bool",
+        Json::Number(_) => "number",
+        Json::Array(_) => "list",
+        Json::Object(_) => "object",
+        Json::String(s) if yaml::parse_datetime(s).is_some() && s.contains(['T', ' ']) => {
+            "datetime"
+        }
+        Json::String(s) if yaml::parse_date(s).is_some() => "date",
+        Json::String(_) => "text",
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Locating keys
 // ---------------------------------------------------------------------------
 
+/// A key anywhere under the root mapping, reached through mapping keys only (never through a
+/// sequence): the key path (`["metadata", "version"]`) and its 0-based line.
+#[derive(Debug, Clone)]
+pub(crate) struct KeyAt {
+    pub path: Vec<String>,
+    pub line: usize,
+}
+
+enum Frame {
+    Seq,
+    /// A mapping: whether the next node is a key, and the last key seen (the path of what follows).
+    Map {
+        next_is_key: bool,
+        key: String,
+    },
+}
+
 #[derive(Default)]
 struct KeyScan {
-    /// `Some(next_is_key)` for mappings, `None` for sequences.
-    stack: Vec<Option<bool>>,
+    stack: Vec<Frame>,
     /// Root-mapping keys with their 0-based line in the scanned text.
     keys: Vec<(String, usize)>,
+    /// Every addressable key in document order (the root ones included).
+    all: Vec<KeyAt>,
 }
 
 impl KeyScan {
     fn node(&mut self, scalar: Option<&str>, mark: Marker) {
         let depth = self.stack.len();
-        if let Some(Some(next_is_key)) = self.stack.last_mut() {
-            if *next_is_key && depth == 1 {
-                let name = scalar.map_or_else(|| "\u{0}complex".to_string(), str::to_string);
-                self.keys.push((name, mark.line().saturating_sub(1)));
-            }
-            *next_is_key = !*next_is_key;
+        let line = mark.line().saturating_sub(1);
+        let Some(Frame::Map { next_is_key, key }) = self.stack.last_mut() else {
+            return;
+        };
+        let is_key = *next_is_key;
+        *next_is_key = !is_key;
+        if !is_key {
+            return;
         }
+        let name = scalar.map_or_else(|| "\u{0}complex".to_string(), str::to_string);
+        key.clone_from(&name);
+        if depth == 1 {
+            self.keys.push((name.clone(), line));
+        }
+        let mut path = Vec::with_capacity(depth);
+        for frame in &self.stack[..depth - 1] {
+            match frame {
+                Frame::Map { key, .. } => path.push(key.clone()),
+                Frame::Seq => return,
+            }
+        }
+        path.push(name);
+        self.all.push(KeyAt { path, line });
     }
 }
 
@@ -153,11 +219,14 @@ impl MarkedEventReceiver for KeyScan {
             Event::Scalar(v, ..) => self.node(Some(&v), mark),
             Event::SequenceStart(..) => {
                 self.node(None, mark);
-                self.stack.push(None);
+                self.stack.push(Frame::Seq);
             }
             Event::MappingStart(..) => {
                 self.node(None, mark);
-                self.stack.push(Some(true));
+                self.stack.push(Frame::Map {
+                    next_is_key: true,
+                    key: String::new(),
+                });
             }
             Event::SequenceEnd | Event::MappingEnd => {
                 self.stack.pop();
@@ -168,7 +237,7 @@ impl MarkedEventReceiver for KeyScan {
     }
 }
 
-fn scan_keys(fm: &str) -> Result<Vec<(String, usize)>, PatchError> {
+fn scan(fm: &str) -> Result<KeyScan, PatchError> {
     match yaml::parse(fm) {
         Err(e) => return Err(PatchError::Unparsable(e)),
         Ok(Some(YNode::Map(_))) | Ok(None) => {}
@@ -182,7 +251,11 @@ fn scan_keys(fm: &str) -> Result<Vec<(String, usize)>, PatchError> {
     Parser::new_from_str(fm)
         .load(&mut scan, false)
         .map_err(|e| PatchError::Unparsable(format!("invalid YAML: {e}")))?;
-    Ok(scan.keys)
+    Ok(scan)
+}
+
+fn scan_keys(fm: &str) -> Result<Vec<(String, usize)>, PatchError> {
+    Ok(scan(fm)?.keys)
 }
 
 /// Byte offset where each line of `text` starts, plus a final `text.len()`.
@@ -199,17 +272,31 @@ fn line_starts(text: &str) -> Vec<usize> {
     v
 }
 
-fn is_separator(line: &str) -> bool {
+fn is_separator(line: &str, indented: bool) -> bool {
     let t = line.trim_end_matches(['\r', '\n']);
+    let t = if indented { t.trim_start() } else { t };
     t.trim().is_empty() || t.starts_with('#')
 }
 
 /// Line range `[start, end)` of the entry of the key on `key_line`.
 fn entry_range(fm: &str, starts: &[usize], keys: &[(String, usize)], idx: usize) -> Range<usize> {
-    let start = keys[idx].1;
+    let next = keys.get(idx + 1).map_or(usize::MAX, |k| k.1);
+    trimmed_range(fm, starts, keys[idx].1, next, false)
+}
+
+/// Lines `[start, end)` where `end` is the line of the next entry (or the end), minus the blank and
+/// comment lines before it, which belong to what follows. `indented` counts an indented comment
+/// line as one of them too (a nested entry is followed by its siblings' comments).
+fn trimmed_range(
+    fm: &str,
+    starts: &[usize],
+    start: usize,
+    next: usize,
+    indented: bool,
+) -> Range<usize> {
     let total = starts.len() - 1;
-    let mut end = keys.get(idx + 1).map_or(total, |k| k.1.min(total));
-    while end > start + 1 && is_separator(&fm[starts[end - 1]..starts[end]]) {
+    let mut end = next.min(total);
+    while end > start + 1 && is_separator(&fm[starts[end - 1]..starts[end]], indented) {
         end -= 1;
     }
     start..end.max(start + 1)
@@ -519,7 +606,9 @@ fn join_lines(lines: &[String], eol: &str) -> String {
     out
 }
 
-/// Set `name` to `value`. `hint` forces the YAML type (`property:set type=`).
+/// Set `name` to `value`. `hint` forces the YAML type (`property:set type=`). A dotted `name` that
+/// is not itself a top-level key and starts with a property holding a map addresses a key inside
+/// that map (`metadata.version`, see [`nested`]); an exact top-level name always wins.
 pub fn set_property(
     text: &str,
     name: &str,
@@ -527,6 +616,9 @@ pub fn set_property(
     hint: Option<ValueType>,
 ) -> Result<String, PatchError> {
     validate_name(name)?;
+    if let Some(path) = nested::target(text, name) {
+        return nested::set_nested(text, &path, value, hint);
+    }
     let (inline, block) = render(value, hint)?;
     let Some(span) = fm_span(text) else {
         // No frontmatter: create the block (spec 7.6).
@@ -597,10 +689,13 @@ fn span_bom(text: &str) -> usize {
     }
 }
 
-/// Remove `name` (its lines only). Fails with [`PatchError::NotFound`] when the
-/// note has no such property.
+/// Remove `name` (its lines only; a dotted nested name like [`set_property`]). Fails with
+/// [`PatchError::NotFound`] when the note has no such property.
 pub fn remove_property(text: &str, name: &str) -> Result<String, PatchError> {
     validate_name(name)?;
+    if let Some(path) = nested::target(text, name) {
+        return nested::remove_nested(text, &path);
+    }
     let Some(span) = fm_span(text) else {
         return Err(PatchError::NotFound(name.to_string()));
     };

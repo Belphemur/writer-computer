@@ -2359,3 +2359,141 @@ fn column_width_comes_from_column_size_by_canonical_key() {
     let j = serde_json::to_value(&r.columns[0]).unwrap();
     assert_eq!(j["width"], 420.0);
 }
+
+// ---------------------------------------------------------------------------
+// object properties: nested keys by dotted path (ADR 2026-11-18, `object` property type)
+// ---------------------------------------------------------------------------
+
+fn obj(pairs: Vec<(&str, Value)>) -> Value {
+    Value::Object(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
+/// Three skills with a `metadata` map (one level-2 map in it), one note without, and one whose
+/// property really is named `metadata.version`.
+fn skills_store() -> Rc<Store> {
+    let meta = |version: f64, beta: bool, author: &str| {
+        obj(vec![
+            ("author", s(author)),
+            ("version", n(version)),
+            ("flags", obj(vec![("beta", Value::Bool(beta))])),
+        ])
+    };
+    Store::new(vec![
+        Note::new("Skills/a.md").p("metadata", meta(2.0, true, "ada")),
+        Note::new("Skills/b.md").p("metadata", meta(10.0, false, "bob")),
+        Note::new("Skills/c.md").p("metadata", meta(3.0, true, "ada")),
+        Note::new("Skills/none.md"),
+        Note::new("Skills/exact.md")
+            .p("metadata.version", n(99.0))
+            .p("metadata", meta(1.0, false, "eve")),
+    ])
+}
+
+fn run_skills(base: &str, narrow: bool) -> BaseQueryResult {
+    let doc = Document::parse(base).expect("base parses");
+    let store = skills_store();
+    let mut src = MemSource::new(&store);
+    src.narrow = narrow;
+    run_view(&doc, None, &src, &clock(), &QueryOptions::default())
+}
+
+#[test]
+fn nested_keys_of_an_object_property_work_in_columns_filters_sort_and_group() {
+    for narrow in [false, true] {
+        // the dotted form of `order` / `sort` / `groupBy` and the member form of an expression
+        let r = run_skills(
+            r#"
+filters:
+  and:
+    - file.inFolder("Skills")
+    - note.metadata.version > 1
+views:
+  - type: table
+    name: T
+    order: [file.name, metadata.version, note.metadata.flags.beta, formula.who]
+    sort:
+      - property: metadata.version
+        direction: DESC
+formulas:
+  who: note.metadata.author
+"#,
+            narrow,
+        );
+        assert!(r.error.is_none(), "{:?}", r.error);
+        // numeric sort (10 before 3 before 2), not text; the member form reaches the map even
+        // where a property really named `metadata.version` exists (exact.md has version 1)
+        assert_eq!(
+            paths(&r),
+            ["Skills/b.md", "Skills/c.md", "Skills/a.md"],
+            "narrow={narrow}"
+        );
+        assert_eq!(col(&r, "metadata.version"), ["10", "3", "2"]);
+        assert_eq!(col(&r, "metadata.flags.beta"), ["false", "true", "true"]);
+        assert_eq!(col(&r, "formula.who"), ["bob", "ada", "ada"]);
+    }
+}
+
+/// A property that really is named `metadata.version` wins over the key inside `metadata` when the
+/// name is written as one string (`order`, `sort`, `note["..."]`), with and without pushdown.
+#[test]
+fn an_exact_dotted_property_name_wins_over_the_nested_key() {
+    for narrow in [false, true] {
+        let r = run_skills(
+            r#"
+filters:
+  and:
+    - file.inFolder("Skills")
+    - note["metadata.version"] > 50
+views:
+  - type: table
+    name: T
+    order: [file.name, metadata.version]
+"#,
+            narrow,
+        );
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert_eq!(paths(&r), ["Skills/exact.md"], "narrow={narrow}");
+        assert_eq!(col(&r, "metadata.version"), ["99"]);
+    }
+}
+
+#[test]
+fn nested_keys_filter_by_text_and_group_by_a_level_two_key() {
+    let r = run_skills(
+        r#"
+filters:
+  and:
+    - file.inFolder("Skills")
+    - note["metadata.author"] == "ada"
+views:
+  - type: table
+    name: T
+    order: [file.name]
+    groupBy:
+      property: metadata.flags.beta
+      direction: ASC
+"#,
+        true,
+    );
+    assert!(r.error.is_none(), "{:?}", r.error);
+    assert_eq!(paths(&r), ["Skills/a.md", "Skills/c.md"]);
+    let groups = r.groups.as_ref().expect("grouped");
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].key.display, "true");
+}
+
+#[test]
+fn a_nested_key_of_a_missing_or_non_object_property_is_null() {
+    let env = Env::new();
+    for src in [
+        "note.nope.version",
+        "note[\"nope.version\"]",
+        "note[\"status.version\"]",
+    ] {
+        assert_eq!(
+            env.at("Projects/Task 01.md", None, src),
+            Value::Null,
+            "{src}"
+        );
+    }
+}

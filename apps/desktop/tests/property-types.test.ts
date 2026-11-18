@@ -35,7 +35,8 @@ const INFO = (key: string, type: string, source = "writer") => ({
   type,
   source,
   mismatched: 0,
-  obsidianType: type === "relationships" ? "multitext" : type === "enum" ? "text" : type,
+  obsidianType:
+    type === "relationships" ? "multitext" : type === "enum" || type === "object" ? "text" : type,
   values: [] as string[],
 });
 
@@ -70,6 +71,7 @@ describe("registry", () => {
       "List",
       "Relationships",
       "Enum",
+      "Object",
       "Number",
       "Checkbox",
       "Date",
@@ -99,6 +101,18 @@ describe("rows and types", () => {
       links: "relationships",
       mix: "multitext",
       none: "multitext",
+      m: "object",
+    });
+  });
+  test("object fits a map (editable or read-only) and an empty value only", () => {
+    const o = rows("a:\n  x: 1\nb: {x: 1}\nc: {}\nd:\ne: x\nf: [x]");
+    for (const k of ["a", "b", "c", "d"]) expect(rowFitsType(o[k], "object")).toBe(true);
+    for (const k of ["e", "f"]) expect(rowFitsType(o[k], "object")).toBe(false);
+    expect(rowFitsType(o.a, "text")).toBe(false);
+    expect(PROPERTY_TYPES.object).toMatchObject({
+      label: "Object",
+      warning: "Not an object",
+      writerOnly: true,
     });
   });
   test("relationships fits a link, a list of links and an empty value only", () => {
@@ -129,6 +143,15 @@ describe("store", () => {
     await usePropertyTypesStore.getState().load();
     expect(ipc.propertyTypes).toHaveBeenCalledTimes(1);
     expect(usePropertyTypesStore.getState().byKey.due.type).toBe("date");
+  });
+  test("setType('object') guesses the plugin-facing type as text until the refetch", async () => {
+    await usePropertyTypesStore.getState().load();
+    await usePropertyTypesStore.getState().setType("Meta", "object");
+    expect(usePropertyTypesStore.getState().byKey.meta).toMatchObject({
+      type: "object",
+      obsidianType: "text",
+    });
+    expect(ipc.propertyTypeSet).toHaveBeenLastCalledWith("Meta", "object");
   });
   test("setType records through the backend and updates at once", async () => {
     await usePropertyTypesStore.getState().load();
@@ -198,6 +221,15 @@ describe("plugin host metadataTypeManager", () => {
     expect(m.getPropertyInfo("status")?.type).toBe("text");
     expect(m.getAssignedType("status")).toBe("text");
     await expect(m.setType("status", "enum")).rejects.toThrow("Unknown property type");
+    expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
+  });
+  test("object is reported as text and cannot be set by a plugin", async () => {
+    ipc.propertyTypes.mockResolvedValue([INFO("metadata", "object")]);
+    const m = new MetadataTypeManager();
+    await m.load();
+    expect(m.getPropertyInfo("metadata")?.type).toBe("text");
+    expect(m.getAssignedType("metadata")).toBe("text");
+    await expect(m.setType("metadata", "object")).rejects.toThrow("Unknown property type");
     expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
   });
   test("an inferred type is not an assigned one", async () => {

@@ -5,6 +5,7 @@
 import {
   Alert02Icon,
   AtIcon,
+  BracesIcon,
   Calendar03Icon,
   CheckmarkSquare02Icon,
   Clock01Icon,
@@ -20,9 +21,9 @@ import { type PropertyKind, type PropertyRow } from "./frontmatter-properties";
 import { isWikiLink } from "./wiki-links";
 
 /** Obsidian's names (`types.json` values), also the wire names with the backend, plus Writer's own
- *  `relationships` (a link or a list of links) and `enum` (one string of a recorded list).
- *  Obsidian has neither, so they live only in `.writer/property-types.json` (`writerOnly`) and
- *  plugins see them as `multitext` / `text`. */
+ *  `relationships` (a link or a list of links), `enum` (one string of a recorded list) and `object`
+ *  (a map edited as indented rows). Obsidian has none of them, so they live only in
+ *  `.writer/property-types.json` (`writerOnly`) and plugins see them as `multitext` / `text`. */
 export type PropertyType =
   | "text"
   | "multitext"
@@ -33,7 +34,8 @@ export type PropertyType =
   | "tags"
   | "aliases"
   | "relationships"
-  | "enum";
+  | "enum"
+  | "object";
 
 interface TypeDefinition {
   label: string;
@@ -66,6 +68,13 @@ export const PROPERTY_TYPES: Record<PropertyType, TypeDefinition> = {
     label: "Enum",
     icon: DropdownFieldTypeIcon,
     warning: "Not text",
+    pickable: true,
+    writerOnly: true,
+  },
+  object: {
+    label: "Object",
+    icon: BracesIcon,
+    warning: "Not an object",
     pickable: true,
     writerOnly: true,
   },
@@ -139,6 +148,8 @@ export function typeOfRow(row: PropertyRow): PropertyType {
       return isLinkList(row) ? "relationships" : "multitext";
     case "link":
       return "relationships";
+    case "object":
+      return "object";
     default:
       return "text";
   }
@@ -162,10 +173,11 @@ const FITS: Record<PropertyType, readonly PropertyKind[]> = {
   relationships: ["link"],
   // the dropdown edits a text value; anything else keeps its own editor and shows the warning
   enum: ["text"],
+  object: ["object"],
 };
 
 /** Whether the row's value is a valid value of `type`. An empty value fits every type; a value
- *  the panel cannot interpret (a nested map, an alias) fits none. */
+ *  the panel cannot interpret (an alias) fits none. */
 export function rowFitsType(row: PropertyRow, type: PropertyType): boolean {
   if (row.kind === "empty") return true;
   if (type === "relationships" && row.kind === "list") return row.items.every(isWikiLink);

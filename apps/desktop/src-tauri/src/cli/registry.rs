@@ -350,7 +350,7 @@ pub static COMMANDS: &[CommandSpec] =
             "Properties",
             "Set a property in a note's frontmatter",
             &[
-                req("name", "property name"),
+                req("name", "property name, or a.b for a key in a map"),
                 req("value", "value"),
                 p("type", "text | list | number | checkbox | date | datetime"),
                 FILE,
@@ -365,7 +365,11 @@ pub static COMMANDS: &[CommandSpec] =
             "property:read",
             "Properties",
             "Print a property value",
-            &[req("name", "property name"), FILE, PATH],
+            &[
+                req("name", "property name, or a.b for a key in a map"),
+                FILE,
+                PATH
+            ],
             NO_FLAGS,
             NO_FORMATS,
             None,
@@ -375,7 +379,11 @@ pub static COMMANDS: &[CommandSpec] =
             "property:remove",
             "Properties",
             "Remove a property",
-            &[req("name", "property name"), FILE, PATH],
+            &[
+                req("name", "property name, or a.b for a key in a map"),
+                FILE,
+                PATH
+            ],
             NO_FLAGS,
             NO_FORMATS,
             None,

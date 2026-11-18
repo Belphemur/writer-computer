@@ -58,11 +58,11 @@ Chosen option: **A** (the user chose each part).
 ### Verification
 
 - [ ] A skill's `metadata` map shows as an Object property with editable indented rows.
-- [ ] Editing one nested key changes only that line in the file.
-- [ ] A level-2 map is editable; a level-3 map shows read-only and is never rewritten.
-- [ ] `writer property:set name=metadata.version value=2` changes that key only.
-- [ ] A Bases column `note.metadata.version` shows the value and sorts.
-- [ ] `.obsidian/types.json` is never written; plugins see the property as `text`.
+- [x] Editing one nested key changes only that line in the file. (`shared/nested-property-vectors.json` in both suites, panel test `edits one nested value and changes only that line`)
+- [x] A level-2 map is editable; a level-3 map shows read-only and is never rewritten. (panel tests `edits a level-2 map...`, `a map at level 3 is read-only...`, the vectors)
+- [x] `writer property:set name=metadata.version value=2` changes that key only. (`property_set_read_remove_reach_nested_keys_by_dotted_path`)
+- [x] A Bases column `note.metadata.version` shows the value and sorts. (engine test `nested_keys_of_an_object_property_work_in_columns_filters_sort_and_group`)
+- [x] `.obsidian/types.json` is never written; plugins see the property as `text`. (`object_is_inferred_from_maps_and_reads_as_text_for_plugins`, the host shim test)
 
 ## Pros and Cons of the Options
 

@@ -660,6 +660,136 @@ fn property_set_read_remove_round_trips() {
     assert_eq!(t.read("Broken.md"), "---\nkey: [oops\n---\nbody\n");
 }
 
+const SKILL: &str = "---\n# a skill\nname: demo\nmetadata:\n  author: ada # who\n  version: 1\n  flags:\n    beta: true\nlicense: MIT\n---\nbody\n";
+
+#[test]
+fn property_set_read_remove_reach_nested_keys_by_dotted_path() {
+    let t = T::new();
+    t.write("Skills/demo.md", SKILL);
+    let set = |name: &str, value: &str| {
+        t.ok(&[
+            "property:set",
+            "path=Skills/demo.md",
+            &format!("name={name}"),
+            &format!("value={value}"),
+        ])
+    };
+    // one key changes, the type of the existing value is kept (a number stays a number)
+    set("metadata.version", "2");
+    assert_eq!(
+        t.read("Skills/demo.md"),
+        SKILL.replace("version: 1", "version: 2")
+    );
+    assert_eq!(
+        t.ok(&[
+            "property:read",
+            "path=Skills/demo.md",
+            "name=metadata.version"
+        ]),
+        "2\n"
+    );
+    assert_eq!(
+        t.code(&[
+            "property:set",
+            "path=Skills/demo.md",
+            "name=metadata.version",
+            "value=two"
+        ])
+        .0,
+        1,
+        "a text value for a number is refused like at the top level"
+    );
+    // a level-2 key, a comment kept, a new key added at the end of its map
+    set("metadata.flags.beta", "false");
+    set("metadata.author", "grace");
+    set("metadata.homepage", "x");
+    let want = SKILL
+        .replace("version: 1", "version: 2")
+        .replace("beta: true", "beta: false")
+        .replace("author: ada # who", "author: grace # who")
+        .replace("license: MIT", "homepage: x\nlicense: MIT")
+        .replace("homepage", "  homepage");
+    assert_eq!(t.read("Skills/demo.md"), want);
+    assert_eq!(
+        t.ok(&[
+            "property:read",
+            "path=Skills/demo.md",
+            "name=metadata.flags.beta"
+        ]),
+        "false\n"
+    );
+    // the whole map still reads as one value
+    assert!(t
+        .ok(&["property:read", "path=Skills/demo.md", "name=metadata"])
+        .contains("\"homepage\":\"x\""));
+    // remove: one key, then the rest of the file is as it was
+    t.ok(&[
+        "property:remove",
+        "path=Skills/demo.md",
+        "name=metadata.homepage",
+    ]);
+    t.ok(&[
+        "property:remove",
+        "path=Skills/demo.md",
+        "name=metadata.flags.beta",
+    ]);
+    assert!(t.read("Skills/demo.md").contains("  flags: {}\n"));
+    // a missing nested key and a too deep one are refused, the file untouched
+    let before = t.read("Skills/demo.md");
+    assert_eq!(
+        t.code(&[
+            "property:remove",
+            "path=Skills/demo.md",
+            "name=metadata.nope"
+        ])
+        .0,
+        1
+    );
+    assert_eq!(
+        t.code(&["property:read", "path=Skills/demo.md", "name=metadata.nope"])
+            .0,
+        1
+    );
+    assert_eq!(t.read("Skills/demo.md"), before);
+}
+
+#[test]
+fn an_exact_dotted_property_name_wins_over_a_nested_key() {
+    let t = T::new();
+    let note = "---\nmetadata:\n  version: 1\nmetadata.version: top\n---\nbody\n";
+    t.write("Skills/dots.md", note);
+    assert_eq!(
+        t.ok(&[
+            "property:read",
+            "path=Skills/dots.md",
+            "name=metadata.version"
+        ]),
+        "top\n"
+    );
+    t.ok(&[
+        "property:set",
+        "path=Skills/dots.md",
+        "name=metadata.version",
+        "value=new",
+    ]);
+    assert_eq!(
+        t.read("Skills/dots.md"),
+        note.replace("version: top", "version: new")
+    );
+    t.ok(&[
+        "property:remove",
+        "path=Skills/dots.md",
+        "name=metadata.version",
+    ]);
+    assert_eq!(
+        t.read("Skills/dots.md"),
+        "---\nmetadata:\n  version: 1\n---\nbody\n"
+    );
+    // a dotted name whose first part is not a map is an ordinary new property
+    t.ok(&["property:set", "path=Skills/dots.md", "name=a.b", "value=1"]);
+    assert!(t.read("Skills/dots.md").contains("a.b: \"1\"\n"));
+}
+
 #[test]
 fn aliases_tags_and_tag() {
     let t = T::new();

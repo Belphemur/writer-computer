@@ -318,6 +318,7 @@ describe("property type icon and menu", () => {
       "List",
       "Relationships",
       "Enum",
+      "Object",
       "Number",
       "Checkbox",
       "Date",
@@ -805,5 +806,138 @@ describe("enum properties", () => {
     // no values sent: the backend seeds them from every value the vault holds
     expect(ipc.propertyTypeSet).toHaveBeenCalledWith("status", "enum");
     expect(stored()).toBe("status: doing");
+  });
+});
+
+describe("object properties", () => {
+  const SKILL = [
+    "name: demo",
+    "metadata:",
+    "  author: ada # who",
+    "  version: 2",
+    "  flags:",
+    "    beta: true",
+    "    deep:",
+    "      x: 1",
+    "license: MIT",
+  ].join("\n");
+  beforeEach(() => {
+    useSettingsStore.setState({ settings: { "editor.properties-default-collapsed": "expanded" } });
+  });
+  const clickButton = (label: string) =>
+    act(async () => (q(`[aria-label="${label}"]`) as HTMLButtonElement).click());
+  const field = (label: string) => q(`input[aria-label="${label}"]`) as HTMLInputElement;
+  const addKey = async (owner: string, name: string) => {
+    // the owner's own button comes last: a nested map's is listed before it
+    const open = [
+      ...host.querySelectorAll<HTMLButtonElement>(`[aria-label="${owner} keys"] ~ ul button`),
+    ]
+      .filter((b) => b.textContent === "+ Add key")
+      .at(-1) as HTMLButtonElement;
+    await act(async () => open.click());
+    await type(q('input[aria-label="New key name"]') as HTMLInputElement, name, "enter");
+  };
+
+  it("shows a skill's metadata as an Object property with indented key rows", async () => {
+    await mountAndLoad(SKILL);
+    expect(typeButton("metadata", "Object").dataset.type).toBe("object");
+    expect(q('[aria-label="metadata keys"]')?.textContent).toContain("3 keys");
+    expect(field("metadata.author value").value).toBe("ada");
+    expect(field("metadata.version value").value).toBe("2");
+    expect(field("metadata.flags.beta value").checked).toBe(true);
+    // the top-level row and the one inside the map share no label
+    expect(field("name value").value).toBe("demo");
+    expect(host.textContent).not.toContain("Not an object");
+  });
+
+  it("edits one nested value and changes only that line", async () => {
+    await mountAndLoad(SKILL);
+    await type(field("metadata.author value"), "grace");
+    expect(stored()).toBe(SKILL.replace("author: ada # who", "author: grace # who"));
+    await type(field("metadata.version value"), "3", "enter");
+    expect(stored()).toBe(
+      SKILL.replace("author: ada # who", "author: grace # who").replace("version: 2", "version: 3"),
+    );
+  });
+
+  it("Escape reverts a nested edit without writing", async () => {
+    await mountAndLoad(SKILL);
+    const input = field("metadata.author value");
+    await act(async () => {
+      input.focus();
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "zed");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(input.value).toBe("ada");
+    expect(stored()).toBe(SKILL);
+  });
+
+  it("edits a level-2 map: toggles a checkbox, adds and removes a key", async () => {
+    await mountAndLoad(SKILL);
+    await act(async () => field("metadata.flags.beta value").click());
+    expect(stored()).toBe(SKILL.replace("beta: true", "beta: false"));
+    await addKey("metadata.flags", "gamma");
+    expect(stored()).toBe(
+      SKILL.replace("beta: true", "beta: false").replace("      x: 1", "      x: 1\n    gamma:"),
+    );
+    await clickButton("Remove metadata.flags.beta");
+    expect(stored()).toBe(
+      SKILL.replace("    beta: true\n", "").replace("      x: 1", "      x: 1\n    gamma:"),
+    );
+  });
+
+  it("adds a key at the end of the map, renames and removes one", async () => {
+    await mountAndLoad(SKILL);
+    await addKey("metadata", "homepage");
+    expect(stored()).toBe(SKILL.replace("license: MIT", "  homepage:\nlicense: MIT"));
+    await type(field("Property name metadata.homepage"), "site", "enter");
+    expect(stored()).toBe(SKILL.replace("license: MIT", "  site:\nlicense: MIT"));
+    await clickButton("Remove metadata.site");
+    expect(stored()).toBe(SKILL);
+  });
+
+  it("a duplicate key name is refused and the text stays", async () => {
+    await mountAndLoad(SKILL);
+    await type(field("Property name metadata.version"), "author", "enter");
+    expect(stored()).toBe(SKILL);
+    expect(q('[role="alert"]')?.textContent).toContain("already exists");
+  });
+
+  it("removing the last key leaves {}", async () => {
+    await mountAndLoad("metadata:\n  k: v\nz: 1");
+    await clickButton("Remove metadata.k");
+    expect(stored()).toBe("metadata: {}\nz: 1");
+    expect(q('[aria-label="metadata keys"]')?.textContent).toContain("Empty");
+  });
+
+  it("a map at level 3 is read-only, shown as source, and never rewritten", async () => {
+    await mountAndLoad(SKILL);
+    const deep = [...host.querySelectorAll("li")]
+      .filter((li) => li.querySelector('input[aria-label="Property name metadata.flags.deep"]'))
+      .at(-1) as HTMLElement;
+    expect(deep.querySelector("input[aria-label$=' value']")).toBeNull();
+    expect(deep.textContent).toContain("x: 1");
+    expect(deep.textContent).toContain("Edit in Source");
+    await addKey("metadata.flags", "gamma");
+    expect(stored()).toContain("    deep:\n      x: 1\n");
+  });
+
+  it("a flow map is read-only with its source and an unchanged block", async () => {
+    await mountAndLoad("meta: {a: 1}\nz: 1");
+    expect(host.textContent).toContain("{a: 1}");
+    expect(host.textContent).toContain("Edit in Source");
+    expect(q('[aria-label="meta keys"]')).toBeNull();
+    await type(field("z value"), "2");
+    expect(stored()).toBe("meta: {a: 1}\nz: 2");
+  });
+
+  it("a nested list is edited as chips", async () => {
+    await mountAndLoad("m:\n  tags:\n    - a\n    - b\nz: 1");
+    await type(field("Add to m.tags"), "c", "enter");
+    expect(stored()).toBe("m:\n  tags:\n    - a\n    - b\n    - c\nz: 1");
+    await clickButton("Remove a");
+    expect(stored()).toBe("m:\n  tags:\n    - b\n    - c\nz: 1");
   });
 });
