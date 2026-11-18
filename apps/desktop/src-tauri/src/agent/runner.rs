@@ -152,6 +152,12 @@ impl ReloadWhy {
     }
 }
 
+/// A steer written to the running process: its receipt id and the message, kept until echoed.
+struct Steer {
+    uuid: String,
+    out: Outgoing,
+}
+
 struct PendingPerm {
     input: Value,
     suggestions: Vec<Value>,
@@ -217,7 +223,9 @@ struct Inner {
     /// user message back (`MapOutput::user_echo`) when it takes it, at a tool boundary inside the
     /// running turn or as the start of the next one. While any is unacknowledged, a normal end of
     /// turn is not the end of the work: the CLI starts the steer's turn by itself.
-    steers: Vec<String>,
+    /// Each keeps its message: a planned restart (reload, resume) that kills the process before
+    /// the receipt arrives re-sends it to the new process (`on_exit`), so a reload never loses it.
+    steers: Vec<Steer>,
     /// The first turn ended while a steer was unacknowledged: `turn_active` is held for it.
     steer_hold: bool,
     seed: Option<String>,
@@ -750,7 +758,7 @@ impl Session {
             }
             let out = g.mapper.map_line(line);
             if let Some(uuid) = &out.user_echo {
-                g.steers.retain(|s| s != uuid);
+                g.steers.retain(|s| s.uuid != *uuid);
             }
             if let Some(id) = out.unsupported_control_request {
                 // never leave the CLI waiting
@@ -1065,7 +1073,8 @@ impl Session {
             g.live_gen = None;
             g.ready = false;
             g.pid = None;
-            g.steers.clear();
+            // written, never acknowledged: a planned restart sends them again (below)
+            let unacked = std::mem::take(&mut g.steers);
             g.steer_hold = false;
             self.live.store(false, Ordering::SeqCst);
             self.proc_cell.store(0, Ordering::SeqCst);
@@ -1106,9 +1115,13 @@ impl Session {
                 Some(Closing::Restart) | Some(Closing::Idle) => {
                     g.turn_active = false;
                     g.state = AgentSessionState::Idle;
-                    // a message may already be waiting, or a reload asked for the new process
-                    if !g.queue.is_empty() || reloaded.is_some() {
-                        respawn = Some((Vec::new(), None));
+                    // The restart is Writer's own doing, so a steer the process never acknowledged
+                    // goes to the new one, once (the same echo that settles a steer decides).
+                    // A message may also be waiting, or a reload asked for the new process.
+                    let replay: Vec<Outgoing> = unacked.into_iter().map(|s| s.out).collect();
+                    g.inflight.clear();
+                    if !replay.is_empty() || !g.queue.is_empty() || reloaded.is_some() {
+                        respawn = Some((replay, None));
                     }
                 }
                 None => {
@@ -1378,7 +1391,10 @@ impl Session {
             } else {
                 uuid::Uuid::new_v4().to_string()
             };
-            g.steers.push(uuid.clone());
+            g.steers.push(Steer {
+                uuid: uuid.clone(),
+                out: out.clone(),
+            });
             g.inflight.push(out.clone());
             g.last_activity = Instant::now();
             self.write(encode_steer_message(&out.text, &out.images, &uuid));
@@ -1401,10 +1417,10 @@ impl Session {
     /// session working, let the session go idle.
     fn steer_unacknowledged(&self, gen: Option<u64>, uuid: &str) {
         let mut g = self.inner.lock();
-        if g.live_gen != gen || !g.steers.iter().any(|s| s == uuid) {
+        if g.live_gen != gen || !g.steers.iter().any(|s| s.uuid == uuid) {
             return;
         }
-        g.steers.retain(|s| s != uuid);
+        g.steers.retain(|s| s.uuid != uuid);
         log::warn!(target: "agent", "agent: a steer was not acknowledged");
         self.log.push(AgentEvent::SteerUndelivered {
             message_id: uuid.to_string(),

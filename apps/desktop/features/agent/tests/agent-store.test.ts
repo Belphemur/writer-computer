@@ -163,6 +163,46 @@ describe("agent store: a turn against the recorded backend", () => {
     await mock.idle(id);
   });
 
+  it("a session reload mid-turn keeps the queued chip, and the turn's end sends it once", async () => {
+    get().openPane();
+    const id = get().activeChatId!;
+    await get().sendMessage("write");
+    await vi.waitFor(() => expect(chat().state).toBe("awaiting-permission"));
+    await get().sendMessage("second");
+    await get().sendMessage("third");
+    const send = vi.spyOn(mock, "send");
+    // Rust replaced the process (a config change or "Reload session"): the event touches no queue
+    get().ingest(id, [{ type: "session-reloaded", reason: "skill writer-graph changed" }], 100);
+    expect(get().queued[id]!.text).toBe("second\n\nthird");
+    expect(send).not.toHaveBeenCalled();
+    // the turn ends: the restart follows in Rust, the web hands the chip's message over once
+    get().ingest(
+      id,
+      [
+        {
+          type: "turn-finished",
+          reason: "completed",
+          durationMs: 1,
+          apiDurationMs: null,
+          numTurns: 1,
+          isError: false,
+          result: null,
+          sessionId: null,
+          errors: [],
+        },
+      ],
+      101,
+    );
+    expect(get().queued[id]).toBeUndefined();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0]![0].text).toContain("second\n\nthird");
+    // a later batch (the new process's events) never sends it again
+    get().ingest(id, [{ type: "session-reloaded", reason: null }], 102);
+    await settle(20);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(chat().turns.filter((t) => t.user?.text === "second\n\nthird")).toHaveLength(1);
+  });
+
   describe("steer (Cmd+Enter)", () => {
     async function awaitingPermission() {
       get().openPane();

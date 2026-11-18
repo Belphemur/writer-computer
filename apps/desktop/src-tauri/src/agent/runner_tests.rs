@@ -2072,6 +2072,123 @@ fn a_send_while_stale_restarts_first_then_sends() {
     assert!(h.lines("argv.log")[1].contains("--resume"));
 }
 
+/// The first turn waits at a `fake_pause` (released by `Harness::go`) so a test can queue
+/// messages and change things while it runs; `then` more plain turns follow.
+fn paused_first_turn(h: &Harness, then: usize) {
+    let mut first: Vec<String> = std::fs::read_to_string(fixture("ok-turn"))
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect();
+    first.insert(1, r#"{"type":"fake_pause"}"#.into());
+    let file = h.fdir.join("paused.jsonl");
+    std::fs::write(&file, first.join("\n") + "\n").unwrap();
+    let mut list = format!("{}\n", file.display());
+    for _ in 0..then {
+        list.push_str(&format!("{}\n", fixture("ok-turn").display()));
+    }
+    std::fs::write(h.fdir.join("turns.txt"), list).unwrap();
+}
+
+/// The texts of the user messages the fake received, across every process of the chat, in order.
+fn user_texts(h: &Harness) -> Vec<String> {
+    h.lines("stdin.log")
+        .iter()
+        .filter(|l| l.contains("\"type\":\"user\""))
+        .map(|l| {
+            let v: serde_json::Value = serde_json::from_str(l).unwrap();
+            v["message"]["content"].as_str().unwrap_or_default().into()
+        })
+        .collect()
+}
+
+#[test]
+fn messages_queued_during_a_turn_survive_the_stale_restart_after_it_in_order_once() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    paused_first_turn(&h, 2);
+    h.start(CHAT);
+    h.send(CHAT, "one");
+    h.send(CHAT, "two");
+    h.send(CHAT, "three");
+    started(&mut h);
+    skill_change(&h);
+    std::thread::sleep(Duration::from_millis(600)); // well past the debounce: stale, not restarted
+    assert_eq!(h.lines("pids.log").len(), 1, "not during the turn");
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    // the fake replays its turn list from the top in every process: release the new one's pause
+    h.wait_until("the new process", || h.lines("pids.log").len() == 2);
+    h.go();
+    for _ in 0..2 {
+        assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    }
+    h.drain();
+    assert_eq!(
+        h.lines("pids.log").len(),
+        2,
+        "restarted once, after the first turn"
+    );
+    assert!(h.lines("argv.log")[1].contains("--resume"));
+    assert_eq!(user_texts(&h), ["one", "two", "three"]);
+    assert_eq!(reloads(&h).len(), 1);
+}
+
+#[test]
+fn a_manual_reload_with_messages_queued_is_refused_and_loses_nothing() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    paused_first_turn(&h, 2);
+    h.start(CHAT);
+    h.send(CHAT, "one");
+    h.send(CHAT, "two");
+    started(&mut h);
+    assert_eq!(h.sessions.reload("w", CHAT).unwrap(), ReloadOutcome::Busy);
+    h.go();
+    for _ in 0..2 {
+        assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    }
+    h.wait_until("idle", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+    // once the queue is empty the reload goes through and the next message reaches the new process
+    assert_eq!(
+        h.sessions.reload("w", CHAT).unwrap(),
+        ReloadOutcome::Started
+    );
+    h.next(CHAT, "session-reloaded", is_reloaded);
+    h.send(CHAT, "three");
+    h.wait_until("the new process", || h.lines("pids.log").len() == 2);
+    h.go(); // the fake replays its turn list from the top in every process
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    assert_eq!(user_texts(&h), ["one", "two", "three"]);
+}
+
+#[test]
+fn a_steer_written_but_never_acknowledged_is_sent_again_once_to_the_replacing_process() {
+    const OTHER_SESSION: &str = "44444444-4444-4444-8444-444444444444";
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    paused_first_turn(&h, 1);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    // written to the paused process, which never reads it: no receipt
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "left instead".into(), &[])
+        .unwrap();
+    h.sessions.resume("w", CHAT, OTHER_SESSION).unwrap();
+    h.wait_until("the new process took it", || {
+        user_texts(&h).iter().any(|t| t == "left instead")
+    });
+    h.go(); // the fake replays its turn list from the top in every process
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+    assert_eq!(h.lines("pids.log").len(), 2);
+    assert_eq!(user_texts(&h), ["first", "left instead"], "once, not twice");
+    assert!(
+        !h.lines("stdin.log")[1].contains("\"uuid\""),
+        "the new process starts an ordinary turn with it"
+    );
+}
+
 #[test]
 fn a_burst_of_changes_is_one_restart() {
     let mut h = Harness::new(&["ok-turn"], "normal");
