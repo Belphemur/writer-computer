@@ -19,6 +19,21 @@ export interface HullSource {
   labelColor: () => string;
 }
 
+/** The clusters that draw a hull: those of the hovered, focused or selected notes, nothing else
+ *  (the colour of the others stays on their dots; the side panel lists them). */
+export function activeGroupKeys(
+  graph: Pick<GraphModel, "hasNode" | "getNodeAttribute">,
+  s: { hovered: string | null; focus: string | null; selection: ReadonlySet<string> },
+): Set<string> {
+  const out = new Set<string>();
+  for (const k of [s.hovered, s.focus, ...s.selection]) {
+    if (k === null || !graph.hasNode(k)) continue;
+    const g = graph.getNodeAttribute(k, "group");
+    if (g !== null) out.add(g);
+  }
+  return out;
+}
+
 const LAYER = "graph-hulls";
 const PAD = 22;
 
@@ -55,8 +70,8 @@ export function drawHulls(
     ctx.closePath();
     ctx.lineJoin = "round";
     ctx.lineWidth = PAD * 2;
-    ctx.fillStyle = withAlpha(g.color, 0.08);
-    ctx.strokeStyle = withAlpha(g.color, 0.08);
+    ctx.fillStyle = withAlpha(g.color, 0.14);
+    ctx.strokeStyle = withAlpha(g.color, 0.14);
     ctx.fill();
     ctx.stroke();
   }

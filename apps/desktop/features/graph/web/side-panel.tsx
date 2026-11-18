@@ -1,9 +1,19 @@
 // The one side panel of the graph tab (nothing floats over the canvas): Filters, Display and Clusters
 // (the legend: colour, name and count of each cluster, largest first). Every change goes through
 // the config store's one write path.
-import type { ReactNode } from "react";
-import { MAX_DEPTH, type Depth, type GraphFilters, type SurfaceConfig } from "./config";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  coversMostOfVault,
+  HUB_THRESHOLD_MAX,
+  LINKS_PER_NOTE_MAX,
+  MAX_DEPTH,
+  type Depth,
+  type GraphFilters,
+  type SurfaceConfig,
+} from "./config";
+import type { Excludable } from "./exclude";
 import { FiltersPanel } from "./filters-panel";
+import { graphStats } from "./ipc";
 import type { GroupsResult } from "./groups";
 import { GroupsPanel } from "./groups-panel";
 import { LABEL_MODES, type LabelMode } from "./lod";
@@ -54,15 +64,36 @@ export interface DepthControl {
 export const legendClusters = (groups: GroupsResult["groups"]) =>
   [...groups].sort((a, b) => b.size - a.size || a.key.localeCompare(b.key));
 
+/** The notes of the vault, once (for the depth hint); null until known or when it cannot be read. */
+function useVaultNotes(enabled: boolean): number | null {
+  const [notes, setNotes] = useState<number | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    graphStats().then(
+      (s) => live && setNotes(s.notes),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+  return notes;
+}
+
 function DisplaySection({
   config,
   labels,
   depth,
+  shownNotes,
 }: {
   config: SurfaceConfig;
   labels: readonly string[];
   depth: DepthControl | null;
+  /** Notes in the slice. */
+  shownNotes: number;
 }) {
+  const vaultNotes = useVaultNotes(depth !== null);
   const update = useGraphConfig((s) => s.update);
   const d = config.display;
   const f = config.filters;
@@ -108,6 +139,34 @@ function DisplaySection({
           />
         </Row>
       )}
+      {depth && coversMostOfVault(shownNotes, vaultNotes) && (
+        <p className="pb-1 text-[11px] text-[var(--text-muted)]" data-testid="graph-depth-hint">
+          Depth {depth.value} covers most of the vault
+        </p>
+      )}
+      <Row label="Hub links above">
+        <input
+          type="number"
+          aria-label="Hide links of notes with more links than"
+          className={`${FIELD} w-16 flex-none text-right`}
+          min={0}
+          max={HUB_THRESHOLD_MAX}
+          placeholder="off"
+          value={d.hubThreshold === 0 ? "" : d.hubThreshold}
+          onChange={(e) => setDisplay({ hubThreshold: Number(e.target.value) || 0 })}
+        />
+      </Row>
+      <Row label={`Links per note ${d.linksPerNote === 0 ? "all" : d.linksPerNote}`}>
+        <input
+          type="range"
+          aria-label="Links per note"
+          min={0}
+          max={LINKS_PER_NOTE_MAX}
+          step={1}
+          value={d.linksPerNote}
+          onChange={(e) => setDisplay({ linksPerNote: Number(e.target.value) })}
+        />
+      </Row>
       <Check label="Links" checked={f.links} onChange={(v) => setFilters({ links: v })} />
       <Check label="Embeds" checked={f.embeds} onChange={(v) => setFilters({ embeds: v })} />
       <Check
@@ -183,7 +242,13 @@ export function SidePanel({
   labels,
   groups,
   depth,
+  notes,
+  shownNotes,
 }: {
+  /** The notes of the slice, for the Exclude presets. */
+  notes: readonly Excludable[];
+  /** How many of them the graph shows (the depth hint). */
+  shownNotes: number;
   config: SurfaceConfig;
   /** Property labels of the slice (for the colour of their edges and the Properties list). */
   labels: readonly string[];
@@ -194,13 +259,13 @@ export function SidePanel({
   return (
     <div className="h-full overflow-y-auto" data-testid="graph-side-panel">
       <Section title="Display" open>
-        <DisplaySection config={config} labels={labels} depth={depth} />
+        <DisplaySection config={config} labels={labels} depth={depth} shownNotes={shownNotes} />
       </Section>
       <Section title="Clusters" open>
         <ClustersSection config={config} groups={groups} />
       </Section>
       <Section title="Filters">
-        <FiltersPanel filters={config.filters} />
+        <FiltersPanel filters={config.filters} notes={notes} />
       </Section>
     </div>
   );

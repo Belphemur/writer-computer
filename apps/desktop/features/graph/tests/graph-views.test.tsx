@@ -35,11 +35,25 @@ const ipc = vi.hoisted(() => ({
 }));
 vi.mock("../web/ipc", () => ipc);
 // The mocked canvas reports its first frame only when a test says so (`probe.frame()`).
-const probe = vi.hoisted(() => ({ frame: () => {} }));
+const probe = vi.hoisted(() => ({
+  frame: () => {},
+  openNode: (_node: unknown) => {},
+}));
 vi.mock("../web/graph-canvas", () => ({
-  GraphCanvas: (p: { spec: { nodes: unknown[] }; onFrame?: (spec: unknown) => void }) => {
+  GraphCanvas: (p: {
+    spec: { nodes: { key: string }[] };
+    onFrame?: (spec: unknown) => void;
+    onOpenNode: (node: unknown, intent: string) => void;
+  }) => {
     probe.frame = () => p.onFrame?.(p.spec);
-    return <div data-testid="canvas" data-nodes={p.spec.nodes.length} />;
+    probe.openNode = (node) => p.onOpenNode(node, "current");
+    return (
+      <div
+        data-testid="canvas"
+        data-nodes={p.spec.nodes.length}
+        data-keys={p.spec.nodes.map((n) => n.key).join("|")}
+      />
+    );
   },
   webglAvailable: () => true,
 }));
@@ -48,6 +62,8 @@ vi.mock("../web/graph-canvas", () => ({
 const detect = vi.hoisted(() => ({
   hold: false,
   release: () => {},
+  /** The community of node `i` (default: all in one). */
+  assign: (_i: number): number => 0,
 }));
 vi.mock("../web/layout-worker-client", () => ({
   detectInWorker: (order: number) => ({
@@ -55,7 +71,7 @@ vi.mock("../web/layout-worker-client", () => ({
       ? new Promise<Int32Array>((resolve) => {
           detect.release = () => resolve(new Int32Array(order));
         })
-      : Promise.resolve(new Int32Array(order)),
+      : Promise.resolve(Int32Array.from({ length: order }, (_, i) => detect.assign(i))),
     cancel: () => {},
   }),
 }));
@@ -71,7 +87,7 @@ import { NodeList } from "../web/node-list";
 import { applySpec, buildSpec, createModel } from "../web/model";
 import { REFETCH_DEBOUNCE_MS, batchAffects } from "../web/use-graph-data";
 import { SAVE_DEBOUNCE_MS, setConfigPort, useGraphConfig } from "../web/store";
-import { smallSlice, WITH_PROPERTIES } from "./fixtures";
+import { edge, node, smallSlice, WITH_PROPERTIES } from "./fixtures";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -86,6 +102,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   detect.hold = false;
+  detect.assign = () => 0;
   ipc.graphSlice.mockResolvedValue(smallSlice());
   ipc.graphStats.mockResolvedValue({ notes: 25000, edges: 1, unresolved: 0, components: 1 });
   ipc.onIndexChanged.mockResolvedValue(() => {});
@@ -257,11 +274,63 @@ describe("global graph tab chrome", () => {
     expect(nav.setGraphTabState).toHaveBeenLastCalledWith("t1", { depth: undefined });
   });
 
+  it("hints when the depth covers most of the vault, and offers Exclude presets for generated notes", async () => {
+    const generated = Array.from({ length: 6 }, (_, i) => node(100 + i, `Gen/agent__run-${i}.md`));
+    ipc.graphSlice.mockResolvedValue({
+      ...smallSlice(),
+      nodes: [...smallSlice().nodes, ...generated],
+    });
+    ipc.graphStats.mockResolvedValue({ notes: 10, edges: 1, unresolved: 0, components: 1 });
+    render({ kind: "graph", center: "People/Ana.md", depth: 5 });
+    await flush();
+    await flush();
+    expect(el.querySelector("[data-testid=graph-depth-hint]")?.textContent).toBe(
+      "Depth 5 covers most of the vault",
+    );
+    const preset = [
+      ...el.querySelectorAll<HTMLButtonElement>("[data-testid=graph-exclude-presets] button"),
+    ].find((b) => b.textContent?.startsWith("agent__*"))!;
+    expect(preset.textContent).toBe("agent__* 6");
+    act(() => preset.click());
+    expect(useGraphConfig.getState().config.global.filters.exclude).toEqual(["agent__*"]);
+  });
+
+  it("the whole vault opens as collapsed clusters; a click opens one with a stub, back returns", async () => {
+    const ring = (a: number) =>
+      Array.from({ length: 4 }, (_, i) => node(a + i, `G${a}/n${i}.md`, { degreeOut: 2 }));
+    const nodes = [...ring(10), ...ring(20)];
+    const edges = [
+      ...[10, 20].flatMap((a) => [0, 1, 2, 3].map((i) => edge(a + i, a + i, a + ((i + 1) % 4)))),
+      edge(99, 10, 20),
+    ];
+    ipc.graphSlice.mockResolvedValue({ ...smallSlice(), nodes, edges });
+    detect.assign = (i) => (i < 4 ? 0 : 1);
+    render();
+    await flush();
+    await flush();
+    const canvas = () => el.querySelector("[data-testid=canvas]")!;
+    expect(canvas().getAttribute("data-nodes")).toBe("2");
+    const keys = canvas().getAttribute("data-keys")!.split("|");
+    expect(keys.every((k) => k.startsWith("cluster:"))).toBe(true);
+    const group = keys[0]!.slice("cluster:".length);
+    act(() => probe.openNode({ kind: "cluster", cluster: group }));
+    await flush();
+    expect(canvas().getAttribute("data-nodes")).toBe("5"); // 4 notes and the other cluster's stub
+    expect(el.querySelector("nav[aria-label=Clusters]")?.textContent).toContain(group);
+    const back = [...el.querySelectorAll("nav button")].find((b) =>
+      b.textContent?.includes("All clusters"),
+    )!;
+    act(() => (back as HTMLButtonElement).click());
+    await flush();
+    expect(canvas().getAttribute("data-nodes")).toBe("2");
+    expect(el.querySelector("nav[aria-label=Clusters]")).toBeNull();
+  });
+
   it("the whole vault has no slider; the toggle returns to the remembered depth", async () => {
     render({ kind: "graph", center: "People/Ana.md" });
     await flush();
     await flush();
-    expect(el.querySelector("input[type=range]")).toBeNull();
+    expect(el.querySelector("input[aria-label=Depth]")).toBeNull();
     act(() => byLabel("Whole vault").click());
     expect(nav.setGraphTabState).toHaveBeenLastCalledWith("t1", { depth: 2 });
   });

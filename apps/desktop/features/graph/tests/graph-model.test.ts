@@ -57,7 +57,7 @@ describe("buildSpec", () => {
       "People/Ana.md",
       "People/Ben.md",
     ]);
-    expect(keys(buildSpec(smallSlice(), filters({ excludeFolders: ["People"] })))).toEqual([
+    expect(keys(buildSpec(smallSlice(), filters({ exclude: ["People"] })))).toEqual([
       "Lonely.md",
       "Notes/Plan.md",
     ]);

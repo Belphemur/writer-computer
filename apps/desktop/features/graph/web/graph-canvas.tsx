@@ -15,13 +15,14 @@ import { syncGroups, type GroupsResult } from "./groups";
 import type { Overview } from "./aggregate";
 import { CardsLayer, pickCards, type CardData } from "./cards-layer";
 import { anyInView, createFollow, fitTarget, sameTarget, type Point } from "./camera-fit";
-import { attachHulls } from "./hulls";
+import { activeGroupKeys, attachHulls } from "./hulls";
 import {
   atLeast,
   cardPriorityKeys,
   edgeLabelsRendered,
   fadeAt,
   hubRanks,
+  hubSet,
   LOD_HYSTERESIS,
   LOD_TABLE,
   levelFor,
@@ -63,6 +64,8 @@ export interface GraphCanvasProps {
   labelRatio: number;
   /** How node labels show (`lod.ts`, the Display section of the panel). */
   labelMode: LabelMode;
+  /** Notes with more links than this draw their links only while hovered or selected (0: off). */
+  hubThreshold: number;
   /** The aggregated overview (group bubbles), or null when the flat hubs overview applies. */
   overview: Overview | null;
   center: string | null;
@@ -138,7 +141,11 @@ function Controller(
     hulls.current = attachHulls(sigma, model, {
       // Clusters keep their hull, name and count from the structure level up (the overview level
       // draws one bubble per cluster instead).
-      groups: () => (atLeast(view.current.level, "structure") ? latest.current.groups.groups : []),
+      groups: () => {
+        if (!atLeast(view.current.level, "structure")) return [];
+        const active = activeGroupKeys(model, view.current);
+        return latest.current.groups.groups.filter((g) => active.has(g.key));
+      },
       labelColor: () => theme.current.label,
     });
     overviewLayer.current = attachOverview(sigma, model, {
@@ -185,6 +192,7 @@ function Controller(
       propertyLabels: p.propertyLabels,
       center: p.center,
       hubRank: hubRanks(p.spec.nodes),
+      hubs: hubSet(p.spec.nodes, p.hubThreshold),
       order: p.spec.nodes.length,
       groupedOverview: p.overview?.mode === "groups",
     });
@@ -208,7 +216,7 @@ function Controller(
       } else void camera.reset({ duration: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.spec, p.groups, p.propertyLabels, p.overview]);
+  }, [p.spec, p.groups, p.propertyLabels, p.overview, p.hubThreshold]);
 
   useEffect(() => patchView({ matches: p.matches }), [p.matches]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -457,6 +465,7 @@ function Controller(
         const intent = intentOf(event.original);
         if (!intent) return;
         const a = nodeAt(node);
+        if (a.kind === "cluster") return latest.current.onOpenNode(a, "current");
         const result = nodeClick(intent, event.original.shiftKey, view.current.selection, a.path);
         if ("open" in result) {
           latest.current.onOpenNode(a, result.open);
@@ -469,6 +478,7 @@ function Controller(
         event.original.preventDefault();
         event.preventSigmaDefault();
         const a = nodeAt(node);
+        if (a.kind === "cluster") return;
         const handlers: MenuHandlers = {
           ...latest.current.menuHandlers,
           selection: () => [...view.current.selection],
@@ -477,7 +487,7 @@ function Controller(
       },
       doubleClickNode: ({ node, event }) => {
         event.preventSigmaDefault();
-        latest.current.onOpenNode(nodeAt(node), "current");
+        if (nodeAt(node).kind !== "cluster") latest.current.onOpenNode(nodeAt(node), "current");
       },
       downNode: () => follow.current.userMoved(),
       downStage: () => follow.current.userMoved(),
@@ -634,6 +644,7 @@ function defaultView(
     order: 0,
     cardKeys: new Set(),
     fade: 1,
+    hubs: new Set(),
     theme: FALLBACK_THEME,
     propertyLabels: p.propertyLabels,
   };

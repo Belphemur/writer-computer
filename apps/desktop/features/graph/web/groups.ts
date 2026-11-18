@@ -123,7 +123,7 @@ export function syncGroups(graph: GraphModel, result: GroupsResult, pull: number
   let structural = false;
   let regrouped = false;
   graph.forEachNode((key, a) => {
-    if (a.anchor) return;
+    if (a.anchor || a.kind === "cluster") return;
     const info = result.nodes.get(a.path);
     if ((info?.group ?? null) !== a.group) regrouped = true;
     graph.mergeNodeAttributes(key, {

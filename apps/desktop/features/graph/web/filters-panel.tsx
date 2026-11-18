@@ -1,6 +1,8 @@
 // The Filters section (spec 3.3): search query, node kinds, orphans and folder include/exclude
 // lists (the edge kinds are in Display). Every change goes through the config store's one write path.
+import { useMemo } from "react";
 import type { GraphFilters } from "./config";
+import { detectPresets, toggleEntry, type Excludable } from "./exclude";
 import { Check } from "./panel-controls";
 import { FIELD } from "./panel-style";
 import { useGraphConfig } from "./store";
@@ -13,7 +15,15 @@ const lines = (text: string) =>
     .map((l) => l.trim().replace(/\/+$/, ""))
     .filter(Boolean);
 
-export function FiltersPanel({ filters }: { filters: GraphFilters }) {
+export function FiltersPanel({
+  filters,
+  notes,
+}: {
+  filters: GraphFilters;
+  /** The notes of the slice, to offer presets for what generates many of them. */
+  notes: readonly Excludable[];
+}) {
+  const presets = useMemo(() => detectPresets(notes), [notes]);
   const update = useGraphConfig((s) => s.update);
   const set = (patch: Partial<GraphFilters>) =>
     update((s) => ({ ...s, filters: { ...s.filters, ...patch } }));
@@ -39,7 +49,7 @@ export function FiltersPanel({ filters }: { filters: GraphFilters }) {
         onChange={(v) => set({ missing: v })}
       />
       <Check label="Orphans" checked={filters.orphans} onChange={(v) => set({ orphans: v })} />
-      <div className="mt-1 text-[11px] font-medium text-[var(--text-muted)]">Folders</div>
+      <div className="mt-1 text-[11px] font-medium text-[var(--text-muted)]">Include</div>
       <textarea
         aria-label="Include folders"
         className={`${INPUT} h-14 py-1`}
@@ -47,12 +57,30 @@ export function FiltersPanel({ filters }: { filters: GraphFilters }) {
         defaultValue={filters.includeFolders.join("\n")}
         onBlur={(e) => set({ includeFolders: lines(e.target.value) })}
       />
+      <div className="mt-1 text-[11px] font-medium text-[var(--text-muted)]">Exclude</div>
+      {presets.length > 0 && (
+        <div className="flex flex-wrap gap-1" data-testid="graph-exclude-presets">
+          {presets.map((p) => (
+            <button
+              key={p.entry}
+              type="button"
+              aria-pressed={filters.exclude.includes(p.entry)}
+              title={p.entry}
+              className="rounded-md border border-[var(--line-subtle)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] aria-pressed:bg-[var(--item-active-bg)]"
+              onClick={() => set({ exclude: toggleEntry(filters.exclude, p.entry) })}
+            >
+              {p.label} {p.count}
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
-        aria-label="Exclude folders"
+        key={filters.exclude.join("\n")}
+        aria-label="Exclude"
         className={`${INPUT} h-14 py-1`}
-        placeholder="Exclude, one per line"
-        defaultValue={filters.excludeFolders.join("\n")}
-        onBlur={(e) => set({ excludeFolders: lines(e.target.value) })}
+        placeholder="Folder or name*, one per line"
+        defaultValue={filters.exclude.join("\n")}
+        onBlur={(e) => set({ exclude: lines(e.target.value) })}
       />
     </div>
   );

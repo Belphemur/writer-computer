@@ -102,6 +102,18 @@ export function edgeOpacity(level: LodLevel, active: boolean, touches: boolean):
   return touches ? 1 : EDGE_DIM;
 }
 
+/** The notes whose links are hidden until they are hovered or selected: those with more links
+ *  than `threshold` (0 is off). Cluster nodes are never hubs (their degree is a note count). */
+export function hubSet(
+  nodes: readonly { key: string; kind: string; degree: number }[],
+  threshold: number,
+): Set<string> {
+  if (threshold <= 0) return new Set();
+  return new Set(
+    nodes.filter((n) => n.kind !== "cluster" && n.degree > threshold).map((n) => n.key),
+  );
+}
+
 export const levelIndex = (level: LodLevel): number =>
   LOD_TABLE.findIndex((r) => r.level === level);
 export const atLeast = (level: LodLevel, min: LodLevel): boolean =>

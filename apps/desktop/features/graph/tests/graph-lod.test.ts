@@ -167,6 +167,7 @@ describe("reducers per level", () => {
     hubRank: hubRanks(
       [...model.nodes()].map((k) => ({ key: k, degree: model.getNodeAttribute(k, "degree") })),
     ),
+    hubs: new Set(),
     order: 100,
     cardKeys: new Set(),
     fade: 1,

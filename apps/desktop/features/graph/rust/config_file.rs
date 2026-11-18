@@ -52,6 +52,12 @@ pub fn read(root: &Path) -> Result<Option<String>, ConfigError> {
 const LABELS: [&str; 3] = ["hover", "zoom", "always"];
 const CLUSTER_BY: [&str; 2] = ["communities", "folder"];
 const DEPTH: std::ops::RangeInclusive<i64> = 1..=5;
+/// Hide the links of notes with more links than this (0 = off) and keep each note's strongest k
+/// links (0 = all); `HUB_THRESHOLD_MAX` and `LINKS_PER_NOTE_MAX` mirror `web/config.ts`.
+const HUB_THRESHOLD: std::ops::RangeInclusive<i64> = 0..=1000;
+const LINKS_PER_NOTE: std::ops::RangeInclusive<i64> = 0..=10;
+/// Entries of the Exclude list (folders and name patterns).
+const MAX_EXCLUDE: usize = 1000;
 
 fn validate_display(surface: &str, display: &serde_json::Value) -> Result<(), ConfigError> {
     let bad = |what: &str| ConfigError::Invalid(format!("{surface}.display.{what} is not valid"));
@@ -65,16 +71,39 @@ fn validate_display(surface: &str, display: &serde_json::Value) -> Result<(), Co
     };
     one_of("labels", &LABELS)?;
     one_of("clusterBy", &CLUSTER_BY)?;
-    match map.get("depth") {
+    let int_in = |key: &str, range: &std::ops::RangeInclusive<i64>| match map.get(key) {
         None => Ok(()),
-        Some(v) if v.as_i64().is_some_and(|d| DEPTH.contains(&d)) => Ok(()),
-        Some(_) => Err(bad("depth")),
+        Some(v) if v.as_i64().is_some_and(|d| range.contains(&d)) => Ok(()),
+        Some(_) => Err(bad(key)),
+    };
+    int_in("depth", &DEPTH)?;
+    int_in("hubThreshold", &HUB_THRESHOLD)?;
+    int_in("linksPerNote", &LINKS_PER_NOTE)
+}
+
+fn validate_filters(surface: &str, filters: &serde_json::Value) -> Result<(), ConfigError> {
+    let bad = || ConfigError::Invalid(format!("{surface}.filters.exclude is not valid"));
+    // `excludeFolders` is the name the list had before name patterns joined it.
+    for key in ["exclude", "excludeFolders"] {
+        match filters.get(key) {
+            None => {}
+            Some(serde_json::Value::Array(items))
+                if items.len() <= MAX_EXCLUDE && items.iter().all(|i| i.is_string()) => {}
+            Some(_) => return Err(bad()),
+        }
     }
+    Ok(())
 }
 
 fn validate(config: &serde_json::Value) -> Result<(), ConfigError> {
-    match config.get("global").and_then(|s| s.get("display")) {
-        Some(display) => validate_display("global", display),
+    let Some(surface) = config.get("global") else {
+        return Ok(());
+    };
+    if let Some(display) = surface.get("display") {
+        validate_display("global", display)?;
+    }
+    match surface.get("filters") {
+        Some(filters) => validate_filters("global", filters),
         None => Ok(()),
     }
 }
@@ -142,7 +171,7 @@ mod tests {
     #[test]
     fn display_options_are_validated_on_write() {
         let vault = tempfile::tempdir().unwrap();
-        let ok = r#"{"global":{"display":{"labels":"hover","clusterBy":"folder","depth":5}}}"#;
+        let ok = r#"{"global":{"display":{"labels":"hover","clusterBy":"folder","depth":5,"hubThreshold":50,"linksPerNote":3},"filters":{"exclude":["agent__*","Archive"]}}}"#;
         write(vault.path(), ok).unwrap();
         for bad in [
             r#"{"global":{"display":{"labels":"loud"}}}"#,
@@ -150,6 +179,12 @@ mod tests {
             r#"{"global":{"display":{"depth":0}}}"#,
             r#"{"global":{"display":{"depth":"2"}}}"#,
             r#"{"global":{"display":"hover"}}"#,
+            r#"{"global":{"display":{"hubThreshold":1001}}}"#,
+            r#"{"global":{"display":{"hubThreshold":-1}}}"#,
+            r#"{"global":{"display":{"linksPerNote":11}}}"#,
+            r#"{"global":{"display":{"linksPerNote":"3"}}}"#,
+            r#"{"global":{"filters":{"exclude":"agent__*"}}}"#,
+            r#"{"global":{"filters":{"exclude":["a",1]}}}"#,
         ] {
             assert!(
                 matches!(write(vault.path(), bad), Err(ConfigError::Invalid(_))),

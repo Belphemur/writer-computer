@@ -63,6 +63,8 @@ export function GraphStage(p: GraphStageProps) {
 
   const open = (node: NodeAttrs | NodeSpec, intent: LinkIntent) => {
     if ("anchor" in node) return;
+    if (node.kind === "cluster")
+      return void (node.cluster && surface.drill?.openCluster(node.cluster));
     void openNode(node, intent);
   };
 
@@ -79,7 +81,8 @@ export function GraphStage(p: GraphStageProps) {
 
   const canvasProps: GraphCanvasProps = {
     spec: surface.spec,
-    groups: surface.groups,
+    groups: surface.canvasGroups,
+    hubThreshold: surface.config.display.hubThreshold,
     forces: settings.forces,
     animate: settings.animate,
     labelRatio: settings.labelRatio,

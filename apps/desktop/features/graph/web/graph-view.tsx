@@ -25,16 +25,24 @@ import { useGraphConfig } from "./store";
 import { useGraphSurface } from "./use-graph-surface";
 import { useNoteProps } from "./use-note-props";
 
+const NO_NOTES: never[] = [];
+
 export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLocation>) {
   const settings = useGraphSettings();
   const depth = clampDepth(location.depth);
-  const surface = useGraphSurface({ center: location.center ?? null, depth });
   const [search, setSearch] = useState("");
+  const surface = useGraphSurface({
+    center: location.center ?? null,
+    depth,
+    searching: search.trim() !== "",
+  });
   const [listOpen, setListOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [centerRequest, setCenterRequest] = useState<{ key: string; n: number } | null>(null);
   const api = useRef<CanvasApi | null>(null);
+  const matchCursor = useRef(-1);
   const remembered = surface.config.display.depth;
+  const slice = surface.data.slice;
 
   const query = useMemo(() => parseQuery(search), [search]);
   const props = useNoteProps(surface.data.slice, needsProps(query));
@@ -42,7 +50,7 @@ export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLoca
     () =>
       query.length === 0
         ? null
-        : surface.spec.nodes
+        : surface.fullSpec.nodes
             .filter((n) =>
               queryMatches(query, {
                 path: n.path,
@@ -52,7 +60,7 @@ export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLoca
               }),
             )
             .sort((a, b) => b.degree - a.degree),
-    [query, surface.spec.nodes, props],
+    [query, surface.fullSpec.nodes, props],
   );
   const matches = useMemo(
     () => (matchList ? new Set(matchList.map((n) => n.key)) : null),
@@ -80,16 +88,35 @@ export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLoca
             placeholder="Search"
             value={search}
             className="h-7 w-44 rounded-md border border-transparent bg-[var(--surface-input)] pl-7 pr-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--focus-border)]"
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              matchCursor.current = -1;
+              setSearch(e.target.value);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && matchList?.[0]) {
-                setCenterRequest({ key: matchList[0].key, n: (centerRequest?.n ?? 0) + 1 });
+              if (e.key === "Enter" && matchList && matchList.length > 0) {
+                // Enter walks the matches (best first, wrapping); Shift+Enter walks back.
+                const step = e.shiftKey ? -1 : 1;
+                const next = (matchCursor.current + step + matchList.length) % matchList.length;
+                matchCursor.current = next;
+                setCenterRequest({ key: matchList[next]!.key, n: (centerRequest?.n ?? 0) + 1 });
               } else if (e.key === "Escape") {
                 setSearch("");
               }
             }}
           />
         </div>
+        {surface.drill?.open != null && (
+          <nav aria-label="Clusters" className="flex min-w-0 items-center gap-1 text-[12px]">
+            <button
+              type="button"
+              className="rounded px-1 text-[var(--text-secondary)] hover:bg-[var(--item-hover-bg)]"
+              onClick={() => surface.drill?.back()}
+            >
+              {"\u2039 All clusters"}
+            </button>
+            <span className="truncate text-[var(--text-muted)]">{surface.drill.open}</span>
+          </nav>
+        )}
         <div className="flex-1" />
         <ToolbarButton
           icon={GlobeIcon}
@@ -148,6 +175,8 @@ export function GraphView({ location, isActive, tabId }: PageViewProps<GraphLoca
               config={surface.config}
               labels={surface.labels}
               groups={surface.groups.groups}
+              notes={slice?.nodes ?? NO_NOTES}
+              shownNotes={surface.fullSpec.nodes.length}
               depth={depth === undefined ? null : { value: depth, onChange: setDepth }}
             />
           </div>

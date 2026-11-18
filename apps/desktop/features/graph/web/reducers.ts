@@ -34,6 +34,8 @@ export interface ViewState {
   labelMode: LabelMode;
   /** Overview with Group by (or folders): bubbles replace nodes and note-level edges. */
   groupedOverview: boolean;
+  /** Notes whose links draw only while they are hovered or selected (`hubSet`, `lod.ts`). */
+  hubs: ReadonlySet<string>;
   /** Hub rank per node, 0 the highest degree (`hubRanks`). */
   hubRank: ReadonlyMap<string, number>;
   /** Displayed nodes (the hub limits are shares of it). */
@@ -56,6 +58,7 @@ const SHAPES: Record<NodeKind, string> = {
   missing: "circle",
   attachment: "square",
   base: "diamond",
+  cluster: "circle",
 };
 
 export interface NodeStyle {
@@ -64,6 +67,11 @@ export interface NodeStyle {
   shape?: string;
   opacity?: number;
   labelVisibility?: "auto" | "visible" | "hidden";
+  /** Sigma draws a label black unless told otherwise, so every label sets its colour (a theme
+   *  token); the ones that must read, on a plate. */
+  labelColor?: string;
+  labelBackgroundColor?: string;
+  labelBackgroundPadding?: number;
   visibility?: "visible" | "hidden";
   highlighted?: boolean;
   zIndex?: number;
@@ -93,6 +101,7 @@ export function nodeStyle(key: string, a: NodeAttrs, s: ViewState): NodeStyle {
     shape: SHAPES[a.kind],
     opacity: a.kind === "missing" ? 0.55 : 1,
     labelVisibility: "hidden",
+    labelColor: s.theme.label,
   };
 
   const hoverActive = s.hovered !== null;
@@ -123,6 +132,12 @@ export function nodeStyle(key: string, a: NodeAttrs, s: ViewState): NodeStyle {
   }
 
   if (related && hoverActive) style.labelVisibility = "visible";
+  if (a.kind === "cluster") style.labelVisibility = "visible";
+  if (matched || emphasised || related || a.kind === "cluster") {
+    style.labelColor = s.theme.text;
+    style.labelBackgroundColor = s.theme.labelBackground;
+    style.labelBackgroundPadding = 2;
+  }
   if (matched || emphasised) {
     style.labelVisibility = "visible";
     style.opacity = 1;
@@ -163,6 +178,9 @@ export interface EdgeStyle {
   gap?: number;
   label?: string;
   labelVisibility?: "auto" | "visible" | "hidden";
+  labelColor?: string;
+  labelBackgroundColor?: string;
+  labelBackgroundPadding?: number;
 }
 
 export function edgeColor(a: EdgeAttrs, s: ViewState): string {
@@ -183,9 +201,17 @@ export function edgeStyle(a: EdgeAttrs, source: string, target: string, s: ViewS
       return { visibility: "hidden" };
     }
   }
+  const touches = (k: string) => k === s.hovered || k === s.focus || s.selection.has(k);
+  // A hub's links draw only while the hub is hovered, focused or selected.
+  if (
+    (s.hubs.has(source) || s.hubs.has(target)) &&
+    !(touches(source) && s.hubs.has(source)) &&
+    !(touches(target) && s.hubs.has(target))
+  ) {
+    return { visibility: "hidden" };
+  }
   const detailed = atLeast(s.level, "detail");
   const look = EDGE_LOOK[s.level];
-  const touches = (k: string) => k === s.hovered || k === s.focus || s.selection.has(k);
   const touching = touches(source) || touches(target);
   const active = s.hovered !== null || s.focus !== null || s.selection.size > 0;
   const style: EdgeStyle = {
@@ -200,6 +226,9 @@ export function edgeStyle(a: EdgeAttrs, source: string, target: string, s: ViewS
   if (touching && edgeLabelShown(s.labelMode, s.level, touching)) {
     style.label = edgeTitle(a);
     style.labelVisibility = "visible";
+    style.labelColor = s.theme.text;
+    style.labelBackgroundColor = s.theme.labelBackground;
+    style.labelBackgroundPadding = 2;
   }
   if (touching && active) {
     style.size = (style.size ?? 1) * 1.6;

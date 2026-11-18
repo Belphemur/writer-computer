@@ -32,6 +32,7 @@ const view = (patch: Partial<ViewState> = {}): ViewState => ({
   labelMode: "hover",
   groupedOverview: false,
   hubRank: new Map(),
+  hubs: new Set(),
   order: 4,
   cardKeys: new Set(),
   fade: 1,

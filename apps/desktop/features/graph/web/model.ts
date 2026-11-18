@@ -5,12 +5,15 @@
 // dropped, new ones are added next to their neighbours. Used by the graph tab.
 // Everything the renderer needs per node and edge (kind, size, label) lives in attributes; style
 // is decided by the sigma reducers (`reducers.ts`), never here.
+import { excludes, inFolder } from "./exclude";
 import Graph from "graphology";
 import { KIND_FILTER, type GraphFilters } from "./config";
 import type { GraphEdgeKind, GraphNode, GraphSlice } from "./ipc";
 import { matches, needsProps, parseQuery, type Matchable } from "./query";
 
-export type NodeKind = "note" | "tag" | "attachment" | "base" | "missing";
+/** `cluster` is a whole cluster drawn as one node (the collapsed whole-vault view) or the stub of
+ *  another cluster in a drilled-down one (`drill.ts`): a click opens that cluster. */
+export type NodeKind = "note" | "tag" | "attachment" | "base" | "missing" | "cluster";
 export type EdgeKind = GraphEdgeKind | "tag";
 
 /** What a node is, independent of the renderer. `key` is the vault-relative path (graphology key);
@@ -26,6 +29,10 @@ export interface NodeSpec {
   degree: number;
   /** The close-up card's type or status text, from `GraphNode.cardValue`. */
   cardValue: string | null;
+  /** A `cluster` node: the cluster it opens. */
+  cluster?: string;
+  /** A `cluster` node's own colour (it is in no group, so the groups sync leaves it alone). */
+  tint?: string;
 }
 
 /** One relationship between two notes, before the pair is merged into one drawn edge. */
@@ -124,15 +131,19 @@ export function sizeForDegree(degree: number): number {
   return Math.min(SIZE_MAX, SIZE_BASE + SIZE_K * Math.sqrt(Math.max(0, degree)));
 }
 
+/** A cluster node's size follows its note count (bubbles are bigger than notes), capped. */
+export const sizeForCluster = (count: number): number =>
+  Math.min(40, 8 + 2.2 * Math.sqrt(Math.max(0, count)));
+
+const sizeOf = (n: NodeSpec) =>
+  n.kind === "cluster" ? sizeForCluster(n.degree) : sizeForDegree(n.degree);
+
 const parentTag = (tag: string) => (tag.includes("/") ? tag.slice(0, tag.lastIndexOf("/")) : null);
 
 // -- slice to spec ------------------------------------------------------------------------------
 
 /** Frontmatter per vault-relative path, for the `[property:value]` terms of the search. */
 export type PropsByPath = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
-
-const inFolder = (folder: string, root: string) =>
-  folder === root || folder.startsWith(`${root.replace(/\/+$/, "")}/`);
 
 function nodeAllowed(n: GraphNode, kind: NodeKind, f: GraphFilters): boolean {
   if (kind === "attachment" && !f.attachments) return false;
@@ -142,7 +153,7 @@ function nodeAllowed(n: GraphNode, kind: NodeKind, f: GraphFilters): boolean {
     if (f.includeFolders.length && !f.includeFolders.some((r) => inFolder(n.folder, r))) {
       return false;
     }
-    if (f.excludeFolders.some((r) => inFolder(n.folder, r))) return false;
+    if (f.exclude.some((r) => excludes(r, n))) return false;
   }
   return true;
 }
@@ -437,13 +448,20 @@ export function applySpec(graph: GraphModel, spec: GraphSpec): ApplyResult {
   }
 
   for (const n of spec.nodes) {
-    const size = sizeForDegree(n.degree);
+    const size = sizeOf(n);
     if (graph.hasNode(n.key)) {
-      graph.mergeNodeAttributes(n.key, { ...n, size });
+      graph.mergeNodeAttributes(n.key, n.tint ? { ...n, size, color: n.tint } : { ...n, size });
       continue;
     }
     const pos = startPosition(graph, n.key, neighbours.get(n.key) ?? [], spec.nodes.length);
-    graph.addNode(n.key, { ...n, size, ...pos, color: null, group: null, groupExtra: [] });
+    graph.addNode(n.key, {
+      ...n,
+      size,
+      ...pos,
+      color: n.tint ?? null,
+      group: null,
+      groupExtra: [],
+    });
     added.push(n.key);
   }
 

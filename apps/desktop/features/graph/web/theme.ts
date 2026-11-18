@@ -10,6 +10,10 @@ export interface GraphTheme {
   edge: string;
   edgeStrong: string;
   label: string;
+  /** Text that must read (matched and hovered labels, edge lines): the primary text colour. */
+  text: string;
+  /** The plate behind such a label. */
+  labelBackground: string;
   /** Tags, missing notes and other secondary things. */
   muted: string;
   background: string;
@@ -20,6 +24,8 @@ export const FALLBACK_THEME: GraphTheme = {
   edge: "#9a9aa4",
   edgeStrong: "#5f5f6b",
   label: "#4a4a55",
+  text: "#1f1f26",
+  labelBackground: "#ffffff",
   muted: "#a0a0aa",
   background: "#ffffff",
 };
@@ -42,6 +48,8 @@ const VARS: Record<keyof GraphTheme, string> = {
   edge: "--line-subtle",
   edgeStrong: "--text-muted",
   label: "--text-secondary",
+  text: "--text-primary",
+  labelBackground: "--surface-card",
   muted: "--text-icon-muted",
   background: "--surface-primary",
 };

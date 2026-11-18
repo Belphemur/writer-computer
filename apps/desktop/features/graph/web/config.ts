@@ -19,7 +19,9 @@ export type GraphFilters = {
   /** Property labels switched off under Properties. */
   hiddenLabels: string[];
   includeFolders: string[];
-  excludeFolders: string[];
+  /** The one exclude list: a folder (`Archive`) or a name pattern (`agent__*`, `####-##-##*`; `*`
+   *  is any text, `#` a digit), told apart by `exclude.ts`. */
+  exclude: string[];
 };
 
 /** The filter switch of each edge kind, and the one list of kinds (the generated `EdgeKind` makes
@@ -55,7 +57,20 @@ export function clampDepth(d: number | undefined): Depth | undefined {
 }
 
 /** The Display section of the side panel. */
-export type Display = { labels: LabelMode; clusterBy: ClusterBy; depth: Depth };
+export type Display = {
+  labels: LabelMode;
+  clusterBy: ClusterBy;
+  depth: Depth;
+  /** Notes with more links than this keep their dot and label but draw their edges only while
+   *  hovered or selected; 0 turns it off. */
+  hubThreshold: number;
+  /** Each note keeps its strongest `k` links (an edge stays if it is in either end's top k); 0 keeps all. */
+  linksPerNote: number;
+};
+
+export const HUB_THRESHOLD_MAX = 1000;
+export const LINKS_PER_NOTE_MAX = 10;
+export const DEFAULT_HUB_THRESHOLD = 50;
 
 export type SurfaceConfig = {
   filters: GraphFilters;
@@ -81,13 +96,15 @@ export const DEFAULT_FILTERS: GraphFilters = {
   properties: false,
   hiddenLabels: [],
   includeFolders: [],
-  excludeFolders: [],
+  exclude: [],
 };
 
 export const DEFAULT_DISPLAY: Display = {
   labels: DEFAULT_LABEL_MODE,
   clusterBy: "communities",
   depth: DEFAULT_DEPTH,
+  hubThreshold: DEFAULT_HUB_THRESHOLD,
+  linksPerNote: 0,
 };
 
 export const DEFAULT_SURFACE: SurfaceConfig = {
@@ -109,6 +126,12 @@ const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fa
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x !== "") : [];
 
+/** A whole number from 0 to `max`; the fallback for anything else. */
+const count = (v: unknown, fallback: number, max: number) =>
+  typeof v === "number" && Number.isFinite(v)
+    ? Math.min(max, Math.max(0, Math.round(v)))
+    : fallback;
+
 function normalizeFilters(v: unknown): GraphFilters {
   const f = isRecord(v) ? v : {};
   const d = DEFAULT_FILTERS;
@@ -124,7 +147,8 @@ function normalizeFilters(v: unknown): GraphFilters {
     properties: bool(f.properties, d.properties),
     hiddenLabels: strings(f.hiddenLabels),
     includeFolders: strings(f.includeFolders),
-    excludeFolders: strings(f.excludeFolders),
+    // `excludeFolders` is the name this list had before name patterns joined it.
+    exclude: strings(f.exclude ?? f.excludeFolders),
   };
 }
 
@@ -156,6 +180,8 @@ function normalizeDisplay(v: unknown): Display {
     labels: isLabelMode(d.labels) ? d.labels : DEFAULT_DISPLAY.labels,
     clusterBy: isClusterBy(d.clusterBy) ? d.clusterBy : DEFAULT_DISPLAY.clusterBy,
     depth: Math.min(MAX_DEPTH, Math.max(1, depth)) as Depth,
+    hubThreshold: count(d.hubThreshold, DEFAULT_HUB_THRESHOLD, HUB_THRESHOLD_MAX),
+    linksPerNote: count(d.linksPerNote, 0, LINKS_PER_NOTE_MAX),
   };
 }
 
@@ -183,4 +209,10 @@ export function parseConfig(text: string | null): GraphConfig {
 
 export function serializeConfig(config: GraphConfig): string {
   return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+/** Whether the notes a depth reaches are most of the vault (more than 60%): the hint beside the
+ *  depth slider. False while the vault size is unknown. */
+export function coversMostOfVault(shown: number, vault: number | null): boolean {
+  return vault !== null && vault > 0 && shown / vault > 0.6;
 }
