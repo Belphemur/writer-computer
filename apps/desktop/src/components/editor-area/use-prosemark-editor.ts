@@ -11,7 +11,7 @@ import * as editorApi from "@/hooks/editor-api";
 import { registerEditorView } from "@/lib/editor-views";
 import { useReloadVersion } from "@/hooks/use-tabs";
 import { getFileName } from "@/lib/paths";
-import { consumePendingAnchor } from "@/lib/pending-anchor";
+import { takePendingAnchor } from "@/lib/pending-anchor";
 import { applyPendingLine } from "./reveal-line";
 import { logTimeline, mark } from "@/lib/startup-metrics";
 import { showEditorNotice } from "./editor-notice-store";
@@ -190,11 +190,11 @@ export function useProsemarkEditor(
         getScrollContainerRef.current,
       );
       if (scrollContainer) {
-        const pendingAnchor = consumePendingAnchor(filePath);
+        const pendingAnchor = takePendingAnchor(filePath);
         if (applyPendingLine(view, filePath, scrollContainer)) {
           // Line revealed (content search): it wins over a heading anchor and the saved scroll.
         } else if (pendingAnchor !== undefined) {
-          const heading = findHeadingBySlug(content, pendingAnchor);
+          const heading = findHeadingBySlug(content, pendingAnchor.anchor);
           if (heading) {
             requestAnimationFrame(() => {
               if (disposedRef.current) return;
@@ -202,7 +202,11 @@ export function useProsemarkEditor(
             });
           } else {
             scrollContainer.scrollTo({ top: 0, behavior: "auto" });
-            showEditorNotice(`Heading "#${pendingAnchor}" not found in ${getFileName(filePath)}`);
+            if (!pendingAnchor.quiet) {
+              showEditorNotice(
+                `Heading "#${pendingAnchor.anchor}" not found in ${getFileName(filePath)}`,
+              );
+            }
           }
         } else {
           restoreScrollPosition(scrollContainer, file?.scrollPos ?? 0, () => disposedRef.current);

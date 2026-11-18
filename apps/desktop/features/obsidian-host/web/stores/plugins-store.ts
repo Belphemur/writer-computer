@@ -211,6 +211,7 @@ const appWorkspace: AppWorkspace = {
       path,
       anchor,
       !newLeaf ? "current" : activate === false ? "new-tab-background" : "new-tab-active",
+      { quiet: true }, // `openLinkText` subpaths are wiki links
     ),
 };
 

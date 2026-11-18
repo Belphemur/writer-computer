@@ -30,7 +30,12 @@ import {
   type LinkIntent,
   type LinkTarget,
 } from "../src/lib/link-activation";
-import { consumePendingAnchor, registerAnchorReveal } from "../src/lib/pending-anchor";
+import {
+  type AnchorOptions,
+  consumePendingAnchor,
+  registerAnchorReveal,
+  takePendingAnchor,
+} from "../src/lib/pending-anchor";
 import { dispatchMouse } from "@tests/helpers/events";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -216,7 +221,7 @@ describe("CodeMirror binding: linkActivationExtension", () => {
 });
 
 describe("openPathAtAnchor: a heading link reveals its heading", () => {
-  const reveal = vi.fn<(path: string, anchor: string) => boolean>();
+  const reveal = vi.fn<(path: string, anchor: string, opts: AnchorOptions) => boolean>();
   registerAnchorReveal(reveal);
   afterEach(() => {
     reveal.mockReset();
@@ -228,7 +233,7 @@ describe("openPathAtAnchor: a heading link reveals its heading", () => {
     h.active.mockReturnValue("/v/a.md");
     reveal.mockReturnValue(true);
     await openPathAtAnchor("/v/a.md", "intro", "current");
-    expect(reveal).toHaveBeenCalledWith("/v/a.md", "intro");
+    expect(reveal).toHaveBeenCalledWith("/v/a.md", "intro", {});
     expect(h.navigate).not.toHaveBeenCalled();
     expect(consumePendingAnchor("/v/a.md")).toBeUndefined();
   });
@@ -259,6 +264,18 @@ describe("openPathAtAnchor: a heading link reveals its heading", () => {
     await openPathAtAnchor("/v/a.md", null, "current");
     expect(h.navigate).toHaveBeenCalledWith("/v/a.md");
     expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it("carries the quiet option (wiki links: no notice for a missing heading) in place and parked", async () => {
+    h.active.mockReturnValue("/v/a.md");
+    reveal.mockReturnValue(true);
+    await openPathAtAnchor("/v/a.md", "intro", "current", { quiet: true });
+    expect(reveal).toHaveBeenCalledWith("/v/a.md", "intro", { quiet: true });
+    h.active.mockReturnValue(null);
+    await openPathAtAnchor("/v/a.md", "intro", "new-tab-background", { quiet: true });
+    expect(takePendingAnchor("/v/a.md")).toEqual({ anchor: "intro", quiet: true });
+    await openPathAtAnchor("/v/a.md", "intro", "current");
+    expect(takePendingAnchor("/v/a.md")).toEqual({ anchor: "intro", quiet: false });
   });
 
   it("drops the anchor when the open fails", async () => {

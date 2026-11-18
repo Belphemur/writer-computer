@@ -14,7 +14,7 @@ import {
 } from "@/lib/link-activation";
 import { resolveLinkTarget } from "@/lib/paths";
 import { findEditorView } from "@/lib/editor-views";
-import { registerAnchorReveal } from "@/lib/pending-anchor";
+import { type AnchorOptions, registerAnchorReveal } from "@/lib/pending-anchor";
 import { linkUrlAt, rawUrlAt } from "@/lib/prosemark-core/links";
 import * as tauri from "@/lib/tauri";
 import { findOuterScroller, scrollPosToSafeTop } from "./editor-scroll";
@@ -25,12 +25,17 @@ export function findHeadingBySlug(content: string, slug: string): DocumentHeadin
   return buildSlugIndex(parseDocumentHeadings(content, { maxDepth: 6, slugDepth: 6 })).get(slug);
 }
 
-function scrollSameDocAnchor(view: EditorView, filePath: string, anchor: string) {
+function scrollSameDocAnchor(
+  view: EditorView,
+  filePath: string,
+  anchor: string,
+  opts: AnchorOptions = {},
+) {
   const file = editorApi.getOpenFile(filePath);
   const content = file?.content ?? view.state.doc.toString();
   const heading = findHeadingBySlug(content, anchor);
   if (!heading) {
-    showEditorNotice(`Heading "#${anchor}" not found in this document`);
+    if (!opts.quiet) showEditorNotice(`Heading "#${anchor}" not found in this document`);
     return;
   }
   const scroller = findOuterScroller(view.dom);
@@ -39,10 +44,10 @@ function scrollSameDocAnchor(view: EditorView, filePath: string, anchor: string)
 }
 
 // The in-place half of `openPathAtAnchor`: the same scroll a same-document `#slug` link does.
-registerAnchorReveal((path, anchor) => {
+registerAnchorReveal((path, anchor, opts) => {
   const view = findEditorView(path);
   if (!view) return false;
-  scrollSameDocAnchor(view, path, anchor);
+  scrollSameDocAnchor(view, path, anchor, opts);
   return true;
 });
 

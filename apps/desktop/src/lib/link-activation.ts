@@ -10,7 +10,12 @@ import type { Extension } from "@codemirror/state";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { getActiveFilePath, navigateToFile, openFileInNewTab } from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
-import { consumePendingAnchor, revealAnchorInPlace, setPendingAnchor } from "@/lib/pending-anchor";
+import {
+  type AnchorOptions,
+  consumePendingAnchor,
+  revealAnchorInPlace,
+  setPendingAnchor,
+} from "@/lib/pending-anchor";
 import { detectPlatform, type Platform } from "@/lib/platform";
 import * as tauri from "@/lib/tauri";
 import { resolveWikiLink, type WikiLinkTarget } from "@/lib/wiki-links";
@@ -72,12 +77,17 @@ export async function openPathAtAnchor(
   path: string,
   anchor: string | null | undefined,
   intent: LinkIntent,
+  opts: AnchorOptions = {},
 ): Promise<void> {
   if (!anchor) return openPath(path, intent);
-  if (intent === "current" && getActiveFilePath() === path && revealAnchorInPlace(path, anchor)) {
+  if (
+    intent === "current" &&
+    getActiveFilePath() === path &&
+    revealAnchorInPlace(path, anchor, opts)
+  ) {
     return;
   }
-  setPendingAnchor(path, anchor);
+  setPendingAnchor(path, anchor, opts);
   try {
     await openPath(path, intent);
   } catch (e) {
@@ -128,9 +138,9 @@ export function wikiLinkTarget(
         (result) => {
           if (isDisposed()) return;
           if (result.kind !== "internal") return fail("unresolved");
-          return openPathAtAnchor(result.path, result.fragment, intent).catch((e: unknown) =>
-            fail("open-failed", e),
-          );
+          return openPathAtAnchor(result.path, result.fragment, intent, {
+            quiet: true,
+          }).catch((e: unknown) => fail("open-failed", e));
         },
         (e: unknown) => fail("resolve-failed", e),
       );
