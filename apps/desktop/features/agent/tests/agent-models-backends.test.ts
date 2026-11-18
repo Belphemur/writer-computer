@@ -27,7 +27,7 @@ describe("backend registry", () => {
     expect(AGENT_BACKENDS.filter((b) => b.status === "available").map((b) => b.id)).toEqual([
       "claude",
     ]);
-    expect(AGENT_BACKENDS.map((b) => b.id)).toEqual(["opencode", "claude", "codex", "quick-chat"]);
+    expect(AGENT_BACKENDS.map((b) => b.id)).toEqual(["opencode", "claude", "codex"]);
     for (const b of AGENT_BACKENDS.filter((b) => b.status === "coming-soon")) {
       expect(b.detectCommand).toBeNull();
     }

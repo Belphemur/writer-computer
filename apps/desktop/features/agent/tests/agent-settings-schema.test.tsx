@@ -219,12 +219,7 @@ describe("Settings > Agent", () => {
   it("shows Claude active and the other backends as disabled coming-soon pills", async () => {
     await mount();
     const tabs = [...container.querySelectorAll<HTMLButtonElement>("[data-agent-backend-tab]")];
-    expect(tabs.map((t) => t.dataset.agentBackendTab)).toEqual([
-      "opencode",
-      "claude",
-      "codex",
-      "quick-chat",
-    ]);
+    expect(tabs.map((t) => t.dataset.agentBackendTab)).toEqual(["opencode", "claude", "codex"]);
     expect(tabs.filter((t) => t.getAttribute("aria-selected") === "true")).toHaveLength(1);
     for (const t of tabs.filter((t) => t.dataset.agentBackendTab !== "claude")) {
       expect(t.disabled).toBe(true);

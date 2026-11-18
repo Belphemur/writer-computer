@@ -6,7 +6,7 @@
  */
 import type { AgentBinaryInfo } from "./events";
 
-export type BackendGlyph = "claude" | "opencode" | "codex" | "quick-chat";
+export type BackendGlyph = "claude" | "opencode" | "codex";
 
 export type AgentBackendDescriptor = {
   id: string;
@@ -48,16 +48,6 @@ export const AGENT_BACKENDS: readonly AgentBackendDescriptor[] = [
     id: "codex",
     label: "Codex",
     glyph: "codex",
-    status: "coming-soon",
-    detectCommand: null,
-    modelsSource: "none",
-    installUrl: null,
-    minVersion: null,
-  },
-  {
-    id: "quick-chat",
-    label: "Quick Chat",
-    glyph: "quick-chat",
     status: "coming-soon",
     detectCommand: null,
     modelsSource: "none",

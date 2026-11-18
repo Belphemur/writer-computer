@@ -47,7 +47,7 @@ function Glyph({ glyph, size = 18 }: { glyph: BackendGlyph; size?: number }) {
       </svg>
     );
   }
-  const letter = { opencode: "O", codex: "X", "quick-chat": "Q" }[glyph];
+  const letter = { opencode: "O", codex: "X" }[glyph];
   return (
     <span
       aria-hidden="true"
