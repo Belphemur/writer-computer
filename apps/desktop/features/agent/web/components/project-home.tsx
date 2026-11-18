@@ -6,6 +6,7 @@ import {
   startNewAgentChat,
 } from "@features/agent/web/hooks/agent-api";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
+import { useSetting } from "@/hooks/use-settings";
 import {
   projectClient,
   type ManifestPreview,
@@ -15,6 +16,7 @@ import {
 import { sourceKindLabel } from "@features/agent/web/lib/project-sources";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
 import { useProjectAppearance, useProjectsStore } from "@features/agent/web/stores/projects-store";
+import { ArchivedProjects } from "./archived-projects";
 import { ProjectIconPopover } from "./project-icon-picker";
 import { ProjectIcon } from "./project-icon";
 
@@ -52,6 +54,9 @@ export function ProjectHome({
   const [pickerOpen, setPickerOpen] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const appearance = useProjectAppearance(projectPath);
+  const archiveFolder =
+    String(useSetting("agent.projects-archive-folder") ?? "").trim() || "Archive/Projects";
+  const archiveRequested = useProjectsStore((s) => s.archiveRequested);
 
   const load = useCallback(
     async (isStale: () => boolean = () => false) => {
@@ -88,6 +93,13 @@ export function ProjectHome({
     };
   }, [load]);
 
+  // The palette's "Archive project" opens the confirm step once the project has loaded.
+  useEffect(() => {
+    if (!archiveRequested || !project) return;
+    useProjectsStore.getState().setArchiveRequested(false);
+    setConfirmArchive(true);
+  }, [archiveRequested, project]);
+
   if (!projectPath) {
     return (
       <div data-agent-slot="project-home" className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -99,6 +111,7 @@ export function ProjectHome({
         <button type="button" className={`${PRIMARY} mt-3`} onClick={() => openNewProjectDialog()}>
           New project
         </button>
+        <ArchivedProjects client={client} />
       </div>
     );
   }
@@ -256,7 +269,8 @@ export function ProjectHome({
             {confirmArchive ? (
               <div className="flex items-center gap-2">
                 <span className="text-[12px] text-[var(--text-muted)]">
-                  Hides the project from pickers. Files stay.
+                  Moves the folder to {archiveFolder} and hides the project from pickers. Notes and
+                  chats move with it; Unarchive brings it back.
                 </span>
                 <button
                   type="button"
@@ -278,6 +292,7 @@ export function ProjectHome({
           </section>
         </>
       ) : null}
+      <ArchivedProjects client={client} />
     </div>
   );
 }

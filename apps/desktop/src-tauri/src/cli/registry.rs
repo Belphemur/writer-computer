@@ -36,7 +36,7 @@ pub(crate) const fn p(name: &'static str, desc: &'static str) -> ParamSpec {
     }
 }
 
-const fn req(name: &'static str, desc: &'static str) -> ParamSpec {
+pub(crate) const fn req(name: &'static str, desc: &'static str) -> ParamSpec {
     ParamSpec {
         name,
         required: true,

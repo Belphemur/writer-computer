@@ -1701,7 +1701,29 @@ impl Session {
 
     /// Graceful close: stdin ends, then the group is signalled after the grace period.
     pub(crate) fn close(self: &Arc<Self>) {
-        let mut g = self.inner.lock();
+        let g = self.inner.lock();
+        self.close_locked(g);
+    }
+
+    /// [`Self::close`] unless a turn runs, a permission card is open, a process is starting or a
+    /// message waits; then nothing is done and `false` is returned. The check and the close are
+    /// one critical section, so a turn cannot slip in between. An ended session counts as closed.
+    pub(crate) fn close_if_idle(self: &Arc<Self>) -> bool {
+        let g = self.inner.lock();
+        if !g.terminal && self.is_busy(&g) {
+            return false;
+        }
+        self.close_locked(g);
+        true
+    }
+
+    /// Is the session working (see [`Self::is_busy`]) and not already ended?
+    pub(crate) fn is_working(&self) -> bool {
+        let g = self.inner.lock();
+        !g.terminal && self.is_busy(&g)
+    }
+
+    fn close_locked(self: &Arc<Self>, mut g: parking_lot::MutexGuard<'_, Inner>) {
         if g.terminal {
             return;
         }

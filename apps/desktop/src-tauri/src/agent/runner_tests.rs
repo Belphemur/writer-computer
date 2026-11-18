@@ -1921,6 +1921,71 @@ fn reloading_a_chat_with_no_process_only_reports_it() {
     assert_eq!(h.lines("pids.log").len(), 1, "the next message starts it");
 }
 
+// ------------------------------------------------------------------------------ archive guard
+
+const OTHER_CHAT: &str = "33333333-3333-4333-8333-333333333333";
+
+fn project_chat(h: &Harness, chat: &str) {
+    h.sessions
+        .start(h.params(chat, "w", Some("Projects/Demo")))
+        .unwrap();
+}
+
+#[test]
+fn stop_idle_in_refuses_during_a_turn_and_during_a_permission_card() {
+    let mut h = Harness::new(&["tool-auto-allowed"], "hang");
+    std::fs::create_dir_all(h.root.join("Projects/Demo")).unwrap();
+    let folder = h.root.join("Projects/Demo");
+    project_chat(&h, CHAT);
+    h.send(CHAT, "x");
+    h.wait_until("turn running", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Running
+    });
+    assert_eq!(
+        h.sessions.stop_idle_in(&folder),
+        Err(super::session::ProjectBusy { chats: 1 })
+    );
+    assert!(
+        h.sessions.get("w", CHAT).unwrap().is_live(),
+        "nothing stopped"
+    );
+    h.drain();
+
+    let mut h = Harness::new(&["permission-allow"], "normal");
+    std::fs::create_dir_all(h.root.join("Projects/Demo")).unwrap();
+    let folder = h.root.join("Projects/Demo");
+    project_chat(&h, CHAT);
+    h.send(CHAT, "run it");
+    h.next(CHAT, "permission-request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    });
+    assert!(h.sessions.stop_idle_in(&folder).is_err());
+    assert!(h.sessions.get("w", CHAT).unwrap().is_live());
+    h.drain();
+}
+
+#[test]
+fn stop_idle_in_closes_the_idle_chats_of_the_folder_and_only_those() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    std::fs::create_dir_all(h.root.join("Projects/Demo")).unwrap();
+    let folder = h.root.join("Projects/Demo");
+    project_chat(&h, CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    // a chat of the vault root is outside the folder
+    h.start(OTHER_CHAT);
+    assert_eq!(h.sessions.stop_idle_in(&folder), Ok(1));
+    match h.next(CHAT, "session-ended", |e| {
+        matches!(e, AgentEvent::SessionEnded { .. })
+    }) {
+        AgentEvent::SessionEnded { reason, .. } => assert_eq!(reason, SessionEndReason::Closed),
+        _ => unreachable!(),
+    }
+    assert!(h.sessions.get("w", OTHER_CHAT).is_ok());
+    // nothing left to stop
+    assert_eq!(h.sessions.stop_idle_in(&folder), Ok(0));
+}
+
 // ------------------------------------------------------------------------------ config change
 
 fn skill_change(h: &Harness) {

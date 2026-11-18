@@ -51,7 +51,8 @@
       "agent_update_project"
     ],
     "events": ["agent:event"],
-    "hooks": ["setup", "onWorkspaceClose", "onExit"]
+    "hooks": ["setup", "onWorkspaceClose", "onExit"],
+    "cliCommands": ["project:archive", "project:unarchive"]
   },
   "contributes": {
     "commands": [
@@ -88,6 +89,18 @@
       {
         "id": "agent.new-project",
         "label": "New project",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.archive-project",
+        "label": "Agent: Archive project",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "agent.unarchive-project",
+        "label": "Agent: Unarchive project...",
         "description": "Command",
         "when": "workspace-window"
       },

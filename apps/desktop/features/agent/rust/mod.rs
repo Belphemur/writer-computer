@@ -19,10 +19,12 @@
 //! Spec: `SPECs/native-agent-spec.md`.
 
 mod bindings;
+mod cli;
 mod commands;
 
 use crate::agent::project_context::ProjectLibrary;
 use crate::agent::session::{AgentSessions, Timing};
+use crate::cli::registry::CommandSpec;
 use crate::features::{Feature, InvokeHandler};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
@@ -46,6 +48,11 @@ impl<R: Runtime> Feature<R> for Agent {
     /// The `plugin:agent|agent_*` commands; the list is `bindings::builder`.
     fn invoke_handler(&self) -> Option<InvokeHandler<R>> {
         Some(Box::new(bindings::builder::<R>().invoke_handler()))
+    }
+
+    /// `project:archive` and `project:unarchive`.
+    fn cli_commands(&self) -> &'static [CommandSpec] {
+        cli::COMMANDS
     }
 
     fn setup(&self, app: &AppHandle<R>) -> Result<(), String> {
@@ -115,6 +122,10 @@ mod tests {
         let m: Manifest = serde_json::from_str(include_str!("../feature.json")).unwrap();
         assert_eq!(m.id, "agent");
         assert_eq!(m.rust.hooks, ["setup", "onWorkspaceClose", "onExit"]);
+        let raw: serde_json::Value = serde_json::from_str(include_str!("../feature.json")).unwrap();
+        let cli: Vec<_> = cli::COMMANDS.iter().map(|c| c.name).collect();
+        assert_eq!(raw["rust"]["cliCommands"], serde_json::json!(cli));
+        assert!(cli::COMMANDS.iter().all(|c| c.feature == Some("agent")));
         assert!(m.has_rust());
     }
 

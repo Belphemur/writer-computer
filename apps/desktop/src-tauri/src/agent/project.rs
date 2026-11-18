@@ -28,6 +28,13 @@ pub const KEY_DESCRIPTION: &str = "copilot-project-description";
 pub const KEY_CREATED: &str = "copilot-project-created";
 pub const KEY_LAST_USED: &str = "copilot-project-last-used";
 pub const KEY_ARCHIVED: &str = "copilot-project-archived-at";
+/// Where an archived project lived before the move (vault-relative folder), so Unarchive can put
+/// it back. Writer's own key; Copilot ignores it.
+pub const KEY_ARCHIVED_FROM: &str = "writer-project-archived-from";
+/// The setting behind the archive folder (`features/agent/settings.schema.json`) and its default;
+/// a blank value means the default.
+pub const SETTING_ARCHIVE_FOLDER: &str = "agent.projects-archive-folder";
+pub const DEFAULT_ARCHIVE_FOLDER: &str = "Archive/Projects";
 pub const KEY_INCLUSIONS: &str = "copilot-project-inclusions";
 pub const KEY_EXCLUSIONS: &str = "copilot-project-exclusions";
 pub const KEY_WEB_URLS: &str = "copilot-project-web-urls";
@@ -177,6 +184,14 @@ pub struct ProjectUpdate {
     /// A name from `shared/project-colors.json`; `Some("")` removes the key.
     pub color: Option<String>,
     pub touch_last_used: bool,
+}
+
+/// Milliseconds since the epoch, the `now_ms` every project write takes.
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 // -------------------------------------------------------------------------------------------
@@ -710,6 +725,15 @@ fn set(text: &str, key: &str, value: Json) -> Res<String> {
     Ok(patch::set_property(text, key, &value, None)?)
 }
 
+/// `text` without `key`; a key that is not there is not an error.
+fn remove_key(text: &str, key: &str) -> Res<String> {
+    match patch::remove_property(text, key) {
+        Ok(t) => Ok(t),
+        Err(PatchError::NotFound(_)) => Ok(text.to_string()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// Set `key` to `value` when `valid`, remove it for the empty string, else refuse. Removing a key
 /// that is not there is not an error.
 fn set_or_remove(
@@ -720,11 +744,7 @@ fn set_or_remove(
     expected: &str,
 ) -> Res<String> {
     if value.is_empty() {
-        return match patch::remove_property(text, key) {
-            Ok(t) => Ok(t),
-            Err(PatchError::NotFound(_)) => Ok(text.to_string()),
-            Err(e) => Err(e.into()),
-        };
+        return remove_key(text, key);
     }
     if !valid(value) {
         return Err(ProjectError::Invalid(format!(
@@ -969,13 +989,7 @@ pub fn update(root: &Path, rel: &str, up: &ProjectUpdate, now_ms: i64) -> Res<Pr
     }
     if let Some(m) = &up.agent_mode {
         match m.as_str() {
-            "" => {
-                next = match patch::remove_property(&next, KEY_AGENT_MODE) {
-                    Ok(t) => t,
-                    Err(PatchError::NotFound(_)) => next,
-                    Err(e) => return Err(e.into()),
-                }
-            }
+            "" => next = remove_key(&next, KEY_AGENT_MODE)?,
             "manual" | "acceptEdits" => next = set(&next, KEY_AGENT_MODE, Json::from(m.as_str()))?,
             other => {
                 return Err(ProjectError::Invalid(format!(
@@ -1011,31 +1025,151 @@ pub fn update(root: &Path, rel: &str, up: &ProjectUpdate, now_ms: i64) -> Res<Pr
     read(&root, &c.rel)
 }
 
-/// Archive (`archived = true`: sets `copilot-project-archived-at`) or restore a project.
-pub fn archive(root: &Path, rel: &str, archived: bool, now_ms: i64) -> Res<ProjectDetail> {
+// -------------------------------------------------------------------------------------------
+// Archive
+
+/// The archive folder from the setting's raw value (blank or absent: the default), confined to
+/// the vault and never hidden. Returns its vault-relative path; the folder need not exist yet.
+pub fn archive_folder(root: &Path, setting: Option<&str>) -> Res<String> {
+    let raw = setting
+        .map(|s| s.trim().trim_end_matches('/'))
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_ARCHIVE_FOLDER);
+    Ok(confine_dir(&root.canonicalize()?, raw)?.rel)
+}
+
+/// `rel` is `folder` or inside it.
+fn is_within(rel: &str, folder: &str) -> bool {
+    rel == folder || rel.strip_prefix(folder).is_some_and(|r| r.starts_with('/'))
+}
+
+/// `name`, else `name 2`, `name 3`, ... : the first that does not exist in `parent` (a dangling
+/// symlink counts as taken).
+fn free_name(parent: &Path, name: &str) -> String {
+    let taken = |n: &str| parent.join(n).symlink_metadata().is_ok();
+    if !taken(name) {
+        return name.to_string();
+    }
+    (2..)
+        .map(|i| format!("{name} {i}"))
+        .find(|n| !taken(n))
+        .expect("an unbounded range always yields a free name")
+}
+
+/// `Projects/X` -> (`Projects`, `X`); a top-level folder has the empty parent.
+fn split_folder(rel: &str) -> (String, String) {
+    match rel.rsplit_once('/') {
+        Some((parent, name)) => (parent.to_string(), name.to_string()),
+        None => (String::new(), rel.to_string()),
+    }
+}
+
+/// The one move of a project folder: write `next` over `project.md`, rename the whole folder
+/// (chats, memory and all) to `<dest_parent>/<name>` (suffixed when taken, the parent created),
+/// and put `project.md` back as it was if the move fails. Returns the new vault-relative path.
+fn move_project(
+    root: &Path,
+    from: &vault_ops::Confined,
+    original: &str,
+    next: &str,
+    dest_parent: &str,
+    name: &str,
+) -> Res<String> {
+    let parent_abs = if dest_parent.is_empty() {
+        root.to_path_buf()
+    } else {
+        confine_dir(root, dest_parent)?.abs
+    };
+    if parent_abs.starts_with(&from.abs) {
+        return Err(ProjectError::Invalid(
+            "a project cannot be moved into itself".into(),
+        ));
+    }
+    let project_md = from.abs.join(PROJECT_FILE);
+    vault_ops::write_text(&project_md, next)?;
+    let moved = std::fs::create_dir_all(&parent_abs).and_then(|()| {
+        let name = free_name(&parent_abs, name);
+        std::fs::rename(&from.abs, parent_abs.join(&name)).map(|()| name)
+    });
+    match moved {
+        Ok(name) if dest_parent.is_empty() => Ok(name),
+        Ok(name) => Ok(format!("{dest_parent}/{name}")),
+        Err(e) => {
+            if let Err(restore) = vault_ops::write_text(&project_md, original) {
+                log::error!("archive: could not restore project.md after a failed move: {restore}");
+            }
+            Err(e.into())
+        }
+    }
+}
+
+/// Archive (`archived = true`) or restore the project in folder `rel`. The one function behind
+/// the app and the `writer project:archive` / `project:unarchive` commands (ADR "archive agent
+/// projects by moving their folder"). `archive_folder` is the vault-relative archive folder
+/// ([`archive_folder`]).
+///
+/// Archive sets `copilot-project-archived-at` (the one "archived" test, also Copilot's) and
+/// `writer-project-archived-from`, then moves the folder into the archive folder; a project
+/// already inside it is only flagged. Unarchive moves it back to `writer-project-archived-from`
+/// (a project of the archive folder without that key goes to the vault root; one outside the
+/// archive folder is only unflagged) and removes both keys. The caller makes sure no chat of the
+/// project is running (`AgentSessions::stop_idle_in`). Returns the project at its new path.
+pub fn archive(
+    root: &Path,
+    rel: &str,
+    archived: bool,
+    archive_folder: &str,
+    now_ms: i64,
+) -> Res<ProjectDetail> {
     let root = root.canonicalize()?;
     let c = confine_dir(&root, rel)?;
     let text = read_project_md(&c.abs)?
         .ok_or_else(|| ProjectError::NotFound(format!("{} has no {PROJECT_FILE}", c.rel)))?;
-    if parse_project_md(&text, &c.rel, &c.abs)?.is_none() {
-        return Err(ProjectError::NotFound(format!(
-            "{} is not a project",
-            c.rel
-        )));
-    }
-    let next = if archived {
-        set(&text, KEY_ARCHIVED, Json::from(now_ms))?
+    let detail = parse_project_md(&text, &c.rel, &c.abs)?
+        .ok_or_else(|| ProjectError::NotFound(format!("{} is not a project", c.rel)))?;
+    let in_archive = is_within(&c.rel, archive_folder);
+    let name = c.rel.rsplit('/').next().unwrap_or(&c.rel).to_string();
+    let (next, dest) = if archived {
+        let mut next = text.clone();
+        if detail.info.archived_at.is_none() {
+            next = set(&next, KEY_ARCHIVED, Json::from(now_ms))?;
+        }
+        if in_archive {
+            (next, None)
+        } else {
+            if is_within(archive_folder, &c.rel) {
+                return Err(ProjectError::Invalid(format!(
+                    "the archive folder {archive_folder} is inside {}",
+                    c.rel
+                )));
+            }
+            let next = set(&next, KEY_ARCHIVED_FROM, Json::from(c.rel.clone()))?;
+            (next, Some((archive_folder.to_string(), name)))
+        }
     } else {
-        match patch::remove_property(&text, KEY_ARCHIVED) {
-            Ok(t) => t,
-            Err(PatchError::NotFound(_)) => text.clone(),
-            Err(e) => return Err(e.into()),
+        let from = text_value(props_map(&text)?.get(KEY_ARCHIVED_FROM));
+        let next = remove_key(&remove_key(&text, KEY_ARCHIVED)?, KEY_ARCHIVED_FROM)?;
+        let dest = match from.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+            // a recorded folder that is no longer a valid place falls back to the vault root
+            Some(f) => Some(match confine_dir(&root, f) {
+                Ok(t) => split_folder(&t.rel),
+                Err(_) => (String::new(), name),
+            }),
+            None if in_archive => Some((String::new(), name)),
+            None => None,
+        };
+        (next, dest)
+    };
+    let new_rel = match dest {
+        Some((parent, name)) => move_project(&root, &c, &text, &next, &parent, &name)?,
+        None => {
+            if next != text {
+                vault_ops::write_text(&c.abs.join(PROJECT_FILE), &next)?;
+            }
+            c.rel.clone()
         }
     };
-    if next != text {
-        vault_ops::write_text(&c.abs.join(PROJECT_FILE), &next)?;
-    }
-    read(&root, &c.rel)
+    read(&root, &new_rel)
 }
 
 #[cfg(test)]
@@ -1522,18 +1656,200 @@ custom: value\n---\nfree notes\n";
         .is_err());
     }
 
+    const ARCH: &str = DEFAULT_ARCHIVE_FOLDER;
+
+    fn archive_to_default(root: &Path, rel: &str, archived: bool, now: i64) -> Res<ProjectDetail> {
+        archive(root, rel, archived, ARCH, now)
+    }
+
+    fn read_md(root: &Path, rel: &str) -> String {
+        std::fs::read_to_string(root.join(rel).join(PROJECT_FILE)).unwrap()
+    }
+
     #[test]
-    fn archive_and_restore() {
+    fn archive_moves_the_folder_and_flags_it_and_unarchive_brings_it_back() {
         let (_d, root) = vault();
         create(&root, &req("Arc"), NOW).unwrap();
-        let p = archive(&root, "Projects/Arc", true, NOW + 1).unwrap();
+        std::fs::create_dir_all(root.join("Projects/Arc/.chats")).unwrap();
+        std::fs::write(root.join("Projects/Arc/.chats/c.md"), "chat").unwrap();
+        std::fs::write(root.join("Projects/Arc/Note.md"), "note").unwrap();
+
+        let p = archive_to_default(&root, "Projects/Arc", true, NOW + 1).unwrap();
+        assert_eq!(p.info.path, "Archive/Projects/Arc");
         assert_eq!(p.info.archived_at, Some(NOW + 1));
+        assert!(!root.join("Projects/Arc").exists());
+        assert_eq!(
+            std::fs::read_to_string(root.join("Archive/Projects/Arc/.chats/c.md")).unwrap(),
+            "chat"
+        );
+        assert!(root.join("Archive/Projects/Arc/Note.md").is_file());
+        let md = read_md(&root, "Archive/Projects/Arc");
+        assert!(md.contains("writer-project-archived-from: Projects/Arc"));
+        assert!(md.contains("copilot-project-archived-at: 1796000000001"));
         assert!(list(&root, false).unwrap().is_empty());
-        let p = archive(&root, "Projects/Arc", false, NOW + 2).unwrap();
+        assert_eq!(list(&root, true).unwrap().len(), 1);
+
+        let p = archive_to_default(&root, "Archive/Projects/Arc", false, NOW + 2).unwrap();
+        assert_eq!(p.info.path, "Projects/Arc");
         assert_eq!(p.info.archived_at, None);
+        assert!(!root.join("Archive/Projects/Arc").exists());
+        assert!(root.join("Projects/Arc/.chats/c.md").is_file());
+        let md = read_md(&root, "Projects/Arc");
+        assert!(!md.contains("archived"));
         assert_eq!(list(&root, false).unwrap().len(), 1);
-        // restoring a non-archived project is a no-op
-        archive(&root, "Projects/Arc", false, NOW + 3).unwrap();
+    }
+
+    #[test]
+    fn archive_keeps_unknown_frontmatter_and_the_body() {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        let path = root.join("Projects/Arc/project.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replacen("---\n", "---\nmine: 1 # keep\n", 1)).unwrap();
+        archive_to_default(&root, "Projects/Arc", true, NOW + 1).unwrap();
+        archive_to_default(&root, "Archive/Projects/Arc", false, NOW + 2).unwrap();
+        assert!(read_md(&root, "Projects/Arc").contains("mine: 1 # keep"));
+    }
+
+    #[test]
+    fn a_taken_name_gets_a_numeric_suffix_on_both_sides() {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        // the archive already holds an "Arc"
+        std::fs::create_dir_all(root.join("Archive/Projects/Arc")).unwrap();
+        std::fs::write(root.join("Archive/Projects/Arc/keep.md"), "old").unwrap();
+        let p = archive_to_default(&root, "Projects/Arc", true, NOW + 1).unwrap();
+        assert_eq!(p.info.path, "Archive/Projects/Arc 2");
+        assert_eq!(
+            std::fs::read_to_string(root.join("Archive/Projects/Arc/keep.md")).unwrap(),
+            "old"
+        );
+        // the original folder name is taken again when restoring
+        std::fs::create_dir_all(root.join("Projects/Arc")).unwrap();
+        std::fs::write(root.join("Projects/Arc/new.md"), "new").unwrap();
+        let p = archive_to_default(&root, "Archive/Projects/Arc 2", false, NOW + 2).unwrap();
+        assert_eq!(p.info.path, "Projects/Arc 2");
+        assert_eq!(
+            std::fs::read_to_string(root.join("Projects/Arc/new.md")).unwrap(),
+            "new"
+        );
+    }
+
+    #[test]
+    fn a_failed_move_restores_project_md() {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        let before = read_md(&root, "Projects/Arc");
+        // a file where the archive folder's parent must be: the folders cannot be created
+        std::fs::write(root.join("Archive"), "a file").unwrap();
+        let err = archive_to_default(&root, "Projects/Arc", true, NOW + 1).unwrap_err();
+        assert!(matches!(
+            err,
+            ProjectError::Io(_) | ProjectError::Invalid(_)
+        ));
+        assert_eq!(read_md(&root, "Projects/Arc"), before);
+        assert!(root.join("Projects/Arc").is_dir());
+    }
+
+    #[test]
+    fn unarchive_without_a_recorded_folder_goes_to_the_vault_root() {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        archive_to_default(&root, "Projects/Arc", true, NOW + 1).unwrap();
+        let path = root.join("Archive/Projects/Arc/project.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let text: String = text
+            .lines()
+            .filter(|l| !l.starts_with(KEY_ARCHIVED_FROM))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        std::fs::write(&path, text).unwrap();
+        let p = archive_to_default(&root, "Archive/Projects/Arc", false, NOW + 2).unwrap();
+        assert_eq!(p.info.path, "Arc");
+        assert!(root.join("Arc/project.md").is_file());
+        // an invalid recorded folder (outside the vault) falls back the same way
+        archive_to_default(&root, "Arc", true, NOW + 3).unwrap();
+        let path = root.join("Archive/Projects/Arc/project.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            text.replace(
+                "writer-project-archived-from: Arc",
+                "writer-project-archived-from: ../x",
+            ),
+        )
+        .unwrap();
+        let p = archive_to_default(&root, "Archive/Projects/Arc", false, NOW + 4).unwrap();
+        assert_eq!(p.info.path, "Arc");
+    }
+
+    #[test]
+    fn unarchive_creates_a_missing_parent() {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        archive_to_default(&root, "Projects/Arc", true, NOW + 1).unwrap();
+        std::fs::remove_dir_all(root.join("Projects")).unwrap();
+        let p = archive_to_default(&root, "Archive/Projects/Arc", false, NOW + 2).unwrap();
+        assert_eq!(p.info.path, "Projects/Arc");
+    }
+
+    #[test]
+    fn a_project_already_in_the_archive_folder_is_only_flagged_and_a_flag_only_one_is_only_unflagged(
+    ) {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        std::fs::create_dir_all(root.join("Archive/Projects")).unwrap();
+        std::fs::rename(root.join("Projects/Arc"), root.join("Archive/Projects/Arc")).unwrap();
+        let p = archive_to_default(&root, "Archive/Projects/Arc", true, NOW + 1).unwrap();
+        assert_eq!(p.info.path, "Archive/Projects/Arc");
+        assert_eq!(p.info.archived_at, Some(NOW + 1));
+        assert!(!read_md(&root, "Archive/Projects/Arc").contains(KEY_ARCHIVED_FROM));
+        // flagged elsewhere (by Copilot): unarchive removes the flag and leaves the folder
+        create(&root, &req("Other"), NOW).unwrap();
+        let path = root.join("Projects/Other/project.md");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            text.replacen("---\n", "---\ncopilot-project-archived-at: 5\n", 1),
+        )
+        .unwrap();
+        let p = archive_to_default(&root, "Projects/Other", false, NOW + 2).unwrap();
+        assert_eq!(p.info.path, "Projects/Other");
+        assert_eq!(p.info.archived_at, None);
+    }
+
+    #[test]
+    fn the_archive_folder_setting_is_confined_and_never_hidden() {
+        let (_d, root) = vault();
+        assert_eq!(archive_folder(&root, None).unwrap(), "Archive/Projects");
+        assert_eq!(
+            archive_folder(&root, Some("  ")).unwrap(),
+            "Archive/Projects"
+        );
+        assert_eq!(
+            archive_folder(&root, Some("Old/Stuff/")).unwrap(),
+            "Old/Stuff"
+        );
+        for bad in ["../out", ".hidden/x", "A/.obsidian", "A/../../out"] {
+            assert!(
+                matches!(
+                    archive_folder(&root, Some(bad)),
+                    Err(ProjectError::Invalid(_))
+                ),
+                "{bad}"
+            );
+        }
+        assert!(archive_folder(&root, Some(root.parent().unwrap().to_str().unwrap())).is_err());
+    }
+
+    #[test]
+    fn an_archive_folder_inside_the_project_is_refused() {
+        let (_d, root) = vault();
+        create(&root, &req("Arc"), NOW).unwrap();
+        let err = archive(&root, "Projects/Arc", true, "Projects/Arc/old", NOW).unwrap_err();
+        assert!(matches!(err, ProjectError::Invalid(_)));
+        assert!(root.join("Projects/Arc").is_dir());
+        assert!(!read_md(&root, "Projects/Arc").contains(KEY_ARCHIVED));
     }
 
     #[test]

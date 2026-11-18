@@ -107,6 +107,11 @@ export const commands = {
 	agentCreateProject: (name: string, parent: string | null, description: string, inclusions: string[], instructions: string, options?: InvokeOptions) => __TAURI_INVOKE<ProjectDetail>("plugin:agent|agent_create_project", { name, parent, description, inclusions, instructions }, options),
 	agentMakeProject: (path: string, createAgentsMd: boolean, instructions: string | null, description: string | null, inclusions: string[] | null, options?: InvokeOptions) => __TAURI_INVOKE<ProjectDetail>("plugin:agent|agent_make_project", { path, createAgentsMd, instructions, description, inclusions }, options),
 	agentUpdateProject: (path: string, update: ProjectUpdate, options?: InvokeOptions) => __TAURI_INVOKE<ProjectDetail>("plugin:agent|agent_update_project", { path, update }, options),
+	/**
+	 *  Archive or unarchive a project (spec 4.6): the one `project::archive`, after the project's idle
+	 *  chats are closed (their processes run inside the folder that moves). Refused, nothing changed,
+	 *  while a chat of it runs a turn or waits on a permission. Returns the project at its new path.
+	 */
 	agentArchiveProject: (path: string, archived: boolean, options?: InvokeOptions) => __TAURI_INVOKE<ProjectDetail>("plugin:agent|agent_archive_project", { path, archived }, options),
 	agentInspectFolder: (path: string, options?: InvokeOptions) => __TAURI_INVOKE<FolderInspection>("plugin:agent|agent_inspect_folder", { path }, options),
 	agentProjectManifest: (path: string, options?: InvokeOptions) => __TAURI_INVOKE<ManifestPreview>("plugin:agent|agent_project_manifest", { path }, options),

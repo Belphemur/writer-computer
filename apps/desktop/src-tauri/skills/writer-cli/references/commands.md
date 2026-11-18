@@ -85,6 +85,11 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `help` — List commands, or show help for one.
 - `version` — Show the Writer version.
 
+## Agent
+
+- `project:archive` — Archive an agent project: flag it and move its folder into the archive folder (setting agent.projects-archive-folder, default Archive/Projects). Params: `path=` (required; vault-relative project folder, e.g. Projects/Client).
+- `project:unarchive` — Unarchive an agent project: move its folder back to where it was archived from and clear the flag. Params: `path=` (required; vault-relative archived project folder, e.g. Archive/Projects/Client).
+
 ## Bases
 
 - `bases` — List .base files.

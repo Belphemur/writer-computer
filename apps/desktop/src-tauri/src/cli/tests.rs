@@ -1278,3 +1278,87 @@ fn nested_tags_match_ancestors_in_tag_and_search() {
     );
     assert_eq!(t.ok(&["search", "query=tag:res nested", "total"]), "0\n");
 }
+
+// ------------------------------------------------------------------------ project archive
+
+fn make_project(t: &T, rel: &str) {
+    t.write(
+        &format!("{rel}/project.md"),
+        "---\ncopilot-project-id: p1\ncopilot-project-name: Demo\n---\nbody\n",
+    );
+    t.write(&format!("{rel}/.chats/c.md"), "chat");
+}
+
+#[test]
+fn project_archive_and_unarchive_round_trip_through_the_one_function() {
+    let t = T::new();
+    make_project(&t, "Work/Demo");
+    assert_eq!(
+        t.ok(&["project:archive", "path=Work/Demo"]),
+        "Archived Work/Demo -> Archive/Projects/Demo\n"
+    );
+    assert!(!t.exists("Work/Demo"));
+    assert!(t.exists("Archive/Projects/Demo/.chats/c.md"));
+    let md = t.read("Archive/Projects/Demo/project.md");
+    assert!(md.contains("copilot-project-archived-at:"), "{md}");
+    assert!(
+        md.contains("writer-project-archived-from: Work/Demo"),
+        "{md}"
+    );
+    // the app's function gives the same state for the same folder
+    let listed =
+        crate::agent::project::list(&t.vault.path().canonicalize().unwrap(), true).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].info.path, "Archive/Projects/Demo");
+    assert!(listed[0].info.archived_at.is_some());
+
+    assert_eq!(
+        t.ok(&["project:unarchive", "path=Archive/Projects/Demo"]),
+        "Unarchived Archive/Projects/Demo -> Work/Demo\n"
+    );
+    assert!(t.exists("Work/Demo/.chats/c.md") && !t.exists("Archive/Projects/Demo"));
+    assert!(!t.read("Work/Demo/project.md").contains("archived"));
+}
+
+#[test]
+fn project_archive_honours_the_global_setting_and_refuses_bad_input() {
+    let t = T::new();
+    make_project(&t, "Work/Demo");
+    fs::write(
+        t.data.path().join("config"),
+        "agent.projects-archive-folder = Old/Stuff\n",
+    )
+    .unwrap();
+    assert_eq!(
+        t.ok(&["project:archive", "path=Work/Demo"]),
+        "Archived Work/Demo -> Old/Stuff/Demo\n"
+    );
+    // a folder outside the vault, a missing project, a plain folder and a missing path
+    fs::write(
+        t.data.path().join("config"),
+        "agent.projects-archive-folder = ../out\n",
+    )
+    .unwrap();
+    make_project(&t, "Work/Other");
+    assert_eq!(t.code(&["project:archive", "path=Work/Other"]).0, EXIT_FAIL);
+    assert!(t.exists("Work/Other/project.md"));
+    assert_eq!(t.code(&["project:archive", "path=Nope"]).0, EXIT_FAIL);
+    assert_eq!(t.code(&["project:archive", "path=Projects"]).0, EXIT_FAIL);
+    assert_eq!(t.code(&["project:archive"]).0, EXIT_USAGE);
+    assert_eq!(t.code(&["project:archive", "path=.obsidian"]).0, EXIT_FAIL);
+}
+
+#[test]
+fn project_commands_follow_the_agent_feature_switch() {
+    let t = T::new();
+    make_project(&t, "Work/Demo");
+    t.switch("agent", false);
+    let o = t.run(&["project:archive", "path=Work/Demo"]);
+    assert_eq!(o.code, EXIT_FAIL);
+    assert!(
+        o.stderr.contains("the agent feature is turned off"),
+        "{}",
+        o.stderr
+    );
+    assert!(t.exists("Work/Demo/project.md"));
+}

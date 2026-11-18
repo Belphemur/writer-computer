@@ -293,8 +293,20 @@ pub fn settings_schema() -> Vec<SettingDef> {
 /// (no migration, nothing written): what the `writer` CLI needs to honour a feature's kill
 /// switch. `None` when the file or the key is absent, or the value is not a boolean.
 pub fn read_global_bool(global_config_dir: &Path, key: &str) -> Option<bool> {
+    read_global_value(global_config_dir, key)?.as_bool()
+}
+
+/// [`read_global_bool`] for a string setting (`None` when absent or not a string): what the
+/// `writer` CLI needs to read a path-like setting such as the projects archive folder.
+pub fn read_global_string(global_config_dir: &Path, key: &str) -> Option<String> {
+    read_global_value(global_config_dir, key)?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn read_global_value(global_config_dir: &Path, key: &str) -> Option<ConfigValue> {
     let raw = std::fs::read_to_string(global_config_dir.join("config")).ok()?;
-    parse_config_with_defaults(&raw, None).get(key)?.as_bool()
+    parse_config_with_defaults(&raw, None).remove(key)
 }
 
 /// Manages the three-layer settings: defaults → global → workspace.

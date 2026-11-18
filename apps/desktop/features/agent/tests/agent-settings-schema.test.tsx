@@ -56,6 +56,7 @@ describe("agent.* settings contract", () => {
       "agent.inject-agents-md": "auto",
       "agent.max-concurrent-chats": 4,
       "agent.chats-keep-days": 0,
+      "agent.projects-archive-folder": "Archive/Projects",
       "agent.auto-title-chats": true,
       "agent.show-thinking": true,
       "agent.auto-reload": true,
@@ -106,6 +107,7 @@ describe("agent.* settings contract", () => {
   it("trims the free-text keys", () => {
     expect(byKey("agent.binary-path").normalize).toBe("trim");
     expect(byKey("agent.model").normalize).toBe("trim");
+    expect(byKey("agent.projects-archive-folder").normalize).toBe("trim");
     for (const tier of AGENT_TIERS) {
       expect(byKey(claudeTierSettingKey(tier)).normalize).toBe("trim");
     }

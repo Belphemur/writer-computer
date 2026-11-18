@@ -1290,8 +1290,23 @@ mod tests {
     #[test]
     fn the_registered_features_add_exactly_their_contributions_to_the_core_tables() {
         let names: Vec<_> = cli_commands().iter().map(|c| c.name).collect();
-        assert_eq!(names, ["bases", "base:views", "base:create", "base:query"]);
-        assert!(cli_commands().iter().all(|c| c.feature == Some("bases")));
+        assert_eq!(
+            names,
+            [
+                "project:archive",
+                "project:unarchive",
+                "bases",
+                "base:views",
+                "base:create",
+                "base:query"
+            ]
+        );
+        assert!(cli_commands().iter().all(|c| c.feature
+            == Some(if c.name.starts_with("project:") {
+                "agent"
+            } else {
+                "bases"
+            })));
         let skills: Vec<_> = skills().iter().map(|s| s.name).collect();
         assert_eq!(skills, ["writer-bases"]);
         assert!(index_ddl().is_empty());
@@ -1301,7 +1316,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 4
+            crate::cli::registry::COMMANDS.len() + 6
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

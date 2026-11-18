@@ -50,6 +50,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Structure  | `outline`, `wordcount`                                                                                                                        |
 | Skills     | `skills:sync`                                                                                                                                 |
 | Meta       | `help`, `version`                                                                                                                             |
+| Agent      | `project:archive`, `project:unarchive`                                                                                                        |
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                            |
 
 <!-- END GENERATED: groups -->

@@ -762,10 +762,7 @@ impl ProjectPort for ProjectLibrary {
     }
 
     fn touch_last_used(&self, root: &Path, project_path: &str) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = project::now_ms();
         let up = ProjectUpdate {
             touch_last_used: true,
             ..Default::default()

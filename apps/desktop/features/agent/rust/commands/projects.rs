@@ -6,6 +6,7 @@
 use crate::agent::events::NewProjectRequest;
 use crate::agent::project::{self, MakeOptions, ProjectDetail, ProjectError, ProjectUpdate};
 use crate::agent::project_context::{self, Manifest};
+use crate::agent::session::AgentSessions;
 use crate::commands::blocking;
 use crate::commands::index::window_index;
 use crate::error::AppError;
@@ -30,13 +31,6 @@ fn root_of<R: Runtime>(
     let state = app.state::<AppState>().get_or_create(webview.label());
     let (root, _) = state.workspace_snapshot().ok_or(AppError::NoWorkspace)?;
     Ok(root)
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
 }
 
 #[tauri::command]
@@ -82,7 +76,7 @@ pub async fn agent_create_project<R: Runtime>(
         instructions,
     };
     blocking(move || {
-        project::create(&root, &request, now_ms())
+        project::create(&root, &request, project::now_ms())
             .map(|r| r.project)
             .map_err(map_err)
     })
@@ -108,7 +102,7 @@ pub async fn agent_make_project<R: Runtime>(
             description: description.unwrap_or_default(),
             inclusions: inclusions.unwrap_or_default(),
         };
-        project::make_with(&root, &path, &opts, now_ms())
+        project::make_with(&root, &path, &opts, project::now_ms())
             .map(|r| r.project)
             .map_err(map_err)
     })
@@ -124,9 +118,13 @@ pub async fn agent_update_project<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
-    blocking(move || project::update(&root, &path, &update, now_ms()).map_err(map_err)).await
+    blocking(move || project::update(&root, &path, &update, project::now_ms()).map_err(map_err))
+        .await
 }
 
+/// Archive or unarchive a project (spec 4.6): the one `project::archive`, after the project's idle
+/// chats are closed (their processes run inside the folder that moves). Refused, nothing changed,
+/// while a chat of it runs a turn or waits on a permission. Returns the project at its new path.
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_archive_project<R: Runtime>(
@@ -136,7 +134,28 @@ pub async fn agent_archive_project<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<ProjectDetail, AppError> {
     let root = root_of(&app, &webview)?;
-    blocking(move || project::archive(&root, &path, archived, now_ms()).map_err(map_err)).await
+    let setting = archive_folder_setting(&app, webview.label());
+    blocking(move || {
+        let folder = project::archive_folder(&root, setting.as_deref()).map_err(map_err)?;
+        if let Some(sessions) = app.try_state::<AgentSessions>() {
+            let cwd = project::resolve_cwd(&root, Some(&path)).map_err(map_err)?;
+            sessions
+                .stop_idle_in(&cwd)
+                .map_err(|busy| AppError::Refused(busy.to_string()))?;
+        }
+        project::archive(&root, &path, archived, &folder, project::now_ms()).map_err(map_err)
+    })
+    .await
+}
+
+/// `agent.projects-archive-folder` as the window's settings hold it (blank: the default).
+fn archive_folder_setting<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Option<String> {
+    let state = app.state::<AppState>().get_or_create(label);
+    let guard = state.settings.read();
+    guard
+        .as_ref()
+        .and_then(|s| s.get(project::SETTING_ARCHIVE_FOLDER))
+        .and_then(|v| v.as_str().map(str::to_string))
 }
 
 /// What "Make project" would do to a folder, for the dialog's convert mode.

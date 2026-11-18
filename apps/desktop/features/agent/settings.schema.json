@@ -109,6 +109,17 @@
       "default": "auto"
     },
     {
+      "key": "agent.projects-archive-folder",
+      "label": "Archived projects folder",
+      "description": "Vault folder that Archive moves a project into (created when needed; Unarchive moves it back). A blank value means Archive/Projects. It must be inside the vault and not a hidden folder.",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "Archive/Projects",
+      "scope": "global",
+      "default": "Archive/Projects"
+    },
+    {
       "key": "agent.show-turn-changes",
       "label": "Show changes after each turn",
       "description": "When a turn ends and the agent changed files in your vault, show a Changes card with a diff per file and an Undo. Writer keeps a copy of each edited file from before the turn in memory only (never on disk, never logged) so it can show the diff and undo it; the copy is dropped when the app quits. Changes made by shell commands are not tracked.",

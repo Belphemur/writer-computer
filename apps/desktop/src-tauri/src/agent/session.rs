@@ -265,6 +265,25 @@ pub struct StartedIds {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rejected(pub String);
 
+/// Chats of a project that run a turn or wait on a permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProjectBusy {
+    pub chats: usize,
+}
+
+impl std::fmt::Display for ProjectBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.chats;
+        write!(
+            f,
+            "{n} chat{} of this project {} busy: stop or finish {} first",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "is" } else { "are" },
+            if n == 1 { "it" } else { "them" },
+        )
+    }
+}
+
 pub struct StartParams {
     /// Tauri window label, the owner of the chat.
     pub label: String,
@@ -712,6 +731,31 @@ impl AgentSessions {
             Ok(s) => s.snapshot(after_seq),
             Err(_) => (AgentSessionState::Ended, Vec::new()),
         }
+    }
+
+    /// Before a project folder is moved: close the idle chats whose working directory is inside
+    /// `folder` (canonical, absolute) and return how many. `Err` (nothing closed) when any chat
+    /// of it runs a turn or waits on a permission: a move must never cut a turn short.
+    pub fn stop_idle_in(&self, folder: &Path) -> Result<usize, ProjectBusy> {
+        let inside: Vec<Arc<Session>> = self
+            .shared
+            .all()
+            .into_iter()
+            .filter(|s| s.cwd.starts_with(folder))
+            .collect();
+        let busy = inside.iter().filter(|s| s.is_working()).count();
+        if busy > 0 {
+            return Err(ProjectBusy { chats: busy });
+        }
+        // a turn may have started since the check: the close itself re-checks under the lock
+        let mut closed = 0;
+        for s in &inside {
+            if !s.close_if_idle() {
+                return Err(ProjectBusy { chats: 1 });
+            }
+            closed += 1;
+        }
+        Ok(closed)
     }
 
     fn kill_where(&self, pred: impl Fn(&Session) -> bool) {

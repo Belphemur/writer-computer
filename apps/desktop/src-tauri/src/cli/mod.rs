@@ -18,6 +18,7 @@ pub(crate) mod cmd_bases;
 mod cmd_files;
 mod cmd_graph;
 mod cmd_notes;
+pub(crate) mod cmd_project;
 mod cmd_query;
 mod cmd_skills;
 pub mod format;

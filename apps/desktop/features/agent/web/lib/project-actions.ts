@@ -5,6 +5,8 @@
 import { getRelativePath } from "@/lib/paths";
 import { folderOfFile } from "@features/agent/web/lib/project-sources";
 import { useAgentStore } from "@features/agent/web/stores/agent-store";
+import { usePaneStore } from "@features/agent/web/stores/pane-store";
+import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
 /** "Make project" on an absolute folder path inside the open workspace. */
@@ -23,4 +25,31 @@ export function openNewProject(): void {
 export function openMakeProjectForActiveFile(activeFilePath: string | null): void {
   const rel = folderOfFile(activeFilePath, useWorkspaceStore.getState().root);
   if (rel) useAgentStore.getState().openNewProjectDialog({ folder: rel });
+}
+
+/** The project the pane is on: the active chat's, else the default for new chats. */
+function currentProject(): string | null {
+  const a = useAgentStore.getState();
+  const chat = a.activeChatId ? a.chats[a.activeChatId] : undefined;
+  return chat?.projectPath ?? a.currentProjectPath;
+}
+
+function showProjectBrowser(): void {
+  const a = useAgentStore.getState();
+  if (a.order.length === 0) a.newChat();
+  usePaneStore.getState().setOpen(true);
+  a.setView("project");
+}
+
+/** Palette "Archive project": the pane's project home with the Archive confirm step open (the
+ *  move itself is the home's button, one path). Without a project it only shows the browser. */
+export function openArchiveProject(): void {
+  if (currentProject()) useProjectsStore.getState().setArchiveRequested(true);
+  showProjectBrowser();
+}
+
+/** Palette "Unarchive project...": the project browser with its Archived section expanded. */
+export function openArchivedProjects(): void {
+  useProjectsStore.getState().setArchivedExpanded(true);
+  showProjectBrowser();
 }

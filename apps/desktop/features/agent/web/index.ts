@@ -55,6 +55,8 @@ const ACTIONS: Record<string, (c: Availability) => void | Promise<void>> = {
     api.openAgentPane();
   },
   "agent.new-project": async () => (await projectActions()).openNewProject(),
+  "agent.archive-project": async () => (await projectActions()).openArchiveProject(),
+  "agent.unarchive-project": async () => (await projectActions()).openArchivedProjects(),
   "agent.make-project-from-folder": async (c) =>
     (await projectActions()).openMakeProjectForActiveFile(c.activeFilePath),
 };

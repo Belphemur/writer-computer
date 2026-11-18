@@ -347,6 +347,7 @@ export function AgentSection() {
           "agent.inject-agents-md",
           "agent.max-concurrent-chats",
           "agent.chats-keep-days",
+          "agent.projects-archive-folder",
           "agent.auto-title-chats",
           "agent.restore-chats",
           "agent.orchestrate",
