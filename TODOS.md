@@ -146,7 +146,7 @@
 
 ## Backlog
 
-- [ ] Git sync engine (future work): built-in `git` feature, Rust 3-way merge (front matter per property), rebase replay, system git transport, `gh` sign-in, history, optional LFS. Design agreed, deferred by the user on 2026-11-18. ADR: [docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md](docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md) (proposed).
+- [ ] Git sync engine (future work): built-in `git` feature, Rust 3-way merge (front matter per property), rebase replay, system git transport, `gh` sign-in, history, optional LFS. Design agreed, deferred by the user on 2026-11-18. Spec: [SPECs/git-sync-spec.md](SPECs/git-sync-spec.md). ADR: [docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md](docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md) (proposed).
 
 Previously-triaged work organized by phase. Pull into `Up Next` as capacity opens.
 

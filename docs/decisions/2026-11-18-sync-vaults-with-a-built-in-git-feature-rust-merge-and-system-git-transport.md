@@ -6,7 +6,7 @@ decision-makers: Writer maintainers
 
 # Sync vaults with a built-in Git feature: Rust logic and merge, system git for transport
 
-> **Deferred (user, 2026-11-18): future work.** The design below is agreed; implementation waits. Accept this ADR when the work starts, after confirming the `gix` version and the GitHub OAuth App client id.
+> **Deferred (user, 2026-11-18): future work.** The design below is agreed and specified in [`SPECs/git-sync-spec.md`](../../SPECs/git-sync-spec.md); implementation waits. Accept this ADR when the work starts, after confirming the `gix` version and the GitHub OAuth App client id.
 
 ## Context and Problem Statement
 
