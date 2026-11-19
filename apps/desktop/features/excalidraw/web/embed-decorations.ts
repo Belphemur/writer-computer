@@ -11,6 +11,7 @@ import { Decoration, EditorView } from "@codemirror/view";
 import type { SyntaxNodeRef } from "@lezer/common";
 import { createElement, type ReactElement } from "react";
 import { editorNotePath } from "@/lib/editor-views";
+import { closeFullscreenWithEditor } from "@/lib/fullscreen-overlay";
 import { foldableSyntaxFacet } from "@/lib/prosemark-core/main";
 import { HeightMemory, ReactBlockWidget } from "@/lib/react-block-widget";
 import { DrawingEmbed } from "./components/drawing-embed";
@@ -87,5 +88,7 @@ export function drawingEmbedDecorations() {
       },
     }),
     embedTheme,
+    // the full screen of an embed closes with the note
+    closeFullscreenWithEditor(),
   ];
 }

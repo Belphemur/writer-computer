@@ -283,7 +283,7 @@ describe("fullscreen", () => {
   test("closes on the close button and on a backdrop click", () => {
     const v = make();
     click(action(widget(v)!, "expand"));
-    click(overlay()!.querySelector(".cm-table-fullscreen-close")!);
+    click(overlay()!.querySelector(".writer-fullscreen-close")!);
     expect(overlay()).toBeNull();
     click(action(widget(v)!, "expand"));
     overlay()!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));

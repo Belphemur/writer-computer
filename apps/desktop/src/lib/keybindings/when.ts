@@ -46,7 +46,7 @@ export function isPdfViewerActive(): boolean {
   return tab?.location.kind === "pdf" && isFeatureActive("pdf");
 }
 
-/** Focus is in a drawing's canvas, the tab's or an embed's (`features/excalidraw`, which marks its
+/** Focus is in a drawing's canvas, the tab's or the full screen's (`features/excalidraw`, which marks its
  *  stage `data-drawing-canvas`): Excalidraw has its own zoom chords there. */
 export function isDrawingCanvasFocused(): boolean {
   return document.activeElement?.closest("[data-drawing-canvas]") != null;

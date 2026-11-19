@@ -260,58 +260,8 @@ th[data-col]:hover > .cm-table-handle {
   background-color: var(--surface-subtle, rgba(127, 127, 127, 0.22));
 }
 
-/* Fullscreen overlay. */
-.cm-table-fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: color-mix(in srgb, var(--bg-base, #1e1e1e) 70%, transparent);
-  backdrop-filter: blur(3px);
-  opacity: 0;
-  transition: opacity 160ms ease-out;
-}
-.cm-table-fullscreen.is-open {
-  opacity: 1;
-}
-.cm-table-fullscreen-panel {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: min(96vw, 1800px);
-  height: 92vh;
-  border-radius: 12px;
-  border: 1px solid var(--border-color, #3e3e42);
-  background-color: var(--bg-base, #1e1e1e);
-  color: var(--fg-base, inherit);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-}
-.cm-table-fullscreen-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color, #3e3e42);
-  color: var(--text-muted, #888);
-  font:
-    12px/1 system-ui,
-    sans-serif;
-}
-.cm-table-fullscreen-close {
-  all: unset;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 5px;
-}
-.cm-table-fullscreen-close:hover {
-  background-color: var(--surface-subtle, rgba(127, 127, 127, 0.22));
-}
+/* Fullscreen: the shell is `src/lib/fullscreen-overlay.css`; this is the table inside it. */
 .cm-table-fullscreen-body {
-  flex: 1;
-  overflow: auto;
   padding: 16px 20px 24px;
   font-family: var(--editor-font-family, inherit);
   font-size: var(--editor-font-size, 16px);

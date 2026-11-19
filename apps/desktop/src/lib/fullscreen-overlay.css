@@ -1,0 +1,89 @@
+/* The one full-screen shell (`fullscreen-overlay.ts`): an opaque panel over a dimmed backdrop with
+   a header (title, the caller's actions, close) and a body the caller fills. `bare` has no panel:
+   the body fills the window and the caller draws its own controls. A surface adds its own class for
+   its content; it never restyles the shell. */
+.writer-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: color-mix(in srgb, var(--bg-base, #1e1e1e) 70%, transparent);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.writer-fullscreen:focus,
+.writer-fullscreen:focus-visible {
+  outline: none;
+}
+.writer-fullscreen.is-open {
+  opacity: 1;
+}
+.writer-fullscreen-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(96vw, 1800px);
+  height: 92vh;
+  border-radius: 12px;
+  border: 1px solid var(--border-color, #3e3e42);
+  background-color: var(--bg-base, #1e1e1e);
+  color: var(--fg-base, inherit);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.writer-fullscreen-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color, #3e3e42);
+  color: var(--text-muted, #888);
+  font:
+    12px/1 system-ui,
+    sans-serif;
+}
+.writer-fullscreen-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.writer-fullscreen-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.writer-fullscreen-close,
+.writer-fullscreen-action {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 5px;
+}
+.writer-fullscreen-close:hover,
+.writer-fullscreen-action:hover,
+.writer-fullscreen-close:focus-visible,
+.writer-fullscreen-action:focus-visible {
+  background-color: var(--surface-subtle, rgba(127, 127, 127, 0.22));
+}
+.writer-fullscreen-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.writer-fullscreen[data-variant="bare"] {
+  display: block;
+  background-color: color-mix(in srgb, var(--bg-base) 92%, transparent);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  transition-duration: 180ms;
+}
+.writer-fullscreen[data-variant="bare"] .writer-fullscreen-body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}

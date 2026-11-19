@@ -13,9 +13,9 @@ const FORBIDDEN = /aria-modal|["']aria-modal["']|key\s*[!=]==?\s*["']Tab["']/;
 // Different on purpose, each with a reason. Any new entry needs one.
 const ALLOWED = new Set([
   SHELL,
-  // Imperative CodeMirror widgets, not React: a fullscreen overlay built with `createElement`.
-  "src/components/editor-area/mermaid-fullscreen.ts",
-  "features/tables/web/table-fullscreen.ts",
+  // The one full-screen shell for imperative CodeMirror widgets (Mermaid, tables, drawings): built
+  // with `createElement`, not React. Those surfaces are content in it and carry no `aria-modal`.
+  "src/lib/fullscreen-overlay.ts",
   // Palettes, pickers and popovers own a keyboard model of their own (roving selection, Tab
   // accepts or moves through options); they are not modals and do not trap focus in a card.
   "src/components/editor-area/property-wikilink.tsx",

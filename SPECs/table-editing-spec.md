@@ -59,7 +59,7 @@ turned it into markdown source. The rendered table is now the editing surface.
   a grip on each row gutter opening a menu (insert before/after, move, duplicate, delete, align
   left/center/right, sort A to Z / Z to A). Everything runs the same `tableCommands`, so output is the
   canonical `layoutTable` format and each action is one undo step. The menus live in `document.body`.
-- Fullscreen (`web/table-fullscreen.ts`, pattern of `mermaid-fullscreen.ts`): the expand button or
+- Fullscreen (`web/table-fullscreen.ts`, in the shared shell `src/lib/fullscreen-overlay.ts`): the expand button or
   palette "Table: Expand table" open the table in a near-full-window panel over a dimmed backdrop,
   scrolling both ways, with the same cells and handles. It edits the note's document through the same
   view (one undo history) and mirrors every document change. Escape, Close or a backdrop click close

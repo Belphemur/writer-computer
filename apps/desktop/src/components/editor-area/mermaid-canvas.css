@@ -374,32 +374,13 @@
   overflow-wrap: break-word;
 }
 
-/* Fullscreen overlay: fixed-position div that fills the viewport and hosts
-   a fresh canvas. Plain div (not <dialog>) so layering and event handling
-   stay under our control. Controls inside the fullscreen canvas stay
-   visible regardless of hover/focus so the user has obvious affordances
-   on first paint.
+/* Fullscreen: the shell (`lib/fullscreen-overlay.ts`, `bare`) is the backdrop, the layering and the
+   fade; this is the canvas inside it. Controls inside the fullscreen canvas stay visible regardless
+   of hover/focus so the user has obvious affordances on first paint.
 
-   Enter/exit animation: backdrop fades, canvas scales 0.95 → 1 and fades.
-   The base rule below is the closed state; `.is-open` (added one frame
-   after mount, removed before teardown) is the open state. JS waits for
-   the canvas's `transitionend` before removing the overlay from the DOM
-   so the exit animation has time to play. */
-.cm-mermaid-fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background-color: color-mix(in srgb, var(--bg-base) 92%, transparent);
-  backdrop-filter: blur(4px);
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity 180ms ease-out;
-}
-
-.cm-mermaid-fullscreen.is-open {
-  opacity: 1;
-}
-
+   Enter/exit animation: the canvas scales 0.95 → 1 and fades with the shell's `.is-open` (added one
+   frame after mount, removed before teardown); the shell keeps the overlay in the DOM for the
+   exit's duration. */
 .cm-mermaid-fullscreen-canvas {
   width: 100%;
   height: 100%;

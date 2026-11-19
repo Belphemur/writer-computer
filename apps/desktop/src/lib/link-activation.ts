@@ -168,7 +168,7 @@ export interface LinkHandlerOptions {
   /** Only the middle button opens the link: for a row whose left and modifier clicks mean
    *  something else (the file tree selects on Cmd/Shift+click, a cmdk item selects on click). */
   middleOnly?: boolean;
-  /** What a plain left click does instead of opening the link (an embed that edits in place);
+  /** What a plain left click does instead of opening the link (an embed that opens full screen);
    *  middle click and Cmd/Ctrl+click still open it. */
   onCurrent?: () => void;
 }

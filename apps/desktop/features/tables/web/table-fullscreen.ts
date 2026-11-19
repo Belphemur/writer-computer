@@ -1,9 +1,8 @@
-// Fullscreen view of a rendered table: a near-full-window panel over a dimmed backdrop, the same
+// Fullscreen view of a rendered table: the shared full-screen shell (`lib/fullscreen-overlay.ts`:
+// backdrop, header, Escape, focus restore, one at a time, closed with the editor) around the same
 // in-place cell editing and row/column handles as the inline table, scrolling both ways. It edits
 // the note's own document through the editor view, so there is one undo history and the table in
-// the note changes underneath. Escape, the close button or a click on the backdrop closes it and
-// returns focus to the note. Pattern: `mermaid-fullscreen.ts`. One at a time; the editing plugin
-// closes it when the editor goes away (the note or tab closes).
+// the note changes underneath.
 import type { EditorView, ViewUpdate } from "@codemirror/view";
 import { HEADER_ROW, type MarkdownTable } from "./markdown-table";
 import {
@@ -14,6 +13,7 @@ import {
   type TableHost,
 } from "./table-cells";
 import { activateLink } from "@/lib/link-activation";
+import { closeFullscreen, closeFullscreenOwnedBy, openFullscreen } from "@/lib/fullscreen-overlay";
 import { cellLinkAt } from "./table-links";
 import { cellTextElement, setFullscreenHooks } from "./table-state";
 import { tableContextAtPos } from "./table-editing";
@@ -33,8 +33,6 @@ interface OpenFullscreen {
   body: HTMLElement;
   wrapper: HTMLElement;
   host: TableHost;
-  restoreFocus: HTMLElement | null;
-  onKey: (e: KeyboardEvent) => void;
 }
 
 let current: OpenFullscreen | null = null;
@@ -68,17 +66,7 @@ function makeHost(state: { view: EditorView; from: number }): TableHost {
 }
 
 export function closeTableFullscreen(): void {
-  const open = current;
-  if (!open) return;
-  closeTableMenu();
-  // Blur first so a cell being edited commits while the overlay is still the table's host.
-  const active = document.activeElement;
-  if (active instanceof HTMLElement && open.overlay.contains(active)) active.blur();
-  current = null;
-  document.removeEventListener("keydown", open.onKey, true);
-  open.overlay.remove();
-  if (open.restoreFocus?.isConnected) open.restoreFocus.focus({ preventScroll: true });
-  else if (open.view.dom.isConnected) open.view.focus();
+  if (current) closeFullscreen();
 }
 
 export function openTableFullscreen(view: EditorView, from: number): void {
@@ -87,25 +75,22 @@ export function openTableFullscreen(view: EditorView, from: number): void {
   if (!ctx) return;
 
   const state = { view, from: ctx.from };
-  const overlay = document.createElement("div");
-  overlay.className = "cm-table-fullscreen";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Table");
-
-  const panel = overlay.appendChild(document.createElement("div"));
-  panel.className = "cm-table-fullscreen-panel";
-  const bar = panel.appendChild(document.createElement("div"));
-  bar.className = "cm-table-fullscreen-bar";
-  bar.appendChild(document.createElement("span")).textContent = "Esc to close";
-  const close = bar.appendChild(document.createElement("button"));
-  close.type = "button";
-  close.className = "cm-table-fullscreen-close";
-  close.textContent = "Close";
-  close.setAttribute("aria-label", "Close fullscreen table");
-  close.addEventListener("click", closeTableFullscreen);
-  const body = panel.appendChild(document.createElement("div"));
-  body.className = "cm-table-fullscreen-body";
+  const { overlay, body } = openFullscreen({
+    label: "Table",
+    title: "Esc to close",
+    className: "cm-table-fullscreen",
+    owner: view,
+    // a column menu handles its own Escape first
+    allowEscape: () => !document.querySelector(".cm-table-menu"),
+    onClose: () => {
+      closeTableMenu();
+      // Blur first so a cell being edited commits while the overlay is still the table's host.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && overlay.contains(active)) active.blur();
+      current = null;
+    },
+  });
+  body.classList.add("cm-table-fullscreen-body");
 
   const host = makeHost(state);
   const wrapper = buildTableDOM(renderTableOf(ctx.table), () => host);
@@ -118,31 +103,7 @@ export function openTableFullscreen(view: EditorView, from: number): void {
   scope.classList.add("cm-table-fullscreen-scope");
   scope.appendChild(wrapper);
 
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || document.querySelector(".cm-table-menu")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    closeTableFullscreen();
-  };
-  document.addEventListener("keydown", onKey, true);
-  overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay) closeTableFullscreen();
-  });
-
-  current = {
-    view,
-    state,
-    overlay,
-    body,
-    wrapper,
-    host,
-    restoreFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
-    onKey,
-  };
-  document.body.appendChild(overlay);
-  if (typeof requestAnimationFrame === "function")
-    requestAnimationFrame(() => overlay.classList.add("is-open"));
-  else overlay.classList.add("is-open");
+  current = { view, state, overlay, body, wrapper, host };
 
   // Start in the first cell unless the note's caret was already in this table.
   const caret = tableContextAtPos(view.state, view.state.selection.main.head);
@@ -177,7 +138,7 @@ function onUpdate(update: ViewUpdate): void {
 setFullscreenHooks({
   update: onUpdate,
   close: (view) => {
-    if (current?.view === view) closeTableFullscreen();
+    closeFullscreenOwnedBy(view);
   },
   isOpenFor: (view) => current?.view === view,
 });

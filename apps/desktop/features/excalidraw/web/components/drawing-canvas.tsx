@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { logger } from "@/lib/logger";
+import { elementLinkIntent, openElementLink } from "../lib/element-links";
 import "../drawing.css";
 import type { ExcalidrawApi } from "../lib/excalidraw-lib";
 import type { SceneElement } from "../lib/excalidraw-md";
@@ -27,8 +28,8 @@ type State =
   | { status: "ready"; held: AcquiredSession };
 
 /**
- * Excalidraw's canvas over one drawing file: the one host behind the drawing tab and the inline
- * editor of an embed. It holds the file's shared session (`lib/sessions.ts`), so two canvases on
+ * Excalidraw's canvas over one drawing file: the one host behind the drawing tab and the full
+ * screen of an embed. It holds the file's shared session (`lib/sessions.ts`), so two canvases on
  * one file are one drawing; the theme follows the app. It fills its parent (the parent sizes it)
  * and owns no scroller (docs/design.md). Keys are Excalidraw's own and work with the canvas
  * focused; app shortcuts are the registry's.
@@ -36,8 +37,17 @@ type State =
 export function DrawingCanvas({
   path,
   topRight,
+  viewMode = false,
+  autoFocus = false,
+  beforeVaultLink,
 }: {
   path: string;
+  /** Read-only: pan, zoom and follow links, no editing (Excalidraw's `viewModeEnabled`). */
+  viewMode?: boolean;
+  /** Focus the canvas when it mounts. */
+  autoFocus?: boolean;
+  /** Called before an element link opens a note here or in an active tab (a full screen closes). */
+  beforeVaultLink?: () => void;
   /** Extra controls in the canvas's top right corner. */
   topRight?: () => ReactNode;
 }) {
@@ -92,6 +102,18 @@ export function DrawingCanvas({
     [held],
   );
 
+  // Element links open through Writer's link handling; Excalidraw never navigates the webview.
+  const onLinkOpen = useCallback(
+    (element: { link: string | null }, event: CustomEvent) => {
+      event.preventDefault();
+      if (!element.link) return;
+      openElementLink(element.link, path, elementLinkIntent(event.detail), {
+        beforeVaultOpen: beforeVaultLink,
+      });
+    },
+    [path, beforeVaultLink],
+  );
+
   // the canvas owns its state after the first render; a theme change goes through the prop
   const initialData = useMemo(() => {
     if (!held) return null;
@@ -119,7 +141,10 @@ export function DrawingCanvas({
         initialData={initialData}
         excalidrawAPI={onApi}
         onChange={onChange}
+        onLinkOpen={onLinkOpen as never}
         theme={theme}
+        viewModeEnabled={viewMode}
+        autoFocus={autoFocus}
         aiEnabled={false}
         handleKeyboardGlobally={false}
         UIOptions={{
