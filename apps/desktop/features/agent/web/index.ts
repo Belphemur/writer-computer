@@ -5,6 +5,7 @@
 // hook and path helpers. The chat store and everything under `web/lib` and `web/components` are
 // dynamic imports that load the first time a command runs or the pane opens
 // (SPECs/builtin-plugins-spec.md, "Step 5: projects").
+import { AiMagicIcon } from "@hugeicons/core-free-icons";
 import { defineFeature } from "@/lib/features/registry";
 import type { CommandContribution, KeybindingContribution } from "@/lib/features/types";
 import { isCompactFileMode } from "@/lib/keybindings/when";
@@ -85,6 +86,16 @@ export default defineFeature({
   contributes: {
     commands,
     keybindings,
+    // the toolbar button next to Graph and Tasks: the same toggle as Cmd+Shift+A
+    sidebarActions: [
+      {
+        id: manifest.contributes.sidebarActions[0]!,
+        label: "Toggle agent",
+        icon: AiMagicIcon,
+        order: 70,
+        run: () => ACTIONS["agent.toggle-pane"]!({} as Availability),
+      },
+    ],
     docks: [
       {
         id: manifest.contributes.docks[0]!,

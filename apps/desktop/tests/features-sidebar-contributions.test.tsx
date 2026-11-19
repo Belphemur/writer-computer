@@ -75,13 +75,14 @@ let container: HTMLElement;
 let root: Root;
 
 beforeEach(() => {
-  // Importing the loader registers the shipped features; the graph and tasks features contribute
-  // a sidebar action of their own and spellcheck a status item, which these fixture-only counts
+  // Importing the loader registers the shipped features; the graph, tasks and agent features
+  // contribute a sidebar action of their own and spellcheck a status item, which these fixture-only counts
   // must not see.
   useSettingsStore.setState({
     settings: {
       "features.graph.enabled": false,
       "features.tasks.enabled": false,
+      "features.agent.enabled": false,
       "features.spellcheck.enabled": false,
     },
   });

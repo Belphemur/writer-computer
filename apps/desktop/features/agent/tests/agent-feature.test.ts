@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: st
 
 import { dockContributions, openDock } from "@/lib/features/docks";
 import { fileTreeDecorationContributions } from "@/lib/features/file-tree";
+import { sidebarActionContributions } from "@/lib/features/sidebar";
 import { menuContributions, menuKey } from "@/lib/features/menus";
 import { overlayContributions } from "@/lib/features/overlays";
 import { featurePaletteCommands } from "@/lib/features/palette";
@@ -98,6 +99,18 @@ describe("commands", () => {
     expect(openDock()?.width()).toBe(420);
     const key = new KeyboardEvent("keydown", { key: "a", metaKey: true, shiftKey: true });
     keybindings.find(key, "bubble")!.run(key);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(openDock()).toBeNull();
+  });
+
+  it("the sidebar toolbar button toggles the pane like the key", async () => {
+    const action = sidebarActionContributions.list().find((a) => a.id === "agent.toggle-action")!;
+    expect(manifest.contributes.sidebarActions).toEqual(["agent.toggle-action"]);
+    expect(action.label).toBe("Toggle agent");
+    await action.run({} as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(openDock()?.id).toBe("agent.pane");
+    await action.run({} as never);
     await new Promise((r) => setTimeout(r, 0));
     expect(openDock()).toBeNull();
   });

@@ -129,6 +129,7 @@
       }
     ],
     "docks": ["agent.pane"],
+    "sidebarActions": ["agent.toggle-action"],
     "overlays": ["agent.new-project-dialog", "agent.archive-project-dialog"],
     "menus": {
       "sidebar-folder": ["agent.make-project"]
