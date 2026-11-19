@@ -230,6 +230,16 @@ pub struct ListShape {
     pub links_only: i64,
 }
 
+/// How many notes hold a text value of one property that is a URL, and how many hold a list made
+/// only of URLs (`crate::url_value`). Read from `props` and `prop_items`;
+/// `property_types::refine_url_shapes` uses it so a property of web addresses infers as `url`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UrlShape {
+    pub key: String,
+    pub urls: i64,
+    pub url_lists: i64,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TaskFilter {
@@ -594,6 +604,17 @@ impl Index {
         })
     }
 
+    /// [`Self::properties`] with the value types refined for type inference: wikilink lists as
+    /// `links`, empty lists as `null`, URL texts and URL lists as `url` / `urls`
+    /// (`property_types::refine_list_shapes` and `refine_url_shapes`). The one input of
+    /// `property_types::report`.
+    pub fn properties_for_types(&self) -> Res<Vec<PropertyCount>> {
+        let mut counts = self.properties()?;
+        crate::property_types::refine_list_shapes(&mut counts, &self.list_shapes()?);
+        crate::property_types::refine_url_shapes(&mut counts, &self.url_shapes()?);
+        Ok(counts)
+    }
+
     /// Every distinct scalar value of one property (any note, list items included) with the
     /// number of notes holding it, for seeding an enum type. The name matches case-insensitively,
     /// like the type record; empty and nested values are skipped.
@@ -607,6 +628,24 @@ impl Index {
                    SELECT file_id, v_text FROM prop_items WHERE key = ?1 COLLATE NOCASE AND vtype IN {SCALAR}) \
                  WHERE v IS NOT NULL AND TRIM(v) != '' GROUP BY v ORDER BY v"
             ))?;
+            let rows = st
+                .query_map([key], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+            Ok(rows)
+        })
+    }
+
+    /// Every distinct text value of one property's scalar values (list items, numbers, booleans,
+    /// dates and wikilinks excluded) with the number of notes holding it, for the enum auto-add
+    /// (`property_types::sync_enum_values`). The name matches case-insensitively, like the type
+    /// record; blank values are skipped.
+    pub fn text_values(&self, key: &str) -> Res<Vec<(String, i64)>> {
+        self.read(|c| {
+            let mut st = c.prepare(
+                "SELECT v_text, COUNT(DISTINCT file_id) FROM props \
+                 WHERE key = ?1 COLLATE NOCASE AND vtype = 'text' AND v_text IS NOT NULL AND TRIM(v_text) != '' \
+                 GROUP BY v_text ORDER BY v_text",
+            )?;
             let rows = st
                 .query_map([key], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<Result<_, _>>()?;
@@ -631,6 +670,63 @@ impl Index {
                 })?
                 .collect::<Result<_, _>>()?;
             Ok(rows)
+        })
+    }
+
+    /// Per property name: the text values that are URLs and the lists made only of URLs. Only
+    /// properties with at least one such value appear.
+    pub fn url_shapes(&self) -> Res<Vec<UrlShape>> {
+        use crate::url_value::is_url;
+        self.read(|c| {
+            let mut by_key: BTreeMap<String, UrlShape> = BTreeMap::new();
+            let mut bump = |key: String, list: bool| {
+                let e = by_key.entry(key.clone()).or_insert(UrlShape {
+                    key,
+                    urls: 0,
+                    url_lists: 0,
+                });
+                if list {
+                    e.url_lists += 1;
+                } else {
+                    e.urls += 1;
+                }
+            };
+            let mut st = c.prepare(
+                "SELECT key, v_text FROM props WHERE vtype = 'text' AND v_text IS NOT NULL",
+            )?;
+            let mut rows = st.query([])?;
+            while let Some(r) = rows.next()? {
+                let (key, text): (String, String) = (r.get(0)?, r.get(1)?);
+                if is_url(&text) {
+                    bump(key, false);
+                }
+            }
+            // items of one list are consecutive: a list counts when it has items and all are URLs
+            let mut st = c.prepare(
+                "SELECT i.file_id, i.key, i.vtype, i.v_text FROM prop_items i \
+                 JOIN props p ON p.file_id = i.file_id AND p.key = i.key AND p.vtype = 'list' \
+                 ORDER BY i.file_id, i.key, i.idx",
+            )?;
+            let mut rows = st.query([])?;
+            let mut current: Option<(i64, String, bool)> = None;
+            while let Some(r) = rows.next()? {
+                let (file, key, vtype, text): (i64, String, String, Option<String>) =
+                    (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?);
+                let url = vtype == "text" && text.as_deref().is_some_and(is_url);
+                match &mut current {
+                    Some((f, k, all)) if *f == file && *k == key => *all &= url,
+                    _ => {
+                        if let Some((_, k, true)) = current.take() {
+                            bump(k, true);
+                        }
+                        current = Some((file, key, url));
+                    }
+                }
+            }
+            if let Some((_, k, true)) = current {
+                bump(k, true);
+            }
+            Ok(by_key.into_values().collect())
         })
     }
 

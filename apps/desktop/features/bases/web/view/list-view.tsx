@@ -161,7 +161,10 @@ export function ListView({ result, shown, view, actions, label }: BaseViewProps)
       }
       keyOf={(item) => (item.kind === "group" ? `g:${item.key}` : `r:${item.row}`)}
       render={(item) => {
-        if (item.kind === "group") return <GroupHeader item={item} onToggle={toggle} />;
+        if (item.kind === "group")
+          return (
+            <GroupHeader item={item} groupProperty={view?.groupBy?.property} onToggle={toggle} />
+          );
         const row = result.rows[item.row]!;
         return (
           <Row

@@ -3,14 +3,8 @@
 // path (`frontmatter-properties.ts`: quoted, byte-minimal, CRLF-safe, verified), the duplicate
 // check of the "+" picker, and the file-name resolution of plain text for conversions. The shape
 // is kept: a single link stays single until a second one is added, then it becomes a list.
-import {
-  appendListItem,
-  removeListItem,
-  setList,
-  setScalar,
-  type EditResult,
-  type PropertyRow,
-} from "./frontmatter-properties";
+import type { EditResult, PropertyRow } from "./frontmatter-properties";
+import { addToSingleOrList, removeFromSingleOrList } from "./single-or-list";
 import { getFileStem } from "./paths";
 import { canonicalWikiTarget, isWikiLink, parseWikiLinkValue } from "./wiki-links";
 import type { SearchResult } from "@/types/fs";
@@ -24,17 +18,13 @@ export function relationshipItems(row: PropertyRow): string[] {
 /** Add `link` (`[[Note]]`) after the existing ones: the first link of an empty property is a
  *  single value, a second turns it into a list, a list gains an item. */
 export function addRelationship(text: string, row: PropertyRow, link: string): EditResult {
-  if (row.kind === "empty") return setScalar(text, row.key, link, true);
-  if (row.kind === "link") return setList(text, row.key, [String(row.value ?? ""), link]);
-  if (row.kind === "list") return appendListItem(text, row.key, link);
-  return { ok: false, error: "This value is not a link." };
+  return addToSingleOrList(text, row, link, row.kind === "link", "This value is not a link.");
 }
 
 /** Remove the link at `index`; removing the only link of a single value empties the property
  *  (`key:`), removing from a list leaves the others. */
 export function removeRelationship(text: string, row: PropertyRow, index: number): EditResult {
-  if (row.kind === "link") return setScalar(text, row.key, null);
-  return removeListItem(text, row.key, index);
+  return removeFromSingleOrList(text, row, index, row.kind === "link");
 }
 
 const norm = (s: string) => s.normalize("NFC").toLowerCase();

@@ -1,5 +1,9 @@
+import { EnumValueIcon } from "@/components/icon-picker/enum-value-icon";
+import { UrlChip } from "@/components/url-chip";
 import { linkHandlers, type LinkIntent } from "@/lib/link-activation";
-import { itemText } from "../lib/cells";
+import { typeKey } from "@/lib/property-types";
+import { usePropertyTypesStore } from "@/stores/property-types-store";
+import { itemText, notePropertyName, propertyNamespace } from "../lib/cells";
 import type { Cell, CellValue } from "../lib/types";
 import type { ViewActions } from "../lib/view-registry";
 
@@ -64,6 +68,37 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
+const URL_CHIP_CLASS =
+  "inline-flex max-w-[16ch] shrink-0 items-center rounded-full bg-[var(--surface-subtle)] px-2 text-[11px] leading-[18px] text-text-secondary";
+
+/** A text or a list of texts: the values a URL column shows as chips (anything else keeps its look). */
+function isUrlCell(cell: Cell): boolean {
+  if (cell.type === "string") return cell.value !== "";
+  return (
+    cell.type === "list" && cell.value.length > 0 && cell.value.every((i) => i.type === "string")
+  );
+}
+
+/** The cell of a `url` property: each address as the core link chip (one shared component). */
+function UrlCell({ cell }: { cell: Cell }) {
+  const items = cell.type === "list" ? cell.value : [cell];
+  return (
+    <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+      {items.map((item, i) => (
+        <UrlChip key={i} value={itemText(item)} className={URL_CHIP_CLASS} tabbable={false} />
+      ))}
+    </span>
+  );
+}
+
+/** Whether the column is a note property the vault types as `url`. */
+function useIsUrlColumn(columnKey: string): boolean {
+  const property = propertyNamespace(columnKey) === "note" ? notePropertyName(columnKey) : null;
+  return usePropertyTypesStore(
+    (s) => property !== null && s.byKey[typeKey(property)]?.type === "url",
+  );
+}
+
 function ListItem({ item, actions }: { item: CellValue; actions: CellActions }) {
   if (item.type === "link") {
     return (
@@ -101,6 +136,8 @@ interface Props {
 
 /** Display renderer of one cell. Never injects raw HTML: `html` values show their text. */
 export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, onToggle }: Props) {
+  const isUrl = useIsUrlColumn(columnKey);
+  if (isUrl && isUrlCell(cell)) return <UrlCell cell={cell} />;
   switch (cell.type) {
     case "null":
       return null;
@@ -156,6 +193,17 @@ export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, on
             onOpen={(intent) => actions.openFile(rowPath, intent)}
           />
         );
-      return <span className="truncate">{cell.display}</span>;
+      return (
+        <>
+          {cell.type === "string" && propertyNamespace(columnKey) === "note" ? (
+            <EnumValueIcon
+              property={notePropertyName(columnKey)}
+              value={cell.display}
+              className="mr-1.5"
+            />
+          ) : null}
+          <span className="truncate">{cell.display}</span>
+        </>
+      );
   }
 }

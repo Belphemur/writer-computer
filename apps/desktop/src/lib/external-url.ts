@@ -31,6 +31,19 @@ export const isExternalHref = (href: string | null | undefined): href is string 
   return external.schemes.some((s) => lower.startsWith(`${s.scheme}:${s.authority ? "//" : ""}`));
 };
 
+/** The shared scheme `href` starts with (case-insensitive) and the text after `scheme:`, or null.
+ *  `rest` keeps `//` for an authority scheme: the caller checks what follows. */
+export function externalSchemeOf(
+  href: string,
+): { scheme: string; authority: boolean; rest: string } | null {
+  const lower = href.toLowerCase();
+  for (const s of external.schemes) {
+    if (lower.startsWith(`${s.scheme}:`))
+      return { scheme: s.scheme, authority: s.authority, rest: href.slice(s.scheme.length + 1) };
+  }
+  return null;
+}
+
 /** A `RegExp` accepting `href`s that start with an allowed scheme or with `#` (a sanitiser's URI
  *  allowlist for rendered markdown). */
 export function externalOrAnchorUriRegExp(): RegExp {

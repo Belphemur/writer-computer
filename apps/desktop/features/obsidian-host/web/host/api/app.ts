@@ -290,7 +290,7 @@ export class MetadataTypeManager {
     return this.getAssignedType(name);
   }
   async setType(name: string, type: string): Promise<void> {
-    // Writer-only types (`relationships`, `enum`): a plugin sees them as multitext / text and
+    // Writer-only types (`relationships`, `enum`, `object`, `url`): a plugin sees them as multitext / text and
     // cannot assign them.
     if (
       !(PROPERTY_TYPE_IDS as string[]).includes(type) ||

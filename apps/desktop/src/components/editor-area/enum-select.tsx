@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
+import { IconPicker } from "@/components/icon-picker/icon-picker";
+import { IconGlyph } from "@/components/icon-picker/icon-glyph";
 import { typeKey } from "@/lib/property-types";
 import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { AnchoredPopover } from "./anchored-popover";
+import { showEditorNotice } from "./editor-notice-store";
 import { FIELD } from "./property-chip";
 
 const NO_VALUES: readonly string[] = [];
+const NO_ICONS: Readonly<Record<string, string>> = {};
 const ADD = "Add value…";
 
 interface EnumSelectProps {
@@ -17,6 +21,11 @@ interface EnumSelectProps {
   ariaLabel: string;
   /** A pick; `null` clears the value. */
   onSelect: (value: string | null) => void;
+  /** The values' optional icons (`emoji:..` / `icon:..`), shown before the value. */
+  icons?: Readonly<Record<string, string>>;
+  /** Set (or with `null` remove) a value's icon: each value row gets an icon slot that opens the
+   *  picker. Without it the icons are shown but not editable. */
+  onIcon?: (value: string, icon: string | null) => void;
   /** Append a value to the type; resolves to the stored (trimmed) value, rejects when not saved. */
   onAdd: (value: string) => Promise<string>;
   /** Open on mount (a table cell being edited). */
@@ -34,6 +43,8 @@ type Choice = { kind: "none" } | { kind: "value"; value: string; stray: boolean 
 export function EnumSelect({
   value,
   values,
+  icons = NO_ICONS,
+  onIcon,
   ariaLabel,
   onSelect,
   onAdd,
@@ -46,6 +57,10 @@ export function EnumSelect({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  // the value whose icon the picker is choosing, the slot it opened from and its box
+  const [picking, setPicking] = useState<string | null>(null);
+  const pickerAnchor = useRef<HTMLElement | null>(null);
+  const pickerBox = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLElement | null)[]>([]);
   const current = value === null || value === "" ? null : value;
   const stray = current !== null && !values.includes(current);
@@ -62,6 +77,7 @@ export function EnumSelect({
 
   const close = (refocus: boolean) => {
     setOpen(false);
+    setPicking(null);
     setAdding(false);
     setDraft("");
     setError(null);
@@ -99,8 +115,13 @@ export function EnumSelect({
     else if (e.key === "Home") focusItem(0);
     else if (e.key === "End") focusItem(-1);
     else if (e.key === "Escape") close(true);
-    else if (e.key === "Tab") close(false);
-    else return;
+    else if (e.key === "Tab") {
+      // Tab walks the rows and their icon slots; it leaves the list from either end
+      const all = [...e.currentTarget.querySelectorAll<HTMLElement>("button")];
+      const at = all.indexOf(document.activeElement as HTMLElement);
+      if (e.shiftKey ? at > 0 : at >= 0 && at < all.length - 1) return;
+      close(false);
+    } else return;
     e.preventDefault();
     e.stopPropagation();
   };
@@ -125,6 +146,7 @@ export function EnumSelect({
         onClick={() => (open ? close(false) : setOpen(true))}
         className={`${FIELD} flex items-center gap-1.5 text-left ${className ?? ""}`}
       >
+        {current !== null && <IconGlyph value={icons[current]} />}
         <span
           className={`min-w-0 truncate ${current === null ? "text-[var(--text-muted)] opacity-70" : ""}`}
         >
@@ -147,6 +169,7 @@ export function EnumSelect({
           label={ariaLabel}
           onDismiss={() => close(false)}
           onKeyDown={onListKey}
+          alsoInside={pickerBox}
         >
           {choices.map((c, i) => {
             if (c.kind === "add" && adding)
@@ -184,7 +207,7 @@ export function EnumSelect({
               );
             const selected = i === selectedIndex;
             const label = c.kind === "none" ? "No value" : c.kind === "add" ? ADD : c.value;
-            return (
+            const main = (
               <button
                 key={c.kind === "value" ? `v:${c.value}` : c.kind}
                 ref={(el) => {
@@ -197,9 +220,9 @@ export function EnumSelect({
                   if (c.kind === "add") setAdding(true);
                   else pick(c.kind === "none" ? null : c.value);
                 }}
-                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] leading-[1.4] text-[var(--text-primary)] outline-none hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] ${
+                className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-[13px] leading-[1.4] text-[var(--text-primary)] outline-none hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] ${
                   c.kind === "none" ? "text-[var(--text-muted)]" : ""
-                } ${c.kind === "add" ? "mt-0.5 border-t border-[var(--line-subtler)] pt-1.5" : ""}`}
+                } ${c.kind === "add" ? "mt-0.5 w-full flex-none border-t border-[var(--line-subtler)] pt-1.5" : ""}`}
               >
                 <span className="min-w-0 flex-1 truncate">{label}</span>
                 {c.kind === "value" && c.stray && (
@@ -210,7 +233,74 @@ export function EnumSelect({
                 )}
               </button>
             );
+            if (c.kind !== "value" || c.stray) return main;
+            const icon = icons[c.value];
+            return (
+              <div key={`v:${c.value}`} className="group/row flex items-center gap-0.5">
+                {onIcon ? (
+                  <button
+                    type="button"
+                    aria-label={`Icon of ${c.value}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={picking === c.value}
+                    onClick={(e) => {
+                      pickerAnchor.current = e.currentTarget;
+                      setPicking(picking === c.value ? null : c.value);
+                    }}
+                    className="flex size-6 shrink-0 items-center justify-center rounded text-[var(--text-icon-muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none"
+                  >
+                    {icon ? (
+                      <IconGlyph value={icon} size={14} />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="text-[13px] leading-none opacity-0 group-hover/row:opacity-60 group-focus-within/row:opacity-60"
+                      >
+                        +
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <span className="flex size-6 shrink-0 items-center justify-center">
+                    <IconGlyph value={icon} size={14} />
+                  </span>
+                )}
+                {main}
+              </div>
+            );
           })}
+        </AnchoredPopover>
+      )}
+      {open && picking !== null && onIcon && (
+        <AnchoredPopover
+          anchorRef={pickerAnchor}
+          width={316}
+          maxHeight={440}
+          bare
+          role="group"
+          label={`Icon of ${picking}`}
+          onDismiss={() => setPicking(null)}
+        >
+          <div ref={pickerBox}>
+            <IconPicker
+              label={`Icon of ${picking}`}
+              value={icons[picking] ?? null}
+              onPick={(v) => {
+                onIcon(picking, v);
+                setPicking(null);
+                pickerAnchor.current?.focus();
+              }}
+              onRemove={() => {
+                onIcon(picking, null);
+                setPicking(null);
+                pickerAnchor.current?.focus();
+              }}
+              onClose={() => {
+                setPicking(null);
+                pickerAnchor.current?.focus();
+              }}
+            />
+          </div>
         </AnchoredPopover>
       )}
     </>
@@ -229,11 +319,17 @@ interface PropertyEnumSelectProps extends Pick<
  *  cell editor both render this one component. */
 export function PropertyEnumSelect({ name, ...rest }: PropertyEnumSelectProps) {
   const values = usePropertyTypesStore((s) => s.byKey[typeKey(name)]?.values) ?? NO_VALUES;
+  const icons = usePropertyTypesStore((s) => s.byKey[typeKey(name)]?.icons) ?? NO_ICONS;
   const addEnumValue = usePropertyTypesStore((s) => s.addEnumValue);
+  const setEnumIcon = usePropertyTypesStore((s) => s.setEnumIcon);
   return (
     <EnumSelect
       {...rest}
       values={values}
+      icons={icons}
+      onIcon={(value, icon) =>
+        void setEnumIcon(name, value, icon).catch(() => showEditorNotice("Could not save the icon"))
+      }
       ariaLabel={`${name} value`}
       onAdd={(v) => addEnumValue(name, v)}
     />

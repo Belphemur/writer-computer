@@ -693,6 +693,7 @@ export function initialValue(
     case "text":
     case "enum": // nothing picked yet
     case "relationships": // no link yet: the first one written is a single value
+    case "url": // no address yet: the first one written is a single value
       return null;
     case "number":
       return 0;

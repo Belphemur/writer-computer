@@ -1,0 +1,129 @@
+{
+  "comment": "What counts as a URL property value, shared by src/lib/url-value.ts (urlHref) and src-tauri/src/url_value.rs (href): the schemes of shared/external-protocols.json (an authority scheme needs a non-empty host after //, a mail scheme needs local@domain), or a bare domain (dot-separated ASCII labels, a TLD of 2+ letters, optional port, path, query or fragment) which opens as https. No whitespace or control character anywhere; any other scheme (javascript:, ftp:, file:) is refused. Both tests read this file; href is the address handed to the system browser. A bare `name.ext` whose extension is a vault file's (the union of shared/attachments.json importExtensions and renderExtensions, shared/code-files.json neverExtensions and shared/vault-file-extensions.json) is a file name, not a domain; with a path, a scheme or www. it is still a URL.",
+  "valid": [
+    {
+      "value": "https://example.com",
+      "href": "https://example.com"
+    },
+    {
+      "value": "http://example.com/a?b=1#c",
+      "href": "http://example.com/a?b=1#c"
+    },
+    {
+      "value": "HTTPS://EXAMPLE.COM",
+      "href": "HTTPS://EXAMPLE.COM"
+    },
+    {
+      "value": "http://localhost:3000",
+      "href": "http://localhost:3000"
+    },
+    {
+      "value": "http://192.168.0.1/x",
+      "href": "http://192.168.0.1/x"
+    },
+    {
+      "value": "mailto:a@b.co",
+      "href": "mailto:a@b.co"
+    },
+    {
+      "value": "mailto:a@b.co?subject=Hi",
+      "href": "mailto:a@b.co?subject=Hi"
+    },
+    {
+      "value": "example.com",
+      "href": "https://example.com"
+    },
+    {
+      "value": "www.example.com/path",
+      "href": "https://www.example.com/path"
+    },
+    {
+      "value": "sub.example.co.uk/a?x=1#y",
+      "href": "https://sub.example.co.uk/a?x=1#y"
+    },
+    {
+      "value": "example.com:8080/x",
+      "href": "https://example.com:8080/x"
+    },
+    {
+      "value": "Example.COM",
+      "href": "https://Example.COM"
+    },
+    {
+      "value": "example.com/notes.md",
+      "href": "https://example.com/notes.md"
+    },
+    {
+      "value": "www.notes.md",
+      "href": "https://www.notes.md"
+    },
+    {
+      "value": "https://example.com/a.pdf",
+      "href": "https://example.com/a.pdf"
+    },
+    {
+      "value": "https://notes.md",
+      "href": "https://notes.md"
+    },
+    {
+      "value": "example.com/docs",
+      "href": "https://example.com/docs"
+    },
+    {
+      "value": "docs.example.com",
+      "href": "https://docs.example.com"
+    }
+  ],
+  "invalid": [
+    "",
+    " ",
+    "example",
+    "example.c",
+    "example.com ",
+    " example.com",
+    "a b.com",
+    "https://",
+    "http://",
+    "https:// example.com",
+    "https://exa mple.com",
+    "https://a\nb",
+    "https:/example.com",
+    "http:example.com",
+    "https:///path",
+    "javascript:alert(1)",
+    "JavaScript:alert(1)//x.com",
+    "ftp://example.com",
+    "ftp:example.com",
+    "file:///etc/passwd",
+    "tel:+15551234",
+    "obsidian://open?vault=x",
+    "mailto:",
+    "mailto:ab",
+    "mailto:@b.co",
+    "mailto:a@",
+    "mailto:a@b@c",
+    "[[Note]]",
+    "a@b.com",
+    "1.2.3",
+    "v1.2",
+    "-a.com",
+    "a-.com",
+    "a..com",
+    ".com",
+    "example.com.",
+    "example.com:port",
+    "localhost",
+    "data:text/html,x.com",
+    "notes.md",
+    "Paper.pdf",
+    "diagram.svg",
+    "x.base",
+    "board.canvas",
+    "photo.png",
+    "Photo.PNG",
+    "my.notes.md",
+    "a.markdown",
+    "pic.heic",
+    "data.ipynb"
+  ]
+}

@@ -70,6 +70,7 @@ describe("registry", () => {
       "Text",
       "List",
       "Relationships",
+      "URL",
       "Enum",
       "Object",
       "Number",
@@ -153,6 +154,19 @@ describe("store", () => {
     });
     expect(ipc.propertyTypeSet).toHaveBeenLastCalledWith("Meta", "object");
   });
+  test("setType('url') records it and keeps the plugin-facing shape until the refetch", async () => {
+    ipc.propertyTypes.mockResolvedValue([
+      { ...INFO("sources", "text"), obsidianType: "multitext" },
+    ]);
+    await usePropertyTypesStore.getState().load();
+    await usePropertyTypesStore.getState().setType("sources", "url");
+    expect(usePropertyTypesStore.getState().byKey.sources).toMatchObject({
+      type: "url",
+      source: "writer",
+      obsidianType: "multitext",
+    });
+    expect(ipc.propertyTypeSet).toHaveBeenLastCalledWith("sources", "url");
+  });
   test("setType records through the backend and updates at once", async () => {
     await usePropertyTypesStore.getState().load();
     const done = usePropertyTypesStore.getState().setType("Status", "checkbox");
@@ -230,6 +244,19 @@ describe("plugin host metadataTypeManager", () => {
     expect(m.getPropertyInfo("metadata")?.type).toBe("text");
     expect(m.getAssignedType("metadata")).toBe("text");
     await expect(m.setType("metadata", "object")).rejects.toThrow("Unknown property type");
+    expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
+  });
+  test("url is reported as text (multitext for lists) and cannot be set by a plugin", async () => {
+    ipc.propertyTypes.mockResolvedValue([
+      { ...INFO("website", "url"), obsidianType: "text" },
+      { ...INFO("sources", "url"), obsidianType: "multitext" },
+    ]);
+    const m = new MetadataTypeManager();
+    await m.load();
+    expect(m.getPropertyInfo("website")?.type).toBe("text");
+    expect(m.getAssignedType("website")).toBe("text");
+    expect(m.getAllProperties().sources.type).toBe("multitext");
+    await expect(m.setType("website", "url")).rejects.toThrow("Unknown property type");
     expect(ipc.propertyTypeSet).not.toHaveBeenCalled();
   });
   test("an inferred type is not an assigned one", async () => {

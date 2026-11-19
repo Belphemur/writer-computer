@@ -6,6 +6,8 @@ import { openPropertyUrl } from "./property-links";
 import { CHIP, ChipRemove, Chevron, FIELD, RemoveRowButton } from "./property-chip";
 import { useWikiSuggest, WikiLinkButton } from "./property-wikilink";
 import { RelationshipsField } from "./relationships-field";
+import { UrlField } from "./url-field";
+import { isUrlRow } from "@/lib/url-property";
 import { PropertyEnumSelect } from "./enum-select";
 import type { SearchResult } from "@/types/fs";
 import type { PropertyType } from "@/lib/property-types";
@@ -35,6 +37,9 @@ export interface PropertyActions {
   /** Relationships: add the picked note as a link (single stays single, a second makes a list). */
   addLink: (row: PropertyRow, file: SearchResult) => Promise<boolean>;
   removeLink: (row: PropertyRow, index: number) => boolean;
+  /** URL: add the typed text as another address (as written; single stays single, a second makes a list). */
+  addUrl: (row: PropertyRow, url: string) => boolean;
+  removeUrl: (row: PropertyRow, index: number) => boolean;
 }
 
 /** Enter commits, Escape reverts, and neither reaches the editor's key handlers. */
@@ -295,6 +300,8 @@ function scopeActions(actions: PropertyActions, row: PropertyRow): PropertyActio
     setTags: () => false,
     addLink: () => Promise.resolve(false),
     removeLink: () => false,
+    addUrl: () => false,
+    removeUrl: () => false,
   };
 }
 
@@ -398,6 +405,7 @@ export function PropertyValue({ row, actions, type }: FieldProps & { type?: Prop
     (row.kind === "link" || row.kind === "empty" || (row.kind === "list" && row.editable))
   )
     return <RelationshipsField row={row} actions={actions} />;
+  if (type === "url" && isUrlRow(row)) return <UrlField row={row} actions={actions} />;
   if (type === "enum" && (row.kind === "text" || row.kind === "empty"))
     return (
       <PropertyEnumSelect

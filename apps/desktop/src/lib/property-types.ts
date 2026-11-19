@@ -10,6 +10,7 @@ import {
   CheckmarkSquare02Icon,
   Clock01Icon,
   DropdownFieldTypeIcon,
+  Globe02Icon,
   HashtagIcon,
   LeftToRightListBulletIcon,
   Link01Icon,
@@ -18,11 +19,14 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 import { type PropertyKind, type PropertyRow } from "./frontmatter-properties";
+import { isUrlRow } from "./url-property";
+import { isUrl } from "./url-value";
 import { isWikiLink } from "./wiki-links";
 
 /** Obsidian's names (`types.json` values), also the wire names with the backend, plus Writer's own
- *  `relationships` (a link or a list of links), `enum` (one string of a recorded list) and `object`
- *  (a map edited as indented rows). Obsidian has none of them, so they live only in
+ *  `relationships` (a link or a list of links), `enum` (one string of a recorded list), `object`
+ *  (a map edited as indented rows) and `url` (a web address or a list of them, shown as link
+ *  chips). Obsidian has none of them, so they live only in
  *  `.writer/property-types.json` (`writerOnly`) and plugins see them as `multitext` / `text`. */
 export type PropertyType =
   | "text"
@@ -35,7 +39,8 @@ export type PropertyType =
   | "aliases"
   | "relationships"
   | "enum"
-  | "object";
+  | "object"
+  | "url";
 
 interface TypeDefinition {
   label: string;
@@ -61,6 +66,13 @@ export const PROPERTY_TYPES: Record<PropertyType, TypeDefinition> = {
     label: "Relationships",
     icon: Link01Icon,
     warning: "Not a link",
+    pickable: true,
+    writerOnly: true,
+  },
+  url: {
+    label: "URL",
+    icon: Globe02Icon,
+    warning: "Not a URL",
     pickable: true,
     writerOnly: true,
   },
@@ -113,10 +125,13 @@ export interface PropertyTypeInfo {
   /** Notes whose value does not fit `type`. */
   mismatched: number;
   /** The type name Obsidian and its plugins know this one by (Rust `PropertyType::obsidian_name`):
-   *  `relationships` is `multitext` when the vault holds lists of links there, else `text`. */
+   *  `relationships` and `url` are `multitext` when the vault holds lists there, else `text`. */
   obsidianType: string;
   /** An enum's allowed values, in order (empty for any other type). */
   values: string[];
+  /** An enum's optional value icons by value: `emoji:<emoji>` or `icon:<Hugeicons name>`
+   *  (`lib/icon-picker/icon-value.ts`); empty for any other type. */
+  icons: Record<string, string>;
 }
 
 /** Name -> info lookups are case-insensitive, like Obsidian's `types.json`. */
@@ -145,14 +160,36 @@ export function typeOfRow(row: PropertyRow): PropertyType {
       return "tags";
     case "list":
       if (row.key.toLowerCase() === "aliases") return "aliases";
-      return isLinkList(row) ? "relationships" : "multitext";
+      if (isLinkList(row)) return "relationships";
+      return row.items.length > 0 && row.items.every(isUrl) ? "url" : "multitext";
     case "link":
       return "relationships";
     case "object":
       return "object";
+    case "text":
+    case "url":
+      return isUrl(String(row.value)) ? "url" : "text";
     default:
       return "text";
   }
+}
+
+/** The type the panel shows for a row: the declared one (Writer's or Obsidian's record), else what
+ *  its own value is; `mixed` counts the other notes whose value does not fit. A vault-inferred
+ *  `url` is vault-wide: this note's lone address among prose stays text, and a property the
+ *  vault infers `url` is one even where this note's value is empty. */
+export function effectiveType(
+  row: PropertyRow,
+  info: PropertyTypeInfo | undefined,
+): { type: PropertyType; mixed: number } {
+  if (info && info.source !== "inferred") return { type: info.type, mixed: info.mismatched };
+  const mixed = info?.mismatched ?? 0;
+  const own = typeOfRow(row);
+  if (info) {
+    if (info.type === "url" && isUrlRow(row)) return { type: "url", mixed };
+    if (own === "url") return { type: row.kind === "list" ? "multitext" : "text", mixed };
+  }
+  return { type: own, mixed };
 }
 
 /** A non-empty list whose every item is a `[[wikilink]]`. */
@@ -174,6 +211,8 @@ const FITS: Record<PropertyType, readonly PropertyKind[]> = {
   // the dropdown edits a text value; anything else keeps its own editor and shows the warning
   enum: ["text"],
   object: ["object"],
+  // a text or list value; whether each value is a URL is checked in `rowFitsType`
+  url: ["text", "url", "list"],
 };
 
 /** Whether the row's value is a valid value of `type`. An empty value fits every type; a value
@@ -181,5 +220,9 @@ const FITS: Record<PropertyType, readonly PropertyKind[]> = {
 export function rowFitsType(row: PropertyRow, type: PropertyType): boolean {
   if (row.kind === "empty") return true;
   if (type === "relationships" && row.kind === "list") return row.items.every(isWikiLink);
+  if (type === "url") {
+    if (row.kind === "list") return row.items.every(isUrl);
+    return FITS.url.includes(row.kind) && isUrl(String(row.value ?? ""));
+  }
   return FITS[type].includes(row.kind);
 }

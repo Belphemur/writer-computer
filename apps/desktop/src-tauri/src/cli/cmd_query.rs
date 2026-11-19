@@ -273,9 +273,7 @@ pub fn properties(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, 
     let mut list = index.properties()?;
     // `types`: each name with its effective type (`relationships` included), the app's own report
     let types: std::collections::HashMap<String, String> = if args.flag("types") {
-        let mut counts = list.clone();
-        crate::property_types::refine_list_shapes(&mut counts, &index.list_shapes()?);
-        crate::property_types::report(index.root(), counts)
+        crate::property_types::report(index.root(), index.properties_for_types()?)
             .into_iter()
             .map(|p| (p.key, p.ty.wire_name().to_string()))
             .collect()

@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { usePropertyTypesStore } from "@/stores/property-types-store";
 import type { BaseDocument, BaseQueryResult } from "../lib/types";
 import { extraPropertiesOf, getBaseView, type BaseViewProps } from "../lib/view-registry";
 import "./builtin-views";
@@ -120,6 +121,13 @@ export function BaseViewBody({
 }: Props) {
   const { document, result } = state;
   const entry = getBaseView(viewType);
+  // the property types decide how a cell shows (an enum edits as a dropdown, a URL is a link chip)
+  useEffect(() => {
+    void usePropertyTypesStore
+      .getState()
+      .load()
+      .catch(() => {});
+  }, []);
   const warnings = useMemo(
     () => [...(document?.warnings ?? []), ...(result?.warnings ?? [])],
     [document, result],

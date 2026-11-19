@@ -57,11 +57,11 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A property whose values are all web addresses shows as URL with no setup.
-- [ ] A click opens the address in the browser; Cmd/middle click follow the link rules.
-- [ ] The pencil edits the raw text; Escape keeps the old value.
-- [ ] A non-URL value under the type is marked and never rewritten.
-- [ ] `.obsidian/types.json` is never written; plugins see `text`.
+- [x] A property whose values are all web addresses shows as URL with no setup.
+- [x] A click opens the address in the browser; Cmd/middle click follow the link rules.
+- [x] The pencil edits the raw text; Escape keeps the old value.
+- [x] A non-URL value under the type is marked and never rewritten.
+- [x] `.obsidian/types.json` is never written; plugins see `text`.
 
 ## Pros and Cons of the Options
 

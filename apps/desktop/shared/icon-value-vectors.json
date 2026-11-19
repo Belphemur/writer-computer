@@ -1,0 +1,39 @@
+{
+  "comment": "What a picked icon value is, shared by src/lib/icon-picker/icon-value.ts (parseIconValue) and src-tauri/src/property_types.rs (valid_icon): `emoji:` plus exactly one emoji (one grapheme: a ZWJ sequence, a flag, a keycap or a skin-tone variant is one), or `icon:` plus a Hugeicons export name (an upper-case letter, letters and digits, ending in Icon, at most 64 characters). Both tests read this file.",
+  "valid": [
+    "emoji:✅",
+    "emoji:😀",
+    "emoji:❤️",
+    "emoji:👍🏽",
+    "emoji:👨‍👩‍👧‍👦",
+    "emoji:🇫🇷",
+    "emoji:1️⃣",
+    "emoji:🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "icon:Home01Icon",
+    "icon:ArrowDown01Icon",
+    "icon:Cursor3DIcon"
+  ],
+  "invalid": [
+    "",
+    "✅",
+    "emoji:",
+    "emoji: ",
+    "emoji:a",
+    "emoji:ab",
+    "emoji:1",
+    "emoji:✅✅",
+    "emoji:✅ ",
+    "emoji:✅a",
+    "emoji:🇫🇷🇫🇷",
+    "emoji:\n",
+    "icon:",
+    "icon:home01Icon",
+    "icon:Home01",
+    "icon:Home 01Icon",
+    "icon:../Icon",
+    "icon:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIcon",
+    "image:Home01Icon",
+    "EMOJI:✅",
+    "emoji"
+  ]
+}

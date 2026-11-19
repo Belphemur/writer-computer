@@ -26,6 +26,54 @@ struct Entry {
 #[derive(Default)]
 pub struct IndexRegistry {
     entries: Mutex<HashMap<String, Entry>>,
+    /// Windows with an enum auto-add already scheduled (the debounce, see [`schedule_enum_sync`]).
+    enum_sync: Mutex<std::collections::HashSet<String>>,
+}
+
+/// How long index changes settle before enum lists are brought up to date (a burst of saves is
+/// one pass).
+const ENUM_SYNC_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(750);
+
+/// The one place a value an enum property does not list yet is detected, whoever changed the note
+/// (the app, the CLI, an agent, an external editor): every change reaches the index, and every
+/// index change batch ends here. One pass per window after the changes settle appends the new
+/// text values to the type's list through [`crate::property_types::sync_enum_values`] (the one
+/// write of `.writer/property-types.json`) and tells the window to reload the types. A pass
+/// with nothing to add writes nothing, so its own write never starts another.
+fn schedule_enum_sync<R: Runtime>(handle: &tauri::AppHandle<R>, label: &str) {
+    let Some(registry) = handle.try_state::<IndexRegistry>() else {
+        return;
+    };
+    if !registry.enum_sync.lock().insert(label.to_string()) {
+        return; // a pass is already waiting
+    }
+    let (handle, label) = (handle.clone(), label.to_string());
+    std::thread::spawn(move || {
+        std::thread::sleep(ENUM_SYNC_DEBOUNCE);
+        let registry = handle.state::<IndexRegistry>();
+        registry.enum_sync.lock().remove(&label);
+        let index = registry
+            .entries
+            .lock()
+            .get(&label)
+            .map(|e| Arc::clone(&e.index));
+        let Some(index) = index else { return };
+        if index
+            .status()
+            .map(|s| s.state != IndexState::Ready)
+            .unwrap_or(true)
+        {
+            return; // a cold index would miss values; its finishing batch comes back here
+        }
+        match crate::property_types::sync_enum_values(index.root(), |name| index.text_values(name))
+        {
+            Ok(grown) if !grown.is_empty() => {
+                let _ = handle.emit_to(label, "property-types://changed", ());
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("enum values could not be updated: {e}"),
+        }
+    });
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -116,6 +164,7 @@ pub(crate) fn ensure_index_with<R: Runtime>(
             full: batch.full,
         };
         let _ = handle.emit_to(event_label.clone(), "index://changed", &payload);
+        schedule_enum_sync(&handle, &event_label);
     });
     let index = Arc::new(
         Index::open(OpenParams {
@@ -266,9 +315,7 @@ pub async fn property_types(
 ) -> Result<Vec<crate::property_types::PropertyTypeInfo>, AppError> {
     blocking(move || {
         let (_, index) = window_index(&app, &webview)?;
-        let mut counts = index.properties().map_err(app_err)?;
-        let shapes = index.list_shapes().map_err(app_err)?;
-        crate::property_types::refine_list_shapes(&mut counts, &shapes);
+        let counts = index.properties_for_types().map_err(app_err)?;
         Ok(crate::property_types::report(index.root(), counts))
     })
     .await
@@ -276,12 +323,14 @@ pub async fn property_types(
 
 /// Record a property's type vault-wide in `.writer/property-types.json` (never `.obsidian`).
 /// `values` is an enum's whole ordered list; without it a new enum is seeded from the values the
-/// vault already holds under that name.
+/// vault already holds under that name. `icons` is an enum's whole value -> icon map (absent keeps
+/// the recorded one).
 #[tauri::command]
 pub async fn property_type_set(
     name: String,
     ty: crate::property_types::PropertyType,
     values: Option<Vec<String>>,
+    icons: Option<std::collections::BTreeMap<String, String>>,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
@@ -293,12 +342,11 @@ pub async fn property_type_set(
         } else {
             Vec::new()
         };
-        crate::property_types::set_type(index.root(), &name, ty, values, observed).map_err(|e| {
-            match e {
+        crate::property_types::set_type_with_icons(index.root(), &name, ty, values, icons, observed)
+            .map_err(|e| match e {
                 crate::property_types::PropertyTypeError::Invalid(m) => AppError::InvalidPath(m),
                 other => AppError::Io(other.to_string()),
-            }
-        })
+            })
     })
     .await
 }

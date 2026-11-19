@@ -60,4 +60,17 @@ describe("import boundaries", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("core never imports the agent feature (the icon picker is core; the agent wraps it, not the other way round)", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (boundaryOf(file) !== "src") continue;
+      for (const { spec } of importsOf(file)) {
+        const target = resolveSpec(file, spec);
+        if (/^@features\/agent\b/.test(spec) || (target && boundaryOf(target) === "features/agent"))
+          offenders.push(`${rel(file)}: ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

@@ -12,6 +12,12 @@ interface AnchoredPopoverProps {
   label: string;
   children: ReactNode;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  /** Tallest the popover grows (px). */
+  maxHeight?: number;
+  /** No border, padding or background: the content draws its own card (a picker). */
+  bare?: boolean;
+  /** A popover opened from this one: a press inside it does not dismiss this one. */
+  alsoInside?: RefObject<HTMLElement | null>;
 }
 
 /** A popover under its anchor, portalled to the body with fixed positioning so the panel's
@@ -25,11 +31,14 @@ export function AnchoredPopover({
   label,
   children,
   onKeyDown,
+  maxHeight = 280,
+  bare = false,
+  alsoInside,
 }: AnchoredPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const place = usePopoverPlacement(anchorRef, true, { width, maxHeight: 280, side: "bottom" });
+  const place = usePopoverPlacement(anchorRef, true, { width, maxHeight, side: "bottom" });
   const [origin, setOrigin] = useState({ left: 0, top: 0 });
-  usePopoverDismiss(ref, anchorRef, onDismiss);
+  usePopoverDismiss(ref, anchorRef, onDismiss, true, alsoInside);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -54,7 +63,11 @@ export function AnchoredPopover({
         width: place.width,
         maxHeight: place.maxHeight,
       }}
-      className="z-50 overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--surface-primary)] p-1 shadow-lg"
+      className={`z-50 overflow-y-auto ${
+        bare
+          ? ""
+          : "rounded-lg border border-[var(--border-color)] bg-[var(--surface-primary)] p-1 shadow-lg"
+      }`}
     >
       {children}
     </div>,

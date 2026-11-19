@@ -22,6 +22,9 @@
 // | link        | unchanged (single)                                                                |
 // | number, checkbox, date, date & time | refused ("Not a link")                                    |
 // | empty       | unchanged                                                                         |
+// URL (a web address or a list of them, `lib/url-value.ts`): the value is kept as written, text
+// or list, valid or not (an invalid one shows "Not a URL" and is never rewritten); converting
+// away keeps the text like any other text.
 // Object (a map): a map stays a map; nothing else converts to or from it ("edit it in Source"),
 // an empty value is unchanged.
 //
@@ -214,6 +217,8 @@ export function convertProperty(
   const toList = to === "multitext" || to === "tags" || to === "aliases";
   if (row.kind === "object" && to === "object") return { ok: true, text };
   if (row.kind === "empty") return toList ? setList(text, row.key, []) : { ok: true, text };
+  // to URL the value stays exactly as written, whatever it is: a bad one is marked, not changed
+  if (to === "url") return { ok: true, text };
   if (!row.editable || !(SCALAR_KINDS.includes(row.kind) || LIST_KINDS.includes(row.kind)))
     return refuse(IN_SOURCE);
   if (rowFitsType(row, to) && row.kind !== "tagString") return { ok: true, text };

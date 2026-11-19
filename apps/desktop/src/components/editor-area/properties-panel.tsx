@@ -25,12 +25,13 @@ import {
   removeRelationship,
   resolveLinkNames,
 } from "@/lib/relationships";
+import { addUrl, removeUrl } from "@/lib/url-property";
 import * as tauri from "@/lib/tauri";
 import {
+  effectiveType,
   PROPERTY_TYPES,
   rowFitsType,
   typeKey,
-  typeOfRow,
   type PropertyType,
 } from "@/lib/property-types";
 import { usePropertyTypesStore } from "@/stores/property-types-store";
@@ -111,15 +112,11 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
       return apply(addRelationship(frontmatter, row, link));
     },
     removeLink: (row, index) => apply(removeRelationship(frontmatter, row, index)),
+    addUrl: (row, url) => apply(addUrl(frontmatter, row, url)),
+    removeUrl: (row, index) => apply(removeUrl(frontmatter, row, index)),
   };
 
-  /** The row's type: the declared one (Writer's or Obsidian's record), else what its own value is;
-   *  `mixed` counts the other notes that use a different type. */
-  const typeOf = (row: PropertyRow): { type: PropertyType; mixed: number } => {
-    const info = typeInfo[typeKey(row.key)];
-    if (info && info.source !== "inferred") return { type: info.type, mixed: info.mismatched };
-    return { type: typeOfRow(row), mixed: info?.mismatched ?? 0 };
-  };
+  const typeOf = (row: PropertyRow) => effectiveType(row, typeInfo[typeKey(row.key)]);
 
   /** Record the type vault-wide, and convert THIS note's value as one frontmatter update (one undo
    *  step). A value that cannot be converted is left as it is and shows as not fitting the type. */

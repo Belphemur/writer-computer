@@ -1,0 +1,4 @@
+{
+  "$comment": "Extensions of vault files that no list in shared/attachments.json (images) or shared/code-files.json (neverExtensions: md, base, ...) already names: a bare `name.ext` with one of them is a file name, not a web address (src/lib/url-value.ts and src-tauri/src/url_value.rs, shared/url-vectors.json). The URL predicate unions all three lists.",
+  "extensions": ["markdown", "canvas", "pdf"]
+}

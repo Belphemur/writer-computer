@@ -10,7 +10,8 @@
 //!
 //! With no record, the type is inferred from the observed values (the index's `props.vtype`
 //! counts; a property whose every non-empty value is a wikilink or a list of wikilinks is
-//! `relationships`, see [`refine_list_shapes`]; a property whose values are maps is `object`).
+//! `relationships`, see [`refine_list_shapes`]; a property whose values are maps is `object`; one
+//! whose every value is a URL, see [`refine_url_shapes`], is `url`).
 //! Tauri-free: the Tauri commands, the Bases property pickers and the plugin host's
 //! `metadataTypeManager` all read [`report`] through one IPC command.
 
@@ -26,8 +27,8 @@ pub const OBSIDIAN_FILE: &str = ".obsidian/types.json";
 
 /// Obsidian's type names (`types.json` values), which are also the wire names everywhere, plus
 /// Writer's own `relationships` (a link or a list of links), `enum` (one string of a recorded
-/// list) and `object` (a map, edited as indented rows up to two levels). Obsidian has none of
-/// them: they are stored only in `.writer/property-types.json`, an `.obsidian/types.json` entry of
+/// list), `object` (a map, edited as indented rows up to two levels) and `url` (a web address
+/// or a list of them, shown as link chips). Obsidian has none of them: they are stored only in `.writer/property-types.json`, an `.obsidian/types.json` entry of
 /// that name is skipped, and plugins see them as `multitext` / `text`
 /// ([`PropertyType::obsidian_name`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ pub enum PropertyType {
     Relationships,
     Enum,
     Object,
+    Url,
 }
 
 impl PropertyType {
@@ -61,6 +63,7 @@ impl PropertyType {
             "relationships" => PropertyType::Relationships,
             "enum" => PropertyType::Enum,
             "object" => PropertyType::Object,
+            "url" => PropertyType::Url,
             _ => return None,
         })
     }
@@ -79,6 +82,7 @@ impl PropertyType {
             PropertyType::Relationships => "relationships",
             PropertyType::Enum => "enum",
             PropertyType::Object => "object",
+            PropertyType::Url => "url",
         }
     }
 
@@ -86,7 +90,10 @@ impl PropertyType {
     pub fn is_writer_only(self) -> bool {
         matches!(
             self,
-            PropertyType::Relationships | PropertyType::Enum | PropertyType::Object
+            PropertyType::Relationships
+                | PropertyType::Enum
+                | PropertyType::Object
+                | PropertyType::Url
         )
     }
 
@@ -96,25 +103,32 @@ impl PropertyType {
     }
 
     /// The type name Obsidian (and so a plugin) knows this type by: `relationships` is a
-    /// `multitext` (`multi` is whether the property holds lists) or a `text`; `enum` and `object`
-    /// are a `text`.
+    /// `multitext` or a `text` (`multi` is whether the property holds lists, as for `url`); `enum`
+    /// and `object` are a `text`.
     pub fn obsidian_name(self, multi: bool) -> &'static str {
         match self {
-            PropertyType::Relationships if multi => "multitext",
-            PropertyType::Relationships | PropertyType::Enum | PropertyType::Object => "text",
+            PropertyType::Relationships | PropertyType::Url if multi => "multitext",
+            PropertyType::Relationships
+            | PropertyType::Enum
+            | PropertyType::Object
+            | PropertyType::Url => "text",
             other => other.wire_name(),
         }
     }
 
     /// Whether an indexed value type (`props.vtype`, plus the synthetic `links` of
-    /// [`refine_list_shapes`]: a list of wikilinks only) is a valid value of this type.
+    /// [`refine_list_shapes`] (a list of wikilinks only) and `url` / `urls` of
+    /// [`refine_url_shapes`] (a text that is a URL, a list of URLs only)) is a valid value of this
+    /// type. A `url` property fits any text or list: a value that is no URL is marked per value,
+    /// never refused.
     /// A property without a value (`null`) fits every type.
     pub fn fits(self, vtype: &str) -> bool {
         matches!(
             (self, vtype),
             (_, "null")
-                | (PropertyType::Text, "text" | "link")
-                | (PropertyType::Enum, "text")
+                | (PropertyType::Text, "text" | "link" | "url")
+                | (PropertyType::Enum, "text" | "url")
+                | (PropertyType::Url, "text" | "url" | "list" | "urls")
                 | (PropertyType::Object, "object")
                 | (PropertyType::Number, "number")
                 | (PropertyType::Checkbox, "bool")
@@ -122,7 +136,7 @@ impl PropertyType {
                 | (PropertyType::Datetime, "datetime")
                 | (
                     PropertyType::Multitext | PropertyType::Tags | PropertyType::Aliases,
-                    "list" | "links"
+                    "list" | "links" | "urls"
                 )
                 | (PropertyType::Relationships, "link" | "links")
         )
@@ -158,11 +172,13 @@ struct TypesFile {
     types: BTreeMap<String, serde_json::Value>,
 }
 
-/// One recorded type: the type and, for an enum, its ordered values.
+/// One recorded type: the type and, for an enum, its ordered values and the optional icon of some
+/// of them (`emoji:<emoji>` or `icon:<Hugeicons name>`, see [`valid_icon`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Recorded {
     ty: PropertyType,
     values: Vec<String>,
+    icons: BTreeMap<String, String>,
 }
 
 impl Recorded {
@@ -172,9 +188,11 @@ impl Recorded {
         entry: &serde_json::Value,
         parse: fn(&str) -> Option<PropertyType>,
     ) -> Option<Recorded> {
-        let (name, values) = match entry {
-            serde_json::Value::String(s) => (s.as_str(), None),
-            serde_json::Value::Object(o) => (o.get("type")?.as_str()?, o.get("values")),
+        let (name, values, icons) = match entry {
+            serde_json::Value::String(s) => (s.as_str(), None, None),
+            serde_json::Value::Object(o) => {
+                (o.get("type")?.as_str()?, o.get("values"), o.get("icons"))
+            }
             _ => return None,
         };
         let ty = parse(name)?;
@@ -187,17 +205,79 @@ impl Recorded {
             ),
             _ => Vec::new(),
         };
-        Some(Recorded { ty, values })
+        // an icon of a value the list lacks, or one that is malformed, is skipped, not an error
+        let icons = match icons {
+            Some(serde_json::Value::Object(o)) if ty == PropertyType::Enum => o
+                .iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+                .filter(|(k, v)| values.contains(k) && valid_icon(v))
+                .collect(),
+            _ => BTreeMap::new(),
+        };
+        Some(Recorded { ty, values, icons })
     }
 
     /// The entry as stored: a bare string, except an enum, which carries its values.
     fn to_entry(&self) -> serde_json::Value {
         if self.ty == PropertyType::Enum {
-            serde_json::json!({"type": self.ty.wire_name(), "values": self.values})
+            let mut entry = serde_json::json!({"type": self.ty.wire_name(), "values": self.values});
+            if !self.icons.is_empty() {
+                entry["icons"] = serde_json::json!(self.icons);
+            }
+            entry
         } else {
             serde_json::Value::String(self.ty.wire_name().to_owned())
         }
     }
+}
+
+/// Whether `value` is an icon Writer stores for an enum value: `emoji:` and exactly one emoji, or
+/// `icon:` and a Hugeicons export name (`[A-Z][A-Za-z0-9]*Icon`, at most 64 characters). The twin
+/// of `src/lib/icon-picker/icon-value.ts` (`shared/icon-value-vectors.json` pins both). The emoji
+/// check is an approximation of "one grapheme holding an emoji" without a segmentation table: one
+/// cluster (modifiers, variation selectors, ZWJ joins, keycap, tags and a flag pair stay in it),
+/// no whitespace or control character, at least one character from an emoji block.
+pub fn valid_icon(value: &str) -> bool {
+    if value.len() > 80 {
+        return false;
+    }
+    if let Some(name) = value.strip_prefix("icon:") {
+        let mut chars = name.chars();
+        return name.len() <= 64
+            && name.ends_with("Icon")
+            && chars.next().is_some_and(|c| c.is_ascii_uppercase())
+            && name.chars().all(|c| c.is_ascii_alphanumeric());
+    }
+    let Some(emoji) = value.strip_prefix("emoji:") else {
+        return false;
+    };
+    let is_mark = |c: char| {
+        matches!(c as u32,
+            0xA9 | 0xAE | 0x203C..=0x3299 | 0x1F000..=0x1FAFF)
+    };
+    emoji.chars().any(is_mark)
+        && !emoji.chars().any(|c| c.is_whitespace() || c.is_control())
+        && emoji_clusters(emoji) == 1
+}
+
+/// How many emoji clusters `text` holds (see [`valid_icon`]).
+fn emoji_clusters(text: &str) -> usize {
+    let is_ri = |c: char| matches!(c as u32, 0x1F1E6..=0x1F1FF);
+    let mut clusters = 0;
+    let mut prev: Option<char> = None;
+    let mut ri_run = 0;
+    for c in text.chars() {
+        let joins = matches!(c as u32,
+            0x200D | 0xFE0F | 0x20E3 | 0x1F3FB..=0x1F3FF | 0xE0020..=0xE007F)
+            || prev == Some('\u{200D}');
+        let flag_pair = is_ri(c) && ri_run == 1;
+        if !joins && !flag_pair {
+            clusters += 1;
+        }
+        ri_run = if is_ri(c) { ri_run + 1 } else { 0 };
+        prev = Some(c);
+    }
+    clusters
 }
 
 /// An enum's values as stored: trimmed, non-empty, one line, first occurrence wins, order kept.
@@ -267,6 +347,22 @@ impl TypeTable {
             .map_or(&[], |r| r.values.as_slice())
     }
 
+    /// The recorded icons of an enum property's values (empty for any other type).
+    pub fn icons(&self, name: &str) -> BTreeMap<String, String> {
+        self.writer
+            .get(&normalize(name))
+            .map(|r| r.icons.clone())
+            .unwrap_or_default()
+    }
+
+    /// The enum properties Writer records (lower-cased name) with their current values.
+    pub fn enums(&self) -> impl Iterator<Item = (&String, &[String])> {
+        self.writer
+            .iter()
+            .filter(|(_, r)| r.ty == PropertyType::Enum)
+            .map(|(k, r)| (k, r.values.as_slice()))
+    }
+
     /// Every recorded name (lower-cased), Writer's and Obsidian's.
     pub fn names(&self) -> impl Iterator<Item = &String> {
         self.writer.keys().chain(self.obsidian.keys())
@@ -285,7 +381,9 @@ impl TypeTable {
 
 /// Type of a property with no record: `tags`/`aliases` are special names; a property whose every
 /// non-empty value is a wikilink or a list of wikilinks (`link` / `links`) is `relationships`
-/// (empty values are neutral, one plain-text note breaks it); otherwise the most common observed
+/// (empty values are neutral, one plain-text note breaks it); likewise `url` for a property whose
+/// every non-empty value is a URL or a list of URLs (`url` / `urls`, see [`refine_url_shapes`]);
+/// otherwise the most common observed
 /// value type (`bool` -> checkbox, `number`, `date`, `datetime`, `list` ->
 /// multitext, `object` -> object, everything else text).
 pub fn infer(name: &str, observed: &BTreeMap<String, i64>) -> PropertyType {
@@ -297,6 +395,10 @@ pub fn infer(name: &str, observed: &BTreeMap<String, i64>) -> PropertyType {
     let mut non_empty = observed.keys().filter(|t| t.as_str() != "null").peekable();
     if non_empty.peek().is_some() && non_empty.all(|t| t == "link" || t == "links") {
         return PropertyType::Relationships;
+    }
+    let mut non_empty = observed.keys().filter(|t| t.as_str() != "null").peekable();
+    if non_empty.peek().is_some() && non_empty.all(|t| t == "url" || t == "urls") {
+        return PropertyType::Url;
     }
     // Ties resolve to the first type in name order, so the answer is deterministic.
     let best = observed.iter().filter(|(t, _)| t.as_str() != "null").fold(
@@ -311,7 +413,7 @@ pub fn infer(name: &str, observed: &BTreeMap<String, i64>) -> PropertyType {
         Some("bool") => PropertyType::Checkbox,
         Some("date") => PropertyType::Date,
         Some("datetime") => PropertyType::Datetime,
-        Some("list") => PropertyType::Multitext,
+        Some("list" | "urls") => PropertyType::Multitext,
         Some("object") => PropertyType::Object,
         _ => PropertyType::Text,
     }
@@ -344,6 +446,34 @@ pub fn refine_list_shapes(counts: &mut [PropertyCount], shapes: &[crate::index::
     }
 }
 
+/// Refine the counts for type inference once more: a text value that is a URL
+/// ([`crate::url_value::is_url`]) moves from `text` to the synthetic `url`, a list made only of
+/// URLs from `list` to `urls`. Inference then types a property `url` when nothing else is
+/// observed. Read-only, like [`refine_list_shapes`] (run it after that one).
+pub fn refine_url_shapes(counts: &mut [PropertyCount], shapes: &[crate::index::UrlShape]) {
+    for shape in shapes {
+        let Some(c) = counts.iter_mut().find(|c| c.key == shape.key) else {
+            continue;
+        };
+        for (from, to, moved) in [
+            ("text", "url", shape.urls),
+            ("list", "urls", shape.url_lists),
+        ] {
+            let have = c.types.get(from).copied().unwrap_or(0);
+            let n = moved.min(have);
+            if n == 0 {
+                continue;
+            }
+            *c.types.entry(to.into()).or_insert(0) += n;
+            if have == n {
+                c.types.remove(from);
+            } else {
+                c.types.insert(from.into(), have - n);
+            }
+        }
+    }
+}
+
 /// One vault property with its effective type and how well the notes' values fit it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -364,6 +494,8 @@ pub struct PropertyTypeInfo {
     pub obsidian_type: &'static str,
     /// An enum's allowed values, in order (empty for any other type).
     pub values: Vec<String>,
+    /// An enum's optional value icons (`emoji:<emoji>` / `icon:<Hugeicons name>` by value).
+    pub icons: BTreeMap<String, String>,
 }
 
 /// The vault's properties (from the index counts, merged case-insensitively) plus every recorded
@@ -394,7 +526,9 @@ pub fn report(root: &Path, counts: Vec<PropertyCount>) -> Vec<PropertyTypeInfo> 
                 .filter(|(t, _)| !ty.fits(t))
                 .map(|(_, n)| n)
                 .sum();
-            let multi = types.contains_key("links") || types.contains_key("list");
+            let multi = ["links", "list", "urls"]
+                .iter()
+                .any(|t| types.contains_key(*t));
             PropertyTypeInfo {
                 key,
                 count,
@@ -404,6 +538,7 @@ pub fn report(root: &Path, counts: Vec<PropertyCount>) -> Vec<PropertyTypeInfo> 
                 mismatched,
                 obsidian_type: ty.obsidian_name(multi),
                 values: table.values(&norm).to_vec(),
+                icons: table.icons(&norm),
             }
         })
         .collect()
@@ -424,6 +559,32 @@ pub fn set_type(
     values: Option<Vec<String>>,
     observed: Vec<(String, i64)>,
 ) -> Result<(), PropertyTypeError> {
+    set_type_with_icons(root, name, ty, values, None, observed)
+}
+
+/// [`set_type`] with an enum's icons: `Some(map)` (value -> `emoji:..` / `icon:..`) replaces the
+/// recorded icons, `None` keeps them. Either way an icon whose value is not in the final list is
+/// dropped (a removed value loses its icon; a renamed one keeps it because the caller sends the
+/// map under the new name); a malformed icon is refused. Any other type drops them. The one write
+/// of the type record.
+pub fn set_type_with_icons(
+    root: &Path,
+    name: &str,
+    ty: PropertyType,
+    values: Option<Vec<String>>,
+    icons: Option<BTreeMap<String, String>>,
+    observed: Vec<(String, i64)>,
+) -> Result<(), PropertyTypeError> {
+    if let Some(bad) = icons
+        .iter()
+        .flatten()
+        .find(|(_, v)| !valid_icon(v))
+        .map(|(k, _)| k)
+    {
+        return Err(PropertyTypeError::Invalid(format!(
+            "the icon of \"{bad}\" is not an emoji or an icon name"
+        )));
+    }
     let key = normalize(name);
     if key.is_empty() || key.contains(['\n', '\r']) {
         return Err(PropertyTypeError::Invalid(
@@ -438,27 +599,67 @@ pub fn set_type(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => TypesFile::default(),
         Err(e) => return Err(PropertyTypeError::Io(e.to_string())),
     };
-    let values = if ty == PropertyType::Enum {
-        match values {
-            Some(v) => clean_values(v),
-            None => match file
-                .types
-                .get(&key)
-                .and_then(|e| Recorded::from_entry(e, PropertyType::parse))
-            {
-                Some(r) if r.ty == PropertyType::Enum => r.values,
-                _ => seed_values(observed),
-            },
-        }
+    let recorded = file
+        .types
+        .get(&key)
+        .and_then(|e| Recorded::from_entry(e, PropertyType::parse))
+        .filter(|r| r.ty == PropertyType::Enum);
+    let (values, icons) = if ty == PropertyType::Enum {
+        let values = match (values, &recorded) {
+            (Some(v), _) => clean_values(v),
+            (None, Some(r)) => r.values.clone(),
+            (None, None) => seed_values(observed),
+        };
+        let icons = icons
+            .or_else(|| recorded.map(|r| r.icons))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(k, _)| values.contains(k))
+            .collect();
+        (values, icons)
     } else {
-        Vec::new()
+        (Vec::new(), BTreeMap::new())
     };
-    file.types.insert(key, Recorded { ty, values }.to_entry());
+    file.types
+        .insert(key, Recorded { ty, values, icons }.to_entry());
     let mut body =
         serde_json::to_string_pretty(&file).map_err(|e| PropertyTypeError::Io(e.to_string()))?;
     body.push('\n');
     crate::plugins::write_atomic(&dir, "property-types.json", body.as_bytes())
         .map_err(PropertyTypeError::Io)
+}
+
+/// Append to every enum property's list the text values the notes hold that the list lacks (the
+/// one place an unlisted value is detected; run after an index update, see
+/// `commands/index.rs`). `observed(name)` gives a property's distinct text values with their note
+/// counts (the index's `text_values`): scalars only, so lists and non-text values are never
+/// added. New values go after the existing ones (most used first, then by name), trimmed, one
+/// line each. Idempotent: nothing to add writes nothing, so Writer's own write of the file never
+/// starts another round. Returns the names that gained values. Notes are never touched.
+pub fn sync_enum_values<E>(
+    root: &Path,
+    observed: impl Fn(&str) -> Result<Vec<(String, i64)>, E>,
+) -> Result<Vec<String>, PropertyTypeError>
+where
+    E: std::fmt::Display,
+{
+    let table = TypeTable::load(root);
+    let mut grown = Vec::new();
+    for (name, current) in table.enums() {
+        let seen = observed(name).map_err(|e| PropertyTypeError::Io(e.to_string()))?;
+        let have: std::collections::HashSet<&str> = current.iter().map(String::as_str).collect();
+        let fresh: Vec<String> = seed_values(seen)
+            .into_iter()
+            .filter(|v| !have.contains(v.as_str()))
+            .collect();
+        if fresh.is_empty() {
+            continue;
+        }
+        let values = current.iter().cloned().chain(fresh).collect();
+        set_type(root, name, PropertyType::Enum, Some(values), vec![])?;
+        grown.push(name.clone());
+    }
+    Ok(grown)
 }
 
 /// `<root>/.writer`, created, and proven to resolve inside the vault (a symlinked `.writer`
@@ -876,6 +1077,404 @@ mod tests {
         let r = run();
         assert_eq!(get(&r, "manager").ty, PropertyType::Text);
         assert_eq!(get(&r, "manager").source, TypeSource::Writer);
+    }
+
+    #[test]
+    fn url_is_inferred_only_when_every_value_is_a_url() {
+        let u = PropertyType::Url;
+        assert_eq!(infer("website", &obs(&[("url", 3)])), u);
+        assert_eq!(infer("sources", &obs(&[("urls", 2), ("url", 1)])), u);
+        assert_eq!(infer("website", &obs(&[("url", 2), ("null", 4)])), u);
+        // one non-URL value (or any other kind) keeps the usual answer
+        assert_eq!(
+            infer("website", &obs(&[("url", 3), ("text", 1)])),
+            PropertyType::Text
+        );
+        assert_eq!(
+            infer("sources", &obs(&[("urls", 3), ("list", 1)])),
+            PropertyType::Multitext
+        );
+        assert_eq!(
+            infer("x", &obs(&[("url", 2), ("link", 2)])),
+            PropertyType::Text
+        );
+        assert_eq!(infer("x", &obs(&[("null", 2)])), PropertyType::Text);
+        // tags / aliases are never url
+        assert_eq!(infer("tags", &obs(&[("urls", 3)])), PropertyType::Tags);
+        assert_eq!(infer("Aliases", &obs(&[("url", 3)])), PropertyType::Aliases);
+    }
+
+    #[test]
+    fn url_fits_text_and_lists_and_reads_as_text_for_plugins() {
+        let u = PropertyType::Url;
+        for t in ["text", "url", "list", "urls", "null"] {
+            assert!(u.fits(t), "{t}");
+        }
+        for t in ["number", "bool", "date", "link", "links", "object"] {
+            assert!(!u.fits(t), "{t}");
+        }
+        // the synthetic kinds still fit the types they were carved out of
+        assert!(PropertyType::Text.fits("url") && PropertyType::Enum.fits("url"));
+        assert!(PropertyType::Multitext.fits("urls") && PropertyType::Tags.fits("urls"));
+        assert!(!PropertyType::Number.fits("url"));
+        assert_eq!(u.wire_name(), "url");
+        assert_eq!(PropertyType::parse("url"), Some(u));
+        assert!(u.is_writer_only());
+        assert_eq!(PropertyType::parse_obsidian("url"), None);
+        assert_eq!(u.obsidian_name(false), "text");
+        assert_eq!(u.obsidian_name(true), "multitext");
+    }
+
+    #[test]
+    fn refine_url_shapes_moves_urls_out_of_text_and_list() {
+        let mut counts = vec![
+            count("website", &[("text", 4)]),
+            count("sources", &[("list", 3), ("text", 1)]),
+            count("other", &[("text", 2)]),
+        ];
+        let shape = |key: &str, urls, url_lists| crate::index::UrlShape {
+            key: key.into(),
+            urls,
+            url_lists,
+        };
+        refine_url_shapes(
+            &mut counts,
+            &[
+                shape("website", 4, 0),
+                shape("sources", 1, 2),
+                shape("gone", 1, 1),
+            ],
+        );
+        assert_eq!(counts[0].types, obs(&[("url", 4)]));
+        assert_eq!(
+            counts[1].types,
+            obs(&[("list", 1), ("urls", 2), ("url", 1)])
+        );
+        assert_eq!(counts[2].types, obs(&[("text", 2)]));
+    }
+
+    #[test]
+    fn report_over_a_real_index_infers_url_and_never_overrides_a_record() {
+        let v = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        write(v.path(), "A.md", "---\nwebsite: https://a.example\nsources:\n  - b.example/x\n  - mailto:me@c.example\nmixed: https://a.example\ncopy: https://a.example\ntags:\n  - https://t.example\nempty: []\n---\n");
+        write(
+            v.path(),
+            "B.md",
+            "---\nwebsite: www.b.example\nsources: https://one.example\nmixed: just words\ncopy: https://b.example\nempty:\n---\n",
+        );
+        write(
+            v.path(),
+            ".obsidian/types.json",
+            r#"{"types":{"copy":"text"}}"#,
+        );
+        let index = crate::index::Index::open_for_cli(v.path(), Some(data.path())).unwrap();
+        index.refresh_blocking().unwrap();
+        let run = || report(v.path(), index.properties_for_types().unwrap());
+        let get = |r: &[PropertyTypeInfo], k: &str| r.iter().find(|p| p.key == k).cloned().unwrap();
+        let r = run();
+        let website = get(&r, "website");
+        assert_eq!(
+            (website.ty, website.source, website.obsidian_type),
+            (PropertyType::Url, TypeSource::Inferred, "text")
+        );
+        let sources = get(&r, "sources");
+        assert_eq!(
+            (sources.ty, sources.obsidian_type, sources.mismatched),
+            (PropertyType::Url, "multitext", 0),
+            "a list and a single value"
+        );
+        assert_ne!(
+            get(&r, "mixed").ty,
+            PropertyType::Url,
+            "one non-URL breaks it"
+        );
+        assert_eq!(get(&r, "copy").ty, PropertyType::Text, "a stored type wins");
+        assert_eq!(get(&r, "copy").source, TypeSource::Obsidian);
+        assert_eq!(get(&r, "copy").mismatched, 0);
+        assert_eq!(get(&r, "tags").ty, PropertyType::Tags);
+        assert_eq!(get(&r, "empty").ty, PropertyType::Text, "empty is neutral");
+        // inference never writes a record
+        assert!(!v.path().join(WRITER_FILE).exists());
+        assert_eq!(
+            std::fs::read_to_string(v.path().join(OBSIDIAN_FILE)).unwrap(),
+            r#"{"types":{"copy":"text"}}"#
+        );
+    }
+
+    #[test]
+    fn enum_values_are_appended_once_when_a_note_gains_a_new_text_value() {
+        let v = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        write(v.path(), "A.md", "---\nstatus: todo\nother: x\n---\n");
+        write(v.path(), "B.md", "---\nstatus: done\n---\n");
+        let index = crate::index::Index::open_for_cli(v.path(), Some(data.path())).unwrap();
+        index.refresh_blocking().unwrap();
+        set_type(
+            v.path(),
+            "Status",
+            PropertyType::Enum,
+            Some(strings(&["todo", "doing"])),
+            vec![],
+        )
+        .unwrap();
+        set_type(v.path(), "other", PropertyType::Text, None, vec![]).unwrap();
+        let sync = || sync_enum_values(v.path(), |name| index.text_values(name)).unwrap();
+        let listed = || TypeTable::load(v.path()).values("status").to_vec();
+        // "done" is held by a note and not listed: it goes after the existing values
+        assert_eq!(sync(), ["status"]);
+        assert_eq!(listed(), ["todo", "doing", "done"]);
+        let written = std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap();
+        // nothing new: no pass writes (the file Writer wrote does not start another round)
+        assert!(sync().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap(),
+            written
+        );
+        // an external edit brings new values: most used first, then by name, after the old ones
+        write(v.path(), "A.md", "---\nstatus: blocked\n---\n");
+        write(v.path(), "C.md", "---\nstatus: \"  waiting  \"\n---\n");
+        write(v.path(), "D.md", "---\nstatus: waiting\n---\n");
+        write(v.path(), "E.md", "---\nstatus: todo\n---\n");
+        index.refresh_blocking().unwrap();
+        assert_eq!(sync(), ["status"]);
+        assert_eq!(listed(), ["todo", "doing", "done", "waiting", "blocked"]);
+        assert!(sync().is_empty());
+        // the note is never rewritten and `.obsidian` never appears
+        assert_eq!(
+            std::fs::read_to_string(v.path().join("A.md")).unwrap(),
+            "---\nstatus: blocked\n---\n"
+        );
+        assert!(!v.path().join(".obsidian").exists());
+        // only an enum's list grows
+        assert_eq!(
+            TypeTable::load(v.path()).recorded("other").unwrap().0,
+            PropertyType::Text
+        );
+    }
+
+    #[test]
+    fn enum_sync_skips_lists_numbers_links_and_blank_or_multiline_values() {
+        let v = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        write(v.path(), "A.md", "---\nstatus: 3\n---\n");
+        write(v.path(), "B.md", "---\nstatus: [a, b]\n---\n");
+        write(v.path(), "C.md", "---\nstatus: \"[[Note]]\"\n---\n");
+        write(v.path(), "D.md", "---\nstatus: \" \"\n---\n");
+        write(v.path(), "E.md", "---\nstatus: |\n  one\n  two\n---\n");
+        write(v.path(), "F.md", "---\nstatus: true\n---\n");
+        write(v.path(), "G.md", "---\nstatus:\n---\n");
+        let index = crate::index::Index::open_for_cli(v.path(), Some(data.path())).unwrap();
+        index.refresh_blocking().unwrap();
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["todo"])),
+            vec![],
+        )
+        .unwrap();
+        let before = std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap();
+        assert!(sync_enum_values(v.path(), |n| index.text_values(n))
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap(),
+            before
+        );
+        assert_eq!(TypeTable::load(v.path()).values("status"), ["todo"]);
+    }
+
+    fn icons(pairs: &[(&str, &str)]) -> Option<BTreeMap<String, String>> {
+        Some(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn icon_values_match_the_shared_vectors() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../../shared/icon-value-vectors.json")).unwrap();
+        for c in v["valid"].as_array().unwrap() {
+            let c = c.as_str().unwrap();
+            assert!(valid_icon(c), "{c:?} should be valid");
+        }
+        for c in v["invalid"].as_array().unwrap() {
+            let c = c.as_str().unwrap();
+            assert!(!valid_icon(c), "{c:?} should be invalid");
+        }
+    }
+
+    #[test]
+    fn enum_icons_are_stored_optional_and_old_files_load_unchanged() {
+        let v = tempfile::tempdir().unwrap();
+        // an old file: no icons key anywhere
+        write(
+            v.path(),
+            WRITER_FILE,
+            r#"{"types":{"status":{"type":"enum","values":["todo","done"]},"n":"number"}}"#,
+        );
+        let t = TypeTable::load(v.path());
+        assert!(t.icons("status").is_empty());
+        assert_eq!(t.values("status"), ["todo", "done"]);
+        // set one: the entry gains `icons`, every other entry is untouched
+        set_type_with_icons(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            None,
+            icons(&[("done", "emoji:✅"), ("todo", "icon:Home01Icon")]),
+            vec![],
+        )
+        .unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap())
+                .unwrap();
+        assert_eq!(
+            raw["types"]["status"],
+            serde_json::json!({"type":"enum","values":["todo","done"],
+                "icons":{"done":"emoji:✅","todo":"icon:Home01Icon"}})
+        );
+        assert_eq!(raw["types"]["n"], "number");
+        // `None` keeps the icons (set_type, auto-add); the report carries them
+        set_type(v.path(), "status", PropertyType::Enum, None, vec![]).unwrap();
+        let r = report(v.path(), vec![count("status", &[("text", 2)])]);
+        let status = r.iter().find(|p| p.key == "status").unwrap();
+        assert_eq!(status.icons["done"], "emoji:✅");
+        assert!(!v.path().join(".obsidian").exists());
+    }
+
+    #[test]
+    fn a_renamed_value_keeps_its_icon_a_removed_one_drops_it_and_new_ones_have_none() {
+        let v = tempfile::tempdir().unwrap();
+        set_type_with_icons(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["todo", "done"])),
+            icons(&[("done", "emoji:✅"), ("todo", "emoji:📝")]),
+            vec![],
+        )
+        .unwrap();
+        // rename done -> finished (the caller sends the map under the new name), drop todo
+        set_type_with_icons(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["finished"])),
+            icons(&[("finished", "emoji:✅"), ("todo", "emoji:📝")]),
+            vec![],
+        )
+        .unwrap();
+        let t = TypeTable::load(v.path());
+        assert_eq!(t.values("status"), ["finished"]);
+        assert_eq!(
+            t.icons("status"),
+            icons(&[("finished", "emoji:✅")]).unwrap()
+        );
+        // removing a value without sending icons drops its icon too
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["other"])),
+            vec![],
+        )
+        .unwrap();
+        assert!(TypeTable::load(v.path()).icons("status").is_empty());
+        // an auto-added value has no icon, the others keep theirs
+        set_type_with_icons(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["a"])),
+            icons(&[("a", "icon:Home01Icon")]),
+            vec![],
+        )
+        .unwrap();
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(strings(&["a", "b"])),
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(
+            TypeTable::load(v.path()).icons("status"),
+            icons(&[("a", "icon:Home01Icon")]).unwrap()
+        );
+        // another type has no icons
+        set_type(v.path(), "status", PropertyType::Text, None, vec![]).unwrap();
+        assert!(TypeTable::load(v.path()).icons("status").is_empty());
+    }
+
+    #[test]
+    fn bad_icons_are_refused_and_bad_stored_ones_skipped() {
+        let v = tempfile::tempdir().unwrap();
+        for (k, bad) in [
+            ("a", "smile:x"),
+            ("a", "emoji:ab"),
+            ("a", "emoji:✅✅"),
+            ("a", "icon:lowercase"),
+        ] {
+            let r = set_type_with_icons(
+                v.path(),
+                "s",
+                PropertyType::Enum,
+                Some(strings(&["a"])),
+                icons(&[(k, bad)]),
+                vec![],
+            );
+            assert!(r.is_err(), "{bad}");
+        }
+        assert!(!v.path().join(WRITER_FILE).exists(), "nothing written");
+        // a key the list lacks is dropped on write; a malformed stored icon is skipped on read
+        write(
+            v.path(),
+            WRITER_FILE,
+            r#"{"types":{"s":{"type":"enum","values":["a","b"],"icons":{"a":"emoji:✅","b":"junk","zz":"emoji:✅"}}}}"#,
+        );
+        assert_eq!(
+            TypeTable::load(v.path()).icons("s"),
+            icons(&[("a", "emoji:✅")]).unwrap()
+        );
+        set_type_with_icons(
+            v.path(),
+            "s",
+            PropertyType::Enum,
+            None,
+            icons(&[("zz", "emoji:✅")]),
+            vec![],
+        )
+        .unwrap();
+        assert!(TypeTable::load(v.path()).icons("s").is_empty());
+    }
+
+    #[test]
+    fn a_property_of_file_names_stays_text_not_url() {
+        let v = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        write(v.path(), "A.md", "---\nattachment: Paper.pdf\nrefs:\n  - notes.md\n  - photo.png\nsite: example.com\n---\n");
+        write(
+            v.path(),
+            "B.md",
+            "---\nattachment: diagram.svg\nrefs:\n  - board.canvas\n  - x.base\nsite: example.com/docs\n---\n",
+        );
+        let index = crate::index::Index::open_for_cli(v.path(), Some(data.path())).unwrap();
+        index.refresh_blocking().unwrap();
+        let r = report(v.path(), index.properties_for_types().unwrap());
+        let ty = |k: &str| r.iter().find(|p| p.key == k).unwrap().ty;
+        assert_eq!(ty("attachment"), PropertyType::Text);
+        assert_eq!(ty("refs"), PropertyType::Multitext);
+        assert_eq!(
+            ty("site"),
+            PropertyType::Url,
+            "real domains still infer url"
+        );
     }
 
     fn strings(v: &[&str]) -> Vec<String> {

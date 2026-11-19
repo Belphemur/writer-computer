@@ -5,12 +5,14 @@ import { useEffect, useEffectEvent, type RefObject } from "react";
  *  anchor, so closing beats drifting away from it). Wheel rather than scroll:
  *  momentum scrolling keeps emitting scroll events after the gesture ends,
  *  which would instantly close a popover opened mid-glide. Events inside the
- *  popover or its anchor don't dismiss — the anchor's toggle stays in charge. */
+ *  popover or its anchor don't dismiss — the anchor's toggle stays in charge. `alsoInside` is a
+ *  second element that counts as inside (a popover opened from this one, portalled elsewhere). */
 export function usePopoverDismiss(
   popoverRef: RefObject<HTMLElement | null>,
   anchorRef: RefObject<HTMLElement | null>,
   onDismiss: () => void,
   enabled = true,
+  alsoInside?: RefObject<HTMLElement | null>,
 ) {
   const dismiss = useEffectEvent(onDismiss);
 
@@ -18,7 +20,9 @@ export function usePopoverDismiss(
     if (!enabled) return;
     const isInside = (target: EventTarget | null) =>
       target instanceof Node &&
-      (popoverRef.current?.contains(target) || anchorRef.current?.contains(target));
+      (popoverRef.current?.contains(target) ||
+        anchorRef.current?.contains(target) ||
+        alsoInside?.current?.contains(target));
 
     const onPointerDown = (event: PointerEvent) => {
       if (!isInside(event.target)) dismiss();
@@ -41,5 +45,5 @@ export function usePopoverDismiss(
       document.removeEventListener("wheel", onWheel, true);
       window.removeEventListener("resize", onResize);
     };
-  }, [popoverRef, anchorRef, enabled]);
+  }, [popoverRef, anchorRef, enabled, alsoInside]);
 }

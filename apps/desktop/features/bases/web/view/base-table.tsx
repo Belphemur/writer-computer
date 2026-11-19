@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useId, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ariaSort,
@@ -11,13 +11,13 @@ import {
   type GridItem,
   type GridLayout,
 } from "../lib/grid";
-import { notePropertyName, type EditKind } from "../lib/cells";
+import { canonicalPropertyKey, notePropertyName, type EditKind } from "../lib/cells";
+import { EnumValueIcon } from "@/components/icon-picker/enum-value-icon";
 import type { BaseQueryResult, BaseView, Cell, Column } from "../lib/types";
 import { MAX_COLUMN_WIDTH, MIN_COLUMN_WIDTH } from "../lib/grid";
 import { fitColumnWidth } from "../lib/fit-width";
 import { createMeasure } from "./measure-text";
 import type { ViewConfig } from "../lib/view-registry";
-import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { CellEditor } from "./cell-editor";
 import { keyIntent } from "@/lib/link-activation";
 import { CellView, type CellActions } from "./cell-view";
@@ -190,14 +190,6 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
   const { collapsed, toggle: toggleGroup } = useGroupCollapse(view?.name ?? "");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
-  // enum properties edit as a dropdown: their values come from the property type store
-  useEffect(() => {
-    void usePropertyTypesStore
-      .getState()
-      .load()
-      .catch(() => {});
-  }, []);
-
   const { probeRow, beginEdit: beginCellEdit, toggleCheckbox, notify } = edits;
   const { columns, rows } = result;
   const [dragged, setDragged] = useState<WidthOverrides>({ view, widths: new Map() });
@@ -719,6 +711,12 @@ export function BaseTable({ result, view, edits, actions, config, label }: Props
                         <span aria-hidden="true" className="w-3 text-text-muted">
                           {item.collapsed ? "▸" : "▾"}
                         </span>
+                        {view?.groupBy ? (
+                          <EnumValueIcon
+                            property={canonicalPropertyKey(view.groupBy.property)}
+                            value={item.label}
+                          />
+                        ) : null}
                         <span>{item.label}</span>
                         <span data-group-count className="text-[11px] font-normal text-text-muted">
                           {item.count}

@@ -10,7 +10,13 @@ export function propertyTypes(): Promise<PropertyTypeInfo[]> {
 
 /** Record a property's type vault-wide in `.writer/property-types.json` (never `.obsidian`).
  *  `values` is an enum's whole ordered list; omitted, a new enum is seeded from the values the
- *  vault already holds under that name. */
-export function propertyTypeSet(name: string, ty: PropertyType, values?: string[]): Promise<void> {
-  return invoke("property_type_set", { name, ty, values: values ?? null });
+ *  vault already holds under that name. `icons` is an enum's whole value -> icon map; omitted, the
+ *  recorded icons stay (a value no longer in the list loses its icon). */
+export function propertyTypeSet(
+  name: string,
+  ty: PropertyType,
+  values?: string[],
+  icons?: Record<string, string>,
+): Promise<void> {
+  return invoke("property_type_set", { name, ty, values: values ?? null, icons: icons ?? null });
 }

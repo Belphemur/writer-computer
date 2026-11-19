@@ -20,6 +20,14 @@ const ipc = vi.hoisted(() => ({
 // The fake backend keeps what was recorded, as the real one does, for the refetch after a write.
 const recorded = vi.hoisted(() => new Map<string, string>());
 vi.mock("../src/lib/property-types-ipc", () => ipc);
+// The backend's "I changed the type record" notice (an enum gained values); tests fire it by hand.
+const changed = vi.hoisted(() => ({ handler: null as null | (() => void) }));
+vi.mock("../src/lib/property-types-events", () => ({
+  onPropertyTypesChanged: async (h: () => void) => {
+    changed.handler = h;
+    return () => {};
+  },
+}));
 const VAULT_TYPES = [
   { key: "status", count: 4, types: { text: 4 }, type: "text", source: "inferred", mismatched: 0 },
   { key: "due", count: 2, types: { date: 2 }, type: "date", source: "writer", mismatched: 0 },
@@ -41,7 +49,17 @@ vi.mock("../src/lib/tauri", async (orig) => ({
   ]),
 }));
 vi.mock("@/lib/theme", () => ({ applyTheme: vi.fn(), applyCssVarBindings: vi.fn() }));
+// A small stand-in for the Hugeicons shards (the picker would load all 26 chunks, ~6 MB).
+vi.mock("@/lib/icon-picker/icon-shards", () => {
+  const glyph = (id: string) => [["path", { d: `M0 0h${id.length}`, key: id }]];
+  return {
+    SHARD_LETTERS: ["H"],
+    shardOf: (n: string) => (n.startsWith("H") ? "H" : null),
+    loadShard: async () => ({ Home01Icon: glyph("Home01Icon"), HeartIcon: glyph("HeartIcon") }),
+  };
+});
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { scheduleSave } from "../src/lib/save";
 import * as tauri from "../src/lib/tauri";
 import { PropertiesPanel } from "../src/components/editor-area/properties-panel";
@@ -317,6 +335,7 @@ describe("property type icon and menu", () => {
       "Text",
       "List",
       "Relationships",
+      "URL",
       "Enum",
       "Object",
       "Number",
@@ -701,7 +720,7 @@ describe("middle-click on a relationship link", () => {
 });
 
 describe("enum properties", () => {
-  const enumInfo = (values: string[]) => ({
+  const enumInfo = (values: string[], icons: Record<string, string> = {}) => ({
     key: "status",
     count: 3,
     types: { text: 3 },
@@ -710,6 +729,7 @@ describe("enum properties", () => {
     mismatched: 0,
     obsidianType: "text",
     values,
+    icons,
   });
   const trigger = () => q('button[aria-label="status value"]') as HTMLButtonElement;
   const optionLabels = () =>
@@ -763,6 +783,158 @@ describe("enum properties", () => {
     expect(optionLabels()).toEqual(["No value", "blockednot in list", "todo", "doing", "done"]);
     await act(async () => optionNamed("blocked").click()); // picking it again changes nothing
     expect(stored()).toBe("status: blocked");
+  });
+
+  it("a value the backend auto-added to the list shows in the dropdown, no longer marked", async () => {
+    await mountAndLoad("status: blocked");
+    expect(trigger().textContent).toContain("not in list"); // until the backend has seen it
+    ipc.propertyTypes.mockImplementation(
+      async () => [enumInfo(["todo", "doing", "done", "blocked"])] as never,
+    );
+    await act(async () => changed.handler!()); // `property-types://changed`
+    await act(async () => {});
+    expect(trigger().dataset.notInList).toBeUndefined();
+    expect(trigger().textContent).not.toContain("not in list");
+    await act(async () => trigger().click());
+    expect(optionLabels()).toEqual(["No value", "todo", "doing", "done", "blocked"]);
+    expect(stored()).toBe("status: blocked"); // the note is never rewritten
+  });
+
+  describe("value icons", () => {
+    // jsdom has no layout: give the picker's grid a size so the virtualizer renders a window
+    for (const [name, value] of [
+      ["offsetHeight", 216],
+      ["clientHeight", 216],
+      ["offsetWidth", 316],
+      ["clientWidth", 316],
+    ] as const) {
+      let original: PropertyDescriptor | undefined;
+      beforeEach(() => {
+        original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, name);
+        Object.defineProperty(HTMLElement.prototype, name, {
+          configurable: true,
+          get: () => value,
+        });
+      });
+      afterEach(() => {
+        if (original) Object.defineProperty(HTMLElement.prototype, name, original);
+        else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+      });
+    }
+
+    const slot = (v: string) =>
+      document.querySelector<HTMLButtonElement>(`button[aria-label="Icon of ${v}"]`)!;
+    const picker = () =>
+      document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Icon of"]');
+    const list = () => document.querySelector('[role="listbox"]');
+    const pause = () => act(async () => void (await new Promise((r) => setTimeout(r, 20))));
+
+    beforeEach(() => {
+      ipc.propertyTypes.mockImplementation(
+        async () =>
+          [
+            enumInfo(["todo", "doing", "done"], { done: "emoji:✅", todo: "icon:Home01Icon" }),
+          ] as never,
+      );
+    });
+
+    it("shows a value's icon in the cell and in its dropdown row; a value without one looks as before", async () => {
+      await mountAndLoad("status: done");
+      expect(trigger().querySelector('[data-icon-glyph="emoji"]')?.textContent).toBe("✅");
+      await act(async () => trigger().click());
+      expect(slot("done").querySelector("[data-icon-glyph]")).not.toBeNull();
+      await pause(); // the icon set loads lazily
+      expect(slot("todo").querySelector('[data-icon-glyph="icon"] svg')).not.toBeNull();
+      expect(slot("doing").querySelector("[data-icon-glyph]")).toBeNull();
+      await act(async () => optionNamed("doing").click());
+      expect(stored()).toBe("status: doing");
+      expect(trigger().querySelector("[data-icon-glyph]")).toBeNull();
+    });
+
+    it("the slot opens the picker; picking an emoji records it through the one write path", async () => {
+      await mountAndLoad("status: doing");
+      await act(async () => trigger().click());
+      await act(async () => slot("doing").click());
+      await pause();
+      expect(picker()).not.toBeNull();
+      await act(async () => {
+        [...picker()!.querySelectorAll<HTMLElement>('[role="tab"]')]
+          .find((t) => t.textContent === "Emoji")!
+          .click();
+      });
+      for (let i = 0; i < 50 && !picker()!.querySelector('[role="option"][data-emoji="😀"]'); i++)
+        await act(async () => void (await new Promise((r) => setTimeout(r, 40)))); // emoji.json loads lazily
+      const grin = picker()!.querySelector<HTMLElement>('[role="option"][data-emoji="😀"]')!;
+      await act(async () => {
+        grin.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      });
+      expect(ipc.propertyTypeSet).toHaveBeenLastCalledWith(
+        "status",
+        "enum",
+        ["todo", "doing", "done"],
+        { done: "emoji:✅", todo: "icon:Home01Icon", doing: "emoji:😀" },
+      );
+      expect(picker()).toBeNull();
+      expect(list()).not.toBeNull(); // the dropdown stays open
+      expect(stored()).toBe("status: doing"); // the note is never touched
+    });
+
+    it("Remove icon drops it; a click inside the picker does not close the dropdown", async () => {
+      await mountAndLoad("status: todo");
+      await act(async () => trigger().click());
+      await act(async () => slot("done").click());
+      await pause();
+      await act(async () => {
+        picker()!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      });
+      expect(list()).not.toBeNull();
+      await act(async () =>
+        [...picker()!.querySelectorAll("button")]
+          .find((b) => b.textContent === "Remove icon")!
+          .click(),
+      );
+      expect(ipc.propertyTypeSet).toHaveBeenLastCalledWith(
+        "status",
+        "enum",
+        ["todo", "doing", "done"],
+        { todo: "icon:Home01Icon" },
+      );
+    });
+
+    it("Escape closes the picker first, then the dropdown", async () => {
+      await mountAndLoad("status: todo");
+      await act(async () => trigger().click());
+      await act(async () => slot("doing").click());
+      await pause();
+      const search = picker()!.querySelector<HTMLInputElement>("input[aria-label='Search icons']")!;
+      await press(search, "Escape");
+      expect(picker()).toBeNull();
+      expect(list()).not.toBeNull();
+      expect(document.activeElement).toBe(slot("doing"));
+      await press(document.activeElement!, "Escape");
+      expect(list()).toBeNull();
+    });
+
+    it("Tab walks the rows and slots; it leaves the list from the last one", async () => {
+      await mountAndLoad("status: todo");
+      await act(async () => trigger().click());
+      const last = [...document.querySelectorAll<HTMLElement>('[role="listbox"] button')].at(-1)!;
+      last.focus();
+      await act(async () => {
+        last.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+        );
+      });
+      expect(list()).toBeNull();
+      await act(async () => trigger().click());
+      slot("todo").focus();
+      await act(async () => {
+        slot("todo").dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+        );
+      });
+      expect(list()).not.toBeNull(); // moves to the row's own button
+    });
   });
 
   it("Add value... appends to the type's values through the one write path and sets it", async () => {
@@ -939,5 +1111,140 @@ describe("object properties", () => {
     expect(stored()).toBe("m:\n  tags:\n    - a\n    - b\n    - c\nz: 1");
     await clickButton("Remove a");
     expect(stored()).toBe("m:\n  tags:\n    - b\n    - c\nz: 1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// url: link chips that open on click, edited with a pencil
+// ---------------------------------------------------------------------------
+
+describe("url properties", () => {
+  const chips = (key = "site") => [
+    ...host.querySelectorAll<HTMLElement>(`li:has([aria-label^="Add to ${key}"]) [data-url-chip]`),
+  ];
+  const chipLink = (i = 0) => chips()[i]!.querySelector<HTMLButtonElement>("button[title]")!;
+  const pencil = () => q('button[aria-label="Edit site"]') as HTMLButtonElement;
+  const edit = () => q('input[aria-label="site value"]') as HTMLInputElement;
+  const clickWith = (el: Element, init: MouseEventInit) =>
+    act(async () => {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
+    });
+  const opened = () => vi.mocked(openUrl);
+
+  beforeEach(() => {
+    opened().mockReset().mockResolvedValue(undefined);
+    recorded.set("site", "url");
+  });
+
+  it("a recorded url shows a link chip: host and path, the full value in the title", async () => {
+    await mountAndLoad("site: https://www.example.com/docs/a?x=1");
+    expect(typeButton("site", "URL").dataset.type).toBe("url");
+    expect(chips()).toHaveLength(1);
+    expect(chipLink().textContent).toBe("example.com/docs/a?x=1");
+    expect(chipLink().title).toBe("https://www.example.com/docs/a?x=1");
+    expect(q('[role="status"]')).toBeNull();
+  });
+
+  it("is inferred from the value when the vault has no record", async () => {
+    recorded.clear();
+    await mountAndLoad("link: https://example.com\nbare: example.org\nnote: hello");
+    expect(typeButton("link", "URL")).not.toBeNull();
+    expect(typeButton("bare", "URL")).not.toBeNull();
+    expect(typeButton("note", "Text")).not.toBeNull();
+  });
+
+  it("a click opens it through link activation: plain, Cmd/Ctrl and middle click", async () => {
+    await mountAndLoad("site: example.com/a");
+    await clickWith(chipLink(), {});
+    expect(opened()).toHaveBeenLastCalledWith("https://example.com/a"); // a bare domain opens as https
+    await clickWith(chipLink(), { metaKey: true, ctrlKey: true });
+    expect(opened()).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      chipLink().dispatchEvent(
+        new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }),
+      );
+    });
+    expect(opened()).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      chipLink().dispatchEvent(
+        new MouseEvent("auxclick", { button: 2, bubbles: true, cancelable: true }),
+      );
+    });
+    expect(opened()).toHaveBeenCalledTimes(3); // the context-menu button is not a link press
+    expect(stored()).toBe("site: example.com/a"); // opening never edits
+  });
+
+  it("the pencil edits the raw text: Enter saves, Escape keeps the old value", async () => {
+    await mountAndLoad("site: https://old.example");
+    await act(async () => pencil().click());
+    expect(edit().value).toBe("https://old.example");
+    expect(document.activeElement).toBe(edit());
+    await type(edit(), "https://new.example/x", "enter");
+    expect(stored()).toBe("site: https://new.example/x");
+    expect(chipLink().textContent).toBe("new.example/x");
+    await act(async () => pencil().click());
+    await act(async () => {
+      edit().value = "changed";
+      edit().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(stored()).toBe("site: https://new.example/x");
+    expect(edit()).toBeNull();
+    // clearing the text empties the property
+    await act(async () => pencil().click());
+    await type(edit(), "", "enter");
+    expect(stored()).toBe("site:");
+  });
+
+  it("the empty part of the row edits too", async () => {
+    await mountAndLoad("site: https://a.example");
+    const cell = chips()[0]!.parentElement!;
+    await act(async () => cell.click());
+    expect(edit()).not.toBeNull();
+  });
+
+  it("a list adds and removes: a second URL turns a single value into a list", async () => {
+    await mountAndLoad("site:");
+    const add = () => q('input[aria-label="Add to site"]') as HTMLInputElement;
+    await type(add(), "one.example", "enter");
+    expect(stored()).toBe("site: one.example");
+    await type(add(), "https://two.example", "enter");
+    expect(stored()).toBe("site:\n  - one.example\n  - https://two.example");
+    expect(chips()).toHaveLength(2);
+    expect(pencil()).toBeNull(); // a list is edited by × and add
+    await type(add(), "three.example", "blur");
+    expect(stored()).toBe("site:\n  - one.example\n  - https://two.example\n  - three.example");
+    await act(async () => q('button[aria-label="Remove one.example"]')!.click());
+    expect(stored()).toBe("site:\n  - https://two.example\n  - three.example");
+    await act(async () => q('button[aria-label="Remove three.example"]')!.click());
+    expect(stored()).toBe("site:\n  - https://two.example");
+  });
+
+  it("a value that is not a URL is marked and never rewritten or made a link", async () => {
+    const fm = "site: just some words";
+    await mountAndLoad(fm);
+    expect(q('[role="status"]')?.textContent).toBe("Not a URL");
+    expect(chips()[0]!.dataset.invalid).toBe("true");
+    expect(chips()[0]!.querySelector("button[title]")).toBeNull();
+    expect(chips()[0]!.textContent).toBe("just some words");
+    expect(stored()).toBe(fm);
+    // a bad item in a list is marked too, the others stay links
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await mountAndLoad("site:\n  - good.example\n  - nope nope");
+    expect(chips().map((c) => c.dataset.invalid)).toEqual([undefined, "true"]);
+    expect(q('[role="status"]')?.textContent).toBe("Not a URL");
+    expect(stored()).toBe("site:\n  - good.example\n  - nope nope");
+  });
+
+  it("converting to URL keeps the value as written and marks a bad one", async () => {
+    recorded.clear();
+    await mountAndLoad("a: hello there\nb: x.example");
+    vi.mocked(scheduleSave).mockClear();
+    await act(async () => typeButton("a", "Text").click());
+    await act(async () => menuItem("URL").click());
+    expect(stored()).toBe("a: hello there\nb: x.example");
+    expect(vi.mocked(scheduleSave)).not.toHaveBeenCalled();
+    expect(ipc.propertyTypeSet).toHaveBeenCalledWith("a", "url");
+    expect(q('[role="status"]')?.textContent).toBe("Not a URL");
   });
 });

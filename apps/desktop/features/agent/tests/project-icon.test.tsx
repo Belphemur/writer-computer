@@ -17,7 +17,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 // A small stand-in for the 4,000 icons: five real names and 400 fillers, in two shards.
-vi.mock("@features/agent/web/lib/project-icon-shards", () => {
+vi.mock("@/lib/icon-picker/icon-shards", () => {
   const glyph = (id: string) => [["path", { d: `M0 0h${id.length}`, key: id }]];
   const names = [
     "Rocket01Icon",
@@ -44,17 +44,9 @@ import {
   ProjectIconPopover,
 } from "@features/agent/web/components/project-icon-picker";
 import { projectClient, type ProjectDetail } from "@features/agent/web/lib/project-client";
-import {
-  DEFAULT_PROJECT_ICON,
-  PROJECT_COLORS,
-  loadProjectIconSet,
-  resetProjectIconSetForTests,
-} from "@features/agent/web/lib/project-appearance";
-import {
-  buildIconIndex,
-  iconWords,
-  searchIconIndex,
-} from "@features/agent/web/lib/project-icon-search";
+import { DEFAULT_PROJECT_ICON, PROJECT_COLORS } from "@features/agent/web/lib/project-appearance";
+import { loadIconSet, resetIconSetForTests } from "@/lib/icon-picker/icon-set";
+import { buildIconIndex, iconWords, searchIconIndex } from "@/lib/icon-picker/icon-search";
 import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 
@@ -71,7 +63,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  resetProjectIconSetForTests();
+  resetIconSetForTests();
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -172,7 +164,7 @@ describe("the picker", () => {
     await render(<ProjectIconPicker value={value} onChange={onChange} onClose={() => {}} />);
     await key("ArrowDown");
     await key("Enter");
-    const all = buildIconIndex(Object.keys(await loadProjectIconSet()));
+    const all = buildIconIndex(Object.keys(await loadIconSet()));
     expect(onChange).toHaveBeenLastCalledWith({ icon: all[8]!.name, color: "blue" }, "icon");
     await mouseDown(options()[2]!);
     expect(onChange).toHaveBeenLastCalledWith({ icon: all[2]!.name, color: "blue" }, "icon");
@@ -302,8 +294,11 @@ describe("the icon set is lazy", () => {
   it("the feature's startup graph holds the light helpers, not the picker, the search or a shard", () => {
     const reached = [...staticGraph(join(DESKTOP, "features/agent/web/index.ts"))].map(rel);
     expect(reached).toContain("features/agent/web/lib/project-appearance.ts");
+    expect(reached).toContain("src/lib/icon-picker/icon-set.ts");
     expect(
-      reached.filter((f) => /icon-shards\/|project-icon-picker|project-icon-search/.test(f)),
+      reached.filter((f) =>
+        /icon-shards\/|components\/icon-picker\/|project-icon-picker|icon-search/.test(f),
+      ),
     ).toEqual([]);
   });
 

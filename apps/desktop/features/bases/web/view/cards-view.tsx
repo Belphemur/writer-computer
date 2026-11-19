@@ -221,7 +221,7 @@ export function CardsView({ result, shown, view, actions, label }: BaseViewProps
       keyOf={(item, i) => (item.kind === "group" ? `g:${item.key}` : `c:${item.rows[0]}:${i}`)}
       render={(item) =>
         item.kind === "group" ? (
-          <GroupHeader item={item} onToggle={toggle} />
+          <GroupHeader item={item} groupProperty={view?.groupBy?.property} onToggle={toggle} />
         ) : (
           <div
             className="flex"

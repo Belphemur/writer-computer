@@ -55,10 +55,10 @@ Chosen option: **A** (the user chose each part).
 
 ### Verification
 
-- [ ] An enum value can get an emoji or an icon from its dropdown row, and lose it with "Remove icon".
-- [ ] The icon shows in the properties panel and in Bases cells, cards and group headers.
-- [ ] A value without an icon looks as before; old type files load unchanged.
-- [ ] Projects still pick their icon through the same picker.
+- [x] An enum value can get an emoji or an icon from its dropdown row, and lose it with "Remove icon".
+- [x] The icon shows in the properties panel and in Bases cells, cards and group headers.
+- [x] A value without an icon looks as before; old type files load unchanged.
+- [x] Projects still pick their icon through the same picker.
 
 ## Pros and Cons of the Options
 
