@@ -28,8 +28,10 @@ import { ScrollFade } from "@/components/scroll-fade";
 import { useScrollActiveTabIntoView } from "@/hooks/use-scroll-active-tab-into-view";
 import { getRelativePath } from "@/lib/paths";
 import { pageKind } from "./page-kinds";
-import { buildTabMenuItemsSpec, showNativeContextMenu } from "./editor-context-menu";
+import { buildTabMenuItemsSpec, showTabContextMenu } from "./editor-context-menu";
 import { noteLabel } from "@/lib/note-title";
+import { useFileIcon } from "@/lib/file-icons";
+import { IconGlyph } from "@/components/icon-picker/icon-glyph";
 import { isMarkdownPath, openNoteTitleDialog } from "@/stores/note-title-dialog-store";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { revealPathInSidebar } from "@/lib/reveal-in-sidebar";
@@ -65,6 +67,7 @@ function EditorTabButton({
   const titleOverride = label?.isOverride ? label : null;
   const title = titleOverride ? titleOverride.text : kind.title(tab.location);
   const pinned = isTabPinned(tab);
+  const fileIcon = useFileIcon(filePath);
 
   return (
     // tab row wraps a native <button> close control; HTML forbids nested buttons so it cannot become a <button>.
@@ -140,6 +143,14 @@ function EditorTabButton({
           className={`shrink-0 ${pinned ? "" : "mr-1.5"} ${isActive ? "text-[var(--text-secondary)]" : "text-[var(--text-icon-muted)]"}`}
         />
       ) : null}
+      {fileIcon ? (
+        <IconGlyph
+          value={fileIcon.icon}
+          color={fileIcon.color}
+          size={13}
+          className={pinned ? "" : "mr-1.5"}
+        />
+      ) : null}
       <span
         className={`truncate ${pinned ? "" : "group-hover:[mask-image:linear-gradient(to_right,black,black_calc(100%_-_28px),transparent)] group-hover:[-webkit-mask-image:linear-gradient(to_right,black,black_calc(100%_-_32px),transparent_calc(100%_-_8px))]"} ${isLoading ? "animate-pulse opacity-60" : ""} ${titleOverride ? "italic" : ""}`}
       >
@@ -198,7 +209,7 @@ export function EditorTabs() {
       const relative =
         filePath && workspaceRoot ? getRelativePath(filePath, workspaceRoot) : filePath;
 
-      void showNativeContextMenu(
+      void showTabContextMenu(
         buildTabMenuItemsSpec(
           {
             onTogglePin: () => (pinned ? unpinTab(tab.id) : pinTab(tab.id)),
@@ -227,6 +238,7 @@ export function EditorTabs() {
             closeAllEnabled: tabs.some((t) => !isTabPinned(t)),
           },
         ),
+        filePath,
       );
     },
     [

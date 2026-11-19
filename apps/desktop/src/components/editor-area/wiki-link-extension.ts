@@ -19,7 +19,10 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import * as tauri from "@/lib/tauri";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { linkActivationExtension, wikiLinkTarget } from "@/lib/link-activation";
-import { WIKI_LINK_CLASS } from "@/lib/link-dom";
+import { LINK_ICON_CLASS, WIKI_LINK_CLASS } from "@/lib/link-dom";
+import { contributedCompletions } from "@/lib/editor-completion-sources";
+import { watchLinkIcon } from "@/lib/file-icons";
+import { fillIconElement } from "@/lib/icon-picker/icon-dom";
 import {
   wikiSuggestions,
   parseWikiLink,
@@ -42,7 +45,7 @@ import { renderedRanges, renderedRangesChanged } from "@/lib/prosemark-core/util
 
 const CODE_NODE_NAMES = new Set(["FencedCode", "InlineCode", "CodeBlock", "CodeText", "CodeInfo"]);
 
-function isInsideCode(state: EditorState, pos: number): boolean {
+export function isInsideCode(state: EditorState, pos: number): boolean {
   let inside = false;
   syntaxTree(state).iterate({
     from: pos,
@@ -83,8 +86,14 @@ function extractWikiTarget(
 // Decorations — fold [[...]] into a clean link widget, unfold when editing
 // ---------------------------------------------------------------------------
 
+/** Stops the icon watch of a link widget's element once CodeMirror drops it. */
+const iconWatchers = new WeakMap<HTMLElement, () => void>();
+
 class WikiLinkWidget extends WidgetType {
-  constructor(readonly target: string) {
+  constructor(
+    readonly target: string,
+    readonly sourcePath: string | null = null,
+  ) {
     super();
   }
 
@@ -95,8 +104,25 @@ class WikiLinkWidget extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = WIKI_LINK_CLASS;
-    span.textContent = parseWikiLink(this.target).displayText;
+    // The icon of the note the link points to (`lib/file-icons.ts`; hidden, and empty, while the
+    // note has none), before the text.
+    const icon = document.createElement("span");
+    icon.className = LINK_ICON_CLASS;
+    icon.setAttribute("aria-hidden", "true");
+    icon.style.display = "none";
+    span.append(icon, document.createTextNode(parseWikiLink(this.target).displayText));
+    iconWatchers.set(
+      span,
+      watchLinkIcon(this.target, this.sourcePath, (entry) =>
+        fillIconElement(icon, entry?.icon, { color: entry?.color }),
+      ),
+    );
     return span;
+  }
+
+  destroy(dom: HTMLElement): void {
+    iconWatchers.get(dom)?.();
+    iconWatchers.delete(dom);
   }
 
   ignoreEvent(): boolean {
@@ -224,7 +250,11 @@ function buildDecorations(view: EditorView, getFilePath: () => string): Decorati
         );
       } else {
         // Folded: replace with clean link text
-        builder.add(start, end, Decoration.replace({ widget: new WikiLinkWidget(inner) }));
+        builder.add(
+          start,
+          end,
+          Decoration.replace({ widget: new WikiLinkWidget(inner, currentFilePath) }),
+        );
       }
     }
   }
@@ -349,6 +379,12 @@ const wikiLinkTheme = EditorView.baseTheme({
     cursor: "pointer",
     textDecoration: "none",
   },
+  [`.${LINK_ICON_CLASS}`]: {
+    marginRight: "0.3em",
+    verticalAlign: "-0.1em",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   ".cm-wiki-link-editing": {
     color: "var(--pm-link-color, #7cacf8)",
   },
@@ -403,7 +439,7 @@ export function wikiLinkExtension(
     // already defaults to `"fixed"` on non-iOS.
     tooltips({ parent: document.body }),
     autocompletion({
-      override: [wikiLinkCompletions],
+      override: [wikiLinkCompletions, contributedCompletions],
       icons: false,
     }),
   ];

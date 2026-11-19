@@ -45,6 +45,15 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** The icon of a Hugeicons export name once its shard has loaded, for code outside React (a
+ *  CodeMirror widget); null for a name without a file. */
+export async function loadHugeicon(name: string): Promise<IconSvgElement | null> {
+  const letter = shardOf(name);
+  if (!letter) return null;
+  if (!cache.has(name)) await loadLetter(letter).catch(() => {});
+  return cache.get(name) ?? null;
+}
+
 /** The icon of a Hugeicons export name, or null until its shard has loaded and for a name
  *  without a file. */
 export function useHugeicon(name: string | null | undefined): IconSvgElement | null {

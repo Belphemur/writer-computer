@@ -41,12 +41,12 @@ Chosen option: **A**.
    - Editor: clicking a checkbox uses the Rust toggle; custom statuses cycle; autocomplete after a signifier or `due::` (dates, `today`, `tomorrow`, weekdays, priorities, recurrence phrases); a small edit popover (due, scheduled, start, priority, recurrence) from the task's context menu.
    - Tasks page (a page kind): Today, Upcoming, Overdue, No date, and By folder, each a built-in base definition over `rows: tasks` rendered by the Bases view (no second list UI); quick add writes to the daily note or a chosen note (setting `tasks.inbox`).
    - Agents and CLI: `writer tasks` (a base-style filter grammar over task rows), `task:add`, `task:done`, `task:edit` (Rust), documented in the `writer-cli` skill.
-   - Existing ```` ```tasks ```` query blocks are left as plain code blocks in v1 (not executed, no conversion; "Convert to Base" is Dataview's only).
+   - Existing ` ```tasks ` query blocks are left as plain code blocks in v1 (not executed, no conversion; "Convert to Base" is Dataview's only).
 6. **Dataview** (`apps/desktop/features/dataview/`, kill switch `features.dataview.enabled`, default on):
    - A Rust DQL parser (`src-tauri/src/dql/`) lowering `TABLE`, `LIST`, `TASK` and `CALENDAR` with `FROM` (tags, folders, files, `[[links]]`, `outgoing()`, `and`, `or`, negation), `WHERE`, `SORT`, `GROUP BY`, `FLATTEN`, `LIMIT` to the Bases executor: `TABLE` and `LIST` over file rows, `TASK` over task rows, `FLATTEN` as a new executor step (one row per list element), Dataview's group result (`key`, `rows`) as a grouped view. DQL-only functions and semantics (loose `=`, `dur()`, luxon-style `dateformat`, swizzling) are added to `bases/functions.rs` behind a DQL dialect flag, never changing Bases results.
-   - ```` ```dataview ```` blocks render live through the Bases web views (table, list, task list, calendar); errors show the DQL position.
+   - ` ```dataview ` blocks render live through the Bases web views (table, list, task list, calendar); errors show the DQL position.
    - "Convert to Base" on a block writes an equivalent `.base` (and replaces the block with `![[...base]]` on confirm) where the query maps; otherwise it says which clause does not.
-   - ```` ```dataviewjs ```` and inline JS show "dataviewjs is not supported" with the code collapsed; never executed. Inline `=` queries are not rendered in v1.
+   - ` ```dataviewjs ` and inline JS show "dataviewjs is not supported" with the code collapsed; never executed. Inline `=` queries are not rendered in v1.
 7. **Plugin coexistence**: when Writer's Tasks or Dataview feature is on and the same Obsidian plugin is enabled in the plugin host, a one-time prompt offers to disable the plugin in Writer (never touching `.obsidian`), as for Excalidraw.
 
 ### Consequences
@@ -59,7 +59,7 @@ Chosen option: **A**.
 ### Non-goals
 
 - Running `dataviewjs`, Tasks `filter/sort/group by function`, or any JS.
-- Rendering or converting ```` ```tasks ```` blocks in v1; inline `=` queries; inline fields in the properties panel.
+- Rendering or converting ` ```tasks ` blocks in v1; inline `=` queries; inline fields in the properties panel.
 - Dataview's `csv()` source and `CALENDAR` beyond a month grid.
 
 ## Implementation Plan
@@ -73,7 +73,7 @@ Chosen option: **A**.
 
 - [ ] A vault's Tasks-format tasks show their due dates and priorities in a `rows: tasks` base; checking one writes the done date and the next recurrence.
 - [ ] `![[Tasks.base]]` embeds a task base in a note.
-- [ ] A ```` ```dataview ```` TABLE, LIST and TASK block render the same rows as the fixture expects.
+- [ ] A ` ```dataview ` TABLE, LIST and TASK block render the same rows as the fixture expects.
 - [ ] "Convert to Base" turns a DQL block into a working base.
 - [ ] `dataviewjs` never runs.
 - [ ] `writer task:add` / `task:done` change one line only.

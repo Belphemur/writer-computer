@@ -8,11 +8,11 @@ Version history and multi-device sync for a vault through Git, with merges that 
 
 ## Split
 
-| Layer | Owns |
-| --- | --- |
+| Layer                                                        | Owns                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src-tauri/src/git/` (Rust, Tauri-free, shared with the CLI) | reading the repository with `gix` (objects, refs, index, status, merge base, writing objects and commits), status, the 3-way merge, rebase replay, the scheduler, the managed ignore and attributes blocks, history, LFS decisions, the credential helper |
-| System `git` (child process) | `clone`, `fetch`, `push`, `lfs`: the network only |
-| `features/git/` | Tauri glue, settings fragment, secrets declaration, CLI and IPC contributions, the web panel, status item, setup page, merge view and history tab |
+| System `git` (child process)                                 | `clone`, `fetch`, `push`, `lfs`: the network only                                                                                                                                                                                                         |
+| `features/git/`                                              | Tauri glue, settings fragment, secrets declaration, CLI and IPC contributions, the web panel, status item, setup page, merge view and history tab                                                                                                         |
 
 ## Requirements
 
@@ -55,14 +55,14 @@ Shared Writer config (`.writer/property-types.json`, `.writer/graph.json`, `.wri
 
 ## Cadence
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `git.commit-after` | 60 s | commit changed files after this much quiet |
-| `git.sync-interval` | 5 min | fetch, replay, push |
-| `git.sync-on-open` | on | sync when the vault opens |
-| `git.commit-message` | `vault backup: {{date}}` | placeholders `{{date}}`, `{{hostname}}`, `{{numFiles}}`, `{{files}}` (Obsidian Git's) |
-| `git.lfs` | off | see LFS |
-| `git.lfs-threshold-mb` | 100 | see LFS |
+| Setting                | Default                  | Meaning                                                                               |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------- |
+| `git.commit-after`     | 60 s                     | commit changed files after this much quiet                                            |
+| `git.sync-interval`    | 5 min                    | fetch, replay, push                                                                   |
+| `git.sync-on-open`     | on                       | sync when the vault opens                                                             |
+| `git.commit-message`   | `vault backup: {{date}}` | placeholders `{{date}}`, `{{hostname}}`, `{{numFiles}}`, `{{files}}` (Obsidian Git's) |
+| `git.lfs`              | off                      | see LFS                                                                               |
+| `git.lfs-threshold-mb` | 100                      | see LFS                                                                               |
 
 Also on window close: commit, then push if the network allows within a short timeout. Writes by the app are seen through the watcher's self-write detection. A file with an open merge view is never committed until it is saved.
 

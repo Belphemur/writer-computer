@@ -112,4 +112,10 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `excalidraw:read` — Print a drawing as a spec (boxes, arrows, groups). Params: `file=`, `path=`.
 - `excalidraw:export` — Write the drawing as an SVG next to it (needs Writer running). Params: `file=`, `path=`.
 
+## Icons
+
+- `icon:set` — Give a file or folder an icon (shown in the sidebar, tabs and links); icon is emoji:<emoji> or icon:<Hugeicons name>, a bare emoji or a bare name also works. Params: `file=`, `path=`, `icon=` (required; emoji:🚀 or icon:Rocket01Icon), `color=` (#rrggbb).
+- `icon:get` — Print the icon of a file or folder (exit 1 when it has none). Params: `file=`, `path=`, `format=` (text | json).
+- `icon:remove` — Remove the icon of a file or folder. Params: `file=`, `path=`.
+
 <!-- END GENERATED: commands -->

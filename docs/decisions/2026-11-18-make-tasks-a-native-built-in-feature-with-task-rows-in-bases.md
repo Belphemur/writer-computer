@@ -38,7 +38,7 @@ Chosen option: **A**.
    - Editor: clicking a checkbox uses the Rust toggle; custom statuses cycle; autocomplete after a signifier or `due::` (dates, `today`, `tomorrow`, weekdays, priorities, recurrence phrases); a small edit popover (due, scheduled, start, priority, recurrence) from the task's context menu.
    - Tasks page (a page kind): Today, Upcoming, Overdue, No date, and By folder, each a built-in base definition over `rows: tasks` rendered by the Bases view; quick add writes to the note named by the setting `tasks.inbox` (default `Tasks.md` at the vault root, created on first use; Writer has no daily notes yet, and a later daily-notes feature may offer "Today's daily note" as a choice).
    - Agents and CLI: `writer tasks` (a base-style filter grammar over task rows), `task:add`, `task:done`, `task:edit` (Rust), documented in the `writer-cli` skill.
-   - Existing ```` ```tasks ```` query blocks are not executed in v1; they show a small "Tasks query" card with "Convert to Base" (the user, 2026-11-18): the query (filters, sort, group, limit, layout) is lowered to a `rows: tasks` base, written as a `.base` and, on confirm, the block is replaced with `![[…base]]`; an instruction that does not map (e.g. `filter by function`) is named and the block is left as is.
+   - Existing ` ```tasks ` query blocks are not executed in v1; they show a small "Tasks query" card with "Convert to Base" (the user, 2026-11-18): the query (filters, sort, group, limit, layout) is lowered to a `rows: tasks` base, written as a `.base` and, on confirm, the block is replaced with `![[…base]]`; an instruction that does not map (e.g. `filter by function`) is named and the block is left as is.
    - Plugin coexistence: if the Obsidian Tasks plugin is enabled in the plugin host, a one-time prompt offers to disable it in Writer (never touching `.obsidian`).
 
 ### Consequences
@@ -50,7 +50,7 @@ Chosen option: **A**.
 
 ### Non-goals
 
-- Executing ```` ```tasks ```` blocks in place in v1 (they convert to a base instead); Tasks' `filter/sort/group by function` or any JS.
+- Executing ` ```tasks ` blocks in place in v1 (they convert to a base instead); Tasks' `filter/sort/group by function` or any JS.
 - A task list UI outside Bases views.
 
 ## Implementation Plan
@@ -58,7 +58,7 @@ Chosen option: **A**.
 - **Affected paths**: `src-tauri/src/index/` (schema migration for `list_items` and extended `tasks`; `markdown.rs` scanning; incremental updates), new `src-tauri/src/tasks/` (grammar, statuses, recurrence, urgency, serialiser, writes, the `tasks` block query parser and its lowering to a base), `src-tauri/src/bases/` (`rows: tasks` source and task properties), `vault_ops.rs` (task writes), `cli/` (`tasks`, `task:*`); `apps/desktop/features/tasks/` (editor extensions, edit popover, Tasks page, Rust glue); `apps/desktop/features/bases/web` (task row cells with checkboxes); `apps/desktop/shared/task-vectors.json`; specs: new `SPECs/tasks-spec.md`, updates to `SPECs/obsidian-bases-spec.md` and `SPECs/writer-cli-spec.md`; the `writer-cli` and `writer-bases` skills (bump `BUNDLE_VERSION`); `THIRD_PARTY_NOTICES` for adapted MIT code; `CHANGELOG.md`, `TODOS.md`.
 - **Patterns to follow**: Tauri-free Rust cores with thin glue; shared vectors; one write path; Bases as the only executor and view layer; the read-only Obsidian settings layer (property types); `docs/design.md`.
 - **Patterns to avoid**: a second query engine or list UI; JS evaluation; rewriting whole lines or files.
-- **Tests**: grammar vectors (every signifier, both formats, any order, trailing tags and block ids, variation selectors, `⌛`/`📆` read and normalised on write); statuses and custom cycles; recurrence (every n days/weeks/months, weekdays, `when done`, month ends, DST); toggle writes and next occurrence placement; list-item nesting; index incremental updates; `rows: tasks` bases (filters, sorts, groups, urgency, embeds, checkbox toggles the source); CLI commands; Tasks page sections; Convert to Base for ```` ```tasks ```` blocks (mapped instructions, an unmapped one named, block replaced on confirm); feature off.
+- **Tests**: grammar vectors (every signifier, both formats, any order, trailing tags and block ids, variation selectors, `⌛`/`📆` read and normalised on write); statuses and custom cycles; recurrence (every n days/weeks/months, weekdays, `when done`, month ends, DST); toggle writes and next occurrence placement; list-item nesting; index incremental updates; `rows: tasks` bases (filters, sorts, groups, urgency, embeds, checkbox toggles the source); CLI commands; Tasks page sections; Convert to Base for ` ```tasks ` blocks (mapped instructions, an unmapped one named, block replaced on confirm); feature off.
 
 ### Verification
 
@@ -66,7 +66,7 @@ Chosen option: **A**.
 - [ ] `![[Tasks.base]]` embeds a task base in a note.
 - [ ] The Tasks page shows Today, Upcoming, Overdue, No date and By folder; quick add appends to `Tasks.md` (created if missing).
 - [ ] `writer task:add` / `task:done` change one line only.
-- [ ] "Convert to Base" turns a ```` ```tasks ```` block into a working task base.
+- [ ] "Convert to Base" turns a ` ```tasks ` block into a working task base.
 
 ## Pros and Cons of the Options
 

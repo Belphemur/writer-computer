@@ -19,6 +19,7 @@ pub(crate) mod cmd_app;
 pub(crate) mod cmd_bases;
 mod cmd_files;
 mod cmd_graph;
+pub(crate) mod cmd_icons;
 mod cmd_notes;
 pub(crate) mod cmd_project;
 mod cmd_query;
@@ -408,6 +409,7 @@ pub fn run_main(argv: &[String], cwd: &Path) -> u8 {
     // The CLI process has no settings layer: the code-files switch comes from the config file.
     if let Ok(dir) = env.data_dir() {
         crate::features::code_files::apply_for_cli(&dir);
+        crate::features::icons::apply_for_cli(&dir);
     }
     let out = execute(argv, cwd, &env);
     if out.code != 0 {

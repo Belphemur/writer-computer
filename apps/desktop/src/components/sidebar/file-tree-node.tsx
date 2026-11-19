@@ -7,7 +7,7 @@ import { getFileStem } from "@/lib/paths";
 import type { DirEntry } from "@/types/fs";
 import { AgentFolderBadge } from "./agent-folder-badge";
 import { FileTreeDecorations } from "./file-tree-decorations";
-import { FileIcon, FolderIcon } from "./file-tree-icons";
+import { EntryIcon } from "./file-tree-icons";
 import { useFileTreeLabel } from "./use-file-tree-label";
 
 interface FileTreeNodeProps {
@@ -95,7 +95,7 @@ export const FileTreeNode = memo(function FileTreeNode({
           className="flex w-5 antialiased shrink-0 items-center justify-center text-current"
           aria-hidden="true"
         >
-          {entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon name={entry.name} />}
+          <EntryIcon entry={entry} isExpanded={isExpanded} />
         </span>
         <input
           ref={inputRef}
@@ -153,7 +153,7 @@ export const FileTreeNode = memo(function FileTreeNode({
         {entry.is_dir ? (
           <>
             <span className="flex items-center justify-center opacity-60 group-hover:opacity-100 group-hover/folder:opacity-0">
-              <FolderIcon isExpanded={isExpanded} />
+              <EntryIcon entry={entry} isExpanded={isExpanded} />
             </span>
             <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/folder:opacity-100">
               <HugeiconsIcon
@@ -167,7 +167,7 @@ export const FileTreeNode = memo(function FileTreeNode({
           </>
         ) : (
           <span className="opacity-60 group-hover:opacity-100">
-            <FileIcon name={entry.name} />
+            <EntryIcon entry={entry} isExpanded={isExpanded} />
           </span>
         )}
       </span>

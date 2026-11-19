@@ -11,10 +11,13 @@ export function IconGlyph({
   value,
   size = 14,
   className,
+  color,
 }: {
   value: string | null | undefined;
   size?: number;
   className?: string;
+  /** A CSS colour for an icon (an emoji keeps its own); the text colour when absent. */
+  color?: string;
 }) {
   const parsed = parseIconValue(value);
   const icon = useHugeicon(parsed?.kind === "icon" ? parsed.name : null);
@@ -24,7 +27,7 @@ export function IconGlyph({
       aria-hidden="true"
       data-icon-glyph={parsed.kind}
       className={`inline-flex shrink-0 items-center justify-center ${className ?? ""}`}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, ...(color ? { color } : {}) }}
     >
       {parsed.kind === "emoji" ? (
         <span style={{ fontSize: size * 0.9, lineHeight: 1 }}>{parsed.name}</span>

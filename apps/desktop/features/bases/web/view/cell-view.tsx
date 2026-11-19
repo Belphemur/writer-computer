@@ -1,4 +1,6 @@
 import { EnumValueIcon } from "@/components/icon-picker/enum-value-icon";
+import { IconGlyph } from "@/components/icon-picker/icon-glyph";
+import { useFileIcon } from "@/lib/file-icons";
 import { UrlChip } from "@/components/url-chip";
 import { linkHandlers, type LinkIntent } from "@/lib/link-activation";
 import { typeKey } from "@/lib/property-types";
@@ -30,13 +32,17 @@ function ErrorBadge({ message }: { message: string }) {
 function Link({
   label,
   unresolved,
+  path,
   onOpen,
 }: {
   label: string;
   unresolved: boolean;
+  /** The vault path the link points to: its icon (if any) shows before the label. */
+  path?: string | null;
   onOpen: (intent: LinkIntent) => void;
 }) {
   const link = linkHandlers({ kind: "custom", open: onOpen });
+  const icon = useFileIcon(path);
   return (
     <button
       type="button"
@@ -52,6 +58,14 @@ function Link({
       }}
       className={`${LINK_CLASS} ${unresolved ? "opacity-70" : ""} bg-transparent p-0 text-left`}
     >
+      {icon ? (
+        <IconGlyph
+          value={icon.icon}
+          color={icon.color}
+          size={13}
+          className="mr-1 align-[-0.15em]"
+        />
+      ) : null}
       {label}
     </button>
   );
@@ -106,6 +120,7 @@ function ListItem({ item, actions }: { item: CellValue; actions: CellActions }) 
         <Link
           label={item.value.display ?? item.value.target}
           unresolved={item.value.resolved === null}
+          path={item.value.resolved}
           onOpen={(intent) => actions.openLink(item.value, intent)}
         />
       </Chip>
@@ -163,6 +178,7 @@ export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, on
         <Link
           label={cell.display}
           unresolved={cell.value.resolved === null}
+          path={cell.value.resolved}
           onOpen={(intent) => actions.openLink(cell.value, intent)}
         />
       );
@@ -171,6 +187,7 @@ export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, on
         <Link
           label={cell.display}
           unresolved={false}
+          path={cell.value}
           onOpen={(intent) => actions.openFile(cell.value, intent)}
         />
       );
@@ -190,6 +207,7 @@ export function CellView({ cell, columnKey, rowPath, readOnlyReason, actions, on
           <Link
             label={cell.display}
             unresolved={false}
+            path={rowPath}
             onOpen={(intent) => actions.openFile(rowPath, intent)}
           />
         );

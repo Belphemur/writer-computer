@@ -3,6 +3,9 @@ import { getActiveFilePath } from "@/hooks/editor-api";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { wikilinkTarget } from "@features/agent/web/lib/markdown";
 import { isExternalHref } from "@/lib/external-url";
+import { watchLinkIcon } from "@/lib/file-icons";
+import { fillIconElement } from "@/lib/icon-picker/icon-dom";
+import { LINK_ICON_CLASS } from "@/lib/link-dom";
 import {
   bindLinkActivation,
   linkHandlers,
@@ -38,10 +41,57 @@ function markdownLinkTarget(el: Element): LinkTarget | null {
   return isExternalHref(href) ? { kind: "url", href } : SWALLOW;
 }
 
-/** Link activation (left, middle, modifier clicks) for the rendered markdown inside `ref`. */
+/** The icon of the note each `[[wikilink]]` anchor inside `el` points to (`lib/file-icons.ts`),
+ *  before its text; the markdown is re-rendered as a reply streams, so new anchors are picked up
+ *  as they appear and the watches of removed ones are dropped. Returns the cleanup. */
+function bindLinkIcons(el: HTMLElement): () => void {
+  const watching = new Map<Element, () => void>();
+  const scan = () => {
+    for (const [anchor, stop] of watching) {
+      if (!anchor.isConnected) {
+        stop();
+        watching.delete(anchor);
+      }
+    }
+    for (const anchor of el.querySelectorAll("a[href^='#wikilink:']")) {
+      if (watching.has(anchor)) continue;
+      const target = wikilinkTarget(anchor.getAttribute("href"));
+      if (!target) continue;
+      const holder = document.createElement("span");
+      holder.className = LINK_ICON_CLASS;
+      holder.setAttribute("aria-hidden", "true");
+      holder.style.display = "none";
+      holder.style.marginRight = "0.3em";
+      holder.style.verticalAlign = "-0.1em";
+      anchor.prepend(holder);
+      watching.set(
+        anchor,
+        watchLinkIcon(target, getActiveFilePath(), (entry) =>
+          fillIconElement(holder, entry?.icon, { color: entry?.color }),
+        ),
+      );
+    }
+  };
+  scan();
+  const observer = new MutationObserver(scan);
+  observer.observe(el, { childList: true, subtree: true });
+  return () => {
+    observer.disconnect();
+    for (const stop of watching.values()) stop();
+  };
+}
+
+/** Link activation (left, middle, modifier clicks) and note icons for the rendered markdown inside
+ *  `ref`. */
 export function useMarkdownLinks(ref: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const el = ref.current;
-    return el ? bindLinkActivation(el, markdownLinkTarget) : undefined;
+    if (!el) return undefined;
+    const unbind = bindLinkActivation(el, markdownLinkTarget);
+    const unicons = bindLinkIcons(el);
+    return () => {
+      unbind();
+      unicons();
+    };
   }, [ref]);
 }

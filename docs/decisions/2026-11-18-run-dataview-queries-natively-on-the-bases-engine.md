@@ -8,7 +8,7 @@ decision-makers: Writer maintainers
 
 ## Context and Problem Statement
 
-Dataview (MIT, 5.4M downloads) lets notes hold ```` ```dataview ```` queries in its own language (DQL) and adds inline fields (`key:: value`, `[key:: value]`, `(key:: value)`). Many vaults depend on it. Writer's Bases engine (`src-tauri/src/bases/`, Rust) already has values, about 100 functions, filter, sort, group, limit and SQL pushdown, about 60% of what DQL needs; the gaps are list and task rows, `FLATTEN`, Dataview's grouped `rows` result, the output shapes and inline fields. Research of the plugin's source (2026-11-18: `src/query/parse.ts`, `src/expression/*`, `src/data-import/inline-field.ts`, `src/data-model/*`) pinned the grammar, the inline-field scanner and the list-item model. The user asked (2026-11-18) for Dataview's query language natively as its own plugin, as much as possible in Rust, and chose DQL blocks and "Convert to Base", with `dataviewjs` shown as a placeholder, never run. Tasks is a separate plugin with its own ADR (`2026-11-18-make-tasks-a-native-built-in-feature-with-task-rows-in-bases`); both share the core index and the Bases executor.
+Dataview (MIT, 5.4M downloads) lets notes hold ` ```dataview ` queries in its own language (DQL) and adds inline fields (`key:: value`, `[key:: value]`, `(key:: value)`). Many vaults depend on it. Writer's Bases engine (`src-tauri/src/bases/`, Rust) already has values, about 100 functions, filter, sort, group, limit and SQL pushdown, about 60% of what DQL needs; the gaps are list and task rows, `FLATTEN`, Dataview's grouped `rows` result, the output shapes and inline fields. Research of the plugin's source (2026-11-18: `src/query/parse.ts`, `src/expression/*`, `src/data-import/inline-field.ts`, `src/data-model/*`) pinned the grammar, the inline-field scanner and the list-item model. The user asked (2026-11-18) for Dataview's query language natively as its own plugin, as much as possible in Rust, and chose DQL blocks and "Convert to Base", with `dataviewjs` shown as a placeholder, never run. Tasks is a separate plugin with its own ADR (`2026-11-18-make-tasks-a-native-built-in-feature-with-task-rows-in-bases`); both share the core index and the Bases executor.
 
 ## Decision Drivers
 
@@ -34,9 +34,9 @@ Chosen option: **A**.
    - `FLATTEN` as a new executor step (one row per list element); `GROUP BY` producing Dataview's `key`/`rows` result as a grouped view.
    - DQL-only functions and semantics (loose `=`, `dur()` and calendar-aware date arithmetic, luxon-style `dateformat`, swizzling `rows.field`, Dataview's null ordering) in `bases/functions.rs` behind a DQL dialect flag, never changing Bases results.
 3. **Dataview feature** (`apps/desktop/features/dataview/`, kill switch `features.dataview.enabled`, default on):
-   - ```` ```dataview ```` blocks render live through the Bases web views (table, list, task list, calendar month grid); errors show the DQL line and column.
+   - ` ```dataview ` blocks render live through the Bases web views (table, list, task list, calendar month grid); errors show the DQL line and column.
    - "Convert to Base" on a block writes an equivalent `.base` where every clause maps (and, on confirm, replaces the block with `![[…base]]`); otherwise it names the clause that does not map.
-   - ```` ```dataviewjs ```` and inline JS show "dataviewjs is not supported" with the code collapsed; never executed. Inline `=` queries are not rendered in v1.
+   - ` ```dataviewjs ` and inline JS show "dataviewjs is not supported" with the code collapsed; never executed. Inline `=` queries are not rendered in v1.
    - Plugin coexistence: if the Obsidian Dataview plugin is enabled in the plugin host, a one-time prompt offers to disable it in Writer (never touching `.obsidian`).
    - Agents and CLI: `writer dql query="…"` runs a query headless and prints the rows (the same Rust engine), documented in the `writer-cli` skill.
 
@@ -61,7 +61,7 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A ```` ```dataview ```` TABLE, LIST and TASK block render the rows the fixture expects.
+- [ ] A ` ```dataview ` TABLE, LIST and TASK block render the rows the fixture expects.
 - [ ] "Convert to Base" turns a DQL block into a working base.
 - [ ] `dataviewjs` never runs.
 - [ ] `writer dql` prints the same rows as the block.

@@ -16,6 +16,9 @@ import {
 import { isRenderableImageName } from "@/lib/attachments";
 import type { FileTreeBadge } from "@/lib/features/types";
 import { codeIconFamily, isCodeName, type CodeIconFamily } from "@/lib/code-files";
+import { useFileIcon } from "@/lib/file-icons";
+import { IconGlyph } from "@/components/icon-picker/icon-glyph";
+import type { DirEntry } from "@/types/fs";
 
 // Shared file/folder glyphs used by file-tree rows and the drag ghost so they
 // stay visually identical.
@@ -84,6 +87,14 @@ export function FileIcon({ name }: { name?: string }) {
       data-testid={isBase ? "base-file-icon" : undefined}
     />
   );
+}
+
+/** The glyph of a tree row: the icon the user (or Iconize) gave the entry, else the default
+ *  folder or file glyph. The one lookup is `useFileIcon` (`lib/file-icons.ts`). */
+export function EntryIcon({ entry, isExpanded }: { entry: DirEntry; isExpanded: boolean }) {
+  const custom = useFileIcon(entry.path);
+  if (custom) return <IconGlyph value={custom.icon} color={custom.color} size={16} />;
+  return entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon name={entry.name} />;
 }
 
 /** Marks the `.agents` / `.claude` folders (and their `skills` folder): agent skills with scripts. */

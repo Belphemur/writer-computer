@@ -8,11 +8,11 @@ Read the PDFs a vault holds the way Obsidian users expect: open one in a tab, sc
 
 ## Split
 
-| Layer | Owns |
-| --- | --- |
-| Rust core | PDF listing (sidebar, quick open, index walker, watcher, `NameCache`) from `shared/attachments.json` `documentExtensions` and the setting `files.show-pdfs`; confinement of every path; the agent's `document` content block (base64, media type, caps) in `agent/` |
-| `features/pdf` (TS) | the viewer, find bar, embed widget, zoom commands; pdf.js loaded lazily |
-| Core TS | the `pdf` page kind (`feature: "pdf"`), link activation, `#page=N` anchors through `pending-anchor.ts` |
+| Layer               | Owns                                                                                                                                                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rust core           | PDF listing (sidebar, quick open, index walker, watcher, `NameCache`) from `shared/attachments.json` `documentExtensions` and the setting `files.show-pdfs`; confinement of every path; the agent's `document` content block (base64, media type, caps) in `agent/` |
+| `features/pdf` (TS) | the viewer, find bar, embed widget, zoom commands; pdf.js loaded lazily                                                                                                                                                                                             |
+| Core TS             | the `pdf` page kind (`feature: "pdf"`), link activation, `#page=N` anchors through `pending-anchor.ts`                                                                                                                                                              |
 
 As much as possible stays in Rust; pdf.js is the renderer because the webview has no other cross-platform one.
 

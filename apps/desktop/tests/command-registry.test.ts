@@ -82,6 +82,7 @@ describe("palette built-in commands", () => {
       "excalidraw.new-drawing",
       "graph.open",
       "hotkeys.open",
+      "icons.change",
     ]);
   });
 

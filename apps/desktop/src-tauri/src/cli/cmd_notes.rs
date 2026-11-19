@@ -469,6 +469,7 @@ pub fn delete(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
     let t = ctx.target(args)?;
     if args.flag("permanent") {
         std::fs::remove_file(&t.abs)?;
+        crate::icons::on_delete_abs(ctx.root()?, &t.abs);
         return Ok(format!("Deleted {}\n", t.rel));
     }
     trash::delete(&t.abs).map_err(|e| {
@@ -477,6 +478,7 @@ pub fn delete(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
             t.rel
         ))
     })?;
+    crate::icons::on_delete_abs(ctx.root()?, &t.abs);
     Ok(format!("Trashed {}\n", t.rel))
 }
 

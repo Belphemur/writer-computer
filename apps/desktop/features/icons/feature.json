@@ -1,0 +1,37 @@
+{
+  "id": "icons",
+  "name": "Icons",
+  "version": "1.0.0",
+  "description": "Icons on files and folders: shown in the sidebar, tabs, note title and links, set from the context menu, kept when you rename or move; Iconize icons show with no setup (read-only), and :shortcodes render inline.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "low",
+    "note": "One small file per vault (.writer/icons.json) and one read of Iconize's data when a workspace opens or either file changes; the picker and icon sets load when first used. The Rust half (the commands and the writer icon commands) takes effect at the next launch."
+  },
+  "rust": {
+    "commands": ["icons_resolved", "icons_set", "icons_remove"],
+    "events": ["icons:changed"],
+    "hooks": ["setup"],
+    "cliCommands": ["icon:set", "icon:get", "icon:remove"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "icons.change",
+        "label": "Change icon...",
+        "description": "Command",
+        "when": "active-file"
+      }
+    ],
+    "menus": {
+      "sidebar-file": ["icons.sidebar-file"],
+      "sidebar-folder": ["icons.sidebar-folder"],
+      "sidebar-bulk": ["icons.sidebar-bulk"],
+      "editor-tab": ["icons.editor-tab"]
+    },
+    "overlays": ["icons.picker"],
+    "slots": ["icons.note-icon"],
+    "editorExtensions": ["icons.shortcodes"]
+  }
+}

@@ -1,5 +1,5 @@
 import type { DirEntry } from "@/types/fs";
-import { FileIcon, FolderIcon } from "./file-tree-icons";
+import { EntryIcon } from "./file-tree-icons";
 import { useFileTreeLabel } from "./use-file-tree-label";
 
 interface DragGhostProps {
@@ -28,7 +28,7 @@ export function DragGhost({ entry, count, width, paddingLeft, isExpanded }: Drag
         style={{ paddingLeft }}
       >
         <span className="flex w-5 shrink-0 items-center justify-center opacity-60">
-          {entry.is_dir ? <FolderIcon isExpanded={isExpanded} /> : <FileIcon name={entry.name} />}
+          <EntryIcon entry={entry} isExpanded={isExpanded} />
         </span>
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {label.text}

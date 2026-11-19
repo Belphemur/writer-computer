@@ -54,10 +54,13 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Agent      | `project:archive`, `project:unarchive`                                                                                                        |
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                            |
 | Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:connect`, `excalidraw:read`, `excalidraw:export`                                           |
+| Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                         |
 
 <!-- END GENERATED: groups -->
 
 Search commands: see the `writer-search` skill. Bases commands: see `writer-bases`. `skills:sync` reinstalls the managed agent skills in this vault.
+
+Icons: `icon:set path=Projects icon=📁` (or `icon=icon:Rocket01Icon`, a Hugeicons name) gives a file or folder the icon Writer shows in the sidebar, tabs and links; `icon:get` prints it, `icon:remove` clears it. They live in `.writer/icons.json` (never `.obsidian`); an icon from the Iconize plugin shows too, read-only, and `icon:remove` hides it. Renaming or moving with `writer rename` / `move` keeps the icon.
 
 ## Typical tasks
 

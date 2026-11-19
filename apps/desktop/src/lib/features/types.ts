@@ -107,6 +107,8 @@ export interface MenuSurfaces {
   "sidebar-folder": [entry: DirEntry];
   /** Right-click on a multi-selection of the sidebar. */
   "sidebar-bulk": [paths: readonly string[]];
+  /** Right-click on a tab that shows a file (`path` is absolute). */
+  "editor-tab": [path: string];
 }
 export type MenuSurface = keyof MenuSurfaces;
 

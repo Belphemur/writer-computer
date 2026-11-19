@@ -1,4 +1,4 @@
-import { withContributedItems } from "@/lib/features/menus";
+import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
 import { Menu } from "@tauri-apps/api/menu/menu";
 import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
 import { MenuItem } from "@tauri-apps/api/menu/menuItem";
@@ -258,6 +258,16 @@ export function buildTabMenuItemsSpec(
     );
   }
   return items;
+}
+
+/** Pop up the tab menu: the core items, then what features contributed for the tab's file
+ *  (`editor-tab`). */
+export async function showTabContextMenu(
+  spec: TabMenuItemSpec[],
+  filePath: string | null,
+): Promise<void> {
+  const extra = filePath ? await contributedMenuItems("editor-tab", filePath) : [];
+  await showNativeContextMenu(withContributedItems(spec, extra));
 }
 
 // -- Document title menu --

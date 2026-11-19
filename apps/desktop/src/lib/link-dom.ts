@@ -4,5 +4,7 @@
 
 export const RENDERED_LINK_CLASS = "cm-rendered-link";
 export const WIKI_LINK_CLASS = "cm-wiki-link";
+/** The icon of the note a rendered link points to, inside the link (`lib/file-icons.ts`). */
+export const LINK_ICON_CLASS = "cm-link-icon";
 /** Matches an element inside either kind of rendered link (`closest(LINK_SELECTOR)`). */
 export const LINK_SELECTOR = `.${RENDERED_LINK_CLASS}, .${WIKI_LINK_CLASS}`;

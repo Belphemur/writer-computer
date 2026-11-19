@@ -93,6 +93,8 @@ pub(crate) mod code_files;
 mod excalidraw;
 #[path = "../../../features/graph/rust/mod.rs"]
 mod graph;
+#[path = "../../../features/icons/rust/mod.rs"]
+pub(crate) mod icons;
 // Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
 // registers (see the module), it has no plugin, setup or hook for the runner to run.
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
@@ -280,6 +282,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &code_files::CodeFiles,
         &excalidraw::Excalidraw,
         &graph::Graph,
+        &icons::Icons,
     ]
 }
 
@@ -1115,7 +1118,17 @@ mod tests {
             .iter()
             .map(|f| f.manifest().expect("manifest parses").id)
             .collect();
-        assert_eq!(ids, ["agent", "bases", "code-files", "excalidraw", "graph"]);
+        assert_eq!(
+            ids,
+            [
+                "agent",
+                "bases",
+                "code-files",
+                "excalidraw",
+                "graph",
+                "icons"
+            ]
+        );
     }
 
     #[test]
@@ -1165,8 +1178,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            5,
-            "the agent, bases, code-files, excalidraw and graph still start"
+            6,
+            "the agent, bases, code-files, excalidraw, graph and icons still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1357,7 +1370,10 @@ mod tests {
                 "excalidraw:add",
                 "excalidraw:connect",
                 "excalidraw:read",
-                "excalidraw:export"
+                "excalidraw:export",
+                "icon:set",
+                "icon:get",
+                "icon:remove"
             ]
         );
         assert!(cli_commands().iter().all(|c| c.feature
@@ -1365,6 +1381,8 @@ mod tests {
                 "agent"
             } else if c.name.starts_with("excalidraw:") {
                 "excalidraw"
+            } else if c.name.starts_with("icon:") {
+                "icons"
             } else {
                 "bases"
             })));
@@ -1377,7 +1395,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 11
+            crate::cli::registry::COMMANDS.len() + 14
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

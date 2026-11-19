@@ -31,7 +31,7 @@ These work anywhere in the window, whether or not you are typing in a note.
 | Cmd+1 ... Cmd+9 | Jump to Nth tab                                                                                         |
 | Cmd+= / Cmd++   | Zoom editor text in (numpad + works too)                                                                |
 | Cmd+-           | Zoom editor text out (Cmd+Shift+- and numpad − work too)                                                |
-| Cmd+0           | Actual size (zoom back to 100%); in an image tab, fit the image to the page                            |
+| Cmd+0           | Actual size (zoom back to 100%); in an image tab, fit the image to the page                             |
 | Alt+ArrowLeft   | Navigate back (outside the note; inside it, moves by word)                                              |
 | Alt+ArrowRight  | Navigate forward (outside the note; inside it, moves by word)                                           |
 | Cmd+[           | Navigate back, everywhere including the note (Tab / Shift+Tab indent)                                   |

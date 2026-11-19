@@ -61,10 +61,12 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A vault with Iconize emoji icons shows them in the sidebar with no setup.
-- [ ] "Change icon…" sets an icon shown in the sidebar, tab, title and links; it survives a rename and a folder move.
-- [ ] `.obsidian/plugins/obsidian-icon-folder/data.json` is never written.
-- [ ] `:Rocket01Icon:` renders in a note and autocompletes.
+- [x] A vault with Iconize emoji icons shows them in the sidebar with no setup.
+- [x] "Change icon…" sets an icon shown in the sidebar, tab, title and links; it survives a rename and a folder move.
+- [x] `.obsidian/plugins/obsidian-icon-folder/data.json` is never written.
+- [x] `:Rocket01Icon:` renders in a note and autocompletes.
+
+Ticked 2026-11-18 on code and tests (Rust and jsdom); not yet seen in a real window.
 
 ## Pros and Cons of the Options
 
@@ -85,4 +87,4 @@ Chosen option: **A**.
 
 ## More Information
 
-Research: the four-plugin source review of 2026-11-18 (Iconize is MIT; data shape, prefixes, emoji detection, rules). Related: the enum icons ADR (core picker and icon values), the property types ADR (the read-only Obsidian layer pattern).
+Research: the four-plugin source review of 2026-11-18 (Iconize is MIT; data shape, prefixes, emoji detection, rules). Spec: [`SPECs/icons-spec.md`](../../SPECs/icons-spec.md). Related: the enum icons ADR (core picker and icon values), the property types ADR (the read-only Obsidian layer pattern).

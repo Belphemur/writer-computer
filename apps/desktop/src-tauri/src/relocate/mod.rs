@@ -397,6 +397,13 @@ pub fn apply(plan: &Plan) -> Result<(), ApplyError> {
         }
     }
     let Some(message) = error else {
+        // The icons of the moved file or folder follow it (a no-op without any, or with the
+        // feature off); a failure here never fails the move.
+        if moves {
+            if let Err(e) = crate::icons::on_move(&plan.root, &plan.from, &plan.to) {
+                log::warn!("icons: could not re-key after a move: {e}");
+            }
+        }
         return Ok(());
     };
     // Roll back: restore committed referrers, drop the rest, move the file back.

@@ -1503,3 +1503,115 @@ fn project_commands_follow_the_agent_feature_switch() {
     );
     assert!(t.exists("Work/Demo/project.md"));
 }
+
+#[test]
+fn icon_commands_set_get_and_remove_through_the_one_store() {
+    let t = T::new();
+    assert_eq!(
+        t.code(&["icon:get", "path=Home.md"]).0,
+        EXIT_FAIL,
+        "no icon yet"
+    );
+    assert!(t
+        .ok(&["icon:set", "path=Projects", "icon=emoji:📁"])
+        .contains("Set emoji:📁 on Projects"));
+    // a bare name, a note by file name, and a colour
+    t.ok(&[
+        "icon:set",
+        "file=Beta",
+        "icon=Rocket01Icon",
+        "color=#ff8800",
+    ]);
+    assert_eq!(t.ok(&["icon:get", "path=Projects"]), "emoji:📁\n");
+    assert_eq!(
+        t.ok(&["icon:get", "path=Projects/Beta.md"]),
+        "icon:Rocket01Icon\n"
+    );
+    let json = t.ok(&["icon:get", "path=Projects/Beta.md", "format=json"]);
+    assert!(
+        json.contains("\"source\": \"writer\"") && json.contains("#ff8800"),
+        "{json}"
+    );
+    assert!(t
+        .read(".writer/icons.json")
+        .contains("\"Projects/Beta.md\""));
+    t.ok(&["icon:remove", "path=Projects"]);
+    assert_eq!(t.code(&["icon:get", "path=Projects"]).0, EXIT_FAIL);
+}
+
+#[test]
+fn icon_commands_refuse_bad_input_and_never_touch_obsidian() {
+    let t = T::new();
+    assert_eq!(
+        t.code(&["icon:set", "path=Home.md", "icon=smile"]).0,
+        EXIT_FAIL
+    );
+    assert_eq!(
+        t.code(&["icon:set", "path=Home.md", "icon=🚀", "color=red"])
+            .0,
+        EXIT_FAIL
+    );
+    assert_eq!(
+        t.code(&["icon:set", "path=Nope.md", "icon=🚀"]).0,
+        EXIT_FAIL
+    );
+    assert_eq!(t.code(&["icon:set", "path=Home.md"]).0, EXIT_USAGE);
+    assert_eq!(
+        t.code(&["icon:set", "path=.obsidian", "icon=🚀"]).0,
+        EXIT_FAIL
+    );
+    assert_eq!(t.code(&["icon:set", "path=../x", "icon=🚀"]).0, EXIT_FAIL);
+    assert!(!t.exists(".writer/icons.json"), "nothing was written");
+}
+
+#[test]
+fn an_iconize_icon_shows_through_icon_get_and_is_hidden_by_remove() {
+    let t = T::new();
+    let data = ".obsidian/plugins/obsidian-icon-folder/data.json";
+    t.write(data, r#"{"settings":{},"Home.md":"🏠"}"#);
+    let before = t.read(data);
+    assert_eq!(t.ok(&["icon:get", "path=Home.md"]), "emoji:🏠\n");
+    assert!(t
+        .ok(&["icon:get", "path=Home.md", "format=json"])
+        .contains("\"source\": \"iconize\""));
+    t.ok(&["icon:remove", "path=Home.md"]);
+    assert_eq!(
+        t.code(&["icon:get", "path=Home.md"]).0,
+        EXIT_FAIL,
+        "hidden, not revealed"
+    );
+    assert_eq!(t.read(data), before, "Iconize's file is never written");
+}
+
+#[test]
+fn rename_and_delete_keep_the_icons_in_step() {
+    let _on = crate::icons::TEST_SWITCH.lock();
+    crate::icons::set_enabled(true);
+    let t = T::new();
+    t.ok(&["icon:set", "path=Projects/Beta.md", "icon=🎯"]);
+    t.ok(&["rename", "path=Projects/Beta.md", "name=Gamma"]);
+    assert_eq!(t.ok(&["icon:get", "path=Projects/Gamma.md"]), "emoji:🎯\n");
+    assert_eq!(t.code(&["icon:get", "path=Projects/Beta.md"]).0, EXIT_FAIL);
+    t.ok(&["delete", "path=Projects/Gamma.md", "permanent"]);
+    assert!(!t.read(".writer/icons.json").contains("Gamma"));
+}
+
+#[test]
+fn icon_commands_follow_the_icons_feature_switch() {
+    let t = T::new();
+    t.switch("icons", false);
+    for line in [
+        &["icon:set", "path=Home.md", "icon=🚀"][..],
+        &["icon:get", "path=Home.md"],
+        &["icon:remove", "path=Home.md"],
+    ] {
+        let o = t.run(line);
+        assert_eq!(o.code, EXIT_FAIL, "{line:?}");
+        assert!(
+            o.stderr.contains("the icons feature is turned off"),
+            "{line:?}: {}",
+            o.stderr
+        );
+    }
+    assert!(!t.exists(".writer/icons.json"), "nothing was written");
+}

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { IconGlyph } from "@/components/icon-picker/icon-glyph";
+import { useLinkIcon } from "@/lib/file-icons";
 import { linkHandlers } from "@/lib/link-activation";
 import * as tauri from "@/lib/tauri";
 import {
   parseWikiLinkValue,
+  wikiLinkInner,
   WIKI_SUGGEST_TRIGGER,
   wikiSuggestions,
   type WikiSuggestion,
@@ -55,6 +58,7 @@ export function wikilinkLabel(value: string): string {
  *  does not exist. */
 export function WikiLinkButton({ value }: { value: string }) {
   const ok = useLinkResolves(value);
+  const icon = useLinkIcon(wikiLinkInner(value));
   return (
     <button
       type="button"
@@ -72,6 +76,14 @@ export function WikiLinkButton({ value }: { value: string }) {
           : "text-[var(--accent)]"
       }`}
     >
+      {icon ? (
+        <IconGlyph
+          value={icon.icon}
+          color={icon.color}
+          size={13}
+          className="mr-1 align-[-0.15em]"
+        />
+      ) : null}
       {wikilinkLabel(value)}
     </button>
   );

@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-icons",
+  "description": "Grants the icons feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["icons:default"]
+}

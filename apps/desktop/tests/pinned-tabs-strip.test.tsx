@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn() }));
 const shown = vi.hoisted(() => ({ spec: [] as unknown[] }));
 vi.mock("../src/components/editor-area/editor-context-menu", async (importActual) => ({
   ...(await importActual<typeof import("../src/components/editor-area/editor-context-menu")>()),
-  showNativeContextMenu: vi.fn(async (spec: unknown[]) => {
+  showTabContextMenu: vi.fn(async (spec: unknown[]) => {
     shown.spec = spec;
   }),
 }));

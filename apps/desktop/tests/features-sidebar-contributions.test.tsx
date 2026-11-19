@@ -230,6 +230,7 @@ describe("sidebar menus", () => {
     // The shipped agent and excalidraw features also offer a folder item; these tests are about the fixture's.
     menuContributions.removeOwner("builtin:agent");
     menuContributions.removeOwner("builtin:excalidraw");
+    menuContributions.removeOwner("builtin:icons");
     host.register(fixtureSidebarFeature());
   });
 

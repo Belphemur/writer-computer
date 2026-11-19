@@ -13,6 +13,7 @@ mod error;
 mod features;
 pub mod fs_entry;
 mod hotkeys;
+pub mod icons;
 mod ignore;
 pub mod index;
 pub mod ipc;
