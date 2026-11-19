@@ -1,0 +1,39 @@
+{
+ "$comment": "What each fixture must parse to, in both codecs (features/excalidraw/web/lib/excalidraw-md.ts and src-tauri/src/excalidraw_codec.rs).",
+ "elementIds": [
+  "rectAAAA",
+  "textBBBB",
+  "arrowCCCC",
+  "textDDDD",
+  "imageEEEE"
+ ],
+ "textElements": "Hello world ^textBBBB\n\nSee [[Meeting notes]]\nsecond line ^textDDDD\n\n",
+ "embeddedFiles": {
+  "f1e2d3c4b5a6978877665544": "attachments/pic.png"
+ },
+ "files": {
+  "compressed.excalidraw.md": {
+   "encoding": "compressed-json",
+   "embedded": true
+  },
+  "plain-json.excalidraw.md": {
+   "encoding": "json",
+   "embedded": true
+  },
+  "unknown-sections.excalidraw.md": {
+   "encoding": "compressed-json",
+   "embedded": true
+  },
+  "empty.excalidraw.md": {
+   "encoding": "compressed-json",
+   "embedded": false
+  }
+ },
+ "plain": {
+  "scene.excalidraw": {
+   "inlineFileIds": [
+    "f1e2d3c4b5a6978877665544"
+   ]
+  }
+ }
+}

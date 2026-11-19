@@ -79,6 +79,7 @@ describe("palette built-in commands", () => {
       "agent.projects",
       "agent.archive-project",
       "agent.unarchive-project",
+      "excalidraw.new-drawing",
       "graph.open",
       "hotkeys.open",
     ]);

@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// The always-listed extensions; the code/text ones come from `code_files` (settings).
-pub const LISTED_EXTS: [&str; 2] = ["md", "base"];
+pub const LISTED_EXTS: [&str; 3] = crate::code_files::ALWAYS_LISTED_EXTS;
 
 /// While the cold build runs, re-read the partial rows at most this often.
 const PARTIAL_RELOAD_INTERVAL: Duration = Duration::from_millis(200);

@@ -1,0 +1,48 @@
+{
+  "id": "excalidraw",
+  "name": "Excalidraw",
+  "version": "1.0.0",
+  "description": "Draw in Excalidraw natively: .excalidraw.md drawings compatible with the Obsidian plugin, plain .excalidraw files, SVG export, drawings embedded in notes, and agent commands (writer excalidraw:*) with the writer-excalidraw skill.",
+  "enabledByDefault": true,
+  "activation": ["onFileKind:drawing"],
+  "memory": {
+    "level": "high",
+    "note": "Excalidraw (several MB with its fonts) loads when the first drawing opens or a note shows an embedded drawing; nothing runs in the background. The writer excalidraw commands and the writer-excalidraw skill are read at launch."
+  },
+  "rust": {
+    "skills": ["writer-excalidraw"],
+    "cliCommands": [
+      "excalidraw:create",
+      "excalidraw:add",
+      "excalidraw:connect",
+      "excalidraw:read",
+      "excalidraw:export"
+    ],
+    "ipcCommands": ["excalidraw:export"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "excalidraw.new-drawing",
+        "label": "New drawing",
+        "description": "Create a drawing next to the open note",
+        "when": "workspace-window"
+      },
+      {
+        "id": "excalidraw.export-svg",
+        "label": "Export drawing as SVG",
+        "description": "Write the drawing as an SVG next to it",
+        "when": "drawing-tab"
+      }
+    ],
+    "editorExtensions": ["excalidraw.embeds"],
+    "slots": ["excalidraw.drawing-tab"],
+    "menus": {
+      "sidebar-folder": ["excalidraw.new-drawing"]
+    },
+    "workspaceListeners": ["excalidraw.disk-sync"],
+    "ipcRequests": ["excalidraw.export"],
+    "services": ["excalidraw.files"]
+  },
+  "provides": ["excalidraw.files"]
+}

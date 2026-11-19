@@ -227,8 +227,9 @@ describe("sidebar panels", () => {
 
 describe("sidebar menus", () => {
   beforeEach(() => {
-    // The shipped agent feature also offers a folder item; these tests are about the fixture's.
+    // The shipped agent and excalidraw features also offer a folder item; these tests are about the fixture's.
     menuContributions.removeOwner("builtin:agent");
+    menuContributions.removeOwner("builtin:excalidraw");
     host.register(fixtureSidebarFeature());
   });
 

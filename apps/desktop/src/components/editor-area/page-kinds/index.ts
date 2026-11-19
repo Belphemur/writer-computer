@@ -1,5 +1,6 @@
 import { baseKind, type BaseLocation } from "./base";
 import { codeKind, type CodeLocation } from "./code";
+import { drawingKind, type DrawingLocation } from "./drawing";
 import { fileKind, type FileLocation } from "./file";
 import { graphKind, type GraphLocation } from "./graph";
 import { imageKind, type ImageLocation } from "./image";
@@ -24,6 +25,7 @@ const kinds = [
   graphKind,
   codeKind,
   imageKind,
+  drawingKind,
   launcherKind,
   settingsKind,
   pluginViewKind,
@@ -37,6 +39,7 @@ export type Location =
   | GraphLocation
   | CodeLocation
   | ImageLocation
+  | DrawingLocation
   | LauncherLocation
   | SettingsLocation
   | PluginViewLocation
@@ -63,7 +66,13 @@ export const locationBehavior = pageKind;
  *  (a `.base` opens as a table), else the text editor. The single place that routes a path. */
 export function locationForPath(
   path: string,
-): FileLocation | BaseLocation | CodeLocation | ImageLocation | PluginFileLocation {
+):
+  | FileLocation
+  | BaseLocation
+  | CodeLocation
+  | ImageLocation
+  | DrawingLocation
+  | PluginFileLocation {
   for (const k of kinds) {
     // A kind whose feature is off claims nothing: its files open as text (unless they are not
     // text: `claimsWhenOff` keeps the tab, which then shows the "turned off" page).
@@ -71,7 +80,14 @@ export function locationForPath(
     const location = (
       k.forPath as (
         path: string,
-      ) => FileLocation | BaseLocation | CodeLocation | ImageLocation | PluginFileLocation | null
+      ) =>
+        | FileLocation
+        | BaseLocation
+        | CodeLocation
+        | ImageLocation
+        | DrawingLocation
+        | PluginFileLocation
+        | null
     )(path);
     if (location) return location;
   }
@@ -107,6 +123,7 @@ export type { GraphLocation, GraphCamera } from "./graph";
 export { withGraphState } from "./graph";
 export type { CodeLocation } from "./code";
 export type { ImageLocation } from "./image";
+export type { DrawingLocation } from "./drawing";
 export type { LauncherLocation } from "./launcher";
 export type { SettingsLocation } from "./settings";
 export type { PluginViewLocation } from "./plugin-view";

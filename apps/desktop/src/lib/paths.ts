@@ -199,6 +199,13 @@ export function isBasePath(path: string): boolean {
   return path.toLowerCase().endsWith(".base");
 }
 
+/** Is this an Excalidraw drawing (`.excalidraw.md` or `.excalidraw`)? Core claims the path for the
+ *  `drawing` page kind; what a drawing shows is the `excalidraw` feature's. */
+export function isDrawingPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".excalidraw.md") || lower.endsWith(".excalidraw");
+}
+
 export function getFileName(path: string): string {
   const lastSlash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return path.slice(lastSlash + 1);

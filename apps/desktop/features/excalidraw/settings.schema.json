@@ -1,0 +1,23 @@
+{
+  "settings": [
+    {
+      "key": "excalidraw.handle-files",
+      "label": "Open Drawings With",
+      "description": "Writer opens .excalidraw.md and .excalidraw files itself. Choose the Obsidian plugin to hand them back to it (needs the plugin on).",
+      "category": "Excalidraw",
+      "type": "enum",
+      "options": ["native", "plugin"],
+      "default": "native",
+      "scope": "global"
+    },
+    {
+      "key": "excalidraw.auto-export-svg",
+      "label": "Keep an SVG Next to Each Drawing",
+      "description": "Write <name>.svg beside a drawing after every save and every change from outside (an agent, sync). Needs the drawing's window open.",
+      "category": "Excalidraw",
+      "type": "boolean",
+      "default": false,
+      "scope": "global"
+    }
+  ]
+}

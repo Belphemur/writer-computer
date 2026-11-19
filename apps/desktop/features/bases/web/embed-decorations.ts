@@ -12,33 +12,20 @@
 // (`revealBlockOnArrow`) come for free.
 import { EditorSelection, type EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { Decoration, EditorView } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
-import { createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createElement, type ReactElement } from "react";
 import { EmbeddedBase } from "./view/embedded";
 import { embedKey, isBaseFenceInfo, parseBaseEmbedLine, type BaseEmbed } from "./lib/embeds";
 import { editorNotePath } from "@/lib/editor-views";
 import { foldableSyntaxFacet } from "@/lib/prosemark-core/main";
+import { HeightMemory, ReactBlockWidget } from "@/lib/react-block-widget";
 import { parseFencedCode } from "@/components/editor-area/fenced-code";
 
-/** Used until a widget has been measured once (title bar plus a few rows). */
-const DEFAULT_ESTIMATED_HEIGHT = 160;
-const HEIGHT_CACHE_LIMIT = 200;
-
-// Last measured height per embed. The data loads after the widget is inserted, so without a
-// remembered height every scroll past an embed inserts a placeholder that later snaps to size
-// and shifts the heightmap under the viewport (same story as images in `fold/image.ts`).
-const heightCache = new Map<string, number>();
-
-function rememberHeight(key: string, height: number): void {
-  heightCache.delete(key);
-  heightCache.set(key, height);
-  if (heightCache.size > HEIGHT_CACHE_LIMIT) {
-    const oldest = heightCache.keys().next().value;
-    if (oldest !== undefined) heightCache.delete(oldest);
-  }
-}
+// Last measured height per embed (title bar plus a few rows until measured). The data loads after
+// the widget is inserted, so without a remembered height every scroll past an embed shifts the
+// heightmap under the viewport (same story as images in `fold/image.ts`).
+const heightCache = new HeightMemory(160, 200);
 
 // ---------------------------------------------------------------------------
 // Finding embeds in the syntax tree
@@ -126,17 +113,14 @@ export function enterEmbedEditMode(view: EditorView, host: HTMLElement): boolean
 // The widget
 // ---------------------------------------------------------------------------
 
-interface Mounted {
-  root: Root;
-  observer: ResizeObserver | null;
-  unmounted: boolean;
-}
+// ---------------------------------------------------------------------------
+// The widget
+// ---------------------------------------------------------------------------
 
-// Keyed by the widget's DOM so `updateDOM` and `destroy` find the live root without going
-// through CodeMirror state. Weak, so a dropped wrapper cannot leak a handle.
-const mounted = new WeakMap<HTMLElement, Mounted>();
+export class BaseEmbedWidget extends ReactBlockWidget {
+  protected readonly className = "cm-base-embed";
+  protected readonly heights = heightCache;
 
-export class BaseEmbedWidget extends WidgetType {
   constructor(
     readonly embed: BaseEmbed,
     /** Absolute path of the embedding note (`this`). */
@@ -151,72 +135,20 @@ export class BaseEmbedWidget extends WidgetType {
     return this.notePath === other.notePath && embedKey(this.embed) === embedKey(other.embed);
   }
 
-  get estimatedHeight(): number {
-    return heightCache.get(embedKey(this.embed)) ?? DEFAULT_ESTIMATED_HEIGHT;
+  protected heightKey(): string {
+    return embedKey(this.embed);
   }
 
-  private render(host: HTMLElement, view: EditorView): void {
-    const handle = mounted.get(host);
-    if (!handle || handle.unmounted) return;
-    handle.root.render(
-      createElement(EmbeddedBase, {
-        embed: this.embed,
-        notePath: this.notePath,
-        onEdit: () => {
-          if (!enterEmbedEditMode(view, host)) {
-            console.error("[editor] base embed: could not find its source to edit");
-          }
-        },
-      }),
-    );
-  }
-
-  toDOM(view: EditorView): HTMLElement {
-    const host = document.createElement("div");
-    host.className = "cm-base-embed";
-    host.contentEditable = "false";
-    const handle: Mounted = { root: createRoot(host), observer: null, unmounted: false };
-    mounted.set(host, handle);
-    // Height settles after the data loads: remember it and let CodeMirror re-measure while the
-    // user is still interacting (docs/editor.md, heightmap shifts).
-    if (typeof ResizeObserver !== "undefined") {
-      let last = -1;
-      handle.observer = new ResizeObserver(() => {
-        const height = host.getBoundingClientRect().height;
-        if (height <= 0 || Math.abs(height - last) < 1) return;
-        last = height;
-        rememberHeight(embedKey(this.embed), height);
-        view.requestMeasure();
-      });
-      handle.observer.observe(host);
-    }
-    this.render(host, view);
-    return host;
-  }
-
-  // Not `eq` but the same kind of block: keep the DOM and the React root, hand it the new embed.
-  // This is what makes a source edit update the rendered base in place.
-  updateDOM(dom: HTMLElement, view: EditorView): boolean {
-    if (!mounted.has(dom)) return false;
-    this.render(dom, view);
-    return true;
-  }
-
-  destroy(dom: HTMLElement): void {
-    const handle = mounted.get(dom);
-    if (!handle) return;
-    mounted.delete(dom);
-    handle.unmounted = true;
-    handle.observer?.disconnect();
-    // `destroy` can run inside a React commit (a view torn down by an effect cleanup), where a
-    // synchronous `root.unmount()` is refused.
-    queueMicrotask(() => handle.root.unmount());
-  }
-
-  // Scrolling, tabs, links and buttons inside belong to the React tree; the explicit Edit
-  // button (and the arrow keys, through `revealBlockOnArrow`) enter the source.
-  ignoreEvent(): boolean {
-    return true;
+  protected content(host: HTMLElement, view: EditorView): ReactElement {
+    return createElement(EmbeddedBase, {
+      embed: this.embed,
+      notePath: this.notePath,
+      onEdit: () => {
+        if (!enterEmbedEditMode(view, host)) {
+          console.error("[editor] base embed: could not find its source to edit");
+        }
+      },
+    });
   }
 }
 
@@ -262,4 +194,4 @@ export function baseEmbedDecorations() {
   ];
 }
 
-export const __testBaseEmbed = { heightCache, mounted };
+export const __testBaseEmbed = { heightCache };

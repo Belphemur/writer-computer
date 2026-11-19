@@ -1,6 +1,6 @@
 // Publishes which community plugins are enabled to core (`lib/community-plugins.ts`), so a built-in
 // feature can yield to a plugin without reaching into the host. Follows the plugins store snapshot.
-import { setRunningCommunityPlugins } from "@/lib/community-plugins";
+import { setCommunityPluginControl, setRunningCommunityPlugins } from "@/lib/community-plugins";
 import type { Dispose } from "@/lib/features/types";
 import { usePluginsStore } from "./stores/plugins-store";
 
@@ -14,11 +14,15 @@ export function publishRunningPlugins(): Dispose {
     );
   };
   push();
+  setCommunityPluginControl({
+    setEnabled: (id, enabled) => usePluginsStore.getState().setEnabled(id, enabled),
+  });
   const unsubscribe = usePluginsStore.subscribe((s, prev) => {
     if (s.snapshot !== prev.snapshot) push();
   });
   return () => {
     unsubscribe();
     setRunningCommunityPlugins([]);
+    setCommunityPluginControl(null);
   };
 }

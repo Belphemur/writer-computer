@@ -471,6 +471,15 @@
       "scope": "global"
     },
     {
+      "key": "features.excalidraw.enabled",
+      "label": "Excalidraw",
+      "description": "Turns the Excalidraw feature on or off.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
       "key": "features.images.enabled",
       "label": "Images",
       "description": "Turns the Images feature on or off.",

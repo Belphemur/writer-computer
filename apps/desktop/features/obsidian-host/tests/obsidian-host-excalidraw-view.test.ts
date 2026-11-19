@@ -34,6 +34,7 @@ import { PluginHost, type ScriptLoader } from "../web/host/loader";
 import { createMemoryVaultIo, FakeHostIpc } from "../web/host/testing";
 import { usePluginsStore, type PluginsDeps } from "../web/stores/plugins-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { serviceContributions } from "@/lib/features/services";
 
 const ID = "obsidian-excalidraw-plugin";
 const PLUGIN_DIR = join(homedir(), "Documents/Vault/PersonalVault/.obsidian/plugins", ID);
@@ -147,6 +148,13 @@ describe.skipIf(!existsSync(join(PLUGIN_DIR, "main.js")))(
     }
 
     beforeAll(async () => {
+      // Writer's own Excalidraw feature opens drawings by default; this test is about the plugin,
+      // so the files are handed back to it, as the setting `excalidraw.handle-files = plugin` does.
+      serviceContributions.add("excalidraw.files", {
+        id: "excalidraw.files",
+        service: { handledNatively: () => false },
+        owner: "test:plugin-owns-drawings",
+      });
       installDomHelpers(window);
       installBrowserStubs();
       g.__WRITER_PLUGIN_DEBUG__ = true;
@@ -203,6 +211,7 @@ describe.skipIf(!existsSync(join(PLUGIN_DIR, "main.js")))(
     }, 60_000);
 
     afterAll(async () => {
+      serviceContributions.removeOwner("test:plugin-owns-drawings");
       await usePluginsStore.getState().detach();
     });
 

@@ -12,3 +12,19 @@ export function setRunningCommunityPlugins(ids: Iterable<string>): void {
 export function isCommunityPluginRunning(id: string): boolean {
   return running.has(id);
 }
+
+/** What the host lets core do to a plugin: turn it on or off in Writer's own plugin state (never
+ *  the vault's `.obsidian` folder). Published with the running set; absent while the host is. */
+export interface CommunityPluginControl {
+  setEnabled(id: string, enabled: boolean): Promise<void>;
+}
+
+let control: CommunityPluginControl | null = null;
+
+export function setCommunityPluginControl(next: CommunityPluginControl | null): void {
+  control = next;
+}
+
+export function communityPluginControl(): CommunityPluginControl | null {
+  return control;
+}

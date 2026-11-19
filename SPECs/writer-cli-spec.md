@@ -916,6 +916,20 @@ Four commands (group **App**) need the running app; every other command stays he
 
 With no app (no token file, no socket, or a socket nobody listens on) they print `writer: Writer is not running` and exit **4** (distinct from usage `2` and failure `1`). `open --launch` starts the app on the vault through the launcher (`open -a Writer <vault>`, which the single-instance path handles), polls for the socket for up to 20 s, then sends the request; a launch that fails is exit 1, an app that never opens its socket exit 4. `--launch` is the only `--` flag besides `--copy` and `--help`, and only commands that list it take it.
 
+### Excalidraw commands
+
+Group **Excalidraw**, contributed by the `excalidraw` feature (`feature: Some("excalidraw")`, so they say "turned off" when the feature is off). Spec: [`excalidraw-spec.md`](./excalidraw-spec.md).
+
+| Command              | Params and flags                                    | Does                                                                                                                               |
+| -------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `excalidraw:create`  | `path=`, `spec=` (JSON), `--overwrite`              | New drawing from a spec of boxes (`nodes`), arrows (`edges`) and `groups`, `direction` `LR` or `TB`, laid out without overlaps.    |
+| `excalidraw:add`     | `file=`/`path=`, `spec=`                            | Add a block of boxes and arrows below the existing ones; an open tab draws it in.                                                  |
+| `excalidraw:connect` | `file=`/`path=`, `from=`, `to=` (box ids), `label=` | An arrow bound to two existing boxes.                                                                                              |
+| `excalidraw:read`    | `file=`/`path=`                                     | The drawing as a spec (boxes, arrows, groups), never the compressed data.                                                          |
+| `excalidraw:export`  | `file=`/`path=`                                     | Asks the running app for `<name>.svg` next to the drawing (socket command `excalidraw:export`; exit 4 when Writer is not running). |
+
+Writes keep unknown sections and front matter byte for byte and never touch `.obsidian/`.
+
 ### The channel
 
 - **Endpoint.** Unix: `ipc/ipc.sock` and `ipc/ipc.token` in a dedicated `ipc/` folder of the app data dir, the folder `0700` (created if missing, mode corrected if wrong; the app data dir itself is never chmod-ed), the socket and token `0600`; the server also checks the peer's uid. Windows: the named pipe `\\.\pipe\writer-<hash of the user SID>` created with the descriptor `D:P(A;;GA;;;<user SID>)`, remote clients rejected, first instance exclusive (`ipc/windows.rs`, no new crate, never compiled or run on Windows so far). One server per app process, started after the features and stopped at exit (`RunEvent::Exit`), which removes the socket and the token. At startup a socket that refuses connections is stale and is unlinked; one that answers belongs to a live Writer and is left alone (no second server); a path that is not a socket is never deleted; a socket path over 100 bytes (macOS allows 104) is refused with an error naming the too-long data dir; a test checks the real default path fits. A launch that cannot make the endpoint safe runs without the socket and logs a warning.

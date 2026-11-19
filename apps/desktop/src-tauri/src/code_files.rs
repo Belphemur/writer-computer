@@ -267,11 +267,14 @@ pub fn is_image_name_with(policy: &Policy, name: &str) -> bool {
         && ext_of(name).is_some_and(|e| crate::attachments::render_extensions().contains(&e))
 }
 
-/// A listed file: a note, a `.base`, a code file, or (setting on) an image.
+/// Extensions listed whatever the settings: notes, Bases, and Excalidraw's plain `.excalidraw`
+/// drawings (the `.excalidraw.md` ones are notes). The one list the three listing rules below and
+/// `index::names::LISTED_EXTS` share.
+pub const ALWAYS_LISTED_EXTS: [&str; 3] = ["md", "base", "excalidraw"];
+
+/// A listed file: a note, a `.base`, a drawing, a code file, or (setting on) an image.
 pub fn is_listed_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".md")
-        || lower.ends_with(".base")
+    ext_of(name).is_some_and(|e| ALWAYS_LISTED_EXTS.contains(&e.as_str()))
         || with_current(|p| is_code_name_with(p, name) || is_image_name_with(p, name))
 }
 
@@ -289,7 +292,7 @@ pub fn listed_sql_predicate() -> String {
 
 /// [`listed_sql_predicate`] under an explicit policy.
 pub fn listed_sql_predicate_with(p: &Policy) -> String {
-    let mut exts: Vec<String> = vec!["md".into(), "base".into()];
+    let mut exts: Vec<String> = ALWAYS_LISTED_EXTS.iter().map(|e| e.to_string()).collect();
     if p.code {
         let mut code: Vec<&String> = p.extensions.iter().collect();
         code.sort();
@@ -320,7 +323,7 @@ pub fn is_listed_row(name: &str, ext: &str) -> bool {
 
 /// [`is_listed_row`] under an explicit policy.
 pub fn is_listed_row_with(p: &Policy, name: &str, ext: &str) -> bool {
-    if ext == "md" || ext == "base" {
+    if ALWAYS_LISTED_EXTS.contains(&ext) {
         return true;
     }
     if p.show_images

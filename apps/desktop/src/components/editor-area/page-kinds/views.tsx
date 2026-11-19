@@ -13,6 +13,7 @@ import type { PageViewProps } from "@/lib/features/slots";
 import type { Location } from "./index";
 import type { BaseLocation } from "./base";
 import type { CodeLocation } from "./code";
+import type { DrawingLocation } from "./drawing";
 import type { FileLocation } from "./file";
 import type { GraphLocation } from "./graph";
 import type { ImageLocation } from "./image";
@@ -104,6 +105,10 @@ const views = {
     feature: "images",
     actions: (location) => <OpenInDefaultAppButton path={location.path} />,
   }) satisfies PageKindView<ImageLocation>,
+  drawing: featureView("drawing", {
+    feature: "excalidraw",
+    actions: (location) => <OpenAsTextButton path={location.path} />,
+  }) satisfies PageKindView<DrawingLocation>,
   base: featureView("base", {
     feature: "bases",
     actions: (location) => <OpenAsTextButton path={location.path} />,

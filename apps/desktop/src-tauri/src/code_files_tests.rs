@@ -399,6 +399,21 @@ mod feature_off {
     }
 
     #[test]
+    fn plain_excalidraw_drawings_are_listed_whatever_the_settings() {
+        for run in [off, on] {
+            run(|| {
+                assert!(
+                    cf::is_listed_name("Arch.excalidraw") && cf::is_listed_name("A.EXCALIDRAW")
+                );
+                assert!(cf::is_listed_row("Arch.excalidraw", "excalidraw"));
+                assert!(cf::listed_sql_predicate().contains("'excalidraw'"));
+                // a drawing is not a text file the editor opens
+                assert!(!cf::is_code_name("Arch.excalidraw"));
+            });
+        }
+    }
+
+    #[test]
     fn quick_open_and_the_name_index_list_notes_bases_and_images_only() {
         off(|| {
             let sql = cf::listed_sql_predicate();

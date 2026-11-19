@@ -53,6 +53,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Meta       | `help`, `version`                                                                                                                             |
 | Agent      | `project:archive`, `project:unarchive`                                                                                                        |
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                            |
+| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:connect`, `excalidraw:read`, `excalidraw:export`                                           |
 
 <!-- END GENERATED: groups -->
 

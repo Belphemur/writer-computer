@@ -104,4 +104,12 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `base:create` — Create a note in a base view. Params: `file=`, `path=`, `view=` (view name), `name=` (note name), `content=` (initial text). Flags: `open` (accepted, ignored), `newtab` (accepted, ignored).
 - `base:query` — Run a base view. Params: `file=`, `path=`, `view=` (view name), `format=` (json | csv | tsv | md | paths).
 
+## Excalidraw
+
+- `excalidraw:create` — Create a drawing from a spec of boxes and arrows. Params: `path=` (required; new drawing, e.g. Diagrams/Arch.excalidraw.md), `spec=` (JSON: {"nodes":[{"id","text","shape"?,"x"?,"y"?,"color"?}],"edges":[["from","to","label"?]],"groups":[{"nodes":[ids]}],"direction":"LR|TB"}). Flags: `overwrite` (replace an existing file).
+- `excalidraw:add` — Add boxes and arrows to a drawing. Params: `file=`, `path=`, `spec=` (required; JSON: {"nodes":[{"id","text","shape"?,"x"?,"y"?,"color"?}],"edges":[["from","to","label"?]],"groups":[{"nodes":[ids]}],"direction":"LR|TB"}).
+- `excalidraw:connect` — Draw an arrow between two boxes of a drawing. Params: `file=`, `path=`, `from=` (required; box id), `to=` (required; box id), `label=` (text on the arrow).
+- `excalidraw:read` — Print a drawing as a spec (boxes, arrows, groups). Params: `file=`, `path=`.
+- `excalidraw:export` — Write the drawing as an SVG next to it (needs Writer running). Params: `file=`, `path=`.
+
 <!-- END GENERATED: commands -->

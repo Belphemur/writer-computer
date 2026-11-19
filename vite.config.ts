@@ -15,6 +15,8 @@ export default defineConfig({
       "apps/desktop/src-tauri/src/agent/fixtures/**",
       "apps/desktop/tests/fixtures/agent-chat-notes/**",
       "apps/desktop/features/obsidian-host/tests/fixtures/**",
+      // Drawing files whose bytes the codec tests compare (trailing spaces, line endings).
+      "apps/desktop/shared/excalidraw-fixtures/**",
     ],
   },
   lint: {

@@ -65,12 +65,12 @@ Chosen option: **A**.
 ### Verification
 
 - [ ] An existing Obsidian `.excalidraw.md` opens, edits and saves; Obsidian still opens it.
-- [ ] An image pasted into a `.excalidraw.md` drawing lands in the attachments folder and is listed under `## Embedded Files`; a `.excalidraw` file still opens on excalidraw.com.
+- [x] An image pasted into a `.excalidraw.md` drawing lands in the attachments folder and is listed under `## Embedded Files`; a `.excalidraw` file still opens on excalidraw.com. (Tested at the codec and save level; opening in excalidraw.com is manual.)
 - [ ] "New drawing" creates a `.excalidraw.md`; `![[it]]` shows it in a note.
-- [ ] `writer excalidraw:create` with a spec makes a valid drawing that opens with boxes, labels and connected arrows.
+- [x] `writer excalidraw:create` with a spec makes a valid drawing that opens with boxes, labels and connected arrows. (Valid and overlap-free by test; the canvas look is manual.)
 - [ ] "Export SVG" and auto-export write `<name>.svg`; `writer excalidraw:export` gets an SVG while the app runs.
 - [ ] With the drawing open, an agent's `excalidraw:add` calls appear one by one, drawn in, without losing the user's view.
-- [ ] No network request; Excalidraw is not in the startup chunk.
+- [x] No network request; Excalidraw is not in the startup chunk. (Build test: entry chunk clean, fonts emitted; a network panel check is manual.)
 
 ## Pros and Cons of the Options
 

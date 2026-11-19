@@ -1,0 +1,9 @@
+/* The canvas of a drawing tab. Excalidraw's online library and sharing have no place in a local
+   app (ADR 2026-11-18, point 1: no network, no library), so the library trigger is hidden; the
+   rest of the UI is Excalidraw's own. */
+.writer-drawing .default-sidebar-trigger {
+  display: none;
+}
+.writer-drawing .excalidraw {
+  --color-surface-low: var(--surface-secondary, transparent);
+}

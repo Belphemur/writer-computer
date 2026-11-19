@@ -40,6 +40,17 @@ fn send(
     client::call(&dir, cmd, vault.as_deref(), &args, client_timeout(cmd))
 }
 
+/// One request to the running app for a feature's socket command (`Feature::ipc_commands`):
+/// the answer, or the CLI error (`NotRunning` when there is no app).
+pub(crate) fn call_app(
+    ctx: &Ctx,
+    cmd: &str,
+    vault: Option<&Path>,
+    args: Map<String, Value>,
+) -> Result<Value, CliError> {
+    send(ctx, cmd, vault, args).map_err(map_error)
+}
+
 /// [`send`], and when the app is not running and `launch` is set, start it on the vault, wait for
 /// its socket (up to `Env::launch_wait`) and send again.
 fn send_or_launch(

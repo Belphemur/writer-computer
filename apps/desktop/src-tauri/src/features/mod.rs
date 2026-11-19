@@ -89,6 +89,8 @@ mod agent;
 pub(crate) mod bases;
 #[path = "../../../features/code-files/rust/mod.rs"]
 pub(crate) mod code_files;
+#[path = "../../../features/excalidraw/rust/mod.rs"]
+mod excalidraw;
 #[path = "../../../features/graph/rust/mod.rs"]
 mod graph;
 // Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
@@ -276,6 +278,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &agent::Agent,
         &bases::Bases,
         &code_files::CodeFiles,
+        &excalidraw::Excalidraw,
         &graph::Graph,
     ]
 }
@@ -1112,7 +1115,7 @@ mod tests {
             .iter()
             .map(|f| f.manifest().expect("manifest parses").id)
             .collect();
-        assert_eq!(ids, ["agent", "bases", "code-files", "graph"]);
+        assert_eq!(ids, ["agent", "bases", "code-files", "excalidraw", "graph"]);
     }
 
     #[test]
@@ -1162,8 +1165,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            4,
-            "the agent, bases, code-files and graph still start"
+            5,
+            "the agent, bases, code-files, excalidraw and graph still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1349,17 +1352,24 @@ mod tests {
                 "bases",
                 "base:views",
                 "base:create",
-                "base:query"
+                "base:query",
+                "excalidraw:create",
+                "excalidraw:add",
+                "excalidraw:connect",
+                "excalidraw:read",
+                "excalidraw:export"
             ]
         );
         assert!(cli_commands().iter().all(|c| c.feature
             == Some(if c.name.starts_with("project:") {
                 "agent"
+            } else if c.name.starts_with("excalidraw:") {
+                "excalidraw"
             } else {
                 "bases"
             })));
         let skills: Vec<_> = skills().iter().map(|s| s.name).collect();
-        assert_eq!(skills, ["writer-bases"]);
+        assert_eq!(skills, ["writer-bases", "writer-excalidraw"]);
         assert!(index_ddl().is_empty());
         assert_eq!(index_schema_suffix(), "");
         assert!(crate::index::schema_version()
@@ -1367,11 +1377,11 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 6
+            crate::cli::registry::COMMANDS.len() + 11
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),
-            crate::managed_skills::SKILLS.len() + 1
+            crate::managed_skills::SKILLS.len() + 2
         );
     }
 
