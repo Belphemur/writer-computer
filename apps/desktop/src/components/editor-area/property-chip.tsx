@@ -1,4 +1,6 @@
 // Shared look of the property value cells: the inline field, the chip and its remove button.
+import { HugeiconsIcon } from "@hugeicons/react";
+import { PinIcon } from "@hugeicons/core-free-icons";
 
 export const FIELD =
   "min-w-0 flex-1 rounded bg-transparent px-1 -mx-1 text-[13px] leading-[1.4] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] placeholder:opacity-70 focus-visible:bg-[var(--surface-subtle)]";
@@ -56,6 +58,42 @@ export function RemoveRowButton({ label, onRemove }: { label: string; onRemove: 
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
         <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
+    </button>
+  );
+}
+
+/** The pin button next to a row's ×: shown on hover and focus, kept in the accent colour while
+ *  the property is pinned. */
+export function PinRowButton({
+  name,
+  pinned,
+  onToggle,
+}: {
+  name: string;
+  pinned: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`${pinned ? "Unpin" : "Pin"} property ${name}`}
+      title={pinned ? "Unpin" : "Pin"}
+      aria-pressed={pinned}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onToggle}
+      className={`flex h-5 w-5 shrink-0 items-center justify-center self-center rounded transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 ${
+        pinned
+          ? "text-[var(--accent)]"
+          : "text-[var(--text-icon-muted)] opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+      }`}
+    >
+      <HugeiconsIcon
+        icon={PinIcon}
+        size={12}
+        strokeWidth={2}
+        color="currentColor"
+        fill={pinned ? "currentColor" : "none"}
+      />
     </button>
   );
 }

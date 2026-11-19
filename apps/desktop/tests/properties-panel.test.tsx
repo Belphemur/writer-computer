@@ -16,6 +16,7 @@ vi.mock("../src/lib/save", () => ({
 const ipc = vi.hoisted(() => ({
   propertyTypes: vi.fn(),
   propertyTypeSet: vi.fn(async (_name: string, _ty: string, _values?: string[]) => {}),
+  propertyPinSet: vi.fn(async (_name: string, _pinned: boolean) => {}),
 }));
 // The fake backend keeps what was recorded, as the real one does, for the refetch after a write.
 const recorded = vi.hoisted(() => new Map<string, string>());
@@ -63,6 +64,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { scheduleSave } from "../src/lib/save";
 import * as tauri from "../src/lib/tauri";
 import { PropertiesPanel } from "../src/components/editor-area/properties-panel";
+import { chipText, orderRows, shortDate } from "../src/components/editor-area/pinned-properties";
+import { parseProperties } from "../src/lib/frontmatter-properties";
 import { useEditorStore } from "../src/stores/editor-store";
 import { usePropertiesPanelStore } from "../src/stores/properties-panel-store";
 import { useSettingsStore } from "../src/stores/settings-store";
@@ -1246,5 +1249,244 @@ describe("url properties", () => {
     expect(vi.mocked(scheduleSave)).not.toHaveBeenCalled();
     expect(ipc.propertyTypeSet).toHaveBeenCalledWith("a", "url");
     expect(q('[role="status"]')?.textContent).toBe("Not a URL");
+  });
+});
+
+describe("pinned properties", () => {
+  // the fake backend keeps pins (lower-cased name -> place) the way the record does
+  const pins = new Map<string, number>();
+  const info = (key: string, type: string, extra: object = {}) => ({
+    key,
+    count: 3,
+    types: {},
+    type,
+    source: "writer",
+    mismatched: 0,
+    obsidianType: "text",
+    values: [],
+    icons: {},
+    pinned: pins.get(key.toLowerCase()) ?? null,
+    ...extra,
+  });
+  const pin = (...names: string[]) => names.forEach((n, i) => pins.set(n, i));
+  const COLLAPSED = (rest: string) =>
+    `${Array.from({ length: 7 }, (_, i) => `k${i}: v${i}`).join("\n")}\n${rest}`;
+  const chips = () => [...host.querySelectorAll<HTMLElement>("[data-pinned-chip]")];
+  const chipLabels = () => chips().map((c) => c.getAttribute("aria-label"));
+  const pinButton = (name: string) => q(`button[aria-label$="property ${name}"][aria-pressed]`);
+
+  beforeEach(() => {
+    pins.clear();
+    ipc.propertyTypes.mockImplementation(
+      async () =>
+        [
+          info("status", "enum", {
+            values: ["todo", "doing", "done"],
+            icons: { doing: "emoji:🚧" },
+          }),
+          info("due", "date"),
+          info("priority", "text"),
+          info("project", "relationships"),
+          info("sources", "multitext"),
+          info("k0", "text"),
+          info("k1", "text"),
+        ] as never,
+    );
+    ipc.propertyPinSet.mockReset().mockImplementation(async (name: string, pinned: boolean) => {
+      if (pinned) pins.set(name.toLowerCase(), pins.size);
+      else pins.delete(name.toLowerCase());
+    });
+  });
+
+  it("formats chip values as the panel does: short dates, link titles, lists with +n", () => {
+    const text = (fm: string) => chipText(parseProperties(fm).ok ? parseRows(fm)[0] : null!);
+    const parseRows = (fm: string) => {
+      const parsed = parseProperties(fm);
+      return parsed.ok ? parsed.rows : [];
+    };
+    expect(shortDate("2026-11-20", new Date("2026-06-01"))).toBe("Nov 20");
+    expect(shortDate("2025-01-05", new Date("2026-06-01"))).toBe("Jan 5, 2025");
+    expect(shortDate("2026-11-20T14:30", new Date("2026-06-01"))).toBe("Nov 20 14:30");
+    expect(chipText(parseRows("due: 2026-11-20")[0], new Date("2026-06-01"))).toBe("Nov 20");
+    expect(text('project: "[[Plans/Roadmap|The plan]]"')).toBe("The plan");
+    expect(text("t: [a, b, c, d]")).toBe("a, b +2");
+    expect(text("t: [[[x]], b]")).toBe("x, b");
+    expect(text("a:")).toBeNull();
+    expect(text("t: []")).toBeNull();
+    expect(text("n: 3")).toBe("3");
+    expect(text("done: false")).toBe("No");
+  });
+
+  it("orders the expanded rows pinned first without touching the file", async () => {
+    pin("priority", "status");
+    const fm = "title: T\nstatus: todo\ndue: 2026-11-20\npriority: P2";
+    await mountAndLoad(fm);
+    const names = () =>
+      [...host.querySelectorAll<HTMLInputElement>('input[aria-label^="Property name"]')].map(
+        (i) => i.value,
+      );
+    expect(names()).toEqual(["priority", "status", "title", "due"]);
+    expect(stored()).toBe(fm);
+    const parsed = parseProperties(fm);
+    const rows = parsed.ok ? parsed.rows : [];
+    expect(orderRows(rows, {}).map((r) => r.key)).toEqual(["title", "status", "due", "priority"]);
+  });
+
+  it("the pin button is hidden until hover, shown in the accent while pinned, and tags have none", async () => {
+    pin("due");
+    await mountAndLoad("tags: [a]\nstatus: todo\ndue: 2026-11-20");
+    expect(q('button[aria-label="Pin property tags"]')).toBeNull();
+    expect(pinButton("status")?.getAttribute("aria-label")).toBe("Pin property status");
+    expect(pinButton("status")?.getAttribute("title")).toBe("Pin");
+    expect(pinButton("status")?.className).toContain("group-hover:opacity-100");
+    expect(pinButton("status")?.className).not.toContain("var(--accent)");
+    expect(pinButton("due")?.getAttribute("aria-label")).toBe("Unpin property due");
+    expect(pinButton("due")?.getAttribute("title")).toBe("Unpin");
+    expect(pinButton("due")?.className).toContain("var(--accent)");
+    expect(pinButton("due")?.className).not.toContain("opacity-0");
+  });
+
+  it("pinning and unpinning go through the one write path and reorder the rows", async () => {
+    await mountAndLoad("title: T\nstatus: todo");
+    await act(async () => pinButton("status")!.click());
+    expect(ipc.propertyPinSet).toHaveBeenCalledWith("status", true);
+    expect(pinButton("status")?.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      (q('input[aria-label^="Property name"]') as HTMLInputElement).value,
+      "pinned row comes first",
+    ).toBe("status");
+    await act(async () => pinButton("status")!.click());
+    expect(ipc.propertyPinSet).toHaveBeenLastCalledWith("status", false);
+    expect(pinButton("status")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("a failed pin rolls back and says so", async () => {
+    ipc.propertyPinSet.mockRejectedValueOnce(new Error("disk full"));
+    await mountAndLoad("title: T\nstatus: todo");
+    await act(async () => pinButton("status")!.click());
+    expect(pinButton("status")?.getAttribute("aria-pressed")).toBe("false");
+    expect(q('[role="alert"]')?.textContent).toContain("Could not save the pin of");
+  });
+
+  it("the collapsed header shows pinned chips after the tags, in pin order, with the type or enum icon", async () => {
+    pin("due", "status", "priority");
+    await mountAndLoad(COLLAPSED("tags: [x]\nstatus: doing\ndue: 2026-11-20\npriority: P2"));
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(chipLabels()).toEqual(["due: Nov 20", "status: doing", "priority: P2"]);
+    expect(chips().map((c) => c.title)).toEqual(["due", "status", "priority"]);
+    expect(chips()[0].querySelector("svg")).not.toBeNull(); // the date's type icon
+    expect(chips()[1].querySelector('[data-icon-glyph="emoji"]')?.textContent).toBe("🚧");
+    expect(chips()[1].querySelector("svg")).toBeNull();
+    // tags first, then the chips (they are not inside the toggle button)
+    expect(toggle().textContent).toContain("x");
+    expect(toggle().contains(chips()[0])).toBe(false);
+  });
+
+  it("shows nothing for a pinned property the note lacks or leaves empty, and +n past four", async () => {
+    pin("due", "status", "priority", "sources", "project", "k0");
+    await mountAndLoad(COLLAPSED("due:\npriority: P2\nsources: [a, b]\nproject: '[[Alpha]]'"));
+    // status is absent and due is empty
+    expect(chipLabels()).toEqual(["priority: P2", "sources: a, b", "project: Alpha", "k0: v0"]);
+    pin("due", "status", "priority", "sources", "project", "k0", "k1");
+    usePropertyTypesStore.setState({ loadedAt: 0 });
+    await act(async () => {
+      await usePropertyTypesStore.getState().load(true);
+    });
+    expect(chipLabels()).toHaveLength(4);
+    expect(host.querySelector("section")?.textContent).toContain("+1");
+  });
+
+  it("shows no chips when expanded", async () => {
+    pin("status");
+    await mountAndLoad("status: todo");
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(chips()).toHaveLength(0);
+  });
+
+  it("clicking a text chip edits it in place without expanding, and writes the note", async () => {
+    pin("priority");
+    await mountAndLoad(COLLAPSED("priority: P2"));
+    await act(async () => chips()[0].click());
+    const input = document.querySelector<HTMLInputElement>(
+      '[role="dialog"] input[aria-label="priority value"]',
+    )!;
+    expect(input.value).toBe("P2");
+    expect(document.activeElement).toBe(input);
+    await type(input, "P1", "enter");
+    expect(stored()).toContain("priority: P1");
+    expect(stored()).toContain("k0: v0");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(chipLabels()).toEqual(["priority: P1"]);
+  });
+
+  it("Escape closes the editor without writing", async () => {
+    pin("priority");
+    await mountAndLoad(COLLAPSED("priority: P2"));
+    vi.mocked(scheduleSave).mockClear();
+    await act(async () => chips()[0].click());
+    const input = document.querySelector<HTMLInputElement>('[role="dialog"] input')!;
+    await act(async () => {
+      input.value = "zzz";
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(stored()).toContain("priority: P2");
+  });
+
+  it("a click outside commits a typed value", async () => {
+    pin("priority");
+    await mountAndLoad(COLLAPSED("priority: P2"));
+    await act(async () => chips()[0].click());
+    const input = document.querySelector<HTMLInputElement>('[role="dialog"] input')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "P3");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    expect(stored()).toContain("priority: P3");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("a date chip opens the date editor and a pick writes it", async () => {
+    pin("due");
+    await mountAndLoad(COLLAPSED("due: 2026-11-20"));
+    await act(async () => chips()[0].click());
+    const input = document.querySelector<HTMLInputElement>(
+      '[role="dialog"] input[aria-label="due value"]',
+    )!;
+    expect(input.type).toBe("date");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "2026-12-01");
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(stored()).toContain("due: 2026-12-01");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("an enum chip opens the dropdown under it; a pick writes the value and closes", async () => {
+    pin("status");
+    await mountAndLoad(COLLAPSED("status: todo"));
+    await act(async () => chips()[0].click());
+    const options = [...document.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')];
+    expect(options.map((o) => o.textContent)).toEqual(["No value", "todo", "doing", "done"]);
+    await act(async () => options.find((o) => o.textContent?.startsWith("done"))!.click());
+    expect(stored()).toContain("status: done");
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(chipLabels()).toEqual(["status: done"]);
+  });
+
+  it("pins are vault-wide: another note with the property shows the chip too", async () => {
+    pin("status");
+    await mountAndLoad(COLLAPSED("status: doing"));
+    expect(chipLabels()).toEqual(["status: doing"]);
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    usePropertiesPanelStore.setState({ notes: new Map() });
+    await mountAndLoad(COLLAPSED("other: 1\nstatus: done"));
+    expect(chipLabels()).toEqual(["status: done"]);
   });
 });

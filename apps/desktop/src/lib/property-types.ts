@@ -132,6 +132,9 @@ export interface PropertyTypeInfo {
   /** An enum's optional value icons by value: `emoji:<emoji>` or `icon:<Hugeicons name>`
    *  (`lib/icon-picker/icon-value.ts`); empty for any other type. */
   icons: Record<string, string>;
+  /** Its place among the vault's pinned properties (0 first), `null` when not pinned: the panel
+   *  shows pinned ones in its collapsed header and lists them first. */
+  pinned: number | null;
 }
 
 /** Name -> info lookups are case-insensitive, like Obsidian's `types.json`. */

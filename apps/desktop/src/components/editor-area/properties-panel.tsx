@@ -37,7 +37,9 @@ import {
 import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { AddPropertyRow } from "./add-property-row";
 import { PropertyTypeControl } from "./property-type-control";
-import { Chevron, RemoveRowButton } from "./property-chip";
+import { Chevron, PinRowButton, RemoveRowButton } from "./property-chip";
+import { PinnedChips } from "./pinned-chips";
+import { isPinnable, isPinned, orderRows, pinnedRows } from "./pinned-properties";
 import { PropertyKey, PropertyValue, type PropertyActions } from "./property-value";
 
 interface PropertiesPanelProps {
@@ -69,6 +71,7 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
   const typeInfo = usePropertyTypesStore((s) => s.byKey);
   const loadTypes = usePropertyTypesStore((s) => s.load);
   const setType = usePropertyTypesStore((s) => s.setType);
+  const setPinned = usePropertyTypesStore((s) => s.setPinned);
   useEffect(() => {
     if (hasFrontmatter) void loadTypes().catch(() => {}); // no index yet: types are inferred per row
   }, [hasFrontmatter, loadTypes]);
@@ -140,6 +143,13 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
     );
   };
 
+  const togglePin = (row: PropertyRow) =>
+    setPinned(row.key, !isPinned(row, typeInfo)).catch((e) =>
+      setError(
+        `Could not save the pin of "${row.key}": ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+
   const rows = parsed.ok ? parsed.rows : [];
   const tags = summaryTags(rows);
   const showSource = source || !parsed.ok;
@@ -152,7 +162,7 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
           aria-expanded={!collapsed}
           aria-controls={bodyId}
           onClick={toggleCollapsed}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded py-1 text-left text-[13px] leading-[1.3] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-border)]"
+          className="flex min-w-0 items-center gap-1.5 rounded py-1 text-left text-[13px] leading-[1.3] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-border)]"
         >
           <Chevron open={!collapsed} />
           <span className="shrink-0">Properties ({parsed.count})</span>
@@ -172,6 +182,19 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
             </span>
           )}
         </button>
+        {collapsed && (
+          <PinnedChips
+            rows={pinnedRows(rows, typeInfo)}
+            typeOf={(row) => typeOf(row).type}
+            actions={actions}
+          />
+        )}
+        {/* the rest of the header toggles too, as the whole row did before the chips */}
+        <span
+          role="presentation"
+          onClick={toggleCollapsed}
+          className="min-w-0 flex-1 self-stretch"
+        />
         {!collapsed && parsed.ok && (
           <button
             type="button"
@@ -213,7 +236,7 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
           ) : (
             <>
               <ul className="flex flex-col">
-                {rows.map((row) => {
+                {orderRows(rows, typeInfo).map((row) => {
                   const { type, mixed } = typeOf(row);
                   const fits = rowFitsType(row, type);
                   return (
@@ -239,6 +262,13 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                         >
                           {PROPERTY_TYPES[type].warning}
                         </span>
+                      )}
+                      {isPinnable(row) && (
+                        <PinRowButton
+                          name={row.key}
+                          pinned={isPinned(row, typeInfo)}
+                          onToggle={() => void togglePin(row)}
+                        />
                       )}
                       <RemoveRowButton
                         label={`Remove property ${row.key}`}

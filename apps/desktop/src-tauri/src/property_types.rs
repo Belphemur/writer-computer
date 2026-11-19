@@ -6,7 +6,11 @@
 //!   up immediately. Writer never writes it.
 //! - `.writer/property-types.json`, same format, Writer's own record and the only file this module
 //!   writes. It wins over Obsidian's. An `enum` entry is an object carrying its ordered values
-//!   (`{"type": "enum", "values": [...]}`); every other entry is a bare type string.
+//!   (`{"type": "enum", "values": [...]}`); every other entry is a bare type string. Any entry may
+//!   also carry `"pinned": <n>` (the panel shows the property in its collapsed header, `n` is its
+//!   place among the pinned ones, 0 first; see [`set_pinned`]); a property pinned before it has a
+//!   declared type is `{"pinned": n}` alone and its type stays inferred. Keys this build does not
+//!   know are kept as they are.
 //!
 //! With no record, the type is inferred from the observed values (the index's `props.vtype`
 //! counts; a property whose every non-empty value is a wikilink or a list of wikilinks is
@@ -312,11 +316,74 @@ fn read_types(path: &Path, parse: fn(&str) -> Option<PropertyType>) -> BTreeMap<
         .collect()
 }
 
+/// The `pinned` place of a raw entry (a non-negative integer), if it has one.
+fn pinned_of(entry: &serde_json::Value) -> Option<u32> {
+    entry
+        .get("pinned")?
+        .as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+}
+
+/// The pins of Writer's file, leniently (a broken file has none).
+fn read_pins(path: &Path) -> BTreeMap<String, u32> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(file) = serde_json::from_slice::<TypesFile>(&bytes) else {
+        return BTreeMap::new();
+    };
+    file.types
+        .iter()
+        .filter_map(|(k, v)| Some((normalize(k), pinned_of(v)?)))
+        .collect()
+}
+
+/// Keys of an entry that [`Recorded`] owns; every other key (`pinned`, one a later build adds)
+/// is carried over when the type is rewritten.
+const OWNED_KEYS: [&str; 3] = ["type", "values", "icons"];
+
+/// `new` (a freshly built entry) plus every key of `old` it does not own. A bare type string
+/// becomes an object when there is something to carry.
+fn carry_extras(old: Option<&serde_json::Value>, new: serde_json::Value) -> serde_json::Value {
+    let extras: Vec<_> = old
+        .and_then(|o| o.as_object())
+        .into_iter()
+        .flatten()
+        .filter(|(k, _)| !OWNED_KEYS.contains(&k.as_str()))
+        .collect();
+    if extras.is_empty() {
+        return new;
+    }
+    let mut object = match new {
+        serde_json::Value::String(ty) => serde_json::json!({ "type": ty }),
+        other => other,
+    };
+    for (k, v) in extras {
+        object[k] = v.clone();
+    }
+    object
+}
+
+/// An entry left without anything to say collapses: only a `type` back to the bare string,
+/// nothing at all to no entry.
+fn tidy(entry: serde_json::Value) -> Option<serde_json::Value> {
+    match &entry {
+        serde_json::Value::Object(o) if o.is_empty() => None,
+        serde_json::Value::Object(o) if o.len() == 1 => match o.get("type") {
+            Some(t @ serde_json::Value::String(_)) => Some(t.clone()),
+            _ => Some(entry),
+        },
+        _ => Some(entry),
+    }
+}
+
 /// Both records of a vault, merged with Writer's winning.
 #[derive(Debug, Default)]
 pub struct TypeTable {
     writer: BTreeMap<String, Recorded>,
     obsidian: BTreeMap<String, Recorded>,
+    /// Pinned properties (lower-cased name -> place), from Writer's record only.
+    pins: BTreeMap<String, u32>,
 }
 
 impl TypeTable {
@@ -324,7 +391,13 @@ impl TypeTable {
         TypeTable {
             writer: read_types(&root.join(WRITER_FILE), PropertyType::parse),
             obsidian: read_types(&root.join(OBSIDIAN_FILE), PropertyType::parse_obsidian),
+            pins: read_pins(&root.join(WRITER_FILE)),
         }
+    }
+
+    /// The place of `name` among the pinned properties, if it is pinned.
+    pub fn pinned(&self, name: &str) -> Option<u32> {
+        self.pins.get(&normalize(name)).copied()
     }
 
     /// The recorded type of `name`, if any, and whose record it is.
@@ -365,7 +438,10 @@ impl TypeTable {
 
     /// Every recorded name (lower-cased), Writer's and Obsidian's.
     pub fn names(&self) -> impl Iterator<Item = &String> {
-        self.writer.keys().chain(self.obsidian.keys())
+        self.writer
+            .keys()
+            .chain(self.obsidian.keys())
+            .chain(self.pins.keys())
     }
 
     /// The type of `name`: the recorded one, else inferred from `observed` (value type -> notes).
@@ -496,6 +572,8 @@ pub struct PropertyTypeInfo {
     pub values: Vec<String>,
     /// An enum's optional value icons (`emoji:<emoji>` / `icon:<Hugeicons name>` by value).
     pub icons: BTreeMap<String, String>,
+    /// The place among the pinned properties (0 first), `None` when not pinned.
+    pub pinned: Option<u32>,
 }
 
 /// The vault's properties (from the index counts, merged case-insensitively) plus every recorded
@@ -539,6 +617,7 @@ pub fn report(root: &Path, counts: Vec<PropertyCount>) -> Vec<PropertyTypeInfo> 
                 obsidian_type: ty.obsidian_name(multi),
                 values: table.values(&norm).to_vec(),
                 icons: table.icons(&norm),
+                pinned: table.pinned(&norm),
             }
         })
         .collect()
@@ -592,13 +671,7 @@ pub fn set_type_with_icons(
         ));
     }
     let dir = writer_dir(root)?;
-    let mut file = match std::fs::read(dir.join("property-types.json")) {
-        Ok(bytes) => serde_json::from_slice::<TypesFile>(&bytes).map_err(|e| {
-            PropertyTypeError::Invalid(format!("{WRITER_FILE} is not valid JSON: {e}"))
-        })?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => TypesFile::default(),
-        Err(e) => return Err(PropertyTypeError::Io(e.to_string())),
-    };
+    let mut file = read_file(&dir)?;
     let recorded = file
         .types
         .get(&key)
@@ -620,13 +693,89 @@ pub fn set_type_with_icons(
     } else {
         (Vec::new(), BTreeMap::new())
     };
-    file.types
-        .insert(key, Recorded { ty, values, icons }.to_entry());
+    let entry = carry_extras(
+        file.types.get(&key),
+        Recorded { ty, values, icons }.to_entry(),
+    );
+    file.types.insert(key, entry);
+    write_file(&dir, &file)
+}
+
+/// Writer's record as stored; a missing file is an empty one, an invalid one is refused.
+fn read_file(dir: &Path) -> Result<TypesFile, PropertyTypeError> {
+    match std::fs::read(dir.join("property-types.json")) {
+        Ok(bytes) => serde_json::from_slice::<TypesFile>(&bytes).map_err(|e| {
+            PropertyTypeError::Invalid(format!("{WRITER_FILE} is not valid JSON: {e}"))
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(TypesFile::default()),
+        Err(e) => Err(PropertyTypeError::Io(e.to_string())),
+    }
+}
+
+/// Atomic replace of Writer's record: the one place the file is written.
+fn write_file(dir: &Path, file: &TypesFile) -> Result<(), PropertyTypeError> {
     let mut body =
-        serde_json::to_string_pretty(&file).map_err(|e| PropertyTypeError::Io(e.to_string()))?;
+        serde_json::to_string_pretty(file).map_err(|e| PropertyTypeError::Io(e.to_string()))?;
     body.push('\n');
-    crate::plugins::write_atomic(&dir, "property-types.json", body.as_bytes())
+    crate::plugins::write_atomic(dir, "property-types.json", body.as_bytes())
         .map_err(PropertyTypeError::Io)
+}
+
+/// Pin (`true`) or unpin `name` vault-wide in Writer's own file: a pin takes the next place after
+/// the existing ones, an unpin closes the gap so the places stay 0, 1, 2... A pin on a name with
+/// no entry writes `{"pinned": n}` alone (its type stays inferred, or Obsidian's); pinning a
+/// pinned name or unpinning a free one writes nothing. The rest of the entry (type, values, icons,
+/// keys this build does not know) is untouched, and so is `.obsidian`.
+pub fn set_pinned(root: &Path, name: &str, pinned: bool) -> Result<(), PropertyTypeError> {
+    let key = normalize(name);
+    if key.is_empty() || key.contains(['\n', '\r']) {
+        return Err(PropertyTypeError::Invalid(
+            "a property name must be one non-empty line".into(),
+        ));
+    }
+    let dir = writer_dir(root)?;
+    let mut file = read_file(&dir)?;
+    // the file's keys are matched as the table reads them: lower-cased
+    let stored = file.types.keys().find(|k| normalize(k) == key).cloned();
+    let current = stored.as_ref().and_then(|k| pinned_of(&file.types[k]));
+    if current.is_some() == pinned {
+        return Ok(());
+    }
+    if pinned {
+        let next = file
+            .types
+            .values()
+            .filter_map(pinned_of)
+            .max()
+            .map_or(0, |n| n + 1);
+        let k = stored.unwrap_or(key);
+        let entry = file.types.remove(&k).unwrap_or(serde_json::json!({}));
+        let mut object = match entry {
+            serde_json::Value::String(ty) => serde_json::json!({ "type": ty }),
+            other => other,
+        };
+        object["pinned"] = serde_json::json!(next);
+        file.types.insert(k, object);
+    } else if let Some(k) = stored {
+        let mut object = file.types.remove(&k).unwrap_or_default();
+        if let Some(o) = object.as_object_mut() {
+            o.remove("pinned");
+        }
+        if let Some(entry) = tidy(object) {
+            file.types.insert(k, entry);
+        }
+        // close the gap
+        let mut order: Vec<(u32, String)> = file
+            .types
+            .iter()
+            .filter_map(|(k, v)| Some((pinned_of(v)?, k.clone())))
+            .collect();
+        order.sort();
+        for (place, (_, k)) in order.into_iter().enumerate() {
+            file.types.get_mut(&k).unwrap()["pinned"] = serde_json::json!(place);
+        }
+    }
+    write_file(&dir, &file)
 }
 
 /// Append to every enum property's list the text values the notes hold that the list lacks (the
@@ -1616,5 +1765,150 @@ mod tests {
         let json = serde_json::to_value(&r[0]).unwrap();
         assert_eq!(json["type"], "enum");
         assert_eq!(json["values"], serde_json::json!(["todo", "done"]));
+    }
+
+    fn record(root: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join(WRITER_FILE)).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn pins_take_the_next_place_and_unpinning_closes_the_gap() {
+        let v = tempfile::tempdir().unwrap();
+        for n in ["Status", "priority", "due"] {
+            set_pinned(v.path(), n, true).unwrap();
+        }
+        let t = TypeTable::load(v.path());
+        assert_eq!(
+            [t.pinned("status"), t.pinned("PRIORITY"), t.pinned("due")],
+            [Some(0), Some(1), Some(2)]
+        );
+        set_pinned(v.path(), "status", false).unwrap();
+        let t = TypeTable::load(v.path());
+        assert_eq!(
+            [t.pinned("status"), t.pinned("priority"), t.pinned("due")],
+            [None, Some(0), Some(1)]
+        );
+        assert!(record(v.path())["types"].get("status").is_none());
+    }
+
+    #[test]
+    fn pinning_is_idempotent_and_unpinning_a_free_name_writes_nothing() {
+        let v = tempfile::tempdir().unwrap();
+        set_pinned(v.path(), "due", false).unwrap();
+        assert!(!v.path().join(WRITER_FILE).exists());
+        set_pinned(v.path(), "due", true).unwrap();
+        set_pinned(v.path(), "due", true).unwrap();
+        assert_eq!(TypeTable::load(v.path()).pinned("due"), Some(0));
+        assert_eq!(
+            record(v.path())["types"]["due"],
+            serde_json::json!({"pinned": 0})
+        );
+    }
+
+    #[test]
+    fn a_pin_on_an_untyped_property_leaves_its_type_inferred() {
+        let v = tempfile::tempdir().unwrap();
+        set_pinned(v.path(), "due", true).unwrap();
+        let t = TypeTable::load(v.path());
+        assert_eq!(t.recorded("due"), None);
+        let counts = vec![PropertyCount {
+            key: "due".into(),
+            count: 2,
+            types: [("date".to_string(), 2)].into(),
+        }];
+        let r = report(v.path(), counts);
+        assert_eq!(
+            (r[0].ty, r[0].source, r[0].pinned),
+            (PropertyType::Date, TypeSource::Inferred, Some(0))
+        );
+        // a pin on a name no note uses is still reported
+        set_pinned(v.path(), "ghost", true).unwrap();
+        let r = report(v.path(), vec![]);
+        assert!(r.iter().any(|i| i.key == "ghost" && i.pinned == Some(1)));
+    }
+
+    #[test]
+    fn pinning_keeps_the_type_values_icons_and_unknown_keys() {
+        let v = tempfile::tempdir().unwrap();
+        write(
+            v.path(),
+            WRITER_FILE,
+            r#"{"types":{"status":{"type":"enum","values":["todo","done"],"icons":{"done":"emoji:✅"},"future":[1]},"n":"number"}}"#,
+        );
+        set_pinned(v.path(), "status", true).unwrap();
+        set_pinned(v.path(), "n", true).unwrap();
+        let r = record(v.path());
+        assert_eq!(r["types"]["status"]["future"], serde_json::json!([1]));
+        assert_eq!(r["types"]["status"]["pinned"], 0);
+        assert_eq!(
+            r["types"]["n"],
+            serde_json::json!({"type": "number", "pinned": 1})
+        );
+        // the type is still read, and a type change keeps the pin and the unknown key
+        set_type(v.path(), "n", PropertyType::Text, None, vec![]).unwrap();
+        set_type(
+            v.path(),
+            "status",
+            PropertyType::Enum,
+            Some(vec!["a".into()]),
+            vec![],
+        )
+        .unwrap();
+        let r = record(v.path());
+        assert_eq!(
+            r["types"]["n"],
+            serde_json::json!({"type": "text", "pinned": 1})
+        );
+        assert_eq!(r["types"]["status"]["pinned"], 0);
+        assert_eq!(r["types"]["status"]["future"], serde_json::json!([1]));
+        // unpin collapses the entry back to a bare string
+        set_pinned(v.path(), "n", false).unwrap();
+        assert_eq!(record(v.path())["types"]["n"], "text");
+    }
+
+    #[test]
+    fn typing_a_pinned_untyped_property_keeps_the_pin() {
+        let v = tempfile::tempdir().unwrap();
+        set_pinned(v.path(), "due", true).unwrap();
+        set_type(v.path(), "due", PropertyType::Date, None, vec![]).unwrap();
+        assert_eq!(
+            record(v.path())["types"]["due"],
+            serde_json::json!({"type": "date", "pinned": 0})
+        );
+        assert_eq!(
+            TypeTable::load(v.path()).recorded("due"),
+            Some((PropertyType::Date, TypeSource::Writer))
+        );
+    }
+
+    #[test]
+    fn pinning_never_writes_obsidian_and_refuses_bad_names() {
+        let v = tempfile::tempdir().unwrap();
+        let obsidian = r#"{"types":{"due":"date"}}"#;
+        write(v.path(), OBSIDIAN_FILE, obsidian);
+        set_pinned(v.path(), "due", true).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(v.path().join(OBSIDIAN_FILE)).unwrap(),
+            obsidian
+        );
+        let t = TypeTable::load(v.path());
+        assert_eq!(
+            t.recorded("due"),
+            Some((PropertyType::Date, TypeSource::Obsidian))
+        );
+        assert_eq!(t.pinned("due"), Some(0));
+        assert!(set_pinned(v.path(), "  ", true).is_err());
+        assert!(set_pinned(v.path(), "a\nb", true).is_err());
+    }
+
+    #[test]
+    fn a_broken_record_refuses_a_pin_and_is_left_alone() {
+        let v = tempfile::tempdir().unwrap();
+        write(v.path(), WRITER_FILE, "{not json");
+        assert!(set_pinned(v.path(), "due", true).is_err());
+        assert_eq!(
+            std::fs::read_to_string(v.path().join(WRITER_FILE)).unwrap(),
+            "{not json"
+        );
     }
 }

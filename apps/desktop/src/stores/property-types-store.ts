@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { propertyTypes, propertyTypeSet } from "@/lib/property-types-ipc";
+import { propertyPinSet, propertyTypes, propertyTypeSet } from "@/lib/property-types-ipc";
 import { typeKey, type PropertyType, type PropertyTypeInfo } from "@/lib/property-types";
 import { onPropertyTypesChanged } from "@/lib/property-types-events";
 
@@ -22,6 +22,9 @@ interface PropertyTypesState {
     values?: string[],
     icons?: Record<string, string>,
   ) => Promise<void>;
+  /** Pin or unpin `name` vault-wide (the one write path of pins); rolls the local state back when
+   *  the write fails. A pin takes the next place, an unpin closes the gap, as the backend does. */
+  setPinned: (name: string, pinned: boolean) => Promise<void>;
   /** Set (or with `null` remove) the icon of one value of an enum property through `setType`, the
    *  one write path; the values and the other icons stay. */
   setEnumIcon: (name: string, value: string, icon: string | null) => Promise<void>;
@@ -94,6 +97,7 @@ export const usePropertyTypesStore = create<PropertyTypesState>((set, get) => ({
             : type,
       // an unseeded enum shows its recorded list (if any) until the refetch brings the seed
       values: type === "enum" ? (values ?? (before?.type === "enum" ? before.values : [])) : [],
+      pinned: before?.pinned ?? null,
       icons:
         type === "enum"
           ? Object.fromEntries(
@@ -122,6 +126,37 @@ export const usePropertyTypesStore = create<PropertyTypesState>((set, get) => ({
       throw e;
     }
     // The mismatch count depends on the new type; the observed values do not change.
+    void get()
+      .load(true)
+      .catch(() => {});
+  },
+  setPinned: async (name, pinned) => {
+    const key = typeKey(name);
+    const before = get().byKey;
+    const info = before[key];
+    if (info && (info.pinned != null) !== pinned) {
+      const places = Object.values(before).flatMap((i) => (i.pinned == null ? [] : [i.pinned]));
+      const gone = info.pinned;
+      set({
+        byKey: Object.fromEntries(
+          Object.entries(before).map(([k, i]) => [
+            k,
+            k === key
+              ? { ...i, pinned: pinned ? Math.max(-1, ...places) + 1 : null }
+              : !pinned && gone != null && i.pinned != null && i.pinned > gone
+                ? { ...i, pinned: i.pinned - 1 }
+                : i,
+          ]),
+        ),
+      });
+    }
+    try {
+      await propertyPinSet(name, pinned);
+    } catch (e) {
+      set({ byKey: before });
+      throw e;
+    }
+    // an untyped name had no entry to update: the refetch brings it
     void get()
       .load(true)
       .catch(() => {});

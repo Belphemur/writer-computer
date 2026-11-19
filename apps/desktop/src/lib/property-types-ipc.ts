@@ -20,3 +20,9 @@ export function propertyTypeSet(
 ): Promise<void> {
   return invoke("property_type_set", { name, ty, values: values ?? null, icons: icons ?? null });
 }
+
+/** Pin or unpin a property vault-wide (a flag in `.writer/property-types.json`, never
+ *  `.obsidian`). */
+export function propertyPinSet(name: string, pinned: boolean): Promise<void> {
+  return invoke("property_pin_set", { name, pinned });
+}

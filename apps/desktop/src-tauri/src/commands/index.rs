@@ -351,6 +351,25 @@ pub async fn property_type_set(
     .await
 }
 
+/// Pin or unpin a property vault-wide (the properties panel shows pinned ones in its collapsed
+/// header): a flag in `.writer/property-types.json`, never `.obsidian`.
+#[tauri::command]
+pub async fn property_pin_set(
+    name: String,
+    pinned: bool,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    blocking(move || {
+        let (_, index) = window_index(&app, &webview)?;
+        crate::property_types::set_pinned(index.root(), &name, pinned).map_err(|e| match e {
+            crate::property_types::PropertyTypeError::Invalid(m) => AppError::InvalidPath(m),
+            other => AppError::Io(other.to_string()),
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn index_query_files(
     filter: FileFilter,

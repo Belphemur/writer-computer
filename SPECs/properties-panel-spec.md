@@ -27,7 +27,7 @@ The frontmatter is not part of the CodeMirror document. `OpenFile.frontmatter` (
 ### Collapsed / expanded
 
 - Header: one button with a chevron, `Properties (N)` and `aria-expanded`/`aria-controls`; a click, Enter or Space toggles. One click either way.
-- Collapsed: that row only, plus up to three tag chips (`tags`/`tag` values, list or string) and `+n` for the rest.
+- Collapsed: that row only, plus up to three tag chips (`tags`/`tag` values, list or string) and `+n` for the rest, then one chip per pinned property the note has (vault-wide pins, edited in place; see [`properties-types-spec.md`](properties-types-spec.md) "Pinned properties"). Expanded, pinned rows come first and each row has a pin button next to the ×.
 - Default state: the setting `editor.properties-default-collapsed`, an enum: `auto` (default) collapses a block with more than 6 properties or more than 8 lines; `collapsed` always; `expanded` never. A toggle on a note overrides it for that note until the app quits (not persisted; keyed by path). Thresholds: `PROPERTIES_COLLAPSE_AUTO_PROPS`, `PROPERTIES_COLLAPSE_AUTO_LINES`.
 - Expanded: the body is capped at `max-h-[40vh]` and scrolls inside, so a huge block cannot push the note off screen. A Source button (`aria-pressed`) swaps the rows for a textarea with the raw YAML.
 - Not collapsible away: a note with no frontmatter shows nothing; typing `---` on the first line of such a note still opens an empty panel (existing `editor-clipboard.ts` behaviour) with the add-property field focused.

@@ -163,6 +163,7 @@ describe("type rules", () => {
       obsidianType: "text",
       values: [],
       icons: {},
+      pinned: null,
     }) as PropertyTypeInfo;
   test("a vault-inferred url is vault-wide: a lone address among prose stays text", () => {
     expect(effectiveType(r("a: x.com"), inferred("url")).type).toBe("url");

@@ -721,6 +721,7 @@ pub fn run() {
             commands::index::index_properties,
             commands::index::property_types,
             commands::index::property_type_set,
+            commands::index::property_pin_set,
             commands::index::index_get_metadata,
             commands::index::index_search,
             commands::index::search_kinds,
