@@ -18,6 +18,18 @@ use std::rc::Rc;
 const MAX_FORMULA_NESTING: usize = 48;
 const MAX_EVAL_DEPTH: usize = 384;
 
+/// Which language's semantics the interpreter applies. `Bases` is the Obsidian Bases language
+/// and never changes; `Dql` is Dataview's query language lowered onto the same engine
+/// (`crate::dql`), switched on by a document's `dialect: dql` and contained in `dialect.rs`:
+/// swizzled member access, DQL truthiness, `file.*` fields Bases lacks, inline fields,
+/// canonical field names and the DQL-only functions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dialect {
+    #[default]
+    Bases,
+    Dql,
+}
+
 /// Parsed formulas of a base (name -> compiled expression). A formula with a
 /// syntax error keeps its error and only fails where it is used (U20).
 #[derive(Debug, Default)]
@@ -81,6 +93,7 @@ pub struct Interp<'a> {
     pub clock: &'a dyn Clock,
     pub row: Rc<dyn RowContext>,
     pub this: Option<Rc<dyn RowContext>>,
+    pub dialect: Dialect,
     formulas: &'a FormulaSet,
     memo: RefCell<HashMap<String, Value>>,
     active: RefCell<Vec<String>>,
@@ -99,12 +112,26 @@ impl<'a> Interp<'a> {
             clock,
             row,
             this,
+            dialect: Dialect::Bases,
             formulas,
             memo: RefCell::new(HashMap::new()),
             active: RefCell::new(Vec::new()),
             // deterministic: derived from the injected clock
             rng: Cell::new((clock.now_utc_ms() as u64) ^ 0x9E37_79B9_7F4A_7C15),
             depth: Cell::new(0),
+        }
+    }
+
+    pub fn with_dialect(mut self, dialect: Dialect) -> Interp<'a> {
+        self.dialect = dialect;
+        self
+    }
+
+    /// Truthiness under the active dialect (an empty list or object is falsy in DQL).
+    pub fn truthy(&self, v: &Value) -> bool {
+        match self.dialect {
+            Dialect::Bases => v.truthy(),
+            Dialect::Dql => super::dialect::truthy(v),
         }
     }
 
@@ -152,6 +179,11 @@ impl<'a> Interp<'a> {
     /// (`metadata.version`, same as `note.metadata.version`): an exact name always wins, so a
     /// property that really contains a dot keeps working.
     pub fn note_value(&self, ctx: &Rc<dyn RowContext>, key: &str) -> Value {
+        if self.dialect == Dialect::Dql {
+            if let Some(v) = super::dialect::note_value(self, ctx, key) {
+                return v;
+            }
+        }
         if let Some(v) = ctx.property(key) {
             return self.coerce_property(ctx, v);
         }
@@ -218,6 +250,11 @@ impl<'a> Interp<'a> {
             return Value::err(ErrorKind::Runtime, format!("file not found: {path}"));
         };
         let meta = ctx.meta();
+        if self.dialect == Dialect::Dql {
+            if let Some(v) = super::dialect::file_field(self, &ctx, path, name) {
+                return v;
+            }
+        }
         match name {
             "name" => Value::str(file_name(path)),
             "basename" => Value::str(file_basename(path)),
@@ -404,7 +441,7 @@ impl<'a> Interp<'a> {
                     return v;
                 }
                 match op {
-                    UnaryOp::Not => Value::Bool(!v.truthy()),
+                    UnaryOp::Not => Value::Bool(!self.truthy(&v)),
                     UnaryOp::Neg => match v {
                         Value::Number(n) => Value::Number(-n),
                         Value::Duration(d) => Value::Duration(d.neg()),
@@ -449,6 +486,10 @@ impl<'a> Interp<'a> {
             }
             Value::String(ref s) if name == "length" => Value::Number(s.chars().count() as f64),
             Value::List(ref l) if name == "length" => Value::Number(l.len() as f64),
+            // DQL swizzling: a field of a list is the list of that field of each element.
+            Value::List(l) if self.dialect == Dialect::Dql => {
+                Value::List(l.into_iter().map(|v| self.get_field(v, name)).collect())
+            }
             Value::Object(o) => o
                 .into_iter()
                 .find(|(k, _)| k == name)
@@ -492,28 +533,28 @@ impl<'a> Interp<'a> {
                 if let Value::Error(_) = a {
                     return a;
                 }
-                if !a.truthy() {
+                if !self.truthy(&a) {
                     return Value::Bool(false);
                 }
                 let b = self.eval(r, sc);
                 if let Value::Error(_) = b {
                     return b;
                 }
-                Value::Bool(b.truthy())
+                Value::Bool(self.truthy(&b))
             }
             BinaryOp::Or => {
                 let a = self.eval(l, sc);
                 if let Value::Error(_) = a {
                     return a;
                 }
-                if a.truthy() {
+                if self.truthy(&a) {
                     return Value::Bool(true);
                 }
                 let b = self.eval(r, sc);
                 if let Value::Error(_) = b {
                     return b;
                 }
-                Value::Bool(b.truthy())
+                Value::Bool(self.truthy(&b))
             }
             _ => {
                 let a = self.eval(l, sc);

@@ -11,6 +11,7 @@ import {
   MIN_CARD_SIZE,
 } from "../lib/collections";
 import { ROW_HEIGHTS } from "../lib/grid";
+import { CalendarView } from "./calendar-view";
 import { CardsView } from "./cards-view";
 import { ListView } from "./list-view";
 import { TableView } from "./table-view";
@@ -66,6 +67,15 @@ const LIST_OPTIONS: ViewOption[] = [
   { type: "text", key: "separator", displayName: "Separators", default: DEFAULT_SEPARATOR },
 ];
 
+const CALENDAR_OPTIONS: ViewOption[] = [
+  {
+    type: "property",
+    key: "dateProperty",
+    displayName: "Date property",
+    placeholder: "Last column",
+  },
+];
+
 registerBaseView({
   type: "table",
   name: "Table",
@@ -89,4 +99,12 @@ registerBaseView({
   owner: CORE_OWNER,
   Component: ListView,
   options: () => LIST_OPTIONS,
+});
+registerBaseView({
+  type: "calendar",
+  name: "Calendar",
+  icon: "calendar",
+  owner: CORE_OWNER,
+  Component: CalendarView,
+  options: () => CALENDAR_OPTIONS,
 });

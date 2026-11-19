@@ -1,0 +1,301 @@
+{
+  "comment": "DQL vectors: a fixture vault, a clock, and each query's lowered result. Read by src-tauri/src/dql/tests.rs. Cells are the displayed text; `same_as_base` says the query also runs, with the same rows, as the plain .base it converts to; `unmapped` names the clauses with no Bases form.",
+  "now": "2024-03-15T10:30:00",
+  "this": "Home.md",
+  "vault": {
+    "Home.md": "---\ntitle: Home\n---\n# Home\nSee [[Alpha]] and [[Beta]].\n",
+    "Projects/Alpha.md": "---\nstatus: active\npriority: 2\ndue: 2024-03-10\ntags: [work, urgent]\nowner: \"[[Ann]]\"\n---\n# Alpha\nLinks to [[Beta]]. #alpha\nOwner:: Ann Lee\nEstimated Hours:: 5\n- [ ] write plan\n- [x] kickoff [due:: 2024-03-01]\n",
+    "Projects/Beta.md": "---\nstatus: done\npriority: 1\ndue: 2024-02-01\ntags: [work, home]\n---\n# Beta\nBack to [[Alpha]].\n(hours:: 8)\n",
+    "Projects/Gamma.md": "---\nstatus: active\npriority: 3\n---\nGamma [[Home]]\n",
+    "Notes/Daily 2024-03-05.md": "Met about [[Alpha]].\n",
+    "Notes/Ideas.md": "---\nrating: 4\n---\n#idea/big thoughts\n",
+    "People/Ann.md": "---\naliases: [A]\n---\nAnn\n"
+  },
+  "queries": [
+    {
+      "name": "table_sorted_desc",
+      "dql": "TABLE status, priority FROM \"Projects\" SORT priority DESC",
+      "columns": ["File", "status", "priority"],
+      "rows": [
+        ["Gamma", "active", "3"],
+        ["Alpha", "active", "2"],
+        ["Beta", "done", "1"]
+      ],
+      "same_as_base": true
+    },
+    {
+      "name": "without_id_alias_where",
+      "dql": "TABLE WITHOUT ID file.name AS Name, status FROM \"Projects\" WHERE status = \"active\" SORT file.name",
+      "columns": ["Name", "status"],
+      "rows": [
+        ["Alpha", "active"],
+        ["Gamma", "active"]
+      ],
+      "same_as_base": true
+    },
+    {
+      "name": "list_from_tag",
+      "dql": "LIST FROM #work",
+      "columns": ["File"],
+      "rows": [["Alpha"], ["Beta"]],
+      "same_as_base": true
+    },
+    {
+      "name": "list_with_format",
+      "dql": "LIST priority FROM \"Projects\" WHERE priority >= 2 SORT priority",
+      "columns": ["File", "priority"],
+      "rows": [
+        ["Alpha", "2"],
+        ["Gamma", "3"]
+      ],
+      "same_as_base": true
+    },
+    {
+      "name": "from_incoming_link",
+      "dql": "LIST FROM [[Alpha]]",
+      "columns": ["File"],
+      "rows": [["Home"], ["Daily 2024-03-05"], ["Beta"]],
+      "same_as_base": true
+    },
+    {
+      "name": "from_outgoing_link",
+      "dql": "LIST FROM outgoing([[Alpha]])",
+      "columns": ["File"],
+      "rows": [["Ann"], ["Beta"]],
+      "same_as_base": true
+    },
+    {
+      "name": "from_and_not",
+      "dql": "LIST FROM \"Projects\" AND -#home",
+      "columns": ["File"],
+      "rows": [["Alpha"], ["Gamma"]],
+      "same_as_base": true
+    },
+    {
+      "name": "from_or",
+      "dql": "LIST FROM #urgent OR #home",
+      "columns": ["File"],
+      "rows": [["Alpha"], ["Beta"]],
+      "same_as_base": true
+    },
+    {
+      "name": "from_single_file",
+      "dql": "LIST FROM \"Projects/Beta\"",
+      "columns": ["File"],
+      "rows": [["Beta"]],
+      "same_as_base": true
+    },
+    {
+      "name": "sort_two_keys",
+      "dql": "TABLE status FROM \"Projects\" SORT status ASC, priority DESC",
+      "columns": ["File", "status"],
+      "rows": [
+        ["Gamma", "active"],
+        ["Alpha", "active"],
+        ["Beta", "done"]
+      ],
+      "same_as_base": true
+    },
+    {
+      "name": "limit",
+      "dql": "LIST FROM \"Projects\" SORT priority DESC LIMIT 2",
+      "columns": ["File"],
+      "rows": [["Gamma"], ["Alpha"]],
+      "same_as_base": true
+    },
+    {
+      "name": "group_by_rows",
+      "dql": "TABLE length(rows) AS n, rows.file.name AS names FROM \"Projects\" GROUP BY status",
+      "columns": ["Group", "n", "names"],
+      "rows": [
+        ["active", "2", "Alpha, Gamma"],
+        ["done", "1", "Beta"]
+      ],
+      "unmapped": ["GROUP BY"]
+    },
+    {
+      "name": "group_by_then_sort",
+      "dql": "TABLE sum(rows.priority) AS total FROM \"Projects\" GROUP BY status SORT key DESC",
+      "columns": ["Group", "total"],
+      "rows": [
+        ["done", "1"],
+        ["active", "5"]
+      ],
+      "unmapped": ["GROUP BY", "SORT"]
+    },
+    {
+      "name": "flatten_with_where",
+      "dql": "TABLE WITHOUT ID file.name AS Note, t FROM \"Projects\" FLATTEN tags AS t WHERE t = \"work\"",
+      "columns": ["Note", "t"],
+      "rows": [
+        ["Alpha", "work"],
+        ["Beta", "work"]
+      ],
+      "unmapped": ["FLATTEN"]
+    },
+    {
+      "name": "inline_full_line_field",
+      "dql": "TABLE Owner FROM \"Projects\" WHERE Owner",
+      "columns": ["File", "Owner"],
+      "rows": [["Alpha", "Ann Lee"]]
+    },
+    {
+      "name": "inline_canonical_key",
+      "dql": "TABLE estimated-hours AS h FROM \"Projects\" WHERE estimated-hours",
+      "columns": ["File", "h"],
+      "rows": [["Alpha", "5"]]
+    },
+    {
+      "name": "inline_wrapped_field",
+      "dql": "TABLE hours FROM \"Projects\" WHERE hours",
+      "columns": ["File", "hours"],
+      "rows": [["Beta", "8"]]
+    },
+    {
+      "name": "file_fields",
+      "dql": "TABLE WITHOUT ID file.name, file.folder, file.ext, length(file.outlinks) AS outs FROM \"Projects/Alpha\"",
+      "columns": ["file.name", "file.folder", "file.ext", "outs"],
+      "rows": [["Alpha", "Projects", "md", "2"]],
+      "same_as_base": true
+    },
+    {
+      "name": "date_comparison",
+      "dql": "TABLE due FROM \"Projects\" WHERE due AND due < date(2024-03-01)",
+      "columns": ["File", "due"],
+      "rows": [["Beta", "2024-02-01"]],
+      "same_as_base": true
+    },
+    {
+      "name": "dateformat_luxon",
+      "dql": "TABLE dateformat(due, \"yyyy/MM/dd\") AS d FROM \"Projects\" WHERE due SORT due",
+      "columns": ["File", "d"],
+      "rows": [
+        ["Beta", "2024/02/01"],
+        ["Alpha", "2024/03/10"]
+      ],
+      "unmapped": ["TABLE"]
+    },
+    {
+      "name": "contains_on_a_list",
+      "dql": "LIST FROM \"Projects\" WHERE contains(tags, \"urgent\")",
+      "columns": ["File"],
+      "rows": [["Alpha"]],
+      "same_as_base": true
+    },
+    {
+      "name": "choice_and_default",
+      "dql": "TABLE choice(priority > 1, \"high\", \"low\") AS p, default(due, \"none\") AS d FROM \"Projects\" SORT file.name",
+      "columns": ["File", "p", "d"],
+      "rows": [
+        ["Alpha", "high", "2024-03-10"],
+        ["Beta", "low", "2024-02-01"],
+        ["Gamma", "high", "none"]
+      ],
+      "same_as_base": true
+    },
+    {
+      "name": "calendar_rows",
+      "dql": "CALENDAR due FROM \"Projects\" WHERE due",
+      "columns": ["File", "due"],
+      "rows": [
+        ["Alpha", "2024-03-10"],
+        ["Beta", "2024-02-01"]
+      ],
+      "kind": "calendar",
+      "same_as_base": true
+    },
+    {
+      "name": "comments_between_clauses",
+      "dql": "// the work\nTABLE status // columns\nFROM \"Projects\" // where from\nWHERE priority = 3",
+      "columns": ["File", "status"],
+      "rows": [["Gamma", "active"]],
+      "same_as_base": true
+    },
+    {
+      "name": "file_tags_keep_hash_and_parents",
+      "dql": "TABLE file.tags AS t FROM \"Notes\" WHERE file.name = \"Ideas\"",
+      "columns": ["File", "t"],
+      "rows": [["Ideas", "#idea, #idea/big"]],
+      "unmapped": ["TABLE"]
+    },
+    {
+      "name": "this_is_the_embedding_note",
+      "dql": "LIST FROM \"Projects\" WHERE file.name != this.file.name",
+      "columns": ["File"],
+      "rows": [["Beta"], ["Gamma"]],
+      "this": "Projects/Alpha.md",
+      "same_as_base": true
+    },
+    {
+      "name": "negation_of_a_missing_field",
+      "dql": "LIST FROM \"Projects\" WHERE !due",
+      "columns": ["File"],
+      "rows": [["Gamma"]],
+      "same_as_base": true
+    },
+    {
+      "name": "file_day_from_the_name",
+      "dql": "TABLE file.day FROM \"Notes\" WHERE file.day",
+      "columns": ["File", "file.day"],
+      "rows": [["Daily 2024-03-05", "2024-03-05"]],
+      "unmapped": ["TABLE", "WHERE"]
+    },
+    {
+      "name": "tasks_of_a_file_with_a_lambda",
+      "dql": "TABLE join(map(file.tasks, (t) => t.text), \"; \") AS tasks FROM \"Projects/Alpha\"",
+      "columns": ["File", "tasks"],
+      "rows": [["Alpha", "write plan; kickoff [due:: 2024-03-01]"]],
+      "unmapped": ["TABLE"]
+    }
+  ],
+  "errors": [
+    {
+      "dql": "TABLE status FROM \"Projects\" WHERE",
+      "line": 1,
+      "col": 35,
+      "contains": "expected a value"
+    },
+    {
+      "dql": "LIST WHERE nosuch(1)",
+      "line": 1,
+      "col": 12,
+      "contains": "unknown function"
+    },
+    {
+      "dql": "TABLE status\nFROM \"Projects\"\nWHERE status = ",
+      "line": 3,
+      "col": 16,
+      "contains": "expected a value"
+    },
+    {
+      "dql": "LIST FROM \"Projects\" LIMIT 3 SORT file.name",
+      "line": 1,
+      "col": 22,
+      "contains": "LIMIT must come after"
+    },
+    {
+      "dql": "LIST FROM",
+      "line": 1,
+      "col": 10,
+      "contains": "expected a source"
+    },
+    {
+      "dql": "LIST FROM csv(\"a.csv\")",
+      "line": 1,
+      "col": 11,
+      "contains": "csv()"
+    },
+    {
+      "dql": "CHART x",
+      "line": 1,
+      "col": 1,
+      "contains": "expected TABLE, LIST, TASK or CALENDAR"
+    },
+    {
+      "dql": "LIST WHERE file.nope = 1",
+      "line": 1,
+      "col": 12,
+      "contains": "unknown file field"
+    }
+  ]
+}

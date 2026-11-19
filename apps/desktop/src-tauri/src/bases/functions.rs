@@ -786,6 +786,11 @@ pub fn function_infos() -> Vec<FunctionInfo> {
 // ---------------------------------------------------------------------------
 
 pub fn call_global(interp: &Interp, name: &str, args: &[Expr], sc: &Scope) -> Value {
+    if interp.dialect == super::interp::Dialect::Dql {
+        if let Some(v) = super::dialect::call(interp, name, args, sc) {
+            return v;
+        }
+    }
     let def = FUNCTIONS
         .iter()
         .find(|d| matches!(d.recv, Global) && d.name == name);
@@ -1065,7 +1070,7 @@ fn g_if(i: &Interp, sc: &Scope, _: &Value, args: &[Expr]) -> Res {
     if let Value::Error(_) = cond {
         return ok(cond);
     }
-    if cond.truthy() {
+    if i.truthy(&cond) {
         ok(i.eval(&args[1], sc))
     } else if let Some(e) = args.get(2) {
         ok(i.eval(e, sc))
@@ -1492,7 +1497,7 @@ fn l_filter(i: &Interp, sc: &Scope, r: &Value, args: &[Expr]) -> Res {
         if let Value::Error(_) = keep {
             return ok(keep);
         }
-        if keep.truthy() {
+        if i.truthy(&keep) {
             out.push(v.clone());
         }
     }

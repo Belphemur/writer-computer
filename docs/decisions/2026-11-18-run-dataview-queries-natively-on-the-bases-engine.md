@@ -61,10 +61,10 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A ` ```dataview ` TABLE, LIST and TASK block render the rows the fixture expects.
-- [ ] "Convert to Base" turns a DQL block into a working base.
-- [ ] `dataviewjs` never runs.
-- [ ] `writer dql` prints the same rows as the block.
+- [x] A ` ```dataview ` TABLE, LIST and TASK block render the rows the fixture expects (TABLE and LIST run on the fixture vault; TASK is lowered and unit-tested, its execution waits for the Tasks feature's rows).
+- [x] "Convert to Base" turns a DQL block into a working base.
+- [x] `dataviewjs` never runs.
+- [x] `writer dql` prints the same rows as the block.
 
 ## Pros and Cons of the Options
 
@@ -85,4 +85,4 @@ Chosen option: **A**.
 
 ## More Information
 
-Supersedes, with the Tasks ADR, `2026-11-18-make-tasks-native-and-run-dataview-queries-on-the-bases-engine` (split into two plugins at the user's request). Related: the Bases ADRs, the Tasks ADR (task rows and list items).
+Supersedes, with the Tasks ADR, `2026-11-18-make-tasks-native-and-run-dataview-queries-on-the-bases-engine` (split into two plugins at the user's request). Spec: [`SPECs/dataview-spec.md`](../../SPECs/dataview-spec.md). Related: the Bases ADRs, the Tasks ADR (task rows and list items).

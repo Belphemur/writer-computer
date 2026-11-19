@@ -1476,6 +1476,7 @@ fn query_filter_error_is_an_explicit_view_error() {
     let src = MemSource::new(&store);
     let lenient = QueryOptions {
         filter_errors: FilterErrorPolicy::RowFails,
+        ..QueryOptions::default()
     };
     let r = run_view(&doc, None, &src, &clock(), &lenient);
     assert!(r.error.is_none() && r.rows.is_empty());

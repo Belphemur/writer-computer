@@ -17,6 +17,7 @@ pub(crate) mod edges;
 pub(crate) mod frontmatter;
 pub mod fts;
 pub mod graph;
+pub mod inline_fields;
 pub(crate) mod markdown;
 pub mod names;
 mod note;

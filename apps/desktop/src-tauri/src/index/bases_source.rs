@@ -102,6 +102,8 @@ impl Env {
             props: OnceCell::new(),
             tags: OnceCell::new(),
             links: OnceCell::new(),
+            inline: OnceCell::new(),
+            items: OnceCell::new(),
         });
         self.rows.borrow_mut().insert(path, Some(Rc::clone(&row)));
         row
@@ -118,6 +120,8 @@ struct IndexRow {
     props: OnceCell<Vec<(String, Value)>>,
     tags: OnceCell<Vec<String>>,
     links: OnceCell<(Vec<LinkValue>, Vec<LinkValue>)>,
+    inline: OnceCell<Vec<(String, Value)>>,
+    items: OnceCell<Vec<Value>>,
 }
 
 fn typed_date(text: &str, offset: i32) -> Option<Value> {
@@ -262,6 +266,54 @@ impl IndexRow {
         })
     }
 
+    /// The note's Dataview inline fields (`key:: value`), the raw key and its canonical form.
+    fn load_inline(&self) -> Res<Vec<(String, Value)>> {
+        let offset = self.env.offset;
+        self.env.index.read(|c| {
+            let mut st = c.prepare_cached(
+                "SELECT key, canonical_key, raw FROM inline_fields WHERE file_id = ?1 ORDER BY rowid",
+            )?;
+            let rows: Vec<(String, String, String)> = st
+                .query_map([self.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<Result<_, _>>()?;
+            Ok(super::inline_fields::merge_fields(&rows, offset))
+        })
+    }
+
+    /// The note's tasks as list-item objects (`file.tasks` of the DQL dialect). The Tasks
+    /// feature's `list_items` table widens this to every list item.
+    fn load_items(&self) -> Res<Vec<Value>> {
+        self.env.index.read(|c| {
+            let mut st = c.prepare_cached(
+                "SELECT line, status, text FROM tasks WHERE file_id = ?1 ORDER BY line",
+            )?;
+            let items = st
+                .query_map([self.id], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|(line, status, text)| {
+                    let done = status.eq_ignore_ascii_case("x");
+                    Value::Object(vec![
+                        ("text".into(), Value::String(text)),
+                        ("line".into(), Value::Number(line as f64)),
+                        ("task".into(), Value::Bool(true)),
+                        ("status".into(), Value::String(status.clone())),
+                        ("checked".into(), Value::Bool(status != " ")),
+                        ("completed".into(), Value::Bool(done)),
+                        ("fullyCompleted".into(), Value::Bool(done)),
+                    ])
+                })
+                .collect();
+            Ok(items)
+        })
+    }
+
     fn cached<T: Clone + Default>(&self, cell: &OnceCell<T>, load: impl FnOnce() -> Res<T>) -> T {
         if let Some(v) = cell.get() {
             return v.clone();
@@ -341,6 +393,14 @@ impl RowContext for IndexRow {
 
     fn context_for_path(&self, path: &str) -> Option<Rc<dyn RowContext>> {
         self.env.row_by_path(path).map(|r| r as Rc<dyn RowContext>)
+    }
+
+    fn inline_fields(&self) -> Vec<(String, Value)> {
+        self.cached(&self.inline, || self.load_inline())
+    }
+
+    fn list_items(&self) -> Vec<Value> {
+        self.cached(&self.items, || self.load_items())
     }
 }
 

@@ -104,6 +104,10 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `base:create` — Create a note in a base view. Params: `file=`, `path=`, `view=` (view name), `name=` (note name), `content=` (initial text). Flags: `open` (accepted, ignored), `newtab` (accepted, ignored).
 - `base:query` — Run a base view. Params: `file=`, `path=`, `view=` (view name), `format=` (json | csv | tsv | md | paths).
 
+## Dataview
+
+- `dql` — Run a Dataview query (TABLE, LIST, TASK, CALENDAR). Params: `query=` (the DQL text), `file=`, `path=`, `format=` (json | csv | tsv | md | paths).
+
 ## Excalidraw
 
 - `excalidraw:create` — Create a drawing from a spec of boxes and arrows. Params: `path=` (required; new drawing, e.g. Diagrams/Arch.excalidraw.md), `spec=` (JSON: {"nodes":[{"id","text","shape"?,"x"?,"y"?,"color"?}],"edges":[["from","to","label"?]],"groups":[{"nodes":[ids]}],"direction":"LR|TB"}). Flags: `overwrite` (replace an existing file).

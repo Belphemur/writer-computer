@@ -89,6 +89,8 @@ mod agent;
 pub(crate) mod bases;
 #[path = "../../../features/code-files/rust/mod.rs"]
 pub(crate) mod code_files;
+#[path = "../../../features/dataview/rust/mod.rs"]
+mod dataview;
 #[path = "../../../features/excalidraw/rust/mod.rs"]
 mod excalidraw;
 #[path = "../../../features/graph/rust/mod.rs"]
@@ -280,6 +282,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &agent::Agent,
         &bases::Bases,
         &code_files::CodeFiles,
+        &dataview::Dataview,
         &excalidraw::Excalidraw,
         &graph::Graph,
         &icons::Icons,
@@ -1124,6 +1127,7 @@ mod tests {
                 "agent",
                 "bases",
                 "code-files",
+                "dataview",
                 "excalidraw",
                 "graph",
                 "icons"
@@ -1178,8 +1182,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            6,
-            "the agent, bases, code-files, excalidraw, graph and icons still start"
+            7,
+            "the agent, bases, code-files, dataview, excalidraw, graph and icons still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1366,6 +1370,7 @@ mod tests {
                 "base:views",
                 "base:create",
                 "base:query",
+                "dql",
                 "excalidraw:create",
                 "excalidraw:add",
                 "excalidraw:connect",
@@ -1383,6 +1388,8 @@ mod tests {
                 "excalidraw"
             } else if c.name.starts_with("icon:") {
                 "icons"
+            } else if c.name == "dql" {
+                "dataview"
             } else {
                 "bases"
             })));
@@ -1395,7 +1402,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 14
+            crate::cli::registry::COMMANDS.len() + 15
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

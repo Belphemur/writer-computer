@@ -10,6 +10,7 @@ pub mod ast;
 pub mod choices;
 pub mod context;
 pub mod datetime;
+pub mod dialect;
 pub mod document;
 pub mod functions;
 pub mod interp;

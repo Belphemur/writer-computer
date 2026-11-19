@@ -1,0 +1,19 @@
+{
+  "id": "dataview",
+  "name": "Dataview",
+  "version": "1.0.0",
+  "description": "Dataview queries: ```dataview blocks render live on the Bases engine, Convert to Base, dataviewjs shown as a placeholder (never run), and the writer dql command.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "low",
+    "note": "The block renderer loads with the first editor; queries run in Rust only while a block is visible. The Rust half (dql_lower, dql_convert and the writer dql command) takes effect at the next launch."
+  },
+  "rust": {
+    "commands": ["dql_convert", "dql_lower"],
+    "cliCommands": ["dql"]
+  },
+  "contributes": {
+    "editorExtensions": ["dataview.blocks"]
+  }
+}

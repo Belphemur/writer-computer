@@ -86,8 +86,16 @@ pub struct Heading {
     pub line: u32,
 }
 
+/// A Dataview inline field with its 1-based file line (see [`super::inline_fields`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedField {
+    pub line: u32,
+    pub field: super::inline_fields::InlineField,
+}
+
 #[derive(Debug, Default)]
 pub struct BodyScan {
+    pub inline_fields: Vec<LocatedField>,
     pub links: Vec<LocatedLink>,
     /// Normalised (lowercase) tags exactly as written; ancestors are added by
     /// [`with_ancestors`].
@@ -577,6 +585,14 @@ pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
         if let Some(t) = task(line, line_no) {
             scan.tasks.push(t);
         }
+        scan.inline_fields.extend(
+            super::inline_fields::scan_line(line)
+                .into_iter()
+                .map(|field| LocatedField {
+                    line: line_no,
+                    field,
+                }),
+        );
         let masked = mask_code_spans(line);
         let links = scan_links(&masked);
         scan_tags(&masked, &links, &mut scan.tags);

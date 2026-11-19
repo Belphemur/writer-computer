@@ -3,12 +3,16 @@
 // formula; it gets both through the service `bases.views` (`getService`, `@/lib/features/services`)
 // and takes the TYPES from here with `import type` (erased: no runtime edge between the features).
 // Nothing else of this folder is a contract.
+import type { ComponentType } from "react";
 import type { BaseEvalArgs, Cell } from "./lib/types";
+import type { EmbeddedBaseProps } from "./view/embedded";
 import type { BaseViewEntry } from "./lib/view-registry";
 import type { ValueOption, ViewOption } from "./lib/view-options";
 
 export type { BaseDocument, BaseQueryResult, BaseView, Cell, CellValue } from "./lib/types";
+export type { BaseEmbed } from "./lib/embeds";
 export type { BaseViewEntry, BaseViewProps, MountedView } from "./lib/view-registry";
+export type { EmbeddedBaseProps } from "./view/embedded";
 export type { ValueOption, ViewOption } from "./lib/view-options";
 
 /** The service id, one of the manifest's `provides`. */
@@ -25,4 +29,10 @@ export interface BasesViewsService {
   /** `note.x` and `x` are the same property. */
   canonicalPropertyKey(id: string): string;
   flattenOptions(options: readonly ViewOption[]): ValueOption[];
+  /**
+   * The component that shows a base embedded in a note (a `.base` file or inline `.base` text),
+   * loaded on demand: how another feature shows a computed base (Dataview's blocks) without
+   * importing this feature's internals.
+   */
+  loadEmbeddedBase(): Promise<ComponentType<EmbeddedBaseProps>>;
 }

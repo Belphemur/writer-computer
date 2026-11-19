@@ -17,6 +17,7 @@ export const basesViewsService: BasesViewsService = {
   evaluate: baseEval,
   canonicalPropertyKey,
   flattenOptions,
+  loadEmbeddedBase: () => import("./view/embedded").then((m) => m.EmbeddedBase),
 };
 
 /** Switching the feature off removes what plugins registered, so a stale entry never comes back

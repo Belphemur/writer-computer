@@ -9,6 +9,7 @@ mod commands;
 mod config;
 #[cfg(target_os = "macos")]
 mod dock_menu;
+pub mod dql;
 mod error;
 mod features;
 pub mod fs_entry;

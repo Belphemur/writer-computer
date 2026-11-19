@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-dataview",
+  "description": "Grants the dataview feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["dataview:default"]
+}

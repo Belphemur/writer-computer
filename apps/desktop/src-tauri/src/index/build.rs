@@ -251,6 +251,7 @@ fn delete_children(conn: &Connection, id: i64) -> rusqlite::Result<()> {
         "DELETE FROM edges WHERE src_id = ?1",
         "DELETE FROM tasks WHERE file_id = ?1",
         "DELETE FROM headings WHERE file_id = ?1",
+        "DELETE FROM inline_fields WHERE file_id = ?1",
     ] {
         conn.prepare_cached(sql)?.execute([id])?;
     }
@@ -452,6 +453,21 @@ fn write_children(
         conn.prepare_cached("INSERT INTO headings(file_id,level,text,line) VALUES(?1,?2,?3,?4)")?;
     for h in &note.headings {
         st.execute(params![id, h.level, h.text, h.line])?;
+    }
+    let mut st = conn.prepare_cached(
+        "INSERT INTO inline_fields(file_id,line,key,canonical_key,raw,wrapping) VALUES(?1,?2,?3,?4,?5,?6)",
+    )?;
+    for f in &note.inline_fields {
+        let canonical = super::inline_fields::canonical_key(&f.field.key);
+        let wrapping = f.field.wrapping.map(String::from);
+        st.execute(params![
+            id,
+            f.line,
+            f.field.key,
+            canonical,
+            f.field.value,
+            wrapping
+        ])?;
     }
     Ok(())
 }

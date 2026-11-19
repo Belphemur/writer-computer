@@ -14,7 +14,7 @@ use super::ast::{BinaryOp, Expr, PropertyId};
 use super::choices::{self, FilterErrorPolicy};
 use super::context::{Clock, FileMeta, RowContext};
 use super::document::{Direction, Document, Filter, Node, View};
-use super::interp::{FormulaSet, Interp, Scope};
+use super::interp::{Dialect, FormulaSet, Interp, Scope};
 use super::lexer::ParseError;
 use super::parser;
 use super::value::{compare_for_sort, ErrorKind, ErrorValue, Value};
@@ -79,13 +79,26 @@ pub trait RowSource {
 pub struct QueryOptions {
     /// What a filter evaluation error does (U4, spec 7.5).
     pub filter_errors: FilterErrorPolicy,
+    /// The language the expressions follow. A document with `dialect: dql` selects the DQL
+    /// dialect whatever this says (and then a row whose filter fails is dropped, as in Dataview).
+    pub dialect: Dialect,
 }
 
 impl Default for QueryOptions {
     fn default() -> Self {
         QueryOptions {
             filter_errors: choices::FILTER_ERROR_POLICY,
+            dialect: Dialect::Bases,
         }
+    }
+}
+
+/// The dialect a document asks for: `dialect: dql` (a Writer extension key of the lowered DQL
+/// query, `crate::dql`), else Bases.
+fn doc_dialect(doc: &Document) -> Dialect {
+    match doc.extra.iter().find(|(k, _)| k == "dialect") {
+        Some((_, Node::Str(s))) if s == "dql" => Dialect::Dql,
+        _ => Dialect::Bases,
     }
 }
 
@@ -274,7 +287,7 @@ fn eval_filter(c: &Compiled, it: &Interp) -> Result<bool, FilterFailure> {
                 expression: src.clone(),
                 error: e,
             }),
-            v => Ok(v.truthy()),
+            v => Ok(it.truthy(&v)),
         },
         Compiled::And(v) => {
             for x in v {
@@ -476,6 +489,26 @@ struct Matched<'a> {
     group: Value,
 }
 
+/// The sort and group keys of one row that passed the filters.
+fn keys_of<'a>(
+    interp: Interp<'a>,
+    path: String,
+    sort_ids: &[PropertyId],
+    group_id: &Option<PropertyId>,
+) -> Matched<'a> {
+    let sort = sort_ids.iter().map(|id| interp.eval_property(id)).collect();
+    let group = group_id
+        .as_ref()
+        .map(|id| interp.eval_property(id))
+        .unwrap_or(Value::Null);
+    Matched {
+        interp,
+        path,
+        sort,
+        group,
+    }
+}
+
 /// Run one view of `doc`. `view_name` `None` selects the first view (or the
 /// implicit table when the base has none).
 pub fn run_view(
@@ -485,6 +518,14 @@ pub fn run_view(
     clock: &dyn Clock,
     opts: &QueryOptions,
 ) -> BaseQueryResult {
+    let mut opts = *opts;
+    if doc_dialect(doc) == Dialect::Dql {
+        opts.dialect = Dialect::Dql;
+    }
+    if opts.dialect == Dialect::Dql {
+        opts.filter_errors = FilterErrorPolicy::RowFails;
+    }
+    let opts = &opts;
     let implicit;
     let (view, index) = match (doc.view(view_name), view_name) {
         (Some(v), _) => (v, doc.views.iter().position(|x| std::ptr::eq(x, v))),
@@ -640,9 +681,42 @@ fn execute(
         .as_ref()
         .map(|g| PropertyId::parse(&g.property));
 
+    let steps = match flatten_steps(view) {
+        Ok(s) => s,
+        Err((src, pe)) => {
+            let (line, col) = pe.line_col(&src);
+            return fail(
+                result,
+                QueryErrorKind::FilterSyntax,
+                format!("{} (line {line}, column {col})", pe.message),
+                Some(src),
+                None,
+            );
+        }
+    };
+    let dql_group = match dql_group(view) {
+        Ok(g) => g,
+        Err((src, pe)) => {
+            let (line, col) = pe.line_col(&src);
+            return fail(
+                result,
+                QueryErrorKind::FilterSyntax,
+                format!("{} (line {line}, column {col})", pe.message),
+                Some(src),
+                None,
+            );
+        }
+    };
+    let new_interp = |row: Rc<dyn RowContext>| {
+        Interp::new(clock, &formulas, row, this.clone()).with_dialect(opts.dialect)
+    };
+
     let mut matched: Vec<Matched> = Vec::new();
+    // Rows that passed the filters, kept as rows (not yet `Matched`) only while FLATTEN steps
+    // still have to expand them.
+    let mut passed: Vec<Rc<dyn RowContext>> = Vec::new();
     'rows: for row in candidates {
-        let interp = Interp::new(clock, &formulas, row.clone(), this.clone());
+        let interp = new_interp(row.clone());
         for c in &compiled {
             match eval_filter(c, &interp) {
                 Ok(true) => {}
@@ -661,17 +735,17 @@ fn execute(
                 },
             }
         }
-        let sort = sort_ids.iter().map(|id| interp.eval_property(id)).collect();
-        let group = group_id
-            .as_ref()
-            .map(|id| interp.eval_property(id))
-            .unwrap_or(Value::Null);
-        matched.push(Matched {
-            interp,
-            path: row.path(),
-            sort,
-            group,
-        });
+        if steps.is_empty() {
+            matched.push(keys_of(interp, row.path(), &sort_ids, &group_id));
+        } else {
+            passed.push(row);
+        }
+    }
+    if !steps.is_empty() {
+        for row in flatten_rows(passed, &steps, &new_interp) {
+            let path = row.path();
+            matched.push(keys_of(new_interp(row), path, &sort_ids, &group_id));
+        }
     }
     result.total_matched = matched.len();
 
@@ -689,6 +763,18 @@ fn execute(
             }
             Ordering::Equal
         });
+    }
+
+    if let (Some(group), Some(by)) = (&dql_group, &view.group_by) {
+        return group_rows(
+            result,
+            matched,
+            &cols,
+            by.direction,
+            group,
+            view,
+            &new_interp,
+        );
     }
 
     // 4. group, 5. limit
@@ -1025,4 +1111,320 @@ fn summarize(name: &str, values: &[Value], customs: &CustomSummaries, clock: &dy
     let sc = Scope::root();
     let sc = sc.child(vec![("values", Value::List(values.to_vec()))]);
     interp.eval(expr, &sc)
+}
+
+// ---------------------------------------------------------------------------
+// Writer extensions used by lowered DQL queries (crate::dql, SPECs/dataview-spec.md)
+// ---------------------------------------------------------------------------
+
+/// A row with one more field: what `FLATTEN expr AS name` makes of each element.
+struct FlatRow {
+    inner: Rc<dyn RowContext>,
+    name: String,
+    value: Value,
+}
+
+impl RowContext for FlatRow {
+    fn path(&self) -> String {
+        self.inner.path()
+    }
+    fn meta(&self) -> FileMeta {
+        self.inner.meta()
+    }
+    fn properties(&self) -> Vec<(String, Value)> {
+        let mut props: Vec<(String, Value)> = self
+            .inner
+            .properties()
+            .into_iter()
+            .filter(|(k, _)| *k != self.name)
+            .collect();
+        props.push((self.name.clone(), self.value.clone()));
+        props
+    }
+    fn property(&self, key: &str) -> Option<Value> {
+        if key == self.name {
+            Some(self.value.clone())
+        } else {
+            self.inner.property(key)
+        }
+    }
+    fn tags(&self) -> Vec<String> {
+        self.inner.tags()
+    }
+    fn links(&self) -> Vec<super::value::LinkValue> {
+        self.inner.links()
+    }
+    fn embeds(&self) -> Vec<super::value::LinkValue> {
+        self.inner.embeds()
+    }
+    fn backlinks(&self) -> Vec<String> {
+        self.inner.backlinks()
+    }
+    fn resolve_link(&self, text: &str) -> Option<String> {
+        self.inner.resolve_link(text)
+    }
+    fn context_for_path(&self, path: &str) -> Option<Rc<dyn RowContext>> {
+        self.inner.context_for_path(path)
+    }
+    fn inline_fields(&self) -> Vec<(String, Value)> {
+        self.inner.inline_fields()
+    }
+    fn list_items(&self) -> Vec<Value> {
+        self.inner.list_items()
+    }
+}
+
+/// The row of one `GROUP BY` group: `key` (and the `AS` name) and `rows`, the member rows as
+/// page objects.
+struct GroupRow {
+    props: Vec<(String, Value)>,
+    /// The member rows: a `rows.file.name` reaches the file of each through them.
+    members: Vec<Rc<dyn RowContext>>,
+}
+
+impl RowContext for GroupRow {
+    fn path(&self) -> String {
+        String::new()
+    }
+    fn meta(&self) -> FileMeta {
+        FileMeta::default()
+    }
+    fn properties(&self) -> Vec<(String, Value)> {
+        self.props.clone()
+    }
+    fn tags(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn links(&self) -> Vec<super::value::LinkValue> {
+        Vec::new()
+    }
+    fn embeds(&self) -> Vec<super::value::LinkValue> {
+        Vec::new()
+    }
+    fn backlinks(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn resolve_link(&self, _: &str) -> Option<String> {
+        None
+    }
+    fn context_for_path(&self, path: &str) -> Option<Rc<dyn RowContext>> {
+        let own = self.members.iter().find(|m| m.path() == path);
+        own.cloned()
+            .or_else(|| self.members.first()?.context_for_path(path))
+    }
+}
+
+/// One `FLATTEN`: the expression, the name of the new field, and the `WHERE` filters that
+/// follow it (they may use the new field).
+struct FlattenStep {
+    expr: Expr,
+    name: String,
+    filters: Vec<Compiled>,
+}
+
+fn compile_where(node: Option<&Node>) -> Result<Vec<Compiled>, (String, ParseError)> {
+    let Some(Node::Seq(items)) = node else {
+        return Ok(Vec::new());
+    };
+    items
+        .iter()
+        .filter_map(Node::as_str)
+        .map(|src| compile_filter(&Filter::Expr(src.to_string())))
+        .collect()
+}
+
+fn field<'a>(map: &'a [(String, Node)], key: &str) -> Option<&'a Node> {
+    map.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+/// `flatten: [{expr, as, where?}]` of a view: the FLATTEN steps, in order.
+fn flatten_steps(view: &View) -> Result<Vec<FlattenStep>, (String, ParseError)> {
+    let Some((_, Node::Seq(items))) = view.extra.iter().find(|(k, _)| k == "flatten") else {
+        return Ok(Vec::new());
+    };
+    let mut steps = Vec::new();
+    for item in items {
+        let Node::Map(m) = item else { continue };
+        let Some(src) = field(m, "expr").and_then(Node::as_str) else {
+            continue;
+        };
+        let name = field(m, "as")
+            .and_then(Node::as_str)
+            .unwrap_or("value")
+            .to_string();
+        steps.push(FlattenStep {
+            expr: parser::parse(src).map_err(|e| (src.to_string(), e))?,
+            name,
+            filters: compile_where(field(m, "where"))?,
+        });
+    }
+    Ok(steps)
+}
+
+/// Expand each row by every step: a list yields one row per element, any other value one row
+/// carrying it, an error drops the row; then the step's filters.
+fn flatten_rows<'a>(
+    mut rows: Vec<Rc<dyn RowContext>>,
+    steps: &[FlattenStep],
+    new_interp: &dyn Fn(Rc<dyn RowContext>) -> Interp<'a>,
+) -> Vec<Rc<dyn RowContext>> {
+    for step in steps {
+        let mut out: Vec<Rc<dyn RowContext>> = Vec::new();
+        for row in rows {
+            let it = new_interp(row.clone());
+            let items = match it.eval(&step.expr, &Scope::root()) {
+                Value::Error(_) => continue,
+                Value::List(l) => l,
+                other => vec![other],
+            };
+            for value in items {
+                out.push(Rc::new(FlatRow {
+                    inner: row.clone(),
+                    name: step.name.clone(),
+                    value,
+                }));
+            }
+        }
+        out.retain(|row| {
+            let it = new_interp(row.clone());
+            step.filters
+                .iter()
+                .all(|f| eval_filter(f, &it).unwrap_or(false))
+        });
+        rows = out;
+    }
+    rows
+}
+
+/// `dqlGroup: {as, where?, sort?}` of a view with a `groupBy`: DQL's `GROUP BY`, which turns
+/// the groups themselves into the rows (`key`, `rows`) instead of grouping the rows, and the
+/// `WHERE` / `SORT` clauses that come after it.
+struct DqlGroup {
+    name: String,
+    filters: Vec<Compiled>,
+    sort: Vec<(PropertyId, Direction)>,
+}
+
+fn dql_group(view: &View) -> Result<Option<DqlGroup>, (String, ParseError)> {
+    let Some((_, Node::Map(m))) = view.extra.iter().find(|(k, _)| k == "dqlGroup") else {
+        return Ok(None);
+    };
+    let sort = match field(m, "sort") {
+        Some(Node::Seq(keys)) => keys
+            .iter()
+            .filter_map(|k| match k {
+                Node::Map(km) => {
+                    let id = PropertyId::parse(field(km, "property")?.as_str()?);
+                    let dir = match field(km, "direction").and_then(Node::as_str) {
+                        Some("DESC") => Direction::Desc,
+                        _ => Direction::Asc,
+                    };
+                    Some((id, dir))
+                }
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    Ok(Some(DqlGroup {
+        name: field(m, "as")
+            .and_then(Node::as_str)
+            .unwrap_or("key")
+            .to_string(),
+        filters: compile_where(field(m, "where"))?,
+        sort,
+    }))
+}
+
+/// The group-rows result: groups by key (ascending, like Dataview), one row per group, then the
+/// post-group filters, sorts and `limit`.
+fn group_rows<'a>(
+    mut result: BaseQueryResult,
+    matched: Vec<Matched<'a>>,
+    cols: &[(Column, PropertyId)],
+    direction: Direction,
+    group: &DqlGroup,
+    view: &View,
+    new_interp: &dyn Fn(Rc<dyn RowContext>) -> Interp<'a>,
+) -> BaseQueryResult {
+    let mut buckets: Vec<(Value, Vec<usize>)> = Vec::new();
+    let mut index_of: HashMap<String, usize> = HashMap::new();
+    for (i, m) in matched.iter().enumerate() {
+        let k = group_key_string(&m.group);
+        match index_of.get(&k) {
+            Some(&b) => buckets[b].1.push(i),
+            None => {
+                index_of.insert(k, buckets.len());
+                buckets.push((m.group.clone(), vec![i]));
+            }
+        }
+    }
+    let buckets = order_groups(buckets, direction, None);
+    let mut rows: Vec<Interp<'a>> = Vec::new();
+    for (key, idxs) in buckets {
+        let pages = idxs
+            .iter()
+            .map(|&i| super::dialect::page_object(&matched[i].interp))
+            .collect();
+        let mut props = vec![("key".to_string(), key.clone())];
+        if group.name != "key" {
+            props.push((group.name.clone(), key));
+        }
+        props.push(("rows".to_string(), Value::List(pages)));
+        let members = idxs
+            .iter()
+            .map(|&i| matched[i].interp.row.clone())
+            .collect();
+        rows.push(new_interp(Rc::new(GroupRow { props, members })));
+    }
+    rows.retain(|it| {
+        group
+            .filters
+            .iter()
+            .all(|f| eval_filter(f, it).unwrap_or(false))
+    });
+    if !group.sort.is_empty() {
+        let mut keyed: Vec<(Vec<Value>, Interp<'a>)> = rows
+            .into_iter()
+            .map(|it| {
+                (
+                    group
+                        .sort
+                        .iter()
+                        .map(|(id, _)| it.eval_property(id))
+                        .collect(),
+                    it,
+                )
+            })
+            .collect();
+        keyed.sort_by(|a, b| {
+            for (i, (_, dir)) in group.sort.iter().enumerate() {
+                let mut o = compare_for_sort(&a.0[i], &b.0[i]);
+                if *dir == Direction::Desc {
+                    o = o.reverse();
+                }
+                if o != Ordering::Equal {
+                    return o;
+                }
+            }
+            Ordering::Equal
+        });
+        rows = keyed.into_iter().map(|(_, it)| it).collect();
+    }
+    result.total_matched = rows.len();
+    if let Some(limit) = view.limit {
+        rows.truncate(limit.min(usize::MAX as u64) as usize);
+    }
+    result.rows = rows
+        .iter()
+        .map(|it| Row {
+            path: String::new(),
+            cells: cols
+                .iter()
+                .map(|(_, pid)| Cell::new(it.eval_property(pid)))
+                .collect(),
+        })
+        .collect();
+    result.summaries = vec![None; cols.len()];
+    result
 }

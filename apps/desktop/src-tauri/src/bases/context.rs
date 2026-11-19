@@ -120,6 +120,19 @@ pub trait RowContext {
     /// Row context of another file by vault path, for linked-note lookups
     /// (`link.asFile().properties`, `file("x").hasTag(..)`).
     fn context_for_path(&self, path: &str) -> Option<Rc<dyn RowContext>>;
+
+    /// Dataview inline fields (`key:: value`) as `(key, value)` pairs, the raw key and its
+    /// canonical form both present. Only the DQL dialect reads them (Bases results never see
+    /// them); a source without inline fields keeps the empty default.
+    fn inline_fields(&self) -> Vec<(String, Value)> {
+        Vec::new()
+    }
+
+    /// The file's list items as objects (`text`, `line`, `task`, `status`, `completed`, ...):
+    /// `file.lists` and `file.tasks` of the DQL dialect.
+    fn list_items(&self) -> Vec<Value> {
+        Vec::new()
+    }
 }
 
 /// `name` of `a/b/c.md` is `c.md`.

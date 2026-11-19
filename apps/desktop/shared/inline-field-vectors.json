@@ -1,0 +1,151 @@
+{
+  "comment": "Dataview inline fields: scan (line -> fields), canonical key, and value parsing. Read by src-tauri/src/index/inline_fields.rs. Behaviour follows Dataview's public algorithm (MIT).",
+  "scan": [
+    {
+      "why": "square wrapper",
+      "line": "[due:: 2024-01-01] text",
+      "fields": [{ "key": "due", "value": "2024-01-01", "wrapping": "[" }]
+    },
+    {
+      "why": "round wrapper",
+      "line": "(rating:: 5)",
+      "fields": [{ "key": "rating", "value": "5", "wrapping": "(" }]
+    },
+    {
+      "why": "whole line",
+      "line": "Status:: Done",
+      "fields": [{ "key": "Status", "value": "Done", "wrapping": null }]
+    },
+    {
+      "why": "list item whole line",
+      "line": "- Status:: Done",
+      "fields": [{ "key": "Status", "value": "Done", "wrapping": null }]
+    },
+    {
+      "why": "numbered item whole line",
+      "line": "1. Key:: v",
+      "fields": [{ "key": "Key", "value": "v", "wrapping": null }]
+    },
+    {
+      "why": "task keeps wrapped fields",
+      "line": "- [ ] task [due:: 2024-01-01]",
+      "fields": [{ "key": "due", "value": "2024-01-01", "wrapping": "[" }]
+    },
+    { "why": "task has no whole-line field", "line": "- [ ] task due:: x", "fields": [] },
+    {
+      "why": "emphasis around the key",
+      "line": "**Key**:: value",
+      "fields": [{ "key": "Key", "value": "value", "wrapping": null }]
+    },
+    {
+      "why": "nested brackets inside a value",
+      "line": "[a:: [[Note]] and (b)]",
+      "fields": [{ "key": "a", "value": "[[Note]] and (b)", "wrapping": "[" }]
+    },
+    {
+      "why": "escaped closer",
+      "line": "[a:: x \\] y]",
+      "fields": [{ "key": "a", "value": "x \\] y", "wrapping": "[" }]
+    },
+    {
+      "why": "overlapping field dropped",
+      "line": "[a:: (b:: 1)]",
+      "fields": [{ "key": "a", "value": "(b:: 1)", "wrapping": "[" }]
+    },
+    {
+      "why": "a key with a bracket is no key",
+      "line": "[a[b:: 1]",
+      "fields": [{ "key": "b", "value": "1", "wrapping": "[" }]
+    },
+    { "why": "no field", "line": "plain text", "fields": [] },
+    {
+      "why": "unclosed wrapper falls back to a whole-line field (leading punctuation dropped)",
+      "line": "[unclosed:: 1",
+      "fields": [{ "key": "unclosed", "value": "1", "wrapping": null }]
+    },
+    { "why": "not a key", "line": "see https://x.com/a::b", "fields": [] },
+    {
+      "why": "two fields",
+      "line": "[a:: 1] and [b:: 2]",
+      "fields": [
+        { "key": "a", "value": "1", "wrapping": "[" },
+        { "key": "b", "value": "2", "wrapping": "[" }
+      ]
+    },
+    {
+      "why": "empty value",
+      "line": "[a:: ]",
+      "fields": [{ "key": "a", "value": "", "wrapping": "[" }]
+    },
+    {
+      "why": "mixed wrappers keep line order",
+      "line": "(b:: 2) [a:: 1]",
+      "fields": [
+        { "key": "b", "value": "2", "wrapping": "(" },
+        { "key": "a", "value": "1", "wrapping": "[" }
+      ]
+    }
+  ],
+  "canonical": [
+    { "name": "Some Key", "key": "some-key" },
+    { "name": "Due Date!", "key": "due-date" },
+    { "name": "snake_case", "key": "snake_case" },
+    { "name": "A/B", "key": "ab" },
+    { "name": "Due   Date", "key": "due-date" },
+    { "name": "Über Wert", "key": "über-wert" }
+  ],
+  "values": [
+    { "raw": "", "value": { "type": "null" } },
+    { "raw": "   ", "value": { "type": "null" } },
+    { "raw": "12", "value": { "type": "number", "value": 12.0 } },
+    { "raw": "-3.5", "value": { "type": "number", "value": -3.5 } },
+    { "raw": "true", "value": { "type": "bool", "value": true } },
+    { "raw": "null", "value": { "type": "null" } },
+    { "raw": "2024-03-05", "value": { "type": "date", "value": "2024-03-05" } },
+    { "raw": "2024-03", "value": { "type": "date", "value": "2024-03-01" } },
+    { "raw": "2024-03-05T10:30", "value": { "type": "date", "value": "2024-03-05T10:30" } },
+    { "raw": "2024-03-05T10", "value": { "type": "date", "value": "2024-03-05T10:00" } },
+    { "raw": "5 days", "value": { "type": "duration", "value": "5 days" } },
+    { "raw": "1d 2h", "value": { "type": "duration", "value": "1 days 2 hours" } },
+    { "raw": "4hr2min", "value": { "type": "duration", "value": "4 hours 2 minutes" } },
+    { "raw": "3 apples", "value": { "type": "text", "value": "3 apples" } },
+    { "raw": "\"quoted, text\"", "value": { "type": "text", "value": "quoted, text" } },
+    { "raw": "#tag/sub", "value": { "type": "tag", "value": "#tag/sub" } },
+    { "raw": "[[Note|alias]]", "value": { "type": "link", "value": "[[Note|alias]]" } },
+    { "raw": "![[img.png]]", "value": { "type": "link", "value": "[[img.png]]" } },
+    { "raw": "hello", "value": { "type": "text", "value": "hello" } },
+    { "raw": "a, b, c", "value": { "type": "text", "value": "a, b, c" } },
+    {
+      "raw": "1, 2, 3",
+      "value": {
+        "type": "list",
+        "items": [
+          { "type": "number", "value": 1.0 },
+          { "type": "number", "value": 2.0 },
+          { "type": "number", "value": 3.0 }
+        ]
+      }
+    },
+    {
+      "raw": "[[A]], [[B]]",
+      "value": {
+        "type": "list",
+        "items": [
+          { "type": "link", "value": "[[A]]" },
+          { "type": "link", "value": "[[B]]" }
+        ]
+      }
+    },
+    {
+      "raw": "2024-01-01, 2024-02-01",
+      "value": {
+        "type": "list",
+        "items": [
+          { "type": "date", "value": "2024-01-01" },
+          { "type": "date", "value": "2024-02-01" }
+        ]
+      }
+    },
+    { "raw": "1, oops", "value": { "type": "text", "value": "1, oops" } }
+  ]
+}

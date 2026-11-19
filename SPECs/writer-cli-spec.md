@@ -953,3 +953,7 @@ The Windows pipe, a second OS user being refused, `writer status`/`open`/`active
 ## Launcher for the agent pane
 
 The agent pane's `claude` process gets a `writer` command without any user setup: Writer links `<app data>/bin/writer` to its own binary and puts that directory first on the child's PATH. It does not replace the optional "Install 'writer' Command Line Tool" symlink. Details and tests: [`native-agent-spec.md`](native-agent-spec.md) "Writer CLI for the agent".
+
+## `writer dql` (Dataview feature)
+
+`writer dql query="TABLE file.name FROM #todo" [file=<note>|path=<note>] [format=json|csv|md|tsv|paths]` runs a Dataview query on the vault index with the same Rust engine as the note blocks and prints the rows; `file`/`path` sets `this`. Errors print the DQL line and column and exit non-zero. Provided by the `dataview` feature (absent when it is off); documented in the `writer-cli` skill. Spec: [`SPECs/dataview-spec.md`](dataview-spec.md).

@@ -1,4 +1,4 @@
-//! Schema v4 (`edges`, the note-graph table, replaces the v1 `links` table), open-or-rebuild.
+//! Schema v5 (`inline_fields` joins v4's `edges`, the note-graph table), open-or-rebuild.
 
 use super::IndexError;
 use rusqlite::{Connection, OpenFlags};
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 /// The core schema's version. The version stored in `meta` and compared on open is
 /// [`schema_version`]: this plus the suffix for the DDL features contribute.
-pub const SCHEMA_VERSION: &str = "4";
+pub const SCHEMA_VERSION: &str = "5";
 
 /// Core version plus `features::index_schema_suffix` (empty while no feature adds DDL), so a
 /// feature adding or changing a table rebuilds the rebuildable cache from its own folder.
@@ -17,7 +17,7 @@ pub fn schema_version() -> &'static str {
 }
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
-pub const PARSER_VERSION: &str = "3";
+pub const PARSER_VERSION: &str = "4";
 
 const SCHEMA: &str = "
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -82,6 +82,16 @@ CREATE TABLE headings(
   level INTEGER NOT NULL, text TEXT NOT NULL, line INTEGER NOT NULL
 );
 CREATE INDEX headings_file ON headings(file_id);
+-- Dataview inline fields (SPECs/dataview-spec.md, scanner in `inline_fields.rs`): one row per
+-- field occurrence; `raw` is the value text, parsed on read. `wrapping` is `[`, `(` or NULL
+-- (a whole-line field).
+CREATE TABLE inline_fields(
+  file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  line INTEGER NOT NULL, key TEXT NOT NULL, canonical_key TEXT NOT NULL,
+  raw TEXT NOT NULL, wrapping TEXT
+);
+CREATE INDEX inline_fields_file ON inline_fields(file_id);
+CREATE INDEX inline_fields_key ON inline_fields(canonical_key);
 ";
 
 /// The `edges` indexes: out-neighbours, backlinks (partial: resolved only), re-resolution by

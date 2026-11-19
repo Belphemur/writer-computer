@@ -31,7 +31,7 @@ Source keys used below:
 
 - Map and Kanban views (Phase 4+ stretch; Map needs the Maps community plugin, H:views).
 - Creating or editing filters, formulas and view settings through a full UI (v1 edits via a raw YAML editor and a minimal view menu; the full builder is a follow-up).
-- Dataview query compatibility (421 notes in the sampled vault use Dataview blocks; separate feature).
+- Dataview query compatibility (421 notes in the sampled vault use Dataview blocks; separate feature, now built on this engine: [`SPECs/dataview-spec.md`](dataview-spec.md)).
 - Sync, publish, mobile, Canvas embeds.
 - Custom functions for formulas (H:syntax says plugins will be able to add them "in the future"; no public API exists).
 - Pixel parity with Obsidian's chrome. Parity means the same data, not the same CSS.
@@ -577,3 +577,7 @@ CLI: `writer base:query`, `base:views`, `base:create`, `bases` ([writer-cli-spec
 ## Files expected to change (when implemented)
 
 Rust (done for Phase 0): `apps/desktop/src-tauri/Cargo.toml`, `src/index/` (schema, parsing, resolution, builder, queries, tests), `src/watcher.rs` (feed), `src/commands/index.rs`, `src/commands/mod.rs`, `src/lib.rs`. Rust (later phases): `src/bases/` (`.base` parser, expression engine, query executor, `base_query` in `src/commands/`), `src/cli/` (Obsidian-parity commands), `src/commands/{fs,search}.rs` (file-kind classification). Frontend: `features/bases/web/lib/` (YAML Document round-trip and patch helpers only, no evaluator), `features/bases/web/view/`, `src/components/editor-area/page-kinds/{base.ts,index.ts,views.tsx}`, CodeMirror `base-embed-decorations.ts`, `features/obsidian-host/web/host/api/{vault.ts,views.ts}`, `link-navigation.ts`, `wiki-link*.ts`, sidebar file list. Docs: `docs/` note for the index and `CHANGELOG.md` per the repo rules.
+
+## Dataview dialect, `calendar` view and extension keys
+
+The engine also serves DQL (spec [`SPECs/dataview-spec.md`](dataview-spec.md)). A document with the Writer key `dialect: dql` runs under `Dialect::Dql` (DQL truthiness, list swizzling, inline fields, extra `file.*` fields, the function table in `bases/dialect.rs`, filter errors drop the row); without it nothing changes, pinned by `the_dialect_never_changes_bases_results`. Writer extension keys, kept in `View.extra` and ignored by Obsidian: `flatten`, `dqlGroup`, `dateProperty`, `separator`; `rows: tasks` selects task rows (Tasks feature). The built-in `calendar` view type draws a Monday-first month grid from `dateProperty` (default: the last column).
