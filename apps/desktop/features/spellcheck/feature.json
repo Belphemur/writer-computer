@@ -32,7 +32,7 @@
       }
     ],
     "editorExtensions": ["spellcheck.linter"],
-    "statusItems": ["spellcheck.language"],
+    "statusItems": ["spellcheck.issues", "spellcheck.language"],
     "overlays": ["spellcheck.languagetool-choice"]
   }
 }

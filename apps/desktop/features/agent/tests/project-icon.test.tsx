@@ -333,7 +333,9 @@ describe("the icon set is lazy", () => {
       );
       expect(shards.length).toBeLessThanOrEqual(26);
       expect(size(holders[0]!)).toBeLessThan(total / 8);
-      expect(assets.length).toBeLessThan(600);
+      // A guard against an icon set split into thousands of files, not a bundle budget: lazy
+      // feature chunks (PDF, Excalidraw, spelling, search) add a few each.
+      expect(assets.length).toBeLessThan(800);
     } finally {
       rmSync(out, { recursive: true, force: true });
     }

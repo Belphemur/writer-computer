@@ -5,11 +5,14 @@
 // `overrides` the language the user picked for a note this session.
 import { create } from "zustand";
 import type { BlockLanguage } from "../ipc";
+import type { IssueGroup } from "./issue-groups";
 
 export interface NoteResult {
   blocks: BlockLanguage[];
   /** Languages a block is in that nothing can check (no dictionary installed). */
   missing: string[];
+  /** The findings as unique issues (the footer count and popover read these). */
+  groups: IssueGroup[];
 }
 
 interface SpellState {

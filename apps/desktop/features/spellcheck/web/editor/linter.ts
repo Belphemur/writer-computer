@@ -28,8 +28,10 @@ import {
   KEYS,
   writerCheckerActive,
 } from "../lib/settings";
+import { groupFindings } from "../lib/issue-groups";
 import { useSpellStore } from "../lib/spell-store";
 import { toDiagnostics, type ActionHandlers } from "./diagnostics";
+import { spellTooltipTheme } from "./tooltip-theme";
 
 /** Notes longer than this are not checked (a transfer of megabytes per pause is not worth it). */
 export const MAX_CHECK_CHARS = 1_000_000;
@@ -74,7 +76,11 @@ export async function runCheck(view: EditorView): Promise<Diagnostic[]> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const answer = await check({ path: notePath(abs), text, version: ++version, language });
       if (answer.stale) continue;
-      useSpellStore.getState().setResult(abs, { blocks: answer.blocks, missing: answer.missing });
+      useSpellStore.getState().setResult(abs, {
+        blocks: answer.blocks,
+        missing: answer.missing,
+        groups: groupFindings(answer.findings, text),
+      });
       return toDiagnostics(answer.findings, doc.length, handlers);
     }
   } catch (e) {
@@ -109,6 +115,7 @@ export function spellcheckExtension() {
       needsRefresh: (update) =>
         update.transactions.some((tr) => tr.effects.some((e) => e.is(recheck))),
     }),
+    spellTooltipTheme,
     followChanges,
   ];
 }

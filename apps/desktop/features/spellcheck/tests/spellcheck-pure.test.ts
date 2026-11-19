@@ -1,6 +1,7 @@
 // The pure parts of the web half: diagnostics, the language property edit, language names and the
 // settings readers (including which checker runs next to LanguageTool).
 // @vitest-environment jsdom
+import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -31,9 +32,13 @@ const finding = (over: Partial<Finding> = {}): Finding => ({
 });
 
 describe("diagnostics", () => {
+  const lintState = [];
   const handlers = { addWord: vi.fn(), ignoreRule: vi.fn() };
 
-  it("maps severity, caps replacements and clamps offsets", () => {
+  const cardOf = (d: Diagnostic, view: EditorView) => d.renderMessage!(view) as HTMLElement;
+  const chips = (card: HTMLElement) => [...card.querySelectorAll<HTMLButtonElement>("button")];
+
+  it("maps severity and clamps offsets, with no default actions", () => {
     const [d, s] = toDiagnostics(
       [finding(), finding({ kind: "style", ruleId: "Wordy", start: 2, end: 99 })],
       10,
@@ -41,25 +46,48 @@ describe("diagnostics", () => {
     );
     expect(d!.severity).toBe("warning");
     expect(s).toMatchObject({ severity: "info", from: 2, to: 10 });
-    // replacements plus "Add to dictionary" for a word rule; "Ignore rule" for the others
-    expect(d!.actions).toHaveLength(MAX_REPLACEMENTS + 1);
-    expect(d!.actions!.at(-1)!.name).toBe("Add to dictionary");
-    expect(s!.actions!.at(-1)!.name).toBe("Ignore rule");
+    expect(d!.actions).toBeUndefined();
   });
 
   it("drops a finding that fell past the end of the document", () => {
     expect(toDiagnostics([finding({ start: 20, end: 25 })], 10, handlers)).toEqual([]);
   });
 
-  it("replace edits the text, add-word and ignore-rule call the handlers", () => {
-    const view = new EditorView({ state: EditorState.create({ doc: "teh cat" }) });
+  it("renders a kind icon, the title, the message and word-only chips", () => {
+    const view = new EditorView({ state: EditorState.create({ doc: "x" }) });
+    const [d, s] = toDiagnostics(
+      [finding(), finding({ kind: "style", ruleId: "Wordy", replacements: ["", "x"] })],
+      10,
+      handlers,
+    );
+    const card = cardOf(d!, view);
+    expect(card.querySelector(".cm-spell-head svg")).not.toBeNull();
+    expect(card.querySelector(".cm-spell-title")!.textContent).toBe("Spelling");
+    expect(card.querySelector(".cm-spell-message")!.textContent).toBe("Possible misspelling");
+    const labels = chips(card).map((b) => b.textContent);
+    expect(labels).toEqual(["a", "b", "c", "d", "e", "Add to dictionary"]);
+    expect(labels.length - 1).toBe(MAX_REPLACEMENTS);
+    expect(chips(card).at(-1)!.querySelector("svg")).not.toBeNull();
+    const style = cardOf(s!, view);
+    expect(chips(style).map((b) => b.textContent)).toEqual(["Remove", "x", "Ignore rule"]);
+    expect(chips(style)[0]!.querySelector("svg")).not.toBeNull();
+    view.destroy();
+  });
+
+  it("replace edits the text at the mapped range, add-word and ignore-rule call the handlers", () => {
+    const state = EditorState.create({ doc: "teh cat", extensions: [lintState] });
+    const view = new EditorView({ state });
     const [d] = toDiagnostics([finding({ end: 3, replacements: ["the"] })], 7, handlers);
-    d!.actions![0]!.apply(view, 0, 3);
-    expect(view.state.doc.toString()).toBe("the cat");
-    d!.actions![1]!.apply(view, 4, 7);
-    expect(handlers.addWord).toHaveBeenCalledWith("cat");
+    view.dispatch(setDiagnostics(view.state, [d!]));
+    // an edit before the word after the check: the range maps
+    view.dispatch({ changes: { from: 0, insert: ">> " } });
+    const card = cardOf(d!, view);
+    chips(card)[0]!.click();
+    expect(view.state.doc.toString()).toBe(">> the cat");
+    chips(card).at(-1)!.click();
+    expect(handlers.addWord).toHaveBeenCalled();
     const [g] = toDiagnostics([finding({ ruleId: "ShouldOf", kind: "grammar" })], 7, handlers);
-    g!.actions!.at(-1)!.apply(view, 0, 3);
+    chips(cardOf(g!, view)).at(-1)!.click();
     expect(handlers.ignoreRule).toHaveBeenCalledWith("ShouldOf");
     view.destroy();
   });

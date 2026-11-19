@@ -24,7 +24,7 @@ pub mod options;
 pub mod personal;
 
 use self::cache::{Cache, Key};
-use self::checker::{dedupe, CheckProvider, Finding, Hit, Kind, Prose, Utf16Index};
+use self::checker::{dedupe, glued_to_mask, CheckProvider, Finding, Hit, Kind, Prose, Utf16Index};
 use self::harper::{HarperProvider, Spawner};
 use self::hunspell::HunspellProvider;
 use self::lang::{block_language, note_language, Detector, Lang, NoteLang, Source};
@@ -221,13 +221,15 @@ impl Checker {
             return hits;
         }
         // not under the lock: a check can take a while and other windows share the engine
-        let hits = Arc::new(dedupe(provider.check(
+        let mut hits = provider.check(
             &Prose {
                 chars: source,
                 allowed: &block.allowed,
             },
             lang,
-        )));
+        );
+        hits.retain(|h| !glued_to_mask(source, &block.allowed, &h.range));
+        let hits = Arc::new(dedupe(hits));
         self.cache.lock().put(key, hits.clone());
         hits
     }

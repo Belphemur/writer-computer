@@ -357,3 +357,23 @@ fn a_ten_thousand_word_note_is_rechecked_quickly_after_one_edit() {
         "a re-check after one edit took {warm:?} (cold check {cold:?})"
     );
 }
+
+#[test]
+fn a_possessive_glued_to_a_link_is_not_underlined_but_neighbours_still_are() {
+    let (_d, c) = checker();
+    let (o, p) = (Options::default(), Personal::default());
+    let flagged = |text: &str| -> Vec<String> {
+        let checked = note(&c, text, "a.md", 1, &o, &p);
+        checked.findings.iter().map(|f| covered(text, f)).collect()
+    };
+    for text in [
+        "I met [[Ben]]'s dog today.\n",
+        "I met [[Ben|Benjamin]]\u{2019}s dog today.\n",
+        "I met [Ben](x.md)'s dog today.\n",
+        "I met #tag's dog today.\n",
+    ] {
+        assert!(flagged(text).is_empty(), "{text:?}: {:?}", flagged(text));
+    }
+    assert_eq!(flagged("I met [[Ben]] teh dog.\n"), vec!["teh"]);
+    assert_eq!(flagged("I met [[Ben]] wrng today.\n"), vec!["wrng"]);
+}

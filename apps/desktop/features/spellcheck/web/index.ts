@@ -27,6 +27,11 @@ export default defineFeature({
     ],
     statusItems: [
       {
+        id: "spellcheck.issues",
+        order: 19,
+        load: () => import("./components/issues-status").then((m) => m.default),
+      },
+      {
         id: "spellcheck.language",
         order: 20,
         load: () => import("./components/language-status").then((m) => m.default),

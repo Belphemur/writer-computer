@@ -89,6 +89,24 @@ pub trait CheckProvider: Send + Sync {
     fn check(&self, prose: &Prose<'_>, lang: &Lang) -> Vec<Hit>;
 }
 
+/// Is this hit a suffix glued to a masked span: a possessive or a compound tail such as the `'s`
+/// of `[[Ben]]'s`, `[Ben](x.md)'s` or `#tag's`? The masked link has no letters left to attach to,
+/// so a provider reads the orphan as a misspelling. One rule for every provider: such a hit is
+/// dropped. A hit starts at (or one char after) an apostrophe or hyphen whose left neighbour is a
+/// masked char; a real word after a link, or after emphasis markers, is never dropped.
+pub fn glued_to_mask(chars: &[char], allowed: &[Range<usize>], range: &Range<usize>) -> bool {
+    let joiner = |c: char| matches!(c, '\'' | '\u{2019}' | '-');
+    let at = range.start;
+    let p = if chars.get(at).copied().is_some_and(joiner) {
+        at
+    } else if at > 0 && joiner(chars[at - 1]) {
+        at - 1
+    } else {
+        return false;
+    };
+    p > 0 && !allowed.iter().any(|r| r.contains(&(p - 1)))
+}
+
 /// Keeps one finding per span: when two cover exactly the same characters the higher-ranked kind
 /// stays (grammar over spelling over style), ties keep the first. Overlaps that are not identical
 /// are kept, the editor can draw both. Output is sorted by position.
