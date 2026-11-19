@@ -45,6 +45,7 @@ describe("file palette ranking", () => {
       isCommandPaletteOpen: true,
       commandPaletteIntent: "search",
       commandPaletteSearch: "",
+      commandPaletteKind: null,
     });
     host = document.createElement("div");
     document.body.append(host);
@@ -134,7 +135,7 @@ describe("file palette ranking", () => {
     });
     await settle();
     const chips = [...document.querySelectorAll<HTMLElement>("[data-testid^='kind-chip-']")];
-    expect(chips.map((c) => c.textContent)).toEqual(["All", "Notes", "PDFs"]);
+    expect(chips.map((c) => c.textContent)).toEqual(["All", "Notes", "PDFs", "Commands"]);
     expect(
       [...document.querySelectorAll<HTMLElement>("[data-kind-icon]")].map(
         (i) => i.dataset.kindIcon,
@@ -150,5 +151,97 @@ describe("file palette ranking", () => {
       kinds: ["pdf"],
     });
     expect(rows().filter((v) => v.startsWith("/ws/"))).toEqual(["/ws/Papers/Report.pdf"]);
+  });
+  describe("Commands chip and Tab", () => {
+    const KINDS = [
+      { id: "note", label: "Notes", icon: "File02Icon" },
+      { id: "pdf", label: "PDFs", icon: "Pdf02Icon" },
+    ];
+    const pressed = () =>
+      [...document.querySelectorAll("[data-testid^='kind-chip-']")]
+        .filter((c) => c.getAttribute("aria-pressed") === "true")
+        .map((c) => c.getAttribute("data-testid"));
+    const fuzzyCalls = () => mockedInvoke.mock.calls.filter(([cmd]) => cmd === "fuzzy_search");
+
+    async function mount(kinds = KINDS) {
+      mockedInvoke.mockImplementation(((cmd: string) => {
+        if (cmd === "search_kinds") return Promise.resolve(kinds);
+        if (cmd === "fuzzy_search") return Promise.resolve([result("Notes/Settings plan.md")]);
+        return Promise.resolve([]);
+      }) as never);
+      await act(async () => {
+        root.render(<CommandPalette />);
+      });
+      await settle();
+    }
+
+    async function tab(shiftKey = false) {
+      await act(async () => {
+        document
+          .querySelector("[cmdk-input]")!
+          .dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true }));
+      });
+      await settle();
+    }
+
+    it("draws Commands as the last chip, also with a single listed kind", async () => {
+      await mount([KINDS[0]]);
+      const chips = [...document.querySelectorAll("[data-testid^='kind-chip-']")];
+      expect(chips.map((c) => c.textContent)).toEqual(["All", "Notes", "Commands"]);
+      expect(chips.at(-1)!.getAttribute("data-testid")).toBe("kind-chip-commands");
+    });
+
+    it("Commands lists only commands, filtered by the query, and runs no file search", async () => {
+      useUIStore.setState({ commandPaletteSearch: "settings" });
+      await mount();
+      expect(rows().some((v) => v.startsWith("/ws/"))).toBe(true);
+      const before = fuzzyCalls().length;
+      await act(async () => {
+        document.querySelector<HTMLElement>("[data-testid='kind-chip-commands']")!.click();
+      });
+      await settle();
+      const values = rows();
+      expect(values.length).toBeGreaterThan(0);
+      expect(values.every((v) => !v.startsWith("/ws/"))).toBe(true);
+      expect(document.body.textContent).toContain("App preferences");
+      expect(document.body.textContent).not.toContain("Toggle Sidebar");
+      expect(fuzzyCalls().length).toBe(before);
+      expect(
+        mockedInvoke.mock.calls.some(([, a]) => JSON.stringify(a ?? {}).includes('"commands"')),
+      ).toBe(false);
+    });
+
+    it("a file kind hides the commands", async () => {
+      await mount();
+      await act(async () => {
+        document.querySelector<HTMLElement>("[data-testid='kind-chip-pdf']")!.click();
+      });
+      await settle();
+      expect(rows().every((v) => v.startsWith("/ws/"))).toBe(true);
+    });
+
+    it("Tab and Shift+Tab cycle through the chips and wrap, resetting the selection", async () => {
+      await mount();
+      expect(pressed()).toEqual(["kind-chip-all"]);
+      await tab();
+      expect(pressed()).toEqual(["kind-chip-note"]);
+      await tab();
+      await tab();
+      expect(pressed()).toEqual(["kind-chip-commands"]);
+      expect(document.querySelector("[cmdk-item][aria-selected='true']")).toBe(
+        document.querySelector("[cmdk-item]"),
+      );
+      await tab();
+      expect(pressed()).toEqual(["kind-chip-all"]);
+      await tab(true);
+      expect(pressed()).toEqual(["kind-chip-commands"]);
+    });
+
+    it("Tab does nothing without chips", async () => {
+      await mount([]);
+      expect(document.querySelector("[data-testid^='kind-chip-']")).toBeNull();
+      await tab();
+      expect(useUIStore.getState().commandPaletteKind).toBeNull();
+    });
   });
 });

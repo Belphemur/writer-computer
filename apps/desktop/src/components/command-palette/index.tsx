@@ -48,6 +48,7 @@ import { openStandaloneFile } from "@/hooks/use-open-drop";
 import { rankCandidates } from "@/lib/search-rank";
 import { noteLabel } from "@/lib/note-title";
 import { KindChips } from "./kind-chips";
+import { COMMANDS_KIND, cycleKindOnTab, kindChoices } from "./kind-choices";
 import { NoteResultTitle } from "./note-result-title";
 import { ResultIcon } from "./result-icon";
 import { useSearchKinds } from "./use-search-kinds";
@@ -136,8 +137,16 @@ function FilePalette() {
   // Standalone compact windows have no workspace index — search filters the
   // global recents list client-side instead of hitting fuzzy_search.
   const fileSearch = isOpen && !isCompactFileMode && !isCreateIntent;
-  const { results, error: searchError } = useFuzzySearch(fileQuery, 20, fileSearch, kind);
+  // The Commands chip lists commands only: no file search runs, and a file kind hides commands.
+  const commandsOnly = kind === COMMANDS_KIND;
+  const { results, error: searchError } = useFuzzySearch(
+    fileQuery,
+    20,
+    fileSearch && !commandsOnly,
+    commandsOnly ? null : kind,
+  );
   const kinds = useSearchKinds(fileSearch);
+  const choices = fileSearch ? kindChoices(kinds, true) : [];
   const { files: globalRecents } = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
   // In standalone mode new files are created next to the active file.
   const createBaseDir = root ?? (activeFilePath ? getParentDir(activeFilePath) : null);
@@ -163,6 +172,7 @@ function FilePalette() {
           { middleOnly: true },
         );
   function onResultKeyDown(e: React.KeyboardEvent) {
+    cycleKindOnTab(e, choices, kind, setKind);
     const how = keyIntent(e);
     if (!how || how === "current") return;
     const path = [...visibleFiles, ...visibleRecents].find((r) => r.path === selectedValue)?.path;
@@ -258,11 +268,12 @@ function FilePalette() {
         ? rankGlobalRecents(globalRecents, trimmedSearch)
         : globalRecents
       : [];
-  const visibleCommands = isCreateIntent
-    ? []
-    : trimmedSearch
-      ? commands.filter((c) => matchesSearch(c.label, trimmedSearch))
-      : commands;
+  const visibleCommands =
+    isCreateIntent || (kind !== null && !commandsOnly)
+      ? []
+      : trimmedSearch
+        ? commands.filter((c) => matchesSearch(c.label, trimmedSearch))
+        : commands;
   // Typed query: commands match first; empty query: recent files come first.
   const firstValue = trimmedSearch
     ? (visibleCommands[0]?.id ?? visibleFiles[0]?.path ?? visibleRecents[0]?.path ?? "")
@@ -331,7 +342,7 @@ function FilePalette() {
   useEffect(() => {
     setSelectedValue(firstValue);
     listRef.current?.scrollTo({ top: 0 });
-  }, [search, intent, firstValue]);
+  }, [search, intent, kind, firstValue]);
   /* eslint-enable react-doctor/no-derived-state */
 
   const placeholder = isCreateIntent ? "Create a new note..." : "Search...";
@@ -349,7 +360,7 @@ function FilePalette() {
       onValueChange={setSelectedValue}
     >
       <CommandInput placeholder={placeholder} value={search} onValueChange={setSearch} />
-      {fileSearch && <KindChips kinds={kinds} selected={kind} onSelect={setKind} />}
+      <KindChips choices={choices} selected={kind} onSelect={setKind} />
       <CommandList ref={listRef}>
         {isCreateIntent ? (
           <>

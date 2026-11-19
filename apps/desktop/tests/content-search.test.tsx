@@ -139,6 +139,7 @@ describe("ContentSearchPalette", () => {
       isCommandPaletteOpen: true,
       commandPaletteIntent: "search-notes",
       commandPaletteSearch: "",
+      commandPaletteKind: null,
     });
     host = document.createElement("div");
     document.body.append(host);
@@ -400,6 +401,40 @@ describe("ContentSearchPalette", () => {
     });
     await settle();
     expect(searchRequests().at(-1)).not.toHaveProperty("kinds");
+  });
+
+  it("cycles the chips with Tab and Shift+Tab, wrapping, and never sends a pseudo-kind", async () => {
+    listedKinds.current = KINDS;
+    mockedInvoke.mockResolvedValue(page(hit("Notes/Plan.md", 1, "budget", [[0, 6]])));
+    await mount();
+    await type("budget");
+    await settle();
+    const pressed = () =>
+      [...document.querySelectorAll("[data-testid^='kind-chip-']")]
+        .filter((c) => c.getAttribute("aria-pressed") === "true")
+        .map((c) => c.getAttribute("data-testid"));
+    const tab = async (shiftKey = false) => {
+      await key("Tab", { shiftKey });
+      await settle();
+    };
+    await tab();
+    expect(pressed()).toEqual(["kind-chip-note"]);
+    await tab();
+    await tab();
+    expect(pressed()).toEqual(["kind-chip-code"]);
+    await tab();
+    expect(pressed()).toEqual(["kind-chip-all"]); // wraps
+    await tab(true);
+    expect(pressed()).toEqual(["kind-chip-code"]); // and back
+    expect(searchRequests().at(-1)).toMatchObject({ kinds: ["code"] });
+    expect(document.querySelector("[data-testid='kind-chip-commands']")).toBeNull();
+  });
+
+  it("leaves Tab alone when no chips are drawn", async () => {
+    listedKinds.current = [KINDS[0]];
+    await mount();
+    await key("Tab");
+    expect(useUIStore.getState().commandPaletteKind).toBeNull();
   });
 
   it("draws no chips while the vault lists a single kind", async () => {

@@ -19,6 +19,7 @@ import {
 import { keyIntent, linkHandlers, openPathAtAnchor, type LinkIntent } from "@/lib/link-activation";
 import { getFileName } from "@/lib/paths";
 import { KindChips } from "./kind-chips";
+import { cycleKindOnTab, kindChoices } from "./kind-choices";
 import { NoteResultTitle } from "./note-result-title";
 import { ResultIcon } from "./result-icon";
 import { CONTENT_SEARCH_MIN_CHARS, useContentSearch } from "./use-content-search";
@@ -63,6 +64,7 @@ export function ContentSearchPalette() {
   const kind = useCommandPaletteKind();
   const setKind = useSetCommandPaletteKind();
   const kinds = useSearchKinds(isOpen);
+  const choices = kindChoices(kinds);
   const result = useContentSearch(search, isOpen, kind);
   const hits = result.status === "ready" || result.status === "loading" ? result.hits : [];
 
@@ -86,8 +88,16 @@ export function ContentSearchPalette() {
     });
   }
 
-  // cmdk's Enter selects; Cmd/Ctrl+Enter is claimed here (cmdk skips defaultPrevented keys).
+  // A chip change starts the list over: the first hit is selected, as for a new query.
+  function selectKind(next: string | null) {
+    setSelected("");
+    setKind(next);
+  }
+
+  // cmdk's Enter selects; Tab cycles the chips and Cmd/Ctrl+Enter is claimed here (cmdk skips
+  // defaultPrevented keys).
   function onKeyDown(e: KeyboardEvent) {
+    cycleKindOnTab(e, choices, kind, selectKind);
     const intent = keyIntent(e);
     if (!intent || intent === "current") return;
     e.preventDefault();
@@ -114,7 +124,7 @@ export function ContentSearchPalette() {
         onValueChange={setSearch}
         aria-label="Search in notes"
       />
-      <KindChips kinds={kinds} selected={kind} onSelect={setKind} />
+      <KindChips choices={choices} selected={kind} onSelect={selectKind} />
       <CommandList ref={listRef}>
         {trimmed.length < CONTENT_SEARCH_MIN_CHARS && (
           <StatusLine role="status">

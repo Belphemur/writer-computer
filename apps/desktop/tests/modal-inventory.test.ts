@@ -24,6 +24,8 @@ const ALLOWED = new Set([
   "features/agent/web/components/row-menu.tsx",
   "features/agent/web/components/composer.tsx",
   "features/bases/web/view/expression-input.tsx",
+  // The palettes' Tab selects the next kind chip; focus stays in the input.
+  "src/components/command-palette/kind-choices.ts",
 ]);
 
 describe("modal inventory", () => {

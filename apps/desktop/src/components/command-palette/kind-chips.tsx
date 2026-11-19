@@ -1,20 +1,20 @@
-import type { SearchKind } from "@/lib/content-search";
+import type { KindChoice } from "./kind-choices";
 
 /**
- * The kind filter above palette results: All, then one chip per listed kind by its label (the
- * registry's, `search_kinds`). One selection at a time; `null` is All. Not drawn while the vault
- * lists a single kind: there is nothing to narrow.
+ * The kind filter above palette results, one chip per choice (`kindChoices`: All, the registry's
+ * kinds by label, Commands in quick open). One selection at a time; `null` is All. Not drawn
+ * without choices.
  */
 export function KindChips({
-  kinds,
+  choices,
   selected,
   onSelect,
 }: {
-  kinds: SearchKind[];
+  choices: KindChoice[];
   selected: string | null;
   onSelect: (kind: string | null) => void;
 }) {
-  if (kinds.length < 2) return null;
+  if (choices.length === 0) return null;
   const chip = (id: string | null, label: string) => (
     <button
       key={id ?? "all"}
@@ -38,8 +38,7 @@ export function KindChips({
       aria-label="Filter by kind"
       className="flex gap-1 overflow-x-auto border-b border-[var(--line-subtle)] px-3 py-2"
     >
-      {chip(null, "All")}
-      {kinds.map((k) => chip(k.id, k.label))}
+      {choices.map((c) => chip(c.id, c.label))}
     </div>
   );
 }

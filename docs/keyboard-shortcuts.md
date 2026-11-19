@@ -53,6 +53,16 @@ In the compact window a single note opens in, which has no sidebar or tabs,
 Cmd+Shift+F, Cmd+Shift+A, Cmd+\\, Cmd+T, Cmd+Shift+T, Ctrl+Tab, Ctrl+Shift+Tab, and Cmd+1 ... Cmd+9 do nothing. Cmd+P, Cmd+O, Cmd+N, zoom, and history navigation still
 work.
 
+## Command palette
+
+<!-- Palette-local keys, not registry bindings (so `tests/keybindings.test.ts` does not read this section): handled in the palette's `onKeyDown` through `cycleKindOnTab` in `components/command-palette/kind-choices.ts`, for both quick open and Search in notes (SPECs/search-spec.md "Kind chips"). Cmd+Enter / Ctrl+Enter opens the chosen result in a new tab. -->
+
+| Shortcut  | Action                                                                |
+| --------- | --------------------------------------------------------------------- |
+| Tab       | Next kind chip (All, each kind, and Commands in quick open), wrapping |
+| Shift+Tab | Previous kind chip                                                    |
+| Cmd+Enter | Open the selected result in a new tab                                 |
+
 ## Agent
 
 The Agent pane is the chat on the right. It shares the right side with the plugin pane: opening one closes the other. These work while focus is inside the pane.
