@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { useStickToBottom } from "@features/agent/web/components/use-stick-to-bottom";
-import { liveHtml } from "@features/agent/web/components/assistant-text";
+import { endsInOpenFence, liveHtml } from "@features/agent/web/components/assistant-text";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -188,5 +188,34 @@ describe("the live tail stays inside the block it continues", () => {
     liveHtml({ id: "t3", text: "- one" }, 0);
     const out = liveHtml({ id: "t3", text: "- one two" }, 1);
     expect(out).toMatch(/one<span[^>]*> two<\/span><\/li>/);
+  });
+
+  it("an open code block's tail is code inside the block, never prose under it", () => {
+    liveHtml({ id: "c1", text: 'Intro\n\n```json\n{\n  "a": 1' }, 0);
+    const mid = liveHtml({ id: "c1", text: 'Intro\n\n```json\n{\n  "a": 1,\n  "b"' }, 1);
+    expect(mid).toMatch(/<code>\{\n {2}"a": 1,\n {2}"b"\n<\/code><\/pre>\s*$/);
+    expect(mid).not.toMatch(/<\/pre>[\s\S]*<span/);
+    // after a line end the tail starts the next code line
+    liveHtml({ id: "c2", text: "```\nx\n" }, 0);
+    expect(liveHtml({ id: "c2", text: "```\nx\ny" }, 1)).toMatch(
+      /<code>x\ny\n?<\/code><\/pre>\s*$/,
+    );
+    // the tail escapes like any code text
+    liveHtml({ id: "c3", text: "```\n" }, 0);
+    expect(liveHtml({ id: "c3", text: "```\n<b>" }, 1)).toContain("&lt;b&gt;");
+  });
+
+  it("a closed fence keeps the tail after the block", () => {
+    liveHtml({ id: "c4", text: "```\nx\n```" }, 0);
+    expect(liveHtml({ id: "c4", text: "```\nx\n```\n\nnext" }, 1)).toMatch(/<\/pre>\s*<span[^>]*>/);
+  });
+
+  it("knows when the text ends inside a fence", () => {
+    expect(endsInOpenFence("```json\n{")).toBe(true);
+    expect(endsInOpenFence("```\nx\n```")).toBe(false);
+    expect(endsInOpenFence("````md\n```json\n{}\n```\nstill in")).toBe(true); // a shorter fence does not close
+    expect(endsInOpenFence("~~~\nx\n```")).toBe(true); // another character does not close
+    expect(endsInOpenFence("```\nx\n``` not a close")).toBe(true);
+    expect(endsInOpenFence("text with ```inline``` code")).toBe(false);
   });
 });

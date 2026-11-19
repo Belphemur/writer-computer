@@ -20,7 +20,45 @@ export function liveHtml(block: Pick<TextBlock, "id" | "text">, now: number): st
   const tail = block.text.slice(entry.len);
   if (!tail) return entry.html;
   const span = `<span ${MD_RANGE_ATTR}="${mdRange(entry.len, block.text.length)}" style="white-space:pre-wrap">${escapeText(tail)}</span>`;
+  if (endsInOpenFence(block.text.slice(0, entry.len))) {
+    const inCode = intoOpenCode(entry.html, block.text.slice(0, entry.len), escapeText(tail));
+    if (inCode !== null) return inCode;
+  }
   return withTail(entry.html, tail, span);
+}
+
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/** Whether `text` ends inside a fenced code block that is still open (CommonMark: a fence closes
+ *  on a line of the same character, at least as long, with nothing after it). */
+export function endsInOpenFence(text: string): boolean {
+  let open: string | null = null;
+  for (const line of text.split("\n")) {
+    const m = FENCE.exec(line);
+    if (!m) continue;
+    const marker = m[1]!;
+    if (open === null) {
+      // a backtick fence's info string has no backtick
+      if (marker[0] === "`" && m[2]!.includes("`")) continue;
+      open = marker;
+    } else if (marker[0] === open[0] && marker.length >= open.length && m[2]!.trim() === "") {
+      open = null;
+    }
+  }
+  return open !== null;
+}
+
+const OPEN_CODE_END = /\n<\/code><\/pre>\s*$/;
+
+/** The tail of an open code block goes inside it, as code text: placed after the block, it showed
+ *  under the block in prose type and jumped into it at the next pass (the stream jittered). marked
+ *  ends code with a newline the source may not have yet, so the tail goes before that newline
+ *  unless the rendered source already ended a line. `null` when the HTML has no such end. */
+function intoOpenCode(html: string, rendered: string, escapedTail: string): string | null {
+  const m = OPEN_CODE_END.exec(html);
+  if (!m) return null;
+  const at = rendered.endsWith("\n") ? m.index + 1 : m.index;
+  return html.slice(0, at) + escapedTail + html.slice(at);
 }
 
 const OPEN_PARAGRAPH = /<\/p>\s*$/;
