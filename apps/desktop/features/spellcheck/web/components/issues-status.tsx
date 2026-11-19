@@ -97,8 +97,9 @@ export default function IssuesStatus({ filePath }: StatusItemProps) {
       {open && (
         <AnchoredPopover
           anchorRef={anchor}
-          width={320}
-          maxHeight={360}
+          width={420}
+          maxHeight={560}
+          side="top"
           role="dialog"
           label="Spelling and grammar issues"
           onDismiss={() => setOpen(false)}

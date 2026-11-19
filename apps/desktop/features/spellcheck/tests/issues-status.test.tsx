@@ -13,7 +13,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), e
 
 import { registerEditorView } from "@/lib/editor-views";
 import { useSettingsStore } from "@/stores/settings-store";
-import { toDiagnostics } from "../web/editor/diagnostics";
+import { liveDiagnostics, toDiagnostics, withoutWord } from "../web/editor/diagnostics";
 import IssuesStatus from "../web/components/issues-status";
 import { groupFindings } from "../web/lib/issue-groups";
 import { useSpellStore } from "../web/lib/spell-store";
@@ -133,5 +133,15 @@ describe("the popover", () => {
     );
     await click(btn);
     expect(add).toHaveBeenCalledWith("wrng");
+  });
+
+  it("withoutWord drops that word's spelling hits in any case and keeps the rest", () => {
+    load(TEXT, FINDINGS);
+    const before = liveDiagnostics(view.state).length;
+    const kept = withoutWord(view.state, "TEH")!;
+    expect(kept.length).toBeLessThan(before);
+    expect(kept.some((d) => view.state.sliceDoc(d.from, d.to).toLowerCase() === "teh")).toBe(false);
+    expect(kept.some((d) => view.state.sliceDoc(d.from, d.to) === "wrng")).toBe(true);
+    expect(withoutWord(view.state, "absent")).toBeNull();
   });
 });

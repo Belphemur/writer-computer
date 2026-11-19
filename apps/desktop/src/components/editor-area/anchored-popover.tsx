@@ -18,6 +18,9 @@ interface AnchoredPopoverProps {
   bare?: boolean;
   /** A popover opened from this one: a press inside it does not dismiss this one. */
   alsoInside?: RefObject<HTMLElement | null>;
+  /** Which side of the anchor it opens on: `bottom` (default) or `top`, for anchors at the
+   *  bottom of the window (footer items) so the popover grows upward and never covers it. */
+  side?: "top" | "bottom";
 }
 
 /** A popover under its anchor, portalled to the body with fixed positioning so the panel's
@@ -34,16 +37,19 @@ export function AnchoredPopover({
   maxHeight = 280,
   bare = false,
   alsoInside,
+  side = "bottom",
 }: AnchoredPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const place = usePopoverPlacement(anchorRef, true, { width, maxHeight, side: "bottom" });
-  const [origin, setOrigin] = useState({ left: 0, top: 0 });
+  const place = usePopoverPlacement(anchorRef, true, { width, maxHeight, side });
+  const [origin, setOrigin] = useState({ left: 0, top: 0, bottom: 0 });
   usePopoverDismiss(ref, anchorRef, onDismiss, true, alsoInside);
 
   useLayoutEffect(() => {
     const measure = () => {
       const r = anchorRef.current?.getBoundingClientRect();
-      if (r) setOrigin({ left: r.left, top: r.bottom + 4 });
+      if (r) {
+        setOrigin({ left: r.left, top: r.bottom + 4, bottom: window.innerHeight - r.top + 4 });
+      }
     };
     measure();
     window.addEventListener("resize", measure);
@@ -58,7 +64,7 @@ export function AnchoredPopover({
       onKeyDown={onKeyDown}
       style={{
         position: "fixed",
-        top: origin.top,
+        ...(side === "top" ? { bottom: origin.bottom } : { top: origin.top }),
         left: origin.left + (typeof place.left === "number" ? place.left : 0),
         width: place.width,
         maxHeight: place.maxHeight,

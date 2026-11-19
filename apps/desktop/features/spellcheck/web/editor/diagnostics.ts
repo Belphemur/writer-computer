@@ -66,6 +66,19 @@ export function liveDiagnostics(state: EditorState): LiveDiagnostic[] {
   return out;
 }
 
+/** The live diagnostics minus the spelling hits on `word` (any case), or `null` when none is
+ *  there: "Add to dictionary" drops them at once, before the re-check confirms. */
+export function withoutWord(state: EditorState, word: string): Diagnostic[] | null {
+  const folded = word.toLowerCase();
+  const live = liveDiagnostics(state);
+  const kept = live.filter((l) => {
+    const ruleId = (l.diagnostic.source ?? "").split("\u0000")[1] ?? "";
+    return !(WORD_RULES.has(ruleId) && state.sliceDoc(l.from, l.to).toLowerCase() === folded);
+  });
+  if (kept.length === live.length) return null;
+  return kept.map((l) => ({ ...l.diagnostic, from: l.from, to: l.to }));
+}
+
 /** The live occurrences of an issue group, in document order. */
 export function liveOccurrences(state: EditorState, group: IssueGroup): LiveDiagnostic[] {
   return liveDiagnostics(state)

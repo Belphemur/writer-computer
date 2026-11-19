@@ -22,6 +22,9 @@ export const spellTooltipTheme = EditorView.baseTheme({
     color: "var(--text-primary)",
   },
   ".cm-spell-card": { display: "flex", flexDirection: "column", gap: "6px" },
+  // `source` carries the kind and rule for grouping (`encodeSource`); the card title already
+  // names the kind, so CodeMirror's printed source line is hidden on our cards.
+  ".cm-diagnostic:has(.cm-spell-card) .cm-diagnosticSource": { display: "none" },
   ".cm-spell-head": { display: "flex", alignItems: "center", gap: "6px" },
   ".cm-spell-kind": { display: "inline-flex", flex: "none" },
   ".cm-spell-kind-warning": { color: "var(--warning)" },

@@ -7,14 +7,13 @@
 //   answer when the document changed while it was away.
 // - Re-checks without an edit: a dictionary installed, a word added, a rule ignored, a language
 //   picked, a setting changed or the LanguageTool plugin turning up or off bump `epoch` (or change
-//   the settings signature); a `ViewPlugin` listens and dispatches `recheck`, which the linter's
-//   `needsRefresh` turns into a new run.
-import { linter, type Diagnostic } from "@codemirror/lint";
-import { StateEffect } from "@codemirror/state";
+//   the settings signature); a `ViewPlugin` listens and runs the linter at once (`forceLinting`):
+//   nothing was typed, so the typing pause does not apply.
+import { forceLinting, linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { ViewPlugin, type EditorView } from "@codemirror/view";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import { subscribeCommunityPlugins } from "@/lib/community-plugins";
-import { editorNotePath } from "@/lib/editor-views";
+import { editorNotePath, liveEditorViews } from "@/lib/editor-views";
 import { vaultRelative } from "@/lib/attachments";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { logger } from "@/lib/logger";
@@ -30,7 +29,7 @@ import {
 } from "../lib/settings";
 import { groupFindings } from "../lib/issue-groups";
 import { useSpellStore } from "../lib/spell-store";
-import { toDiagnostics, type ActionHandlers } from "./diagnostics";
+import { toDiagnostics, withoutWord, type ActionHandlers } from "./diagnostics";
 import { spellTooltipTheme } from "./tooltip-theme";
 
 /** Notes longer than this are not checked (a transfer of megabytes per pause is not worth it). */
@@ -38,12 +37,15 @@ export const MAX_CHECK_CHARS = 1_000_000;
 /** Pause after the last edit before a check, in milliseconds. */
 export const CHECK_DELAY_MS = 750;
 
-const recheck = StateEffect.define<null>();
-
 let version = 0;
 
 export const handlers: ActionHandlers = {
   addWord: (word) => {
+    // the underlines go at once in every open editor; the re-check after the write confirms
+    for (const view of liveEditorViews.keys()) {
+      const kept = withoutWord(view.state, word);
+      if (kept) view.dispatch(setDiagnostics(view.state, kept));
+    }
     addWord(word).then(
       () => useSpellStore.getState().bump(),
       (e: unknown) => showEditorNotice(`Could not add "${word}": ${String(e)}`),
@@ -91,7 +93,8 @@ export async function runCheck(view: EditorView): Promise<Diagnostic[]> {
 
 /** Tells the editor to check again when something other than the text changed. */
 const followChanges = ViewPlugin.define((view) => {
-  const nudge = () => view.dispatch({ effects: recheck.of(null) });
+  // nothing was typed, so there is no pause to wait for: check now
+  const nudge = () => forceLinting(view);
   let signature = checkSignature();
   const stops = [
     useSpellStore.subscribe((s, prev) => {
@@ -110,11 +113,7 @@ const followChanges = ViewPlugin.define((view) => {
 
 export function spellcheckExtension() {
   return [
-    linter((view) => runCheck(view), {
-      delay: CHECK_DELAY_MS,
-      needsRefresh: (update) =>
-        update.transactions.some((tr) => tr.effects.some((e) => e.is(recheck))),
-    }),
+    linter((view) => runCheck(view), { delay: CHECK_DELAY_MS }),
     spellTooltipTheme,
     followChanges,
   ];
