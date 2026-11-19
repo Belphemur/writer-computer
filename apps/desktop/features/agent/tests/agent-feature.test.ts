@@ -107,10 +107,10 @@ describe("commands", () => {
     const action = sidebarActionContributions.list().find((a) => a.id === "agent.toggle-action")!;
     expect(manifest.contributes.sidebarActions).toEqual(["agent.toggle-action"]);
     expect(action.label).toBe("Toggle agent");
-    await action.run({} as never);
+    await action.run();
     await new Promise((r) => setTimeout(r, 0));
     expect(openDock()?.id).toBe("agent.pane");
-    await action.run({} as never);
+    await action.run();
     await new Promise((r) => setTimeout(r, 0));
     expect(openDock()).toBeNull();
   });
