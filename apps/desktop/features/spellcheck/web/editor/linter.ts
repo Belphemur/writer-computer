@@ -7,9 +7,10 @@
 //   answer when the document changed while it was away.
 // - Re-checks without an edit: a dictionary installed, a word added, a rule ignored, a language
 //   picked, a setting changed or the LanguageTool plugin turning up or off bump `epoch` (or change
-//   the settings signature); a `ViewPlugin` listens and runs the linter at once (`forceLinting`):
-//   nothing was typed, so the typing pause does not apply.
-import { forceLinting, linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
+//   the settings signature); a `ViewPlugin` listens and checks at once (`recheck`): nothing was
+//   typed, so the typing pause does not apply. Not `forceLinting`, which only hurries a check an
+//   edit already scheduled and does nothing otherwise.
+import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { ViewPlugin, type EditorView } from "@codemirror/view";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import { subscribeCommunityPlugins } from "@/lib/community-plugins";
@@ -27,7 +28,7 @@ import {
   KEYS,
   writerCheckerActive,
 } from "../lib/settings";
-import { groupFindings } from "../lib/issue-groups";
+import { groupFindings, issueKey } from "../lib/issue-groups";
 import { useSpellStore } from "../lib/spell-store";
 import { toDiagnostics, withoutWord, type ActionHandlers } from "./diagnostics";
 import { spellTooltipTheme } from "./tooltip-theme";
@@ -53,6 +54,8 @@ function silenceWord(
     const kept = withoutWord(view.state, word);
     if (kept) view.dispatch(setDiagnostics(view.state, kept));
   }
+  // the footer count and popover drop the word at once too
+  useSpellStore.getState().dropIssue(issueKey("spelling", "", word), filePath);
   write().then(
     () => useSpellStore.getState().bump(),
     (e: unknown) => showEditorNotice(`${failure} "${word}": ${String(e)}`),
@@ -105,8 +108,15 @@ export async function runCheck(view: EditorView): Promise<Diagnostic[]> {
 
 /** Tells the editor to check again when something other than the text changed. */
 const followChanges = ViewPlugin.define((view) => {
-  // nothing was typed, so there is no pause to wait for: check now
-  const nudge = () => forceLinting(view);
+  let live = true;
+  // nothing was typed, so there is no pause to wait for: check now, and draw the answer unless
+  // the note changed meanwhile (the edit's own check then wins, as in `@codemirror/lint`)
+  const nudge = () => {
+    const doc = view.state.doc;
+    void runCheck(view).then((diagnostics) => {
+      if (live && view.state.doc === doc) view.dispatch(setDiagnostics(view.state, diagnostics));
+    });
+  };
   let signature = checkSignature();
   const stops = [
     useSpellStore.subscribe((s, prev) => {
@@ -120,7 +130,12 @@ const followChanges = ViewPlugin.define((view) => {
     }),
     subscribeCommunityPlugins(nudge),
   ];
-  return { destroy: () => stops.forEach((stop) => stop()) };
+  return {
+    destroy: () => {
+      live = false;
+      stops.forEach((stop) => stop());
+    },
+  };
 });
 
 export function spellcheckExtension() {

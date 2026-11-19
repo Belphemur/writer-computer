@@ -23,7 +23,7 @@ import { liveDiagnostics, toDiagnostics, withoutWord } from "../web/editor/diagn
 import IssuesStatus from "../web/components/issues-status";
 import { groupFindings } from "../web/lib/issue-groups";
 import { useSpellStore } from "../web/lib/spell-store";
-import { ignoreWord, type Finding } from "../web/ipc";
+import { addWord, ignoreWord, type Finding } from "../web/ipc";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -128,19 +128,6 @@ describe("the popover", () => {
     expect(view.state.selection.main.from).toBe(0);
   });
 
-  it("Add to dictionary calls the handler with the word", async () => {
-    const { handlers } = await import("../web/editor/linter");
-    const add = vi.spyOn(handlers, "addWord").mockImplementation(() => {});
-    load(TEXT, FINDINGS);
-    await mount();
-    await click(footer()!);
-    const btn = [...rows()[1]!.querySelectorAll("button")].find((b) =>
-      b.textContent!.includes("Add to dictionary"),
-    );
-    await click(btn);
-    expect(add).toHaveBeenCalledWith("wrng");
-  });
-
   it("offers Ignore on spelling rows only, next to Add to dictionary", async () => {
     load(TEXT, [...FINDINGS, find("should of", 0, { kind: "grammar", ruleId: "ShouldOf" })]);
     await mount();
@@ -173,6 +160,20 @@ describe("the popover", () => {
       stop();
       other.destroy();
     }
+  });
+
+  it("Add to dictionary removes the row and lowers the count at once", async () => {
+    load(TEXT, FINDINGS);
+    await mount();
+    expect(footer()!.textContent).toBe("4");
+    await click(footer()!);
+    const btn = [...rows()[0]!.querySelectorAll("button")].find((b) =>
+      b.textContent!.includes("Add to dictionary"),
+    );
+    await click(btn);
+    expect(rows().map((r) => r.querySelector("button")!.textContent)).toEqual(["wrng"]);
+    expect(footer()!.textContent).toBe("1");
+    expect(addWord).toHaveBeenCalledWith("teh");
   });
 
   it("withoutWord drops that word's spelling hits in any case and keeps the rest", () => {
