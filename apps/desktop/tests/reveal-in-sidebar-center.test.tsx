@@ -17,8 +17,12 @@ function mountRow(path: string, rowTop: number) {
   const row = document.createElement("div");
   row.setAttribute("data-tree-path", path);
   row.getBoundingClientRect = () => ({ top: rowTop, bottom: rowTop + 20 }) as DOMRect;
-  scroller.appendChild(row);
+  const tree = document.createElement("div");
+  tree.setAttribute("data-vault-tree", "");
+  tree.appendChild(row);
+  scroller.appendChild(tree);
   document.body.appendChild(scroller);
+  return row;
 }
 
 beforeEach(() => {
@@ -48,5 +52,16 @@ describe("revealPathInSidebar center mode", () => {
     await revealPathInSidebar(path, { center: true });
     expect(toggled).toEqual([]);
     expect(scroller.scrollTop).toBe(0);
+  });
+
+  it("goes to the vault tree's row, never the same file's Recents row above it", async () => {
+    const path = `${ROOT}/open/note.md`;
+    mountRow(path, 500);
+    const recents = document.createElement("div");
+    recents.setAttribute("data-tree-path", path); // a Recents row: visible, but not in the vault tree
+    recents.getBoundingClientRect = () => ({ top: 10, bottom: 30 }) as DOMRect;
+    scroller.prepend(recents);
+    await revealPathInSidebar(path, { center: true });
+    expect(scroller.scrollTop).toBe(460);
   });
 });

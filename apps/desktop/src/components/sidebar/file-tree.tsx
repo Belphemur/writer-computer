@@ -306,6 +306,7 @@ export function FileTree({
       className="relative isolate flex flex-col gap-px rounded-lg"
       role="tree"
       aria-label="File tree"
+      data-vault-tree
     >
       {dropHighlight && (
         <div

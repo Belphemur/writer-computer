@@ -42,8 +42,14 @@ function ancestorsBetween(root: string, leaf: string): string[] {
   return ancestors;
 }
 
+/** The vault tree's row for `path`, never a Pinned or Recents row of the same file (those come
+ *  first in the sidebar). */
+export function vaultRowSelector(path: string): string {
+  return `[data-vault-tree] [data-tree-path="${CSS.escape(path)}"]`;
+}
+
 async function waitForRow(path: string): Promise<HTMLElement | null> {
-  const selector = `[data-tree-path="${CSS.escape(path)}"]`;
+  const selector = vaultRowSelector(path);
   for (let i = 0; i < FRAME_BUDGET; i += 1) {
     const row = document.querySelector<HTMLElement>(selector);
     if (row) return row;
