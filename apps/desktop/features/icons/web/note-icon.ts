@@ -1,7 +1,9 @@
-// The note's own icon, next to the text of its first H1 and nowhere else (spec
-// `SPECs/icons-spec.md`): an inline widget at the start of the heading's text, so it lines up with
-// the title in live preview and in source. A note without an H1 shows no icon in its body. The
-// widget is never text and never changes the document; a click opens the picker for the note.
+// The note's own icon, a large glyph before the text of its first H1 and nowhere else (spec
+// `SPECs/icons-spec.md`), like a Confluence page title: an inline widget at the start of the
+// heading's text, 1.3em of the heading, plus a line decoration that hangs the heading's wrapped
+// lines under the text (padding-left and a negative text-indent of the icon's width), so they
+// never run under the icon. A note without an H1 shows no icon in its body. The widget is never
+// text and never changes the document; a click, Enter or Space opens the picker for the note.
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Extension, StateEffect } from "@codemirror/state";
 import {
@@ -18,22 +20,26 @@ import { fillIconElement } from "@/lib/icon-picker/icon-dom";
 import { treeChanged } from "@/lib/prosemark-core/utils";
 import { openIconPicker } from "./picker-store";
 
-const GLYPH_SIZE = 16;
+const GLYPH_SIZE = "1.3em";
 const NOTE_ICON_CLASS = "cm-note-icon";
+const NOTE_ICON_LINE_CLASS = "cm-note-icon-line";
 
-/** The document position where the first H1's text starts, or null without an H1. Only top-level
- *  headings count (front matter is its own node, so a `# comment` in it never matches): `# Title`
- *  after its marker and spaces, or a setext `Title\n===`. */
-export function firstH1Start(state: EditorState): number | null {
+/** The first top-level H1: where it starts and where its text starts, or null without one. Front
+ *  matter is its own node, so a `# comment` in it never matches. The text starts after the marker
+ *  and a space for `# Title`, at the heading for a setext `Title\n===`. */
+export function firstH1(state: EditorState): { from: number; textFrom: number } | null {
   for (let node = syntaxTree(state).topNode.firstChild; node; node = node.nextSibling) {
     if (node.name === "ATXHeading1") {
       const mark = node.firstChild;
-      return mark ? Math.min(mark.to + 1, node.to) : node.from;
+      return { from: node.from, textFrom: mark ? Math.min(mark.to + 1, node.to) : node.from };
     }
-    if (node.name === "SetextHeading1") return node.from;
+    if (node.name === "SetextHeading1") return { from: node.from, textFrom: node.from };
   }
   return null;
 }
+
+/** The document position where the first H1's text starts, or null without an H1. */
+export const firstH1Start = (state: EditorState): number | null => firstH1(state)?.textFrom ?? null;
 
 class NoteIconWidget extends WidgetType {
   constructor(
@@ -49,25 +55,38 @@ class NoteIconWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const span = document.createElement("span");
-    span.className = NOTE_ICON_CLASS;
-    span.setAttribute("role", "button");
-    span.setAttribute("aria-label", "Change icon");
-    span.title = "Change icon";
-    fillIconElement(span, this.entry.icon, { size: GLYPH_SIZE, color: this.entry.color });
+    const button = document.createElement("span");
+    button.className = NOTE_ICON_CLASS;
+    button.setAttribute("role", "button");
+    button.setAttribute("tabindex", "0");
+    button.setAttribute("aria-label", "Change icon");
+    button.title = "Change icon";
+    const glyph = document.createElement("span");
+    glyph.className = "cm-note-icon-glyph";
+    fillIconElement(glyph, this.entry.icon, { size: GLYPH_SIZE, color: this.entry.color });
+    button.append(glyph);
+    const open = () => {
+      const path = this.getPath();
+      if (path) openIconPicker([path]);
+    };
     // Keep the editor focused and out of the click (docs/editor.md "Buttons inside widgets").
     for (const type of ["mousedown", "pointerdown"]) {
-      span.addEventListener(type, (e) => {
+      button.addEventListener(type, (e) => {
         e.preventDefault();
         e.stopPropagation();
       });
     }
-    span.addEventListener("click", (e) => {
+    button.addEventListener("click", (e) => {
       e.preventDefault();
-      const path = this.getPath();
-      if (path) openIconPicker([path]);
+      open();
     });
-    return span;
+    button.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+    });
+    return button;
   }
 
   ignoreEvent(): boolean {
@@ -78,13 +97,16 @@ class NoteIconWidget extends WidgetType {
 /** Asks the plugin to rebuild after the icon store changed. */
 const refreshNoteIcon = StateEffect.define<null>();
 
+const lineDeco = Decoration.line({ class: NOTE_ICON_LINE_CLASS });
+
 function build(state: EditorState): DecorationSet {
   const getPath = state.facet(editorNotePath);
   const entry = fileIconOf(getPath() || null);
-  const pos = entry ? firstH1Start(state) : null;
-  if (!entry || pos === null) return Decoration.none;
+  const h1 = entry ? firstH1(state) : null;
+  if (!entry || !h1) return Decoration.none;
   const widget = Decoration.widget({ widget: new NoteIconWidget(entry, getPath), side: -1 });
-  return Decoration.set([widget.range(pos)]);
+  const lineFrom = state.doc.lineAt(h1.from).from;
+  return Decoration.set([lineDeco.range(lineFrom), widget.range(h1.textFrom)], true);
 }
 
 const plugin = ViewPlugin.fromClass(
@@ -118,17 +140,33 @@ const plugin = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+// The heading's own size: the heading line decoration sets `--ws-heading-scale`, the body size is
+// `--writer-editor-font-size`. Absolute, so the widget is right whether or not CodeMirror put it
+// inside the heading's highlight span. The icon box is 1.3em plus a 0.35em gap.
+const HEADING_SIZE = "calc(var(--ws-heading-scale, 1.6) * var(--writer-editor-font-size, 16px))";
+const HANG = `calc(${HEADING_SIZE} * 1.65)`;
+
 const theme = EditorView.baseTheme({
+  [`.cm-line.${NOTE_ICON_LINE_CLASS}`]: { paddingLeft: HANG, textIndent: `calc(${HANG} * -1)` },
   [`.${NOTE_ICON_CLASS}`]: {
+    display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    verticalAlign: "-0.1em",
+    boxSizing: "border-box",
+    width: "1.3em",
+    height: "1.3em",
     marginRight: "0.35em",
-    // the heading's own size, whatever fillIconElement sets for an emoji
-    fontSize: "0.9em !important",
+    verticalAlign: "middle",
+    fontSize: HEADING_SIZE,
+    lineHeight: "1",
+    textIndent: "0",
+    borderRadius: "0.25em",
     cursor: "pointer",
   },
-  [`.${NOTE_ICON_CLASS} svg`]: { width: "1em", height: "1em" },
+  [`.${NOTE_ICON_CLASS}:hover, .${NOTE_ICON_CLASS}:focus-visible`]: {
+    backgroundColor: "color-mix(in srgb, var(--fg-base) 12%, transparent)",
+    outline: "none",
+  },
 });
 
 /** The extension: the icon of the note the editor shows, before its first H1's text. */
