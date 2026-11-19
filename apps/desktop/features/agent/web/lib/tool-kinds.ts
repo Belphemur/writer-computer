@@ -6,7 +6,7 @@ import { roleLabelOf } from "./agent-roles";
 import type { PermissionPersist, PermissionSuggestion } from "./events";
 import type { PermissionView } from "./transcript";
 
-export type ToolKind = "execute" | "edit" | "read" | "fetch" | "agent" | "other";
+export type ToolKind = "execute" | "edit" | "read" | "search" | "fetch" | "agent" | "other";
 
 type ToolSpec = {
   kind: ToolKind;
@@ -51,15 +51,16 @@ const SPECS: Record<string, ToolSpec> = {
     noun: ["note", "notes"],
     readsFile: true,
   },
+  // Glob and Grep: the installed CLI no longer has them, old chats still hold their rows
   Grep: {
-    kind: "read",
+    kind: "search",
     past: "Searched",
     present: "Searching",
     primary: ["pattern"],
     noun: ["search", "searches"],
   },
   Glob: {
-    kind: "read",
+    kind: "search",
     past: "Listed",
     present: "Listing",
     primary: ["pattern"],
@@ -130,6 +131,39 @@ const SPECS: Record<string, ToolSpec> = {
   },
 };
 
+/** Writer's own MCP tools (`writer mcp`, tools reach the model as `mcp__writer__<command>`). */
+const WRITER_TOOL_PREFIX = "mcp__writer__";
+/** The commands that look things up in the vault (the explorer's and the main agent's search). */
+const WRITER_SEARCH =
+  /^(search|search_context|files|folders|tags?|tasks|graph_.+|bases?(_.+)?|dql|properties|property_read)$/;
+/** The commands that read one note or one fact about the vault. */
+const WRITER_READ = /^(read|file|folder|outline|wordcount|active|status|vaults?)$/;
+
+const WRITER_SEARCH_SPEC: ToolSpec = {
+  kind: "search",
+  past: "Searched",
+  present: "Searching",
+  primary: ["query", "file", "path", "name", "tag", "format"],
+  noun: ["search", "searches"],
+};
+const WRITER_READ_SPEC: ToolSpec = {
+  kind: "read",
+  past: "Read",
+  present: "Reading",
+  primary: ["file", "path"],
+  noun: ["note", "notes"],
+  readsFile: true,
+};
+
+/** The spec of a `mcp__writer__*` tool by its command; the generic fallback for the others. */
+function writerToolSpec(tool: string): ToolSpec | undefined {
+  if (!tool.startsWith(WRITER_TOOL_PREFIX)) return undefined;
+  const command = tool.slice(WRITER_TOOL_PREFIX.length);
+  if (WRITER_SEARCH.test(command)) return WRITER_SEARCH_SPEC;
+  if (WRITER_READ.test(command)) return WRITER_READ_SPEC;
+  return undefined;
+}
+
 const FALLBACK: ToolSpec = {
   kind: "other",
   past: "Used",
@@ -138,7 +172,7 @@ const FALLBACK: ToolSpec = {
   noun: ["tool", "tools"],
 };
 
-export const toolSpec = (tool: string): ToolSpec => SPECS[tool] ?? FALLBACK;
+export const toolSpec = (tool: string): ToolSpec => SPECS[tool] ?? writerToolSpec(tool) ?? FALLBACK;
 export const toolKind = (tool: string): ToolKind => toolSpec(tool).kind;
 export const readsFile = (tool: string): boolean => toolSpec(tool).readsFile === true;
 
@@ -146,6 +180,7 @@ export const KIND_LABEL: Record<ToolKind, string> = {
   execute: "Run a command",
   edit: "Edit a file",
   read: "Read",
+  search: "Search",
   fetch: "Fetch from the web",
   agent: "Run a subagent",
   other: "Other",

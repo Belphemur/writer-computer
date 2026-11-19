@@ -27,6 +27,18 @@ describe("tool kinds", () => {
       ["Bash", "Edit", "Write", "Read", "WebFetch", "Task", "mcp__x__y"].map(toolKind),
     ).toEqual(["execute", "edit", "edit", "read", "fetch", "agent", "other"]);
   });
+  it("renders Writer's own MCP tools by what they do", () => {
+    expect(toolKind("mcp__writer__search")).toBe("search");
+    expect(toolKind("mcp__writer__graph_backlinks")).toBe("search");
+    expect(toolKind("mcp__writer__read")).toBe("read");
+    // a write tool and another server's tool take the generic row
+    expect(toolKind("mcp__writer__create")).toBe("other");
+    expect(toolLabel("mcp__writer__search", { query: "pricing" }, false)).toBe("Searched pricing");
+    expect(toolLabel("mcp__writer__read", { file: "a/note.md" }, true)).toBe("Reading note.md");
+    // rows of old chats keep their rendering
+    expect(toolKind("Grep")).toBe("search");
+    expect(toolKind("Glob")).toBe("search");
+  });
   it("labels rows with the verb and the primary argument", () => {
     expect(toolLabel("Bash", { command: "ls -la\nmore" }, false)).toBe("Ran ls -la");
     expect(toolLabel("Read", { file_path: "/v/a/note.md" }, true)).toBe("Reading note.md");

@@ -114,6 +114,23 @@ pub fn resolve_launch(
     })
 }
 
+/// The `mcp__writer__*` names of every command the registry marks as a read (the rules that let
+/// the main agent call them without a prompt, `mcp::read_tool_rules`): never a hand-kept list.
+/// Made once; the registry is static, so the names live as long as the process.
+fn writer_read_tools() -> &'static [&'static str] {
+    static TOOLS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    TOOLS.get_or_init(|| {
+        crate::cli::mcp::read_tool_rules()
+            .into_iter()
+            .map(|n| &*Box::leak(n.into_boxed_str()))
+            .collect()
+    })
+}
+
+/// Where a role's `promptByCapability` text asks for the search line (the one wording of the
+/// main prompt, `writer_prompt::search_line`).
+const SEARCH_LINE_TOKEN: &str = "{search-line}";
+
 /// The adapter for the `claude` CLI.
 pub struct ClaudeAdapter;
 
@@ -126,10 +143,9 @@ impl RoleAdapter for ClaudeAdapter {
     fn capability(&self, capability: &str) -> CapabilitySupport {
         match capability {
             "read" => CapabilitySupport::Tools(&["Read"]),
-            "search" => CapabilitySupport::Tools(&["Glob", "Grep"]),
-            // The tool list cannot narrow Bash to `writer` reads; the role prompt and the
-            // default allow rules (`Bash(writer search *)` ...) do.
-            "writer-cli-read" => CapabilitySupport::Tools(&["Bash"]),
+            // The installed CLI has no Glob or Grep: searching is Writer's own MCP server
+            // (`cli::mcp`, ADR 2026-11-19), every tool of the registry that reads.
+            "writer-cli-read" => CapabilitySupport::Tools(writer_read_tools()),
             "edit" => CapabilitySupport::Tools(&["Edit", "MultiEdit"]),
             "write" => CapabilitySupport::Tools(&["Write"]),
             "bash-limited" => CapabilitySupport::Tools(&["Bash"]),
@@ -149,7 +165,8 @@ impl RoleAdapter for ClaudeAdapter {
             def.insert("description".into(), json!(role.purpose));
             def.insert(
                 "prompt".into(),
-                json!(role_prompt(self, role, input.writer_cli)),
+                json!(role_prompt(self, role, input.writer_cli)
+                    .replace(SEARCH_LINE_TOKEN, &super::writer_prompt::search_line())),
             );
             def.insert(
                 "tools".into(),
@@ -182,11 +199,6 @@ mod tests {
     use crate::agent::roles::{registry, Flags};
     use std::collections::BTreeMap;
 
-    /// `explorer` as the CLI got it before the roles registry existed (`agents_json(None, false)`
-    /// and `(None, true)`, captured 2026-11-17): the registry must reproduce it byte for byte.
-    const EXPLORER_PLAIN: &str = r#"{"writer-explorer":{"description":"Cheap read-only helper: finds, reads and summarises notes and runs read-only queries. Give it a self-contained question; it returns file paths and short findings.","model":"haiku","prompt":"You explore a vault of Markdown notes for another agent. Find and read files, summarise them, and report vault-relative paths with short findings (a few lines per file, no full note text). Never edit, create, move or delete anything, and never run a command that writes. Find files with Glob and Grep.","tools":["Read","Glob","Grep"]}}"#;
-    const EXPLORER_CLI: &str = r#"{"writer-explorer":{"description":"Cheap read-only helper: finds, reads and summarises notes and runs read-only queries. Give it a self-contained question; it returns file paths and short findings.","model":"haiku","prompt":"You explore a vault of Markdown notes for another agent. Find and read files, summarise them, and report vault-relative paths with short findings (a few lines per file, no full note text). Never edit, create, move or delete anything, and never run a command that writes. Find files with Glob and Grep. You may also run read-only `writer` commands (search, graph:backlinks, graph:neighbors, properties, bases, base:query); no other command.","tools":["Read","Glob","Grep","Bash"]}}"#;
-
     fn models(pairs: &[(&str, &str)]) -> BTreeMap<String, Option<String>> {
         pairs
             .iter()
@@ -210,12 +222,85 @@ mod tests {
         serde_json::from_str(r.config.as_deref().expect("a config")).unwrap()
     }
 
+    /// The tools the registry marks as reads, qualified as the model calls them.
+    fn registry_read_tools() -> Vec<String> {
+        crate::cli::registry::commands()
+            .filter(|c| crate::cli::mcp::is_tool(c) && !c.writes)
+            .map(crate::cli::mcp::qualified_name)
+            .collect()
+    }
+
+    fn tool_list(role: &Value) -> Vec<String> {
+        role["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t.as_str().unwrap().to_string())
+            .collect()
+    }
+
     #[test]
-    fn explorer_output_is_byte_identical_to_before_the_registry() {
+    fn explorer_tools_are_read_and_exactly_the_registry_read_tools() {
         let flags = Flags::current().with("changes-coverage", false);
-        let none = BTreeMap::new();
-        assert_eq!(render(false, &none, &flags).config.unwrap(), EXPLORER_PLAIN);
-        assert_eq!(render(true, &none, &flags).config.unwrap(), EXPLORER_CLI);
+        let v = agents(&render(true, &BTreeMap::new(), &flags));
+        let tools = tool_list(&v["writer-explorer"]);
+        let mut expected = vec!["Read".to_string()];
+        expected.extend(registry_read_tools());
+        assert_eq!(tools, expected);
+        assert!(tools.contains(&"mcp__writer__search".to_string()));
+        for gone in ["Glob", "Grep", "Bash", "Edit", "MultiEdit", "Write"] {
+            assert!(!tools.iter().any(|t| t == gone), "{gone}");
+        }
+        // no write tool of the registry either
+        for c in crate::cli::registry::commands().filter(|c| c.writes) {
+            assert!(
+                !tools.contains(&crate::cli::mcp::qualified_name(c)),
+                "{}",
+                c.name
+            );
+        }
+    }
+
+    #[test]
+    fn without_the_writer_tools_the_explorer_only_reads() {
+        let flags = Flags::current().with("changes-coverage", false);
+        let v = agents(&render(false, &BTreeMap::new(), &flags));
+        assert_eq!(v["writer-explorer"]["tools"], json!(["Read"]));
+    }
+
+    #[test]
+    fn the_explorer_prompt_carries_the_search_line_and_names_only_existing_tools() {
+        let flags = Flags::current().with("changes-coverage", true);
+        let v = agents(&render(true, &BTreeMap::new(), &flags));
+        let granted = tool_list(&v["writer-explorer"]);
+        for role in ["writer-explorer", "writer-worker"] {
+            let prompt = v[role]["prompt"].as_str().unwrap();
+            assert!(
+                prompt.contains(&crate::agent::writer_prompt::search_line()),
+                "{role}"
+            );
+            assert!(!prompt.contains("{search-line}"), "{role}");
+            assert!(
+                !prompt.contains("Glob") && !prompt.contains("Grep"),
+                "{role}"
+            );
+        }
+        // every `mcp__writer__x` and the bare tool names the line gives exist and are granted
+        let prompt = v["writer-explorer"]["prompt"].as_str().unwrap();
+        let line = crate::agent::writer_prompt::search_line();
+        let first = format!("{}search", crate::cli::mcp::TOOL_PREFIX);
+        assert!(line.contains(&first) && granted.contains(&first));
+        for word in line.split('`').skip(1).step_by(2) {
+            let name = word
+                .strip_prefix(crate::cli::mcp::TOOL_PREFIX)
+                .unwrap_or(word);
+            if name == "writer" {
+                continue;
+            }
+            let qualified = format!("{}{name}", crate::cli::mcp::TOOL_PREFIX);
+            assert!(granted.contains(&qualified), "{qualified} is not granted");
+        }
+        assert!(prompt.starts_with("You explore a vault of Markdown notes"));
     }
 
     #[test]
@@ -235,7 +320,7 @@ mod tests {
         let v = agents(&render(false, &BTreeMap::new(), &flags));
         let e = &v["writer-explorer"];
         assert_eq!(e["model"], "haiku");
-        assert_eq!(e["tools"], json!(["Read", "Glob", "Grep"]));
+        assert_eq!(e["tools"], json!(["Read"]));
         assert!(!e["prompt"].as_str().unwrap().contains("`writer`"));
         // whatever the capability table holds, no read-only role gets a writing tool
         for t in e["tools"].as_array().unwrap() {
@@ -249,10 +334,13 @@ mod tests {
         let r = render(true, &BTreeMap::new(), &flags);
         let w = &agents(&r)["writer-worker"];
         assert_eq!(w["model"], "sonnet");
-        assert_eq!(
-            w["tools"],
-            json!(["Read", "Glob", "Grep", "Bash", "Edit", "MultiEdit", "Write"])
-        );
+        let tools = tool_list(w);
+        assert_eq!(tools.first().map(String::as_str), Some("Read"));
+        assert_eq!(&tools[tools.len() - 3..], ["Edit", "MultiEdit", "Write"]);
+        assert!(tools.contains(&"mcp__writer__search".to_string()));
+        assert!(!tools
+            .iter()
+            .any(|t| ["Glob", "Grep", "Bash"].contains(&t.as_str())));
         let prompt = w["prompt"].as_str().unwrap();
         assert!(prompt.starts_with("You make a bounded set of edits to Markdown notes"));
         assert!(prompt.contains("never rename or move files"));
@@ -362,35 +450,6 @@ mod tests {
                 "no {} setting",
                 tier_setting_key(tier)
             );
-        }
-    }
-
-    /// The commands the prompt allows are the read-only ones of the default allow rules.
-    #[test]
-    fn prompt_commands_are_default_allowed_read_commands() {
-        let rules = crate::config::settings_schema()
-            .into_iter()
-            .find(|d| d.key == "agent.allowed-tools")
-            .unwrap();
-        let crate::config::ConfigValue::List(rules) = rules.default else {
-            panic!("a list")
-        };
-        let prompt = &registry().roles[0].prompt_by_capability["writer-cli-read"];
-        for name in [
-            "search",
-            "graph:backlinks",
-            "graph:neighbors",
-            "properties",
-            "bases",
-            "base:query",
-        ] {
-            assert!(
-                rules
-                    .iter()
-                    .any(|r| r.starts_with(&format!("Bash(writer {name}"))),
-                "{name} is not allowed by default"
-            );
-            assert!(prompt.contains(name));
         }
     }
 }

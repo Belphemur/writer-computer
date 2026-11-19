@@ -42,7 +42,6 @@ describe("agent roles registry", () => {
     expect(AGENT_ROLES.map((r) => r.id)).toEqual(["explorer", "worker"]);
     expect(capabilities).toEqual([
       "read",
-      "search",
       "writer-cli-read",
       "edit",
       "write",

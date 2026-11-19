@@ -47,8 +47,7 @@ File: `apps/desktop/shared/agent-roles.json`, read by Rust (`include_str!`, serd
   "tiers": ["cheap", "standard", "strong"],
   "capabilities": {
     "read": "Read files in the working directory and added folders",
-    "search": "Find files by name and content (glob, grep)",
-    "writer-cli-read": "Run read-only `writer` commands (search, graph:backlinks, graph:neighbors, properties, bases, base:query)",
+    "writer-cli-read": "Search and read the vault with the read-only `writer` tools (the command registry served over MCP)",
     "edit": "Modify existing files",
     "write": "Create files",
     "bash-limited": "Run shell commands; only the permission rules decide which"
@@ -96,14 +95,13 @@ Capability tables are data in the adapter (a `match`), not branches in callers; 
 
 `--agents <json>`: `{ "writer-<id>": { description: purpose, prompt, tools: [...], model: <alias> } }`.
 
-| capability        | Claude tools                                          |
-| ----------------- | ----------------------------------------------------- |
-| `read`            | `Read`                                                |
-| `search`          | `Glob`, `Grep`                                        |
-| `writer-cli-read` | `Bash` (only with managed skills installed; see note) |
-| `edit`            | `Edit`, `MultiEdit`                                   |
-| `write`           | `Write`                                               |
-| `bash-limited`    | `Bash`                                                |
+| capability        | Claude tools                                                                                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`            | `Read`                                                                                                                                                                                                     |
+| `writer-cli-read` | every `mcp__writer__*` read tool of the command registry (only with managed skills installed; 2026-11-19 replaces `search` = `Glob`, `Grep` and the `Bash` mapping: the installed CLI has no Glob or Grep) |
+| `edit`            | `Edit`, `MultiEdit`                                                                                                                                                                                        |
+| `write`           | `Write`                                                                                                                                                                                                    |
+| `bash-limited`    | `Bash`                                                                                                                                                                                                     |
 
 Note: Claude's tool list cannot restrict Bash to `writer` subcommands; the read-only guarantee comes from the permission rules (`agent.allowed-tools`), as today. A `readOnly` role with `writer-cli-read` is therefore "read-only by prompt plus rules", and the spec must keep saying so. Tier to model: setting `agent.claude.tier-models` (section 5), values are aliases or pinned names validated like `--model`. Unverified (carried from the native spec): that the CLI honours per-agent `model` and `tools`. The real-CLI run for section 2 used `tools: ["Write"]` and `model: "haiku"` and the sub-agent wrote the file; that confirms `tools` accepts the field, not that other tools were denied (not tested).
 

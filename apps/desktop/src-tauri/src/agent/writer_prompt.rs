@@ -59,20 +59,26 @@ const SEARCH_COMMANDS: [&str; 7] = [
 /// Read a note's structure without reading its text.
 const OUTLINE_COMMAND: &str = "outline";
 
-fn search_cli() -> String {
+/// The one line that tells an agent how to search the vault with the `writer` tools. The main
+/// block adds [`BASH_AFTER_SEARCH`]; the read-only sub-agents (`subagents.rs`, which have no Bash)
+/// take it as it is.
+pub fn search_line() -> String {
     let [first, rest @ ..] = SEARCH_COMMANDS;
     let rest: Vec<String> = rest
         .iter()
         .map(|c| format!("`{}`", mcp::tool_name_of(c)))
         .collect();
     format!(
-        "Search the vault with the `writer` tools, not Bash grep or find: `{}{}` first, also {}, and `{}` for a note's headings. Bash only for what the index does not hold.",
+        "Search the vault with the `writer` tools, not Bash grep or find: `{}{}` first, also {}, and `{}` for a note's headings.",
         mcp::TOOL_PREFIX,
         mcp::tool_name_of(first),
         rest.join(", "),
         mcp::tool_name_of(OUTLINE_COMMAND),
     )
 }
+
+/// Follows [`search_line`] in the main block.
+const BASH_AFTER_SEARCH: &str = "Bash only for what the index does not hold.";
 
 /// Orchestration (setting `agent.orchestrate`): the line is rendered from the roles the backend
 /// adapter actually produced for the session (`roles.rs`, `subagents.rs`). The fixed sentences are
@@ -181,7 +187,7 @@ pub fn render(input: &PromptInput<'_>) -> String {
         memory,
         place,
     } = *input;
-    let search = search_cli();
+    let search = format!("{} {BASH_AFTER_SEARCH}", search_line());
     let mut lines = vec![INTRO, READ_EDIT, FRONTMATTER];
     if writer_cli {
         lines.push(PROPERTIES_CLI);
