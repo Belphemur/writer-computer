@@ -152,10 +152,15 @@ pub fn read_text(abs: &Path) -> Result<String, VaultOpError> {
 
 /// The app's one atomic write (temp file + rename, `commands::fs`).
 pub fn write_text(abs: &Path, text: &str) -> Result<(), VaultOpError> {
+    write_bytes(abs, text.as_bytes())
+}
+
+/// [`write_text`] for bytes (an exported image).
+pub fn write_bytes(abs: &Path, bytes: &[u8]) -> Result<(), VaultOpError> {
     let s = abs
         .to_str()
         .ok_or_else(|| VaultOpError::Invalid("path is not valid UTF-8".into()))?;
-    crate::commands::fs::write_file_impl(s, text)
+    crate::commands::fs::write_bytes_impl(s, bytes)
         .map(|_| ())
         .map_err(|e| VaultOpError::Io(e.to_string()))
 }

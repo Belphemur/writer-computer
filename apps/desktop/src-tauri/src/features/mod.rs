@@ -1418,9 +1418,10 @@ mod tests {
                 "dql",
                 "excalidraw:create",
                 "excalidraw:add",
-                "excalidraw:connect",
+                "excalidraw:update",
                 "excalidraw:read",
                 "excalidraw:export",
+                "excalidraw:preview",
                 "icon:set",
                 "icon:get",
                 "icon:remove",
@@ -1455,7 +1456,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 19
+            crate::cli::registry::COMMANDS.len() + 20
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

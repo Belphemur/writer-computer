@@ -24,6 +24,7 @@ mod extract;
 mod ipc;
 mod layout;
 mod lz;
+mod previews;
 
 use crate::cli::registry::CommandSpec;
 use crate::features::Feature;

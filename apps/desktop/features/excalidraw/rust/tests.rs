@@ -137,18 +137,24 @@ fn the_skill_folder_and_the_bundled_files_are_the_same_set() {
 }
 
 /// The fenced ```spec blocks of a skill file: (is_add, JSON).
-fn spec_blocks(text: &str) -> Vec<(bool, String)> {
+/// The command each kind of example block runs with: ```spec` creates, ```spec add` adds to and
+/// ```spec update` updates the drawing the block before it made.
+fn spec_blocks(text: &str) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
         let info = line.strip_prefix("```").unwrap_or("").trim();
-        if info == "spec" || info == "spec add" {
-            let body: Vec<&str> = lines
-                .by_ref()
-                .take_while(|l| !l.starts_with("```"))
-                .collect();
-            out.push((info == "spec add", body.join("\n")));
-        }
+        let command = match info {
+            "spec" => "excalidraw:create",
+            "spec add" => "excalidraw:add",
+            "spec update" => "excalidraw:update",
+            _ => continue,
+        };
+        let body: Vec<&str> = lines
+            .by_ref()
+            .take_while(|l| !l.starts_with("```"))
+            .collect();
+        out.push((command, body.join("\n")));
     }
     out
 }
@@ -163,21 +169,17 @@ fn every_example_spec_in_the_skill_builds_a_valid_drawing() {
         assert!(!blocks.is_empty(), "{file} has examples");
         let v = Vaults::new();
         let mut last: Option<String> = None;
-        for (i, (add, body)) in blocks.iter().enumerate() {
+        for (i, (command, body)) in blocks.iter().enumerate() {
             let spec: Value =
                 serde_json::from_str(body).unwrap_or_else(|e| panic!("{file} #{i}: {e}"));
-            let rel = if *add {
-                last.clone()
-                    .expect("a `spec add` block follows the block that made the drawing")
-            } else {
+            let rel = if *command == "excalidraw:create" {
                 format!("ex-{i}.excalidraw.md")
+            } else {
+                last.clone().expect(
+                    "a `spec add` or `spec update` block follows the block that made the drawing",
+                )
             };
             let path = format!("path={rel}");
-            let command = if *add {
-                "excalidraw:add"
-            } else {
-                "excalidraw:create"
-            };
             v.ok(&[command, &path, &spec_arg(&spec)]);
             let scene = v.scene(&rel);
             validate_scene(&scene).unwrap_or_else(|e| panic!("{file} #{i}: {e}"));
@@ -325,7 +327,7 @@ fn boxes_without_a_position_never_overlap_and_a_given_one_stays() {
 }
 
 #[test]
-fn add_and_connect_leave_what_is_there_alone_except_what_they_connect() {
+fn add_leaves_what_is_there_alone_except_what_it_connects() {
     let v = Vaults::new();
     v.ok(&[
         "excalidraw:create",
@@ -388,12 +390,11 @@ fn add_and_connect_leave_what_is_there_alone_except_what_they_connect() {
             > api_before["y"].as_f64().unwrap() + api_before["height"].as_f64().unwrap()
     );
 
+    // an arrow between boxes that are both already drawn is an `add` with only edges
     v.ok(&[
-        "excalidraw:connect",
+        "excalidraw:add",
         "path=D.excalidraw.md",
-        "from=cache",
-        "to=db",
-        "label=writes",
+        &spec_arg(&json!({"edges": [["cache", "db", "writes"]]})),
     ]);
     let read: Value = serde_json::from_str(&v.ok(&["excalidraw:read", "file=D.excalidraw"]))
         .unwrap_or_else(|_| {
@@ -453,10 +454,9 @@ fn a_plain_excalidraw_file_works_too() {
     let text = std::fs::read_to_string(v.path("P.excalidraw")).unwrap();
     assert!(text.trim_start().starts_with('{') && !text.contains("## "));
     v.ok(&[
-        "excalidraw:connect",
+        "excalidraw:add",
         "path=P.excalidraw",
-        "from=db",
-        "to=api",
+        &spec_arg(&json!({"edges": [["db", "api"]]})),
     ]);
     let scene = v.scene("P.excalidraw");
     validate_scene(&scene).unwrap();
@@ -525,10 +525,9 @@ fn bad_input_is_refused_before_anything_is_written() {
         .contains("already exists"));
     assert!(v
         .fail(&[
-            "excalidraw:connect",
+            "excalidraw:add",
             "path=D.excalidraw.md",
-            "from=api",
-            "to=nope"
+            &spec_arg(&json!({"edges": [["api", "nope"]]}))
         ])
         .contains("no node nope"));
     let before = std::fs::read(v.path("D.excalidraw.md")).unwrap();
@@ -548,9 +547,21 @@ fn bad_input_is_refused_before_anything_is_written() {
 fn export_without_the_app_says_so_and_a_switched_off_feature_runs_nothing() {
     let v = Vaults::new();
     v.ok(&["excalidraw:create", "path=D", &spec_arg(&two_boxes())]);
-    let o = v.run(&["excalidraw:export", "path=D.excalidraw.md"]);
-    assert_eq!(o.code, EXIT_NOT_RUNNING);
-    assert!(o.stderr.contains("Writer is not running"), "{}", o.stderr);
+    for line in [
+        &["excalidraw:export", "path=D.excalidraw.md"][..],
+        &["excalidraw:export", "path=D.excalidraw.md", "format=png"],
+        &["excalidraw:preview", "path=D.excalidraw.md"],
+        &["excalidraw:preview", "path=D.excalidraw.md", "scale=2"],
+    ] {
+        let o = v.run(line);
+        assert_eq!(o.code, EXIT_NOT_RUNNING, "{line:?}");
+        assert!(o.stderr.contains("Writer is not running"), "{}", o.stderr);
+    }
+    // a bad format or scale is a usage error, before the app is looked for
+    for bad in ["format=gif", "scale=abc"] {
+        let o = v.run(&["excalidraw:preview", "path=D.excalidraw.md", bad]);
+        assert_eq!(o.code, EXIT_USAGE, "{bad}");
+    }
 
     std::fs::write(
         v.data.path().join("config"),
@@ -561,6 +572,8 @@ fn export_without_the_app_says_so_and_a_switched_off_feature_runs_nothing() {
         &["excalidraw:create", "path=Z"][..],
         &["excalidraw:read", "path=D.excalidraw.md"],
         &["excalidraw:export", "path=D.excalidraw.md"],
+        &["excalidraw:preview", "path=D.excalidraw.md"],
+        &["excalidraw:update", "path=D.excalidraw.md", "spec={}"],
     ] {
         let o = v.run(line);
         assert_eq!(o.code, EXIT_FAIL, "{line:?}");
@@ -573,11 +586,12 @@ fn export_without_the_app_says_so_and_a_switched_off_feature_runs_nothing() {
     assert!(!v.path("Z.excalidraw.md").exists());
 }
 
-// ---------- the socket command ----------
+// ---------- the socket commands ----------
 
 struct FakeWindow {
     root: PathBuf,
     answer: Value,
+    asked: std::sync::Mutex<Vec<Value>>,
 }
 
 impl Host for FakeWindow {
@@ -604,17 +618,27 @@ impl Host for FakeWindow {
         topic: &'a str,
         payload: Value,
     ) -> crate::ipc::BoxFuture<'a, Result<Value, IpcError>> {
-        assert_eq!(topic, "excalidraw:export");
+        assert_eq!(topic, "excalidraw:render");
         assert!(payload["path"]
             .as_str()
             .unwrap()
             .ends_with("D.excalidraw.md"));
+        self.asked.lock().unwrap().push(payload);
         let answer = self.answer.clone();
         Box::pin(async move { Ok(answer) })
     }
 }
 
-fn export_with(answer: impl Fn(&Path) -> Value, args: Value) -> Result<Value, IpcError> {
+/// A one-pixel PNG, base64.
+const PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+/// Run the command `name` against a fake window answering `answer`. Returns the result, the
+/// vault (kept alive) and what the window was asked.
+fn run_ipc(
+    name: &str,
+    answer: Value,
+    args: Value,
+) -> (Result<Value, IpcError>, TempDir, Vec<Value>) {
     let dir = TempDir::new().unwrap();
     let root = dir.path().canonicalize().unwrap();
     std::fs::write(
@@ -623,10 +647,12 @@ fn export_with(answer: impl Fn(&Path) -> Value, args: Value) -> Result<Value, Ip
     )
     .unwrap();
     std::fs::write(root.join("Note.md"), "x").unwrap();
-    let host: Arc<dyn Host> = Arc::new(FakeWindow {
-        answer: answer(&root),
+    let window = Arc::new(FakeWindow {
+        answer,
         root: root.clone(),
+        asked: Default::default(),
     });
+    let host: Arc<dyn Host> = window.clone();
     let call = Call {
         host,
         vault: Some(Vault {
@@ -635,43 +661,185 @@ fn export_with(answer: impl Fn(&Path) -> Value, args: Value) -> Result<Value, Ip
         }),
         args: args.as_object().unwrap().clone(),
     };
+    let run = ipc::COMMANDS.iter().find(|c| c.name == name).unwrap().run;
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-    rt.block_on((ipc::COMMANDS[0].run)(call))
+    let out = rt.block_on(run(call));
+    let asked = window.asked.lock().unwrap().clone();
+    (out, dir, asked)
+}
+
+fn png_answer() -> Value {
+    json!({"format": "png", "data": PNG_B64})
 }
 
 #[test]
-fn the_socket_command_confines_the_path_and_reduces_the_answer_to_the_svg() {
-    let ok = export_with(
-        |root| json!({"path": root.join("D.svg").to_string_lossy(), "svg": "<svg>note text</svg>"}),
-        json!({"path": "D.excalidraw.md"}),
-    )
-    .unwrap();
-    assert_eq!(ok, json!({"path": "D.svg"}), "only the path leaves the app");
-    for bad in [
-        json!({"path": "../D.excalidraw.md"}),
-        json!({"path": "missing.excalidraw.md"}),
-        json!({"path": "Note.md"}),
-        json!({"path": "D.excalidraw.md", "extra": 1}),
-    ] {
-        assert!(export_with(|_| json!({}), bad.clone()).is_err(), "{bad}");
-    }
-    // a window that answers with a path outside the vault, or not an SVG, is not believed
-    let outside = export_with(
-        |_| json!({"path": "/etc/passwd.svg"}),
-        json!({"path": "D.excalidraw.md"}),
-    );
-    assert_eq!(outside.unwrap_err().code, ErrorCode::Internal);
-    assert!(export_with(
-        |root| json!({"path": root.join("Note.md").to_string_lossy()}),
-        json!({"path": "D.excalidraw.md"})
-    )
-    .is_err());
-    let c = &ipc::COMMANDS[0];
+fn the_commands_are_on_the_allowlist_as_feature_commands() {
+    let names: Vec<_> = ipc::COMMANDS.iter().map(|c| (c.name, c.feature)).collect();
     assert_eq!(
-        (c.name, c.feature),
-        ("excalidraw:export", Some("excalidraw"))
+        names,
+        [
+            ("excalidraw:export", Some("excalidraw")),
+            ("excalidraw:preview", Some("excalidraw"))
+        ]
     );
 }
+
+#[test]
+fn preview_writes_a_png_outside_the_vault_and_answers_only_its_path() {
+    let (out, dir, asked) = run_ipc(
+        "excalidraw:preview",
+        png_answer(),
+        json!({"path": "D.excalidraw.md", "scale": 2}),
+    );
+    let path = PathBuf::from(out.unwrap()["path"].as_str().unwrap());
+    assert!(path.is_absolute());
+    assert!(
+        !path.starts_with(dir.path().canonicalize().unwrap()),
+        "never in the vault"
+    );
+    assert!(path.starts_with(std::env::temp_dir().join("writer-previews")));
+    assert!(path.extension().is_some_and(|e| e == "png"));
+    assert!(std::fs::read(&path)
+        .unwrap()
+        .starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert_eq!(asked[0]["format"], "png");
+    assert_eq!(asked[0]["scale"], 2.0);
+    // the vault holds nothing new
+    assert!(!dir.path().join("D.png").exists());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn preview_defaults_to_png_and_can_be_an_svg() {
+    let (_, dir, asked) = run_ipc(
+        "excalidraw:preview",
+        png_answer(),
+        json!({"path": "D.excalidraw.md"}),
+    );
+    assert_eq!(
+        (asked[0]["format"].clone(), asked[0]["scale"].clone()),
+        (json!("png"), json!(1.0))
+    );
+    drop(dir);
+    let (out, _dir, _) = run_ipc(
+        "excalidraw:preview",
+        json!({"format": "svg", "data": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"}),
+        json!({"path": "D.excalidraw.md", "format": "svg"}),
+    );
+    let path = PathBuf::from(out.unwrap()["path"].as_str().unwrap());
+    assert!(std::fs::read_to_string(&path).unwrap().starts_with("<svg"));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn export_writes_beside_the_drawing_in_the_vault_as_svg_or_png() {
+    let (out, dir, _) = run_ipc(
+        "excalidraw:export",
+        json!({"format": "svg", "data": "<svg>note text</svg>"}),
+        json!({"path": "D.excalidraw.md", "format": "svg"}),
+    );
+    assert_eq!(
+        out.unwrap(),
+        json!({"path": "D.svg"}),
+        "only the path leaves the app"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("D.svg")).unwrap(),
+        "<svg>note text</svg>"
+    );
+
+    let (out, dir, _) = run_ipc(
+        "excalidraw:export",
+        png_answer(),
+        json!({"path": "D.excalidraw.md", "format": "png"}),
+    );
+    assert_eq!(out.unwrap(), json!({"path": "D.png"}));
+    assert!(std::fs::read(dir.path().join("D.png"))
+        .unwrap()
+        .starts_with(b"\x89PNG"));
+    // export stays an SVG unless asked otherwise
+    let (_, _dir, asked) = run_ipc(
+        "excalidraw:export",
+        json!({"data": "<svg/>"}),
+        json!({"path": "D.excalidraw.md"}),
+    );
+    assert_eq!(asked[0]["format"], "svg");
+}
+
+#[test]
+fn the_socket_commands_confine_the_path_and_refuse_bad_arguments() {
+    for name in ["excalidraw:export", "excalidraw:preview"] {
+        for bad in [
+            json!({"path": "../D.excalidraw.md"}),
+            json!({"path": "missing.excalidraw.md"}),
+            json!({"path": "Note.md"}),
+            json!({"path": "D.excalidraw.md", "extra": 1}),
+            json!({"path": "D.excalidraw.md", "format": "gif"}),
+            json!({"path": "D.excalidraw.md", "scale": 9}),
+            json!({"path": "D.excalidraw.md", "scale": "big"}),
+            json!({"path": "D.excalidraw.md", "format": "svg", "scale": 2}),
+        ] {
+            let (out, _dir, asked) = run_ipc(name, png_answer(), bad.clone());
+            assert!(out.is_err(), "{name} {bad}");
+            assert!(asked.is_empty(), "the window is not bothered: {bad}");
+        }
+    }
+}
+
+#[test]
+fn an_answer_that_is_not_the_image_it_claims_is_not_believed() {
+    for (name, answer, format) in [
+        ("excalidraw:preview", json!({"data": "bm90IGEgcG5n"}), "png"),
+        ("excalidraw:preview", json!({"data": "!!"}), "png"),
+        ("excalidraw:preview", json!({}), "png"),
+        ("excalidraw:export", json!({"data": "<html>"}), "svg"),
+    ] {
+        let (out, dir, _) = run_ipc(
+            name,
+            answer,
+            json!({"path": "D.excalidraw.md", "format": format}),
+        );
+        assert_eq!(out.unwrap_err().code, ErrorCode::Internal);
+        assert!(!dir.path().join("D.png").exists() && !dir.path().join("D.svg").exists());
+    }
+}
+
+// ---------- the previews folder ----------
+
+#[test]
+fn previews_are_private_and_old_ones_are_swept() {
+    use std::time::{Duration, SystemTime};
+    let base = TempDir::new().unwrap();
+    let now = SystemTime::now();
+    let first = previews::save(base.path(), "My note/odd name", "png", b"a", now).unwrap();
+    let name = first.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        name.starts_with("My-note-odd-name-") && name.ends_with(".png"),
+        "{name}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(first.parent().unwrap()), 0o700);
+        assert_eq!(mode(&first), 0o600);
+    }
+    // a later preview, past the keep time, sweeps the first
+    let later = now + previews::KEEP + Duration::from_secs(60);
+    // the file's mtime is real "now", so age it by asking from the future
+    let second = previews::save(base.path(), "x", "png", b"b", later).unwrap();
+    assert!(!first.exists() && second.exists());
+    // a symlink in the place of the folder is refused
+    #[cfg(unix)]
+    {
+        let other = TempDir::new().unwrap();
+        let b2 = TempDir::new().unwrap();
+        std::os::unix::fs::symlink(other.path(), b2.path().join(previews::FOLDER)).unwrap();
+        assert!(previews::save(b2.path(), "x", "png", b"c", now).is_err());
+    }
+}
+
+mod update;

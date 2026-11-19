@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Excalidraw for agents: `writer excalidraw:update` changes a drawing (re-label, recolour, reshape, move or resize boxes, re-label or recolour arrows, remove boxes with their arrows or single arrows) and keeps everything else as it was; `writer excalidraw:preview` renders a drawing to a PNG (or SVG) in the OS temp folder, outside your vault, and prints its path so an agent can look at what it drew; `excalidraw:export` can now write a PNG too (`format=png`). The `writer-excalidraw` skill teaches the loop: draw, preview, fix, preview. `excalidraw:connect` is gone: `excalidraw:add` with only `edges` draws the arrow. Bundle v17.
 - Spelling: a misspelled word gets an "Ignore" chip (eye-off icon) in the tooltip and in the footer issues list, next to "Add to dictionary". It stops flagging that word in that note only, is remembered across restarts, and is kept on this computer (not in the vault, so other devices still flag it); it follows the note when you rename or move it and goes with it when you delete it.
 - Tasks: the Tasks page sections no longer fail with "`this` file is not in the index" before `Tasks.md` exists; each section shows its title once and no Edit button. A base embedded with no note now reads `this` as empty instead of the current row.
 - Spelling: "Add to dictionary" removes the underlines at once; the issues list opens above the footer and is larger; the internal rule tag is no longer printed under the tooltip.

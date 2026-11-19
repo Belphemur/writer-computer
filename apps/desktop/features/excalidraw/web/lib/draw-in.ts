@@ -1,5 +1,5 @@
 // The draw-in of new elements when a drawing reloads (ADR 2026-11-18, point 9): each element an
-// agent adds is revealed over about 300 ms, so `excalidraw:add` and `excalidraw:connect` calls
+// agent adds is revealed over about 300 ms, so `excalidraw:add` and `excalidraw:update` calls
 // show up as being drawn. A line, an arrow or a freehand stroke is revealed along its path; a
 // box, an ellipse, a diamond, a label or an image fades in. Only the elements that are new in the
 // reload are touched, and with reduced motion nothing is animated at all.

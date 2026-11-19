@@ -72,16 +72,17 @@ describe("manifest contract", () => {
     const ids = [...c.slots!, ...c.commands!, ...c.editorExtensions!].map((x) => x.id);
     expect(ids.every((id) => id.startsWith("excalidraw."))).toBe(true);
     expect(c.slots![0]!.slot).toBe("page-view:drawing");
-    expect(c.ipcRequests![0]!.topic).toBe("excalidraw:export");
+    expect(c.ipcRequests![0]!.topic).toBe("excalidraw:render");
   });
 
   it("names the Rust commands the CLI exposes", () => {
     expect(manifest.rust.cliCommands).toEqual([
       "excalidraw:create",
       "excalidraw:add",
-      "excalidraw:connect",
+      "excalidraw:update",
       "excalidraw:read",
       "excalidraw:export",
+      "excalidraw:preview",
     ]);
     expect(manifest.rust.skills).toEqual(["writer-excalidraw"]);
   });

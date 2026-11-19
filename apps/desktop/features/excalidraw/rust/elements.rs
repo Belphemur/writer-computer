@@ -3,7 +3,7 @@
 //! agent should not have to know: element ids, seeds and versions, box sizes from the text, bound
 //! text, arrow bindings (both ends know the arrow), groups and a layered layout for boxes without
 //! a position. The id an agent gave a box is kept in the element's `customData.writerId`, so
-//! `add`, `connect` and `read` address boxes by it later. Existing elements are never rewritten
+//! `add`, `update` and `read` address boxes by it later. Existing elements are never rewritten
 //! except for the `boundElements` of a box a new arrow connects to (its version moves, so an
 //! open editor sees exactly what changed). Tauri-free.
 
@@ -11,6 +11,9 @@ use super::layout::{self, Direction, Item};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+mod update;
+pub use update::update_scene;
 
 const FONT_SIZE: f64 = 20.0;
 const LINE_HEIGHT: f64 = 1.25;
@@ -34,18 +37,32 @@ pub struct Spec {
     pub edges: Vec<EdgeSpec>,
     #[serde(default)]
     pub groups: Vec<GroupSpec>,
+    /// `update` only: boxes (their arrows go with them) and arrows `[from, to]` to delete.
+    pub remove: Option<RemoveSpec>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveSpec {
+    #[serde(default)]
+    pub nodes: Vec<String>,
+    #[serde(default)]
+    pub edges: Vec<(String, String)>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeSpec {
     pub id: String,
-    #[serde(default)]
-    pub text: String,
+    /// The label. In `update`, absent keeps the current one and `""` clears it.
+    pub text: Option<String>,
     /// `rectangle` (default), `ellipse`, `diamond` or `text` (a label with no box).
     pub shape: Option<String>,
     pub x: Option<f64>,
     pub y: Option<f64>,
+    /// An explicit size; the text has to fit in it. Absent: sized from the text.
+    pub w: Option<f64>,
+    pub h: Option<f64>,
     /// A palette name (blue, green, red, yellow, orange, purple, gray) or `#rrggbb`.
     pub color: Option<String>,
 }
@@ -58,8 +75,12 @@ pub enum EdgeSpec {
     Named {
         from: String,
         to: String,
+        /// In `update`, absent keeps the current label and `""` clears it.
         #[serde(default)]
         label: Option<String>,
+        /// The arrow's colour (and its label's), as for a box.
+        #[serde(default)]
+        color: Option<String>,
     },
 }
 
@@ -75,26 +96,37 @@ pub struct Edge {
     pub from: String,
     pub to: String,
     pub label: Option<String>,
+    pub color: Option<String>,
 }
 
 impl EdgeSpec {
-    pub fn normalize(&self) -> Result<Edge, String> {
+    /// `(from, to, label, color)` as written: an empty label is kept (in `update` it clears).
+    pub fn raw(&self) -> Result<(String, String, Option<String>, Option<String>), String> {
         match self {
-            EdgeSpec::List(v) if (2..=3).contains(&v.len()) => Ok(Edge {
-                from: v[0].clone(),
-                to: v[1].clone(),
-                label: v.get(2).filter(|l| !l.is_empty()).cloned(),
-            }),
+            EdgeSpec::List(v) if (2..=3).contains(&v.len()) => {
+                Ok((v[0].clone(), v[1].clone(), v.get(2).cloned(), None))
+            }
             EdgeSpec::List(v) => Err(format!(
                 "an edge is [from, to] or [from, to, label], got {} items",
                 v.len()
             )),
-            EdgeSpec::Named { from, to, label } => Ok(Edge {
-                from: from.clone(),
-                to: to.clone(),
-                label: label.clone().filter(|l| !l.is_empty()),
-            }),
+            EdgeSpec::Named {
+                from,
+                to,
+                label,
+                color,
+            } => Ok((from.clone(), to.clone(), label.clone(), color.clone())),
         }
+    }
+
+    pub fn normalize(&self) -> Result<Edge, String> {
+        let (from, to, label, color) = self.raw()?;
+        Ok(Edge {
+            from,
+            to,
+            label: label.filter(|l| !l.is_empty()),
+            color,
+        })
     }
 }
 
@@ -378,6 +410,69 @@ fn push_bound(el: &mut Value, id: &str, kind: &str) {
     }
 }
 
+/// The size of a box: `natural` (from its text) unless `w`/`h` say otherwise, and the text has
+/// to fit in what they say.
+fn fit_size(
+    id: &str,
+    natural: (f64, f64),
+    text: &str,
+    lines: &[String],
+    w: Option<f64>,
+    h: Option<f64>,
+) -> Result<(f64, f64), String> {
+    if w.is_some_and(|v| v <= 0.0) || h.is_some_and(|v| v <= 0.0) {
+        return Err(format!("node {id}: w and h are positive"));
+    }
+    let size = (w.unwrap_or(natural.0), h.unwrap_or(natural.1));
+    let need = text_size(lines);
+    if !text.is_empty() && ((w.is_some() && size.0 < need.0) || (h.is_some() && size.1 < need.1)) {
+        return Err(format!(
+            "node {id}: the text needs at least {} x {}",
+            need.0.ceil(),
+            need.1.ceil()
+        ));
+    }
+    Ok(size)
+}
+
+type Rect = (f64, f64, f64, f64);
+
+/// One end of an arrow: a box it is bound to, or a free point.
+#[derive(Clone, Copy)]
+enum End {
+    Box(Rect),
+    Point((f64, f64)),
+}
+
+/// Where an arrow between two ends starts and stops: on each box's outline towards the other
+/// end, with a small gap.
+fn route(a: End, b: End) -> ((f64, f64), (f64, f64)) {
+    let anchor = |e: End| match e {
+        End::Box(r) => center(r),
+        End::Point(p) => p,
+    };
+    let (ca, cb) = (anchor(a), anchor(b));
+    let mut s = match a {
+        End::Box(r) => boundary(r, cb),
+        End::Point(p) => p,
+    };
+    let mut t = match b {
+        End::Box(r) => boundary(r, ca),
+        End::Point(p) => p,
+    };
+    let len = ((t.0 - s.0).powi(2) + (t.1 - s.1).powi(2)).sqrt();
+    if len > 3.0 * ARROW_GAP {
+        let (ux, uy) = ((t.0 - s.0) / len, (t.1 - s.1) / len);
+        if matches!(a, End::Box(_)) {
+            s = (s.0 + ux * ARROW_GAP, s.1 + uy * ARROW_GAP);
+        }
+        if matches!(b, End::Box(_)) {
+            t = (t.0 - ux * ARROW_GAP, t.1 - uy * ARROW_GAP);
+        }
+    }
+    (s, t)
+}
+
 // ---------- the nodes already in a drawing ----------
 
 fn is_box(el: &Value) -> bool {
@@ -400,7 +495,7 @@ fn node_key(el: &Value) -> String {
         .to_string()
 }
 
-fn rect_of(el: &Value) -> (f64, f64, f64, f64) {
+fn rect_of(el: &Value) -> Rect {
     let n = |k: &str| el[k].as_f64().unwrap_or(0.0);
     (n("x"), n("y"), n("width"), n("height"))
 }
@@ -474,6 +569,9 @@ fn push_elements(scene: &mut Value, els: Vec<Value>) {
 /// Add the nodes, edges and groups of `spec` to `scene` (which may be empty). Everything is
 /// checked first: a bad spec leaves the scene as it was.
 pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added, String> {
+    if spec.remove.is_some() {
+        return Err("remove is only for update".into());
+    }
     let direction = direction_of(spec)?;
     let existing = nodes_by_key(scene);
 
@@ -496,14 +594,15 @@ pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added
             _ => return Err(format!("node {}: give both x and y, or neither", n.id)),
         };
         let (stroke, background) = colors(n.color.as_deref())?;
-        let lines = wrap(&n.text);
+        let text = n.text.clone().unwrap_or_default();
+        let lines = wrap(&text);
         nodes.push(NewNode {
             key: n.id.clone(),
             el_id: g.id(),
             shape,
-            size: shape.size(&lines),
+            size: fit_size(&n.id, shape.size(&lines), &text, &lines, n.w, n.h)?,
             lines,
-            original: n.text.clone(),
+            original: text,
             stroke,
             background,
             at,
@@ -527,6 +626,9 @@ pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added
                 "edge {} -> {}: a node cannot point at itself",
                 e.from, e.to
             ));
+        }
+        if let Some(c) = &e.color {
+            colors(Some(c)).map_err(|m| format!("edge {} -> {}: {m}", e.from, e.to))?;
         }
     }
     for grp in &spec.groups {
@@ -656,15 +758,7 @@ pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added
             .to_string()
     };
     for e in &edges {
-        let (ra, rb) = (rects[&e.from], rects[&e.to]);
-        let (ca, cb) = (center(ra), center(rb));
-        let (mut s, mut t) = (boundary(ra, cb), boundary(rb, ca));
-        let len = ((t.0 - s.0).powi(2) + (t.1 - s.1).powi(2)).sqrt();
-        if len > 3.0 * ARROW_GAP {
-            let (ux, uy) = ((t.0 - s.0) / len, (t.1 - s.1) / len);
-            s = (s.0 + ux * ARROW_GAP, s.1 + uy * ARROW_GAP);
-            t = (t.0 - ux * ARROW_GAP, t.1 - uy * ARROW_GAP);
-        }
+        let (s, t) = route(End::Box(rects[&e.from]), End::Box(rects[&e.to]));
         let (dx, dy) = (t.0 - s.0, t.1 - s.1);
         let arrow_id = g.id();
         let mut m = base("arrow", &arrow_id, (s.0, s.1, dx.abs(), dy.abs()), g);
@@ -682,6 +776,10 @@ pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added
         m.insert("startArrowhead".into(), Value::Null);
         m.insert("endArrowhead".into(), json!("arrow"));
         m.insert("elbowed".into(), json!(false));
+        let ink = e.color.as_deref().map_or(INK.to_string(), |c| {
+            colors(Some(c)).expect("checked above").0
+        });
+        m.insert("strokeColor".into(), json!(ink));
         let mut arrow = Value::Object(m);
         let mut label_el = None;
         if let Some(label) = &e.label {
@@ -695,7 +793,7 @@ pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added
                 label,
                 mid,
                 Some(&arrow_id),
-                INK,
+                &ink,
                 g,
             ));
         }
@@ -728,26 +826,6 @@ pub fn add_to_scene(scene: &mut Value, spec: &Spec, g: &mut Gen) -> Result<Added
         nodes: new_count,
         edges: edge_count,
     })
-}
-
-/// One new arrow between boxes already in the drawing (`from` and `to` are the ids the drawing
-/// knows them by).
-pub fn connect(
-    scene: &mut Value,
-    from: &str,
-    to: &str,
-    label: Option<&str>,
-    g: &mut Gen,
-) -> Result<Added, String> {
-    let spec = Spec {
-        edges: vec![EdgeSpec::Named {
-            from: from.to_string(),
-            to: to.to_string(),
-            label: label.map(str::to_string),
-        }],
-        ..Spec::default()
-    };
-    add_to_scene(scene, &spec, g)
 }
 
 // ---------- reading back ----------

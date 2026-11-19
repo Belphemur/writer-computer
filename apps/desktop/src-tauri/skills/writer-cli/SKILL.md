@@ -54,7 +54,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Agent      | `project:archive`, `project:unarchive`                                                                                                        |
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                            |
 | Dataview   | `dql`                                                                                                                                         |
-| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:connect`, `excalidraw:read`, `excalidraw:export`                                           |
+| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:export`, `excalidraw:preview`                      |
 | Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                         |
 | Spelling   | `check`                                                                                                                                       |
 

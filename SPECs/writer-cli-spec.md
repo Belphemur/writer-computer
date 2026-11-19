@@ -921,13 +921,14 @@ With no app (no token file, no socket, or a socket nobody listens on) they print
 
 Group **Excalidraw**, contributed by the `excalidraw` feature (`feature: Some("excalidraw")`, so they say "turned off" when the feature is off). Spec: [`excalidraw-spec.md`](./excalidraw-spec.md).
 
-| Command              | Params and flags                                    | Does                                                                                                                               |
-| -------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `excalidraw:create`  | `path=`, `spec=` (JSON), `--overwrite`              | New drawing from a spec of boxes (`nodes`), arrows (`edges`) and `groups`, `direction` `LR` or `TB`, laid out without overlaps.    |
-| `excalidraw:add`     | `file=`/`path=`, `spec=`                            | Add a block of boxes and arrows below the existing ones; an open tab draws it in.                                                  |
-| `excalidraw:connect` | `file=`/`path=`, `from=`, `to=` (box ids), `label=` | An arrow bound to two existing boxes.                                                                                              |
-| `excalidraw:read`    | `file=`/`path=`                                     | The drawing as a spec (boxes, arrows, groups), never the compressed data.                                                          |
-| `excalidraw:export`  | `file=`/`path=`                                     | Asks the running app for `<name>.svg` next to the drawing (socket command `excalidraw:export`; exit 4 when Writer is not running). |
+| Command              | Params and flags                             | Does                                                                                                                                                                                                                                     |
+| -------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `excalidraw:create`  | `path=`, `spec=` (JSON), `--overwrite`       | New drawing from a spec of boxes (`nodes`), arrows (`edges`) and `groups`, `direction` `LR` or `TB`, laid out without overlaps.                                                                                                          |
+| `excalidraw:add`     | `file=`/`path=`, `spec=`                     | Add a block of boxes and arrows below the existing ones; an open tab draws it in.                                                                                                                                                        |
+| `excalidraw:update`  | `file=`/`path=`, `spec=`                     | Change boxes by id (`text`, `shape`, `color`, `x`/`y`, `w`/`h`), re-label or recolour arrows `[from, to]`, `remove` boxes and arrows.                                                                                                    |
+| `excalidraw:read`    | `file=`/`path=`                              | The drawing as a spec (boxes, arrows, groups), never the compressed data.                                                                                                                                                                |
+| `excalidraw:export`  | `file=`/`path=`, `format=svg\|png`, `scale=` | Asks the running app for `<name>.svg` (default) or `<name>.png` next to the drawing (socket command `excalidraw:export`; exit 4 when Writer is not running).                                                                             |
+| `excalidraw:preview` | `file=`/`path=`, `format=png\|svg`, `scale=` | Renders the drawing through the running app to `writer-previews/` in the OS temp dir (outside the vault) and prints the absolute path, for an agent to look at (socket command `excalidraw:preview`; exit 4 when Writer is not running). |
 
 Writes keep unknown sections and front matter byte for byte and never touch `.obsidian/`.
 

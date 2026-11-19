@@ -14,11 +14,12 @@
     "cliCommands": [
       "excalidraw:create",
       "excalidraw:add",
-      "excalidraw:connect",
+      "excalidraw:update",
       "excalidraw:read",
-      "excalidraw:export"
+      "excalidraw:export",
+      "excalidraw:preview"
     ],
-    "ipcCommands": ["excalidraw:export"],
+    "ipcCommands": ["excalidraw:export", "excalidraw:preview"],
     "fileKinds": ["drawing"]
   },
   "contributes": {
@@ -42,7 +43,7 @@
       "sidebar-folder": ["excalidraw.new-drawing"]
     },
     "workspaceListeners": ["excalidraw.disk-sync"],
-    "ipcRequests": ["excalidraw.export"],
+    "ipcRequests": ["excalidraw.render"],
     "services": ["excalidraw.files"]
   },
   "provides": ["excalidraw.files"]

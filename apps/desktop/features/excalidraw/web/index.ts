@@ -93,9 +93,9 @@ export default defineFeature({
     workspaceListeners: [diskSyncListener],
     ipcRequests: [
       {
-        id: "excalidraw.export",
-        topic: "excalidraw:export",
-        handle: (payload) => import("./export").then((m) => m.handleExport(payload)),
+        id: "excalidraw.render",
+        topic: "excalidraw:render",
+        handle: (payload) => import("./render").then((m) => m.handleRender(payload)),
       },
     ],
     services: [{ id: DRAWING_FILES, service: files }],

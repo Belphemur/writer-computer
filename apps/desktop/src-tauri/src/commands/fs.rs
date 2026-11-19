@@ -480,6 +480,11 @@ pub async fn read_file(
 }
 
 pub fn write_file_impl(path: &str, content: &str) -> Result<WriteResult, AppError> {
+    write_bytes_impl(path, content.as_bytes())
+}
+
+/// [`write_file_impl`] for bytes (an exported PNG): the same atomic, link-following write.
+pub fn write_bytes_impl(path: &str, content: &[u8]) -> Result<WriteResult, AppError> {
     // A symlink is written through to its target, never replaced by the rename below. The command
     // authorised the resolved path (inside the vault) before getting here.
     let file_path = crate::fs_entry::write_target(Path::new(path))?;

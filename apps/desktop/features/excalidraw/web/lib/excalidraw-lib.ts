@@ -31,9 +31,19 @@ export interface ExportToSvgOptions {
   exportPadding?: number;
 }
 
+export interface ExportToBlobOptions extends ExportToSvgOptions {
+  mimeType: "image/png";
+  /** The size of the image and its pixel ratio, from the natural size. */
+  getDimensions?: (
+    width: number,
+    height: number,
+  ) => { width: number; height: number; scale: number };
+}
+
 export interface ExcalidrawLib {
   Excalidraw: ComponentType<Record<string, unknown>>;
   exportToSvg(options: ExportToSvgOptions): Promise<SVGSVGElement>;
+  exportToBlob(options: ExportToBlobOptions): Promise<Blob>;
   CaptureUpdateAction: { NEVER: unknown; IMMEDIATELY: unknown };
 }
 

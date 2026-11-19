@@ -1,7 +1,7 @@
-//! The `writer excalidraw:*` commands (ADR 2026-11-18, point 7): `create`, `add`, `connect` and
-//! `read` work on the files with the app closed, through the codec and `vault_ops` confinement
-//! (the one write path of the CLI); `export` asks the running app over the socket
-//! (`ipc::export`). Declared here, tagged with the feature so the CLI's one gate answers "turned
+//! The `writer excalidraw:*` commands (ADR 2026-11-18, point 7): `create`, `add`, `update`
+//! and `read` work on the files with the app closed, through the codec and `vault_ops`
+//! confinement (the one write path of the CLI); `export` and `preview` ask the running app over
+//! the socket (`ipc.rs`). Declared here, tagged with the feature so the CLI's one gate answers "turned
 //! off" while `features.excalidraw.enabled` is false.
 
 use super::elements::{self, Gen};
@@ -16,7 +16,12 @@ use serde_json::{json, Map};
 const FEATURE: Option<&str> = Some("excalidraw");
 const GROUP: &str = "Excalidraw";
 
+const UPDATE_HELP: &str = "JSON: {\"nodes\":[{\"id\",\"text\"?,\"shape\"?,\"x\"?,\"y\"?,\"w\"?,\"h\"?,\"color\"?}],\"edges\":[[\"from\",\"to\",\"label\"?]],\"remove\":{\"nodes\":[ids],\"edges\":[[\"from\",\"to\"]]}}";
+
 const SPEC_HELP: &str = "JSON: {\"nodes\":[{\"id\",\"text\",\"shape\"?,\"x\"?,\"y\"?,\"color\"?}],\"edges\":[[\"from\",\"to\",\"label\"?]],\"groups\":[{\"nodes\":[ids]}],\"direction\":\"LR|TB\"}";
+
+const FORMAT_HELP: &str = "png or svg (default svg for export, png for preview)";
+const SCALE_HELP: &str = "PNG scale, 0.5 to 4 (default 1)";
 
 pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -51,20 +56,14 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         feature: FEATURE,
         ..cmd!(
-            "excalidraw:connect",
+            "excalidraw:update",
             GROUP,
-            "Draw an arrow between two boxes of a drawing",
-            &[
-                FILE,
-                PATH,
-                req("from", "box id"),
-                req("to", "box id"),
-                p("label", "text on the arrow")
-            ],
+            "Change, move, re-label or remove boxes and arrows of a drawing",
+            &[FILE, PATH, req("spec", UPDATE_HELP)],
             NO_FLAGS,
             NO_FORMATS,
             None,
-            connect
+            update
         )
     },
     CommandSpec {
@@ -85,12 +84,25 @@ pub static COMMANDS: &[CommandSpec] = &[
         ..cmd!(
             "excalidraw:export",
             GROUP,
-            "Write the drawing as an SVG next to it (needs Writer running)",
-            &[FILE, PATH],
+            "Write the drawing as an SVG or PNG next to it (needs Writer running)",
+            &[FILE, PATH, p("format", FORMAT_HELP), p("scale", SCALE_HELP)],
             NO_FLAGS,
             NO_FORMATS,
             None,
             export
+        )
+    },
+    CommandSpec {
+        feature: FEATURE,
+        ..cmd!(
+            "excalidraw:preview",
+            GROUP,
+            "Render the drawing to an image outside the vault and print its path (needs Writer running)",
+            &[FILE, PATH, p("format", FORMAT_HELP), p("scale", SCALE_HELP)],
+            NO_FLAGS,
+            NO_FORMATS,
+            None,
+            preview
         )
     },
 ];
@@ -196,22 +208,6 @@ pub fn add(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> 
     ))
 }
 
-pub fn connect(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let (t, format) = drawing(ctx, args)?;
-    let from = args
-        .get("from")
-        .ok_or_else(|| CliError::Usage("from= is required".into()))?;
-    let to = args
-        .get("to")
-        .ok_or_else(|| CliError::Usage("to= is required".into()))?;
-    let parsed = load(&t, format)?;
-    let mut scene = parsed.scene.clone();
-    elements::connect(&mut scene, from, to, args.get("label"), &mut Gen::new())
-        .map_err(CliError::fail)?;
-    write_back(&t, &parsed, scene)?;
-    Ok(format!("Connected {from} -> {to} in {}\n", t.rel))
-}
-
 pub fn read(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
     let (t, format) = drawing(ctx, args)?;
     let parsed = load(&t, format)?;
@@ -222,13 +218,65 @@ pub fn read(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError>
     ))
 }
 
-pub fn export(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+pub fn update(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let (t, format) = drawing(ctx, args)?;
+    let spec = spec_of(args, true)?;
+    let parsed = load(&t, format)?;
+    let mut scene = parsed.scene.clone();
+    let done =
+        elements::update_scene(&mut scene, &spec, &mut Gen::new()).map_err(CliError::fail)?;
+    write_back(&t, &parsed, scene)?;
+    let mut parts = Vec::new();
+    for (n, one, many, verb) in [
+        (done.nodes, "box", "boxes", "Updated"),
+        (done.edges, "arrow", "arrows", "Updated"),
+        (done.removed_nodes, "box", "boxes", "removed"),
+        (done.removed_edges, "arrow", "arrows", "removed"),
+    ] {
+        if n > 0 {
+            parts.push(format!("{verb} {}", plural(n, one, many)));
+        }
+    }
+    if parts.is_empty() {
+        parts.push("Nothing to change".into());
+    }
+    let said = parts.join(", ");
+    let mut chars = said.chars();
+    let said = chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect::<String>())
+        .unwrap_or_default();
+    Ok(format!("{said} in {}\n", t.rel))
+}
+
+/// Ask the running app to draw the drawing as `format` and print the path it answers with.
+fn render(ctx: &Ctx, args: &Args, command: &str) -> Result<String, CliError> {
     let (t, _) = drawing(ctx, args)?;
     let mut call = Map::new();
     call.insert("path".into(), json!(t.rel));
-    let v = cmd_app::call_app(ctx, "excalidraw:export", Some(ctx.root()?), call)?;
+    if let Some(f) = args.get("format") {
+        if !matches!(f, "png" | "svg") {
+            return Err(CliError::Usage("format= is png or svg".into()));
+        }
+        call.insert("format".into(), json!(f));
+    }
+    if let Some(s) = args.get("scale") {
+        let n: f64 = s
+            .parse()
+            .map_err(|_| CliError::Usage("scale= is a number from 0.5 to 4".into()))?;
+        call.insert("scale".into(), json!(n));
+    }
+    let v = cmd_app::call_app(ctx, command, Some(ctx.root()?), call)?;
     v["path"]
         .as_str()
         .map(|p| format!("{p}\n"))
-        .ok_or_else(|| CliError::fail("Writer did not say where it wrote the SVG"))
+        .ok_or_else(|| CliError::fail("Writer did not say where it wrote the image"))
+}
+
+pub fn export(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    render(ctx, args, "excalidraw:export")
+}
+
+pub fn preview(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    render(ctx, args, "excalidraw:preview")
 }

@@ -1,6 +1,6 @@
 # Worked examples
 
-Every `spec` block below is a complete spec for `excalidraw:create`; a `spec add` block is for `excalidraw:add` on the drawing the block before it made.
+Every `spec` block below is a complete spec for `excalidraw:create`; a `spec add` or `spec update` block is for `excalidraw:add` or `excalidraw:update` on the drawing the block before it made.
 
 ## Architecture, left to right
 
@@ -135,4 +135,23 @@ Step 2, `add` a branch below it that points at boxes already there (`build`) by 
 }
 ```
 
-Step 3, `excalidraw:connect path=... from=idea to=ship label=skip` draws one more arrow. Then `excalidraw:read` to check, `excalidraw:export` for the image.
+Step 3, an `add` with only `edges` draws one more arrow between boxes already there:
+
+```spec add
+{ "edges": [["idea", "ship", "skip"]] }
+```
+
+Step 4, after a `preview` showed "Fix bugs" is the wrong word and `test` should stand out, `update` changes them and drops the skip arrow:
+
+```spec update
+{
+  "nodes": [
+    { "id": "fix", "text": "Fix and retest", "color": "orange" },
+    { "id": "test", "color": "red" }
+  ],
+  "edges": [["test", "fix", "fails twice"]],
+  "remove": { "edges": [["idea", "ship"]] }
+}
+```
+
+Then `excalidraw:read` to check, `excalidraw:preview` to look, `excalidraw:export` for the image.

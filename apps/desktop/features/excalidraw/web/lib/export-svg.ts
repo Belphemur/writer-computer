@@ -37,9 +37,19 @@ export async function renderSvg(path: string, text: string, dark = false): Promi
     cache.set(key, hit);
     return hit;
   }
-  const [lib, loaded] = await Promise.all([loadExcalidraw(), loadDrawingText(path, text)]);
+  const [lib, input] = await Promise.all([loadExcalidraw(), exportInput(path, text, dark)]);
+  const markup = new XMLSerializer().serializeToString(await lib.exportToSvg(input));
+  cache.set(key, markup);
+  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
+  return markup;
+}
+
+/** Excalidraw's export input for a drawing's text: the live elements, the background and the
+ *  images. The one place both the SVG and the PNG render start from. */
+async function exportInput(path: string, text: string, dark: boolean) {
+  const loaded = await loadDrawingText(path, text);
   const scene = loaded.parsed.scene;
-  const svg = await lib.exportToSvg({
+  return {
     elements: scene.elements.filter((e) => e.isDeleted !== true),
     appState: {
       exportBackground: true,
@@ -48,11 +58,18 @@ export async function renderSvg(path: string, text: string, dark = false): Promi
     },
     files: loaded.files,
     exportPadding: 12,
+  };
+}
+
+/** The PNG of a drawing's text at `scale` times its natural size (Excalidraw's `exportToBlob`).
+ *  Not cached: a preview is asked for once per look. */
+export async function renderPng(path: string, text: string, scale = 1): Promise<Blob> {
+  const [lib, input] = await Promise.all([loadExcalidraw(), exportInput(path, text, false)]);
+  return lib.exportToBlob({
+    ...input,
+    mimeType: "image/png",
+    getDimensions: (width, height) => ({ width: width * scale, height: height * scale, scale }),
   });
-  const markup = new XMLSerializer().serializeToString(svg);
-  cache.set(key, markup);
-  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-  return markup;
 }
 
 /** Write `<name>.svg` next to the drawing from what the file holds now (an open tab saves first).
