@@ -1,70 +1,69 @@
 // The shared takeover prompt: asks once, only while the plugin runs and core can control it, and
-// turns the plugin off only when the answer says so.
+// turns the plugin off only on yes.
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   setCommunityPluginControl,
   setRunningCommunityPlugins,
   subscribeCommunityPlugins,
 } from "./community-plugins";
-import { offerTakeover } from "./plugin-takeover";
+import { offerPluginTakeover } from "./plugin-takeover";
 
 afterEach(() => {
   setRunningCommunityPlugins([]);
   setCommunityPluginControl(null);
 });
 
-function setup(answer = "writer", setEnabled = vi.fn(async () => {})) {
+const confirmAction = vi.hoisted(() => vi.fn(async () => true));
+vi.mock("./tauri", () => ({ confirmAction }));
+
+function setup(yes = true, setEnabled = vi.fn(async () => {})) {
+  localStorage.clear();
+  confirmAction.mockClear();
+  confirmAction.mockImplementation(async () => yes);
   setRunningCommunityPlugins(["p"]);
   setCommunityPluginControl({ setEnabled });
-  let stored: string | null = null;
-  const ask = vi.fn(async () => answer);
-  const offer = {
-    pluginId: "p",
-    scope: "test",
-    remembered: () => stored,
-    remember: (a: string) => void (stored = a),
-    ask,
-    turnsPluginOff: (a: string) => a === "writer",
-  };
-  return { offer, ask, setEnabled };
+  const offer = { pluginId: "p", askedKey: "asked-p", message: "Turn off?", title: "Plugin P" };
+  return { offer, setEnabled };
 }
 
-describe("offerTakeover", () => {
-  it("asks once, remembers, and turns the plugin off on the matching answer", async () => {
-    const { offer, ask, setEnabled } = setup();
-    expect(await offerTakeover(offer)).toEqual({ answer: "writer", pluginOff: true });
+describe("offerPluginTakeover", () => {
+  it("asks once, remembers, and turns the plugin off on yes", async () => {
+    const { offer, setEnabled } = setup();
+    expect(await offerPluginTakeover(offer)).toBe(true);
     expect(setEnabled).toHaveBeenCalledWith("p", false);
-    expect(await offerTakeover(offer)).toBeNull();
-    expect(ask).toHaveBeenCalledTimes(1);
+    expect(await offerPluginTakeover(offer)).toBe(false);
+    expect(confirmAction).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves the plugin on for another answer", async () => {
-    const { offer, setEnabled } = setup("both");
-    expect(await offerTakeover(offer)).toEqual({ answer: "both", pluginOff: false });
+  it("leaves the plugin on for no, and does not ask again", async () => {
+    const { offer, setEnabled } = setup(false);
+    expect(await offerPluginTakeover(offer)).toBe(false);
     expect(setEnabled).not.toHaveBeenCalled();
+    expect(await offerPluginTakeover(offer)).toBe(false);
+    expect(confirmAction).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing without the plugin or without control, and not twice at once", async () => {
-    const { offer, ask } = setup();
+    const { offer } = setup();
     setRunningCommunityPlugins([]);
-    expect(await offerTakeover(offer)).toBeNull();
+    expect(await offerPluginTakeover(offer)).toBe(false);
     setRunningCommunityPlugins(["p"]);
     setCommunityPluginControl(null);
-    expect(await offerTakeover(offer)).toBeNull();
+    expect(await offerPluginTakeover(offer)).toBe(false);
     setCommunityPluginControl({ setEnabled: async () => {} });
-    const [a, b] = await Promise.all([offerTakeover(offer), offerTakeover(offer)]);
-    expect([a, b].filter(Boolean)).toHaveLength(1);
-    expect(ask).toHaveBeenCalledTimes(1);
+    const results = await Promise.all([offerPluginTakeover(offer), offerPluginTakeover(offer)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(confirmAction).toHaveBeenCalledTimes(1);
   });
 
   it("reports a plugin that could not be turned off", async () => {
     const { offer } = setup(
-      "writer",
+      true,
       vi.fn(async () => {
         throw new Error("no");
       }),
     );
-    expect(await offerTakeover(offer)).toEqual({ answer: "writer", pluginOff: false });
+    expect(await offerPluginTakeover(offer)).toBe(false);
   });
 });
 

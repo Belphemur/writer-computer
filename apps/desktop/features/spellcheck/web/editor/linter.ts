@@ -6,14 +6,13 @@
 //   it already gave for the note (`stale`, then one retry), and `@codemirror/lint` itself drops an
 //   answer when the document changed while it was away.
 // - Re-checks without an edit: a dictionary installed, a word added, a rule ignored, a language
-//   picked, a setting changed or the LanguageTool plugin turning up or off bump `epoch` (or change
-//   the settings signature); a `ViewPlugin` listens and checks at once (`recheck`): nothing was
-//   typed, so the typing pause does not apply. Not `forceLinting`, which only hurries a check an
-//   edit already scheduled and does nothing otherwise.
+//   picked or a setting changed bump `epoch` (or change the settings signature); a `ViewPlugin`
+//   listens and checks at once (`nudge`): nothing was typed, so the typing pause does not
+//   apply. Not `forceLinting`, which only hurries a check an edit already scheduled and does
+//   nothing otherwise.
 import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { ViewPlugin, type EditorView } from "@codemirror/view";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
-import { subscribeCommunityPlugins } from "@/lib/community-plugins";
 import { editorNotePath, liveEditorViews } from "@/lib/editor-views";
 import { vaultRelative } from "@/lib/attachments";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
@@ -21,13 +20,7 @@ import { logger } from "@/lib/logger";
 import { getFileName } from "@/lib/paths";
 import { useSettingsStore } from "@/stores/settings-store";
 import { addWord, check, ignoreWord } from "../ipc";
-import {
-  anyKindEnabled,
-  checkSignature,
-  ignoredRules,
-  KEYS,
-  writerCheckerActive,
-} from "../lib/settings";
+import { anyKindEnabled, checkSignature, ignoredRules, KEYS } from "../lib/settings";
 import { groupFindings, issueKey } from "../lib/issue-groups";
 import { useSpellStore } from "../lib/spell-store";
 import { toDiagnostics, withoutWord, type ActionHandlers } from "./diagnostics";
@@ -81,7 +74,7 @@ function notePath(abs: string): string {
 }
 
 export async function runCheck(view: EditorView): Promise<Diagnostic[]> {
-  if (!writerCheckerActive() || !anyKindEnabled()) return [];
+  if (!anyKindEnabled()) return [];
   const doc = view.state.doc;
   if (doc.length > MAX_CHECK_CHARS) return [];
   const abs = view.state.facet(editorNotePath)();
@@ -128,7 +121,6 @@ const followChanges = ViewPlugin.define((view) => {
       signature = next;
       nudge();
     }),
-    subscribeCommunityPlugins(nudge),
   ];
   return {
     destroy: () => {

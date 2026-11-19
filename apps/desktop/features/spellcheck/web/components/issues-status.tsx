@@ -11,7 +11,7 @@ import type { StatusItemProps } from "@/lib/features/types";
 import { fixAll, jumpToNext } from "../editor/diagnostics";
 import { handlers } from "../editor/linter";
 import { countByKind, summarize, type IssueGroup } from "../lib/issue-groups";
-import { anyKindEnabled, writerCheckerActive } from "../lib/settings";
+import { anyKindEnabled } from "../lib/settings";
 import { useSpellStore } from "../lib/spell-store";
 
 const CHIP =
@@ -91,7 +91,7 @@ export default function IssuesStatus({ filePath }: StatusItemProps) {
   const groups = useSpellStore((s) => s.results[filePath]?.groups);
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
-  if (!groups?.length || !writerCheckerActive() || !anyKindEnabled()) return null;
+  if (!groups?.length || !anyKindEnabled()) return null;
   const total = Object.values(countByKind(groups)).reduce((a, b) => a + b, 0);
   return (
     <>

@@ -63,16 +63,6 @@
       "type": "list",
       "default": [],
       "scope": "global"
-    },
-    {
-      "key": "spellcheck.provider-with-languagetool",
-      "label": "With the LanguageTool plugin",
-      "description": "Which checker runs when the LanguageTool plugin is on. Asked once.",
-      "category": "Spelling",
-      "type": "enum",
-      "options": ["ask", "writer", "languagetool", "both"],
-      "default": "ask",
-      "scope": "global"
     }
   ]
 }

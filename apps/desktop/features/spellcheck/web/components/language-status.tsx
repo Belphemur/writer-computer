@@ -15,7 +15,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { dictionaries } from "../ipc";
 import { languagePropertyChange } from "../lib/lang-property";
 import { blockAt, languageName, sourceLabel } from "../lib/languages";
-import { anyKindEnabled, writerCheckerActive } from "../lib/settings";
+import { anyKindEnabled } from "../lib/settings";
 import { useSpellStore } from "../lib/spell-store";
 
 /** Writes `lang: <tag>` into the note through its editor, like any other edit. */
@@ -77,7 +77,7 @@ export default function LanguageStatus({ filePath }: StatusItemProps) {
       logger.warn("spellcheck", `the language menu failed: ${String(e)}`),
     );
   }, [filePath, block?.lang]);
-  if (!block || !writerCheckerActive() || !anyKindEnabled()) return null;
+  if (!block || !anyKindEnabled()) return null;
   const missing = result?.missing.includes(block.lang) ?? false;
   return (
     <button

@@ -34,7 +34,6 @@
       }
     ],
     "editorExtensions": ["spellcheck.linter"],
-    "statusItems": ["spellcheck.issues", "spellcheck.language"],
-    "overlays": ["spellcheck.languagetool-choice"]
+    "statusItems": ["spellcheck.issues", "spellcheck.language"]
   }
 }

@@ -96,6 +96,8 @@ Chosen option: **A**.
 
 ## More Information
 
+Amended 2026-11-19: point 9 (LanguageTool plugin coexistence) is removed at the user's request; Writer's checker runs whenever the feature is on.
+
 Amendment 2026-11-18: the user chose a per-note, device-local "Ignore" for a misspelled word (stored in the app data dir, not the vault; "Add to dictionary" stays the vault-wide choice).
 
 Research 2026-11-18: github.com/Automattic/harper (releases v3.0.0 2026-10-27 to v3.3.0 2026-11-18, `COMPARISON.md` English only, issues #2654 and #79 roadmap, PR #3402 closed unmerged 2026-11-12 in favour of WebAssembly language plugins, issue #3725 dictionary memory, closed), crates.io `harper-core`; github.com/helix-editor/spellbook (0.4.2, 2026-06-03); github.com/pemistahl/lingua-rs (1.8.0, 2026-03-09, 75 languages, models per language feature); github.com/bminixhofer/nlprule (last release 2021). Revisit when Harper ships stable non-English language plugins.

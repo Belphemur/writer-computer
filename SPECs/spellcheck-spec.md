@@ -4,7 +4,7 @@ Status: implemented in code and tested (Rust and jsdom); not seen in a real wind
 
 ## Goal
 
-Underline misspellings and (in English) grammar and style problems in the editor, offer fixes, work in the language of each paragraph, and do it all on the machine: **no network call ever carries note text**. It replaces the LanguageTool Obsidian plugin for the vault's usual case (English, some French) and is reachable from the CLI and the agent (`writer check`).
+Underline misspellings and (in English) grammar and style problems in the editor, offer fixes, work in the language of each paragraph, and do it all on the machine: **no network call ever carries note text**. It covers the vault's usual case (English, some French) and is reachable from the CLI and the agent (`writer check`).
 
 ## Engine (Tauri-free, `src-tauri/src/spellcheck/`)
 
@@ -59,16 +59,15 @@ A request carries a document version; the engine refuses one older than an answe
 
 Fragment `features/spellcheck/settings.schema.json`; the kill switch `features.spellcheck.enabled` is in the shared schema.
 
-| Key                                     | Default  | Meaning                                                     |
-| --------------------------------------- | -------- | ----------------------------------------------------------- |
-| `spellcheck.check-spelling`             | on       | Underline misspellings                                      |
-| `spellcheck.check-grammar`              | on       | Underline grammar problems (English)                        |
-| `spellcheck.check-style`                | off      | Underline style suggestions (English)                       |
-| `spellcheck.english-dialect`            | american | American, British, Canadian, Australian, Indian             |
-| `spellcheck.default-language`           | `en`     | Language when nothing else decides (workspace may override) |
-| `spellcheck.folder-languages`           | none     | `Folder=lang` rules (workspace may override)                |
-| `spellcheck.ignored-rules`              | none     | Rules turned off with "Ignore rule"                         |
-| `spellcheck.provider-with-languagetool` | ask      | `ask`, `writer`, `languagetool` or `both`                   |
+| Key                           | Default  | Meaning                                                     |
+| ----------------------------- | -------- | ----------------------------------------------------------- |
+| `spellcheck.check-spelling`   | on       | Underline misspellings                                      |
+| `spellcheck.check-grammar`    | on       | Underline grammar problems (English)                        |
+| `spellcheck.check-style`      | off      | Underline style suggestions (English)                       |
+| `spellcheck.english-dialect`  | american | American, British, Canadian, Australian, Indian             |
+| `spellcheck.default-language` | `en`     | Language when nothing else decides (workspace may override) |
+| `spellcheck.folder-languages` | none     | `Folder=lang` rules (workspace may override)                |
+| `spellcheck.ignored-rules`    | none     | Rules turned off with "Ignore rule"                         |
 
 ## Commands (`plugin:spellcheck|*`, all `async` through `commands::blocking`)
 
@@ -80,16 +79,12 @@ Fragment `features/spellcheck/settings.schema.json`; the kill switch `features.s
 
 ## Editor and Settings
 
-- A lazy `@codemirror/lint` source (750 ms after the last edit) sends the note and draws spelling and grammar as warnings and style as information. Actions: Replace with (up to 5), Add to dictionary and Ignore (this note only), for a spelling rule; Ignore rule for any other. Notes over 1,000,000 characters are not checked. A dictionary install, a word added, a rule ignored, a language picked, a setting changed and the LanguageTool plugin turning up or off all re-check the open notes.
+- A lazy `@codemirror/lint` source (750 ms after the last edit) sends the note and draws spelling and grammar as warnings and style as information. Actions: Replace with (up to 5), Add to dictionary and Ignore (this note only), for a spelling rule; Ignore rule for any other. Notes over 1,000,000 characters are not checked. A dictionary install, a word added, a rule ignored, a language picked and a setting changed all re-check the open notes.
 - The tooltip is a compact card (kind icon and title, the message, then a row of chips): each replacement as a word-only chip in the app accent (the first is stronger), "Add to dictionary" and "Ignore" (eye-off icon) for a misspelled word, or "Ignore rule", as quiet chips. It is CodeMirror's lint tooltip, built in `renderMessage` (`editor/diagnostics.ts`, styled by `editor/tooltip-theme.ts`); a chip looks the diagnostic's range up at click time (`liveDiagnostics`) so edits since the check are mapped.
 - A masked span counts as a word for its neighbours: a hit that is a suffix glued to one (`'s`, `’s`, `-based` after `[[Ben]]`, `[Ben](x.md)` or `#tag`) is dropped for every provider (`checker::glued_to_mask`, applied before the cache).
 - A footer item shows the note's issue count (spell-check icon and number, tooltip "3 spelling, 1 grammar", hidden at 0 or with the checker inactive), read from the groups the linter stores in `spell-store` (no second check). Its popover (`AnchoredPopover`) lists unique issues (`lib/issue-groups.ts`): spelling by word, case and apostrophe folded; grammar and style by rule plus text; spelling first, then grammar, then style, most frequent first; each with `x3`, up to 3 chips that replace every occurrence in one `input.complete` transaction, Add to dictionary and Ignore, or Ignore rule, and a click on the word selects the next occurrence through CodeMirror's `scrollIntoView` effect. A row leaves when the re-check comes back.
 - The footer item shows the language of the paragraph at the cursor; its menu lists English and the installed dictionaries. Picking one asks to confirm, then writes `lang:` into the note's front matter through the editor.
 - Settings > Spelling: the toggles and dialect, the default language and folder rules, the language list (installed, "Add language" with every catalog entry and its licence shown before the download, remove), and the personal dictionary. One hint line: "Grammar: English only for now; other languages check spelling".
-
-## LanguageTool coexistence
-
-When the LanguageTool community plugin runs in Writer's plugin host, Writer asks once ("Writer", "LanguageTool", "Both"; closing the dialog means Both) through the shared takeover mechanism `src/lib/plugin-takeover.ts` (also used by Excalidraw), and stores the answer in `spellcheck.provider-with-languagetool`. "Writer" turns the plugin off in Writer's own plugin state only, never in the vault's `.obsidian` folder. With "LanguageTool" chosen and the plugin running, Writer's checker stays quiet. Until the question is answered it runs: nothing is turned off without the user's word.
 
 ## Network
 
@@ -105,7 +100,7 @@ Rust: mask, lang, harper, hunspell, dictionaries (local file server, sha256 mism
 
 ## Not verified without a real window
 
-The underline look and tooltip, the footer menu and the confirm, the native three-button LanguageTool dialog, a real dictionary download, Settings > Spelling, and the release binary size and memory.
+The underline look and tooltip, the footer menu and the confirm, a real dictionary download, Settings > Spelling, and the release binary size and memory.
 
 ## Deferred
 

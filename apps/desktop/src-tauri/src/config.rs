@@ -831,6 +831,24 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_value_of_a_removed_setting_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("config"),
+            "spellcheck.provider-with-languagetool = both\neditor.font-size = 18\n",
+        )
+        .unwrap();
+        let settings = Settings::new(dir.path().to_path_buf()).unwrap();
+        assert_eq!(
+            settings.get("editor.font-size"),
+            Some(&ConfigValue::Number(18.0))
+        );
+        assert!(!settings_schema()
+            .iter()
+            .any(|d| d.key == "spellcheck.provider-with-languagetool"));
+    }
+
+    #[test]
     fn test_theme_font_migration() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(

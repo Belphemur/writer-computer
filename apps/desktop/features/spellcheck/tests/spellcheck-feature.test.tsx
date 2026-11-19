@@ -44,11 +44,8 @@ describe("manifest contract", () => {
     expect(spellcheck.id).toBe(manifest.id);
     expect(manifest.contributes.editorExtensions).toEqual(c.editorExtensions!.map((x) => x.id));
     expect(manifest.contributes.statusItems).toEqual(c.statusItems!.map((x) => x.id));
-    expect(manifest.contributes.overlays).toEqual(c.overlays!.map((x) => x.id));
     expect(manifest.contributes.commands.map((x) => x.id)).toEqual(c.commands!.map((x) => x.id));
-    const ids = [...c.editorExtensions!, ...c.statusItems!, ...c.overlays!, ...c.commands!].map(
-      (x) => x.id,
-    );
+    const ids = [...c.editorExtensions!, ...c.statusItems!, ...c.commands!].map((x) => x.id);
     expect(ids.every((id) => id.startsWith("spellcheck."))).toBe(true);
   });
 

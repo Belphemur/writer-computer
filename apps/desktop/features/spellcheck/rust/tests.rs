@@ -83,13 +83,12 @@ fn the_manifest_names_exactly_what_the_feature_contributes() {
         crate::spellcheck::options::DEFAULT_LANGUAGE,
         crate::spellcheck::options::FOLDER_LANGUAGES,
         crate::spellcheck::options::IGNORED_RULES,
-        "spellcheck.provider-with-languagetool",
     ] {
         assert!(keys.contains(key), "{key} is in the fragment");
     }
     assert_eq!(
         keys.len(),
-        8,
+        7,
         "no setting the engine or the web half does not read"
     );
 }

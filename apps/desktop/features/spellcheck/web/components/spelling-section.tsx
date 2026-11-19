@@ -1,13 +1,11 @@
 // Settings > Spelling: the checks, the installed languages (with "Add language" over the whole
-// Hunspell catalog and each licence), the personal dictionary and the LanguageTool choice. The
+// Hunspell catalog and each licence) and the personal dictionary. The
 // plain settings are rows of the shared `SettingRows`; the lists that need actions are cards here.
 // Text stays terse: labels, and one hint line.
 import { useCallback, useEffect, useState } from "react";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
 import { SelectControl } from "@/components/settings-panel/select-control";
-import { useAllSettings } from "@/hooks/use-settings";
 import { useWorkspaceStore } from "@/stores/workspace-store";
-import { isCommunityPluginRunning } from "@/lib/community-plugins";
 import { logger } from "@/lib/logger";
 import { FEATURE_SETTINGS, type SettingDef } from "@/lib/settings-schema";
 import {
@@ -19,7 +17,7 @@ import {
   removeWord,
   type DictionaryInfo,
 } from "../ipc";
-import { KEYS, LANGUAGETOOL_PLUGIN_ID, languageToolChoice } from "../lib/settings";
+import { KEYS } from "../lib/settings";
 import { useSpellStore } from "../lib/spell-store";
 
 const CARD =
@@ -217,13 +215,9 @@ function PersonalDictionary() {
 }
 
 export function SpellingSection() {
-  const settings = useAllSettings();
   const defs = (FEATURE_SETTINGS.spellcheck ?? []) as readonly SettingDef[];
   const byKey = (keys: readonly string[]) => defs.filter((d) => keys.includes(d.key));
-  // The LanguageTool row only matters while the plugin is on, or once it was answered.
-  const showChoice =
-    isCommunityPluginRunning(LANGUAGETOOL_PLUGIN_ID) || languageToolChoice(settings) !== "ask";
-  const rest = byKey([KEYS.ignoredRules, ...(showChoice ? [KEYS.languageTool] : [])]);
+  const rest = byKey([KEYS.ignoredRules]);
   return (
     <div className="space-y-6">
       <SettingRows defs={byKey(PRIMARY)} />

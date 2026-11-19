@@ -1,24 +1,15 @@
 // The pure parts of the web half: diagnostics, the language property edit, language names and the
-// settings readers (including which checker runs next to LanguageTool).
+// settings readers.
 // @vitest-environment jsdom
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { setRunningCommunityPlugins } from "@/lib/community-plugins";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { editorNotePath } from "@/lib/editor-views";
 import { toDiagnostics, MAX_REPLACEMENTS } from "../web/editor/diagnostics";
 import { languagePropertyChange } from "../web/lib/lang-property";
 import { blockAt, languageName } from "../web/lib/languages";
-import {
-  anyKindEnabled,
-  checkSignature,
-  ignoredRules,
-  KEYS,
-  LANGUAGETOOL_PLUGIN_ID,
-  languageToolChoice,
-  writerCheckerActive,
-} from "../web/lib/settings";
+import { anyKindEnabled, checkSignature, ignoredRules, KEYS } from "../web/lib/settings";
 import type { Finding } from "../web/ipc";
 
 const finding = (over: Partial<Finding> = {}): Finding => ({
@@ -171,27 +162,13 @@ describe("languages", () => {
 });
 
 describe("settings readers", () => {
-  beforeEach(() => setRunningCommunityPlugins([]));
-
   it("reads the defaults and the stored values", () => {
     expect(anyKindEnabled({})).toBe(true);
     expect(anyKindEnabled({ [KEYS.spelling]: false, [KEYS.grammar]: false })).toBe(false);
     expect(
       anyKindEnabled({ [KEYS.spelling]: false, [KEYS.grammar]: false, [KEYS.style]: true }),
     ).toBe(true);
-    expect(languageToolChoice({})).toBe("ask");
-    expect(languageToolChoice({ [KEYS.languageTool]: "both" })).toBe("both");
-    expect(languageToolChoice({ [KEYS.languageTool]: "nonsense" })).toBe("ask");
     expect(ignoredRules({ [KEYS.ignoredRules]: ["A", 3] })).toEqual(["A"]);
     expect(checkSignature({})).not.toBe(checkSignature({ [KEYS.style]: true }));
-  });
-
-  it("yields to LanguageTool only when chosen and the plugin runs", () => {
-    const chosen = { [KEYS.languageTool]: "languagetool" };
-    expect(writerCheckerActive(chosen)).toBe(true);
-    setRunningCommunityPlugins([LANGUAGETOOL_PLUGIN_ID]);
-    expect(writerCheckerActive(chosen)).toBe(false);
-    expect(writerCheckerActive({})).toBe(true);
-    expect(writerCheckerActive({ [KEYS.languageTool]: "both" })).toBe(true);
   });
 });
