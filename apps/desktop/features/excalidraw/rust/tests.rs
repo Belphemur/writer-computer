@@ -226,11 +226,8 @@ fn create_keeps_ids_binds_arrows_and_reads_back() {
         "path=Diagrams/Arch",
         &spec_arg(&two_boxes()),
     ]);
-    assert_eq!(
-        out,
-        "Created Diagrams/Arch.excalidraw.md (2 boxes, 1 arrow)\n"
-    );
-    let scene = v.scene("Diagrams/Arch.excalidraw.md");
+    assert_eq!(out, "Created Diagrams/Arch.excalidraw (2 boxes, 1 arrow)\n");
+    let scene = v.scene("Diagrams/Arch.excalidraw");
     validate_scene(&scene).unwrap();
     let els = md::elements(&scene);
     let kinds: Vec<&str> = els.iter().map(|e| e["type"].as_str().unwrap()).collect();
@@ -254,18 +251,26 @@ fn create_keeps_ids_binds_arrows_and_reads_back() {
     );
 
     let read: Value =
-        serde_json::from_str(&v.ok(&["excalidraw:read", "path=Diagrams/Arch.excalidraw.md"]))
-            .unwrap();
+        serde_json::from_str(&v.ok(&["excalidraw:read", "path=Diagrams/Arch.excalidraw"])).unwrap();
     assert_eq!(read["edges"], json!([["api", "db", "reads"]]));
     assert_eq!(read["nodes"][1]["text"], "Database");
     assert_eq!(read["nodes"][1]["color"], "green");
     assert_eq!(read["groups"][0]["nodes"], json!(["api", "db"]));
 
-    // the file is the plugin's shape: front matter, text elements, drawing block
-    let text = std::fs::read_to_string(v.path("Diagrams/Arch.excalidraw.md")).unwrap();
-    assert!(text.starts_with("---\n\nexcalidraw-plugin: parsed\ntags: [excalidraw]\n\n---\n"));
-    assert!(text.contains("## Text Elements\nAPI ^"));
-    assert!(text.contains("```compressed-json\n"));
+    // with no suffix the drawing is native: plain Excalidraw JSON, no Markdown wrapper
+    let text = std::fs::read_to_string(v.path("Diagrams/Arch.excalidraw")).unwrap();
+    let file: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(file["type"], "excalidraw");
+    assert!(!text.contains("excalidraw-plugin"));
+    // an explicit `.excalidraw.md` keeps the Obsidian plugin's shape
+    v.ok(&[
+        "excalidraw:create",
+        "path=Obs.excalidraw.md",
+        &spec_arg(&two_boxes()),
+    ]);
+    let md_text = std::fs::read_to_string(v.path("Obs.excalidraw.md")).unwrap();
+    assert!(md_text.starts_with("---\n\nexcalidraw-plugin: parsed\ntags: [excalidraw]\n\n---\n"));
+    assert!(md_text.contains("```compressed-json\n"));
     assert!(v
         .fail(&[
             "excalidraw:create",
@@ -274,7 +279,7 @@ fn create_keeps_ids_binds_arrows_and_reads_back() {
         ])
         .contains("already exists"));
     v.ok(&["excalidraw:create", "path=Diagrams/Arch", "overwrite"]);
-    assert!(md::elements(&v.scene("Diagrams/Arch.excalidraw.md")).is_empty());
+    assert!(md::elements(&v.scene("Diagrams/Arch.excalidraw")).is_empty());
 }
 
 #[test]
@@ -292,7 +297,7 @@ fn boxes_without_a_position_never_overlap_and_a_given_one_stays() {
         "path=Flow",
         &spec_arg(&json!({"nodes": nodes, "edges": edges, "direction": "TB"})),
     ]);
-    let scene = v.scene("Flow.excalidraw.md");
+    let scene = v.scene("Flow.excalidraw");
     let boxes: Vec<(f64, f64, f64, f64)> = md::elements(&scene)
         .iter()
         .filter(|e| e["type"] == "rectangle")
@@ -506,7 +511,7 @@ fn bad_input_is_refused_before_anything_is_written() {
         let o = create("path=Bad", &spec);
         assert_eq!(o.code, EXIT_FAIL, "{spec}: {}", o.stderr);
         assert!(o.stderr.contains(needle), "{spec}: {}", o.stderr);
-        assert!(!v.path("Bad.excalidraw.md").exists(), "{spec}");
+        assert!(!v.path("Bad.excalidraw").exists(), "{spec}");
     }
     let o = v.run(&["excalidraw:create", "path=Bad", "spec={\"nodez\":[]}"]);
     assert_eq!(o.code, EXIT_USAGE);
@@ -519,25 +524,25 @@ fn bad_input_is_refused_before_anything_is_written() {
     assert!(v
         .fail(&[
             "excalidraw:add",
-            "path=D.excalidraw.md",
+            "path=D.excalidraw",
             &spec_arg(&json!({"nodes": [{"id": "api"}]}))
         ])
         .contains("already exists"));
     assert!(v
         .fail(&[
             "excalidraw:add",
-            "path=D.excalidraw.md",
+            "path=D.excalidraw",
             &spec_arg(&json!({"edges": [["api", "nope"]]}))
         ])
         .contains("no node nope"));
-    let before = std::fs::read(v.path("D.excalidraw.md")).unwrap();
+    let before = std::fs::read(v.path("D.excalidraw")).unwrap();
     v.run(&[
         "excalidraw:add",
-        "path=D.excalidraw.md",
+        "path=D.excalidraw",
         &spec_arg(&json!({"nodes": [{"id": "x"}], "edges": [["x", "ghost"]]})),
     ]);
     assert_eq!(
-        std::fs::read(v.path("D.excalidraw.md")).unwrap(),
+        std::fs::read(v.path("D.excalidraw")).unwrap(),
         before,
         "a refused add writes nothing"
     );
@@ -548,10 +553,10 @@ fn export_without_the_app_says_so_and_a_switched_off_feature_runs_nothing() {
     let v = Vaults::new();
     v.ok(&["excalidraw:create", "path=D", &spec_arg(&two_boxes())]);
     for line in [
-        &["excalidraw:export", "path=D.excalidraw.md"][..],
-        &["excalidraw:export", "path=D.excalidraw.md", "format=png"],
-        &["excalidraw:preview", "path=D.excalidraw.md"],
-        &["excalidraw:preview", "path=D.excalidraw.md", "scale=2"],
+        &["excalidraw:export", "path=D.excalidraw"][..],
+        &["excalidraw:export", "path=D.excalidraw", "format=png"],
+        &["excalidraw:preview", "path=D.excalidraw"],
+        &["excalidraw:preview", "path=D.excalidraw", "scale=2"],
     ] {
         let o = v.run(line);
         assert_eq!(o.code, EXIT_NOT_RUNNING, "{line:?}");
@@ -559,7 +564,7 @@ fn export_without_the_app_says_so_and_a_switched_off_feature_runs_nothing() {
     }
     // a bad format or scale is a usage error, before the app is looked for
     for bad in ["format=gif", "scale=abc"] {
-        let o = v.run(&["excalidraw:preview", "path=D.excalidraw.md", bad]);
+        let o = v.run(&["excalidraw:preview", "path=D.excalidraw", bad]);
         assert_eq!(o.code, EXIT_USAGE, "{bad}");
     }
 
@@ -570,10 +575,10 @@ fn export_without_the_app_says_so_and_a_switched_off_feature_runs_nothing() {
     .unwrap();
     for line in [
         &["excalidraw:create", "path=Z"][..],
-        &["excalidraw:read", "path=D.excalidraw.md"],
-        &["excalidraw:export", "path=D.excalidraw.md"],
-        &["excalidraw:preview", "path=D.excalidraw.md"],
-        &["excalidraw:update", "path=D.excalidraw.md", "spec={}"],
+        &["excalidraw:read", "path=D.excalidraw"],
+        &["excalidraw:export", "path=D.excalidraw"],
+        &["excalidraw:preview", "path=D.excalidraw"],
+        &["excalidraw:update", "path=D.excalidraw", "spec={}"],
     ] {
         let o = v.run(line);
         assert_eq!(o.code, EXIT_FAIL, "{line:?}");

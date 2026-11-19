@@ -31,7 +31,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             GROUP,
             "Create a drawing from a spec of boxes and arrows",
             &[
-                req("path", "new drawing, e.g. Diagrams/Arch.excalidraw.md"),
+                req("path", "new drawing, e.g. Diagrams/Arch.excalidraw"),
                 p("spec", SPEC_HELP)
             ],
             &[("overwrite", "replace an existing file")],
@@ -168,7 +168,7 @@ pub fn create(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
     let input = if md::format_of(input).is_some() {
         input.to_string()
     } else {
-        format!("{input}.excalidraw.md")
+        format!("{input}.excalidraw")
     };
     let format = md::format_of(&input).expect("the suffix was just ensured");
     let spec = spec_of(args, false)?;

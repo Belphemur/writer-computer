@@ -5,7 +5,7 @@ Decision: [ADR 2026-11-18, draw natively with a built-in Excalidraw feature](../
 ## What it does
 
 - Opens, edits and saves `*.excalidraw.md` (the Obsidian Excalidraw plugin's shape) and plain `*.excalidraw` (the standard JSON). Obsidian keeps opening what Writer saves.
-- "New drawing" (palette, folder context menu) creates `Drawing.excalidraw.md` and opens it.
+- "New drawing" (palette, the sidebar's New section) creates a native `Drawing.excalidraw` (plain Excalidraw JSON) and opens it. `excalidraw:create` with a path without a suffix also writes `.excalidraw`; `.excalidraw.md` (the Obsidian plugin's shape) is written only when the path asks for it, and existing `.excalidraw.md` drawings are read and edited in their own format (2026-11-19, the user: "It should be native").
 - `![[Arch.excalidraw.md]]` or `![[Arch.excalidraw]]` alone on a line renders the drawing in the note (SVG, cached by content hash); a click opens the tab.
 - "Export drawing as SVG" writes `<name>.svg` next to the drawing. Setting `excalidraw.auto-export-svg` (off) keeps it current after every save and every outside change.
 - Agents: `writer excalidraw:create|add|update|read|preview|export` and the managed skill `writer-excalidraw` (Rust half, works with the app closed except `preview` and `export`). An agent looks at its work with `preview` (a PNG outside the vault) and fixes it with `update`: the skill teaches the loop create or add, preview, update, preview.

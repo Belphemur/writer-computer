@@ -105,7 +105,7 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 
 ## Excalidraw
 
-- `excalidraw:create` — Create a drawing from a spec of boxes and arrows. Params: `path=` (required; new drawing, e.g. Diagrams/Arch.excalidraw.md), `spec=` (JSON: {"nodes":[{"id","text","shape"?,"x"?,"y"?,"color"?}],"edges":[["from","to","label"?]],"groups":[{"nodes":[ids]}],"direction":"LR|TB"}). Flags: `overwrite` (replace an existing file).
+- `excalidraw:create` — Create a drawing from a spec of boxes and arrows. Params: `path=` (required; new drawing, e.g. Diagrams/Arch.excalidraw), `spec=` (JSON: {"nodes":[{"id","text","shape"?,"x"?,"y"?,"color"?}],"edges":[["from","to","label"?]],"groups":[{"nodes":[ids]}],"direction":"LR|TB"}). Flags: `overwrite` (replace an existing file).
 - `excalidraw:add` — Add boxes and arrows to a drawing. Params: `file=`, `path=`, `spec=` (required; JSON: {"nodes":[{"id","text","shape"?,"x"?,"y"?,"color"?}],"edges":[["from","to","label"?]],"groups":[{"nodes":[ids]}],"direction":"LR|TB"}).
 - `excalidraw:update` — Change, move, re-label or remove boxes and arrows of a drawing. Params: `file=`, `path=`, `spec=` (required; JSON: {"nodes":[{"id","text"?,"shape"?,"x"?,"y"?,"w"?,"h"?,"color"?}],"edges":[["from","to","label"?]],"remove":{"nodes":[ids],"edges":[["from","to"]]}}).
 - `excalidraw:read` — Print a drawing as a spec (boxes, arrows, groups). Params: `file=`, `path=`.

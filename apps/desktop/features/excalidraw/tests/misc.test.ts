@@ -165,9 +165,9 @@ describe("live views", () => {
 
 describe("new drawing", () => {
   it("takes the first free name", async () => {
-    const taken = new Set(["D/Drawing.excalidraw.md", "D/Drawing 1.excalidraw.md"]);
-    expect(await freeDrawingPath("D", async (p) => taken.has(p))).toBe("D/Drawing 2.excalidraw.md");
-    expect(await freeDrawingPath("E", async () => false)).toBe("E/Drawing.excalidraw.md");
+    const taken = new Set(["D/Drawing.excalidraw", "D/Drawing 1.excalidraw"]);
+    expect(await freeDrawingPath("D", async (p) => taken.has(p))).toBe("D/Drawing 2.excalidraw");
+    expect(await freeDrawingPath("E", async () => false)).toBe("E/Drawing.excalidraw");
   });
 });
 

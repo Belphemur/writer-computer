@@ -94,3 +94,5 @@ Chosen option: **A**.
 Related: the bases feature (CLI + skill + embed model), the images and PDF ADRs of 2026-11-18 (viewer pieces), the built-in features ADR, the plugin compatibility rule (never patch plugins).
 
 Amendment (the user, 2026-11-19): `update` and `preview` so agents can change drawings and see them. `excalidraw:update` edits boxes and arrows by id and removes them; `excalidraw:preview` (and `export format=png`) renders through the running app and writes outside the vault; `excalidraw:connect` is folded into `add` by the CLI pruning ADR of 2026-11-19. Details in `SPECs/excalidraw-spec.md`.
+
+- 2026-11-19: new drawings are native `.excalidraw` (plain JSON) by default, from "New drawing" and from `excalidraw:create` without a suffix, at the user's request; `.excalidraw.md` is written only when the path names it, and both formats stay read and edited as before.

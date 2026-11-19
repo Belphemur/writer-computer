@@ -1,6 +1,6 @@
 ---
 name: writer-excalidraw
-description: Draw diagrams as Excalidraw files in a Markdown vault with the `excalidraw:` commands of the `writer` CLI. Use when the user asks for a diagram, flowchart, architecture sketch, mind map or any drawing, or to change, look at or export one. Drawings are `.excalidraw.md` files that open in Writer and in Obsidian's Excalidraw plugin. Describe boxes and arrows in a small JSON spec; the commands place, size, connect and change them, and `preview` lets you see the result.
+description: Draw diagrams as Excalidraw files in a Markdown vault with the `excalidraw:` commands of the `writer` CLI. Use when the user asks for a diagram, flowchart, architecture sketch, mind map or any drawing, or to change, look at or export one. Drawings are native `.excalidraw` files (existing `.excalidraw.md` drawings from Obsidian's Excalidraw plugin work too). Describe boxes and arrows in a small JSON spec; the commands place, size, connect and change them, and `preview` lets you see the result.
 ---
 
 # Draw with Excalidraw
@@ -21,15 +21,15 @@ You cannot judge a diagram from its spec. Draw, look, fix, look again:
 ## Commands
 
 ```
-writer excalidraw:create path=Diagrams/Arch.excalidraw.md spec='<json>'
-writer excalidraw:add path=Diagrams/Arch.excalidraw.md spec='<json>'
-writer excalidraw:update path=Diagrams/Arch.excalidraw.md spec='<json>'
-writer excalidraw:read path=Diagrams/Arch.excalidraw.md
-writer excalidraw:preview path=Diagrams/Arch.excalidraw.md [format=png|svg] [scale=2]
-writer excalidraw:export path=Diagrams/Arch.excalidraw.md [format=svg|png]
+writer excalidraw:create path=Diagrams/Arch.excalidraw spec='<json>'
+writer excalidraw:add path=Diagrams/Arch.excalidraw spec='<json>'
+writer excalidraw:update path=Diagrams/Arch.excalidraw spec='<json>'
+writer excalidraw:read path=Diagrams/Arch.excalidraw
+writer excalidraw:preview path=Diagrams/Arch.excalidraw [format=png|svg] [scale=2]
+writer excalidraw:export path=Diagrams/Arch.excalidraw [format=svg|png]
 ```
 
-- `path=` is exact from the vault root; `file=Arch` also works for an existing drawing. A new path without `.excalidraw.md` or `.excalidraw` gets `.excalidraw.md`. `create` refuses to replace a file unless you add the `overwrite` flag.
+- `path=` is exact from the vault root; `file=Arch` also works for an existing drawing. A new path without `.excalidraw` or `.excalidraw.md` gets `.excalidraw` (the native format); give `.excalidraw.md` only to match an Obsidian vault that keeps its drawings that way. `create` refuses to replace a file unless you add the `overwrite` flag.
 - `preview` prints the absolute path of an image in the OS temp folder (never in the vault; old ones are cleaned up). `format` is `png` (default) or `svg`; `scale` (0.5 to 4, PNG only, default 1) makes small text easier to read, `scale=2` is a good start.
 - `export` writes `<name>.svg` (default) or `<name>.png` beside the drawing in the vault and prints its vault-relative path. Use it when the user wants the image, not to look yourself.
 - Quote the spec with single quotes in the shell; `\n` inside a text value is a line break.
