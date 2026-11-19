@@ -20,6 +20,19 @@ pub struct Invocation {
     pub help: bool,
 }
 
+/// Flags written with two dashes (`--launch`), not as a bare word. The parser knows only these
+/// names; a spec still has to list the flag for the command to take it.
+pub const LONG_FLAGS: &[&str] = &["launch"];
+
+/// How a flag is written on the command line (help and the skill reference).
+pub fn flag_display(name: &str) -> String {
+    if LONG_FLAGS.contains(&name) {
+        format!("--{name}")
+    } else {
+        name.to_string()
+    }
+}
+
 /// Unescape `\n`, `\t` and `\\`; other backslashes stay literal.
 pub fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -110,6 +123,8 @@ pub fn parse(tokens: &[String]) -> Result<Invocation, CliError> {
             }
             inv.params
                 .push((n.to_string(), strip_quotes(&unescape(v)).to_string()));
+        } else if let Some(name) = tok.strip_prefix("--").filter(|n| LONG_FLAGS.contains(n)) {
+            inv.flags.push(name.to_string());
         } else if tok.starts_with('-') {
             return Err(CliError::Usage(format!("unknown option {tok}")));
         } else if inv.command == "help" {

@@ -10,10 +10,12 @@
 //! * `cmd_*.rs` — handlers; `relocate/` (crate level) — link updates for move/rename
 //!
 //! Handlers return the text for stdout; nothing here prints except [`run_main`].
-//! Exit codes: 0 ok, 1 failure/validation, 2 usage (the launcher keeps its own).
+//! Exit codes: 0 ok, 1 failure/validation, 2 usage, 4 Writer is not running (the launcher keeps
+//! its own).
 
 pub mod args;
 mod clipboard;
+pub(crate) mod cmd_app;
 pub(crate) mod cmd_bases;
 mod cmd_files;
 mod cmd_graph;
@@ -34,6 +36,7 @@ pub use clipboard::{Clipboard, SystemClipboard};
 
 use crate::index::{Index, IndexError};
 use crate::vault_ops::{self, Confined, VaultOpError};
+use crate::writer_cli::Launcher;
 use std::cell::{OnceCell, RefCell};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -41,6 +44,8 @@ use std::sync::Arc;
 pub const EXIT_OK: u8 = 0;
 pub const EXIT_FAIL: u8 = 1;
 pub const EXIT_USAGE: u8 = 2;
+/// A command that needs the running app and found none (`status`, `open`, `reveal`, `active`).
+pub const EXIT_NOT_RUNNING: u8 = 4;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CliError {
@@ -48,13 +53,26 @@ pub enum CliError {
     Usage(String),
     /// The command ran and failed or the input was invalid (exit 1).
     Fail(String),
+    /// The command needs the running app and there is none (exit 4).
+    NotRunning,
 }
 
 impl CliError {
     pub fn fail(msg: impl Into<String>) -> CliError {
         CliError::Fail(msg.into())
     }
+
+    /// The message, as printed after `writer: `.
+    pub fn text(&self) -> &str {
+        match self {
+            CliError::Usage(m) | CliError::Fail(m) => m,
+            CliError::NotRunning => NOT_RUNNING,
+        }
+    }
 }
+
+/// What `writer` says when a command needs the app and none is running.
+pub const NOT_RUNNING: &str = "Writer is not running";
 
 impl From<VaultOpError> for CliError {
     fn from(e: VaultOpError) -> Self {
@@ -92,6 +110,10 @@ pub struct Env {
     pub clipboard: Box<dyn Clipboard>,
     /// Local UTC offset for `now()` in bases.
     pub utc_offset_minutes: i32,
+    /// Starts the app for `open --launch`.
+    pub launcher: Box<dyn Launcher>,
+    /// How long `open --launch` waits for the app it started to open its socket.
+    pub launch_wait: std::time::Duration,
 }
 
 impl Env {
@@ -100,6 +122,8 @@ impl Env {
             app_data_dir: None,
             clipboard: Box::new(SystemClipboard),
             utc_offset_minutes: local_utc_offset_minutes(),
+            launcher: Box::new(crate::writer_cli::SystemLauncher),
+            launch_wait: std::time::Duration::from_secs(20),
         }
     }
 
@@ -293,7 +317,7 @@ fn feature_off(spec: &registry::CommandSpec, env: &Env) -> Option<String> {
 pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
     let inv = match args::parse(argv) {
         Ok(i) => i,
-        Err(CliError::Usage(m)) | Err(CliError::Fail(m)) => return usage_outcome(&m, None),
+        Err(e) => return usage_outcome(e.text(), None),
     };
     if registry::app_control(&inv.command) {
         return Outcome {
@@ -323,9 +347,7 @@ pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
     }
     let parsed = match args::validate(&inv, spec) {
         Ok(a) => a,
-        Err(CliError::Usage(m)) | Err(CliError::Fail(m)) => {
-            return usage_outcome(&m, Some(spec.name))
-        }
+        Err(e) => return usage_outcome(e.text(), Some(spec.name)),
     };
     if let Some(message) = feature_off(spec, env) {
         return Outcome {
@@ -364,10 +386,14 @@ pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
             o.stderr = format!("{stderr}{}", o.stderr);
             o
         }
-        Err(CliError::Fail(m)) => {
-            stderr.push_str(&format!("writer: {m}\n"));
+        Err(e @ (CliError::Fail(_) | CliError::NotRunning)) => {
+            stderr.push_str(&format!("writer: {}\n", e.text()));
             Outcome {
-                code: EXIT_FAIL,
+                code: if e == CliError::NotRunning {
+                    EXIT_NOT_RUNNING
+                } else {
+                    EXIT_FAIL
+                },
                 stdout: String::new(),
                 stderr,
             }

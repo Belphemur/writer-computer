@@ -722,7 +722,7 @@ fn command_reference_lists_every_registry_command_exactly() {
         }
         for (f, _) in spec.flags {
             assert!(
-                flags_part.contains(&format!("`{f}`")),
+                flags_part.contains(&format!("`{}`", crate::cli::args::flag_display(f))),
                 "commands.md: `{name}` does not list flag `{f}`"
             );
         }
@@ -737,7 +737,9 @@ fn command_reference_lists_every_registry_command_exactly() {
         }
         for tok in flags_part.split('`').skip(1).step_by(2) {
             assert!(
-                spec.flags.iter().any(|(f, _)| *f == tok),
+                spec.flags
+                    .iter()
+                    .any(|(f, _)| crate::cli::args::flag_display(f) == tok),
                 "commands.md: `{name}` documents flag `{tok}` which it does not take"
             );
         }

@@ -29,8 +29,8 @@ The `writer` CLI (`src-tauri/src/cli/`, spec `SPECs/writer-cli-spec.md`) works h
 
 Chosen option: **A**.
 
-1. **Endpoint**: macOS and Linux: a Unix domain socket `ipc.sock` in Writer's app data dir (the dir `0700`, the socket `0600`); Windows: a named pipe `\\.\pipe\writer-<user-sid-hash>` with a security descriptor granting only the current user. Created at app startup by a Tauri-free module `src-tauri/src/ipc/` (server on tokio), removed on exit; a stale socket (connect fails) is unlinked at startup. One server per app process; all windows share it.
-2. **Token**: a random token (`uuid` v4, 122 bits) generated per launch, written atomically to `ipc.token` (`0600`) beside the socket and rotated on every launch. Every request carries it; a wrong or missing token closes the connection after one generic error. The token is never logged.
+1. **Endpoint**: macOS and Linux: a Unix domain socket `ipc/ipc.sock` in a dedicated `ipc/` folder of Writer's app data dir (the folder `0700`, created or corrected at startup, the app data dir itself untouched; the socket `0600`); Windows: a named pipe `\\.\pipe\writer-<user-sid-hash>` with a security descriptor granting only the current user. Created at app startup by a Tauri-free module `src-tauri/src/ipc/` (server on tokio), removed on exit; a stale socket (connect fails) is unlinked at startup. One server per app process; all windows share it.
+2. **Token**: a random token (`uuid` v4, 122 bits) generated per launch, written atomically to `ipc/ipc.token` (`0600`) beside the socket and rotated on every launch. Every request carries it; a wrong or missing token closes the connection after one generic error. The token is never logged.
 3. **Protocol**: one JSON object per line, UTF-8, at most 64 KiB per message, 5 s read timeout per request. Request `{"v": 1, "id": "<n>", "token": "...", "cmd": "<name>", "vault": "<abs path>", "args": {...}}`; response `{"v": 1, "id": "<n>", "ok": true, "result": {...}}` or `{"ok": false, "error": {"code": "...", "message": "..."}}`. Unknown `v` or `cmd` is refused. Shared request/response vectors `apps/desktop/shared/ipc-vectors.json` pin the CLI client and the server.
 4. **Allowlisted commands** (a registry, not a match per case; built-in features contribute through the `Feature` trait like CLI commands):
    - `status` → app version, open vaults (paths), whether the vault is open.
@@ -38,7 +38,7 @@ Chosen option: **A**.
    - `reveal` → reveal a file in the sidebar.
    - `active` → the active tab's vault-relative path, kind and cursor line of the vault's window. Never note text or the selection's text.
    - `excalidraw:export` (from the excalidraw feature) → render `<name>.svg` for a drawing and return its vault-relative path.
-   Every path argument is vault-relative, resolved and confined by `vault_ops`, and must exist; requests for a vault the app does not have open are refused unless the command opens it (`open`).
+     Every path argument is vault-relative, resolved and confined by `vault_ops`, and must exist; requests for a vault the app does not have open are refused unless the command opens it (`open`).
 5. **Client**: the CLI uses a blocking client (std `UnixStream`; on Windows the pipe opened as a file), reads the token file, sends one request, waits for the reply (default 5 s, `excalidraw:export` up to 30 s). If the socket or token is missing, or the connection is refused, the command fails with "Writer is not running" (exit code distinct from usage errors); `open` offers `--launch` to start the app (through the single-instance path) and retry.
 6. **Logging**: the server logs the command name, outcome and duration at `info`; never args, paths, contents or the token (`SPECs/local-logging-spec.md`).
 7. **Excalidraw**: `writer excalidraw:export` uses `excalidraw:export` over the socket; the export marker file in the Excalidraw ADR is dropped (that ADR is updated in the same change). Auto-export on change stays.
@@ -60,16 +60,16 @@ Chosen option: **A**.
 - **Affected paths**: new `src-tauri/src/ipc/` (`mod.rs` endpoint and token, `protocol.rs` types, `server.rs` tokio accept loop, `registry.rs` command table, `client.rs` blocking client; Tauri-free core with a thin Tauri glue that routes to windows in `commands/` or `lib.rs` setup); `features/mod.rs` (`Feature` trait: `ipc_commands()` contribution); `cli/registry.rs` (`app_control` commands now dispatched over IPC where implemented; still refused where not); `cli/mod.rs` (client use, "Writer is not running" error, `--launch`); `lib.rs` (start and stop the server, exit hook); `shared/ipc-vectors.json`; Excalidraw ADR update (marker dropped); specs `SPECs/writer-cli-spec.md` (new "Talking to the running app" section) and `SPECs/local-logging-spec.md` (IPC lines); the managed `writer-cli` skill (document `open`, `active`, `status`; bump `BUNDLE_VERSION`); `CHANGELOG.md`, `TODOS.md`.
 - **Patterns to follow**: `commands::blocking` for blocking work; `vault_ops` confinement; registries over per-case branches; shared vectors for twins; the `Feature` trait's contribution style; atomic writes.
 - **Patterns to avoid**: a TCP port; logging args or the token; a command that returns note text; a second confinement check.
-- **Tests**: endpoint permissions (`0700` dir, `0600` socket and token) and stale-socket cleanup; token rotation per launch; wrong/missing token refused without detail; oversized message and timeout refused; unknown `v`/`cmd` refused; each command's confinement (`../`, absolute paths, symlink out, missing file); `active` returns no text; the vectors in client and server; CLI "Writer is not running" exit code and message; `open --launch`; a feature-contributed command registered and removed with the feature; logs contain the command name and never the path or token.
+- **Tests**: endpoint permissions (`0700` `ipc/` folder, `0600` socket and token, path under the socket length limit) and stale-socket cleanup; token rotation per launch; wrong/missing token refused without detail; oversized message and timeout refused; unknown `v`/`cmd` refused; each command's confinement (`../`, absolute paths, symlink out, missing file); `active` returns no text; the vectors in client and server; CLI "Writer is not running" exit code and message; `open --launch`; a feature-contributed command registered and removed with the feature; logs contain the command name and never the path or token.
 
 ### Verification
 
 - [ ] `writer status` reports the running app; with the app closed it says "Writer is not running".
 - [ ] `writer open path=Note.md` opens the note in the vault's window.
-- [ ] `writer active` returns the active note's path and line, never its text.
-- [ ] Another OS user cannot connect; a request without the current token is refused.
+- [x] `writer active` returns the active note's path and line, never its text. (Rust `active_returns_the_path_kind_and_line_and_never_text`, jsdom `active`; not run against the app.)
+- [ ] Another OS user cannot connect; a request without the current token is refused. (The token half is tested: `a_wrong_or_missing_token_gets_one_generic_error_and_the_connection_closes`, `a_new_launch_serves_with_a_new_token_and_the_old_one_is_refused`. The other-user half rests on the `0700` `ipc/` folder, `0600` socket and the uid check and is not tested with a second account.)
 - [ ] `writer excalidraw:export` returns the SVG path while the app runs.
-- [ ] Logs show command names only.
+- [x] Logs show command names only. (`ipc::tests::the_log_has_the_command_name_outcome_and_duration_and_never_args_paths_or_the_token`; a real log file is not checked.)
 
 ## Pros and Cons of the Options
 

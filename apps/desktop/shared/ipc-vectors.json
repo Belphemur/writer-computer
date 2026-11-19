@@ -1,0 +1,206 @@
+{
+  "description": "Request and response vectors of the CLI-to-app socket (ADR 2026-11-18). Read by the server tests (ipc::tests, through ipc::server::admit and protocol::response_line) and the client tests (ipc::client::encode_request and protocol::parse_response). `requests` are valid lines the client must produce byte-for-byte as JSON values and the server must admit; `refusals` are lines the server must refuse with the code; `responses` pin the answer shape both ways.",
+  "version": 1,
+  "maxMessageBytes": 65536,
+  "token": "T0KEN-0123456789",
+  "requests": [
+    {
+      "name": "status without a vault",
+      "cmd": "status",
+      "vault": null,
+      "args": {},
+      "line": {
+        "v": 1,
+        "id": "1",
+        "token": "T0KEN-0123456789",
+        "cmd": "status",
+        "args": {}
+      }
+    },
+    {
+      "name": "status of a vault",
+      "cmd": "status",
+      "vault": "/vaults/Notes",
+      "args": {},
+      "line": {
+        "v": 1,
+        "id": "1",
+        "token": "T0KEN-0123456789",
+        "cmd": "status",
+        "vault": "/vaults/Notes",
+        "args": {}
+      }
+    },
+    {
+      "name": "open with options",
+      "cmd": "open",
+      "vault": "/vaults/Notes",
+      "args": {
+        "path": "Projects/Alpha.md",
+        "newTab": true,
+        "line": 12
+      },
+      "line": {
+        "v": 1,
+        "id": "1",
+        "token": "T0KEN-0123456789",
+        "cmd": "open",
+        "vault": "/vaults/Notes",
+        "args": {
+          "path": "Projects/Alpha.md",
+          "newTab": true,
+          "line": 12
+        }
+      }
+    },
+    {
+      "name": "reveal",
+      "cmd": "reveal",
+      "vault": "/vaults/Notes",
+      "args": {
+        "path": "Projects"
+      },
+      "line": {
+        "v": 1,
+        "id": "1",
+        "token": "T0KEN-0123456789",
+        "cmd": "reveal",
+        "vault": "/vaults/Notes",
+        "args": {
+          "path": "Projects"
+        }
+      }
+    },
+    {
+      "name": "active",
+      "cmd": "active",
+      "vault": "/vaults/Notes",
+      "args": {},
+      "line": {
+        "v": 1,
+        "id": "1",
+        "token": "T0KEN-0123456789",
+        "cmd": "active",
+        "vault": "/vaults/Notes",
+        "args": {}
+      }
+    }
+  ],
+  "refusals": [
+    {
+      "name": "not JSON",
+      "raw": "hello",
+      "code": "bad_request"
+    },
+    {
+      "name": "a JSON array",
+      "raw": "[1,2]",
+      "code": "bad_request"
+    },
+    {
+      "name": "args that are not an object",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"T0KEN-0123456789\", \"cmd\": \"status\", \"args\": [1]}",
+      "code": "bad_request"
+    },
+    {
+      "name": "a missing token",
+      "raw": "{\"v\": 1, \"id\": \"2\", \"cmd\": \"status\", \"args\": {}}",
+      "code": "unauthorized"
+    },
+    {
+      "name": "a wrong token",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"not-the-token\", \"cmd\": \"status\", \"args\": {}}",
+      "code": "unauthorized"
+    },
+    {
+      "name": "an empty token",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"\", \"cmd\": \"status\", \"args\": {}}",
+      "code": "unauthorized"
+    },
+    {
+      "name": "a wrong token on an unknown command stays unauthorized",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"bad\", \"cmd\": \"nope\", \"args\": {}}",
+      "code": "unauthorized"
+    },
+    {
+      "name": "an unknown version",
+      "raw": "{\"v\": 2, \"id\": \"1\", \"token\": \"T0KEN-0123456789\", \"cmd\": \"status\", \"args\": {}}",
+      "code": "unsupported_version"
+    },
+    {
+      "name": "an unknown command",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"T0KEN-0123456789\", \"cmd\": \"nope\", \"args\": {}}",
+      "code": "unknown_command"
+    },
+    {
+      "name": "a command that runs code is not in the allowlist",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"T0KEN-0123456789\", \"cmd\": \"eval\", \"args\": {\"code\": \"1+1\"}}",
+      "code": "unknown_command"
+    },
+    {
+      "name": "a command of a feature that is not registered",
+      "raw": "{\"v\": 1, \"id\": \"1\", \"token\": \"T0KEN-0123456789\", \"cmd\": \"excalidraw:export\", \"vault\": \"/vaults/Notes\", \"args\": {\"path\": \"a.excalidraw.md\"}}",
+      "code": "unknown_command"
+    }
+  ],
+  "responses": [
+    {
+      "name": "ok with a result",
+      "line": {
+        "v": 1,
+        "id": "1",
+        "ok": true,
+        "result": {
+          "version": "0.8.0",
+          "vaults": [],
+          "vaultOpen": null
+        }
+      },
+      "expect": {
+        "ok": true,
+        "id": "1",
+        "result": {
+          "version": "0.8.0",
+          "vaults": [],
+          "vaultOpen": null
+        }
+      }
+    },
+    {
+      "name": "an error",
+      "line": {
+        "v": 1,
+        "id": "1",
+        "ok": false,
+        "error": {
+          "code": "unauthorized",
+          "message": "unauthorized"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "id": "1",
+        "code": "unauthorized",
+        "message": "unauthorized"
+      }
+    },
+    {
+      "name": "an error before the request parsed has no id",
+      "line": {
+        "v": 1,
+        "id": "",
+        "ok": false,
+        "error": {
+          "code": "bad_request",
+          "message": "malformed request"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "id": "",
+        "code": "bad_request",
+        "message": "malformed request"
+      }
+    }
+  ]
+}

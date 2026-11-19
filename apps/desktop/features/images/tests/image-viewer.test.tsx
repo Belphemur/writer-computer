@@ -196,7 +196,7 @@ describe("zoom and pan", () => {
 
   it("a double-click toggles Fit and 100%", async () => {
     await mount("/v/p.png", true, [1000, 800]);
-    expect(zoomText()).not.toBe("100%");
+    expect(zoomText()).toBe("Fit");
     const dbl = () =>
       act(() => {
         stage().dispatchEvent(
@@ -207,7 +207,7 @@ describe("zoom and pan", () => {
     expect(zoomText()).toBe("100%");
     expect(drawn().w).toBe(1000);
     dbl();
-    expect(zoomText()).not.toBe("100%");
+    expect(zoomText()).toBe("Fit");
   });
 
   it("the footer shows name, size and zoom; − and + step, the percent returns to Fit", async () => {

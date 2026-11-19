@@ -15,6 +15,7 @@ pub mod fs_entry;
 mod hotkeys;
 mod ignore;
 pub mod index;
+pub mod ipc;
 pub mod logging;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -112,6 +113,7 @@ fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
             // drops on the last `Arc` release, unregistering FSEvents/inotify.
             commands::plugins::stop_window_work(&handle, &label);
             commands::index::stop_window(&handle, &label);
+            commands::ipc::window_gone(&handle, &label);
             handle.state::<AppState>().remove(&label);
         }
         _ => {}
@@ -557,6 +559,7 @@ pub fn run() {
         .manage(plugin_proc::ProcManager::default())
         .manage(plugin_env::PluginEnv::default())
         .manage(commands::index::IndexRegistry::default())
+        .manage(ipc::bridge::WindowBridge::default())
         // The first finished page load means this launch got far enough to reset the
         // startup-failure counter (`features::recovery`).
         .on_page_load(|webview, payload| {
@@ -595,6 +598,9 @@ pub fn run() {
             if let Some(settings) = main_state.settings.read().as_ref() {
                 features::install(app.handle(), settings, boot);
             }
+            // The CLI-to-app socket (ADR 2026-11-18): after the features, whose IPC commands
+            // it serves.
+            commands::ipc::start(app.handle());
 
             // Telemetry reads its enabled/email values out of the settings
             // layer above, so it must come after `init_window_settings` and
@@ -655,6 +661,8 @@ pub fn run() {
         })
         // The plugin host's commands are gated by the `obsidian-host` feature (switch, failure).
         .invoke_handler(features::obsidian_host::gated(tauri::generate_handler![
+            commands::ipc::ipc_ready,
+            commands::ipc::ipc_reply,
             commands::logs::log_event,
             commands::logs::log_info,
             commands::logs::open_log_folder,
@@ -774,6 +782,7 @@ pub fn run() {
             if matches!(_event, tauri::RunEvent::Exit) {
                 logging::log_exit("exit", None);
                 _app.state::<plugin_proc::ProcManager>().kill_all();
+                commands::ipc::stop(_app);
                 features::exit(_app);
                 logging::shutdown();
             }

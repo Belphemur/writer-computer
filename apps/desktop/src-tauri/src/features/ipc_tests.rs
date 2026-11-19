@@ -131,3 +131,23 @@ fn plain_app_commands_are_not_gated_by_the_feature_acl() {
         .unwrap();
     assert_eq!(r, "ok");
 }
+
+#[test]
+fn a_running_feature_contributes_its_socket_commands_and_one_that_failed_to_start_does_not() {
+    use super::running_ipc_commands;
+    let app = app_with(fixture::registry::<MockRuntime>());
+    let names: Vec<_> = running_ipc_commands(app.handle())
+        .iter()
+        .map(|c| c.name)
+        .collect();
+    assert_eq!(names, ["fixture-hello:greet"]);
+    let registry = crate::ipc::Registry::new(running_ipc_commands(app.handle()));
+    assert!(registry.find("fixture-hello:greet").is_some());
+
+    // the same registry built from an app whose feature failed to set up has only the core
+    let app = app_with(vec![&Broken, &Healthy]);
+    assert!(running_ipc_commands(app.handle()).is_empty());
+    let registry = crate::ipc::Registry::new(running_ipc_commands(app.handle()));
+    assert!(registry.find("fixture-hello:greet").is_none());
+    assert_eq!(registry.names(), ["status", "open", "reveal", "active"]);
+}

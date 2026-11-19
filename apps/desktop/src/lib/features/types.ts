@@ -231,6 +231,17 @@ export interface CommandSourceContribution {
   list: PaletteCommandSource["list"];
 }
 
+export interface IpcRequestContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  /** The socket command this answers: `<feature id>:<name>`, a name the feature's Rust
+   *  `Feature::ipc_commands` declares. */
+  topic: string;
+  /** Runs in the window the `writer` CLI asked, after the feature is activated. The answer goes
+   *  back to the CLI: JSON, and never note text beyond what the command is meant to return. */
+  handle: (payload: unknown, feature: FeatureContext) => unknown | Promise<unknown>;
+}
+
 export interface Contributions {
   commands?: readonly CommandContribution[];
   keybindings?: readonly KeybindingContribution[];
@@ -249,6 +260,9 @@ export interface Contributions {
   commandSources?: readonly CommandSourceContribution[];
   /** Listeners for what core tells features about the workspace (`workspace-events.ts`). */
   workspaceListeners?: readonly WorkspaceListenerContribution[];
+  /** What this window answers to the feature's `ipc_commands` over the CLI socket
+   *  (`ipc-requests.ts`). */
+  ipcRequests?: readonly IpcRequestContribution[];
   /** Typed capabilities other code finds through `getService` (`services.ts`). */
   services?: readonly ServiceContribution[];
   // Declared by the spec, no host registry yet (lands with its first pilot).

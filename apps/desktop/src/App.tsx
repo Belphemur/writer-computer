@@ -6,6 +6,7 @@ import { TelemetryConsentDialog } from "./components/telemetry-consent-dialog";
 import { WindowTitle } from "./components/window-title";
 import { useIsStartupResolved } from "./hooks/use-workspace";
 import { useFileWatcher } from "./hooks/use-file-watcher";
+import { useIpcRequests } from "./hooks/use-ipc-requests";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useMenuEvents } from "./hooks/use-menu-events";
 import { useOpenDrop } from "./hooks/use-open-drop";
@@ -21,6 +22,7 @@ function App() {
   useKeyboardShortcuts();
   useMenuEvents();
   useOpenDrop();
+  useIpcRequests(isStartupResolved);
 
   if (!isStartupResolved) {
     return null;

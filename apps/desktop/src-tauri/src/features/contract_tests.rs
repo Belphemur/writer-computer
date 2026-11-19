@@ -642,3 +642,79 @@ fn a_contribution_id_must_be_namespaced_and_unique() {
         .unwrap_err()
         .contains("menus.sidebar-bulk"));
 }
+
+/// What a feature's socket commands must look like (`Feature::ipc_commands`): named `<id>:<name>`
+/// so two features and the core never share a name, and tied to the feature's own switch.
+fn check_ipc_commands(def: &dyn Feature<Wry>) -> Result<(), String> {
+    let m = def.manifest().map_err(|e| e.to_string())?;
+    let core: Vec<&str> = crate::ipc::commands::CORE.iter().map(|c| c.name).collect();
+    for c in def.ipc_commands() {
+        if !c.name.starts_with(&format!("{}:", m.id)) {
+            return Err(format!(
+                "ipc command {} must be named {}:<name>",
+                c.name, m.id
+            ));
+        }
+        if c.feature != Some(m.id.as_str()) {
+            return Err(format!(
+                "ipc command {} must name its feature {}",
+                c.name, m.id
+            ));
+        }
+        if core.contains(&c.name) {
+            return Err(format!("ipc command {} replaces a core command", c.name));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn every_feature_socket_command_is_namespaced_unique_and_tied_to_its_feature() {
+    let mut seen = BTreeSet::new();
+    for def in registry::<Wry>()
+        .into_iter()
+        .chain(fixture::registry::<Wry>())
+    {
+        check_ipc_commands(def).unwrap();
+        for c in def.ipc_commands() {
+            assert!(seen.insert(c.name), "duplicate ipc command {}", c.name);
+        }
+    }
+    assert!(
+        seen.contains("fixture-hello:greet"),
+        "the fixture contributes one"
+    );
+}
+
+#[test]
+fn a_socket_command_that_is_not_namespaced_or_names_another_feature_fails_the_contract() {
+    use crate::ipc::{boxed, IpcCommand, VaultRule};
+    use std::time::Duration;
+    struct Bad(&'static [IpcCommand]);
+    impl<R: tauri::Runtime> Feature<R> for Bad {
+        fn manifest_source(&self) -> &'static str {
+            r#"{"id":"bad","name":"Bad"}"#
+        }
+        fn ipc_commands(&self) -> &'static [IpcCommand] {
+            self.0
+        }
+    }
+    const fn cmd(name: &'static str, feature: Option<&'static str>) -> IpcCommand {
+        IpcCommand {
+            name,
+            vault: VaultRule::Optional,
+            timeout: Duration::from_secs(5),
+            feature,
+            run: |_| boxed(async { Ok(Value::Null) }),
+        }
+    }
+    static GOOD: &[IpcCommand] = &[cmd("bad:ok", Some("bad"))];
+    static NOT_NAMESPACED: &[IpcCommand] = &[cmd("export", Some("bad"))];
+    static OTHER_FEATURE: &[IpcCommand] = &[cmd("bad:x", Some("other"))];
+    static NO_FEATURE: &[IpcCommand] = &[cmd("bad:y", None)];
+    static CORE_NAME: &[IpcCommand] = &[cmd("status", Some("bad"))];
+    assert!(check_ipc_commands(&Bad(GOOD)).is_ok());
+    for bad in [NOT_NAMESPACED, OTHER_FEATURE, NO_FEATURE, CORE_NAME] {
+        assert!(check_ipc_commands(&Bad(bad)).is_err());
+    }
+}

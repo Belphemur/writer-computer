@@ -377,6 +377,24 @@ export function getStartupState(): Promise<StartupState> {
   return invoke("get_startup_state");
 }
 
+// The CLI-to-app socket (`src-tauri/src/ipc/`): this window listens for `ipc:request` events and
+// answers each through `ipcReply`; `ipcReady` says it can take requests (its startup resolved).
+export function ipcReady(): Promise<void> {
+  return invoke("ipc_ready");
+}
+
+/** The answer to request `id`: `result` when it worked, `error` (a short message) when not. */
+export function ipcReply(
+  id: string,
+  answer: { result: unknown } | { error: string },
+): Promise<void> {
+  return invoke("ipc_reply", {
+    id,
+    result: "result" in answer ? answer.result : null,
+    error: "error" in answer ? answer.error : null,
+  });
+}
+
 // Window commands
 export function showMainWindow(): Promise<void> {
   return getCurrentWindow().show();

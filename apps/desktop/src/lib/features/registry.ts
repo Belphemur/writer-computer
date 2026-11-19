@@ -22,6 +22,7 @@ import { menuContributions, menuKey } from "./menus";
 import { overlayContributions } from "./overlays";
 import { featurePaletteCommands, featurePaletteSources } from "./palette";
 import { slotContributions } from "./slots";
+import { ipcRequestHandlers } from "./ipc-requests";
 import { workspaceListeners } from "./workspace-events";
 import { settingsSectionContributions } from "./settings-sections";
 import { sidebarActionContributions, sidebarPanelContributions } from "./sidebar";
@@ -58,11 +59,17 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.slots ?? []),
     ...(c.commandSources ?? []),
     ...(c.workspaceListeners ?? []),
+    ...(c.ipcRequests ?? []),
     ...(c.services ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
       throw new Error(`feature ${def.id}: contribution id "${id}" must start with "${def.id}."`);
+    }
+  }
+  for (const r of c.ipcRequests ?? []) {
+    if (!r.topic.startsWith(`${def.id}:`)) {
+      throw new Error(`feature ${def.id}: ipc topic "${r.topic}" must start with "${def.id}:"`);
     }
   }
   return def;
@@ -155,6 +162,7 @@ export function createFeatureHost({
     slotContributions.removeOwner(ownerOf(id));
     featurePaletteSources.removeOwner(ownerOf(id));
     workspaceListeners.removeOwner(ownerOf(id));
+    ipcRequestHandlers.removeOwner(ownerOf(id));
     serviceContributions.removeOwner(ownerOf(id));
   }
 
@@ -239,6 +247,18 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.workspaceListeners ?? []) {
           workspaceListeners.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.ipcRequests ?? []) {
+          ipcRequestHandlers.add(x.topic, {
+            id: x.id,
+            topic: x.topic,
+            owner: o,
+            // The first request activates the feature, like a command or a key.
+            handle: async (payload) => {
+              await host.activate(def.id);
+              return x.handle(payload, entry.ctx);
+            },
+          });
         }
         for (const x of def.contributes?.services ?? []) {
           serviceContributions.add(x.id, { ...x, owner: o });

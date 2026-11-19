@@ -20,6 +20,15 @@ impl Clipboard for FakeClipboard {
     }
 }
 
+/// The CLI tests never start the app: `open --launch` has its own tests in `ipc/tests.rs`.
+struct NoLauncher;
+
+impl crate::writer_cli::Launcher for NoLauncher {
+    fn launch(&self, _: Option<&std::path::Path>) -> Result<(), crate::writer_cli::LaunchError> {
+        panic!("a CLI test must not start the app");
+    }
+}
+
 struct T {
     vault: TempDir,
     data: TempDir,
@@ -66,6 +75,8 @@ impl T {
             app_data_dir: Some(self.data.path().to_path_buf()),
             clipboard: Box::new(FakeClipboard(Rc::clone(&self.clip), broken_clip)),
             utc_offset_minutes: 0,
+            launcher: Box::new(NoLauncher),
+            launch_wait: std::time::Duration::ZERO,
         };
         let argv: Vec<String> = line.iter().map(|s| s.to_string()).collect();
         execute(&argv, cwd, &env)

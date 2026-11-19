@@ -34,7 +34,7 @@ One JSON object per line:
 }
 ```
 
-Targets: `frontend` (all webview events), `app`, `panic`, `cli`, `plugin_proc` (plugin child process stderr head, 2 KB, and non-zero exits at info), and each Rust module path (`log::` macros).
+Targets: `frontend` (all webview events), `app`, `panic`, `cli`, `ipc`, `plugin_proc` (plugin child process stderr head, 2 KB, and non-zero exits at info), and each Rust module path (`log::` macros).
 
 ## Levels
 
@@ -46,6 +46,7 @@ Targets: `frontend` (all webview events), `app`, `panic`, `cli`, `plugin_proc` (
 - Frontend: `installGlobalLogging()` (called first in `main.tsx`) forwards `window.onerror`, `unhandledrejection`, `console.error`/`console.warn` (originals still run), failed IPC commands (command name and error text, never arguments), React error boundary catches, plugin errors (`recordPluginError`: plugin id, phase, version, message, stack) and the missing-API diagnostic (warn, phase `missing-api`; only when `writer.plugins.debug` is on or in dev). Plugin phases in use: `load`, `unload`, `seed`, `prime-agent-paths`, `command:run|check`, `event:<name>`, `ribbon`, `modal-open`, `view-close`, `settings-tab`, `bases-view:*`, `missing-api`.
 - Plugin processes: stderr head and non-zero exit, with plugin id and program name.
 - CLI: a failed command logs its name, exit code and the first 500 characters of stderr (never its arguments).
+- IPC (the CLI-to-app socket, `target: "ipc"`): one `info` line per connection with the command's registered name (`-` for a request that never reached a command), the outcome (`ok` or the error code such as `unauthorized`, `invalid_path`, `timeout`) and `duration_ms`. Never arguments, paths, note contents, the command string a client sent or the token; `ipc::tests` checks a request with a secret file name, a heading and a guessed token leaves none of them in the log. Endpoint problems at startup are `log::warn!` without a path.
 - Batching: entries are buffered for 1 s or 50 entries, identical messages (same level, source, plugin, phase, first 300 chars) are sent once per 60 s with a `repeats` count later, 100 entries per 10 s per window at most (Rust caps 300 per 10 s overall), message 4000 and stack 8000 characters.
 
 ## Privacy rules

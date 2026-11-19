@@ -48,7 +48,8 @@
 //! - Hooks ([`Feature::setup`], `on_workspace_open`, `on_workspace_close`, `on_exit`) are called
 //!   by this module's runner only for features that are enabled and whose `setup` succeeded; a
 //!   failing hook is logged, never propagated. Teardown hooks run in reverse registry order.
-//! - Pure contributions ([`Feature::cli_commands`], [`Feature::skills`], [`Feature::index_ddl`])
+//! - Pure contributions ([`Feature::cli_commands`], [`Feature::ipc_commands`],
+//!   [`Feature::skills`], [`Feature::index_ddl`])
 //!   are read from every registered feature whatever the toggle (the index and the CLI have no
 //!   settings layer; a toggle must never rebuild the index). The tables that run them stay
 //!   where they were: `cli::registry`, `managed_skills`, `index::schema`.
@@ -57,6 +58,7 @@
 use crate::cli::registry::CommandSpec;
 use crate::config::Settings;
 use crate::error::AppError;
+use crate::ipc::IpcCommand;
 use crate::managed_skills::BundledSkill;
 use crate::state::AppState;
 use parking_lot::Mutex;
@@ -77,7 +79,7 @@ mod containment_tests;
 #[cfg(test)]
 mod contract_tests;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 #[cfg(test)]
 mod ipc_tests;
 
@@ -241,6 +243,15 @@ pub trait Feature<R: Runtime>: Send + Sync {
 
     /// `writer` CLI commands, appended to `cli::registry::COMMANDS`.
     fn cli_commands(&self) -> &'static [CommandSpec] {
+        &[]
+    }
+    /// Commands the `writer` CLI may send to the running app over the local socket, added to
+    /// the core allowlist `ipc::commands::CORE` while the feature runs (`ipc::Registry`). Pure
+    /// data like `cli_commands`: each names this feature in `IpcCommand::feature`, so the server
+    /// answers `feature_off` while its switch is off or it failed. A handler is plain async code
+    /// over `ipc::Call`; vault confinement is `Call::confine_existing`, never a path check of
+    /// its own.
+    fn ipc_commands(&self) -> &'static [IpcCommand] {
         &[]
     }
     /// Managed agent skills, appended to `managed_skills::SKILLS` (changing one needs a
@@ -693,6 +704,16 @@ pub fn is_live<R: Runtime>(app: &AppHandle<R>, manifest: &Manifest) -> bool {
         .map_or(manifest.enabled_by_default, |s| is_enabled(s, manifest))
 }
 
+/// [`is_live`] for the registered feature `id` (a feature without a Rust half is not in the
+/// registry, so it is never live here: only Rust code asks).
+pub fn is_live_id<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
+    registry::<R>()
+        .into_iter()
+        .filter_map(|f| f.manifest().ok())
+        .find(|m| m.id == id)
+        .is_some_and(|m| is_live(app, &m))
+}
+
 /// Wraps the app's invoke handler for a feature whose commands stay registered by the app: a
 /// command named in `manifest.rust.gated_commands` runs only while [`is_live`] and through
 /// [`contain`] (a failed feature answers `FeatureUnavailable`, a panic fails the feature); every
@@ -883,6 +904,29 @@ pub fn cli_commands() -> Vec<&'static CommandSpec> {
 
 fn cli_commands_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'static CommandSpec> {
     features.iter().flat_map(|f| f.cli_commands()).collect()
+}
+
+/// IPC commands of every registered feature, for the CLI client's per-command wait.
+pub fn ipc_commands() -> Vec<&'static IpcCommand> {
+    ipc_commands_of(&registry::<Wry>())
+}
+
+fn ipc_commands_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'static IpcCommand> {
+    features.iter().flat_map(|f| f.ipc_commands()).collect()
+}
+
+/// The IPC commands of the features that are running (their `setup` succeeded): what the app's
+/// socket accepts besides the core commands. A feature that is off, or failed to start, adds none.
+pub fn running_ipc_commands<R: Runtime>(app: &AppHandle<R>) -> Vec<&'static IpcCommand> {
+    app.try_state::<Running<R>>()
+        .map(|running| ipc_commands_of(&running.0))
+        .unwrap_or_default()
+}
+
+/// A socket command of feature `id` panicked: the feature is failed for the session, like at any
+/// other boundary.
+pub fn fail_ipc_command<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    fail(app, id, "ipc", true);
 }
 
 /// Is the feature `id` switched on, for a process that has no settings layer (the `writer` CLI)?

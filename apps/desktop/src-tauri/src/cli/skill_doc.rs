@@ -45,7 +45,7 @@ fn command_line(c: &CommandSpec) -> String {
         let flags: Vec<String> = c
             .flags
             .iter()
-            .map(|(f, d)| format!("`{f}` ({d})"))
+            .map(|(f, d)| format!("`{}` ({d})", super::args::flag_display(f)))
             .collect();
         out.push_str(&format!(" Flags: {}.", flags.join(", ")));
     }

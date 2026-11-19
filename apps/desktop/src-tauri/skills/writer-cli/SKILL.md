@@ -17,7 +17,7 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 
 - `vault=` must be the first argument. Without it the vault is the nearest parent of the working directory that has a `.obsidian` folder, otherwise the working directory itself. Run from the vault root, or pass `vault=/absolute/path`.
 - `key=value` parameters. Quote values with spaces in the shell: `writer create name="Meeting notes"`. Parameter names are case-sensitive and a repeated parameter is an error.
-- Flags are bare words (`total`, `verbose`, `case`, `overwrite`, ...), never `--flag`. The only `--` options are `--copy` (also copy stdout to the clipboard) and `--help`.
+- Flags are bare words (`total`, `verbose`, `case`, `overwrite`, ...), never `--flag`. The only `--` options are `--copy` (also copy stdout to the clipboard), `--help` and, on `open`, `--launch`.
 - `file=<name>` resolves like a wikilink, by **file name** (never by the note's `title:` property or first heading): no folder, no extension (`file=Recipe`), case-insensitive. With several files of that name the closest folder wins, then the shortest path, then alphabetical order; use `path=` to be exact. Links, backlinks, unresolved links and Bases `link()` all use this same rule. `path=<path>` is exact from the vault root (`path=Projects/Recipe.md`). Give one of them, not both. There is no "active file": commands that act on a file need `file=` or `path=`.
 - In `content=` the escapes `\n` and `\t` become a newline and a tab; `\\` is a backslash.
 - One pair of quotes surrounding a whole value is stripped after the shell has run. This matters for search phrases, see the `writer-search` skill.
@@ -28,7 +28,7 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 - Results go to stdout, errors and warnings to stderr as `writer: <message>`. Output is plain and line oriented, safe to pipe.
 - Commands with `format=` accept the formats listed in their help. Defaults: `search`/`search:context`/`tasks` text, `properties` yaml, `tags`/`backlinks`/`unresolved` tsv (no header), `outline` tree, `base:query` json.
 - `total` prints only a count.
-- Exit `0` success. Exit `1` the command ran and failed (file not found, refused write, invalid value, unparsable frontmatter or `.base`, index busy). Exit `2` usage error (unknown command, parameter or flag, missing required parameter, command not available in the Writer CLI). Check the exit code, not just the output.
+- Exit `0` success. Exit `1` the command ran and failed (file not found, refused write, invalid value, unparsable frontmatter or `.base`, index busy). Exit `2` usage error (unknown command, parameter or flag, missing required parameter, command not available in the Writer CLI). Exit `4` `Writer is not running`: a command of the running app (`status`, `open`, `reveal`, `active`) found no app. Check the exit code, not just the output.
 
 ## Command groups
 
@@ -48,6 +48,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                                                                                     |
 | Graph      | `graph:neighbors`, `graph:path`, `graph:relationships`, `graph:backlinks`, `graph:related`, `graph:hubs`, `graph:components`, `graph:orphans` |
 | Structure  | `outline`, `wordcount`                                                                                                                        |
+| App        | `status`, `open`, `reveal`, `active`                                                                                                          |
 | Skills     | `skills:sync`                                                                                                                                 |
 | Meta       | `help`, `version`                                                                                                                             |
 | Agent      | `project:archive`, `project:unarchive`                                                                                                        |
@@ -78,6 +79,24 @@ writer title file=Recipe set="Best recipe"        # display title only (the `tit
 writer title file=Recipe clear dry-run            # preview removing it
 ```
 
+## The running app
+
+Only four commands talk to the Writer app (the **App** group); everything else works on the files with the app closed. They need Writer to be running and exit `4` with `writer: Writer is not running` when it is not. They reach the app over a local socket that only the same OS user can open, and they never return note text.
+
+```
+writer status                                    # is Writer running, its version, the open vaults
+writer open path=Projects/Plan.md line=12        # open a note in the vault's window, at a line
+writer open file=Recipe anchor=ingredients newtab   # at a heading; in a new tab
+writer open file=Recipe --launch                 # start Writer on this vault first when it is closed
+writer active                                    # the active tab: path, kind and cursor line
+writer active format=json
+```
+
+- `open` focuses the vault's window (and opens it when the vault has none). `line=` and `anchor=` (a heading slug) are alternatives. The path must exist inside the vault.
+- `active` answers with the vault-relative path, the tab kind (`file`, `base`, `code`, `image`, ...) and the cursor line of the window for this vault; it never prints the note or the selection. Use `read` for the text.
+- `reveal path=...` shows a file or folder in the sidebar.
+- Use these to point the user at a note you changed or to learn which note they are looking at; do not poll them.
+
 ## How notes relate (graph)
 
 Use the `graph:*` commands, with `format=json`, to understand how notes are connected before reading many files: `graph:neighbors` (notes within `depth=` links, each with how it is reached: a body `link`, an `embed` or a `property` such as `manager`), `graph:path from=A to=B`, `graph:relationships` (property links like `manager: [[Daniel]]`; with no `file=` it lists the property names in use, reuse those names when you write new ones), `graph:backlinks context` (the line that holds each link, capped), `graph:related` (notes that share linked notes), `graph:hubs`, `graph:components`, `graph:orphans` (no link in or out; `orphans` means no incoming link). Results are capped; `truncated: true` means raise `limit=` or lower `depth=`. A note with hundreds of links is listed but not expanded. Links resolve by file name, so a bare `[[index]]` that matches several files is reported by the index as ambiguous.
@@ -98,7 +117,7 @@ Use the `graph:*` commands, with `format=json`, to understand how notes are conn
 
 ## Not available in the CLI
 
-These Obsidian CLI commands need a running Obsidian-style app or features Writer does not have, and exit 2 with `Not available in the Writer CLI: <name>`: `open`, `search:open`, `templates` and `template*`, `bookmark*`, `diff`, `history*`, `sync*`, `plugin*`, `theme*`, `snippet*`, `publish*`, `workspace*`, `tab*`, `daily*`, `random*`, `unique*`, `web`, `dev*`, `command*`, `hotkey*`, `vault:*`, plus the `active` and `daily` flags. Use `file=` or `path=` instead of the active file, and ordinary file edits for anything else.
+These Obsidian CLI commands need a running Obsidian-style app or features Writer does not have, and exit 2 with `Not available in the Writer CLI: <name>`: `search:open`, `templates` and `template*`, `bookmark*`, `diff`, `history*`, `sync*`, `plugin*`, `theme*`, `snippet*`, `publish*`, `workspace*`, `tab*`, `daily*`, `random*`, `unique*`, `web`, `dev*`, `command*`, `hotkey*`, `vault:*`, plus the `active` and `daily` flags. Use `file=` or `path=` instead of the active file, and ordinary file edits for anything else.
 
 ## When not to use it
 

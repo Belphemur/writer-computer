@@ -4,6 +4,7 @@ pub mod fs;
 pub mod hotkeys;
 pub mod images;
 pub mod index;
+pub mod ipc;
 pub mod logs;
 pub mod plugins;
 pub mod recents;

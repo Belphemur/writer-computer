@@ -76,6 +76,13 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `outline` — Headings of a file. Params: `file=`, `path=`, `format=` (tree | md | json). Flags: `total` (print only the count).
 - `wordcount` — Words and characters of a file. Params: `file=`, `path=`. Flags: `words` (words only), `characters` (characters only).
 
+## App
+
+- `status` — Show whether Writer is running, its version and the open vaults. Params: `format=` (text | json).
+- `open` — Open a file in the vault's Writer window. Params: `file=`, `path=`, `line=` (line to reveal (from 1)), `anchor=` (heading slug to reveal). Flags: `newtab` (open in a new tab), `--launch` (start Writer first when it is not running).
+- `reveal` — Reveal a file or folder in the sidebar of the vault's Writer window. Params: `file=`, `path=`.
+- `active` — Show the active tab of the vault's Writer window: path, kind and line (never its text). Params: `format=` (text | json).
+
 ## Skills
 
 - `skills:sync` — Install or update the Writer-managed agent skills in this vault. Flags: `check` (report what would change, write nothing).

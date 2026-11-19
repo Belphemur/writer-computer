@@ -278,6 +278,7 @@ export function ImageViewer({ location, isActive }: PageViewProps<ImageLocation>
         name={name}
         size={content}
         scale={transform?.scale ?? null}
+        fitted={view === null}
         onZoomIn={actions.zoomIn}
         onZoomOut={actions.zoomOut}
         onFit={actions.fit}
@@ -300,11 +301,12 @@ function Message({ testId, children }: { testId: string; children: ReactNode }) 
 const iconButton =
   "flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--item-hover-bg)] hover:text-[var(--text-primary)]";
 
-/** File name, pixel size and the zoom control (− percent +; the percent returns to Fit). */
+/** File name, pixel size and the zoom control (− Fit or percent +; a click on it returns to Fit). */
 function Footer({
   name,
   size,
   scale,
+  fitted,
   onZoomIn,
   onZoomOut,
   onFit,
@@ -312,6 +314,8 @@ function Footer({
   name: string;
   size: Size | null;
   scale: number | null;
+  /** At Fit the control reads "Fit", not the fitted percent. */
+  fitted: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
@@ -345,7 +349,7 @@ function Footer({
             className="min-w-12 rounded px-1 text-center tabular-nums hover:bg-[var(--item-hover-bg)] hover:text-[var(--text-primary)]"
             onClick={onFit}
           >
-            {percent(scale)}%
+            {fitted ? "Fit" : `${percent(scale)}%`}
           </button>
           <button
             type="button"
