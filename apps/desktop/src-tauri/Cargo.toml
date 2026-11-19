@@ -80,6 +80,7 @@ specta-typescript = { version = "=0.0.15" }
 harper-core = "=3.2.0"
 spellbook = "=0.4.2"
 lingua = { version = "=1.8.0", default-features = false, features = ["english", "french"] }
+pdf_oxide = { version = "=0.3.78", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
