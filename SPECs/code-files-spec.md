@@ -23,6 +23,10 @@ Writer is also a notebook for agents. A skill is a folder with a `SKILL.md` and 
 - **Symlinks** follow the rule in "Symlinks" below (a link to a folder or file of the same vault is shown; anything else is skipped).
 - The `index` setting change takes effect for the index at the next workspace open (the tree reads the filesystem live).
 
+### One policy, one registry
+
+"Is this file listed" is the file-kind registry read through this module (`index/kinds.rs`, `search-spec.md` "File kinds"): `is_listed_name`, `listed_sql_predicate` and `is_listed_row` ask `kinds::kind_of(policy, name)`, and `ALWAYS_LISTED_EXTS` is gone. Notes, bases, drawings, images, PDFs and code files are kinds; a plain `.excalidraw` and a `.base` are listed while their feature is on (`Policy.features_off` holds the switched-off features, fed by this feature's `apply`), and `.excalidraw.md` is a drawing or, with the excalidraw feature off, a note. A new file type adds a kind, not an entry here.
+
 ### Images
 
 Setting `files.show-images` (boolean, global, default on) adds an `images` kind to the one policy (`code_files::Policy.show_images`, `is_image_name_with`). Images are the renderable image extensions of `shared/attachments.json` (`renderExtensions`, the one list of image types: see `shared/attachments.json`), read once there for the attachment feature and here; the list is not copied.
@@ -59,7 +63,7 @@ Setting `files.show-images` (boolean, global, default on) adds an `images` kind 
 ### Search, mentions, CLI, plugin host
 
 - Quick open and `fuzzy_search` (`NameCache`) list code files with their extension. Agent `@` mentions use that search, so code files and skill files appear; chips keep the extension (only `.md` is stripped).
-- **Full-text search does not cover code content.** Cost: a second parser path, a re-hash on setting toggles and noisy results for little gain; the agent has `rg`. File names are searchable. (A future opt-in setting could add it; not built.)
+- **Full-text search covers code content** (since ADR 2026-11-18 "let features contribute file kinds and text extractors to search", `search-spec.md` "File kinds"): the `code` kind, contributed by this feature, extracts the file's UTF-8 text under the same guards as opening it (secret names never, binary and invalid UTF-8 and files over `max_read_bytes` by name only, ignored folders never walked). Hits show the file's own lines and open at the line. Switching `code-files` off or changing the extension list drops or adds the rows at the next workspace open. File names are searchable as before. (Old note kept for context: the cost that put this off was a second parser path and a re-hash on toggles, now paid by the file-kind registry.)
 - `writer files` lists indexed files of every type, so code files and `.agents/skills` files appear, `ext=py` filters, `writer read path=...` prints them; `writer rename/move` of a code file rewrites no links. The managed `writer-cli` skill says so (BUNDLE_VERSION 3).
 - The plugin host's `vault.getFiles()` includes code files (as Obsidian lists every file); `getMarkdownFiles()` stays `md`-only; dot-folders (including the agent exception) are filtered out of the plugin vault listing.
 
@@ -89,7 +93,6 @@ Nothing is read outside the vault (unchanged `authorize_path`/`confine`); nothin
 
 ## Not done / known gaps
 
-- No full-text search over code contents; no "open at line" for code hits.
 - No `.ipynb`; `svg` is an image (listed by `files.show-images`, opened in the image viewer, never as text); Terraform, Elixir, GraphQL, batch files, Makefile and `.conf` have no highlighting in the shared language data.
 - Changing the ignore list or the agent-folder switch re-applies to the index at the next workspace open.
 - The code editor has no autocompletion or linting.

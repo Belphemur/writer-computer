@@ -14,9 +14,14 @@ interface FuzzySearchState {
  * and modified files. An empty query lists recent files (opened first). When `enabled` is false
  * (standalone windows without an index) nothing is requested. `error` is set when the index
  * failed (not when the list is merely short); callers show it instead of
- * "No results".
+ * "No results". `kind` narrows the list to one file kind (the palette's chip).
  */
-export function useFuzzySearch(query: string, limit = 20, enabled = true) {
+export function useFuzzySearch(
+  query: string,
+  limit = 20,
+  enabled = true,
+  kind: string | null = null,
+) {
   const [state, setState] = useState<FuzzySearchState>({ query: "", results: [], error: null });
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hasQuery = enabled;
@@ -32,8 +37,7 @@ export function useFuzzySearch(query: string, limit = 20, enabled = true) {
 
     let stale = false;
     debounceRef.current = setTimeout(() => {
-      tauri
-        .fuzzySearch(query, limit)
+      (kind ? tauri.fuzzySearch(query, limit, [kind]) : tauri.fuzzySearch(query, limit))
         .then((results) => {
           if (!stale) setState({ query, results, error: null });
         })
@@ -51,7 +55,7 @@ export function useFuzzySearch(query: string, limit = 20, enabled = true) {
         clearTimeout(debounceRef.current);
       }
     };
-  }, [query, limit, enabled]);
+  }, [query, limit, enabled, kind]);
 
   // Disabled hooks have no results — derive this during render instead of
   // clearing state in the effect, so callers never see a stale frame.

@@ -15,13 +15,14 @@ import { useWorkspaceStore } from "../src/stores/workspace-store";
 
 const mockedInvoke = vi.mocked(invoke);
 
-function result(rel: string, indices: number[] = []) {
+function result(rel: string, indices: number[] = [], kind?: string) {
   return {
     path: `/ws/${rel}`,
     filename: rel.split("/").pop(),
     relative_path: rel,
     score: 1,
     match_indices: indices,
+    ...(kind ? { kind } : {}),
   };
 }
 
@@ -109,5 +110,45 @@ describe("file palette ranking", () => {
       query: "francios lamare",
       limit: 20,
     });
+  });
+
+  it("filters quick open by kind from the registry's chips and draws each row's kind icon", async () => {
+    useUIStore.setState({ commandPaletteSearch: "report" });
+    const KINDS = [
+      { id: "note", label: "Notes", icon: "File02Icon" },
+      { id: "pdf", label: "PDFs", icon: "Pdf02Icon" },
+    ];
+    mockedInvoke.mockImplementation(((cmd: string, args: { kinds?: string[] }) => {
+      if (cmd === "search_kinds") return Promise.resolve(KINDS);
+      if (cmd === "fuzzy_search") {
+        return Promise.resolve(
+          args.kinds?.includes("pdf")
+            ? [result("Papers/Report.pdf", [], "pdf")]
+            : [result("Notes/Report.md", [], "note"), result("Papers/Report.pdf", [], "pdf")],
+        );
+      }
+      return Promise.resolve([]);
+    }) as never);
+    await act(async () => {
+      root.render(<CommandPalette />);
+    });
+    await settle();
+    const chips = [...document.querySelectorAll<HTMLElement>("[data-testid^='kind-chip-']")];
+    expect(chips.map((c) => c.textContent)).toEqual(["All", "Notes", "PDFs"]);
+    expect(
+      [...document.querySelectorAll<HTMLElement>("[data-kind-icon]")].map(
+        (i) => i.dataset.kindIcon,
+      ),
+    ).toEqual(["note", "pdf"]);
+    await act(async () => {
+      document.querySelector<HTMLElement>("[data-testid='kind-chip-pdf']")!.click();
+    });
+    await settle();
+    expect(mockedInvoke).toHaveBeenLastCalledWith("fuzzy_search", {
+      query: "report",
+      limit: 20,
+      kinds: ["pdf"],
+    });
+    expect(rows().filter((v) => v.startsWith("/ws/"))).toEqual(["/ws/Papers/Report.pdf"]);
   });
 });

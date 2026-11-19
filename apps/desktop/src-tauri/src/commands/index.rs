@@ -404,6 +404,14 @@ pub struct SearchRequest {
 pub(crate) const INDEX_BUILDING_MESSAGE: &str =
     "the vault index is still being built; try again when it is ready";
 
+/// The file kinds the vault lists right now, in registry order: the chips of quick open and content
+/// search. The registry is the one list (`index::kinds`); the UI never keeps a copy. No disk or
+/// lock work: the answer is the registry under the current policy.
+#[tauri::command]
+pub async fn search_kinds() -> Result<Vec<crate::index::kinds::KindInfo>, AppError> {
+    Ok(crate::index::kinds::listed(&crate::code_files::policy()))
+}
+
 #[tauri::command]
 pub async fn index_search(
     request: SearchRequest,

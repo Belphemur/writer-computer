@@ -18,7 +18,8 @@
       "excalidraw:read",
       "excalidraw:export"
     ],
-    "ipcCommands": ["excalidraw:export"]
+    "ipcCommands": ["excalidraw:export"],
+    "fileKinds": ["drawing"]
   },
   "contributes": {
     "commands": [

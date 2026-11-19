@@ -3,6 +3,8 @@
 //! the walker threads.
 
 use super::edges;
+use super::fts::FtsDoc;
+use super::kinds::{self, TextSource};
 use super::note::{content_hash, parse_note, ParsedNote};
 use super::paths::{is_indexable_rel, rel_to_string};
 use super::resolve::PathIndex;
@@ -43,10 +45,25 @@ pub(crate) struct ExistingRow {
     mtime: i64,
     size: i64,
     hash: Option<i64>,
+    /// The kind the row was indexed as: a policy change that gives the file another kind (or none)
+    /// re-indexes it even though its stat did not move.
+    kind: String,
+    /// The file's text was indexed: a content gate that opens or closes re-indexes it too.
+    text_indexed: bool,
+}
+
+/// A non-note file with a text extractor (a PDF, a code file): its text columns, and the hash of
+/// its bytes when they were read. An extraction that failed is the same with no body: the file
+/// stays listed and found by name.
+struct DocContent {
+    hash: Option<i64>,
+    title: Option<String>,
+    fts: FtsDoc,
 }
 
 enum Content {
     Parsed(Box<ParsedNote>, i64),
+    Doc(Box<DocContent>),
     /// Row metadata only (non-markdown file, or markdown whose hash is unchanged).
     MetaOnly(Option<i64>),
     ReadError(String),
@@ -62,6 +79,10 @@ pub(crate) struct FileRecord {
     ctime: i64,
     mtime: i64,
     existed: bool,
+    /// The id of the kind the file is indexed as, `""` when it is not listed (`index::kinds`).
+    kind: &'static str,
+    /// The file has an FTS row: its kind has text and its content gate is open.
+    has_fts: bool,
     content: Content,
 }
 
@@ -98,16 +119,52 @@ fn split_rel(rel: &str) -> (String, String, String, String) {
     )
 }
 
-/// Stat (and for changed markdown, read and parse) one file. `trust_mtime`:
-/// skip reading markdown whose mtime and size match the stored row. The
-/// watcher path passes `false` because a same-size edit inside one mtime tick
-/// must not be missed.
+/// The text columns of an extracted body: capped, spaced for CJK, and kept whole for the lines
+/// under a hit when the kind shows them from the index.
+fn extracted_fts(kind: &kinds::FileKind, body: String) -> FtsDoc {
+    let body = super::extract::cap_body(body);
+    FtsDoc {
+        body: super::fts::space_cjk(&body),
+        stored: (kind.text == TextSource::Stored).then_some(body),
+        ..FtsDoc::default()
+    }
+}
+
+/// Read and extract a non-note file of a kind with an extractor.
+fn doc_content(
+    kind: &kinds::FileKind,
+    extract: &kinds::Extract,
+    abs: &Path,
+    name: &str,
+    size: i64,
+) -> Content {
+    let doc = match super::extract::run(kind, extract, abs, name, size.max(0) as u64) {
+        Ok((out, bytes)) => DocContent {
+            hash: Some(content_hash(&bytes)),
+            title: out.title,
+            fts: extracted_fts(kind, out.body),
+        },
+        // named only: an FTS row with the file name and no body
+        Err(_) => DocContent {
+            hash: None,
+            title: None,
+            fts: FtsDoc::default(),
+        },
+    };
+    Content::Doc(Box::new(doc))
+}
+
+/// Stat (and for changed markdown, read and parse; for a kind with an extractor, read and
+/// extract) one file. `trust_mtime`: skip reading markdown whose mtime and size match the stored
+/// row. The watcher path passes `false` because a same-size edit inside one mtime tick must not
+/// be missed. `policy` decides the file's kind (`index::kinds`).
 fn process_file(
     abs: &Path,
     rel: &str,
     meta: &Metadata,
     existing: Option<&ExistingRow>,
     trust_mtime: bool,
+    policy: &crate::code_files::Policy,
 ) -> Outcome {
     let size = meta.len() as i64;
     let mtime = ms(meta.modified()).unwrap_or(0);
@@ -115,7 +172,14 @@ fn process_file(
     // meaningful stand-in there.
     let ctime = ms(meta.created()).unwrap_or(mtime);
     let (folder, name, basename, ext) = split_rel(rel);
+    let kind = kinds::kind_of(policy, &name);
+    let kind_id = kind.map_or("", |k| k.id);
+    let has_text = kind.is_some_and(|k| kinds::indexes_text(policy, k));
+    let extract = kind
+        .filter(|_| has_text)
+        .and_then(|k| k.extract.as_ref().map(|e| (k, e)));
     let same_stat = existing.is_some_and(|e| e.mtime == mtime && e.size == size);
+    let same_kind = existing.is_some_and(|e| e.kind == kind_id && e.text_indexed == has_text);
     let is_md = ext == "md";
 
     let record = |content| {
@@ -129,18 +193,22 @@ fn process_file(
             ctime,
             mtime,
             existed: existing.is_some(),
+            kind: kind_id,
+            has_fts: has_text,
             content,
         }))
     };
 
     if !is_md {
-        return if same_stat {
-            Outcome::Unchanged
-        } else {
-            record(Content::MetaOnly(None))
-        };
+        if same_stat && same_kind {
+            return Outcome::Unchanged;
+        }
+        return record(match extract {
+            Some((k, e)) => doc_content(k, e, abs, &name, size),
+            None => Content::MetaOnly(None),
+        });
     }
-    if same_stat && trust_mtime && existing.is_some_and(|e| e.hash.is_some()) {
+    if same_stat && same_kind && trust_mtime && existing.is_some_and(|e| e.hash.is_some()) {
         return Outcome::Unchanged;
     }
     let bytes = match std::fs::read(abs) {
@@ -149,7 +217,7 @@ fn process_file(
     };
     let hash = content_hash(&bytes);
     if let Some(e) = existing {
-        if e.hash == Some(hash) {
+        if e.hash == Some(hash) && same_kind {
             return if same_stat {
                 Outcome::Unchanged
             } else {
@@ -159,14 +227,21 @@ fn process_file(
     }
     // Invalid UTF-8 is decoded lossily; Obsidian assumes UTF-8 as well.
     let text = String::from_utf8_lossy(&bytes);
-    record(Content::Parsed(Box::new(parse_note(&text)), hash))
+    let mut note = parse_note(&text);
+    // A markdown file of another kind with an extractor (a drawing note) is parsed as a note for
+    // its properties and links; its searchable text is what the extractor reads.
+    if let Some((k, e)) = extract.filter(|(k, _)| k.id != "note") {
+        if let Ok(out) = super::extract::run_bytes(k, e, abs, &name, &bytes) {
+            let text = extracted_fts(k, out.body);
+            note.fts.body = text.body;
+            note.fts.stored = text.stored;
+            note.fts.body_skipped = false;
+        }
+    }
+    record(Content::Parsed(Box::new(note), hash))
 }
 
-pub(crate) fn walk_builder(root: &Path) -> WalkBuilder {
-    walk_builder_with(root, crate::code_files::policy())
-}
-
-/// [`walk_builder`] under one policy snapshot, so a scan sees a single policy even when a
+/// The walker over the vault under one policy snapshot, so a scan sees a single policy even when a
 /// setting changes meanwhile (and the walker threads need not ask for it).
 pub(crate) fn walk_builder_with(root: &Path, policy: crate::code_files::Policy) -> WalkBuilder {
     let mut b = WalkBuilder::new(root);
@@ -203,12 +278,15 @@ pub(crate) fn load_existing(
                 mtime: r.get(1)?,
                 size: r.get(2)?,
                 hash: r.get(3)?,
+                kind: r.get(4)?,
+                text_indexed: r.get(5)?,
             },
         ))
     };
     match range {
         None => {
-            let mut st = conn.prepare("SELECT path, mtime, size, body_hash FROM files")?;
+            let mut st =
+                conn.prepare("SELECT path, mtime, size, body_hash, kind, text_indexed FROM files")?;
             for row in st.query_map([], map)? {
                 let (p, e) = row?;
                 out.insert(p, e);
@@ -216,7 +294,7 @@ pub(crate) fn load_existing(
         }
         Some((lo, hi)) => {
             let mut st = conn.prepare(
-                "SELECT path, mtime, size, body_hash FROM files WHERE path >= ?1 AND path < ?2",
+                "SELECT path, mtime, size, body_hash, kind, text_indexed FROM files WHERE path >= ?1 AND path < ?2",
             )?;
             for row in st.query_map([lo, hi], map)? {
                 let (p, e) = row?;
@@ -323,16 +401,37 @@ fn write_record(
     resolver: Option<&PathIndex>,
 ) -> Result<i64, IndexError> {
     Ok(match &rec.content {
-        Content::MetaOnly(hash) if existed => conn
-            .prepare_cached(
-                "UPDATE files SET size=?2, ctime=?3, mtime=?4, body_hash=COALESCE(?5, body_hash) \
-                 WHERE path=?1 RETURNING id",
-            )?
-            .query_row(
-                params![rec.path, rec.size, rec.ctime, rec.mtime, hash],
-                |r| r.get(0),
-            )?,
+        Content::MetaOnly(hash) if existed => {
+            let id: i64 = conn
+                .prepare_cached(
+                    "UPDATE files SET size=?2, ctime=?3, mtime=?4, body_hash=COALESCE(?5, body_hash), \
+                     kind=?6, text_indexed=?7 WHERE path=?1 RETURNING id",
+                )?
+                .query_row(
+                    params![rec.path, rec.size, rec.ctime, rec.mtime, hash, rec.kind, rec.has_fts],
+                    |r| r.get(0),
+                )?;
+            if !rec.has_fts {
+                // the file lost its kind (a feature or a setting went off): its text goes with it
+                super::fts::delete_doc(conn, id)?;
+            }
+            id
+        }
         Content::MetaOnly(_) => insert_file(conn, rec, None, None, None, None, None)?,
+        Content::Doc(doc) => {
+            let id = insert_file(conn, rec, None, None, doc.hash, None, None)?;
+            let title_text = match doc
+                .title
+                .as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+            {
+                Some(t) => format!("{} {t}", rec.basename),
+                None => rec.basename.clone(),
+            };
+            super::fts::write_doc(conn, id, &title_text, &doc.fts, existed)?;
+            id
+        }
         Content::ReadError(msg) => {
             let id = insert_file(conn, rec, None, Some(msg), None, None, None)?;
             delete_children(conn, id)?;
@@ -376,6 +475,7 @@ fn write_record(
 fn mark_failed(conn: &Connection, rec: &FileRecord, msg: &str) -> Result<i64, IndexError> {
     let hash = match &rec.content {
         Content::Parsed(_, h) => Some(*h),
+        Content::Doc(d) => d.hash,
         _ => None,
     };
     let id = insert_file(
@@ -403,18 +503,19 @@ fn insert_file(
 ) -> Result<i64, IndexError> {
     Ok(conn
         .prepare_cached(
-            "INSERT INTO files(path,name,basename,ext,folder,size,ctime,mtime,fm_json,fm_error,body_hash,words,chars) \
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) \
+            "INSERT INTO files(path,name,basename,ext,folder,size,ctime,mtime,fm_json,fm_error,body_hash,words,chars,kind,text_indexed) \
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15) \
              ON CONFLICT(path) DO UPDATE SET name=excluded.name, basename=excluded.basename, ext=excluded.ext, \
                folder=excluded.folder, size=excluded.size, ctime=excluded.ctime, mtime=excluded.mtime, \
                fm_json=excluded.fm_json, fm_error=excluded.fm_error, body_hash=excluded.body_hash, \
-               words=excluded.words, chars=excluded.chars \
+               words=excluded.words, chars=excluded.chars, kind=excluded.kind, \
+               text_indexed=excluded.text_indexed \
              RETURNING id",
         )?
         .query_row(
             params![
                 rec.path, rec.name, rec.basename, rec.ext, rec.folder, rec.size, rec.ctime,
-                rec.mtime, fm_json, fm_error, hash, words, chars
+                rec.mtime, fm_json, fm_error, hash, words, chars, rec.kind, rec.has_fts
             ],
             |r| r.get(0),
         )?)
@@ -545,7 +646,7 @@ pub(crate) fn scan(
     let root = shared.root.clone();
     let walker_shared = Arc::clone(shared);
     let walker_existing = Arc::clone(&existing);
-    let policy = crate::code_files::policy();
+    let policy = shared.policy();
     let walker = std::thread::spawn(move || {
         let threads = std::thread::available_parallelism()
             .map(|n| n.get().min(8))
@@ -599,6 +700,7 @@ pub(crate) fn scan(
                         &meta,
                         existing.get(&rel_str),
                         true,
+                        &policy,
                     ) {
                         Outcome::Unchanged => Item::Unchanged(rel_str),
                         Outcome::Record(r) => Item::Record(r),
@@ -670,7 +772,7 @@ pub(crate) fn scan(
                         }
                     }
                     Content::MetaOnly(Some(_)) => stats.touched += 1,
-                    Content::MetaOnly(None) => {
+                    Content::MetaOnly(None) | Content::Doc(_) => {
                         if rec.existed {
                             stats.changed += 1
                         } else {
@@ -775,6 +877,7 @@ pub(crate) fn index_paths(
     let mut records: Vec<Box<FileRecord>> = Vec::new();
     let mut removed: Vec<String> = Vec::new();
     let mut handled: HashSet<&PathBuf> = HashSet::new();
+    let policy = shared.policy();
 
     for abs in abs_paths {
         if !handled.insert(abs) {
@@ -807,7 +910,7 @@ pub(crate) fn index_paths(
                 let existing =
                     load_existing(conn, Some((rel_str.clone(), format!("{rel_str}\0"))))?;
                 if let Outcome::Record(r) =
-                    process_file(abs, &rel_str, &meta, existing.get(&rel_str), false)
+                    process_file(abs, &rel_str, &meta, existing.get(&rel_str), false, &policy)
                 {
                     records.push(r);
                 }
@@ -815,7 +918,7 @@ pub(crate) fn index_paths(
             Ok(meta) if meta.is_dir() => {
                 let existing = load_existing(conn, Some(prefix_range(&rel_str)))?;
                 let mut seen = HashSet::new();
-                for entry in walk_builder(abs).build() {
+                for entry in walk_builder_with(abs, policy.clone()).build() {
                     let entry = match entry {
                         Ok(e) => e,
                         Err(e) => return Err(IndexError::Internal(format!("walk: {e}"))),
@@ -834,7 +937,7 @@ pub(crate) fn index_paths(
                         .map_err(|e| IndexError::Internal(e.to_string()))?;
                     seen.insert(p.clone());
                     if let Outcome::Record(rec) =
-                        process_file(entry.path(), &p, &m, existing.get(&p), false)
+                        process_file(entry.path(), &p, &m, existing.get(&p), false, &policy)
                     {
                         records.push(rec);
                     }

@@ -12,6 +12,10 @@
 //! - `a OR b`                        alternatives (`AND` is implicit and optional)
 //! - `path:x`, `file:x`, `tag:x`     filters: path substring, file-name substring, tag
 //!   (also `path:"my dir"`)
+//! - `kind:pdf`, `-kind:code`        keep only (or drop) a file kind (`index::kinds`: `note`,
+//!   `pdf`, `code`, `image`, `drawing`, `base`); repeated `kind:` filters are alternatives; an
+//!   unknown kind is an error that lists the known ones
+//! - `ext:py`, `-ext:py`             keep only (or drop) a file extension (no dot)
 //!
 //! A query without any positive term matches nothing (it is not an error).
 
@@ -29,6 +33,14 @@ pub enum Filter {
     File(String),
     /// Normalised tag (lowercase, no `#`); nested tags match their ancestors.
     Tag(String),
+    /// A file kind id (validated against the registry); repeated kinds are alternatives.
+    Kind(String),
+    /// Not this kind.
+    NotKind(String),
+    /// A lowercase extension without the dot; repeated extensions are alternatives.
+    Ext(String),
+    /// Not this extension.
+    NotExt(String),
     /// A filter whose value can never match (an invalid tag).
     Never,
 }
@@ -132,17 +144,41 @@ impl Cursor<'_> {
     }
 }
 
-const FILTER_KEYS: [&str; 4] = ["path", "folder", "file", "tag"];
+const FILTER_KEYS: [&str; 6] = ["path", "folder", "file", "tag", "kind", "ext"];
+/// The filters that can also be negated with a leading `-`.
+const NEGATABLE_KEYS: [&str; 2] = ["kind", "ext"];
 
-fn make_filter(key: &str, value: &str) -> Filter {
-    match key {
+fn make_filter(key: &str, value: &str, negated: bool) -> Result<Filter, IndexError> {
+    Ok(match key {
         "path" | "folder" => Filter::Path(value.to_string()),
         "file" => Filter::File(value.to_string()),
+        "kind" => {
+            let id = value.to_lowercase();
+            if super::kinds::by_id(&id).is_none() {
+                return Err(IndexError::Invalid(format!(
+                    "unknown kind \"{value}\"; known kinds: {}",
+                    super::kinds::ids().join(", ")
+                )));
+            }
+            if negated {
+                Filter::NotKind(id)
+            } else {
+                Filter::Kind(id)
+            }
+        }
+        "ext" => {
+            let ext = value.trim_start_matches('.').to_lowercase();
+            if negated {
+                Filter::NotExt(ext)
+            } else {
+                Filter::Ext(ext)
+            }
+        }
         _ => match super::markdown::normalize_tag(value) {
             Some(t) => Filter::Tag(t),
             None => Filter::Never,
         },
-    }
+    })
 }
 
 /// `as_you_type`: the user is still typing, so a trailing bare word (no space
@@ -189,32 +225,32 @@ pub fn parse_query(input: &str, as_you_type: bool) -> Result<ParsedQuery, IndexE
             bare = false;
         } else {
             let mut word = cur.bare();
-            if !negated {
-                if word == "OR" {
-                    if groups.last().is_some_and(|g| !g.is_empty()) {
-                        groups.push(Vec::new());
+            if !negated && word == "OR" {
+                if groups.last().is_some_and(|g| !g.is_empty()) {
+                    groups.push(Vec::new());
+                }
+                continue;
+            }
+            if !negated && word == "AND" {
+                continue;
+            }
+            if let Some((key, rest)) = word.split_once(':') {
+                let key = key.to_lowercase();
+                if FILTER_KEYS.contains(&key.as_str())
+                    && (!negated || NEGATABLE_KEYS.contains(&key.as_str()))
+                {
+                    let value = match rest.strip_prefix('"') {
+                        // `path:"my dir"`: the bare read stopped at the first space.
+                        Some(inner) => match inner.split_once('"') {
+                            Some((v, _)) => v.to_string(),
+                            None => format!("{inner}{}", cur.quoted()),
+                        },
+                        None => rest.to_string(),
+                    };
+                    if !value.trim().is_empty() {
+                        filters.push(make_filter(&key, value.trim(), negated)?);
                     }
                     continue;
-                }
-                if word == "AND" {
-                    continue;
-                }
-                if let Some((key, rest)) = word.split_once(':') {
-                    let key = key.to_lowercase();
-                    if FILTER_KEYS.contains(&key.as_str()) {
-                        let value = match rest.strip_prefix('"') {
-                            // `path:"my dir"`: the bare read stopped at the first space.
-                            Some(inner) => match inner.split_once('"') {
-                                Some((v, _)) => v.to_string(),
-                                None => format!("{inner}{}", cur.quoted()),
-                            },
-                            None => rest.to_string(),
-                        };
-                        if !value.trim().is_empty() {
-                            filters.push(make_filter(&key, value.trim()));
-                        }
-                        continue;
-                    }
                 }
             }
             prefix_marker = word.ends_with('*');
@@ -349,6 +385,43 @@ mod tests {
             parse_query("tag:%%%", false).unwrap().filters,
             vec![Filter::Never]
         );
+    }
+
+    #[test]
+    fn kind_and_ext_filters_repeat_negate_and_validate() {
+        let q = parse_query(
+            "budget kind:PDF kind:code -kind:image ext:.Py -ext:md",
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            q.filters,
+            vec![
+                Filter::Kind("pdf".into()),
+                Filter::Kind("code".into()),
+                Filter::NotKind("image".into()),
+                Filter::Ext("py".into()),
+                Filter::NotExt("md".into()),
+            ]
+        );
+        assert_eq!(q.match_expr.as_deref(), Some("(\"budget\")"));
+        // a kind filter alone is no positive term
+        assert!(parse_query("kind:pdf", false).unwrap().match_expr.is_none());
+        // the other negated keys stay plain text; so do empty values
+        let q = parse_query("-path:x kind:", false).unwrap();
+        assert!(q.filters.is_empty());
+        assert_eq!(q.match_expr, None);
+        let Err(IndexError::Invalid(msg)) = parse_query("kind:spreadsheet x", false) else {
+            panic!("an unknown kind is an error");
+        };
+        assert!(
+            msg.contains("spreadsheet") && msg.contains("pdf") && msg.contains("note"),
+            "{msg}"
+        );
+        assert!(matches!(
+            parse_query("-kind:nope x", false),
+            Err(IndexError::Invalid(_))
+        ));
     }
 
     #[test]

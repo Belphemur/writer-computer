@@ -20,6 +20,8 @@ pub struct SearchResult {
     pub match_indices: Vec<u32>,
     /// The note's display-title override (frontmatter `title`), matched like the file name.
     pub title: Option<String>,
+    /// The id of the file's kind (`search_kinds` lists them): note, pdf, code...
+    pub kind: String,
 }
 
 fn now_ms() -> i64 {
@@ -29,7 +31,7 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Quick-open / link-autocomplete search over notes and `.base` files: fuzzy,
+/// Quick-open / link-autocomplete search over the listed files (every kind): fuzzy,
 /// typo-tolerant, boosted by recently opened/modified files (`index/rank.rs`).
 /// An empty query lists files by recency (opened first, then modified).
 ///
@@ -41,6 +43,7 @@ fn now_ms() -> i64 {
 pub async fn fuzzy_search(
     query: String,
     limit: Option<u32>,
+    kinds: Option<Vec<String>>,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<Vec<SearchResult>, AppError> {
@@ -57,7 +60,15 @@ pub async fn fuzzy_search(
         };
         let found = state
             .names
-            .search_with(&query, limit, &NameFilter::default(), &ctx)
+            .search_with(
+                &query,
+                limit,
+                &NameFilter {
+                    kinds: kinds.filter(|k| !k.is_empty()),
+                    ..NameFilter::default()
+                },
+                &ctx,
+            )
             .map_err(app_err)?;
         Ok(found
             .matches
@@ -69,6 +80,7 @@ pub async fn fuzzy_search(
                 score: m.score,
                 match_indices: m.match_indices,
                 title: m.title,
+                kind: m.kind.to_string(),
             })
             .collect())
     })

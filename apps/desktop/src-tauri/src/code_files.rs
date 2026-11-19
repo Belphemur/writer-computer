@@ -92,6 +92,9 @@ pub struct Policy {
     pub show_images: bool,
     /// List the document files (`documentExtensions` of `shared/attachments.json`, PDFs).
     pub show_pdfs: bool,
+    /// Ids of the registered features switched off: the kinds they gate (`Gate::Feature`) are not
+    /// listed or indexed (`index::kinds`). Fed by the feature's `apply`, empty by default.
+    pub features_off: HashSet<String>,
 }
 
 impl Policy {
@@ -105,6 +108,16 @@ impl Policy {
             show_agent_folders: false,
             show_images: true,
             show_pdfs: true,
+            features_off: HashSet::new(),
+        }
+    }
+
+    /// Is the core setting `key` (one of the listing settings a kind's gate names) on?
+    pub fn setting_on(&self, key: &str) -> bool {
+        match key {
+            SETTING_IMAGES => self.show_images,
+            SETTING_PDFS => self.show_pdfs,
+            _ => true,
         }
     }
 }
@@ -120,6 +133,7 @@ impl Default for Policy {
             show_agent_folders: true,
             show_images: true,
             show_pdfs: true,
+            features_off: HashSet::new(),
         }
     }
 }
@@ -288,19 +302,24 @@ pub fn is_document_name_with(policy: &Policy, name: &str) -> bool {
         && ext_of(name).is_some_and(|e| crate::attachments::document_extensions().contains(&e))
 }
 
-/// Extensions listed whatever the settings: notes, Bases, and Excalidraw's plain `.excalidraw`
-/// drawings (the `.excalidraw.md` ones are notes). The one list the three listing rules below and
-/// `index::names::LISTED_EXTS` share.
-pub const ALWAYS_LISTED_EXTS: [&str; 3] = ["md", "base", "excalidraw"];
+/// The whole file names (`Dockerfile`) the code kind lists under `policy`; empty while code is off.
+pub fn code_file_names(policy: &Policy) -> Vec<String> {
+    if policy.code {
+        SHARED.file_names.clone()
+    } else {
+        Vec::new()
+    }
+}
 
-/// A listed file: a note, a `.base`, a drawing, a code file, or (setting on) an image or a PDF.
+/// A listed file: the file has a kind (`index::kinds`) under `policy`: a note, a `.base`, a
+/// drawing, a code file, or (setting on) an image or a PDF.
+pub fn is_listed_name_with(policy: &Policy, name: &str) -> bool {
+    crate::index::kinds::kind_of(policy, name).is_some()
+}
+
+/// [`is_listed_name_with`] under the current policy.
 pub fn is_listed_name(name: &str) -> bool {
-    ext_of(name).is_some_and(|e| ALWAYS_LISTED_EXTS.contains(&e.as_str()))
-        || with_current(|p| {
-            is_code_name_with(p, name)
-                || is_image_name_with(p, name)
-                || is_document_name_with(p, name)
-        })
+    with_current(|p| is_listed_name_with(p, name))
 }
 
 /// [`is_listed_name`] for a path (its file name).
@@ -310,37 +329,20 @@ pub fn is_listed_path(path: &Path) -> bool {
         .is_some_and(is_listed_name)
 }
 
-/// SQL predicate over `files.ext` / `files.name` selecting the listed rows (md, base, code, images).
+/// The id of the kind the current policy gives the file called `name` (`""` when not listed): what
+/// `files.kind` holds.
+pub fn kind_id_of_name(name: &str) -> &'static str {
+    with_current(|p| crate::index::kinds::kind_id_of(p, name))
+}
+
+/// SQL predicate over `files.ext` / `files.name` selecting the listed rows. The registry builds it.
 pub fn listed_sql_predicate() -> String {
     with_current(listed_sql_predicate_with)
 }
 
 /// [`listed_sql_predicate`] under an explicit policy.
 pub fn listed_sql_predicate_with(p: &Policy) -> String {
-    let mut exts: Vec<String> = ALWAYS_LISTED_EXTS.iter().map(|e| e.to_string()).collect();
-    if p.code {
-        let mut code: Vec<&String> = p.extensions.iter().collect();
-        code.sort();
-        exts.extend(code.into_iter().cloned());
-    }
-    if p.show_images {
-        exts.extend(crate::attachments::render_extensions().iter().cloned());
-    }
-    if p.show_pdfs {
-        exts.extend(crate::attachments::document_extensions().iter().cloned());
-    }
-    let list = exts
-        .iter()
-        .map(|e| format!("'{}'", e.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    let code_names: &[String] = if p.code { &SHARED.file_names } else { &[] };
-    let names = code_names
-        .iter()
-        .map(|n| format!("'{}'", n.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!("(ext IN ({list}) OR name IN ({names}))")
+    crate::index::kinds::listed_sql_predicate(p)
 }
 
 /// True when the SQL row (`name`, lowercase `ext`) is listed. The Rust twin of
@@ -349,29 +351,10 @@ pub fn is_listed_row(name: &str, ext: &str) -> bool {
     with_current(|p| is_listed_row_with(p, name, ext))
 }
 
-/// [`is_listed_row`] under an explicit policy.
-pub fn is_listed_row_with(p: &Policy, name: &str, ext: &str) -> bool {
-    if ALWAYS_LISTED_EXTS.contains(&ext) {
-        return true;
-    }
-    if p.show_images
-        && crate::attachments::render_extensions()
-            .iter()
-            .any(|e| e == ext)
-    {
-        return true;
-    }
-    if p.show_pdfs
-        && crate::attachments::document_extensions()
-            .iter()
-            .any(|e| e == ext)
-    {
-        return true;
-    }
-    if !p.code || is_secret_name(name) {
-        return false;
-    }
-    SHARED.file_names.iter().any(|n| n == name) || p.extensions.contains(ext)
+/// [`is_listed_row`] under an explicit policy. The kind is decided by the file name alone; `ext`
+/// is the stored column, which the name already says.
+pub fn is_listed_row_with(p: &Policy, name: &str, _ext: &str) -> bool {
+    is_listed_name_with(p, name)
 }
 
 /// Is a vault-relative path (`.agents/skills/x/run.py`) visible: no hidden segment except the

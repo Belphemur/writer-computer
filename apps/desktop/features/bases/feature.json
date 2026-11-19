@@ -24,7 +24,8 @@
       "note_property_set"
     ],
     "skills": ["writer-bases"],
-    "cliCommands": ["bases", "base:views", "base:create", "base:query"]
+    "cliCommands": ["bases", "base:views", "base:create", "base:query"],
+    "fileKinds": ["base"]
   },
   "contributes": {
     "editorExtensions": ["bases.embeds"],

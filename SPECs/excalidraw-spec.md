@@ -16,7 +16,7 @@ Decision: [ADR 2026-11-18, draw natively with a built-in Excalidraw feature](../
 - `.excalidraw.md`: front matter and banner untouched; `# Excalidraw Data`, `## Text Elements` (`text ^id`, 8-character ids), `## Embedded Files` (`id: [[target]]`), then the `%%`-fenced `## Drawing` block, `compressed-json` (lz-string base64, 256-character rows) or `json`. Unknown sections are kept byte for byte, CRLF is kept, an unchanged scene returns the original text.
 - Images: in a `.excalidraw.md` a pasted image is saved as a vault attachment and listed under `## Embedded Files`; in a plain `.excalidraw` it stays inline in `files`.
 - One write path per language: the TypeScript codec (`web/lib/excalidraw-md.ts`, the editor) and the Rust codec (`rust/excalidraw_md.rs`, the CLI), pinned to each other by `apps/desktop/shared/excalidraw-fixtures/` (sample files, lz-string vectors, `expected.json`). The format knowledge came from reading the Obsidian Excalidraw plugin's source (AGPL-3.0, cloned outside the repo); no code was copied.
-- Listing: `.excalidraw.md` is a note; plain `.excalidraw` is listed whatever the settings (`code_files::ALWAYS_LISTED_EXTS`) and opens in the drawing kind, never as text.
+- Listing: `.excalidraw.md` is a note; plain `.excalidraw` is listed while the excalidraw feature is on (the `drawing` file kind, `index/kinds.rs`; the code-files switch and the extension list do not matter) and opens in the drawing kind, never as text. Drawings are found by the text of their elements in search (`search-spec.md` "File kinds").
 
 ## Core and feature
 

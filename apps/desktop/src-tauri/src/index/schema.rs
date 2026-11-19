@@ -1,5 +1,5 @@
-//! Schema v6 (`edges`, the note-graph table; `inline_fields`; `list_items` and the extended
-//! `tasks`), open-or-rebuild.
+//! Schema v7 (`edges`, the note-graph table; `inline_fields`; `list_items` and the extended
+//! `tasks`; `files.kind` and `file_text`, the file-kind registry), open-or-rebuild.
 
 use super::IndexError;
 use rusqlite::{Connection, OpenFlags};
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// The core schema's version. The version stored in `meta` and compared on open is
 /// [`schema_version`]: this plus the suffix for the DDL features contribute.
-pub const SCHEMA_VERSION: &str = "6";
+pub const SCHEMA_VERSION: &str = "7";
 
 /// Core version plus `features::index_schema_suffix` (empty while no feature adds DDL), so a
 /// feature adding or changing a table rebuilds the rebuildable cache from its own folder.
@@ -18,7 +18,7 @@ pub fn schema_version() -> &'static str {
 }
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
-pub const PARSER_VERSION: &str = "5";
+pub const PARSER_VERSION: &str = "6";
 
 const SCHEMA: &str = "
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -27,9 +27,20 @@ CREATE TABLE files(
   name TEXT NOT NULL, basename TEXT NOT NULL, ext TEXT NOT NULL, folder TEXT NOT NULL,
   size INTEGER NOT NULL, ctime INTEGER NOT NULL, mtime INTEGER NOT NULL,
   fm_json TEXT, fm_error TEXT, body_hash INTEGER,
-  words INTEGER, chars INTEGER
+  words INTEGER, chars INTEGER,
+  -- the id of the file kind the file was indexed as (`index::kinds`), '' when it is not listed
+  kind TEXT NOT NULL DEFAULT '',
+  -- 1 when the file's text is in the index (its kind has text and its content gate was open)
+  text_indexed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX files_folder ON files(folder);
+CREATE INDEX files_kind ON files(kind);
+-- The extracted text of a PDF or a drawing, for the lines under a content hit (the FTS table is
+-- contentless). Pages are separated by a line holding a form feed. Dropped with the file.
+CREATE TABLE file_text(
+  file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+  body TEXT NOT NULL
+);
 CREATE INDEX files_ext ON files(ext);
 CREATE INDEX files_base ON files(basename COLLATE NOCASE);
 CREATE TABLE props(

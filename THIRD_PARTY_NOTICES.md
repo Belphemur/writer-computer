@@ -9,6 +9,13 @@ Components bundled in Writer that ask for a notice. Each keeps its own license; 
 - License: Apache License, Version 2.0 (<https://www.apache.org/licenses/LICENSE-2.0>), copyright the pdf.js authors and Mozilla Foundation.
 - Use: renders PDF pages and their text layer for the PDF reader and embeds. Writer never writes a PDF.
 
+## pdf_oxide
+
+- Crate: `pdf_oxide` 0.3.78 (pinned exactly in `apps/desktop/src-tauri/Cargo.toml`, default features off: no ICC, legacy crypto, OCR, rendering or ML), compiled into the app and the `writer` CLI.
+- Project: <https://crates.io/crates/pdf_oxide>.
+- License: MIT OR Apache-2.0 (the crate's `LICENSE-MIT` and `LICENSE-APACHE`), copyright the pdf_oxide authors.
+- Use: reads the text of a PDF so vault search finds a PDF by its content (the `pdf` file kind, `apps/desktop/features/pdf/rust/`). The text stays in the local vault index; Writer never writes a PDF.
+
 ## Dataview
 
 The inline-field scanner (`apps/desktop/src-tauri/src/index/inline_fields.rs`) and the Dataview query grammar and function semantics implemented in `apps/desktop/src-tauri/src/dql/` and `bases/dialect.rs` are adapted from Dataview by Michael Brenan (blacksmithgu), https://github.com/blacksmithgu/obsidian-dataview.

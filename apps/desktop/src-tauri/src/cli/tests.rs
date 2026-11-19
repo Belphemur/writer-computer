@@ -510,6 +510,67 @@ fn search_uses_the_full_text_index_with_its_query_language() {
 }
 
 #[test]
+fn search_filters_by_kind_and_ext_and_places_pdf_and_drawing_lines() {
+    let t = T::new();
+    t.write("tools/run.py", "def beta_helper():\n    return 'needle'\n");
+    t.write(
+        "Drawings/Arch.excalidraw",
+        r#"{"type":"excalidraw","version":2,"elements":[{"id":"a","type":"text","text":"beta lighthouse"}],"appState":{},"files":{}}"#,
+    );
+    let pdf =
+        crate::features::pdf::fixture_pdf(&["first sheet", "needle in the second sheet"], None);
+    fs::create_dir_all(t.vault.path().join("Papers")).unwrap();
+    fs::write(t.vault.path().join("Papers/Report.pdf"), pdf).unwrap();
+    // a PDF is found by a word only it holds, and the kind and extension narrow a query
+    assert_eq!(
+        t.ok(&["search", "query=second sheet"]),
+        "Papers/Report.pdf\n"
+    );
+    assert_eq!(
+        t.ok(&["search", "query=needle kind:pdf"]),
+        "Papers/Report.pdf\n"
+    );
+    assert_eq!(
+        t.ok(&["search", "query=needle kind:code"]),
+        "tools/run.py\n"
+    );
+    assert_eq!(t.ok(&["search", "query=needle ext:py"]), "tools/run.py\n");
+    assert_eq!(
+        t.ok(&["search", "query=needle -kind:code -kind:pdf"]),
+        "Projects/Beta.md\n"
+    );
+    assert_eq!(
+        t.ok(&["search", "query=lighthouse kind:drawing"]),
+        "Drawings/Arch.excalidraw\n"
+    );
+    // an unknown kind is an error that names the known ones
+    let (code, err) = t.code(&["search", "query=needle kind:spreadsheet"]);
+    assert_ne!(code, EXIT_OK);
+    assert!(
+        err.contains("spreadsheet") && err.contains("pdf") && err.contains("note"),
+        "{err}"
+    );
+    // lines: a file line, a PDF page, a drawing's text (no place to go to)
+    assert_eq!(
+        t.ok(&["search:context", "query=needle kind:code"]),
+        "tools/run.py:2:     return 'needle'\n"
+    );
+    assert_eq!(
+        t.ok(&["search:context", "query=needle kind:pdf"]),
+        "Papers/Report.pdf:p2: needle in the second sheet\n"
+    );
+    assert_eq!(
+        t.ok(&["search:context", "query=lighthouse kind:drawing"]),
+        "Drawings/Arch.excalidraw: beta lighthouse\n"
+    );
+    let json = t.ok(&["search:context", "query=needle kind:pdf", "format=json"]);
+    assert!(
+        json.contains("\"page\": 2") && !json.contains("\"line\""),
+        "{json}"
+    );
+}
+
+#[test]
 fn properties_commands() {
     let t = T::new();
     assert_eq!(

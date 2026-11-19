@@ -20,12 +20,14 @@
 mod cli;
 mod elements;
 mod excalidraw_md;
+mod extract;
 mod ipc;
 mod layout;
 mod lz;
 
 use crate::cli::registry::CommandSpec;
 use crate::features::Feature;
+use crate::index::kinds::FileKind;
 use crate::ipc::IpcCommand;
 use crate::managed_skills::{BundledFile, BundledSkill};
 use tauri::Runtime;
@@ -57,6 +59,10 @@ impl<R: Runtime> Feature<R> for Excalidraw {
 
     fn cli_commands(&self) -> &'static [CommandSpec] {
         cli::COMMANDS
+    }
+
+    fn file_kinds(&self) -> &'static [FileKind] {
+        &extract::KINDS
     }
 
     fn ipc_commands(&self) -> &'static [IpcCommand] {

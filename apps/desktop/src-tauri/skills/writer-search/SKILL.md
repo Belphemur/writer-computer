@@ -1,6 +1,6 @@
 ---
 name: writer-search
-description: Search the text of a Markdown vault with the `writer` CLI (full-text, ranked, with tag/path/file filters). Use when the user asks to find notes, mentions, phrases or lines in the vault, or when you must locate where something is written before reading or editing it. Also use to decide between full-text search and the cheaper property, tag, link and file queries.
+description: Search the text of a vault with the `writer` CLI (full-text, ranked, with tag/path/file/kind/ext filters): notes, PDFs, code files and drawings. Use when the user asks to find notes, mentions, phrases, lines or a PDF's contents in the vault, or when you must locate where something is written before reading or editing it. Also use to decide between full-text search and the cheaper property, tag, link and file queries.
 ---
 
 # Searching a vault with Writer
@@ -13,34 +13,36 @@ writer search:context query=<query> [path=<folder>] [limit=<n>] [format=text|jso
 ```
 
 - `search` lists matching **files**, best match first (one path per line, or a JSON array of paths with `format=json`). `total` prints only the number of matching files. `limit=` caps files.
-- `search:context` lists matching **lines** as `path:line: text`, best file first. JSON is an array of `{path, line, text}`. `limit=` caps lines, so it is the one to use before editing: the line numbers let you read just the right region.
+- `search:context` lists matching **lines** as `path:line: text`, best file first. JSON is an array of `{path, line, text}`. `limit=` caps lines, so it is the one to use before editing: the line numbers let you read just the right region. A PDF hit has a page instead of a line (`path:p3: text`, JSON `{path, page, text}`), and a drawing's text has neither (`path: text`).
 - `path=<folder>` restricts to a folder (a vault-relative folder, not a pattern). The in-query `path:` filter below is different: it matches anywhere in the path.
-- Only Markdown notes are searched. Hidden folders, `.obsidian` and attachments are not.
+- What is searched is the vault's listed files by **kind**: `note` (Markdown), `pdf` (the text of the pages, plus the document title), `code` (the text files the code-files setting lists), `drawing` (the text of an Excalidraw drawing's elements). `image` and `base` files are found by name only, and a PDF that is encrypted or damaged is found by name only. Hidden folders, `.obsidian`, secret-looking names (`.env`, `secrets.yaml`) and other attachments are not searched.
 
 ## Query syntax
 
 Terms are separated by spaces and ANDed. Matching is by whole word, case-insensitive, and folds accents (`resume` finds `Résumé`).
 
-| Write                     | Meaning                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------ |
-| `word`                    | notes containing the word                                                                        |
-| `"two words"`             | the exact phrase                                                                                 |
-| `plan*`                   | prefix: `plan`, `planning`, `plans` (there is no stemming)                                       |
-| `-draft`, `-"old name"`   | exclude notes containing it                                                                      |
-| `alpha OR beta`           | either (`OR` must be uppercase; `AND` is implicit)                                               |
-| `tag:project`, `tag:#a/b` | notes with that tag; nested tags match their ancestors                                           |
-| `path:Projects/2025`      | note path contains the text (`folder:` is a synonym; quote it if it has spaces: `path:"my dir"`) |
-| `file:recipe`             | file name contains the text                                                                      |
-| `/regex/`                 | the whole query is a regular expression scan (see below)                                         |
+| Write                     | Meaning                                                                                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `word`                    | notes containing the word                                                                                                                                       |
+| `"two words"`             | the exact phrase                                                                                                                                                |
+| `plan*`                   | prefix: `plan`, `planning`, `plans` (there is no stemming)                                                                                                      |
+| `-draft`, `-"old name"`   | exclude notes containing it                                                                                                                                     |
+| `alpha OR beta`           | either (`OR` must be uppercase; `AND` is implicit)                                                                                                              |
+| `tag:project`, `tag:#a/b` | notes with that tag; nested tags match their ancestors                                                                                                          |
+| `path:Projects/2025`      | note path contains the text (`folder:` is a synonym; quote it if it has spaces: `path:"my dir"`)                                                                |
+| `file:recipe`             | file name contains the text                                                                                                                                     |
+| `kind:pdf`, `-kind:code`  | only (or not) that file kind: `note`, `pdf`, `code`, `drawing`, `image`, `base`; repeat to allow several; an unknown kind is an error that lists the known ones |
+| `ext:py`, `-ext:md`       | only (or not) that file extension, without the dot; repeat to allow several                                                                                     |
+| `/regex/`                 | the whole query is a regular expression scan (see below)                                                                                                        |
 
 Rules and limits:
 
 - No parentheses or nesting, no `line:`/`section:` operators, no `[property:value]` queries. Words like `NEAR` or `:` inside text are plain data.
-- A query with only exclusions matches nothing (it is not an error). Punctuation-only terms are dropped.
+- A query with only exclusions or filters (`-draft`, `kind:pdf`) matches nothing (it is not an error): add a word. Punctuation-only terms are dropped.
 - At most 2000 characters and 64 terms; beyond that it is an error (exit 1).
 - Title matches rank highest, then headings, tags, property values and body text.
 - `case` makes spelling exact (and accents significant). It examines at most the 5000 best matches.
-- `/regex/` (the query starts and ends with `/`) scans note text and file names line by line in path order, case-insensitive unless `case` is given. It has no lookaround. Use it only when words and prefixes cannot express the pattern.
+- `/regex/` (the query starts and ends with `/`) scans note text and file names line by line in path order, case-insensitive unless `case` is given. It has no lookaround. It covers Markdown notes only; use it only when words and prefixes cannot express the pattern.
 
 ## Quoting for the shell and the CLI parser
 
@@ -51,6 +53,8 @@ writer search 'query=""exact phrase""'                 # one phrase
 writer search 'query=""red fox" OR "blue fox""'        # starts and ends with a phrase
 writer search 'query=tag:project "exact phrase"'       # starts with a letter: no extra quotes needed
 writer search:context 'query=-draft meeting*' path=Projects limit=20
+writer search 'query=quarterly budget kind:pdf'        # only PDFs
+writer search:context 'query=parse_config kind:code'   # only code files
 ```
 
 When in doubt, run `writer search:context` and check that the hits contain the phrase.

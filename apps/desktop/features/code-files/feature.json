@@ -10,6 +10,7 @@
     "note": "The code editor and its language data load when the first code file opens; nothing runs in the background. Switching applies at once to the editor, the file watcher and rename; folders already shown in the sidebar re-list when you reopen them, quick open and the index follow the next time the workspace opens."
   },
   "provides": ["code-files.rules"],
+  "rust": { "fileKinds": ["code"] },
   "contributes": {
     "slots": ["code-files.code-tab"],
     "services": ["code-files.rules"]

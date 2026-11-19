@@ -8,6 +8,7 @@ use super::fts::{
     is_cjk, run_maintenance, space_cjk_mapped, FtsMaintenance, BM25_WEIGHTS, FTS_MAX_BODY_BYTES,
     FTS_TOKENIZE,
 };
+use super::kinds::{self, TextSource, PAGE_BREAK};
 use super::note::content_hash;
 use super::rank::{
     combine, match_name_or_title, match_path, prepare_title, recency_boost, OpenedMap, Prepared,
@@ -33,20 +34,26 @@ pub const CASE_SCAN_CAP: usize = 5000;
 /// Recency re-ranking looks at this many best text matches (at least
 /// `offset + limit`), then reorders them by `rank::recency_boost`.
 const RERANK_POOL: usize = 200;
-/// Which listed files a name pass looks at: notes (the few-hits fallback) or `.base` files
-/// (always, since they have no text row).
+/// Which listed files a name pass looks at: the kinds with text (notes, code, PDFs, drawings: the
+/// few-hits fallback) or the kinds found by name only (a `.base`, an image: they have no text row,
+/// so always). The sets come from the kind registry (`index::kinds`).
 #[derive(Clone, Copy)]
 enum FuzzyKind {
-    Notes,
-    Bases,
+    Text,
+    NameOnly,
 }
 
 impl FuzzyKind {
-    fn ext(self) -> &'static str {
-        match self {
-            FuzzyKind::Notes => "md",
-            FuzzyKind::Bases => "base",
-        }
+    /// `'a','b'` for an SQL `IN (...)`: registry ids, never user input.
+    fn kinds_sql(self) -> String {
+        let ids = match self {
+            FuzzyKind::Text => kinds::text_kind_ids(),
+            FuzzyKind::NameOnly => kinds::name_only_kind_ids(),
+        };
+        ids.iter()
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -68,6 +75,9 @@ pub struct SearchOptions {
     pub folder: Option<String>,
     /// Every listed tag must be on the note (nested tags match ancestors).
     pub tags: Vec<String>,
+    /// Keep only these file kinds (`index::kinds` ids, any of them): the palette's kind chips.
+    /// Combined with the query's own `kind:` filters, both must hold.
+    pub kinds: Vec<String>,
     /// Hits per page (default 30, at most [`MAX_LIMIT`]).
     pub limit: Option<u32>,
     pub offset: u32,
@@ -99,8 +109,13 @@ pub struct SearchOptions {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Snippet {
-    /// 1-based line number in the file as it is on disk (frontmatter counts).
+    /// 1-based line number in the file as it is on disk (frontmatter counts) when `in_file`;
+    /// otherwise the line of the extracted text (a drawing's text element).
     pub line: u32,
+    /// `line` is a line of the file itself (a note, a code file), so a hit can open at it.
+    pub in_file: bool,
+    /// The 1-based page of a paged document (a PDF); the hit opens at `#page=N`.
+    pub page: Option<u32>,
     pub text: String,
     /// Highlighted `[start, end)` ranges in UTF-16 code units of `text`.
     pub ranges: Vec<[u32; 2]>,
@@ -116,6 +131,8 @@ pub struct SearchHit {
     /// the file name; surfaces show it first (`noteLabel` in `src/lib/note-title.ts`).
     pub title_override: Option<String>,
     pub folder: String,
+    /// The id of the file's kind (`index::kinds`): `note`, `pdf`, `code`...
+    pub kind: String,
     /// bm25 relevance (times the recency boost when enabled), higher is better.
     /// Fuzzy hits carry a small rank value and always follow the exact ones.
     pub score: f64,
@@ -148,9 +165,11 @@ struct RawHit {
     title: String,
     title_override: Option<String>,
     folder: String,
+    kind: String,
     hash: Option<i64>,
     score: f64,
     mtime_ms: i64,
+    size: i64,
 }
 
 fn system_now_ms() -> i64 {
@@ -188,12 +207,44 @@ fn conditions(q: &ParsedQuery, o: &SearchOptions) -> Res<(String, Vec<SqlValue>)
         sql.push_str(&format!(" AND {col} LIKE ? ESCAPE '\\'"));
         args.push(format!("%{}%", like_escape(v)).into());
     };
+    // `kind:` and `ext:` filters repeat as alternatives (OR within one key); the chips' kinds are
+    // a second group that must hold as well; the negated ones are all excluded.
+    let (mut kinds, mut not_kinds, mut exts, mut not_exts) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for f in &q.filters {
         match f {
             Filter::Path(v) => like("f.path", v, &mut sql, &mut args),
             Filter::File(v) => like("f.basename", v, &mut sql, &mut args),
             Filter::Tag(t) => tags.push(t.clone()),
+            Filter::Kind(k) => kinds.push(k.clone()),
+            Filter::NotKind(k) => not_kinds.push(k.clone()),
+            Filter::Ext(e) => exts.push(e.clone()),
+            Filter::NotExt(e) => not_exts.push(e.clone()),
             Filter::Never => sql.push_str(" AND 0"),
+        }
+    }
+    let mut chip_kinds = Vec::new();
+    for k in &o.kinds {
+        let id = k.to_lowercase();
+        if kinds::by_id(&id).is_none() {
+            return Err(IndexError::Invalid(format!(
+                "unknown kind \"{k}\"; known kinds: {}",
+                kinds::ids().join(", ")
+            )));
+        }
+        chip_kinds.push(id);
+    }
+    for (col, op, values) in [
+        ("f.kind", "IN", kinds),
+        ("f.kind", "IN", chip_kinds),
+        ("f.kind", "NOT IN", not_kinds),
+        ("f.ext", "IN", exts),
+        ("f.ext", "NOT IN", not_exts),
+    ] {
+        if !values.is_empty() {
+            let marks = vec!["?"; values.len()].join(",");
+            sql.push_str(&format!(" AND {col} {op} ({marks})"));
+            args.extend(values.into_iter().map(SqlValue::from));
         }
     }
     for t in tags {
@@ -241,7 +292,8 @@ impl Index {
             };
             let sql = format!(
                 "SELECT f.path, f.basename, f.folder, f.body_hash, \
-                        -bm25(notes_fts, {BM25_WEIGHTS}) AS score, f.mtime, {TITLE_OVERRIDE_SQL} \
+                        -bm25(notes_fts, {BM25_WEIGHTS}) AS score, f.mtime, {TITLE_OVERRIDE_SQL}, \
+                        f.kind, f.size \
                  {from}{cond_sql} ORDER BY score DESC, f.path LIMIT {lim} OFFSET {off}"
             );
             let mut st = c.prepare(&sql)?;
@@ -254,6 +306,8 @@ impl Index {
                     score: r.get(4)?,
                     mtime_ms: r.get(5)?,
                     title_override: r.get(6)?,
+                    kind: r.get(7)?,
+                    size: r.get(8)?,
                 })
             })?;
             let raw = rows.collect::<Result<Vec<_>, _>>()?;
@@ -297,13 +351,22 @@ impl Index {
         };
         for r in raw {
             let (mut snippets, stale) = match (&matcher, &parsed.line_expr) {
-                (Some(m), Some(expr)) => m.snippets(
-                    &self.shared.root.join(&r.path),
-                    r.hash,
-                    expr,
-                    if case { usize::MAX } else { max_snippets },
-                    snippet_len,
-                )?,
+                (Some(m), Some(expr)) => {
+                    let max = if case { usize::MAX } else { max_snippets };
+                    match kinds::by_id(&r.kind).map_or(TextSource::Disk, |k| k.text) {
+                        TextSource::Disk => m.snippets(
+                            &self.shared.root.join(&r.path),
+                            r.hash,
+                            expr,
+                            max,
+                            snippet_len,
+                        )?,
+                        TextSource::Stored => {
+                            self.stored_snippets(m, &r, expr, max, snippet_len)?
+                        }
+                        TextSource::None => (Vec::new(), false),
+                    }
+                }
                 _ => (Vec::new(), false),
             };
             if case {
@@ -318,6 +381,7 @@ impl Index {
                 title: r.title,
                 title_override: r.title_override,
                 folder: r.folder,
+                kind: r.kind,
                 score: r.score,
                 fuzzy: false,
                 snippets,
@@ -332,13 +396,13 @@ impl Index {
         };
         let (mut hits, mut total) = (hits, total);
         if opts.fuzzy && !case && offset == 0 {
-            // A `.base` has no full-text row, so its name is the only way to it: always list
-            // it, ahead of the body matches, however many notes matched the text.
+            // A `.base` or an image has no full-text row, so its name is the only way to it:
+            // always list it, ahead of the body matches, however many notes matched the text.
             let bases = self.fuzzy_hits(
                 &parsed,
                 opts,
                 (&cond_sql, &cond_args),
-                FuzzyKind::Bases,
+                FuzzyKind::NameOnly,
                 &std::collections::HashSet::new(),
                 FUZZY_MAX,
                 now_ms,
@@ -354,7 +418,7 @@ impl Index {
                         &parsed,
                         opts,
                         (&cond_sql, &cond_args),
-                        FuzzyKind::Notes,
+                        FuzzyKind::Text,
                         &seen,
                         room,
                         now_ms,
@@ -397,9 +461,9 @@ impl Index {
         let min_score = FUZZY_MIN_PER_CHAR * q.char_count() as f64;
         let (names, secondary) = self.read(|c| {
             let sql = format!(
-                "SELECT f.id, f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL}, f.name FROM files f \
-                 WHERE f.ext = '{}'{cond_sql}",
-                kind.ext()
+                "SELECT f.id, f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL}, f.name, f.kind \
+                 FROM files f WHERE f.kind IN ({}){cond_sql}",
+                kind.kinds_sql()
             );
             let mut st = c.prepare(&sql)?;
             let names = st
@@ -412,6 +476,7 @@ impl Index {
                         r.get::<_, i64>(4)?,
                         r.get::<_, Option<String>>(5)?,
                         r.get::<_, String>(6)?,
+                        r.get::<_, String>(7)?,
                     ))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -431,7 +496,7 @@ impl Index {
             Ok((names, secondary))
         })?;
         let mut scored: Vec<(f64, SearchHit)> = Vec::new();
-        for (id, path, basename, folder, mtime_ms, title_override, file_name) in names {
+        for (id, path, basename, folder, mtime_ms, title_override, file_name, kind_id) in names {
             if seen.contains(&path) {
                 continue;
             }
@@ -475,6 +540,7 @@ impl Index {
                     title: basename,
                     title_override,
                     folder,
+                    kind: kind_id,
                     score: rank_value / 1000.0,
                     fuzzy: true,
                     snippets: Vec::new(),
@@ -484,6 +550,42 @@ impl Index {
         }
         scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.path.cmp(&b.1.path)));
         Ok(scored.into_iter().take(room).map(|(_, h)| h).collect())
+    }
+
+    /// The lines under a hit of a kind whose text the index keeps (`file_text`): a PDF's pages, a
+    /// drawing's labels. Stale when the file moved on (or vanished) since it was indexed.
+    fn stored_snippets(
+        &self,
+        matcher: &LineMatcher,
+        hit: &RawHit,
+        line_expr: &str,
+        max: usize,
+        snippet_len: usize,
+    ) -> Res<(Vec<Snippet>, bool)> {
+        let stored: Option<String> = self.read(|c| {
+            use rusqlite::OptionalExtension;
+            Ok(c.query_row(
+                "SELECT t.body FROM file_text t JOIN files f ON f.id = t.file_id WHERE f.path = ?1",
+                [&hit.path],
+                |r| r.get(0),
+            )
+            .optional()?)
+        })?;
+        let stale = std::fs::metadata(self.shared.root.join(&hit.path)).map_or(true, |m| {
+            let mtime = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64);
+            mtime != Some(hit.mtime_ms) || m.len() as i64 != hit.size
+        });
+        let Some(text) = stored else {
+            return Ok((Vec::new(), stale));
+        };
+        Ok((
+            matcher.snippets_in(&text, line_expr, max, snippet_len, StoredText)?,
+            stale,
+        ))
     }
 
     /// Run an FTS maintenance command on the writer thread and wait.
@@ -519,6 +621,10 @@ fn keep_case_matches(s: &mut Snippet, positives: &[Term]) -> bool {
     !s.ranges.is_empty()
 }
 
+/// The text the lines come from is extracted text kept in the index, not the file: its line
+/// numbers are not the file's, and a page-break line (`kinds::PAGE_BREAK`) starts a new page.
+struct StoredText;
+
 /// Per-search in-memory FTS5 table used to find the matching lines of a file
 /// with exactly the same tokenizer as the index.
 struct LineMatcher {
@@ -548,12 +654,28 @@ impl LineMatcher {
             Ok(b) => b,
             Err(_) => return Ok((Vec::new(), true)),
         };
-        let stale = indexed_hash != Some(content_hash(&bytes));
+        // a file indexed by name only has no hash and nothing to be stale against
+        let stale = indexed_hash.is_some_and(|h| h != content_hash(&bytes));
         if bytes.len() > FTS_MAX_BODY_BYTES {
             return Ok((Vec::new(), stale));
         }
         let text = String::from_utf8_lossy(&bytes);
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        Ok((
+            self.snippets_in(text, line_expr, max, snippet_len, FileLines)?,
+            stale,
+        ))
+    }
+
+    /// The matching lines of `text`, best first by line order (see [`LineSource`]).
+    fn snippets_in(
+        &self,
+        text: &str,
+        line_expr: &str,
+        max: usize,
+        snippet_len: usize,
+        source: impl LineSource,
+    ) -> Res<Vec<Snippet>> {
         let lines: Vec<&str> = text
             .split('\n')
             .map(|l| l.strip_suffix('\r').unwrap_or(l))
@@ -597,9 +719,35 @@ impl LineMatcher {
         for (rowid, marked) in found {
             let line = lines[(rowid - 1) as usize];
             let ranges = parse_marks(&marked, maps.get(&rowid));
-            out.push(window_snippet(rowid as u32, line, &ranges, snippet_len));
+            let mut snippet = window_snippet(rowid as u32, line, &ranges, snippet_len);
+            source.place(&lines, rowid as usize - 1, &mut snippet);
+            out.push(snippet);
         }
-        Ok((out, stale))
+        Ok(out)
+    }
+}
+
+/// Where a snippet's lines come from, which decides what its position means.
+trait LineSource {
+    /// Fill in the snippet's position (`in_file`, `page`) for line index `at` of `lines`.
+    fn place(&self, lines: &[&str], at: usize, snippet: &mut Snippet);
+}
+
+/// The file's own lines: the number is the file's.
+struct FileLines;
+
+impl LineSource for FileLines {
+    fn place(&self, _lines: &[&str], _at: usize, snippet: &mut Snippet) {
+        snippet.in_file = true;
+    }
+}
+
+impl LineSource for StoredText {
+    fn place(&self, lines: &[&str], at: usize, snippet: &mut Snippet) {
+        // every page starts with a page-break line, so the breaks above a line are its page
+        // number; a document without any (a drawing) has no pages
+        let page = lines[..at].iter().filter(|l| **l == PAGE_BREAK).count();
+        snippet.page = (page > 0).then_some(page as u32);
     }
 }
 
@@ -668,6 +816,8 @@ fn window_snippet(line_no: u32, line: &str, ranges: &[(usize, usize)], max_len: 
         .collect();
     Snippet {
         line: line_no,
+        in_file: false,
+        page: None,
         text: text.trim_end().to_string(),
         ranges,
     }

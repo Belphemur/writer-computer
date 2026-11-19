@@ -29,9 +29,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// The always-listed extensions; the code/text ones come from `code_files` (settings).
-pub const LISTED_EXTS: [&str; 3] = crate::code_files::ALWAYS_LISTED_EXTS;
-
 /// While the cold build runs, re-read the partial rows at most this often.
 const PARTIAL_RELOAD_INTERVAL: Duration = Duration::from_millis(200);
 /// SQLite's default variable limit is 32766; stay far below it.
@@ -56,6 +53,8 @@ struct NameEntry {
     /// Byte offset of the file name inside `lower`.
     name_start: usize,
     mtime_ms: i64,
+    /// The id of the file's kind under the policy the mirror was loaded with (`index::kinds`).
+    kind: &'static str,
     /// Folded form for the fuzzy matcher (see `rank.rs`).
     prepared: Prepared,
     /// The display-title override and its folded form (matched like a file called `<title>.md`,
@@ -68,6 +67,7 @@ impl NameEntry {
         let lower = path.to_lowercase();
         let name_start = lower.rfind('/').map(|i| i + 1).unwrap_or(0);
         NameEntry {
+            kind: crate::code_files::kind_id_of_name(&path[path.rfind('/').map_or(0, |i| i + 1)..]),
             lower,
             name_start,
             mtime_ms,
@@ -102,6 +102,8 @@ pub struct NameFilter {
     pub folder: Option<String>,
     /// Lowercase extensions without the dot; `None` means every listed one.
     pub exts: Option<Vec<String>>,
+    /// Kind ids (`index::kinds`), any of them; `None` means every kind.
+    pub kinds: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +116,8 @@ pub struct NameMatch {
     pub match_indices: Vec<u32>,
     /// The display-title override in effect for the file, if any.
     pub title: Option<String>,
+    /// The id of the file's kind (`index::kinds`), for its icon.
+    pub kind: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -479,6 +483,7 @@ fn rank<'a>(
         path: &'a str,
         folded: Vec<usize>,
         title: Option<&'a str>,
+        kind: &'static str,
     }
     let mut hits: Vec<Hit> = Vec::new();
     for (path, entry) in entries {
@@ -496,6 +501,11 @@ fn rank<'a>(
                 continue;
             }
         }
+        if let Some(kinds) = &filter.kinds {
+            if !kinds.iter().any(|k| k == entry.kind) {
+                continue;
+            }
+        }
         if q.is_empty() {
             hits.push(Hit {
                 score: 0.0,
@@ -503,6 +513,7 @@ fn rank<'a>(
                 path,
                 folded: Vec::new(),
                 title: entry.title.as_ref().map(|(t, _)| t.as_str()),
+                kind: entry.kind,
             });
             continue;
         }
@@ -523,6 +534,7 @@ fn rank<'a>(
             path,
             folded: m.folded,
             title: entry.title.as_ref().map(|(t, _)| t.as_str()),
+            kind: entry.kind,
         });
     }
     // Entries arrive in path order and the sort is stable: ties stay in path order.
@@ -543,12 +555,13 @@ fn rank<'a>(
             },
             match_indices: original_indices(h.path, &h.folded),
             title: h.title.map(str::to_string),
+            kind: h.kind,
         })
         .collect()
 }
 
-/// `WHERE` predicate for the listed rows: notes, bases and the code/text files of
-/// `code_files` (by extension, plus `Dockerfile`/`Makefile` by name).
+/// `WHERE` predicate for the listed rows: what the file-kind registry lists under the current
+/// policy (`code_files::listed_sql_predicate`).
 fn listed_sql() -> String {
     crate::code_files::listed_sql_predicate()
 }
@@ -858,7 +871,7 @@ mod tests {
         ]);
         let folder = NameFilter {
             folder: Some("a".into()),
-            exts: None,
+            ..NameFilter::default()
         };
         let got: Vec<_> = rank(map.iter(), ".", 50, &folder, &RankContext::default())
             .into_iter()
@@ -868,8 +881,8 @@ mod tests {
         assert!(!got.iter().any(|p| p.starts_with("ab/") || p == "one.md"));
 
         let base_only = NameFilter {
-            folder: None,
             exts: Some(vec!["base".into()]),
+            ..NameFilter::default()
         };
         let got: Vec<_> = rank(map.iter(), "tasks", 50, &base_only, &RankContext::default())
             .into_iter()
@@ -877,10 +890,48 @@ mod tests {
             .collect();
         assert_eq!(got, ["a/tasks.base"]);
         let none = NameFilter {
-            folder: None,
             exts: Some(vec!["base".into()]),
+            ..NameFilter::default()
         };
         assert!(rank(map.iter(), "one", 50, &none, &RankContext::default()).is_empty());
+    }
+
+    #[test]
+    fn names_carry_their_kind_and_filter_by_it() {
+        let map = entries(&[
+            "a/tasks.base",
+            "a/tasks.md",
+            "a/tasks.png",
+            "a/tasks.pdf",
+            "a/tasks.py",
+        ]);
+        let all = rank(
+            map.iter(),
+            "tasks",
+            50,
+            &NameFilter::default(),
+            &RankContext::default(),
+        );
+        let kind_of = |p: &str| all.iter().find(|m| m.path == p).unwrap().kind;
+        assert_eq!(kind_of("a/tasks.base"), "base");
+        assert_eq!(kind_of("a/tasks.md"), "note");
+        assert_eq!(kind_of("a/tasks.png"), "image");
+        assert_eq!(kind_of("a/tasks.pdf"), "pdf");
+        assert_eq!(kind_of("a/tasks.py"), "code");
+        let only = |kinds: &[&str]| {
+            let f = NameFilter {
+                kinds: Some(kinds.iter().map(|k| k.to_string()).collect()),
+                ..NameFilter::default()
+            };
+            let mut got: Vec<String> = rank(map.iter(), "tasks", 50, &f, &RankContext::default())
+                .into_iter()
+                .map(|m| m.path)
+                .collect();
+            got.sort();
+            got
+        };
+        assert_eq!(only(&["pdf"]), ["a/tasks.pdf"]);
+        assert_eq!(only(&["pdf", "code"]), ["a/tasks.pdf", "a/tasks.py"]);
     }
 
     #[test]

@@ -43,6 +43,9 @@ pub struct FtsDoc {
     pub body: String,
     /// The body exceeded [`FTS_MAX_BODY_BYTES`] and was not indexed.
     pub body_skipped: bool,
+    /// The extracted text of a kind whose hits show lines from the index (`TextSource::Stored`:
+    /// a PDF, a drawing), kept in `file_text` next to the FTS row. `None` for every other file.
+    pub stored: Option<String>,
     /// Test-only switch (perf A/B): leave this note out of the index.
     #[cfg(test)]
     pub skip: bool,
@@ -125,11 +128,23 @@ pub(crate) fn write_doc(
         doc.props,
         doc.body
     ])?;
+    match &doc.stored {
+        Some(text) => conn
+            .prepare_cached("INSERT OR REPLACE INTO file_text(file_id, body) VALUES(?1, ?2)")?
+            .execute(rusqlite::params![id, text])?,
+        None if replace => conn
+            .prepare_cached("DELETE FROM file_text WHERE file_id = ?1")?
+            .execute([id])?,
+        None => 0,
+    };
     Ok(())
 }
 
+/// Drop the FTS row and the stored text of file `id`.
 pub(crate) fn delete_doc(conn: &Connection, id: i64) -> Result<(), IndexError> {
     conn.prepare_cached("DELETE FROM notes_fts WHERE rowid = ?1")?
+        .execute([id])?;
+    conn.prepare_cached("DELETE FROM file_text WHERE file_id = ?1")?
         .execute([id])?;
     Ok(())
 }

@@ -9,6 +9,7 @@
     "level": "medium",
     "note": "pdf.js (about 3 MB with its worker) loads when the first PDF tab opens or a note shows an embedded PDF; nothing runs in the background. Listing PDFs, links to them and PDF chips in the agent composer are part of core and unaffected."
   },
+  "rust": { "fileKinds": ["pdf"] },
   "contributes": {
     "commands": [
       {

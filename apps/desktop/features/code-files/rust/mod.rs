@@ -21,9 +21,12 @@
 //! extension list). Safe mode and a web failure do not reach this half: they turn the web half
 //! off for the session and the files stay listed.
 
+mod extract;
+
 use crate::code_files as cf;
 use crate::config::{ConfigValue, Settings};
 use crate::features::{self, Feature, Manifest};
+use crate::index::kinds::FileKind;
 use std::path::Path;
 use tauri::Runtime;
 
@@ -38,6 +41,10 @@ impl<R: Runtime> Feature<R> for CodeFiles {
 
     fn settings_source(&self) -> Option<&'static str> {
         Some(include_str!("../settings.schema.json"))
+    }
+
+    fn file_kinds(&self) -> &'static [FileKind] {
+        &extract::KINDS
     }
 }
 
@@ -57,14 +64,17 @@ pub fn policy_for(settings: &Settings) -> cf::Policy {
             .get_global_or_default(key)
             .and_then(|v| v.as_bool())
     };
-    cf::policy_from_settings(
+    let mut policy = cf::policy_from_settings(
         features::is_enabled(settings, &manifest()),
         list(cf::SETTING_EXTENSIONS),
         list(cf::SETTING_IGNORED),
         flag(cf::SETTING_AGENT_FOLDERS),
         flag(cf::SETTING_IMAGES),
         flag(cf::SETTING_PDFS),
-    )
+    );
+    // the kinds a feature switch gates (`index::kinds::Gate::Feature`) follow the same policy
+    policy.features_off = features::switched_off(|m| features::is_enabled(settings, m));
+    policy
 }
 
 /// Push the settings into the process-wide policy (at startup and after every global write).
@@ -76,9 +86,9 @@ pub fn apply(settings: &Settings) {
 /// `config` file) and uses the defaults for the rest.
 pub fn apply_for_cli(data_dir: &Path) {
     let enabled = features::cli_enabled(data_dir, &manifest().id);
-    cf::set_policy(cf::policy_from_settings(
-        enabled, None, None, None, None, None,
-    ));
+    let mut policy = cf::policy_from_settings(enabled, None, None, None, None, None);
+    policy.features_off = features::switched_off(|m| features::cli_enabled(data_dir, &m.id));
+    cf::set_policy(policy);
 }
 
 #[cfg(test)]

@@ -14,10 +14,12 @@
 pub mod bases_source;
 mod build;
 pub(crate) mod edges;
+mod extract;
 pub(crate) mod frontmatter;
 pub mod fts;
 pub mod graph;
 pub mod inline_fields;
+pub mod kinds;
 pub(crate) mod markdown;
 pub mod names;
 mod note;
@@ -34,6 +36,8 @@ mod yaml;
 
 #[cfg(test)]
 mod graph_tests;
+#[cfg(test)]
+mod kinds_tests;
 #[cfg(test)]
 mod search_tests;
 #[cfg(test)]
@@ -130,9 +134,22 @@ pub(crate) struct Shared {
     /// Perf A/B in tests: build without the full-text rows.
     #[cfg(test)]
     pub(crate) fts_disabled: AtomicBool,
+    /// A listing policy for this index only (tests): the process-wide one is shared by every test.
+    #[cfg(test)]
+    pub(crate) policy_override: Mutex<Option<crate::code_files::Policy>>,
 }
 
 impl Shared {
+    /// The policy a scan or an update indexes under: the process-wide one (`code_files`), which
+    /// decides each file's kind and whether it is read.
+    pub fn policy(&self) -> crate::code_files::Policy {
+        #[cfg(test)]
+        if let Some(p) = self.policy_override.lock().clone() {
+            return p;
+        }
+        crate::code_files::policy()
+    }
+
     pub fn cancelled(&self) -> bool {
         self.stop.load(Ordering::Relaxed) || self.external_cancel.load(Ordering::Relaxed)
     }
@@ -228,6 +245,8 @@ impl Index {
             on_change: params.on_change,
             #[cfg(test)]
             fts_disabled: AtomicBool::new(false),
+            #[cfg(test)]
+            policy_override: Mutex::new(None),
         });
         let conn = opened.conn;
         let paths = build::load_path_index(&conn)?;

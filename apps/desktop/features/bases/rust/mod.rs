@@ -29,6 +29,7 @@ mod commands;
 
 use crate::cli::registry::CommandSpec;
 use crate::features::{Feature, InvokeHandler};
+use crate::index::kinds::{FileKind, Gate, TextSource};
 use crate::managed_skills::{BundledFile, BundledSkill};
 use tauri::Runtime;
 
@@ -52,6 +53,20 @@ static SKILLS: &[BundledSkill] = &[BundledSkill {
     ],
 }];
 
+/// `.base` files: found by name only (no text extractor; a base has no text row), listed while
+/// the feature is on.
+static KINDS: [FileKind; 1] = [FileKind {
+    id: "base",
+    label: "Bases",
+    icon: "Database02Icon",
+    matches: &[".base"],
+    names: None,
+    listed_by: Gate::Feature("bases"),
+    content_by: Gate::Feature("bases"),
+    text: TextSource::None,
+    extract: None,
+}];
+
 impl<R: Runtime> Feature<R> for Bases {
     fn manifest_source(&self) -> &'static str {
         include_str!("../feature.json")
@@ -68,6 +83,10 @@ impl<R: Runtime> Feature<R> for Bases {
 
     fn skills(&self) -> &'static [BundledSkill] {
         SKILLS
+    }
+
+    fn file_kinds(&self) -> &'static [FileKind] {
+        &KINDS
     }
 }
 

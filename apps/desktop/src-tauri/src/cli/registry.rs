@@ -297,7 +297,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[
             req(
                 "query",
-                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:/kind:/ext:, or /regex/"
             ),
             p("path", "limit to this folder"),
             p("limit", "maximum number of files"),
@@ -318,7 +318,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[
             req(
                 "query",
-                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:, or /regex/"
+                "words, \"phrase\", -word, a OR b, pre*, tag:/path:/file:/kind:/ext:, or /regex/"
             ),
             p("path", "limit to this folder"),
             p("limit", "maximum number of lines"),

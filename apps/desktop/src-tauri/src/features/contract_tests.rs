@@ -404,6 +404,32 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
 }
 
 #[test]
+fn every_feature_names_its_file_kinds_in_the_manifest_and_gates_only_its_own() {
+    use crate::index::kinds::Gate;
+    for def in registry::<Wry>() {
+        let m = def.manifest().expect("feature.json parses");
+        let declared: Vec<&str> = def.file_kinds().iter().map(|k| k.id).collect();
+        assert_eq!(
+            m.rust.file_kinds, declared,
+            "{}: feature.json rust.fileKinds != Feature::file_kinds",
+            m.id
+        );
+        for kind in def.file_kinds() {
+            // a feature's switch lists its own kinds; another feature's kind is not its to gate
+            if let Gate::Feature(id) = kind.listed_by {
+                assert_eq!(id, m.id, "{}: kind {} is gated by {id}", m.id, kind.id);
+            }
+            assert!(
+                crate::index::kinds::by_id(kind.id).is_some(),
+                "{}: kind {} is not in the registry",
+                m.id,
+                kind.id
+            );
+        }
+    }
+}
+
+#[test]
 fn the_fixture_feature_satisfies_the_contract() {
     let def = fixture_def();
     let m = def.manifest().unwrap();

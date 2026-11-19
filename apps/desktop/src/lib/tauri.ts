@@ -306,8 +306,12 @@ export function loadSession(workspaceRoot: string): Promise<SessionData | null> 
 }
 
 // Search commands
-export function fuzzySearch(query: string, limit?: number): Promise<SearchResult[]> {
-  return invoke("fuzzy_search", { query, limit });
+export function fuzzySearch(
+  query: string,
+  limit?: number,
+  kinds?: string[],
+): Promise<SearchResult[]> {
+  return invoke("fuzzy_search", { query, limit, kinds });
 }
 
 // Font commands

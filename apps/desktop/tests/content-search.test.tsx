@@ -6,14 +6,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("../src/components/editor-area/reveal-line", () => ({ openFileAtLine: vi.fn() }));
+vi.mock("../src/lib/link-activation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/link-activation")>()),
+  openPathAtAnchor: vi.fn(),
+}));
+// The kind list is the backend registry over IPC (`search_kinds`); these tests set it directly so
+// the search requests they count stay the only `invoke` calls.
+const listedKinds = vi.hoisted(() => ({
+  current: [] as { id: string; label: string; icon: string }[],
+}));
+vi.mock("../src/components/command-palette/use-search-kinds", () => ({
+  useSearchKinds: () => listedKinds.current,
+}));
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ContentSearchPalette } from "../src/components/command-palette/content-search-palette";
 import { CONTENT_SEARCH_DEBOUNCE_MS } from "../src/components/command-palette/use-content-search";
 import { openFileAtLine } from "../src/components/editor-area/reveal-line";
+import { openPathAtAnchor } from "../src/lib/link-activation";
 import {
+  hitLocation,
   isIndexBuildingError,
+  snippetPlace,
   splitByRanges,
   type ContentSearchHit,
   type ContentSearchPage,
@@ -26,6 +41,7 @@ import { useWorkspaceStore } from "../src/stores/workspace-store";
 const mockedInvoke = vi.mocked(invoke);
 const mockedListen = vi.mocked(listen);
 const mockedOpen = vi.mocked(openFileAtLine);
+const mockedOpenAnchor = vi.mocked(openPathAtAnchor);
 
 function hit(path: string, line: number, text: string, ranges: [number, number][]) {
   const base = path.split("/").pop()!.replace(/\.md$/, "");
@@ -33,8 +49,9 @@ function hit(path: string, line: number, text: string, ranges: [number, number][
     path,
     title: base,
     folder: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
+    kind: "note",
     score: 1,
-    snippets: [{ line, text, ranges }],
+    snippets: [{ line, inFile: true, text, ranges }],
     stale: false,
   } satisfies ContentSearchHit;
 }
@@ -76,6 +93,23 @@ describe("splitByRanges", () => {
   });
 });
 
+describe("hit places", () => {
+  const snippet = { line: 3, inFile: true, text: "t", ranges: [] as [number, number][] };
+
+  it("opens a PDF hit at its page, a file line at its line, extracted text at the file", () => {
+    expect(hitLocation({ ...snippet, inFile: false, page: 4 })).toEqual({ kind: "page", page: 4 });
+    expect(hitLocation(snippet)).toEqual({ kind: "line", line: 3 });
+    expect(hitLocation({ ...snippet, inFile: false })).toEqual({ kind: "file" });
+    expect(hitLocation(undefined)).toEqual({ kind: "file" });
+  });
+
+  it("labels a snippet with its page or its line, and extracted text with nothing", () => {
+    expect(snippetPlace({ ...snippet, inFile: false, page: 4 })).toBe("p4");
+    expect(snippetPlace(snippet)).toBe("3");
+    expect(snippetPlace({ ...snippet, inFile: false })).toBeNull();
+  });
+});
+
 describe("ContentSearchPalette", () => {
   let host: HTMLDivElement;
   let root: Root;
@@ -90,7 +124,9 @@ describe("ContentSearchPalette", () => {
       return Promise.resolve(() => {});
     }) as never);
     mockedInvoke.mockReset();
+    listedKinds.current = [];
     mockedOpen.mockResolvedValue(undefined);
+    mockedOpenAnchor.mockResolvedValue(undefined);
     // cmdk and Radix expect these browser APIs, which jsdom lacks.
     (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
       observe() {}
@@ -152,6 +188,7 @@ describe("ContentSearchPalette", () => {
       path: "Bases/Projects/tasks.base",
       title: "tasks",
       folder: "Bases/Projects",
+      kind: "base",
       score: 1,
       snippets: [],
       stale: false,
@@ -205,7 +242,7 @@ describe("ContentSearchPalette", () => {
       }),
     );
     expect(text()).toContain("Harbour");
-    expect(text()).toContain("1 note");
+    expect(text()).toContain("1 result");
   });
 
   it("leads with the title override (italic, tooltip names the file) and keeps the folder below", async () => {
@@ -327,5 +364,98 @@ describe("ContentSearchPalette", () => {
       intent: "new-tab-background",
     });
     expect(useUIStore.getState().isCommandPaletteOpen).toBe(false);
+  });
+
+  const KINDS = [
+    { id: "note", label: "Notes", icon: "File02Icon" },
+    { id: "pdf", label: "PDFs", icon: "Pdf02Icon" },
+    { id: "code", label: "Code", icon: "CodeIcon" },
+  ];
+
+  const searchRequests = () =>
+    mockedInvoke.mock.calls
+      .filter(([cmd]) => cmd === "index_search")
+      .map(([, args]) => (args as { request: Record<string, unknown> }).request);
+
+  it("shows a chip per listed kind from the registry and narrows the search to the chosen one", async () => {
+    listedKinds.current = KINDS;
+    mockedInvoke.mockResolvedValue(page(hit("Notes/Plan.md", 1, "budget", [[0, 6]])));
+    await mount();
+    const chips = [...document.querySelectorAll<HTMLElement>("[data-testid^='kind-chip-']")];
+    expect(chips.map((c) => c.textContent)).toEqual(["All", "Notes", "PDFs", "Code"]);
+    expect(chips[0].getAttribute("aria-pressed")).toBe("true");
+    await type("budget");
+    await settle();
+    expect(searchRequests().at(-1)).not.toHaveProperty("kinds");
+    await act(async () => {
+      document.querySelector<HTMLElement>("[data-testid='kind-chip-pdf']")!.click();
+    });
+    await settle();
+    expect(searchRequests().at(-1)).toMatchObject({ query: "budget", kinds: ["pdf"] });
+    expect(
+      document.querySelector("[data-testid='kind-chip-pdf']")!.getAttribute("aria-pressed"),
+    ).toBe("true");
+    await act(async () => {
+      document.querySelector<HTMLElement>("[data-testid='kind-chip-all']")!.click();
+    });
+    await settle();
+    expect(searchRequests().at(-1)).not.toHaveProperty("kinds");
+  });
+
+  it("draws no chips while the vault lists a single kind", async () => {
+    listedKinds.current = [KINDS[0]];
+    await mount();
+    expect(document.querySelector("[data-testid^='kind-chip-']")).toBeNull();
+  });
+
+  it("draws each row with the icon the registry names for its kind", async () => {
+    listedKinds.current = KINDS;
+    mockedInvoke.mockResolvedValue(
+      page(
+        hit("Notes/Plan.md", 1, "budget", [[0, 6]]),
+        { ...hit("Papers/Report.pdf", 1, "budget", [[0, 6]]), kind: "pdf" },
+        { ...hit("tools/run.py", 1, "budget", [[0, 6]]), kind: "code" },
+      ),
+    );
+    await mount();
+    await type("budget");
+    await settle();
+    const icons = [...document.querySelectorAll<HTMLElement>("[data-kind-icon]")];
+    expect(icons.map((i) => i.dataset.kindIcon)).toEqual(["note", "pdf", "code"]);
+  });
+
+  it("opens a PDF hit at the page of its match and an extracted-text hit at the file", async () => {
+    mockedInvoke.mockResolvedValue(
+      page(
+        {
+          ...hit("Papers/Report.pdf", 1, "the zebra report", [[4, 9]]),
+          kind: "pdf",
+          snippets: [
+            { line: 7, inFile: false, page: 3, text: "the zebra report", ranges: [[4, 9]] },
+          ],
+        },
+        {
+          ...hit("Drawings/Arch.excalidraw", 1, "lighthouse", [[0, 10]]),
+          kind: "drawing",
+          snippets: [{ line: 2, inFile: false, text: "lighthouse", ranges: [[0, 10]] }],
+        },
+      ),
+    );
+    await mount();
+    await type("zebra");
+    await settle();
+    // the page shows in the row
+    expect(document.querySelector("[cmdk-item]")!.textContent).toContain("p3");
+    await key("Enter");
+    expect(mockedOpenAnchor).toHaveBeenLastCalledWith("/ws/Papers/Report.pdf", "page=3", "current");
+    expect(mockedOpen).not.toHaveBeenCalled();
+
+    useUIStore.setState({ isCommandPaletteOpen: true, commandPaletteSearch: "zebra" });
+    await settle();
+    await key("ArrowDown");
+    await key("Enter");
+    expect(mockedOpen).toHaveBeenLastCalledWith("/ws/Drawings/Arch.excalidraw", null, {
+      intent: "current",
+    });
   });
 });

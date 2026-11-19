@@ -26,10 +26,15 @@ function errorText(e: unknown): string {
 /**
  * Debounced content search with stale-response protection: every request takes a ticket and
  * only the newest ticket may write state, so a slow answer for "ha" never overwrites the
- * answer for "harbour". A cold index reports `building`; the search re-runs when the backend
+ * answer for "harbour". `kind` narrows the search to one file kind (the palette's chip). A cold
+ * index reports `building`; the search re-runs when the backend
  * announces a full `index://changed` (the cold build finished).
  */
-export function useContentSearch(query: string, enabled: boolean): ContentSearchState {
+export function useContentSearch(
+  query: string,
+  enabled: boolean,
+  kind: string | null = null,
+): ContentSearchState {
   const [state, setState] = useState<ContentSearchState>(IDLE);
   const [retry, setRetry] = useState(0);
   const ticket = useRef(0);
@@ -57,6 +62,7 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
         asYouType: true,
         recency: true,
         fuzzy: true,
+        ...(kind ? { kinds: [kind] } : {}),
       }).then(
         (page) => {
           if (mine === ticket.current) {
@@ -74,7 +80,7 @@ export function useContentSearch(query: string, enabled: boolean): ContentSearch
       );
     }, CONTENT_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [active, trimmed, retry]);
+  }, [active, trimmed, retry, kind]);
 
   // Listener registered once per open palette; reads nothing but bumps the retry counter.
   // eslint-disable-next-line react-doctor/no-event-handler

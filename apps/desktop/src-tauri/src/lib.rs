@@ -721,6 +721,7 @@ pub fn run() {
             commands::index::property_type_set,
             commands::index::index_get_metadata,
             commands::index::index_search,
+            commands::index::search_kinds,
             commands::search::fuzzy_search,
             commands::search::find_file_by_name,
             commands::search::find_files_by_exact_name,

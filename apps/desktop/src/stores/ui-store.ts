@@ -13,6 +13,8 @@ interface UIState {
   isCommandPaletteOpen: boolean;
   commandPaletteIntent: CommandPaletteIntent;
   commandPaletteSearch: string;
+  /** The kind chip selected in the palettes (a `search_kinds` id), `null` for All. */
+  commandPaletteKind: string | null;
   /** Selected Settings section id (see settings-sections.ts); remembered across restarts. */
   settingsSection: string;
   /** Selected left sidebar panel id: `files` (core) or a feature's panel; not remembered. */
@@ -24,12 +26,14 @@ interface UIState {
   openCommandPalette: (intent?: CommandPaletteIntent) => void;
   closeCommandPalette: () => void;
   setCommandPaletteSearch: (search: string) => void;
+  setCommandPaletteKind: (kind: string | null) => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
   isCommandPaletteOpen: false,
   commandPaletteIntent: "search",
   commandPaletteSearch: "",
+  commandPaletteKind: null,
   settingsSection: DEFAULT_SETTINGS_SECTION,
   sidebarPanel: FILES_PANEL_ID,
 
@@ -46,12 +50,19 @@ export const useUIStore = create<UIState>((set, get) => ({
       set({ settingsSection: stored });
   },
   openCommandPalette: (intent = "search") =>
-    set({ isCommandPaletteOpen: true, commandPaletteIntent: intent, commandPaletteSearch: "" }),
+    set({
+      isCommandPaletteOpen: true,
+      commandPaletteIntent: intent,
+      commandPaletteSearch: "",
+      commandPaletteKind: null,
+    }),
   closeCommandPalette: () =>
     set({
       isCommandPaletteOpen: false,
       commandPaletteIntent: "search",
       commandPaletteSearch: "",
+      commandPaletteKind: null,
     }),
   setCommandPaletteSearch: (search: string) => set({ commandPaletteSearch: search }),
+  setCommandPaletteKind: (kind: string | null) => set({ commandPaletteKind: kind }),
 }));

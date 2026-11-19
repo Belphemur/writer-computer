@@ -25,3 +25,11 @@ export function useCommandPaletteSearch() {
 export function useSetCommandPaletteSearch() {
   return useUIStore((s) => s.setCommandPaletteSearch);
 }
+
+export function useCommandPaletteKind() {
+  return useUIStore((s) => s.commandPaletteKind);
+}
+
+export function useSetCommandPaletteKind() {
+  return useUIStore((s) => s.setCommandPaletteKind);
+}

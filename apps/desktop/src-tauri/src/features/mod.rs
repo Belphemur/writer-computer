@@ -49,7 +49,7 @@
 //!   by this module's runner only for features that are enabled and whose `setup` succeeded; a
 //!   failing hook is logged, never propagated. Teardown hooks run in reverse registry order.
 //! - Pure contributions ([`Feature::cli_commands`], [`Feature::ipc_commands`],
-//!   [`Feature::skills`], [`Feature::index_ddl`])
+//!   [`Feature::skills`], [`Feature::index_ddl`], [`Feature::file_kinds`])
 //!   are read from every registered feature whatever the toggle (the index and the CLI have no
 //!   settings layer; a toggle must never rebuild the index). The tables that run them stay
 //!   where they were: `cli::registry`, `managed_skills`, `index::schema`.
@@ -58,6 +58,7 @@
 use crate::cli::registry::CommandSpec;
 use crate::config::Settings;
 use crate::error::AppError;
+use crate::index::kinds::FileKind;
 use crate::ipc::IpcCommand;
 use crate::managed_skills::BundledSkill;
 use crate::state::AppState;
@@ -97,6 +98,8 @@ mod excalidraw;
 mod graph;
 #[path = "../../../features/icons/rust/mod.rs"]
 pub(crate) mod icons;
+#[path = "../../../features/pdf/rust/mod.rs"]
+pub(crate) mod pdf;
 #[path = "../../../features/tasks/rust/mod.rs"]
 mod tasks;
 // Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
@@ -185,6 +188,10 @@ pub struct RustPart {
     /// answers `FeatureUnavailable` for them while the feature is off. Not part of `has_rust`.
     #[serde(default, rename = "gatedCommands")]
     pub gated_commands: Vec<String>,
+    /// The ids of the file kinds the feature contributes ([`Feature::file_kinds`]): the contract
+    /// test ties them to the code. Not part of `has_rust`.
+    #[serde(default, rename = "fileKinds")]
+    pub file_kinds: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -273,6 +280,13 @@ pub trait Feature<R: Runtime>: Send + Sync {
     fn index_ddl(&self) -> Option<&'static str> {
         None
     }
+    /// The file kinds the feature adds to listing and search (`index::kinds`): the suffixes it
+    /// owns, the gate that lists it and, optionally, the extractor that makes its files
+    /// searchable by content. Pure data like `cli_commands`, read whatever the toggle: the
+    /// kind's gate decides whether it is listed. Each id is named in `rust.fileKinds`.
+    fn file_kinds(&self) -> &'static [FileKind] {
+        &[]
+    }
 
     fn manifest(&self) -> Result<Manifest, serde_json::Error> {
         serde_json::from_str(self.manifest_source())
@@ -290,6 +304,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &excalidraw::Excalidraw,
         &graph::Graph,
         &icons::Icons,
+        &pdf::Pdf,
         &spellcheck::Spellcheck,
         &tasks::Tasks,
     ]
@@ -921,6 +936,27 @@ fn cli_commands_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'st
     features.iter().flat_map(|f| f.cli_commands()).collect()
 }
 
+/// File kinds of every registered feature, for `index::kinds`.
+pub fn file_kinds() -> Vec<&'static FileKind> {
+    file_kinds_of(&registry::<Wry>())
+}
+
+fn file_kinds_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'static FileKind> {
+    features.iter().flat_map(|f| f.file_kinds()).collect()
+}
+
+/// The ids of the registered features `is_on` says are off: what a kind gated by a feature switch
+/// reads (`code_files::Policy::features_off`). `is_on` is the caller's way to read the switch
+/// (live settings in the app, [`cli_enabled`] in the CLI), like [`held_skills`].
+pub fn switched_off(is_on: impl Fn(&Manifest) -> bool) -> std::collections::HashSet<String> {
+    registry::<Wry>()
+        .iter()
+        .filter_map(|f| f.manifest().ok())
+        .filter(|m| !is_on(m))
+        .map(|m| m.id)
+        .collect()
+}
+
 /// IPC commands of every registered feature, for the CLI client's per-command wait.
 pub fn ipc_commands() -> Vec<&'static IpcCommand> {
     ipc_commands_of(&registry::<Wry>())
@@ -1137,6 +1173,7 @@ mod tests {
                 "excalidraw",
                 "graph",
                 "icons",
+                "pdf",
                 "spellcheck",
                 "tasks"
             ]
@@ -1190,8 +1227,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            9,
-            "the agent, bases, code-files, dataview, excalidraw, graph, icons, spellcheck and tasks still start"
+            10,
+            "the agent, bases, code-files, dataview, excalidraw, graph, icons, pdf, spellcheck and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(

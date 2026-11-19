@@ -2,17 +2,27 @@ import { useRef, useState, type KeyboardEvent } from "react";
 import { CommandDialog, CommandGroup, CommandInput, CommandItem, CommandList } from "cmdk";
 import {
   useCloseCommandPalette,
+  useCommandPaletteKind,
   useCommandPaletteSearch,
   useIsCommandPaletteOpen,
+  useSetCommandPaletteKind,
   useSetCommandPaletteSearch,
 } from "@/hooks/use-command-palette";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { openFileAtLine } from "@/components/editor-area/reveal-line";
-import { splitByRanges, type ContentSearchHit } from "@/lib/content-search";
-import { keyIntent, linkHandlers, type LinkIntent } from "@/lib/link-activation";
+import {
+  hitLocation,
+  snippetPlace,
+  splitByRanges,
+  type ContentSearchHit,
+} from "@/lib/content-search";
+import { keyIntent, linkHandlers, openPathAtAnchor, type LinkIntent } from "@/lib/link-activation";
 import { getFileName } from "@/lib/paths";
+import { KindChips } from "./kind-chips";
 import { NoteResultTitle } from "./note-result-title";
+import { ResultIcon } from "./result-icon";
 import { CONTENT_SEARCH_MIN_CHARS, useContentSearch } from "./use-content-search";
+import { useSearchKinds } from "./use-search-kinds";
 
 function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) {
   return (
@@ -42,14 +52,18 @@ function StatusLine({ role, children }: { role: "status" | "alert"; children: st
   );
 }
 
-/** "Search in notes": ranked full-text results with the matched lines, in the palette dialog. */
+/** "Search in notes": ranked full-text results over every listed kind (notes, PDFs, code,
+ *  drawings) with the matched lines, in the palette dialog. */
 export function ContentSearchPalette() {
   const isOpen = useIsCommandPaletteOpen();
   const close = useCloseCommandPalette();
   const search = useCommandPaletteSearch();
   const setSearch = useSetCommandPaletteSearch();
   const { root } = useWorkspace();
-  const result = useContentSearch(search, isOpen);
+  const kind = useCommandPaletteKind();
+  const setKind = useSetCommandPaletteKind();
+  const kinds = useSearchKinds(isOpen);
+  const result = useContentSearch(search, isOpen, kind);
   const hits = result.status === "ready" || result.status === "loading" ? result.hits : [];
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -59,9 +73,15 @@ export function ContentSearchPalette() {
 
   function open(hit: ContentSearchHit, intent: LinkIntent) {
     if (!root) return;
-    const line = hit.snippets[0]?.line ?? null;
+    const path = `${root}/${hit.path}`;
+    // a PDF opens at the page of its first match, a note or code file at its line, the rest as is
+    const where = hitLocation(hit.snippets[0]);
     close();
-    void openFileAtLine(`${root}/${hit.path}`, line, { intent }).catch((e: unknown) => {
+    const opened =
+      where.kind === "page"
+        ? openPathAtAnchor(path, `page=${where.page}`, intent)
+        : openFileAtLine(path, where.kind === "line" ? where.line : null, { intent });
+    void opened.catch((e: unknown) => {
       console.error("[content-search] open failed:", e);
     });
   }
@@ -94,10 +114,11 @@ export function ContentSearchPalette() {
         onValueChange={setSearch}
         aria-label="Search in notes"
       />
+      <KindChips kinds={kinds} selected={kind} onSelect={setKind} />
       <CommandList ref={listRef}>
         {trimmed.length < CONTENT_SEARCH_MIN_CHARS && (
           <StatusLine role="status">
-            {`Type at least ${CONTENT_SEARCH_MIN_CHARS} characters to search note contents.`}
+            {`Type at least ${CONTENT_SEARCH_MIN_CHARS} characters to search file contents.`}
           </StatusLine>
         )}
         {result.status === "building" && (
@@ -116,7 +137,7 @@ export function ContentSearchPalette() {
           <CommandGroup
             heading={
               result.status === "ready"
-                ? `${result.total} ${result.total === 1 ? "note" : "notes"}`
+                ? `${result.total} ${result.total === 1 ? "result" : "results"}`
                 : "Searching…"
             }
           >
@@ -130,23 +151,33 @@ export function ContentSearchPalette() {
                   { middleOnly: true },
                 )}
               >
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <NoteResultTitle
-                    path={hit.path}
-                    name={hit.path.endsWith(".md") ? hit.title : getFileName(hit.path)}
-                    override={hit.titleOverride}
-                  />
-                  <span className="truncate text-[13px] text-text-muted">
-                    {hit.folder || "Vault root"}
-                    {hit.stale ? " · changed since indexed" : ""}
-                    {hit.fuzzy ? " · similar name" : ""}
+                <div className="flex min-w-0 items-start gap-2">
+                  <span className="mt-0.5 flex">
+                    <ResultIcon path={hit.path} kind={hit.kind} kinds={kinds} />
                   </span>
-                  {hit.snippets.map((s) => (
-                    <span key={s.line} className="truncate text-[13px] text-text-muted">
-                      <span className="mr-2 tabular-nums opacity-60">{s.line}</span>
-                      <Marked text={s.text} ranges={s.ranges} />
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <NoteResultTitle
+                      path={hit.path}
+                      name={hit.path.endsWith(".md") ? hit.title : getFileName(hit.path)}
+                      override={hit.titleOverride}
+                    />
+                    <span className="truncate text-[13px] text-text-muted">
+                      {hit.folder || "Vault root"}
+                      {hit.stale ? " · changed since indexed" : ""}
+                      {hit.fuzzy ? " · similar name" : ""}
                     </span>
-                  ))}
+                    {hit.snippets.map((s) => (
+                      <span
+                        key={`${s.page ?? ""}:${s.line}`}
+                        className="truncate text-[13px] text-text-muted"
+                      >
+                        {snippetPlace(s) && (
+                          <span className="mr-2 tabular-nums opacity-60">{snippetPlace(s)}</span>
+                        )}
+                        <Marked text={s.text} ranges={s.ranges} />
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </CommandItem>
             ))}

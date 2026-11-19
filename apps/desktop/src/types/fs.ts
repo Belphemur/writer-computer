@@ -37,6 +37,8 @@ export interface SearchResult {
   match_indices: number[];
   /** Display-title override (frontmatter `title`); matched like the file name. */
   title?: string | null;
+  /** The id of the file's kind (`search_kinds` lists them). */
+  kind?: string;
 }
 
 export interface ContentSearchResult {

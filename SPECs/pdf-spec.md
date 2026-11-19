@@ -64,11 +64,16 @@ Never write a PDF. Never log its text, its name or its path.
 - Embed: default height and `#height=`; "Open in tab".
 - Listing: `files.show-pdfs` in Rust and TS from the one list.
 - Startup chunk excludes pdf.js.
+- Search: the extractor on PDFs built in memory (words, title, pages, encrypted and malformed named only, page cap), the kind through the index (a word only inside a PDF finds it on its page, `kind:pdf`, a malformed PDF found by name), the `files.show-pdfs` gate; a PDF hit opening at its page in the palette.
 - Agent: a PDF chip encodes a `document` block (golden), caps refused with a message, the real-CLI fixture replays.
 
 ## Not in scope
 
-Annotations or highlights saved to the file, form filling, editing or merging PDFs, OCR, indexing PDF text in vault search (revisit later; it would be Rust text extraction feeding the index), printing.
+Annotations or highlights saved to the file, form filling, editing or merging PDFs, OCR (a scanned PDF has no text and is found by name only), printing.
+
+## Search
+
+PDF text is in vault search (ADR [2026-11-18](../docs/decisions/2026-11-18-let-features-contribute-file-kinds-and-text-extractors-to-search.md), `search-spec.md` "File kinds"). The feature has a small Rust half, `features/pdf/rust/`: it contributes the `pdf` file kind (listed by `files.show-pdfs`, extensions from `documentExtensions`) and its extractor (`pdf_oxide` `=0.3.78`, default features off): plain text per page, the document info title, files above 100 MiB named only, at most 2000 pages, an encrypted or malformed PDF named only. A content hit carries its page and opens the PDF at `#page=N`. The extractor reads bytes in Rust, so the `writer search` CLI and agents find PDFs exactly as the app does (`kind:pdf` narrows to PDFs, `search:context` prints `path:p3: text`). With the `pdf` feature off PDFs stay listed by name but their text is not read and is dropped from the index at the next sync (back on, it is extracted again). The text is stored in the vault index only; it is never logged and the PDF is never written.
 
 ## Implementation notes
 

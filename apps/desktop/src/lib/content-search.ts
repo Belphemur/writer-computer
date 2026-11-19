@@ -3,11 +3,35 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-/** One matching line: `line` is 1-based on disk; `ranges` are `[start, end)` UTF-16 offsets into `text`. */
+/**
+ * One matching line: `line` is 1-based on disk when `inFile`, else a line of the file's extracted
+ * text (a drawing's label); `page` is the 1-based page of a PDF; `ranges` are `[start, end)` UTF-16
+ * offsets into `text`.
+ */
 export interface ContentSnippet {
   line: number;
+  inFile: boolean;
+  page?: number | null;
   text: string;
   ranges: [number, number][];
+}
+
+/** Where a hit opens: a page of a PDF, a line of the file, or just the file. */
+export type HitLocation =
+  | { kind: "page"; page: number }
+  | { kind: "line"; line: number }
+  | { kind: "file" };
+
+export function hitLocation(snippet: ContentSnippet | undefined): HitLocation {
+  if (snippet?.page) return { kind: "page", page: snippet.page };
+  if (snippet?.inFile) return { kind: "line", line: snippet.line };
+  return { kind: "file" };
+}
+
+/** The place label a snippet row shows: its page (`p3`), its line, or nothing. */
+export function snippetPlace(snippet: ContentSnippet): string | null {
+  if (snippet.page) return `p${snippet.page}`;
+  return snippet.inFile ? String(snippet.line) : null;
 }
 
 export interface ContentSearchHit {
@@ -18,6 +42,8 @@ export interface ContentSearchHit {
   /** Display-title override (frontmatter `title`), searchable like the file name. */
   titleOverride?: string | null;
   folder: string;
+  /** The id of the file's kind (`searchKinds` lists them): note, pdf, code... */
+  kind: string;
   score: number;
   snippets: ContentSnippet[];
   /** The file changed since it was indexed; the line may have moved. */
@@ -36,6 +62,8 @@ export interface ContentSearchRequest {
   query: string;
   folder?: string;
   tags?: string[];
+  /** Keep only these file kinds (the palette's chips); the query's own `kind:` filters also apply. */
+  kinds?: string[];
   limit?: number;
   offset?: number;
   snippetLen?: number;
@@ -50,6 +78,18 @@ export interface ContentSearchRequest {
 
 export function indexSearch(request: ContentSearchRequest): Promise<ContentSearchPage> {
   return invoke("index_search", { request });
+}
+
+/** A file kind the vault lists (`search_kinds`): the registry's, never a copy kept here. */
+export interface SearchKind {
+  id: string;
+  label: string;
+  /** A Hugeicons name (`lib/kind-icons.ts`). */
+  icon: string;
+}
+
+export function searchKinds(): Promise<SearchKind[]> {
+  return invoke("search_kinds");
 }
 
 export interface IndexChangedPayload {

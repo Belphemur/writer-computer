@@ -29,8 +29,8 @@ One bullet per command: `required` parameters are marked, everything else is opt
 
 ## Search
 
-- `search` — List files whose text or name matches a query, best match first. Params: `query=` (required; words, "phrase", -word, a OR b, pre*, tag:/path:/file:, or /regex/), `path=` (limit to this folder), `limit=` (maximum number of files), `format=` (text | json). Flags: `total` (print only the count), `case` (case sensitive).
-- `search:context` — Matching lines as path:line: text, best file first. Params: `query=` (required; words, "phrase", -word, a OR b, pre*, tag:/path:/file:, or /regex/), `path=` (limit to this folder), `limit=` (maximum number of lines), `format=` (text | json). Flags: `case` (case sensitive).
+- `search` — List files whose text or name matches a query, best match first. Params: `query=` (required; words, "phrase", -word, a OR b, pre*, tag:/path:/file:/kind:/ext:, or /regex/), `path=` (limit to this folder), `limit=` (maximum number of files), `format=` (text | json). Flags: `total` (print only the count), `case` (case sensitive).
+- `search:context` — Matching lines as path:line: text, best file first. Params: `query=` (required; words, "phrase", -word, a OR b, pre*, tag:/path:/file:/kind:/ext:, or /regex/), `path=` (limit to this folder), `limit=` (maximum number of lines), `format=` (text | json). Flags: `case` (case sensitive).
 
 ## Properties
 

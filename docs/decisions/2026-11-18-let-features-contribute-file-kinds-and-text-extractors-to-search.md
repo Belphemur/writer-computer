@@ -67,12 +67,12 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A word only inside a PDF finds that PDF in content search and `writer search`.
-- [ ] A code file and an Excalidraw drawing are found by their content.
-- [ ] `kind:pdf` and the PDFs chip show only PDFs; `-kind:code` hides code.
-- [ ] Turning a feature off removes its files from search; turning it on brings them back.
-- [ ] Adding a kind needs no edit in core listing or search code (shown by the pdf feature's kind).
-- [ ] A malformed PDF is still found by name and never breaks indexing.
+- [x] A word only inside a PDF finds that PDF in content search and `writer search`.
+- [x] A code file and an Excalidraw drawing are found by their content.
+- [x] `kind:pdf` and the PDFs chip show only PDFs; `-kind:code` hides code.
+- [x] Turning a feature off removes its files from search; turning it on brings them back.
+- [x] Adding a kind needs no edit in core listing or search code (shown by the pdf feature's kind).
+- [x] A malformed PDF is still found by name and never breaks indexing.
 
 ## Pros and Cons of the Options
 

@@ -57,7 +57,7 @@ rank  = text * (1 + boost)
 ## Full-text search
 
 - `SearchOptions.recency`: fetch the best `max(offset + limit, 200)` bm25 hits, multiply each score by `1 + boost`, re-sort (ties by path), then page. bm25 is scale-free, so a hit with much better bm25 outranks a recent weak one.
-- `SearchOptions.fuzzy`: only on the first page. `.base` files (no text row) are name-matched on every search and lead the page (see `search-spec.md`); notes are appended only when fewer than 5 notes match exactly. The query's words are matched with the same scorer against each note's file name and, at weight 0.6, its headings and tags; hits need at least `11` text score per query char, exclude notes already found, rank with the recency boost, and are appended (at most 10), flagged `fuzzy: true` with no snippets. The palette labels them "similar name".
+- `SearchOptions.fuzzy`: only on the first page. The kinds found by name only (`.base` files, images: no text row) are name-matched on every search and lead the page (see `search-spec.md`); files of the kinds with text (notes, code, PDFs, drawings) are appended only when fewer than 5 notes match exactly. The query's words are matched with the same scorer against each note's file name and, at weight 0.6, its headings and tags; hits need at least `11` text score per query char, exclude notes already found, rank with the recency boost, and are appended (at most 10), flagged `fuzzy: true` with no snippets. The palette labels them "similar name".
 - The palette sets both flags; the CLI does not.
 
 ## Tests
@@ -69,3 +69,7 @@ rank  = text * (1 + boost)
 ## Measured (release, 10k synthetic notes, this machine)
 
 Name ranking 10k names: under 50 ms (asserted). Full-text fuzzy fallback: about 22 ms; recency re-rank: about 5 ms.
+
+## File kinds
+
+Every listed kind is one ranked list (ADR 2026-11-18, `search-spec.md` "File kinds"): a PDF, a code file and a drawing sit in the same `notes_fts` table as notes, with the file name (or the PDF's document title) in the `title` column, so the same bm25 weights, the same recency boost and the same fuzzy fallback apply and nothing is ranked per kind. Quick open ranks names of every kind with `rank.rs` as before; `NameFilter.kinds` narrows it. The palette's kind chips narrow both lists to one kind.

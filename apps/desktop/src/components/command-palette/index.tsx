@@ -12,9 +12,11 @@ import type { SearchResult } from "@/types/fs";
 import {
   useCloseCommandPalette,
   useCommandPaletteIntent,
+  useCommandPaletteKind,
   useCommandPaletteSearch,
   useIsCommandPaletteOpen,
   useOpenCommandPalette,
+  useSetCommandPaletteKind,
   useSetCommandPaletteSearch,
 } from "@/hooks/use-command-palette";
 import { useSidebar } from "@/hooks/use-sidebar";
@@ -45,7 +47,10 @@ import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
 import { openStandaloneFile } from "@/hooks/use-open-drop";
 import { rankCandidates } from "@/lib/search-rank";
 import { noteLabel } from "@/lib/note-title";
+import { KindChips } from "./kind-chips";
 import { NoteResultTitle } from "./note-result-title";
+import { ResultIcon } from "./result-icon";
+import { useSearchKinds } from "./use-search-kinds";
 import { getFileName, getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
 import type { RecentFile } from "@/lib/tauri";
@@ -104,6 +109,8 @@ function FilePalette() {
   const intent = useCommandPaletteIntent();
   const search = useCommandPaletteSearch();
   const setSearch = useSetCommandPaletteSearch();
+  const kind = useCommandPaletteKind();
+  const setKind = useSetCommandPaletteKind();
   const { toggleSidebar } = useSidebar();
   const { root, isIndexing, openWorkspace } = useWorkspace();
   const closeWorkspace = useCloseWorkspace();
@@ -128,11 +135,9 @@ function FilePalette() {
   const fileQuery = isCreateIntent ? "" : search;
   // Standalone compact windows have no workspace index — search filters the
   // global recents list client-side instead of hitting fuzzy_search.
-  const { results, error: searchError } = useFuzzySearch(
-    fileQuery,
-    20,
-    isOpen && !isCompactFileMode && !isCreateIntent,
-  );
+  const fileSearch = isOpen && !isCompactFileMode && !isCreateIntent;
+  const { results, error: searchError } = useFuzzySearch(fileQuery, 20, fileSearch, kind);
+  const kinds = useSearchKinds(fileSearch);
   const { files: globalRecents } = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
   // In standalone mode new files are created next to the active file.
   const createBaseDir = root ?? (activeFilePath ? getParentDir(activeFilePath) : null);
@@ -285,12 +290,15 @@ function FilePalette() {
       onSelect={() => handleSelect(r.path)}
       {...rowLink(r.path)}
     >
-      <div className="flex min-w-0 flex-col">
-        {/* An override leads (italic); the path below then carries the file name. */}
-        <NoteResultTitle path={r.path} name={getFileName(r.path)} override={r.title} />
-        <span className="truncate text-[13px] text-text-muted">
-          <HighlightedPath path={r.relative_path} indices={r.match_indices} />
-        </span>
+      <div className="flex min-w-0 items-center gap-2">
+        <ResultIcon path={r.path} kind={r.kind} kinds={kinds} />
+        <div className="flex min-w-0 flex-col">
+          {/* An override leads (italic); the path below then carries the file name. */}
+          <NoteResultTitle path={r.path} name={getFileName(r.path)} override={r.title} />
+          <span className="truncate text-[13px] text-text-muted">
+            <HighlightedPath path={r.relative_path} indices={r.match_indices} />
+          </span>
+        </div>
       </div>
     </CommandItem>
   ));
@@ -341,6 +349,7 @@ function FilePalette() {
       onValueChange={setSelectedValue}
     >
       <CommandInput placeholder={placeholder} value={search} onValueChange={setSearch} />
+      {fileSearch && <KindChips kinds={kinds} selected={kind} onSelect={setKind} />}
       <CommandList ref={listRef}>
         {isCreateIntent ? (
           <>

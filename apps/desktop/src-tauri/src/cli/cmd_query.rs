@@ -156,11 +156,33 @@ pub fn search(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
     })
 }
 
+/// Where a matching line sits: a line of the file, a page of a PDF, or nowhere a reader could go
+/// to (a line of extracted text, like a drawing's label).
+enum Place {
+    Line(usize),
+    Page(u32),
+    Extracted,
+}
+
+struct Located {
+    path: String,
+    place: Place,
+    text: String,
+}
+
+fn place_of(s: &crate::index::Snippet) -> Place {
+    match (s.page, s.in_file) {
+        (Some(page), _) => Place::Page(page),
+        (None, true) => Place::Line(s.line as usize),
+        (None, false) => Place::Extracted,
+    }
+}
+
 pub fn search_context(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
     let format = args.format(spec)?;
     let query = require_query(args)?;
     let limit = parse_limit(args)?;
-    let mut hits: Vec<(String, usize, String)> = Vec::new();
+    let mut hits: Vec<Located> = Vec::new();
     if let Some(m) = Matcher::regex(query, args.flag("case"))? {
         let root = ctx.root()?.to_path_buf();
         'files: for row in regex_files(ctx, args)? {
@@ -176,7 +198,11 @@ pub fn search_context(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<Stri
                     if limit.is_some_and(|l| hits.len() >= l) {
                         break 'files;
                     }
-                    hits.push((row.path.clone(), i + 1, line.trim_end().to_string()));
+                    hits.push(Located {
+                        path: row.path.clone(),
+                        place: Place::Line(i + 1),
+                        text: line.trim_end().to_string(),
+                    });
                 }
             }
         }
@@ -190,7 +216,11 @@ pub fn search_context(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<Stri
                 ));
             }
             for s in h.snippets {
-                hits.push((h.path.clone(), s.line as usize, s.text));
+                hits.push(Located {
+                    path: h.path.clone(),
+                    place: place_of(&s),
+                    text: s.text,
+                });
             }
         }
         if let Some(l) = limit {
@@ -200,11 +230,19 @@ pub fn search_context(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<Stri
     Ok(if format == "json" {
         let v: Vec<Json> = hits
             .iter()
-            .map(|(p, l, t)| json!({"path": p, "line": l, "text": t}))
+            .map(|h| match h.place {
+                Place::Line(l) => json!({"path": h.path, "line": l, "text": h.text}),
+                Place::Page(p) => json!({"path": h.path, "page": p, "text": h.text}),
+                Place::Extracted => json!({"path": h.path, "text": h.text}),
+            })
             .collect();
         format!("{}\n", json_pretty(&Json::Array(v)))
     } else {
-        list_lines(hits.into_iter().map(|(p, l, t)| format!("{p}:{l}: {t}")))
+        list_lines(hits.into_iter().map(|h| match h.place {
+            Place::Line(l) => format!("{}:{l}: {}", h.path, h.text),
+            Place::Page(p) => format!("{}:p{p}: {}", h.path, h.text),
+            Place::Extracted => format!("{}: {}", h.path, h.text),
+        }))
     })
 }
 

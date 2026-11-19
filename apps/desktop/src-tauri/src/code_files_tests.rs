@@ -425,7 +425,9 @@ mod feature_off {
     }
 
     #[test]
-    fn plain_excalidraw_drawings_are_listed_whatever_the_settings() {
+    fn plain_excalidraw_drawings_are_listed_while_the_drawing_kind_is() {
+        // the code-files switch and the extension list do not decide it: the drawing kind is gated
+        // by the excalidraw feature (`index::kinds`)
         for run in [off, on] {
             run(|| {
                 assert!(
@@ -437,6 +439,14 @@ mod feature_off {
                 assert!(!cf::is_code_name("Arch.excalidraw"));
             });
         }
+        // the excalidraw switch off: the plain drawing is not listed, the drawing note stays a note
+        let mut p = Policy::default();
+        p.features_off.insert("excalidraw".into());
+        with_policy_for_test(p, || {
+            assert!(!cf::is_listed_name("Arch.excalidraw"));
+            assert!(!cf::listed_sql_predicate().contains("'excalidraw'"));
+            assert!(cf::is_listed_name("Arch.excalidraw.md"));
+        });
     }
 
     #[test]
