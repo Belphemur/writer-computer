@@ -22,7 +22,10 @@ Version history and multi-device sync for a vault through Git, with merges that 
 
 ## Setup (Settings > Git)
 
-1. **Use existing repository**: the vault is already a repo; its remote and branch are used as they are.
+A remote is optional (the user, 2026-11-19). Without one, Git is local version history: automatic commits, history, diff and restore, the merge view for conflicts the user makes locally; nothing is fetched or pushed. A remote can be added, changed or removed later from the same page.
+
+0. **Local history only**: Writer runs `git init` if the vault is not a repo, writes the ignore block and makes the first commit. No remote, no sign-in, no network.
+1. **Use existing repository**: the vault is already a repo; its remote and branch are used as they are, and a repo with no remote is the local-only mode.
 2. **Add a remote**: paste an SSH or HTTPS URL; Writer runs `git init` if needed, writes the ignore block, makes the first commit, and pushes.
 3. **Sign in with GitHub**: with `gh` installed and signed in, `gh repo create <vault name> --private` creates and links the repo. Without `gh`, the GitHub device flow (needs a registered GitHub OAuth App client id: open item).
 
@@ -58,15 +61,17 @@ Shared Writer config (`.writer/property-types.json`, `.writer/graph.json`, `.wri
 | Setting                | Default                  | Meaning                                                                               |
 | ---------------------- | ------------------------ | ------------------------------------------------------------------------------------- |
 | `git.commit-after`     | 60 s                     | commit changed files after this much quiet                                            |
-| `git.sync-interval`    | 5 min                    | fetch, replay, push                                                                   |
+| `git.sync-interval`    | 5 min                    | fetch, replay, push (not used without a remote)                                       |
 | `git.sync-on-open`     | on                       | sync when the vault opens                                                             |
 | `git.commit-message`   | `vault backup: {{date}}` | placeholders `{{date}}`, `{{hostname}}`, `{{numFiles}}`, `{{files}}` (Obsidian Git's) |
 | `git.lfs`              | off                      | see LFS                                                                               |
 | `git.lfs-threshold-mb` | 100                      | see LFS                                                                               |
 
-Also on window close: commit, then push if the network allows within a short timeout. Writes by the app are seen through the watcher's self-write detection. A file with an open merge view is never committed until it is saved.
+Also on window close: commit, then (with a remote) push if the network allows within a short timeout. Writes by the app are seen through the watcher's self-write detection. A file with an open merge view is never committed until it is saved.
 
 ## Sync
+
+With no remote, sync is step 1 only: commits on the cadence, never a fetch or push, never a network error.
 
 1. Commit pending changes.
 2. `git fetch` the tracking branch.
@@ -117,18 +122,18 @@ Read through gix.
 
 ## Status and panel
 
-- Status item: Synced · Pending n · Syncing · Conflict n · Offline · Error. A click opens the panel.
+- Status item: Synced · Pending n · Syncing · Conflict n · Offline · Error, and **Local** (committed, no remote; never Offline or Error for a missing remote). A click opens the panel.
 - Sidebar panel:
   - changed files;
   - conflicts (each opens the merge view);
   - last sync time;
-  - "Sync now" and "Pause sync".
+  - "Sync now" and "Pause sync" ("Commit now" and "Pause" without a remote, plus "Add a remote").
 - Errors are one line ("Push rejected: authentication failed") with "Details" copying the sanitized git output (no URLs with credentials, no tokens).
 
 ## Agents and CLI
 
-- `writer git:status` (changed, conflicted, ahead/behind).
-- `writer git:sync`: through the running app over the socket when it runs (so the app's scheduler and merge view own it), else headless with the same Rust engine. A conflict headless is reported and left for the app.
+- `writer git:status` (changed, conflicted, ahead/behind; `remote: none` without one).
+- `writer git:sync` (commits only when there is no remote): through the running app over the socket when it runs (so the app's scheduler and merge view own it), else headless with the same Rust engine. A conflict headless is reported and left for the app.
 - `writer git:log path=…` and `writer git:diff path=… [rev=…]`.
 - The managed `writer-cli` skill documents them.
 - An agent chat's changes are committed as their own commit when the turn ends, with the chat title as the message (the Changes card already knows the files).
@@ -147,6 +152,7 @@ Log operation names, durations and outcomes only. Never tokens, remote URLs with
 - **LFS**: threshold, and `git-lfs` missing.
 - **History**: list, diff and restore.
 - **Scheduler**: debounce, interval, on close, paused while a merge view is open.
+- **No remote**: local-only setup from a plain folder, commits on the cadence, no fetch or push attempted, status Local (not Offline or Error), history and restore work, adding a remote later pushes the existing history, removing it returns to Local.
 - **CLI**: headless and through the socket.
 - **Agent**: the chat commit message.
 
