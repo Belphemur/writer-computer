@@ -24,6 +24,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_icons::icon_set
         )
     },
@@ -37,6 +38,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             &["text", "json"],
             Some("text"),
+            reads,
             cmd_icons::icon_get
         )
     },
@@ -50,6 +52,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_icons::icon_remove
         )
     },

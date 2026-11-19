@@ -10,6 +10,7 @@
 
 use super::memory;
 use super::roles::Rendered;
+use crate::cli::mcp;
 
 /// The block's size budget in characters (about 775 tokens at 4 characters per token; it was 2000
 /// before the soul and the context line, which add about 900 and make the worst case 3026). A test
@@ -32,7 +33,6 @@ const READ_EDIT: &str =
 const FRONTMATTER: &str = "Preserve YAML frontmatter: keys, order, quoting, comments.";
 const LINKS: &str = "Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.";
 const FORBIDDEN: &str = "Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.";
-const FINDING: &str = "Find files with Glob and Grep, not Bash find or grep.";
 
 /// Without the CLI the generic rule stands alone.
 const BASH_PLAIN: &str = "Use Bash only when no dedicated tool fits.";
@@ -44,23 +44,33 @@ const BASH_CLI: &str = "Use Bash only when no dedicated tool or `writer` command
 const MOVE_CLI: &str =
     "Rename or move notes only with `writer move` (it rewrites links); never mv.";
 const PROPERTIES_CLI: &str = "Change properties with `writer property:set`, not by editing YAML.";
-/// The query commands the search line names, after `writer `: each is in the command registry and
-/// documented by a managed skill (a test says so).
-const SEARCH_COMMANDS: [&str; 5] = [
+/// The commands the search line names as `writer` MCP tools (`cli::mcp`): each is in the command
+/// registry, is served as a tool and is documented by a managed skill (a test says so). Names that
+/// survive the CLI's pruning; the line is built from them, so it cannot name a tool by hand.
+const SEARCH_COMMANDS: [&str; 7] = [
     "search",
+    "files",
     "graph:backlinks",
     "graph:neighbors",
-    "bases",
+    "tasks",
     "base:query",
+    "dql",
 ];
-const SEARCH_SKILLS: &str = "writer-cli, writer-search, writer-bases";
+/// Read a note's structure without reading its text.
+const OUTLINE_COMMAND: &str = "outline";
 
 fn search_cli() -> String {
     let [first, rest @ ..] = SEARCH_COMMANDS;
-    let (last, middle) = rest.split_last().unwrap();
-    let middle: String = middle.iter().map(|c| format!(", `{c}`")).collect();
+    let rest: Vec<String> = rest
+        .iter()
+        .map(|c| format!("`{}`", mcp::tool_name_of(c)))
+        .collect();
     format!(
-        "Before grepping the vault, try `writer {first}`{middle} or `{last}` (skills {SEARCH_SKILLS})."
+        "Search the vault with the `writer` tools, not Bash grep or find: `{}{}` first, also {}, and `{}` for a note's headings. Bash only for what the index does not hold.",
+        mcp::TOOL_PREFIX,
+        mcp::tool_name_of(first),
+        rest.join(", "),
+        mcp::tool_name_of(OUTLINE_COMMAND),
     )
 }
 
@@ -179,7 +189,6 @@ pub fn render(input: &PromptInput<'_>) -> String {
     lines.push(LINKS);
     lines.push(if writer_cli { MOVE_CLI } else { MOVE_PLAIN });
     lines.push(FORBIDDEN);
-    lines.push(FINDING);
     if writer_cli {
         lines.push(&search);
     }
@@ -264,7 +273,6 @@ Vault: Notes. Working at the vault root.
 - Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.
 - Never mv or rename notes via Bash (links would break); ask the user to rename them in Writer.
 - Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.
-- Find files with Glob and Grep, not Bash find or grep.
 - Use Bash only when no dedicated tool fits.
 "
     );
@@ -281,8 +289,7 @@ Vault: Notes. Working at the vault root.
 - Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.
 - Rename or move notes only with `writer move` (it rewrites links); never mv.
 - Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.
-- Find files with Glob and Grep, not Bash find or grep.
-- Before grepping the vault, try `writer search`, `graph:backlinks`, `graph:neighbors`, `bases` or `base:query` (skills writer-cli, writer-search, writer-bases).
+- Search the vault with the `writer` tools, not Bash grep or find: `mcp__writer__search` first, also `files`, `graph_backlinks`, `graph_neighbors`, `tasks`, `base_query`, `dql`, and `outline` for a note's headings. Bash only for what the index does not hold.
 - Use Bash only when no dedicated tool or `writer` command fits.
 "
     );
@@ -579,13 +586,18 @@ Vault: Notes. Working at the vault root.
             .contains("`writer"));
     }
 
-    /// Every `writer <name>` in backticks is a registered command that a bundled skill documents.
+    /// Every `writer <name>` in backticks is a registered command that a bundled skill documents,
+    /// and every tool the search line names is a registry command served as a tool (so a rename or
+    /// a prune cannot leave the prompt naming a tool that is gone).
     #[test]
     fn every_named_command_exists_and_is_documented() {
         let skills: String = all_skills()
             .flat_map(|s| s.files.iter().map(|f| f.content))
             .collect::<Vec<_>>()
             .join("\n");
+        let documented = |name: &str| {
+            skills.contains(&format!("writer {name}")) || skills.contains(&format!("`{name}`"))
+        };
         let text = r(true, Some(&roles(true, true)), None);
         let mut seen = 0;
         for chunk in text.split("`writer ").skip(1) {
@@ -596,46 +608,51 @@ Vault: Notes. Working at the vault root.
                 "`writer {name}` is not in the registry"
             );
             assert!(
-                skills.contains(&format!("writer {name}")) || skills.contains(&format!("`{name}`")),
+                documented(name),
                 "`writer {name}` is not documented by a managed skill"
             );
             seen += 1;
         }
-        assert!(seen >= 3, "expected the named commands, found {seen}");
-        for name in SEARCH_COMMANDS {
+        assert!(seen >= 2, "expected the named commands, found {seen}");
+        for name in SEARCH_COMMANDS.iter().chain([&OUTLINE_COMMAND]) {
+            let spec =
+                registry::find(name).unwrap_or_else(|| panic!("`{name}` is not in the registry"));
+            assert!(mcp::is_tool(spec), "`{name}` is not served as an MCP tool");
             assert!(
-                registry::find(name).is_some(),
-                "`writer {name}` is not in the registry"
+                !spec.writes,
+                "`{name}` writes: the search line is for reads"
             );
             assert!(
-                skills.contains(&format!("writer {name}")) || skills.contains(&format!("`{name}`")),
-                "`writer {name}` is not documented by a managed skill"
+                documented(name),
+                "`{name}` is not documented by a managed skill"
             );
+            let tool = mcp::tool_name_of(name);
             assert!(
-                text.contains(&format!("`{name}`")) || text.contains(&format!("`writer {name}`"))
+                text.contains(&format!("`{tool}`"))
+                    || text.contains(&format!("`{}{tool}`", mcp::TOOL_PREFIX))
             );
         }
+        // the line carries the prefix once, in front of the first tool
+        assert_eq!(text.matches(mcp::TOOL_PREFIX).count(), 1);
+    }
+
+    /// The agent's CLI has no Glob or Grep: the block never sends it to them, and the search line
+    /// exists only with the `writer` tools.
+    #[test]
+    fn the_block_does_not_name_tools_the_cli_no_longer_has() {
+        for cli in [false, true] {
+            let text = r(cli, None, None);
+            assert!(!text.contains("Glob and Grep"), "cli={cli}");
+            assert!(!text.contains("Find files with"), "cli={cli}");
+        }
+        assert!(r(true, None, None).contains("Search the vault with the `writer` tools"));
+        assert!(!r(false, None, None).contains(mcp::TOOL_PREFIX));
     }
 
     /// The default `agent.allowed-tools` allow only `Bash(writer <read-only command> ...)`: each
     /// command is registered and none writes (a write command in the list fails here).
     #[test]
     fn default_allowed_tools_are_read_only_registered_commands() {
-        const WRITES: &[&str] = &[
-            "create",
-            "append",
-            "prepend",
-            "move",
-            "task:add",
-            "task:done",
-            "task:edit",
-            "title",
-            "delete",
-            "property:set",
-            "property:remove",
-            "base:create",
-            "skills:sync",
-        ];
         let def = crate::config::settings_schema()
             .into_iter()
             .find(|d| d.key == "agent.allowed-tools")
@@ -650,8 +667,8 @@ Vault: Notes. Working at the vault root.
                 .and_then(|x| x.strip_suffix(')'))
                 .unwrap_or_else(|| panic!("{r}: only Bash(writer ...) rules"));
             let name = inner.split_whitespace().next().unwrap();
-            assert!(registry::find(name).is_some(), "{r}: not in the registry");
-            assert!(!WRITES.contains(&name), "{r}: writes");
+            let spec = registry::find(name).unwrap_or_else(|| panic!("{r}: not in the registry"));
+            assert!(!spec.writes, "{r}: writes");
             assert!(!inner.contains(['&', ';', '|', '>']), "{r}");
         }
     }

@@ -17,6 +17,8 @@ writer search:context query=<query> [path=<folder>] [limit=<n>] [format=text|jso
 - `path=<folder>` restricts to a folder (a vault-relative folder, not a pattern). The in-query `path:` filter below is different: it matches anywhere in the path.
 - What is searched is the vault's listed files by **kind**: `note` (Markdown), `pdf` (the text of the pages, plus the document title), `code` (the text files the code-files setting lists), `drawing` (the text of an Excalidraw drawing's elements). `image` and `base` files are found by name only, and a PDF that is encrypted or damaged is found by name only. Hidden folders, `.obsidian`, secret-looking names (`.env`, `secrets.yaml`) and other attachments are not searched.
 
+In Writer's agent pane these are the tools `mcp__writer__search` and `mcp__writer__search_context` (`query`, `path`, `limit`, `format` as strings, `total` and `case` as booleans). Pass the query as plain text: the quoting section below is only for the shell, so a lone phrase is `"exact phrase"` with its own quotes and nothing extra.
+
 ## Query syntax
 
 Terms are separated by spaces and ANDed. Matching is by whole word, case-insensitive, and folds accents (`resume` finds `Résumé`).

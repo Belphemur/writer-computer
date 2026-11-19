@@ -19,6 +19,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_project::project_archive
         )
     },
@@ -32,6 +33,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_project::project_unarchive
         )
     },

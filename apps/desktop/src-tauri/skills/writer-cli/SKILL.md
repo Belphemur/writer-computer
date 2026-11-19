@@ -30,6 +30,10 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 - `total` prints only a count.
 - Exit `0` success. Exit `1` the command ran and failed (file not found, refused write, invalid value, unparsable frontmatter or `.base`, index busy). Exit `2` usage error (unknown command, parameter or flag, missing required parameter, command not available in the Writer CLI). Exit `4` `Writer is not running`: a command of the running app (`status`, `open`, `reveal`, `active`) found no app. Check the exit code, not just the output.
 
+## As MCP tools in Writer's agent pane
+
+In the agent pane every command below is also an MCP tool, `mcp__writer__<command>` with `:` written `_` (`graph:backlinks` is `mcp__writer__graph_backlinks`, `base:query` is `mcp__writer__base_query`). The tools are generated from the command list, so their parameters, flags and formats are the CLI's: a string per `key=`, a boolean per flag, `format` one of the formats the command lists. Use them instead of `Bash`: there is no shell quoting, a value is taken exactly as given (give real newlines, not `\n`; no surrounding quotes to add), read tools run without a prompt and write tools ask first. The same exit conditions come back as an error result with the `writer:` message. `help`, `version` and `skills:sync` are not tools. `writer mcp` is the server itself (`writer vault=<path> mcp`, JSON-RPC on stdio); Writer starts it for each chat.
+
 ## Command groups
 
 See [references/commands.md](references/commands.md) for every command with its parameters and flags.
@@ -49,7 +53,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Structure  | `outline`, `wordcount`                                                                                                                                                              |
 | App        | `status`, `open`, `reveal`, `active`                                                                                                                                                |
 | Skills     | `skills:sync`                                                                                                                                                                       |
-| Meta       | `help`, `version`                                                                                                                                                                   |
+| Meta       | `mcp`, `help`, `version`                                                                                                                                                            |
 | Agent      | `project:archive`, `project:unarchive`                                                                                                                                              |
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                                                                  |
 | Dataview   | `dql`                                                                                                                                                                               |

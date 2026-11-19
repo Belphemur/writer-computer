@@ -37,6 +37,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             &[("overwrite", "replace an existing file")],
             NO_FORMATS,
             None,
+            writes,
             create
         )
     },
@@ -50,6 +51,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             add
         )
     },
@@ -63,6 +65,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             update
         )
     },
@@ -76,6 +79,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            reads,
             read
         )
     },
@@ -89,6 +93,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             export
         )
     },
@@ -102,6 +107,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             preview
         )
     },

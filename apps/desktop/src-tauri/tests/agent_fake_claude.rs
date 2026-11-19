@@ -39,9 +39,15 @@ struct Fake {
 
 impl Fake {
     fn spawn(home: &Path, cwd: &Path, args: &[&str]) -> Fake {
+        Fake::spawn_env(home, cwd, args, &[])
+    }
+
+    /// `env` is set for the fake and so for anything it starts (the MCP server).
+    fn spawn_env(home: &Path, cwd: &Path, args: &[&str], env: &[(&str, &Path)]) -> Fake {
         let mut child = Command::new("node")
             .arg(fake_path())
             .args(args)
+            .envs(env.iter().copied())
             .env("FAKE_CLAUDE_HOME", home)
             .env_remove("FAKE_CLAUDE_SCENARIO")
             .current_dir(cwd)
@@ -390,4 +396,103 @@ fn the_cli_never_hangs_on_stdin_close() {
     let (home, cwd) = dirs();
     let f = Fake::spawn(home.path(), cwd.path(), &["-p", "--session-id", SESSION]);
     assert!(f.close().success());
+}
+
+/// The ADR's end-to-end check: the argv Writer builds (`build_args` with the MCP wiring) hands the
+/// fake `claude` Writer's real `writer mcp` server (the app binary under its CLI name); the fake
+/// calls `search` through it and the chat shows an `mcp__writer__search` call with the ranked
+/// hit. Unix only: the launcher is a symlink.
+#[cfg(unix)]
+#[test]
+fn a_chat_searches_through_the_writer_mcp_server() {
+    need_node!();
+    use desktop_lib::agent::{cli_launcher, mcp_wiring};
+    let (home, vault) = dirs();
+    let vault_root = vault.path().canonicalize().unwrap();
+    std::fs::create_dir_all(vault_root.join(".obsidian")).unwrap();
+    std::fs::write(vault_root.join(".obsidian/app.json"), "{}").unwrap();
+    std::fs::write(
+        vault_root.join("Beta.md"),
+        "# Beta\nbeta body with the word Needle\n",
+    )
+    .unwrap();
+    std::fs::write(vault_root.join("Other.md"), "# Other\nnothing here\n").unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let bin = cli_launcher::ensure(
+        &data.path().join("bin"),
+        Path::new(env!("CARGO_BIN_EXE_desktop")),
+    )
+    .unwrap();
+    let wiring = mcp_wiring::wiring(&bin.join(cli_launcher::LAUNCHER_NAME), &vault_root).unwrap();
+    let settings = AgentSettings {
+        binary_path: None,
+        model: None,
+        effort: None,
+        permission_mode: AgentPermissionMode::Manual,
+        allowed_tools: vec![],
+        disallowed_tools: vec![],
+        orchestrate: false,
+        show_thinking: false,
+        memory: AgentMemory::Off,
+        auto_reload: true,
+        tier_models: Default::default(),
+    };
+    let args = build_args(&ClaudeSpawn {
+        session: SessionRef::New(SESSION.into()),
+        settings: &settings,
+        append_system_prompt: None,
+        add_dirs: &[],
+        agents: None,
+        memory_dir: None,
+        mcp: Some(&wiring),
+    })
+    .unwrap();
+    assert!(
+        args.contains(&"mcp__writer__search".to_string()),
+        "read tools are allowed"
+    );
+    assert!(
+        !args.contains(&"mcp__writer__create".to_string()),
+        "write tools ask"
+    );
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let cli_home = tempfile::tempdir().unwrap();
+    let mut f = Fake::spawn_env(
+        home.path(),
+        &vault_root,
+        &argv,
+        &[("HOME", cli_home.path()), ("WRITER_INDEX_DIR", data.path())],
+    );
+    f.prompt("[fake:mcp-search] Needle");
+    match f.until(|e| matches!(e, AgentEvent::SessionStarted { .. })) {
+        AgentEvent::SessionStarted { mcp_servers, .. } => {
+            assert!(
+                mcp_servers.iter().any(|m| m.name == "writer"),
+                "{mcp_servers:?}"
+            )
+        }
+        _ => unreachable!(),
+    }
+    match f.until(|e| matches!(e, AgentEvent::ToolCallStarted { .. })) {
+        AgentEvent::ToolCallStarted { tool, .. } => assert_eq!(tool, "mcp__writer__search"),
+        _ => unreachable!(),
+    }
+    match f.until(|e| matches!(e, AgentEvent::ToolCallInput { .. })) {
+        AgentEvent::ToolCallInput { input, .. } => assert_eq!(input, json!({"query": "Needle"})),
+        _ => unreachable!(),
+    }
+    match f.until(|e| matches!(e, AgentEvent::ToolCallFinished { .. })) {
+        AgentEvent::ToolCallFinished {
+            output,
+            is_error,
+            outcome,
+            ..
+        } => {
+            assert!(!is_error && outcome == ToolOutcome::Ok, "{output}");
+            assert!(output.contains("Beta"), "{output}");
+            assert!(!output.contains("Other"), "{output}");
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(f.finished(), TurnFinishReason::Completed);
 }

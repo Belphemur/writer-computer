@@ -21,6 +21,7 @@ pub mod env;
 pub mod events;
 pub mod files;
 pub mod line_diff;
+pub mod mcp_wiring;
 pub mod memory;
 pub mod permission_rules;
 pub mod ports;

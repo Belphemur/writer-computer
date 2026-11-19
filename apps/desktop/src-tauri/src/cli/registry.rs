@@ -4,7 +4,7 @@
 
 use super::args::Args;
 use super::CliError;
-use super::{cmd_app, cmd_files, cmd_graph, cmd_notes, cmd_query, cmd_skills, Ctx};
+use super::{cmd_app, cmd_files, cmd_graph, cmd_notes, cmd_query, cmd_skills, mcp, Ctx};
 
 pub type Handler = fn(&Ctx, &Args, &CommandSpec) -> Result<String, CliError>;
 
@@ -23,6 +23,10 @@ pub struct CommandSpec {
     pub formats: &'static [&'static str],
     pub default_format: Option<&'static str>,
     pub run: Handler,
+    /// Does it change the vault (or the app's window)? Set deliberately on every command (the
+    /// `cmd!` macro takes `reads` or `writes`): the MCP server marks write tools (`mcp.rs`) and the
+    /// agent allows read tools without a prompt.
+    pub writes: bool,
     /// The built-in feature that contributes this command (`features::Feature::cli_commands`):
     /// while its switch is off the command reports that instead of running. `None` for core.
     pub feature: Option<&'static str>,
@@ -66,8 +70,20 @@ pub(crate) const NO_PARAMS: &[ParamSpec] = &[];
 pub(crate) const NO_FORMATS: &[&str] = &[];
 const GRAPH_FORMATS: &[&str] = &["text", "json", "tsv"];
 
+/// `reads` or `writes` -> `CommandSpec::writes`; anything else does not compile.
+macro_rules! access {
+    (reads) => {
+        false
+    };
+    (writes) => {
+        true
+    };
+}
+
+pub(crate) use access;
+
 macro_rules! cmd {
-    ($name:expr, $group:expr, $summary:expr, $params:expr, $flags:expr, $formats:expr, $default:expr, $run:expr) => {
+    ($name:expr, $group:expr, $summary:expr, $params:expr, $flags:expr, $formats:expr, $default:expr, $access:tt, $run:expr) => {
         CommandSpec {
             name: $name,
             group: $group,
@@ -77,6 +93,7 @@ macro_rules! cmd {
             formats: $formats,
             default_format: $default,
             run: $run,
+            writes: $crate::cli::registry::access!($access),
             feature: None,
         }
     };
@@ -93,6 +110,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         cmd_files::vault
     ),
     cmd!(
@@ -106,6 +124,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         NO_FORMATS,
         None,
+        reads,
         cmd_files::vaults
     ),
     // Files and folders
@@ -120,6 +139,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("total", "print only the count")],
         NO_FORMATS,
         None,
+        reads,
         cmd_files::files
     ),
     cmd!(
@@ -130,6 +150,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         cmd_files::file
     ),
     cmd!(
@@ -140,6 +161,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("total", "print only the count")],
         NO_FORMATS,
         None,
+        reads,
         cmd_files::folders
     ),
     cmd!(
@@ -153,6 +175,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         cmd_files::folder
     ),
     // Content
@@ -164,6 +187,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         cmd_notes::read
     ),
     cmd!(
@@ -183,6 +207,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         NO_FORMATS,
         None,
+        writes,
         cmd_notes::create
     ),
     cmd!(
@@ -201,6 +226,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         )],
         NO_FORMATS,
         None,
+        writes,
         cmd_notes::append
     ),
     cmd!(
@@ -216,6 +242,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("inline", "no newline after the new text")],
         NO_FORMATS,
         None,
+        writes,
         cmd_notes::prepend
     ),
     cmd!(
@@ -235,6 +262,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         RELOCATE_FLAGS,
         &["text", "json"],
         Some("text"),
+        writes,
         cmd_notes::mv
     ),
     cmd!(
@@ -266,6 +294,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         &["text", "json"],
         Some("text"),
+        writes,
         cmd_notes::title
     ),
     cmd!(
@@ -276,6 +305,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("permanent", "delete for good instead of using the trash")],
         NO_FORMATS,
         None,
+        writes,
         cmd_notes::delete
     ),
     // Search
@@ -298,6 +328,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         &["text", "json"],
         Some("text"),
+        reads,
         cmd_query::search
     ),
     cmd!(
@@ -316,6 +347,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("case", "case sensitive")],
         &["text", "json"],
         Some("text"),
+        reads,
         cmd_query::search_context
     ),
     // Properties
@@ -337,6 +369,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         &["yaml", "json", "tsv"],
         Some("yaml"),
+        reads,
         cmd_query::properties
     ),
     cmd!(
@@ -353,6 +386,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        writes,
         cmd_query::property_set
     ),
     cmd!(
@@ -367,6 +401,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         cmd_query::property_read
     ),
     cmd!(
@@ -381,6 +416,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        writes,
         cmd_query::property_remove
     ),
     // Tags
@@ -400,6 +436,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         &["json", "tsv", "csv"],
         Some("tsv"),
+        reads,
         cmd_query::tags
     ),
     cmd!(
@@ -413,6 +450,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         NO_FORMATS,
         None,
+        reads,
         cmd_query::tag
     ),
     // Tasks
@@ -441,6 +479,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         &["text", "json", "tsv", "csv"],
         Some("text"),
+        reads,
         cmd_query::tasks
     ),
     // Graph (SPECs/note-graph-spec.md 8.1)
@@ -461,6 +500,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::neighbors
     ),
     cmd!(
@@ -476,6 +516,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::path
     ),
     cmd!(
@@ -491,6 +532,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::relationships
     ),
     cmd!(
@@ -509,6 +551,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         )],
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::backlinks
     ),
     cmd!(
@@ -524,6 +567,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::related
     ),
     cmd!(
@@ -537,6 +581,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::hubs
     ),
     cmd!(
@@ -550,6 +595,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::components
     ),
     cmd!(
@@ -563,6 +609,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         )],
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::orphans
     ),
     cmd!(
@@ -573,6 +620,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::deadends
     ),
     cmd!(
@@ -583,6 +631,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         GRAPH_FORMATS,
         Some("text"),
+        reads,
         cmd_graph::unresolved
     ),
     // Structure
@@ -594,6 +643,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("total", "print only the count")],
         &["tree", "md", "json"],
         Some("tree"),
+        reads,
         cmd_query::outline
     ),
     cmd!(
@@ -604,6 +654,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("words", "words only"), ("characters", "characters only")],
         NO_FORMATS,
         None,
+        reads,
         cmd_query::wordcount
     ),
     // The running app (over the local socket, `ipc/`)
@@ -615,6 +666,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         &["text", "json"],
         Some("text"),
+        reads,
         cmd_app::status
     ),
     cmd!(
@@ -633,6 +685,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         ],
         NO_FORMATS,
         None,
+        writes,
         cmd_app::open
     ),
     cmd!(
@@ -643,6 +696,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        writes,
         cmd_app::reveal
     ),
     cmd!(
@@ -653,6 +707,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         &["text", "json"],
         Some("text"),
+        reads,
         cmd_app::active
     ),
     // Skills
@@ -664,9 +719,21 @@ pub static COMMANDS: &[CommandSpec] = &[
         &[("check", "report what would change, write nothing")],
         NO_FORMATS,
         None,
+        writes,
         cmd_skills::skills_sync
     ),
     // Meta
+    cmd!(
+        "mcp",
+        "Meta",
+        "Serve the commands as MCP tools on stdin and stdout, for an agent (one vault; not a tool itself)",
+        NO_PARAMS,
+        NO_FLAGS,
+        NO_FORMATS,
+        None,
+        reads,
+        mcp::run
+    ),
     cmd!(
         "help",
         "Meta",
@@ -675,6 +742,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         help
     ),
     cmd!(
@@ -685,6 +753,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         NO_FLAGS,
         NO_FORMATS,
         None,
+        reads,
         version
     ),
 ];

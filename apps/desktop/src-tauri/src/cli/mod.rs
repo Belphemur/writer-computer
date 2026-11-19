@@ -27,6 +27,7 @@ mod cmd_query;
 mod cmd_skills;
 pub(crate) mod cmd_tasks;
 pub mod format;
+pub mod mcp;
 pub mod registry;
 #[cfg(test)]
 mod skill_doc;
@@ -186,6 +187,11 @@ impl<'a> Ctx<'a> {
         }
     }
 
+    /// The working directory the vault is resolved from when no `vault=` was given.
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
     pub fn root(&self) -> Result<&Path, CliError> {
         if let Some(r) = self.root.get() {
             return Ok(r);
@@ -306,7 +312,7 @@ pub fn is_parity_invocation(args: &[String]) -> bool {
 /// Why a command of a built-in feature cannot run: the feature's switch (`features.<id>.enabled`
 /// in the app's global settings) is off. `None` for core commands and for a feature that is on.
 /// The one gate for every feature's CLI commands (`CommandSpec::feature`).
-fn feature_off(spec: &registry::CommandSpec, env: &Env) -> Option<String> {
+pub(crate) fn feature_off(spec: &registry::CommandSpec, env: &Env) -> Option<String> {
     let id = spec.feature?;
     let on = env
         .data_dir()
@@ -321,10 +327,16 @@ fn feature_off(spec: &registry::CommandSpec, env: &Env) -> Option<String> {
 
 /// Run one invocation. `argv` excludes the program name.
 pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
-    let inv = match args::parse(argv) {
-        Ok(i) => i,
-        Err(e) => return usage_outcome(e.text(), None),
-    };
+    match args::parse(argv) {
+        Ok(inv) => execute_invocation(&inv, cwd, env),
+        Err(e) => usage_outcome(e.text(), None),
+    }
+}
+
+/// Run one parsed invocation: the part of [`execute`] after the grammar, so a caller that already
+/// holds the command, parameters and flags (the MCP server, `mcp.rs`) reaches the same
+/// validation, feature gate and handler without writing them as text first.
+pub fn execute_invocation(inv: &args::Invocation, cwd: &Path, env: &Env) -> Outcome {
     if registry::app_control(&inv.command) {
         return Outcome {
             code: EXIT_USAGE,
@@ -354,7 +366,7 @@ pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
             stderr: String::new(),
         };
     }
-    let parsed = match args::validate(&inv, spec) {
+    let parsed = match args::validate(inv, spec) {
         Ok(a) => a,
         Err(e) => return usage_outcome(e.text(), Some(spec.name)),
     };

@@ -14,6 +14,7 @@ use super::changes::ChangeStore;
 use super::config_sync::{CliMcpProbe, McpProbe, Msg, Worker};
 use super::events::*;
 use super::files::{self, Outgoing};
+use super::mcp_wiring;
 use super::memory;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
 use super::roles::{Flags, RenderInput, RoleAdapter};
@@ -485,6 +486,10 @@ impl AgentSessions {
             memory: memory_note,
         })?;
         let agents = rendered.and_then(|r| r.config);
+        // Writer's own MCP server (the search and vault tools), when the launcher exists.
+        let mcp = p.cli_dir.as_ref().and_then(|dir| {
+            mcp_wiring::wiring(&dir.join(super::cli_launcher::LAUNCHER_NAME), &p.root)
+        });
         let program = info.path.as_deref().map(PathBuf::from);
         let missing = (!info.found).then_some(SpawnError::NotFound);
         Ok((
@@ -496,6 +501,7 @@ impl AgentSessions {
                 agents,
                 cli_dir: p.cli_dir.clone(),
                 memory_dir,
+                mcp,
                 settings,
                 restart_on_config_change: ClaudeAdapter.restart_on_config_change(),
             },
@@ -582,6 +588,7 @@ impl AgentSessions {
             agents: None,
             cli_dir: None,
             memory_dir: None,
+            mcp: None,
             settings: req.settings.clone(),
             restart_on_config_change: false,
         });

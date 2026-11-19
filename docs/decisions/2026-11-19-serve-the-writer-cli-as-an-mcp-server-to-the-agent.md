@@ -29,7 +29,7 @@ Chosen option: **A**.
 1. **Server**: `writer mcp` (a CLI command of its own, not listed as a tool) speaks MCP over stdio, JSON-RPC 2.0 with newline-delimited messages, hand-written in `src-tauri/src/cli/mcp.rs` (the protocol subset is `initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `ping`; no SDK, no new dependency). It serves one vault, given by `vault=` or the working directory, as the CLI does.
 2. **Tools from the registry**: each `CommandSpec` becomes a tool named `<command>` with `:` mapped to `_` (`graph_backlinks`, `base_query`). The description is `summary`, the input schema has one string property per `ParamSpec` (required ones listed), a boolean per flag, `format` as an enum of `formats`. Excluded: `help`, `version`, `mcp`, `skills:sync`, and a feature's commands while its switch is off. A tool call runs the same handler as the CLI (no second implementation) and returns its stdout as text content; a non-zero exit is an `isError` result with the error line.
 3. **Read or write**: `CommandSpec` gains `writes: bool` (a test requires every command to set it deliberately); write tools carry the MCP `readOnlyHint: false`/`destructiveHint` annotations, read tools `readOnlyHint: true`. Writes still go through Writer's permission prompt (`--permission-prompt-tool`) like any tool call; read tools are allowed by default in Writer's permission rules (`permission_rules.rs`).
-4. **Wiring**: the agent runner adds `--mcp-config` with one server `writer` → the `writer` launcher (`cli_launcher`, already first on the child's PATH) with args `mcp vault=<root>`, merged with any MCP servers the user already configured (never replacing them). The tool names reach the model as `mcp__writer__<tool>`.
+4. **Wiring**: the agent runner adds `--mcp-config` with one server `writer` → the `writer` launcher (`cli_launcher`, already first on the child's PATH) with args `vault=<root> mcp` (the CLI grammar puts `vault=` first), merged with any MCP servers the user already configured (never replacing them). The tool names reach the model as `mcp__writer__<tool>`.
 5. **Prompt**: `writer_prompt.rs` drops the Glob/Grep line and names the tools: search with `mcp__writer__search` (and `files`, `graph_*`, `tasks`, `base_query`, `dql`), read structure with `outline`; Bash `grep`/`find` only for what the index does not hold. The command names in the prompt come from the registry so a renamed command cannot leave a stale prompt (a test checks each one exists). The managed `writer-cli`/`writer-search` skills say the same.
 
 ### Consequences
@@ -52,10 +52,10 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] `writer mcp` answers `tools/list` with the registry's commands.
-- [ ] A chat searches with `mcp__writer__search` and gets ranked hits, with no Grep/Glob errors.
-- [ ] A write tool (e.g. `property_set`) asks for permission; read tools do not.
-- [ ] Adding a CLI command shows up as a tool with no other change.
+- [x] `writer mcp` answers `tools/list` with the registry's commands. (`cli::mcp::tests::tools_list_is_the_registry_minus_the_excluded_commands`, `every_tool_schema_follows_its_command_spec`)
+- [ ] A chat searches with `mcp__writer__search` and gets ranked hits, with no Grep/Glob errors. (Proved with the fake `claude` against the real server in `tests/agent_fake_claude.rs`; the real `claude` chat is still to check by hand.)
+- [ ] A write tool (e.g. `property_set`) asks for permission; read tools do not. (Proved at the argv: only read tools are in `--allowedTools`, `claude_stream::tests::the_mcp_server_is_added_next_to_the_users_and_its_read_tools_are_allowed`; the prompt itself is the real CLI's, to check by hand.)
+- [x] Adding a CLI command shows up as a tool with no other change. (The tool list, the schemas, the read-tool allow rules and the prompt checks are all derived from or tested against `registry::commands()`.)
 
 ## More Information
 

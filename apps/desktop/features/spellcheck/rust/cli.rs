@@ -36,6 +36,7 @@ pub static COMMANDS: &[CommandSpec] = &[CommandSpec {
         NO_FLAGS,
         &["text", "json"],
         Some("text"),
+        reads,
         check
     )
 }];

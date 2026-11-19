@@ -19,6 +19,7 @@
 
 use super::events::*;
 use super::files::{FileKind, FilePart};
+use super::mcp_wiring::McpWiring;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -884,6 +885,9 @@ pub struct ClaudeSpawn<'a> {
     /// The memory folder (`agent.memory` = `vault`, built by `memory::prepare_dir`), `None`
     /// otherwise: becomes `--settings {"autoMemoryDirectory": ...}`. Never from model input.
     pub memory_dir: Option<&'a Path>,
+    /// Writer's own MCP server (`mcp_wiring`): `--mcp-config` plus the allow rules of its
+    /// read-only tools, `None` when the chat has no `writer` launcher.
+    pub mcp: Option<&'a McpWiring>,
 }
 
 /// The `--settings` JSON that points the CLI's auto memory at `dir` (the `memory_directory`
@@ -1022,8 +1026,23 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
         a.push("--append-system-prompt".into());
         a.push(prompt.into());
     }
+    if let Some(mcp) = spawn.mcp {
+        // Added to the servers of the user's own settings, never `--strict-mcp-config`.
+        if mcp.config.is_empty() || mcp.config.contains('\0') {
+            return Err("invalid MCP config".into());
+        }
+        a.push("--mcp-config".into());
+        a.push(mcp.config.clone());
+    }
+    let allowed: Vec<String> = spawn
+        .settings
+        .allowed_tools
+        .iter()
+        .chain(spawn.mcp.map_or(&[][..], |m| m.allowed.as_slice()))
+        .cloned()
+        .collect();
     for (flag, rules) in [
-        ("--allowedTools", &spawn.settings.allowed_tools),
+        ("--allowedTools", &allowed),
         ("--disallowedTools", &spawn.settings.disallowed_tools),
     ] {
         if rules.is_empty() {
@@ -2101,6 +2120,7 @@ mod tests {
             add_dirs: &[],
             agents: None,
             memory_dir: None,
+            mcp: None,
         })
         .unwrap();
         assert_eq!(&args[..3], ["-p", "--input-format", "stream-json"]);
@@ -2132,6 +2152,7 @@ mod tests {
             add_dirs: &[],
             agents: None,
             memory_dir: None,
+            mcp: None,
         })
         .unwrap();
         assert!(resumed.contains(&"--resume".to_string()));
@@ -2158,6 +2179,7 @@ mod tests {
                 add_dirs: &[],
                 agents: None,
                 memory_dir: None,
+                mcp: None,
             })
             .unwrap();
             let at = args.iter().position(|a| a == "--thinking-display");
@@ -2181,6 +2203,7 @@ mod tests {
             add_dirs: &dirs,
             agents: None,
             memory_dir: None,
+            mcp: None,
         })
         .unwrap();
         let pos = |f: &str| args.iter().position(|a| a == f).unwrap();
@@ -2205,6 +2228,7 @@ mod tests {
                 add_dirs: &[],
                 agents: None,
                 memory_dir: None,
+                mcp: None,
             })
         };
         assert!(bad(&|_| {}, SessionRef::New("not-a-uuid".into())).is_err());
@@ -2288,6 +2312,7 @@ mod tests {
                 add_dirs: &[],
                 agents,
                 memory_dir: None,
+                mcp: None,
             })
             .unwrap()
         };
@@ -2298,6 +2323,92 @@ mod tests {
         assert!(!build_title_args(None, "t")
             .unwrap()
             .contains(&"--agents".to_string()));
+    }
+
+    /// Writer's MCP server: `--mcp-config` carries the server and `--allowedTools` the rules of
+    /// the read-only tools next to the user's own; never `--strict-mcp-config` (the user's servers
+    /// stay), and without a wiring the argv is exactly what it was.
+    #[test]
+    fn the_mcp_server_is_added_next_to_the_users_and_its_read_tools_are_allowed() {
+        let mut s = settings();
+        s.allowed_tools = vec!["Bash(git status)".into()];
+        let wiring = crate::agent::mcp_wiring::wiring(
+            Path::new("/data/bin/writer"),
+            Path::new("/Users/me/Notes"),
+        )
+        .unwrap();
+        let argv = |mcp: Option<&McpWiring>| {
+            build_args(&ClaudeSpawn {
+                session: SessionRef::New(UUID.into()),
+                settings: &s,
+                append_system_prompt: None,
+                add_dirs: &[],
+                agents: None,
+                memory_dir: None,
+                mcp,
+            })
+            .unwrap()
+        };
+        let off = argv(None);
+        assert!(!off.contains(&"--mcp-config".to_string()));
+        assert_eq!(
+            off.iter()
+                .filter(|a| a.starts_with("mcp__writer__"))
+                .count(),
+            0
+        );
+        let on = argv(Some(&wiring));
+        let pos = |f: &str| on.iter().position(|a| a == f).unwrap();
+        assert_eq!(on[pos("--mcp-config") + 1], wiring.config);
+        assert!(on[pos("--mcp-config") + 1].starts_with('{'));
+        assert!(!on.contains(&"--strict-mcp-config".to_string()));
+        // the user's rule first, then every read tool, in one flag
+        let allowed = &on[pos("--allowedTools") + 1..];
+        assert_eq!(allowed[0], "Bash(git status)");
+        assert!(allowed.contains(&"mcp__writer__search".to_string()));
+        assert!(!allowed.contains(&"mcp__writer__create".to_string()));
+        assert_eq!(on.iter().filter(|a| *a == "--allowedTools").count(), 1);
+        // everything else is unchanged
+        let strip = |v: &[String]| -> Vec<String> {
+            let mut out = Vec::new();
+            let mut skip_rules = false;
+            let mut skip_one = false;
+            for a in v {
+                if skip_one {
+                    skip_one = false;
+                    continue;
+                }
+                if a == "--mcp-config" {
+                    skip_one = true;
+                } else if a == "--allowedTools" {
+                    skip_rules = true;
+                } else if skip_rules && !a.starts_with("--") {
+                } else {
+                    skip_rules = false;
+                    out.push(a.clone());
+                }
+            }
+            out
+        };
+        assert_eq!(strip(&on), strip(&off));
+        // the title call never has it, and a bad config is refused
+        assert!(!build_title_args(None, "t")
+            .unwrap()
+            .contains(&"--mcp-config".to_string()));
+        let bad = McpWiring {
+            config: "{\0}".into(),
+            allowed: vec![],
+        };
+        assert!(build_args(&ClaudeSpawn {
+            session: SessionRef::New(UUID.into()),
+            settings: &s,
+            append_system_prompt: None,
+            add_dirs: &[],
+            agents: None,
+            memory_dir: None,
+            mcp: Some(&bad),
+        })
+        .is_err());
     }
 
     /// The memory flag: `--settings` carries `autoMemoryDirectory` only when a memory folder is
@@ -2314,6 +2425,7 @@ mod tests {
                 add_dirs: &[],
                 agents: None,
                 memory_dir,
+                mcp: None,
             })
             .unwrap()
         };

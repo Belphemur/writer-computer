@@ -21,6 +21,7 @@ pub static COMMANDS: &[CommandSpec] = &[CommandSpec {
         NO_FLAGS,
         &["json", "csv", "tsv", "md", "paths"],
         Some("json"),
+        reads,
         cmd_dql::dql
     )
 }];

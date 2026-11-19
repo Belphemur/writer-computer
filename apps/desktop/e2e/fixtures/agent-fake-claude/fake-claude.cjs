@@ -16,6 +16,10 @@
 //   slow              plain, 250 ms per line, so an interrupt lands mid-stream
 //   crash             starts streaming then exits 1 with no result
 //   auth-error        an error result with api_error_status 401
+//   mcp-search        needs `--mcp-config`: starts the configured server (Writer's `writer mcp`),
+//                     speaks MCP to it (initialize, tools/call `search` with the prompt as the
+//                     query) and plays the tool-auto capture as a `mcp__writer__search` call whose
+//                     result is the server's real answer, so the tool path is the production one
 // The capture decides the outcome of a permission turn; the answer only has to arrive. An allow
 // answer carrying `updatedPermissions` with addRules/localSettings writes
 // <cwd>/.claude/settings.local.json like the real CLI.
@@ -142,7 +146,110 @@ const SCENARIO_FIXTURE = {
   "permission-deny": "permission-deny",
   interrupt: "interrupt",
   "multi-turn": "multi-turn-rule",
+  "mcp-search": "tool-auto-allowed",
 };
+
+// ---------------------------------------------------------------------------------------------
+// MCP client (scenario `mcp-search`): the first server of `--mcp-config` (a JSON string, as Writer
+// passes it), driven over its stdio with newline-delimited JSON-RPC.
+
+const MCP_TOOL = "mcp__writer__search";
+
+function mcpServer() {
+  const raw = flag("mcp-config");
+  if (!raw) throw new Error("fake claude: scenario mcp-search needs --mcp-config");
+  const servers = JSON.parse(raw).mcpServers || {};
+  const server = servers.writer;
+  if (!server) throw new Error("fake claude: no `writer` server in --mcp-config");
+  return server;
+}
+
+/** Start the server, run `tools/call`, return `{ text, isError, tools }`; kills the server. */
+function mcpCall(server, tool, args) {
+  const { spawn } = require("node:child_process");
+  return new Promise((resolve, reject) => {
+    const child = spawn(server.command, server.args || [], {
+      stdio: ["pipe", "pipe", "inherit"],
+      env: { ...process.env, ...server.env },
+    });
+    const replies = new Map();
+    let tools = [];
+    const send = (o) => child.stdin.write(`${JSON.stringify(o)}\n`);
+    const rl2 = readline.createInterface({ input: child.stdout });
+    rl2.on("line", (l) => {
+      let m;
+      try {
+        m = JSON.parse(l);
+      } catch {
+        return reject(new Error(`fake claude: the MCP server said non-JSON on stdout: ${l}`));
+      }
+      if (m.id === 1) {
+        send({ jsonrpc: "2.0", method: "notifications/initialized" });
+        send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+      } else if (m.id === 2) {
+        tools = (m.result?.tools || []).map((t) => t.name);
+        send({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: { name: tool, arguments: args },
+        });
+      } else if (m.id === 3) {
+        child.kill();
+        if (m.error)
+          return reject(new Error(`fake claude: tools/call failed: ${JSON.stringify(m.error)}`));
+        const text = (m.result.content || []).map((c) => c.text || "").join("");
+        resolve({ text, isError: !!m.result.isError, tools });
+      }
+      replies.set(m.id, m);
+    });
+    child.on("error", reject);
+    child.on("exit", (code, sig) => {
+      if (!replies.has(3))
+        reject(new Error(`fake claude: the MCP server exited early (${code ?? sig})`));
+    });
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "fake-claude", version: VERSION },
+      },
+    });
+  });
+}
+
+/** Turn a captured Bash tool turn into a call of the MCP tool with this input and result. */
+function asMcpTurn(line, input, result) {
+  if (line.type === "system" && line.subtype === "init") {
+    line.mcp_servers = [{ name: "writer", status: "connected" }];
+    line.tools = [...(line.tools || []), ...result.tools.map((t) => `mcp__writer__${t}`)];
+  }
+  const ev = line.type === "stream_event" ? line.event : null;
+  if (ev?.type === "content_block_start" && ev.content_block?.type === "tool_use") {
+    ev.content_block.name = MCP_TOOL;
+  }
+  if (ev?.delta?.type === "input_json_delta" && ev.delta.partial_json) {
+    // the whole input in the first non-empty delta, nothing in the rest
+    ev.delta.partial_json = mcpInputSent ? "" : JSON.stringify(input);
+    mcpInputSent = true;
+  }
+  for (const b of line.message?.content || []) {
+    if (b.type === "tool_use") {
+      b.name = MCP_TOOL;
+      b.input = input;
+    }
+    if (b.type === "tool_result") {
+      b.content = result.text;
+      b.is_error = result.isError;
+    }
+  }
+  if (line.tool_use_result) line.tool_use_result = [{ type: "text", text: result.text }];
+  return line;
+}
+let mcpInputSent = false;
 
 function walkStrings(value, f) {
   if (typeof value === "string") return f(value);
@@ -369,6 +476,13 @@ async function runTurn(prompt) {
     return true;
   }
   const turns = loadTurns(fixture);
+  let mcpInput = null;
+  let mcpResult = null;
+  if (scenario === "mcp-search") {
+    mcpInput = { query: prompt.replace(/\[fake:[a-z-]+\]/g, "").trim() };
+    mcpInputSent = false;
+    mcpResult = await mcpCall(mcpServer(), "search", mcpInput);
+  }
   let lines;
   if (scenario === "multi-turn") {
     lines = turns[multiTurnIndex % turns.length];
@@ -404,6 +518,7 @@ async function runTurn(prompt) {
       turn,
       scenario === "plain" || scenario === "slow" || scenario === "crash" ? reply : null,
     );
+    if (mcpResult) line = asMcpTurn(line, mcpInput, mcpResult);
     if (raw.type === "control_response" && interruptRequestId) {
       line = JSON.parse(JSON.stringify(line).replace("req_int_1", interruptRequestId));
     }

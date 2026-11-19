@@ -20,6 +20,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            reads,
             cmd_bases::bases
         )
     },
@@ -33,6 +34,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            reads,
             cmd_bases::base_views
         )
     },
@@ -55,6 +57,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             ],
             NO_FORMATS,
             None,
+            writes,
             cmd_bases::base_create
         )
     },
@@ -73,6 +76,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             &["json", "csv", "tsv", "md", "paths"],
             Some("json"),
+            reads,
             cmd_bases::base_query
         )
     },

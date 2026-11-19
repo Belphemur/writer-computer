@@ -27,6 +27,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_tasks::add
         )
     },
@@ -40,6 +41,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_tasks::done
         )
     },
@@ -68,6 +70,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             NO_FLAGS,
             NO_FORMATS,
             None,
+            writes,
             cmd_tasks::edit
         )
     },

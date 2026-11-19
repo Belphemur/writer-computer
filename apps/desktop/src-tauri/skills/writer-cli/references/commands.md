@@ -83,6 +83,7 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 
 ## Meta
 
+- `mcp` — Serve the commands as MCP tools on stdin and stdout, for an agent (one vault; not a tool itself).
 - `help` — List commands, or show help for one.
 - `version` — Show the Writer version.
 

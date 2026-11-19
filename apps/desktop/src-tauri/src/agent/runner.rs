@@ -25,6 +25,7 @@ use super::config_sync::{self, Decision, McpWatch, Msg, ProbeTarget, Reason, Sta
 use super::env;
 use super::events::*;
 use super::files::Outgoing;
+use super::mcp_wiring::McpWiring;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::{Author, SubTracker};
@@ -103,6 +104,8 @@ pub(crate) struct LaunchConfig {
     pub cli_dir: Option<PathBuf>,
     /// The memory folder of this chat (`agent.memory` = `vault`), created already.
     pub memory_dir: Option<PathBuf>,
+    /// Writer's own MCP server for the chat (`mcp_wiring`), `None` without a launcher.
+    pub mcp: Option<McpWiring>,
     pub settings: AgentSettings,
     /// The backend's `RoleAdapter::restart_on_config_change`.
     pub restart_on_config_change: bool,
@@ -175,6 +178,7 @@ struct Inner {
     agents: Option<String>,
     cli_dir: Option<PathBuf>,
     memory_dir: Option<PathBuf>,
+    mcp: Option<McpWiring>,
     settings: AgentSettings,
     restart_on_config_change: bool,
     /// A file the running process read at start changed (first cause kept); cleared when the next
@@ -355,8 +359,9 @@ pub(crate) fn redact_prompt(args: &[String]) -> Vec<String> {
             out.push(format!("<{} bytes>", a.len()));
             redact = false;
         } else {
-            // the prompt and the memory folder's path stay out of the log (spec section 8)
-            redact = a == "--append-system-prompt" || a == "--settings";
+            // the prompt, the memory folder's path and the vault path of the MCP config stay out of
+            // the log (spec section 8)
+            redact = a == "--append-system-prompt" || a == "--settings" || a == "--mcp-config";
             out.push(a.clone());
         }
     }
@@ -401,6 +406,7 @@ impl Session {
                 agents: config.agents,
                 cli_dir: config.cli_dir,
                 memory_dir: config.memory_dir,
+                mcp: config.mcp,
                 settings: config.settings,
                 restart_on_config_change: config.restart_on_config_change,
                 agent_tiers: BTreeMap::new(),
@@ -496,6 +502,7 @@ impl Session {
         g.agents = config.agents;
         g.cli_dir = config.cli_dir;
         g.memory_dir = config.memory_dir;
+        g.mcp = config.mcp;
         g.settings = config.settings;
     }
 
@@ -547,6 +554,7 @@ impl Session {
                 add_dirs: &g.add_dirs,
                 agents: g.agents.as_deref(),
                 memory_dir: g.memory_dir.as_deref(),
+                mcp: g.mcp.as_ref(),
             })
             .map_err(SpawnError::Invalid)?;
             g.agent_tiers = g.settings.tier_models.clone();
@@ -1962,6 +1970,20 @@ mod tests {
     fn the_settings_value_is_redacted_in_logs() {
         let json = r#"{"autoMemoryDirectory":"/Users/me/Vault/.writer/memory"}"#;
         let args: Vec<String> = ["-p", "--settings", json, "--model", "x"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let r = redact_prompt(&args);
+        assert_eq!(r[2], format!("<{} bytes>", json.len()));
+        assert!(!r.join(" ").contains("/Users"));
+        assert_eq!(r[4], "x");
+    }
+
+    /// The MCP config names the launcher and the vault: a path, so it stays out of the log too.
+    #[test]
+    fn the_mcp_config_value_is_redacted_in_logs() {
+        let json = r#"{"mcpServers":{"writer":{"command":"/Users/me/bin/writer","args":["vault=/Users/me/Vault","mcp"]}}}"#;
+        let args: Vec<String> = ["-p", "--mcp-config", json, "--model", "x"]
             .iter()
             .map(|s| s.to_string())
             .collect();
