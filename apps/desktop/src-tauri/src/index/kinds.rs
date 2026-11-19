@@ -23,6 +23,11 @@ use std::sync::OnceLock;
 pub struct Extracted {
     pub title: Option<String>,
     pub body: String,
+    /// Links the file carries that its text does not show to the note scanner (a drawing's
+    /// element links), written as the markdown would: `[[Note]]`, one per entry. The index reads
+    /// them like the body's links, so backlinks, the graph and unresolved links see them as links
+    /// of the file, whatever its kind.
+    pub links: Vec<String>,
 }
 
 /// The line that starts each page of an extracted paged document (a form feed). The snippet's page

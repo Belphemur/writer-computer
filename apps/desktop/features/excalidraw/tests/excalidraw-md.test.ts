@@ -258,6 +258,50 @@ describe("writing", () => {
     expect(shortenTextIds(parsed.scene.elements)).toEqual(parsed.scene.elements);
   });
 
+  it("element links are listed under ## Element Links with eight-character ids, in step with the Rust codec", () => {
+    const parsed = parseDrawing(read("empty.excalidraw.md"), "md");
+    const longId = "abcdefghijklmnopqrstu";
+    const box = (id: string, link: string | null): SceneElement => ({
+      id,
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      version: 1,
+      versionNonce: 1,
+      isDeleted: false,
+      link,
+    });
+    const scene = (elements: SceneElement[]) => ({
+      scene: { ...parsed.scene, elements },
+      embedded: parsed.embedded,
+    });
+    const out = serializeDrawing(
+      parsed,
+      scene([box(longId, "[[Plan]]"), box("plain001", null), box("shortid1", "[[Other]]")]),
+    );
+    // the linked element took the short id, the unlinked one kept its own
+    expect(out).toContain("## Element Links\nabcdefgh: [[Plan]]\n\nshortid1: [[Other]]\n\n%%\n");
+    const again = parseDrawing(out, "md");
+    expect(again.scene.elements.map((e) => e.id)).toEqual(["abcdefgh", "plain001", "shortid1"]);
+    expect(again.scene.elements[0]!.link).toBe("[[Plan]]");
+    // unchanged: byte for byte; a changed link regenerates the section; no link removes it
+    expect(serializeDrawing(again, { scene: again.scene, embedded: again.embedded })).toBe(out);
+    const relinked = serializeDrawing(
+      again,
+      scene([box("abcdefgh", "[[Plan B]]"), box("plain001", null), box("shortid1", null)]),
+    );
+    expect(relinked).toContain("## Element Links\nabcdefgh: [[Plan B]]\n\n%%\n");
+    expect(relinked).not.toContain("shortid1:");
+    const none = serializeDrawing(
+      parseDrawing(relinked, "md"),
+      scene([box("abcdefgh", null), box("plain001", null)]),
+    );
+    expect(none).not.toContain("Element Links");
+    expect(parseDrawing(none, "md").scene.elements).toHaveLength(2);
+  });
+
   it("a new drawing is an empty .excalidraw.md in the plugin's shape", () => {
     const text = newDrawingText();
     expect(text.startsWith("---\n\nexcalidraw-plugin: parsed\ntags: [excalidraw]\n\n---\n")).toBe(

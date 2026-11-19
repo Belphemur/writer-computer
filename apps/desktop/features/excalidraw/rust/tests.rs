@@ -22,6 +22,15 @@ fn manifest_json() -> Value {
     serde_json::from_str(MANIFEST).unwrap()
 }
 
+thread_local! {
+    /// What `spec=-` reads in a test (the commands run on the test's own thread).
+    static STDIN: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+fn fake_stdin() -> std::io::Result<String> {
+    Ok(STDIN.with(|s| s.borrow().clone()))
+}
+
 struct Vaults {
     vault: TempDir,
     data: TempDir,
@@ -45,9 +54,16 @@ impl Vaults {
             utc_offset_minutes: 0,
             launcher: Box::new(crate::writer_cli::SystemLauncher),
             launch_wait: std::time::Duration::ZERO,
+            read_stdin: fake_stdin,
         };
         let argv: Vec<String> = line.iter().map(|s| s.to_string()).collect();
         execute(&argv, self.vault.path(), &env)
+    }
+
+    /// Run with `text` on standard input.
+    fn run_stdin(&self, line: &[&str], text: &str) -> crate::cli::Outcome {
+        STDIN.with(|s| *s.borrow_mut() = text.to_string());
+        self.run(line)
     }
 
     fn ok(&self, line: &[&str]) -> String {
@@ -514,8 +530,11 @@ fn bad_input_is_refused_before_anything_is_written() {
         assert!(!v.path("Bad.excalidraw").exists(), "{spec}");
     }
     let o = v.run(&["excalidraw:create", "path=Bad", "spec={\"nodez\":[]}"]);
+    assert_eq!(o.code, EXIT_FAIL);
+    assert!(o.stderr.contains("unknown field nodez"), "{}", o.stderr);
+    let o = v.run(&["excalidraw:create", "path=Bad", "spec={not json"]);
     assert_eq!(o.code, EXIT_USAGE);
-    assert!(o.stderr.contains("not valid"));
+    assert!(o.stderr.contains("not valid JSON"));
     // a note is not a drawing; a node that exists cannot be added again
     assert!(v
         .fail(&["excalidraw:read", "path=Note.md"])
@@ -847,4 +866,5 @@ fn previews_are_private_and_old_ones_are_swept() {
     }
 }
 
+mod diagram;
 mod update;

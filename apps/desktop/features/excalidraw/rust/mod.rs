@@ -9,8 +9,8 @@
 //!   bindings, layered layout), reading a drawing back as a spec, and validation;
 //! - `cli.rs`: the five `writer excalidraw:*` commands; `ipc.rs`: `excalidraw:export`, the one
 //!   socket command, answered by the window;
-//! - the `writer-excalidraw` agent skill (`../skills/writer-excalidraw/`), contributed to the
-//!   managed skills.
+//! - the `writer-excalidraw` (commands) and `writer-diagram` (workflow) agent skills (`../skills/`),
+//!   contributed to the managed skills.
 //!
 //! The feature has no Tauri command, event or hook, so no plugin and no capability file: it is a
 //! registry entry that contributes CLI commands, one socket command, a skill and settings. Each
@@ -23,6 +23,7 @@ mod excalidraw_md;
 mod extract;
 mod ipc;
 mod layout;
+mod lint;
 mod lz;
 mod previews;
 
@@ -35,19 +36,28 @@ use tauri::Runtime;
 
 pub struct Excalidraw;
 
-static SKILLS: &[BundledSkill] = &[BundledSkill {
-    name: "writer-excalidraw",
-    files: &[
-        BundledFile {
+static SKILLS: &[BundledSkill] = &[
+    BundledSkill {
+        name: "writer-excalidraw",
+        files: &[
+            BundledFile {
+                rel: "SKILL.md",
+                content: include_str!("../skills/writer-excalidraw/SKILL.md"),
+            },
+            BundledFile {
+                rel: "references/examples.md",
+                content: include_str!("../skills/writer-excalidraw/references/examples.md"),
+            },
+        ],
+    },
+    BundledSkill {
+        name: "writer-diagram",
+        files: &[BundledFile {
             rel: "SKILL.md",
-            content: include_str!("../skills/writer-excalidraw/SKILL.md"),
-        },
-        BundledFile {
-            rel: "references/examples.md",
-            content: include_str!("../skills/writer-excalidraw/references/examples.md"),
-        },
-    ],
-}];
+            content: include_str!("../skills/writer-diagram/SKILL.md"),
+        }],
+    },
+];
 
 impl<R: Runtime> Feature<R> for Excalidraw {
     fn manifest_source(&self) -> &'static str {

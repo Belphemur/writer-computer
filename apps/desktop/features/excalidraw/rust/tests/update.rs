@@ -221,7 +221,7 @@ fn arrows_are_relabelled_cleared_recoloured_and_given_a_first_label() {
     let spec = read_spec(&s);
     let edges = spec["edges"].as_array().unwrap();
     assert!(
-        edges.contains(&json!(["api", "db", "queries"])),
+        edges.contains(&json!({"from": "api", "to": "db", "label": "queries", "color": "red"})),
         "{edges:?}"
     );
     assert!(
@@ -246,7 +246,7 @@ fn arrows_are_relabelled_cleared_recoloured_and_given_a_first_label() {
     assert!(read_spec(&s)["edges"]
         .as_array()
         .unwrap()
-        .contains(&json!(["api", "db"])));
+        .contains(&json!({"from": "api", "to": "db", "color": "red"})));
 }
 
 #[test]
@@ -327,7 +327,10 @@ fn an_unknown_id_names_it_and_a_refused_update_writes_nothing() {
             json!({"edges": [["db", "cache", "x"]]}),
             "no arrow db -> cache",
         ),
-        (json!({"edges": [["api", "db"]]}), "give a label or a color"),
+        (
+            json!({"edges": [["api", "db"]]}),
+            "give a label, color, style",
+        ),
         (
             json!({"nodes": [{"id": "api", "color": "mauve"}]}),
             "unknown color mauve",
@@ -337,7 +340,7 @@ fn an_unknown_id_names_it_and_a_refused_update_writes_nothing() {
             json!({"nodes": [{"id": "api", "shape": "text"}]}),
             "cannot become a text",
         ),
-        (json!({"direction": "TB"}), "direction and groups"),
+        (json!({"direction": "TB"}), "direction, groups and legend"),
         // a good change first, then a bad one: all or nothing
         (
             json!({"nodes": [{"id": "api", "text": "Fine"}, {"id": "nope"}]}),

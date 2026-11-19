@@ -1131,6 +1131,7 @@ mod cli {
                 utc_offset_minutes: 0,
                 launcher: Box::new(launcher),
                 launch_wait: wait,
+                read_stdin: || Ok(String::new()),
             };
             let argv: Vec<String> = line.iter().map(|s| s.to_string()).collect();
             execute(&argv, &self.vault.root, &env)

@@ -443,3 +443,98 @@ fn a_feature_off_only_skips_its_kinds_content_and_on_reads_it_again() {
     assert_eq!(search(&index, "marmot").hits[0].snippets[0].page, Some(2));
     assert_eq!(stored(&index), with_pdf);
 }
+
+fn drawing_with_links(links: &[&str]) -> serde_json::Value {
+    let els: Vec<_> = links
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            serde_json::json!({
+                "id": format!("box{i:05}"), "type": "rectangle", "isDeleted": false, "link": l
+            })
+        })
+        .collect();
+    serde_json::json!({"type": "excalidraw", "version": 2, "appState": {}, "files": {}, "elements": els})
+}
+
+/// A drawing note whose data is plain JSON, with `section` as the text of `## Element Links`.
+fn drawing_note(scene: &serde_json::Value, section: &str) -> String {
+    format!(
+        "---\n\nexcalidraw-plugin: parsed\n\n---\n# Excalidraw Data\n\n## Text Elements\n{section}%%\n## Drawing\n```json\n{scene}\n```\n%%\n"
+    )
+}
+
+#[test]
+fn the_links_on_a_drawings_elements_are_links_of_the_drawing() {
+    let v = V::new();
+    v.write("Notes/Plan.md", "# Plan\n");
+    v.write(
+        "D/Plain.excalidraw",
+        drawing_with_links(&["[[Plan]]", "[[Missing Note]]", ""]).to_string(),
+    );
+    // a drawing note without the plugin's section, and one with it: counted once each
+    v.write(
+        "D/Bare.excalidraw.md",
+        drawing_note(&drawing_with_links(&["[[Plan|the plan]]"]), ""),
+    );
+    v.write(
+        "D/Listed.excalidraw.md",
+        drawing_note(
+            &drawing_with_links(&["[[Plan]]"]),
+            "## Element Links\nbox00000: [[Plan]]\n\n",
+        ),
+    );
+    let index = v.index();
+    index.refresh_blocking().unwrap();
+    let sources = |index: &Index| -> Vec<String> {
+        index
+            .backlinks("Notes/Plan.md")
+            .unwrap()
+            .into_iter()
+            .map(|b| b.source)
+            .collect()
+    };
+    assert_eq!(
+        sources(&index),
+        [
+            "D/Bare.excalidraw.md",
+            "D/Listed.excalidraw.md",
+            "D/Plain.excalidraw"
+        ]
+    );
+    let unresolved = index.unresolved().unwrap();
+    assert!(
+        unresolved
+            .iter()
+            .any(|u| u.target == "Missing Note"
+                && u.sources.contains(&"D/Plain.excalidraw".to_string())),
+        "{unresolved:?}"
+    );
+    // outgoing links of the plain drawing, in order, and nothing for the empty link
+    let out: Vec<String> = index
+        .links("D/Plain.excalidraw")
+        .unwrap()
+        .into_iter()
+        .map(|l| l.raw)
+        .collect();
+    assert_eq!(out, ["Plan", "Missing Note"]);
+
+    // an edit that drops the link drops the edge; a new one adds it
+    v.write(
+        "D/Plain.excalidraw",
+        drawing_with_links(&["[[Other]]"]).to_string(),
+    );
+    v.write("Notes/Other.md", "# Other\n");
+    index.refresh_blocking().unwrap();
+    assert_eq!(
+        sources(&index),
+        ["D/Bare.excalidraw.md", "D/Listed.excalidraw.md"]
+    );
+    let other: Vec<String> = index
+        .backlinks("Notes/Other.md")
+        .unwrap()
+        .into_iter()
+        .map(|b| b.source)
+        .collect();
+    assert_eq!(other, ["D/Plain.excalidraw"]);
+}

@@ -1420,6 +1420,7 @@ mod tests {
                 "excalidraw:add",
                 "excalidraw:update",
                 "excalidraw:read",
+                "excalidraw:lint",
                 "excalidraw:export",
                 "excalidraw:preview",
                 "icon:set",
@@ -1448,7 +1449,10 @@ mod tests {
                 "bases"
             })));
         let skills: Vec<_> = skills().iter().map(|s| s.name).collect();
-        assert_eq!(skills, ["writer-bases", "writer-excalidraw"]);
+        assert_eq!(
+            skills,
+            ["writer-bases", "writer-excalidraw", "writer-diagram"]
+        );
         assert!(index_ddl().is_empty());
         assert_eq!(index_schema_suffix(), "");
         assert!(crate::index::schema_version()
@@ -1456,11 +1460,11 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 20
+            crate::cli::registry::COMMANDS.len() + 21
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),
-            crate::managed_skills::SKILLS.len() + 2
+            crate::managed_skills::SKILLS.len() + 3
         );
     }
 

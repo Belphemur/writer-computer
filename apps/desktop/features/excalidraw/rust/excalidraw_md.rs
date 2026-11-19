@@ -75,6 +75,16 @@ pub struct State {
     pub embedded: BTreeMap<String, String>,
 }
 
+/// The drawing's title: its file name without the drawing suffix.
+pub fn title_of(path: &str) -> String {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    ["excalidraw.md", "excalidraw"]
+        .iter()
+        .find_map(|ext| name.strip_suffix(&format!(".{ext}")))
+        .unwrap_or(name)
+        .to_string()
+}
+
 pub fn empty_scene() -> Value {
     json!({
         "type": "excalidraw",
@@ -128,6 +138,7 @@ struct Layout<'a> {
     fence_close: usize,
     encoding: Encoding,
     text_heading: Option<usize>,
+    links_heading: Option<usize>,
     embedded_heading: Option<usize>,
 }
 
@@ -168,6 +179,7 @@ fn locate(text: &str) -> Result<Layout<'_>, String> {
     Ok(Layout {
         eol,
         text_heading: heading("## Text Elements"),
+        links_heading: heading("## Element Links"),
         embedded_heading: heading("## Embedded Files"),
         lines,
         drawing,
@@ -294,7 +306,14 @@ pub fn parse(text: &str, format: Format) -> Result<Parsed, String> {
 
 // ---------- writing ----------
 
-/// Text elements whose id is longer than [`TEXT_ID_LENGTH`] get a short one (its first eight
+/// An element that carries a link (`[[Note]]` or a URL).
+pub fn link_of(el: &Value) -> Option<&str> {
+    el["link"].as_str().map(str::trim).filter(|l| !l.is_empty())
+}
+
+/// Text elements, and elements with a link (the plugin finds both in the markdown by an
+/// eight-character id: `## Text Elements` and `## Element Links`), whose id is longer than
+/// [`TEXT_ID_LENGTH`] get a short one (its first eight
 /// characters, or the next free variant on a clash, in id order); every reference follows: the
 /// container, bound elements and arrow bindings. The TypeScript twin maps identically.
 pub fn shorten_text_ids(elements: &mut [Value]) {
@@ -304,7 +323,7 @@ pub fn shorten_text_ids(elements: &mut [Value]) {
         .collect();
     let mut long: Vec<String> = elements
         .iter()
-        .filter(|e| e["type"] == "text")
+        .filter(|e| e["type"] == "text" || link_of(e).is_some())
         .filter_map(|e| e["id"].as_str())
         .filter(|id| id.chars().count() > TEXT_ID_LENGTH)
         .map(str::to_string)
@@ -443,6 +462,19 @@ fn text_element_lines(scene: &Value) -> Vec<String> {
     out
 }
 
+/// `## Element Links` as the plugin writes it: `id: link`, a blank line after each, so Obsidian's
+/// graph sees the links of the elements. Empty when no element has a link.
+fn element_link_lines(scene: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for el in elements(scene) {
+        if let Some(link) = link_of(el) {
+            out.push(format!("{}: {link}", el["id"].as_str().unwrap_or("")));
+            out.push(String::new());
+        }
+    }
+    out
+}
+
 fn insert_at(layout: &Layout, before_embedded: bool) -> usize {
     if before_embedded {
         if let Some(h) = layout.embedded_heading {
@@ -511,6 +543,25 @@ pub fn serialize(parsed: &Parsed, next: &State) -> Result<String, String> {
         }
     }
 
+    let links = element_link_lines(&scene);
+    match layout.links_heading {
+        Some(h) => {
+            let end = section_end(&layout.lines, h, layout.drawing);
+            if links.is_empty() {
+                lines.splice(h..end, Vec::<String>::new());
+            } else {
+                lines.splice(h + 1..end, links);
+            }
+        }
+        None if !links.is_empty() => {
+            let at = insert_at(&layout, true);
+            let mut insert = vec!["## Element Links".to_string()];
+            insert.extend(links);
+            lines.splice(at..at, insert);
+        }
+        None => {}
+    }
+
     let texts = text_element_lines(&scene);
     match layout.text_heading {
         Some(h) => {
@@ -550,6 +601,12 @@ pub fn new_drawing_text(format: Format, scene: &Value) -> String {
         texts
     } else {
         format!("{texts}\n")
+    };
+    let links = element_link_lines(&scene).join("\n");
+    let texts = if links.is_empty() {
+        texts
+    } else {
+        format!("{texts}## Element Links\n{links}\n")
     };
     format!(
         "{NEW_FRONT_MATTER}{BANNER}# Excalidraw Data\n\n## Text Elements\n{texts}%%\n## Drawing\n```compressed-json\n{body}\n```\n%%\n"
@@ -800,6 +857,67 @@ mod tests {
         assert!(parse("not json", Format::Plain)
             .unwrap_err()
             .contains("not a drawing"));
+    }
+
+    #[test]
+    fn element_links_are_listed_with_short_ids_like_the_typescript_codec() {
+        let parsed = parse(&read("empty.excalidraw.md"), Format::Md).unwrap();
+        let box_el = |id: &str, link: Value| {
+            json!({"id": id, "type": "rectangle", "x": 0, "y": 0, "width": 10, "height": 10,
+                   "version": 1, "versionNonce": 1, "isDeleted": false, "groupIds": [], "link": link})
+        };
+        let scene = |els: Vec<Value>| {
+            let mut s = parsed.scene.clone();
+            s["elements"] = Value::Array(els);
+            State {
+                scene: s,
+                embedded: parsed.embedded.clone(),
+            }
+        };
+        let out = serialize(
+            &parsed,
+            &scene(vec![
+                box_el("abcdefghijklmnopqrstu", json!("[[Plan]]")),
+                box_el("plain001", Value::Null),
+                box_el("shortid1", json!("[[Other]]")),
+            ]),
+        )
+        .unwrap();
+        assert!(
+            out.contains("## Element Links\nabcdefgh: [[Plan]]\n\nshortid1: [[Other]]\n\n%%\n"),
+            "{out}"
+        );
+        let again = parse(&out, Format::Md).unwrap();
+        let ids: Vec<&str> = elements(&again.scene)
+            .iter()
+            .filter_map(|e| e["id"].as_str())
+            .collect();
+        assert_eq!(ids, ["abcdefgh", "plain001", "shortid1"]);
+        let same = State {
+            scene: again.scene.clone(),
+            embedded: again.embedded.clone(),
+        };
+        assert_eq!(serialize(&again, &same).unwrap(), out);
+        let relinked = serialize(
+            &again,
+            &scene(vec![
+                box_el("abcdefgh", json!("[[Plan B]]")),
+                box_el("plain001", Value::Null),
+                box_el("shortid1", Value::Null),
+            ]),
+        )
+        .unwrap();
+        assert!(relinked.contains("## Element Links\nabcdefgh: [[Plan B]]\n\n%%\n"));
+        assert!(!relinked.contains("shortid1:"));
+        let none = serialize(
+            &parse(&relinked, Format::Md).unwrap(),
+            &scene(vec![
+                box_el("abcdefgh", Value::Null),
+                box_el("plain001", Value::Null),
+            ]),
+        )
+        .unwrap();
+        assert!(!none.contains("Element Links"));
     }
 
     #[test]

@@ -446,6 +446,7 @@ mod tests {
                 utc_offset_minutes: 0,
                 launcher: Box::new(crate::writer_cli::SystemLauncher),
                 launch_wait: std::time::Duration::ZERO,
+                read_stdin: || Ok(String::new()),
             }
         }
 
@@ -615,6 +616,25 @@ mod tests {
             );
             assert!(seen.insert(n.clone()), "two commands make the tool {n}");
         }
+    }
+
+    #[test]
+    fn a_json_parameter_is_taken_as_written_and_stdin_is_not_offered() {
+        let f = Fixture::new();
+        // the model's own JSON, `\n` inside a string included, reaches the parser untouched
+        let spec = r#"{"nodes":[{"id":"a","text":"one\ntwo"}]}"#;
+        let r = f.call("excalidraw_create", json!({"path": "M", "spec": spec}));
+        assert_ne!(r["isError"], json!(true), "{r}");
+        let text = std::fs::read_to_string(f.vault.path().join("M.excalidraw")).unwrap();
+        assert!(text.contains("one\\ntwo"), "{text}");
+        // a vault file works; standard input is the protocol, so `-` is refused
+        f.write("S.json", spec);
+        let r = f.call("excalidraw_create", json!({"path": "N", "spec": "@S.json"}));
+        assert_ne!(r["isError"], json!(true), "{r}");
+        let r = f.call("excalidraw_create", json!({"path": "O", "spec": "-"}));
+        assert_eq!(r["isError"], json!(true), "{r}");
+        assert!(text_of(&r).contains("standard input"), "{}", text_of(&r));
+        assert!(!f.vault.path().join("O.excalidraw").exists());
     }
 
     #[test]

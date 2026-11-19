@@ -35,6 +35,7 @@ fn extract(_path: &Path, bytes: &[u8]) -> Result<Extracted, ExtractError> {
     Ok(Extracted {
         title: None,
         body: text.strip_prefix('\u{feff}').unwrap_or(text).to_string(),
+        links: Vec::new(),
     })
 }
 

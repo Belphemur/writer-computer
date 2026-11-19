@@ -5,7 +5,7 @@
 use super::edges;
 use super::fts::FtsDoc;
 use super::kinds::{self, TextSource};
-use super::note::{content_hash, parse_note, ParsedNote};
+use super::note::{content_hash, parse_note, LinkRow, ParsedNote};
 use super::paths::{is_indexable_rel, rel_to_string};
 use super::resolve::PathIndex;
 use super::{IndexError, Shared};
@@ -59,6 +59,26 @@ struct DocContent {
     hash: Option<i64>,
     title: Option<String>,
     fts: FtsDoc,
+    /// The links the extractor reported (`Extracted::links`), as the note scanner reads them.
+    links: Vec<LinkRow>,
+}
+
+/// The links an extractor reported as rows, parsed by the body scanner like any `[[link]]`.
+fn extracted_links(texts: &[String]) -> Vec<LinkRow> {
+    if texts.is_empty() {
+        return Vec::new();
+    }
+    super::markdown::scan_body(&texts.join("\n"), 1)
+        .links
+        .into_iter()
+        .map(|l| LinkRow {
+            link: l.link,
+            in_fm: false,
+            label: None,
+            line: None,
+            section: None,
+        })
+        .collect()
 }
 
 enum Content {
@@ -143,12 +163,14 @@ fn doc_content(
             hash: Some(content_hash(&bytes)),
             title: out.title,
             fts: extracted_fts(kind, out.body),
+            links: extracted_links(&out.links),
         },
         // named only: an FTS row with the file name and no body
         Err(_) => DocContent {
             hash: None,
             title: None,
             fts: FtsDoc::default(),
+            links: Vec::new(),
         },
     };
     Content::Doc(Box::new(doc))
@@ -236,6 +258,18 @@ fn process_file(
             note.fts.body = text.body;
             note.fts.stored = text.stored;
             note.fts.body_skipped = false;
+            // the links the file's own text already shows (a drawing note lists its element
+            // links under `## Element Links`) are not counted twice
+            let mut shown: Vec<bool> = vec![false; note.links.len()];
+            for l in extracted_links(&out.links) {
+                let at = note.links.iter().enumerate().position(|(i, x)| {
+                    !shown[i] && !x.in_fm && x.link.raw == l.link.raw && x.link.kind == l.link.kind
+                });
+                match at {
+                    Some(i) => shown[i] = true,
+                    None => note.links.push(l),
+                }
+            }
         }
     }
     record(Content::Parsed(Box::new(note), hash))
@@ -412,8 +446,11 @@ fn write_record(
                     |r| r.get(0),
                 )?;
             if !rec.has_fts {
-                // the file lost its kind (a feature or a setting went off): its text goes with it
+                // the file lost its kind (a feature or a setting went off): its text and the links
+                // it carried as a drawing go with it
                 super::fts::delete_doc(conn, id)?;
+                conn.prepare_cached("DELETE FROM edges WHERE src_id = ?1")?
+                    .execute([id])?;
             }
             id
         }
@@ -430,6 +467,9 @@ fn write_record(
                 None => rec.basename.clone(),
             };
             super::fts::write_doc(conn, id, &title_text, &doc.fts, existed)?;
+            conn.prepare_cached("DELETE FROM edges WHERE src_id = ?1")?
+                .execute([id])?;
+            edges::write_edges(conn, id, &rec.path, &doc.links, resolver)?;
             id
         }
         Content::ReadError(msg) => {

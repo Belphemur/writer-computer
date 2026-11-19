@@ -123,8 +123,15 @@ const live = (elements: readonly SceneElement[]) => elements.filter((e) => e.isD
  *  entries by `^` plus exactly eight characters, so a longer id (Excalidraw makes 21) is cut. */
 export const TEXT_ID_LENGTH = 8;
 
+/** The link an element carries (`[[Note]]` or a URL), if any. */
+export function elementLink(el: SceneElement): string | null {
+  return typeof el.link === "string" && el.link.trim() !== "" ? el.link.trim() : null;
+}
+
 /**
- * Text elements whose id is longer than [`TEXT_ID_LENGTH`] get a short one, and every reference
+ * Text elements, and elements that carry a link (the plugin finds both in the markdown by an
+ * eight-character id: `## Text Elements` and `## Element Links`), whose id is longer than
+ * [`TEXT_ID_LENGTH`] get a short one, and every reference
  * to the old id (container, bound elements, arrow bindings) follows. The new id is the old
  * id's first eight characters, so the same drawing always maps the same way and the canvas and
  * the file can be compared after a save; a clash takes the next free variant in id order.
@@ -133,7 +140,7 @@ export function shortenTextIds<T extends SceneElement>(elements: readonly T[]): 
   const taken = new Set(elements.map((e) => e.id));
   const renames = new Map<string, string>();
   const longText = elements
-    .filter((e) => e.type === "text" && e.id.length > TEXT_ID_LENGTH)
+    .filter((e) => (e.type === "text" || elementLink(e) !== null) && e.id.length > TEXT_ID_LENGTH)
     .map((e) => e.id)
     .sort();
   for (const id of longText) {
@@ -178,8 +185,9 @@ interface Layout {
   fenceOpen: number;
   fenceClose: number;
   encoding: Encoding;
-  /** `## Text Elements` and `## Embedded Files`, or -1. */
+  /** `## Text Elements`, `## Element Links` and `## Embedded Files`, or -1. */
   textHeading: number;
+  linksHeading: number;
   embeddedHeading: number;
 }
 
@@ -229,6 +237,7 @@ function locate(text: string): Layout {
     fenceClose,
     encoding,
     textHeading: heading("## Text Elements"),
+    linksHeading: heading("## Element Links"),
     embeddedHeading: heading("## Embedded Files"),
   };
 }
@@ -369,6 +378,17 @@ function textElementLines(elements: readonly SceneElement[]): string[] {
   return out;
 }
 
+/** `## Element Links` as the plugin writes it: `id: link` and a blank line after each, so
+ *  Obsidian's graph sees the links of the elements. Empty when no element has a link. */
+function elementLinkLines(elements: readonly SceneElement[]): string[] {
+  const out: string[] = [];
+  for (const el of elements) {
+    const link = elementLink(el);
+    if (link !== null) out.push(`${el.id}: ${link}`, "");
+  }
+  return out;
+}
+
 /** The plugin writes the scene tab-indented, and compresses that text; the compressed form is
  *  rows of 256 characters, each followed by a blank line. */
 function encodeBody(scene: Scene, encoding: Encoding): string[] {
@@ -430,6 +450,15 @@ export function serializeDrawing(parsed: ParsedDrawing, next: DrawingState): str
     } else {
       lines.splice(sectionInsertAt(layout, false), 0, "## Embedded Files", ...addedLines);
     }
+  }
+
+  const links = elementLinkLines(want.scene.elements);
+  if (layout.linksHeading >= 0) {
+    const end = sectionEnd(layout.lines, layout.linksHeading, layout.drawing);
+    if (links.length === 0) lines.splice(layout.linksHeading, end - layout.linksHeading);
+    else lines.splice(layout.linksHeading + 1, end - layout.linksHeading - 1, ...links);
+  } else if (links.length > 0) {
+    lines.splice(sectionInsertAt(layout, true), 0, "## Element Links", ...links);
   }
 
   const texts = textElementLines(want.scene.elements);

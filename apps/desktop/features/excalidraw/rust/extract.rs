@@ -1,6 +1,8 @@
 //! The `drawing` file kind (ADR 2026-11-18 "let features contribute file kinds and text
 //! extractors to search"): `.excalidraw.md` and plain `.excalidraw` drawings are found by the text
-//! of their elements, read through the codec of `excalidraw_md.rs`.
+//! of their elements, read through the codec of `excalidraw_md.rs`. The links on their elements
+//! (a box that links `[[Note]]`) are reported as links of the drawing (`Extracted::links`), so
+//! backlinks and the graph see them for `.excalidraw` and `.excalidraw.md` alike.
 
 use super::excalidraw_md::{self, Format};
 use crate::code_files as cf;
@@ -33,6 +35,12 @@ fn extract(path: &Path, bytes: &[u8]) -> Result<Extracted, ExtractError> {
     Ok(Extracted {
         title: None,
         body: lines.join("\n"),
+        links: excalidraw_md::elements(&parsed.scene)
+            .iter()
+            .filter(|el| !excalidraw_md::is_deleted(el))
+            .filter_map(excalidraw_md::link_of)
+            .map(str::to_string)
+            .collect(),
     })
 }
 
@@ -73,6 +81,19 @@ mod tests {
         ]));
         let out = extract(Path::new("Arch.excalidraw"), &bytes).unwrap();
         assert_eq!(out.body, "Harbour plan\nsecond label");
+    }
+
+    #[test]
+    fn the_links_of_live_elements_are_reported_as_links_of_the_drawing() {
+        let bytes = plain(json!([
+            {"id":"a","type":"rectangle","link":"[[Plan]]"},
+            {"id":"b","type":"rectangle","link":"  "},
+            {"id":"c","type":"rectangle","link":null},
+            {"id":"d","type":"text","text":"x","link":"[[Other|alias]]"},
+            {"id":"e","type":"rectangle","link":"[[Gone]]","isDeleted":true},
+        ]));
+        let out = extract(Path::new("Arch.excalidraw"), &bytes).unwrap();
+        assert_eq!(out.links, ["[[Plan]]", "[[Other|alias]]"]);
     }
 
     #[test]

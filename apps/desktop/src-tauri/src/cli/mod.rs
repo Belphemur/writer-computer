@@ -118,6 +118,15 @@ pub struct Env {
     pub launcher: Box<dyn Launcher>,
     /// How long `open --launch` waits for the app it started to open its socket.
     pub launch_wait: std::time::Duration,
+    /// Standard input as text, for a JSON parameter written `-`.
+    pub read_stdin: fn() -> std::io::Result<String>,
+}
+
+fn system_stdin() -> std::io::Result<String> {
+    use std::io::Read;
+    let mut text = String::new();
+    std::io::stdin().read_to_string(&mut text)?;
+    Ok(text)
 }
 
 impl Env {
@@ -128,6 +137,7 @@ impl Env {
             utc_offset_minutes: local_utc_offset_minutes(),
             launcher: Box::new(crate::writer_cli::SystemLauncher),
             launch_wait: std::time::Duration::from_secs(20),
+            read_stdin: system_stdin,
         }
     }
 
@@ -378,7 +388,8 @@ pub fn execute_invocation(inv: &args::Invocation, cwd: &Path, env: &Env) -> Outc
         };
     }
     let ctx = Ctx::new(env, cwd, inv.vault.clone());
-    let result = (spec.run)(&ctx, &parsed, spec);
+    let result = resolve_json_inputs(&ctx, inv.stdin_allowed, spec, parsed)
+        .and_then(|parsed| (spec.run)(&ctx, &parsed, spec));
     let mut stderr: String = ctx
         .take_warnings()
         .into_iter()
@@ -420,6 +431,42 @@ pub fn execute_invocation(inv: &args::Invocation, cwd: &Path, env: &Env) -> Outc
             }
         }
     }
+}
+
+/// The JSON parameters of `spec` given as `@<vault file>` (read through the vault confinement:
+/// never outside the vault, never `.obsidian`) or `-` (standard input, command line only) become
+/// the text they name. A JSON document never starts with `@` or is a lone `-`, so neither is
+/// ambiguous.
+fn resolve_json_inputs(
+    ctx: &Ctx,
+    stdin_allowed: bool,
+    spec: &registry::CommandSpec,
+    mut args: args::Args,
+) -> Result<args::Args, CliError> {
+    for param in spec.params.iter().filter(|p| p.json) {
+        let Some(value) = args.get(param.name) else {
+            continue;
+        };
+        let text = if value == "-" {
+            if !stdin_allowed {
+                return Err(CliError::Usage(format!(
+                    "{}=- (standard input) is not available here; give the JSON itself or {}=@<file>",
+                    param.name, param.name
+                )));
+            }
+            (ctx.env.read_stdin)()?
+        } else if let Some(path) = value.strip_prefix('@') {
+            let c = ctx.confine(path.trim())?;
+            if !c.abs.is_file() {
+                return Err(CliError::fail(format!("{}: no such file", c.rel)));
+            }
+            vault_ops::read_text(&c.abs)?
+        } else {
+            continue;
+        };
+        args.set(param.name, text);
+    }
+    Ok(args)
 }
 
 /// Binary entry: run, write stdout/stderr, return the exit code.

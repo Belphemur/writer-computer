@@ -77,6 +77,7 @@ impl T {
             utc_offset_minutes: 0,
             launcher: Box::new(NoLauncher),
             launch_wait: std::time::Duration::ZERO,
+            read_stdin: || Ok(String::new()),
         };
         let argv: Vec<String> = line.iter().map(|s| s.to_string()).collect();
         execute(&argv, cwd, &env)

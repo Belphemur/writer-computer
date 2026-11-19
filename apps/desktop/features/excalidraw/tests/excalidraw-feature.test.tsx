@@ -81,10 +81,11 @@ describe("manifest contract", () => {
       "excalidraw:add",
       "excalidraw:update",
       "excalidraw:read",
+      "excalidraw:lint",
       "excalidraw:export",
       "excalidraw:preview",
     ]);
-    expect(manifest.rust.skills).toEqual(["writer-excalidraw"]);
+    expect(manifest.rust.skills).toEqual(["writer-excalidraw", "writer-diagram"]);
   });
 
   it("has its kill switch in the shared schema and every setting prefixed in the fragment", () => {

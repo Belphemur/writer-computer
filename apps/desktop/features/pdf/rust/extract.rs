@@ -94,6 +94,7 @@ fn extract(_path: &Path, bytes: &[u8]) -> Result<Extracted, ExtractError> {
     Ok(Extracted {
         title: info_title(&doc),
         body,
+        links: Vec::new(),
     })
 }
 

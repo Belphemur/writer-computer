@@ -353,6 +353,7 @@ mod cli_tests {
                 utc_offset_minutes: 0,
                 launcher: Box::new(crate::writer_cli::SystemLauncher),
                 launch_wait: std::time::Duration::ZERO,
+                read_stdin: || Ok(String::new()),
             };
             let argv: Vec<String> = line.iter().map(|s| s.to_string()).collect();
             execute(&argv, self.vault.path(), &env)

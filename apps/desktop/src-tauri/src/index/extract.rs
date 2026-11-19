@@ -98,6 +98,7 @@ mod tests {
         Ok(Extracted {
             title: None,
             body: String::from_utf8_lossy(b).into_owned(),
+            links: Vec::new(),
         })
     }
     fn kind() -> FileKind {

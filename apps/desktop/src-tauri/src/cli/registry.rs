@@ -12,6 +12,9 @@ pub struct ParamSpec {
     pub name: &'static str,
     pub required: bool,
     pub desc: &'static str,
+    /// A JSON document: taken as written (no `\n` unescaping, no quote stripping), and `@<vault
+    /// file>` or `-` (stdin) stand for its text (`cli/mod.rs`, `resolve_json_inputs`).
+    pub json: bool,
 }
 
 pub struct CommandSpec {
@@ -37,6 +40,23 @@ pub(crate) const fn p(name: &'static str, desc: &'static str) -> ParamSpec {
         name,
         required: false,
         desc,
+        json: false,
+    }
+}
+
+/// An optional JSON-valued parameter (see [`ParamSpec::json`]).
+pub(crate) const fn pj(name: &'static str, desc: &'static str) -> ParamSpec {
+    ParamSpec {
+        json: true,
+        ..p(name, desc)
+    }
+}
+
+/// A required JSON-valued parameter.
+pub(crate) const fn reqj(name: &'static str, desc: &'static str) -> ParamSpec {
+    ParamSpec {
+        json: true,
+        ..req(name, desc)
     }
 }
 
@@ -45,6 +65,7 @@ pub(crate) const fn req(name: &'static str, desc: &'static str) -> ParamSpec {
         name,
         required: true,
         desc,
+        json: false,
     }
 }
 

@@ -3,7 +3,10 @@
 //!
 //! Parameters are `name=value` (the shell handles quoting; one pair of
 //! surrounding quotes left in a value is stripped), flags are bare words, `\n`
-//! and `\t` inside a value are a newline and a tab (`\\` is a backslash).
+//! and `\t` inside a value are a newline and a tab (`\\` is a backslash). A JSON-valued
+//! parameter (`ParamSpec::json`, e.g. `spec=`) is the exception: it reaches its parser as written,
+//! so JSON's own escapes (`\n` inside a string) are the only ones; `@<vault file>` and `-` (stdin)
+//! stand for its text (resolved in `cli/mod.rs`).
 
 use super::registry::CommandSpec;
 use super::CliError;
@@ -18,6 +21,9 @@ pub struct Invocation {
     pub positional: Vec<String>,
     pub copy: bool,
     pub help: bool,
+    /// `-` may read standard input: set by the command line, never by the MCP server (whose
+    /// standard input is the protocol).
+    pub stdin_allowed: bool,
 }
 
 /// Flags written with two dashes (`--launch`), not as a bare word. The parser knows only these
@@ -107,6 +113,9 @@ pub fn parse(tokens: &[String]) -> Result<Invocation, CliError> {
         )));
     }
     inv.command = cmd.clone();
+    inv.stdin_allowed = true;
+    let spec = super::registry::find(cmd);
+    let is_json = |n: &str| spec.is_some_and(|s| s.params.iter().any(|p| p.name == n && p.json));
     for tok in it {
         if tok == "--copy" {
             inv.copy = true;
@@ -121,8 +130,12 @@ pub fn parse(tokens: &[String]) -> Result<Invocation, CliError> {
             if inv.params.iter().any(|(k, _)| k == n) {
                 return Err(CliError::Usage(format!("parameter {n}= given twice")));
             }
-            inv.params
-                .push((n.to_string(), strip_quotes(&unescape(v)).to_string()));
+            let value = if is_json(n) {
+                v.to_string()
+            } else {
+                strip_quotes(&unescape(v)).to_string()
+            };
+            inv.params.push((n.to_string(), value));
         } else if let Some(name) = tok.strip_prefix("--").filter(|n| LONG_FLAGS.contains(n)) {
             inv.flags.push(name.to_string());
         } else if tok.starts_with('-') {
@@ -161,6 +174,14 @@ impl Args {
             .iter()
             .find(|(k, _)| k == name)
             .map(|(_, v)| v.as_str())
+    }
+
+    /// Replace (or add) a parameter's value: a JSON input resolved from `@file` or stdin.
+    pub fn set(&mut self, name: &str, value: String) {
+        match self.params.iter_mut().find(|(k, _)| k == name) {
+            Some(slot) => slot.1 = value,
+            None => self.params.push((name.to_string(), value)),
+        }
     }
 
     pub fn flag(&self, name: &str) -> bool {
@@ -272,6 +293,25 @@ mod tests {
         assert_eq!(i.params[1].1, "Quoted Name");
         assert_eq!(unescape("a\\\\nb"), "a\\nb");
         assert_eq!(unescape("C:\\dir"), "C:\\dir");
+    }
+
+    #[test]
+    fn a_json_parameter_reaches_the_parser_as_written() {
+        let tokens = vec![
+            "excalidraw:create".to_string(),
+            "path=A".to_string(),
+            r#"spec={"nodes":[{"id":"a","text":"one\ntwo C:\\x"}]}"#.to_string(),
+        ];
+        let i = parse(&tokens).unwrap();
+        assert_eq!(
+            i.params[1].1,
+            r#"{"nodes":[{"id":"a","text":"one\ntwo C:\\x"}]}"#
+        );
+        serde_json::from_str::<serde_json::Value>(&i.params[1].1).unwrap();
+        // the same text in an ordinary parameter is unescaped, and the line is not a JSON read
+        let plain = parse(&["create".into(), r"content=a\nb".into()]).unwrap();
+        assert_eq!(plain.params[0].1, "a\nb");
+        assert!(i.stdin_allowed);
     }
 
     #[test]

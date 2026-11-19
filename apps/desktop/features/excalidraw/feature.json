@@ -10,12 +10,13 @@
     "note": "Excalidraw (several MB with its fonts) loads when the first drawing opens or a note shows an embedded drawing; nothing runs in the background. The writer excalidraw commands and the writer-excalidraw skill are read at launch."
   },
   "rust": {
-    "skills": ["writer-excalidraw"],
+    "skills": ["writer-excalidraw", "writer-diagram"],
     "cliCommands": [
       "excalidraw:create",
       "excalidraw:add",
       "excalidraw:update",
       "excalidraw:read",
+      "excalidraw:lint",
       "excalidraw:export",
       "excalidraw:preview"
     ],

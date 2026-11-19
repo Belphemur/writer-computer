@@ -19,7 +19,7 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 - `key=value` parameters. Quote values with spaces in the shell: `writer create name="Meeting notes"`. Parameter names are case-sensitive and a repeated parameter is an error.
 - Flags are bare words (`total`, `verbose`, `case`, `overwrite`, ...), never `--flag`. The only `--` options are `--copy` (also copy stdout to the clipboard), `--help` and, on `open`, `--launch`.
 - `file=<name>` resolves like a wikilink, by **file name** (never by the note's `title:` property or first heading): no folder, no extension (`file=Recipe`), case-insensitive. With several files of that name the closest folder wins, then the shortest path, then alphabetical order; use `path=` to be exact. Links, backlinks, unresolved links and Bases `link()` all use this same rule. `path=<path>` is exact from the vault root (`path=Projects/Recipe.md`). Give one of them, not both. There is no "active file": commands that act on a file need `file=` or `path=`.
-- In `content=` the escapes `\n` and `\t` become a newline and a tab; `\\` is a backslash.
+- In `content=` the escapes `\n` and `\t` become a newline and a tab; `\\` is a backslash. A JSON-valued parameter (`spec=` of the `excalidraw:` commands) is taken as written: only JSON's own escapes apply, and `spec=@Specs/a.json` (a vault file) or `spec=-` (standard input) stand for its text.
 - One pair of quotes surrounding a whole value is stripped after the shell has run. This matters for search phrases, see the `writer-search` skill.
 - `writer help` lists every command, `writer help <command>` (or `writer <command> --help`) shows its parameters, flags and formats. That output is authoritative if it ever differs from these notes.
 
@@ -57,7 +57,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Agent      | `project:archive`, `project:unarchive`                                                                                                                                              |
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                                                                  |
 | Dataview   | `dql`                                                                                                                                                                               |
-| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:export`, `excalidraw:preview`                                                            |
+| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:lint`, `excalidraw:export`, `excalidraw:preview`                                         |
 | Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                                                               |
 | Spelling   | `check`                                                                                                                                                                             |
 
