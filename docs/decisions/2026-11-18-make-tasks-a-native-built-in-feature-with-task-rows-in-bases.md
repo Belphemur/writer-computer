@@ -36,7 +36,7 @@ Chosen option: **A**.
 4. **Bases over tasks** (core Bases engine): a base may set `rows: tasks` (a Writer extension key in `.base`; default `files`; Obsidian compatibility not required, by the user's choice). Rows are tasks with properties `task.description`, `task.status`, `task.done`, `task.due`, `task.scheduled`, `task.start`, `task.created`, `task.priority`, `task.recurrence`, `task.urgency` (Tasks' weighted score), `task.tags`, `task.line`, plus the file's (`file.*`, `note.*`), so filters, sorts, groups, formulas and every view type work, and `![[Tasks.base]]` embeds it. Checkboxes in task rows toggle the source through the Rust write path. The Dataview feature's `TASK` queries run on the same rows.
 5. **Tasks feature** (`apps/desktop/features/tasks/`, kill switch `features.tasks.enabled`, default on):
    - Editor: clicking a checkbox uses the Rust toggle; custom statuses cycle; autocomplete after a signifier or `due::` (dates, `today`, `tomorrow`, weekdays, priorities, recurrence phrases); a small edit popover (due, scheduled, start, priority, recurrence) from the task's context menu.
-   - Tasks page (a page kind): Today, Upcoming, Overdue, No date, and By folder, each a built-in base definition over `rows: tasks` rendered by the Bases view; quick add writes to the daily note or a chosen note (setting `tasks.inbox`).
+   - Tasks page (a page kind): Today, Upcoming, Overdue, No date, and By folder, each a built-in base definition over `rows: tasks` rendered by the Bases view; quick add writes to the note named by the setting `tasks.inbox` (default `Tasks.md` at the vault root, created on first use; Writer has no daily notes yet, and a later daily-notes feature may offer "Today's daily note" as a choice).
    - Agents and CLI: `writer tasks` (a base-style filter grammar over task rows), `task:add`, `task:done`, `task:edit` (Rust), documented in the `writer-cli` skill.
    - Existing ```` ```tasks ```` query blocks are not executed in v1; they show a small "Tasks query" card with "Convert to Base" (the user, 2026-11-18): the query (filters, sort, group, limit, layout) is lowered to a `rows: tasks` base, written as a `.base` and, on confirm, the block is replaced with `![[…base]]`; an instruction that does not map (e.g. `filter by function`) is named and the block is left as is.
    - Plugin coexistence: if the Obsidian Tasks plugin is enabled in the plugin host, a one-time prompt offers to disable it in Writer (never touching `.obsidian`).
@@ -64,7 +64,7 @@ Chosen option: **A**.
 
 - [ ] A vault's Tasks-format tasks show their due dates and priorities in a `rows: tasks` base; checking one writes the done date and the next recurrence.
 - [ ] `![[Tasks.base]]` embeds a task base in a note.
-- [ ] The Tasks page shows Today, Upcoming, Overdue, No date and By folder.
+- [ ] The Tasks page shows Today, Upcoming, Overdue, No date and By folder; quick add appends to `Tasks.md` (created if missing).
 - [ ] `writer task:add` / `task:done` change one line only.
 - [ ] "Convert to Base" turns a ```` ```tasks ```` block into a working task base.
 
