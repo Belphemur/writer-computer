@@ -30,7 +30,7 @@ Chosen option: **A**.
 
 1. **Feature**: `apps/desktop/features/spellcheck/` (kill switch `features.spellcheck.enabled`, default on; settings fragment), with the engine Tauri-free in `src-tauri/src/spellcheck/` so the CLI shares it.
 2. **Dependencies** (new, each pinned exactly; confirmed with the user before install):
-   - `harper-core`: the newest release at least two weeks old at install time (3.0.x as of 2026-11-18; the project releases weekly, so upgrades are deliberate).
+   - `harper-core` 3.2.0 (2026-11-13), chosen by the user over the two-week-old rule (the user, 2026-11-18: "Take 3.2.0"); the project releases weekly, so upgrades are deliberate.
    - `spellbook` 0.4.2.
    - `lingua` 1.8.0 with `default-features = false` and only the `english` and `french` features, built with `with_low_accuracy_mode()` to keep it small (the user, 2026-11-18: "keep things small"); adding a detection language is a build change. The binary and memory cost is measured in the release build and recorded in the spec.
 3. **Checker interface** (Rust): `Checker::check(text, lang, ctx) -> Vec<Finding>`, `Finding { start, end, kind: Spelling | Grammar | Style, message, replacements, rule_id, provider }`, offsets in UTF-16 code units for the editor (one conversion point). Providers:
