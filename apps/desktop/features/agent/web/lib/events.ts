@@ -112,6 +112,7 @@ export const AGENT_EVENT_TYPES = [
   "session-ended",
   "session-reloaded",
   "steer-undelivered",
+  "message-received",
   "subagent-message",
   "subagent-started",
   "subagent-status",

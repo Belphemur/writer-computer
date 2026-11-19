@@ -1,0 +1,119 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000101",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q9",
+    "messageId": "msg_q7",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "{\"command\": \"sleep 12"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "\", \"description\": \"S"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "leep for 12 secon"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "ds"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q9",
+    "input": {
+      "command": "sleep 12",
+      "description": "Sleep for 12 seconds"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 82,
+    "cacheReadTokens": 13942,
+    "cacheCreationTokens": 7009,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q9",
+    "output": "(Bash completed with no output)",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q27",
+    "blockIndex": 0,
+    "text": "DONE"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_q27",
+    "blockIndex": 0,
+    "text": "DONE"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 5,
+    "cacheReadTokens": 20951,
+    "cacheCreationTokens": 20048,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 87,
+    "cacheReadTokens": 34893,
+    "cacheCreationTokens": 27057,
+    "costUsd": 0.0058042300000000005,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 15333,
+    "apiDurationMs": 1566,
+    "numTurns": 2,
+    "isError": false,
+    "result": "DONE",
+    "sessionId": "00000000-0000-4000-8000-000000000101",
+    "errors": []
+  }
+]

@@ -71,13 +71,16 @@ export type ToolBlock = {
   permission: ToolPermission | null;
 };
 
-/** A message the user sent into the running turn (a steer), at the point of the timeline where it
- *  was sent. */
+/** A message the user sent into the running turn, at the point of the timeline where it landed: a
+ *  steer (Cmd+Enter, it cut the step, shown with the "Steer" mark), or a plain line the CLI injected
+ *  after a tool result (`injected`, no mark, nothing interrupted). */
 export type SteerBlock = {
   kind: "steer";
   /** `steer:<messageId>` */
   id: string;
   message: UserMessage;
+  /** A queued line the CLI took at a tool boundary (`message-received`), not a steer. */
+  injected?: boolean;
   /** The CLI never acknowledged it (`steer-undelivered`): shown with a Retry button. */
   undelivered?: boolean;
 };

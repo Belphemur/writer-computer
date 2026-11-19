@@ -264,7 +264,16 @@ const toolStatusOf = (outcome: "ok" | "error" | "rejected"): ToolBlock["status"]
 // ---------------------------------------------------------------------------------------------
 // The reducer
 
-export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.now()): Chat {
+/** The message a `message-received` receipt names (the store keeps the lines it wrote). */
+export type SentLine = { text: string; context: ContextRef[] };
+export type LineLookup = (messageId: string) => SentLine | undefined;
+
+export function reduceEvent(
+  chat: Chat,
+  event: AgentEvent,
+  now: number = Date.now(),
+  lines?: LineLookup,
+): Chat {
   switch (event.type) {
     case "session-started": {
       const hasTurn = isRunning(chat.turns[chat.turns.length - 1]);
@@ -623,6 +632,11 @@ export function reduceEvent(chat: Chat, event: AgentEvent, now: number = Date.no
       return found ? { ...chat, turns, localNotice: STEER_UNDELIVERED_TEXT } : chat;
     }
 
+    case "message-received": {
+      const line = lines?.(event.messageId);
+      return line ? placeReceived(chat, { messageId: event.messageId, ...line }, now) : chat;
+    }
+
     case "session-reloaded":
       return {
         ...chat,
@@ -640,9 +654,14 @@ export const reloadedNotice = (reason: string | null | undefined): string =>
   reason ? `Session reloaded: ${reason}` : "Session reloaded";
 
 /** Folds a batch (one animation frame) into the chat. */
-export function reduceEvents(chat: Chat, events: readonly AgentEvent[], now?: number): Chat {
+export function reduceEvents(
+  chat: Chat,
+  events: readonly AgentEvent[],
+  now?: number,
+  lines?: LineLookup,
+): Chat {
   let next = chat;
-  for (const event of events) next = reduceEvent(next, event, now);
+  for (const event of events) next = reduceEvent(next, event, now, lines);
   return next;
 }
 
@@ -701,6 +720,27 @@ export function appendSteer(
     block,
   );
   return { ...chat, turns, pendingPermissions: [], state: "running", localNotice: null };
+}
+
+/** The CLI took a message written while a turn ran (its echo): inside the running turn, as a card
+ *  at the point the CLI injected it (after a tool result; nothing is interrupted), or, when the
+ *  turn had ended, as the user card of the turn it starts. */
+export function placeReceived(
+  chat: Chat,
+  msg: { messageId: MessageId; text: string; context: ContextRef[] },
+  now: number,
+): Chat {
+  const last = chat.turns[chat.turns.length - 1];
+  if (!isRunning(last)) return appendUserTurn(chat, msg, now, true);
+  const block = {
+    kind: "steer" as const,
+    id: `steer:${msg.messageId}`,
+    message: { ...msg, ts: now },
+    injected: true,
+  };
+  const turns = chat.turns.slice();
+  turns[turns.length - 1] = addBlock(last, block);
+  return { ...chat, turns };
 }
 
 /** The user pressed stop: wait for `turn-finished`. */

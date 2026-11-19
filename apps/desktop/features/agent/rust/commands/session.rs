@@ -173,6 +173,48 @@ pub async fn agent_steer<R: Runtime>(
     .await
 }
 
+/// A message sent with Enter while a turn runs: written to the CLI at once as a plain line, which
+/// it injects after the next tool result or runs after the turn (spec 3.13). `message_id` is the
+/// receipt id the CLI echoes (`message-received`). Where no turn can take it, an ordinary send.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_queue<R: Runtime>(
+    chat_id: ChatId,
+    message_id: MessageId,
+    text: String,
+    context: Vec<ContextRef>,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<(), AppError> {
+    root_of(&app, &webview)?;
+    let label = webview.label().to_string();
+    blocking(move || {
+        sessions(&app)
+            .queue_line(&label, &chat_id, &message_id, text, &context)
+            .map_err(rejected)
+    })
+    .await
+}
+
+/// Takes a message written by `agent_queue` back before the CLI took it: `true` when it was still
+/// waiting and will never run, `false` when the CLI already took it.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_unqueue<R: Runtime>(
+    chat_id: ChatId,
+    message_id: MessageId,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<bool, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        sessions(&app)
+            .unqueue(&label, &chat_id, &message_id)
+            .map_err(rejected)
+    })
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_cancel<R: Runtime>(

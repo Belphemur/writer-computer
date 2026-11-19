@@ -17,9 +17,10 @@
 use super::binary::is_older_than_verified;
 use super::changes::{is_edit_tool, is_shell_tool, ChangeStore, ClosedTurn};
 use super::claude_stream::{
-    build_args, encode_control_error, encode_interrupt, encode_permission_allow,
-    encode_permission_deny, encode_set_model, encode_set_permission_mode, encode_steer_message,
-    encode_user_message, updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
+    build_args, encode_cancel_queued, encode_control_error, encode_interrupt,
+    encode_permission_allow, encode_permission_deny, encode_queued_message, encode_set_model,
+    encode_set_permission_mode, encode_steer_message, encode_user_message,
+    parse_cancel_queued_response, updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
 };
 use super::config_sync::{self, Decision, McpWatch, Msg, ProbeTarget, Reason, StaleView};
 use super::env;
@@ -155,10 +156,41 @@ impl ReloadWhy {
     }
 }
 
-/// A steer written to the running process: its receipt id and the message, kept until echoed.
-struct Steer {
+/// How a message was written while a turn runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineKind {
+    /// `priority:"now"`: the CLI aborts the running step and starts this message's turn (3.13).
+    Steer,
+    /// A plain line: the CLI injects it after the next tool result, or runs it after the turn.
+    Queued,
+}
+
+/// A message written to the running process: its receipt id and the message, kept until the CLI
+/// echoes it (`MapOutput::user_echo`).
+struct Unechoed {
     uuid: String,
     out: Outgoing,
+    kind: LineKind,
+    /// The receipt watchdog runs (`Session::watch_receipt`). A steer's starts at the write; a
+    /// queued line's when the turn ended without taking it (it may wait as long as a tool runs).
+    watching: bool,
+}
+
+/// A `cancel_async_message` request in flight: the line it takes back and who waits for the
+/// answer (`Session::unqueue`).
+struct CancelWait {
+    uuid: String,
+    answer: Sender<bool>,
+}
+
+/// The receipt id of a message: its id when that is a uuid (the id the UI keys the card by), else
+/// a fresh one.
+fn receipt_id(message_id: &str) -> String {
+    if uuid::Uuid::parse_str(message_id).is_ok() {
+        message_id.to_string()
+    } else {
+        uuid::Uuid::new_v4().to_string()
+    }
 }
 
 struct PendingPerm {
@@ -228,15 +260,17 @@ struct Inner {
     turn_active: bool,
     queue: VecDeque<Outgoing>,
     inflight: Vec<Outgoing>,
-    /// Steers written mid-turn (their uuids) that the CLI has not acknowledged yet: it echoes a
-    /// user message back (`MapOutput::user_echo`) when it takes it, at a tool boundary inside the
-    /// running turn or as the start of the next one. While any is unacknowledged, a normal end of
-    /// turn is not the end of the work: the CLI starts the steer's turn by itself.
+    /// Messages written mid-turn (steers and queued lines) that the CLI has not acknowledged yet:
+    /// it echoes a user message back (`MapOutput::user_echo`) when it takes it, at a tool boundary
+    /// inside the running turn or as the start of the next one. While any is unacknowledged, a
+    /// normal end of turn is not the end of the work: the CLI starts that message's turn by itself.
     /// Each keeps its message: a planned restart (reload, resume) that kills the process before
     /// the receipt arrives re-sends it to the new process (`on_exit`), so a reload never loses it.
-    steers: Vec<Steer>,
-    /// The first turn ended while a steer was unacknowledged: `turn_active` is held for it.
-    steer_hold: bool,
+    unechoed: Vec<Unechoed>,
+    /// The first turn ended while a message was unacknowledged: `turn_active` is held for it.
+    echo_hold: bool,
+    /// `cancel_async_message` requests waiting for their answer, by request id.
+    cancel_waits: HashMap<String, CancelWait>,
     seed: Option<String>,
     respawns: u8,
     fallback_used: bool,
@@ -436,8 +470,9 @@ impl Session {
                 turn_active: false,
                 queue: VecDeque::new(),
                 inflight: Vec::new(),
-                steers: Vec::new(),
-                steer_hold: false,
+                unechoed: Vec::new(),
+                echo_hold: false,
+                cancel_waits: HashMap::new(),
                 seed: None,
                 respawns: 0,
                 fallback_used: false,
@@ -774,7 +809,14 @@ impl Session {
             }
             let out = g.mapper.map_line(line);
             if let Some(uuid) = &out.user_echo {
-                g.steers.retain(|s| s.uuid != *uuid);
+                // the receipt: the CLI took the message (at a tool boundary or as its next turn)
+                if let Some(i) = g.unechoed.iter().position(|u| u.uuid == *uuid) {
+                    if g.unechoed.remove(i).kind == LineKind::Queued {
+                        self.log.push(AgentEvent::MessageReceived {
+                            message_id: uuid.clone(),
+                        });
+                    }
+                }
             }
             if let Some(id) = out.unsupported_control_request {
                 // never leave the CLI waiting
@@ -1005,22 +1047,24 @@ impl Session {
             }
             AgentEvent::TurnFinished { reason, .. } => {
                 // A steer aborts the running turn, so `interrupted` is its own doing; the user's stop
-                // (`cancel`) and any failure forget the steers.
+                // (`cancel`) and any failure forget what was written.
                 if !matches!(
                     reason,
                     TurnFinishReason::Completed | TurnFinishReason::Interrupted
                 ) {
-                    g.steers.clear();
+                    self.forget_unechoed(g);
                 }
-                if !g.steers.is_empty() {
-                    // The steer cut this turn short (or waited for its end): the CLI starts the
-                    // steer's turn by itself. Still working; nothing flushes until that turn ends.
-                    g.steer_hold = true;
+                if !g.unechoed.is_empty() {
+                    // The steer cut this turn short, or a queued line found no tool boundary
+                    // left: the CLI starts that message's turn by itself. Still working; nothing
+                    // flushes until that turn ends.
+                    g.echo_hold = true;
                     g.last_activity = Instant::now();
+                    self.watch_unwatched(g);
                     self.log.push(ev);
                     return;
                 }
-                g.steer_hold = false;
+                g.echo_hold = false;
                 g.turn_active = false;
                 g.inflight.clear();
                 g.respawns = 0;
@@ -1068,6 +1112,18 @@ impl Session {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
             return;
         };
+        if let Some((request, cancelled)) = parse_cancel_queued_response(line) {
+            if let Some(wait) = g.cancel_waits.remove(&request) {
+                if cancelled {
+                    g.unechoed.retain(|u| u.uuid != wait.uuid);
+                    g.inflight
+                        .retain(|o| o.receipt.as_deref() != Some(wait.uuid.as_str()));
+                    self.release_hold(g);
+                }
+                let _ = wait.answer.send(cancelled);
+                return;
+            }
+        }
         let resp = v.get("response");
         let id = resp
             .and_then(|r| r.get("request_id"))
@@ -1145,11 +1201,21 @@ impl Session {
             g.ready = false;
             g.pid = None;
             // written, never acknowledged: a planned restart sends them again (below)
-            let unacked = std::mem::take(&mut g.steers);
-            g.steer_hold = false;
+            let unacked = std::mem::take(&mut g.unechoed);
+            g.cancel_waits.clear();
+            g.echo_hold = false;
             self.live.store(false, Ordering::SeqCst);
             self.proc_cell.store(0, Ordering::SeqCst);
             let closing = g.closing.take();
+            // Anything but a planned restart forgets a queued line: the chip learns it is gone.
+            let replayable = matches!(closing, Some(Closing::Restart) | Some(Closing::Idle));
+            if !replayable {
+                for u in unacked.iter().filter(|u| u.kind == LineKind::Queued) {
+                    self.log.push(AgentEvent::SteerUndelivered {
+                        message_id: u.uuid.clone(),
+                    });
+                }
+            }
             let mid_turn = g.turn_active || !g.pending.is_empty();
             let init_seen = g.init_seen;
             let stderr = String::from_utf8_lossy(&g.stderr).to_ascii_lowercase();
@@ -1186,8 +1252,9 @@ impl Session {
                 Some(Closing::Restart) | Some(Closing::Idle) => {
                     g.turn_active = false;
                     g.state = AgentSessionState::Idle;
-                    // The restart is Writer's own doing, so a steer the process never acknowledged
-                    // goes to the new one, once (the same echo that settles a steer decides).
+                    // The restart is Writer's own doing, so a message the process never acknowledged
+                    // goes to the new one, once (the same echo that settles it decides; a queued
+                    // line keeps its receipt id, so its chip still resolves).
                     // A message may also be waiting, or a reload asked for the new process.
                     let replay: Vec<Outgoing> = unacked.into_iter().map(|s| s.out).collect();
                     g.inflight.clear();
@@ -1394,14 +1461,28 @@ impl Session {
         g.inflight.push(out.clone());
         let sent = match g.seed.take() {
             Some(seed) => format!("{seed}\n\n{}", out.text),
-            None => out.text,
+            None => out.text.clone(),
         };
         g.turn_active = true;
         g.last_activity = Instant::now();
         if g.state == AgentSessionState::Idle || g.state == AgentSessionState::Reconnecting {
             g.state = AgentSessionState::Running;
         }
-        self.write(encode_user_message(&sent, &out.files));
+        match &out.receipt {
+            // a queued line sent again (a restart replay, or no turn to join): the echo is its
+            // receipt, so it is tracked like a line written mid-turn
+            Some(uuid) => {
+                g.unechoed.push(Unechoed {
+                    uuid: uuid.clone(),
+                    out: out.clone(),
+                    kind: LineKind::Queued,
+                    watching: true,
+                });
+                self.watch_receipt(g.live_gen, uuid);
+                self.write(encode_queued_message(&sent, &out.files, uuid));
+            }
+            None => self.write(encode_user_message(&sent, &out.files)),
+        }
     }
 
     // -------------------------------------------------------------- commands
@@ -1452,60 +1533,202 @@ impl Session {
         out: Outgoing,
         message_id: &str,
     ) -> Result<(), SpawnError> {
-        let gen = {
+        let Some((gen, uuid)) = self.write_mid_turn(out.clone(), message_id, LineKind::Steer)?
+        else {
+            return self.send(out);
+        };
+        self.watch_receipt(gen, &uuid);
+        Ok(())
+    }
+
+    /// A message sent with Enter while a turn runs: write it to the CLI now as a plain line (no
+    /// `priority`), never held in Writer's queue. The CLI injects it after the next tool result of
+    /// the running turn, or runs it right after the turn; its echo (`message-received`) says which
+    /// and where. `message_id` is the receipt id. Where no turn can take it (idle, starting,
+    /// cancelling) it is an ordinary send that keeps the id, so the echo still resolves it.
+    pub(crate) fn queue_line(
+        self: &Arc<Self>,
+        mut out: Outgoing,
+        message_id: &str,
+    ) -> Result<(), SpawnError> {
+        // `unqueue` finds the line by the same id, so it must be one the CLI can echo
+        if uuid::Uuid::parse_str(message_id).is_err() {
+            return Err(SpawnError::Invalid("the message id must be a uuid".into()));
+        }
+        out.receipt = Some(message_id.to_string());
+        let written = self.write_mid_turn(out.clone(), message_id, LineKind::Queued)?;
+        if written.is_none() {
+            return self.send(out);
+        }
+        Ok(())
+    }
+
+    /// Writes `out` into the running turn and tracks it until echoed. `None`: nothing was written
+    /// (no turn runs on a live process, or it is being stopped); otherwise the process generation
+    /// and the receipt id.
+    fn write_mid_turn(
+        &self,
+        mut out: Outgoing,
+        message_id: &str,
+        kind: LineKind,
+    ) -> Result<Option<(Option<u64>, String)>, SpawnError> {
+        let mut g = self.inner.lock();
+        if g.terminal {
+            return Err(SpawnError::Ended);
+        }
+        if !(g.ready
+            && g.turn_active
+            && g.closing.is_none()
+            && g.state != AgentSessionState::Cancelling)
+        {
+            return Ok(None);
+        }
+        let uuid = receipt_id(message_id);
+        let line = match kind {
+            LineKind::Steer => encode_steer_message(&out.text, &out.files, &uuid),
+            LineKind::Queued => {
+                out.receipt = Some(uuid.clone());
+                encode_queued_message(&out.text, &out.files, &uuid)
+            }
+        };
+        g.unechoed.push(Unechoed {
+            uuid: uuid.clone(),
+            out: out.clone(),
+            kind,
+            watching: kind == LineKind::Steer,
+        });
+        g.inflight.push(out);
+        g.last_activity = Instant::now();
+        self.write(line);
+        Ok(Some((g.live_gen, uuid)))
+    }
+
+    /// Takes a queued line back before the CLI took it (the `cancel_async_message` control
+    /// request): `true` when it was still waiting and is gone (the CLI never runs it), `false`
+    /// when the CLI already took it (its echo is coming or came). Blocks for the CLI's answer.
+    /// An error means no answer came; the line stays tracked.
+    pub(crate) fn unqueue(&self, message_id: &str) -> Result<bool, SpawnError> {
+        let uuid = message_id.to_string();
+        let (request, answer) = {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
             }
-            if !(g.ready && g.turn_active) {
-                drop(g);
-                return self.send(out);
+            // still in Writer's own queue (no process yet): drop it there
+            if let Some(i) = g
+                .queue
+                .iter()
+                .position(|o| o.receipt.as_deref() == Some(uuid.as_str()))
+            {
+                g.queue.remove(i);
+                return Ok(true);
             }
-            let uuid = if uuid::Uuid::parse_str(message_id).is_ok() {
-                message_id.to_string()
-            } else {
-                uuid::Uuid::new_v4().to_string()
-            };
-            g.steers.push(Steer {
-                uuid: uuid.clone(),
-                out: out.clone(),
-            });
-            g.inflight.push(out.clone());
-            g.last_activity = Instant::now();
-            self.write(encode_steer_message(&out.text, &out.files, &uuid));
-            (g.live_gen, uuid)
+            let waiting = g
+                .unechoed
+                .iter()
+                .any(|u| u.uuid == uuid && u.kind == LineKind::Queued);
+            if !waiting || !g.ready {
+                return Ok(false);
+            }
+            g.counter += 1;
+            let request = format!("req_cq_{}", g.counter);
+            let (tx, rx) = channel();
+            g.cancel_waits.insert(
+                request.clone(),
+                CancelWait {
+                    uuid: uuid.clone(),
+                    answer: tx,
+                },
+            );
+            self.write(encode_cancel_queued(&request, &uuid));
+            (request, rx)
         };
-        let (gen, uuid) = gen;
-        let me = Arc::clone(self);
+        match answer.recv_timeout(self.timing.unqueue_ack) {
+            Ok(cancelled) => Ok(cancelled),
+            Err(_) => {
+                self.inner.lock().cancel_waits.remove(&request);
+                log::warn!(target: "agent", "agent: no answer to a cancel of a queued line");
+                Err(SpawnError::Invalid("the CLI did not answer".into()))
+            }
+        }
+    }
+
+    /// Forget every written message (the user's stop, a failed turn). A queued line is also taken
+    /// out of the CLI's queue (best effort, no answer awaited) and its chip told it is gone
+    /// (`steer-undelivered`); a steer has no chip.
+    fn forget_unechoed(&self, g: &mut Inner) {
+        for u in std::mem::take(&mut g.unechoed) {
+            if u.kind != LineKind::Queued {
+                continue;
+            }
+            if g.ready {
+                g.counter += 1;
+                let request = format!("req_cq_{}", g.counter);
+                self.write(encode_cancel_queued(&request, &u.uuid));
+            }
+            self.log
+                .push(AgentEvent::SteerUndelivered { message_id: u.uuid });
+        }
+    }
+
+    /// Starts the receipt watchdog of every written message that has none yet.
+    fn watch_unwatched(&self, g: &mut Inner) {
+        let gen = g.live_gen;
+        for u in g.unechoed.iter_mut().filter(|u| !u.watching) {
+            u.watching = true;
+            self.watch_receipt(gen, &u.uuid);
+        }
+    }
+
+    /// A thread (the shape of the cancel watchdog) that reports `uuid` undelivered when the CLI
+    /// has not echoed it within `Timing::steer_ack`.
+    fn watch_receipt(&self, gen: Option<u64>, uuid: &str) {
+        let Some(me) = self.me.upgrade() else {
+            return;
+        };
         let wait = self.timing.steer_ack;
+        let uuid = uuid.to_string();
         std::thread::Builder::new()
             .name("agent-steer-ack".into())
             .spawn(move || {
                 std::thread::sleep(wait);
-                me.steer_unacknowledged(gen, &uuid);
+                me.receipt_overdue(gen, &uuid);
             })
-            .expect("spawn steer watchdog");
-        Ok(())
+            .expect("spawn receipt watchdog");
     }
 
-    /// The steer's receipt time is up: unless it arrived, report it and, when it was what kept the
+    /// The receipt time is up: unless it arrived, report it and, when it was what kept the
     /// session working, let the session go idle.
-    fn steer_unacknowledged(&self, gen: Option<u64>, uuid: &str) {
+    fn receipt_overdue(&self, gen: Option<u64>, uuid: &str) {
         let mut g = self.inner.lock();
-        if g.live_gen != gen || !g.steers.iter().any(|s| s.uuid == uuid) {
+        if g.live_gen != gen {
             return;
         }
-        g.steers.retain(|s| s.uuid != uuid);
-        log::warn!(target: "agent", "agent: a steer was not acknowledged");
+        let Some(i) = g.unechoed.iter().position(|u| u.uuid == uuid) else {
+            return;
+        };
+        let late = g.unechoed.remove(i);
+        log::warn!(target: "agent", "agent: a message written to claude was not acknowledged");
+        if late.kind == LineKind::Queued && g.ready {
+            // it must not run later, behind the chip that is about to send it again
+            g.counter += 1;
+            let request = format!("req_cq_{}", g.counter);
+            self.write(encode_cancel_queued(&request, &late.uuid));
+        }
         self.log.push(AgentEvent::SteerUndelivered {
             message_id: uuid.to_string(),
         });
-        if g.steers.is_empty() && g.steer_hold {
-            g.steer_hold = false;
+        self.release_hold(&mut g);
+    }
+
+    /// Nothing written is waiting for an echo any more: a turn that was held for it is over.
+    fn release_hold(&self, g: &mut Inner) {
+        if g.unechoed.is_empty() && g.echo_hold {
+            g.echo_hold = false;
             g.turn_active = false;
             g.inflight.clear();
             g.state = AgentSessionState::Idle;
-            self.flush_queue(&mut g);
+            self.flush_queue(g);
         }
     }
 
@@ -1662,7 +1885,7 @@ impl Session {
     pub(crate) fn cancel(self: &Arc<Self>) {
         let mut g = self.inner.lock();
         g.queue.clear();
-        g.steers.clear();
+        self.forget_unechoed(&mut g);
         if g.live_gen.is_none() {
             g.turn_active = false;
             return;

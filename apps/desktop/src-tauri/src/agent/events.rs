@@ -273,8 +273,14 @@ pub enum AgentEvent {
         reason: Option<String>,
     },
     /// Runner-originated: the CLI never acknowledged a steer within `Timing::steer_ack` (its
-    /// `message_id` is the one `agent_steer` was given). The message was not delivered.
+    /// `message_id` is the one `agent_steer` was given), or a message written with `agent_queue`
+    /// is gone from the CLI's queue (never echoed, its turn failed, the user stopped). The
+    /// message was not delivered.
     SteerUndelivered { message_id: String },
+    /// Runner-originated: the CLI took a message written with `agent_queue` (its echo, same
+    /// `message_id`): injected after a tool result of the running turn, or run as the next turn.
+    /// Where the card goes depends on whether a turn is running when this arrives.
+    MessageReceived { message_id: String },
     /// An API message made by a sub-agent, not by the main agent: its `text`, `thinking` and tool
     /// events (the message ids it names) belong to the sub-agent run started by the `Agent`/`Task`
     /// call `parent_tool_call_id`. Sent once, before the message's first block; never for the main
@@ -942,6 +948,9 @@ mod tests {
                 report: None,
             },
             AgentEvent::SteerUndelivered {
+                message_id: "m".into(),
+            },
+            AgentEvent::MessageReceived {
                 message_id: "m".into(),
             },
             AgentEvent::SessionReloaded { reason: None },

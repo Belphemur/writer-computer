@@ -63,6 +63,15 @@ export interface AgentCommands {
     "agent_steer",
     { chatId: string; messageId: string; text: string; context: ContextRef[] }
   >;
+  /** A plain line into the running turn at once (Enter): the CLI injects it after the next tool
+   *  result or runs it after the turn; `message-received` is the receipt. */
+  agent_queue: Command<
+    "agent_queue",
+    { chatId: string; messageId: string; text: string; context: ContextRef[] }
+  >;
+  /** Takes a waiting `agent_queue` line back: true when it will never run, false when the CLI
+   *  already took it. */
+  agent_unqueue: Command<"agent_unqueue", { chatId: string; messageId: string }>;
   agent_cancel: Command<"agent_cancel", { chatId: string }>;
   agent_permission: Command<
     "agent_permission",

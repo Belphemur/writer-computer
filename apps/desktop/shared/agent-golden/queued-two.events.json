@@ -1,0 +1,163 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000101",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q9",
+    "messageId": "msg_q7",
+    "tool": "Bash",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "{\"command\": \"sleep 12"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "\", \"description\": \"S"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "leep for 12 secon"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "ds"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q9",
+    "partialJson": "\"}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q9",
+    "input": {
+      "command": "sleep 12",
+      "description": "Sleep for 12 seconds"
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 82,
+    "cacheReadTokens": 13498,
+    "cacheCreationTokens": 7453,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q9",
+    "output": "(Bash completed with no output)",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q29",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q29",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 50
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q29",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 259
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q29",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q29",
+    "blockIndex": 1,
+    "text": "DONE"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q29",
+    "blockIndex": 1,
+    "text": "\n\nALPHA"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q29",
+    "blockIndex": 1,
+    "text": "\n\nBRAVO"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_q29",
+    "blockIndex": 1,
+    "text": "DONE\n\nALPHA\n\nBRAVO"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 184,
+    "cacheReadTokens": 20951,
+    "cacheCreationTokens": 20238,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 266,
+    "cacheReadTokens": 34449,
+    "cacheCreationTokens": 27691,
+    "costUsd": 0.00601609,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 16608,
+    "apiDurationMs": 2668,
+    "numTurns": 2,
+    "isError": false,
+    "result": "DONE\n\nALPHA\n\nBRAVO",
+    "sessionId": "00000000-0000-4000-8000-000000000101",
+    "errors": []
+  }
+]

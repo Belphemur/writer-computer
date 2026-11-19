@@ -69,28 +69,28 @@ The Agent pane is the chat on the right. It shares the right side with the plugi
 
 <!-- Implemented in `features/agent/web/components/agent-pane.tsx` (pane-scoped chords, which stop propagation so the global hook's Cmd+W never sees them), `composer.tsx` (Enter, Esc order, ArrowUp recall, Cmd+Enter / Cmd+Shift+Enter / Cmd+Backspace for a pending permission) and `permission-card.tsx` (Enter / Esc with focus on the card). Cmd+Shift+A is the keybinding of the agent feature (`features/agent/web/index.ts`); it collides with no native menu accelerator (only Cmd+, exists) and no editor binding. Spec: SPECs/native-agent-spec.md section 3.6. Cmd+Shift+H opens the in-pane chat list until the history view lands (lane 4). Cmd+B / Cmd+I and the list-continuing Shift+Enter live in `composer-markdown.ts` (a CodeMirror keymap, so they only fire with the message box focused; they reuse `toggleBold` / `toggleItalic` of the note editor and collide with no global binding or menu accelerator). Tab is left alone. -->
 
-| Shortcut                    | Action                                                                                           |
-| --------------------------- | ------------------------------------------------------------------------------------------------ |
-| Cmd+Shift+A                 | Show or hide the Agent pane (works from anywhere in the window)                                  |
-| Enter / Shift+Enter         | Send the message / new line (while the agent works, Enter queues the message)                    |
-| Esc                         | In order: close an open menu, remove the queued message, stop the running turn, back to the note |
-| Enter (focus on the card)   | Allow once, when a "Permission required" card has focus                                          |
-| Esc (focus on the card)     | Deny, when a "Permission required" card has focus                                                |
-| Cmd+Enter                   | Allow once, from the message box while a permission card shows; otherwise send now (see below)   |
-| Cmd+Shift+Enter             | Always allow in this project, from the message box while a permission card offers it             |
-| Cmd+Backspace               | Deny, from the message box while a permission card shows                                         |
-| Cmd+Shift+N                 | New chat (only while the pane has focus; Cmd+N stays "create new note")                          |
-| Cmd+Shift+H                 | Chat history                                                                                     |
-| Cmd+[ / Cmd+]               | Previous / next chat                                                                             |
-| Cmd+W                       | Close the chat (only while the pane has focus; asks first if it is working)                      |
-| `@`                         | Add a note or folder as context (Arrow keys, Enter or Tab to pick)                               |
-| `/`                         | Pick a Claude Code command                                                                       |
-| ArrowUp in an empty message | Bring back your previous message                                                                 |
-| Cmd+B / Cmd+I               | Wrap the selection in `**` / `*` (again to unwrap), from the message box only                    |
-| Shift+Enter in a list       | New line that continues the bullet, number, task or quote; on an empty item it ends the list     |
-| ArrowLeft / ArrowRight      | Between chat tabs                                                                                |
+| Shortcut                    | Action                                                                                              |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| Cmd+Shift+A                 | Show or hide the Agent pane (works from anywhere in the window)                                     |
+| Enter / Shift+Enter         | Send the message / new line (while the agent works, Enter sends it at the agent's next step)        |
+| Esc                         | In order: close an open menu, take back the queued message, stop the running turn, back to the note |
+| Enter (focus on the card)   | Allow once, when a "Permission required" card has focus                                             |
+| Esc (focus on the card)     | Deny, when a "Permission required" card has focus                                                   |
+| Cmd+Enter                   | Allow once, from the message box while a permission card shows; otherwise send now (see below)      |
+| Cmd+Shift+Enter             | Always allow in this project, from the message box while a permission card offers it                |
+| Cmd+Backspace               | Deny, from the message box while a permission card shows                                            |
+| Cmd+Shift+N                 | New chat (only while the pane has focus; Cmd+N stays "create new note")                             |
+| Cmd+Shift+H                 | Chat history                                                                                        |
+| Cmd+[ / Cmd+]               | Previous / next chat                                                                                |
+| Cmd+W                       | Close the chat (only while the pane has focus; asks first if it is working)                         |
+| `@`                         | Add a note or folder as context (Arrow keys, Enter or Tab to pick)                                  |
+| `/`                         | Pick a Claude Code command                                                                          |
+| ArrowUp in an empty message | Bring back your previous message                                                                    |
+| Cmd+B / Cmd+I               | Wrap the selection in `**` / `*` (again to unwrap), from the message box only                       |
+| Shift+Enter in a list       | New line that continues the bullet, number, task or quote; on an empty item it ends the list        |
+| ArrowLeft / ArrowRight      | Between chat tabs                                                                                   |
 
-Cmd+Enter while the agent works forces your message in now: the step the agent is on (a running tool, or the text it is writing) is stopped and your message starts its next turn (it appears in the chat marked "Steer"). With an empty message box it sends the queued message that way, and the queued message has a "Send now" button. Enter still queues. While a permission card shows, Cmd+Enter allows once instead. When the agent is idle, Cmd+Enter is a normal send.
+Enter while the agent works sends your message at the agent's next step: the agent reads it after the tool it is running (or right after its answer when no step is left) and the message appears in the chat at that point. Until then it shows as a "Queued" chip; messages sent before the agent took the first are merged into one, and Esc (or the chip's x) takes it back. Cmd+Enter forces your message in now: the step the agent is on (a running tool, or the text it is writing) is stopped and your message starts its next turn (it appears in the chat marked "Steer"). With an empty message box it takes the queued message back and sends it that way, and the chip has a "Send now" button. While a permission card shows, Cmd+Enter allows once instead. When the agent is idle, Cmd+Enter is a normal send.
 
 The command palette also has "Agent: Toggle pane", "Agent: New chat" and "Agent: History".
 

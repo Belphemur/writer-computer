@@ -79,6 +79,7 @@ beforeEach(() => {
     activeChatId: null,
     drafts: {},
     queued: {},
+    written: {},
     modes: {},
     view: "chat",
     backend: "tauri",
@@ -292,6 +293,81 @@ describe("AgentPane", () => {
         }),
       );
       expect(button("Queue message").title).toContain("Cmd+Enter");
+    });
+  });
+
+  describe("Enter while a turn runs", () => {
+    async function running() {
+      await openPane();
+      await act(async () => await get().sendMessage("write"));
+      await flush(10);
+      expect(chat().state).toBe("awaiting-permission");
+    }
+
+    it("writes the line to the CLI and shows the Queued chip; the receipt turns it into a card with no Steer mark", async () => {
+      await running();
+      const queue = vi.spyOn(mock, "queue");
+      type(null, "also the tagged ones");
+      key($("[data-agent-composer]")!, "Enter");
+      await flush(10);
+      expect(queue).toHaveBeenCalledTimes(1);
+      expect($("[data-agent-queued]")!.textContent).toContain("also the tagged ones");
+      expect(composerText(composerView(container))).toBe("");
+      const id = get().activeChatId!;
+      const chipId = get().queued[id]!.id!;
+      act(() => get().ingest(id, [{ type: "message-received", messageId: chipId }], 5));
+      expect($("[data-agent-queued]")).toBeNull();
+      const cards = $$("[data-agent-user-turn]").map((c) => c.textContent ?? "");
+      expect(cards.some((t) => t.includes("also the tagged ones") && !t.includes("Steer"))).toBe(
+        true,
+      );
+      expect($("[data-agent-steer]")).toBeNull();
+    });
+
+    it("Esc on the composer takes a waiting message back and never stops the turn", async () => {
+      await running();
+      const unqueue = vi.spyOn(mock, "unqueue");
+      type(null, "never mind");
+      key($("[data-agent-composer]")!, "Enter");
+      await flush(10);
+      expect($("[data-agent-queued]")).not.toBeNull();
+      key($("[data-agent-composer]")!, "Escape");
+      await flush(10);
+      expect(unqueue).toHaveBeenCalledTimes(1);
+      expect($("[data-agent-queued]")).toBeNull();
+      expect(chat().state).toBe("awaiting-permission");
+    });
+
+    it("the chip's x takes it back the same way", async () => {
+      await running();
+      const unqueue = vi.spyOn(mock, "unqueue");
+      type(null, "never mind");
+      key($("[data-agent-composer]")!, "Enter");
+      await flush(10);
+      await act(async () => button("Remove queued message").click());
+      await flush(10);
+      expect(unqueue).toHaveBeenCalledTimes(1);
+      expect($("[data-agent-queued]")).toBeNull();
+    });
+
+    it("the hint says the message lands at the next step", async () => {
+      await running();
+      type(null, "x");
+      act(() =>
+        useAgentStore.setState((st) => {
+          const c = st.chats[st.activeChatId!]!;
+          return {
+            chats: {
+              ...st.chats,
+              [c.chatId]: { ...c, pendingPermissions: [], state: "running" as const },
+            },
+          };
+        }),
+      );
+      expect($("[data-agent-composer]")!.getAttribute("aria-placeholder") ?? "").toContain(
+        "Enter sends at the next step",
+      );
+      expect(button("Queue message").title).toContain("Enter sends at the next step");
     });
   });
 

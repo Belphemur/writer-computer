@@ -8,6 +8,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 }));
 
 import type { AgentClient } from "@features/agent/web/lib/client";
+import type { AgentEvent } from "@features/agent/web/lib/events";
 import { createMockAgentClient, type Goldens } from "@features/agent/web/lib/mock-client";
 import {
   classifyStartError,
@@ -26,6 +27,17 @@ const g = goldens as unknown as Goldens;
 const get = () => useAgentStore.getState();
 const chat = () => get().chats[get().activeChatId!]!;
 const settle = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+const finishedEvent = (reason: "completed" | "interrupted"): AgentEvent => ({
+  type: "turn-finished",
+  reason,
+  durationMs: 1,
+  apiDurationMs: null,
+  numTurns: 1,
+  isError: false,
+  result: null,
+  sessionId: null,
+  errors: [],
+});
 
 let mock: ReturnType<typeof createMockAgentClient>;
 beforeEach(() => {
@@ -38,6 +50,7 @@ beforeEach(() => {
     activeChatId: null,
     drafts: {},
     queued: {},
+    written: {},
     modes: {},
     view: "chat",
     backend: "tauri",
@@ -163,43 +176,30 @@ describe("agent store: a turn against the recorded backend", () => {
     await mock.idle(id);
   });
 
-  it("a session reload mid-turn keeps the queued chip, and the turn's end sends it once", async () => {
+  it("a session reload mid-turn keeps the chip; Rust sends the line again and its receipt places the card once", async () => {
     get().openPane();
     const id = get().activeChatId!;
     await get().sendMessage("write");
     await vi.waitFor(() => expect(chat().state).toBe("awaiting-permission"));
     await get().sendMessage("second");
     await get().sendMessage("third");
+    const chipId = get().queued[id]!.id!;
     const send = vi.spyOn(mock, "send");
-    // Rust replaced the process (a config change or "Reload session"): the event touches no queue
+    const queue = vi.spyOn(mock, "queue");
+    // Rust replaced the process (a config change or "Reload session"): the event touches no chip
     get().ingest(id, [{ type: "session-reloaded", reason: "skill writer-graph changed" }], 100);
     expect(get().queued[id]!.text).toBe("second\n\nthird");
-    expect(send).not.toHaveBeenCalled();
-    // the turn ends: the restart follows in Rust, the web hands the chip's message over once
-    get().ingest(
-      id,
-      [
-        {
-          type: "turn-finished",
-          reason: "completed",
-          durationMs: 1,
-          apiDurationMs: null,
-          numTurns: 1,
-          isError: false,
-          result: null,
-          sessionId: null,
-          errors: [],
-        },
-      ],
-      101,
-    );
-    expect(get().queued[id]).toBeUndefined();
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    expect(send.mock.calls[0]![0].text).toContain("second\n\nthird");
-    // a later batch (the new process's events) never sends it again
-    get().ingest(id, [{ type: "session-reloaded", reason: null }], 102);
+    // the turn ends: the new process runs the line it was handed again (Rust owns that resend,
+    // keeping the receipt id), the web hands nothing over
+    get().ingest(id, [finishedEvent("completed")], 101);
+    expect(get().queued[id]!.id).toBe(chipId);
     await settle(20);
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(queue).not.toHaveBeenCalled();
+    get().ingest(id, [{ type: "message-received", messageId: chipId }], 102);
+    expect(get().queued[id]).toBeUndefined();
+    // a second receipt (nothing waits for it any more) adds nothing
+    get().ingest(id, [{ type: "message-received", messageId: chipId }], 103);
     expect(chat().turns.filter((t) => t.user?.text === "second\n\nthird")).toHaveLength(1);
   });
 
@@ -285,13 +285,209 @@ describe("agent store: a turn against the recorded backend", () => {
     });
   });
 
+  describe("Enter while a turn runs (a plain line the CLI takes at its next tool call)", () => {
+    async function awaitingPermission() {
+      get().openPane();
+      const id = get().activeChatId!;
+      await get().sendMessage("write");
+      await vi.waitFor(() => expect(chat().state).toBe("awaiting-permission"));
+      return id;
+    }
+    const finish = async (id: string) => {
+      await get().stop();
+      await mock.idle(id);
+    };
+
+    it("is written to the CLI at once, not held, and shows as the chip with no card yet", async () => {
+      const id = await awaitingPermission();
+      const send = vi.spyOn(mock, "send");
+      const queue = vi.spyOn(mock, "queue");
+      await get().sendMessage("also the tagged ones");
+      expect(queue).toHaveBeenCalledTimes(1);
+      expect(queue.mock.calls[0]![0]).toMatchObject({ chatId: id });
+      expect(queue.mock.calls[0]![0].text).toContain("also the tagged ones");
+      expect(send).not.toHaveBeenCalled();
+      const chip = get().queued[id]!;
+      expect(chip).toMatchObject({
+        text: "also the tagged ones",
+        id: queue.mock.calls[0]![0].messageId,
+      });
+      expect(chat().turns).toHaveLength(1);
+      expect(chat().turns[0]!.blocks.some((b) => b.kind === "steer")).toBe(false);
+      await finish(id);
+    });
+
+    it("the chip stays until the receipt; then the card sits inside the running turn, with no Steer", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("also the tagged ones");
+      const chipId = get().queued[id]!.id!;
+      get().ingest(id, [], 50);
+      expect(get().queued[id]).toBeDefined();
+      get().ingest(id, [{ type: "message-received", messageId: chipId }], 60);
+      expect(get().queued[id]).toBeUndefined();
+      expect(get().written[chipId]).toBeUndefined();
+      expect(chat().turns).toHaveLength(1);
+      expect(chat().turns[0]!.blocks.at(-1)).toMatchObject({
+        kind: "steer",
+        injected: true,
+        message: { text: "also the tagged ones" },
+      });
+      await finish(id);
+    });
+
+    it("a message the CLI ran after the turn is the next turn's user card", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("one more thing");
+      const chipId = get().queued[id]!.id!;
+      get().ingest(id, [finishedEvent("completed")], 50);
+      // written to the CLI: it is not sent again and the chip waits for the receipt
+      expect(get().queued[id]!.id).toBe(chipId);
+      await settle(10);
+      expect(chat().turns).toHaveLength(1);
+      get().ingest(id, [{ type: "message-received", messageId: chipId }], 60);
+      expect(chat().turns).toHaveLength(2);
+      expect(chat().turns[1]!.user?.text).toBe("one more thing");
+      expect(chat().state).toBe("running");
+      expect(get().queued[id]).toBeUndefined();
+      await finish(id);
+    });
+
+    it("two messages before the CLI took the first are one message, one chip, with a new id", async () => {
+      const id = await awaitingPermission();
+      const queue = vi.spyOn(mock, "queue");
+      const unqueue = vi.spyOn(mock, "unqueue");
+      await get().sendMessage("second");
+      const first = get().queued[id]!.id!;
+      await get().sendMessage("third");
+      expect(unqueue).toHaveBeenCalledWith({ chatId: id, messageId: first });
+      expect(queue).toHaveBeenCalledTimes(2);
+      const merged = queue.mock.calls[1]![0];
+      expect(merged.text).toContain("second\n\nthird");
+      expect(merged.messageId).not.toBe(first);
+      expect(get().queued[id]).toMatchObject({ text: "second\n\nthird", id: merged.messageId });
+      expect(Object.keys(get().written)).toEqual([merged.messageId]);
+      await finish(id);
+    });
+
+    it("a first message the CLI already took keeps its own card; the new text waits on its own", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("second");
+      const first = get().queued[id]!.id!;
+      vi.spyOn(mock, "unqueue").mockResolvedValueOnce(false);
+      await get().sendMessage("third");
+      const chip = get().queued[id]!;
+      expect(chip.text).toBe("third");
+      expect(chip.id).not.toBe(first);
+      // the receipt of the first still finds its text
+      get().ingest(id, [{ type: "message-received", messageId: first }], 60);
+      expect(chat().turns[0]!.blocks.at(-1)).toMatchObject({
+        injected: true,
+        message: { text: "second" },
+      });
+      expect(get().queued[id]!.text).toBe("third");
+      await finish(id);
+    });
+
+    it("quick Enters are handled one after the other", async () => {
+      const id = await awaitingPermission();
+      const queue = vi.spyOn(mock, "queue");
+      await Promise.all([get().sendMessage("a"), get().sendMessage("b"), get().sendMessage("c")]);
+      expect(get().queued[id]!.text).toBe("a\n\nb\n\nc");
+      expect(Object.keys(get().written)).toHaveLength(1);
+      expect(queue.mock.calls.at(-1)![0].text).toContain("a\n\nb\n\nc");
+      await finish(id);
+    });
+
+    it("removing the chip before the receipt takes the line back and drops it", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("never mind");
+      const chipId = get().queued[id]!.id!;
+      const unqueue = vi.spyOn(mock, "unqueue");
+      await get().removeQueued(id);
+      expect(unqueue).toHaveBeenCalledWith({ chatId: id, messageId: chipId });
+      expect(get().queued[id]).toBeUndefined();
+      expect(get().written).toEqual({});
+      await finish(id);
+      // it never ran
+      expect(chat().turns).toHaveLength(1);
+    });
+
+    it("a line the CLI already took cannot be removed: the chip stays until the receipt", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("too late");
+      vi.spyOn(mock, "unqueue").mockResolvedValueOnce(false);
+      await get().removeQueued(id);
+      expect(get().queued[id]).toBeDefined();
+      await finish(id);
+    });
+
+    it("a line the CLI lost goes back to waiting in Writer and is sent as an ordinary message when idle", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("lost one");
+      const chipId = get().queued[id]!.id!;
+      const send = vi.spyOn(mock, "send");
+      get().ingest(id, [{ type: "steer-undelivered", messageId: chipId }], 50);
+      expect(get().queued[id]).toMatchObject({ text: "lost one", id: null });
+      expect(send).not.toHaveBeenCalled(); // not idle yet
+      get().ingest(id, [finishedEvent("interrupted")], 51);
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send.mock.calls[0]![0].text).toContain("lost one");
+      expect(get().queued[id]).toBeUndefined();
+    });
+
+    it("stopping hands the waiting line back and it goes out after the stop", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("after the stop");
+      const send = vi.spyOn(mock, "send");
+      await get().stop();
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send.mock.calls[0]![0].text).toContain("after the stop");
+      expect(get().queued[id]).toBeUndefined();
+      await settle(10);
+      await get().stop();
+    });
+
+    it("a write that fails leaves the running turn alone and the message waiting in Writer", async () => {
+      const id = await awaitingPermission();
+      vi.spyOn(mock, "queue").mockRejectedValueOnce(new Error("pipe closed"));
+      await get().sendMessage("will fail");
+      expect(get().queued[id]).toMatchObject({ text: "will fail", id: null });
+      expect(chat().state).toBe("awaiting-permission");
+      expect(chat().error).toBeNull();
+      await finish(id);
+    });
+
+    it("Cmd+Enter with an empty composer takes the waiting line back and steers it", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("now please");
+      const steer = vi.spyOn(mock, "steer");
+      await get().sendNow("");
+      expect(steer).toHaveBeenCalledTimes(1);
+      expect(steer.mock.calls[0]![0].text).toContain("now please");
+      expect(get().queued[id]).toBeUndefined();
+      expect(get().written).toEqual({});
+      await finish(id);
+    });
+
+    it("while idle there is no line to write: an ordinary send", async () => {
+      get().openPane();
+      const id = get().activeChatId!;
+      const send = vi.spyOn(mock, "send");
+      const queue = vi.spyOn(mock, "queue");
+      await get().sendMessage("hello");
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(queue).not.toHaveBeenCalled();
+      await mock.idle(id);
+    });
+  });
+
   it("removing the queued chip drops it", async () => {
     get().openPane();
     const id = get().activeChatId!;
     await get().sendMessage("write");
     await vi.waitFor(() => expect(chat().state).toBe("awaiting-permission"));
     await get().sendMessage("later");
-    get().removeQueued(id);
+    await get().removeQueued(id);
     expect(get().queued[id]).toBeUndefined();
     await get().stop();
     await mock.idle(id);

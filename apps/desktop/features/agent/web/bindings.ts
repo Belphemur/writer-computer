@@ -22,6 +22,17 @@ export const commands = {
 	 *  receipt id the CLI echoes. With no running turn it is an ordinary send.
 	 */
 	agentSteer: (chatId: string, messageId: string, text: string, context: ContextRef[], options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_steer", { chatId, messageId, text, context }, options),
+	/**
+	 *  A message sent with Enter while a turn runs: written to the CLI at once as a plain line, which
+	 *  it injects after the next tool result or runs after the turn (spec 3.13). `message_id` is the
+	 *  receipt id the CLI echoes (`message-received`). Where no turn can take it, an ordinary send.
+	 */
+	agentQueue: (chatId: string, messageId: string, text: string, context: ContextRef[], options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_queue", { chatId, messageId, text, context }, options),
+	/**
+	 *  Takes a message written by `agent_queue` back before the CLI took it: `true` when it was still
+	 *  waiting and will never run, `false` when the CLI already took it.
+	 */
+	agentUnqueue: (chatId: string, messageId: string, options?: InvokeOptions) => __TAURI_INVOKE<boolean>("plugin:agent|agent_unqueue", { chatId, messageId }, options),
 	agentCancel: (chatId: string, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_cancel", { chatId }, options),
 	agentPermission: (chatId: string, requestId: string, decision: PermissionDecision, persist: PermissionPersist | null, message: string | null, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_permission", { chatId, requestId, decision, persist, message }, options),
 	agentSetPermissionMode: (chatId: string, mode: AgentPermissionMode, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_set_permission_mode", { chatId, mode }, options),
@@ -197,9 +208,17 @@ model?: string | null }) & { apiDurationMs?: never; blockIndex?: never; by?: nev
 reason: string | null }) & { apiDurationMs?: never; blockIndex?: never; by?: never; cacheCreationTokens?: never; cacheReadTokens?: never; cliVersion?: never; contextWindow?: never; costUsd?: never; cwd?: never; decisionReason?: never; description?: never; displayName?: never; durationMs?: never; errors?: never; estimatedTokens?: never; exitCode?: never; input?: never; inputTokens?: never; isError?: never; kind?: never; mcpServers?: never; message?: never; messageId?: never; model?: never; name?: never; numTurns?: never; outcome?: never; output?: never; outputTokens?: never; parentToolCallId?: never; partialJson?: never; permissionMode?: never; phase?: never; report?: never; requestId?: never; requested?: never; resetsAt?: never; resolution?: never; result?: never; retryable?: never; role?: never; scope?: never; sessionId?: never; signal?: never; skills?: never; slashCommands?: never; status?: never; suggestions?: never; text?: never; tool?: never; toolCallId?: never; tools?: never; truncated?: never; using?: never } | 
 /**
  *  Runner-originated: the CLI never acknowledged a steer within `Timing::steer_ack` (its
- *  `message_id` is the one `agent_steer` was given). The message was not delivered.
+ *  `message_id` is the one `agent_steer` was given), or a message written with `agent_queue`
+ *  is gone from the CLI's queue (never echoed, its turn failed, the user stopped). The
+ *  message was not delivered.
  */
 ({ type: "steer-undelivered"; messageId: string }) & { apiDurationMs?: never; blockIndex?: never; by?: never; cacheCreationTokens?: never; cacheReadTokens?: never; cliVersion?: never; contextWindow?: never; costUsd?: never; cwd?: never; decisionReason?: never; description?: never; displayName?: never; durationMs?: never; errors?: never; estimatedTokens?: never; exitCode?: never; input?: never; inputTokens?: never; isError?: never; kind?: never; mcpServers?: never; message?: never; model?: never; name?: never; numTurns?: never; outcome?: never; output?: never; outputTokens?: never; parentToolCallId?: never; partialJson?: never; permissionMode?: never; phase?: never; reason?: never; report?: never; requestId?: never; requested?: never; resetsAt?: never; resolution?: never; result?: never; retryable?: never; role?: never; scope?: never; sessionId?: never; signal?: never; skills?: never; slashCommands?: never; status?: never; suggestions?: never; text?: never; tool?: never; toolCallId?: never; tools?: never; truncated?: never; using?: never } | 
+/**
+ *  Runner-originated: the CLI took a message written with `agent_queue` (its echo, same
+ *  `message_id`): injected after a tool result of the running turn, or run as the next turn.
+ *  Where the card goes depends on whether a turn is running when this arrives.
+ */
+({ type: "message-received"; messageId: string }) & { apiDurationMs?: never; blockIndex?: never; by?: never; cacheCreationTokens?: never; cacheReadTokens?: never; cliVersion?: never; contextWindow?: never; costUsd?: never; cwd?: never; decisionReason?: never; description?: never; displayName?: never; durationMs?: never; errors?: never; estimatedTokens?: never; exitCode?: never; input?: never; inputTokens?: never; isError?: never; kind?: never; mcpServers?: never; message?: never; model?: never; name?: never; numTurns?: never; outcome?: never; output?: never; outputTokens?: never; parentToolCallId?: never; partialJson?: never; permissionMode?: never; phase?: never; reason?: never; report?: never; requestId?: never; requested?: never; resetsAt?: never; resolution?: never; result?: never; retryable?: never; role?: never; scope?: never; sessionId?: never; signal?: never; skills?: never; slashCommands?: never; status?: never; suggestions?: never; text?: never; tool?: never; toolCallId?: never; tools?: never; truncated?: never; using?: never } | 
 /**
  *  An API message made by a sub-agent, not by the main agent: its `text`, `thinking` and tool
  *  events (the message ids it names) belong to the sub-agent run started by the `Agent`/`Task`

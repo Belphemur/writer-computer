@@ -71,7 +71,9 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
     errors: [],
   });
   let current: Turn | null = null;
-  for (const m of doc.messages) {
+  // the turn a mid-turn message went into: the assistant message after it goes on in that turn
+  let resumed: Turn | null = null;
+  for (const [index, m] of doc.messages.entries()) {
     const last = turns[turns.length - 1];
     if (m.role === "user" && m.steer && last) {
       // a steer sits in the timeline of the turn it cut short; its answer is the next turn
@@ -79,18 +81,35 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
       current = null;
       continue;
     }
+    const before = doc.messages[index - 1];
+    if (m.role === "user" && last && before?.role === "assistant" && !before.reason) {
+      // a message the CLI injected mid-turn: the assistant part before it did not end the turn
+      // (no `reason`), so the message sits in that turn's timeline and the answer goes on there
+      last.blocks.push({
+        kind: "steer",
+        id: `steer:${m.id}`,
+        message: userMessage(m),
+        injected: true,
+      });
+      resumed = last;
+      continue;
+    }
     if (m.role === "user") {
+      resumed = null;
       current = open(m, m.at);
       turns.push(current);
       continue;
     }
-    if (!current || current.blocks.length > 0) {
+    if (resumed) {
+      current = resumed;
+      resumed = null;
+    } else if (!current || current.blocks.length > 0) {
       current = open(null, m.at);
       turns.push(current);
     }
     current.blocks.push(...toolBlocks(m));
     const subagents = subagentsOf(m);
-    if (subagents) current.subagents = subagents;
+    if (subagents) current.subagents = { ...current.subagents, ...subagents };
     if (m.text.trim()) {
       current.blocks.push({
         kind: "text",

@@ -33,6 +33,7 @@
       "agent_permission",
       "agent_permission_rules",
       "agent_project_manifest",
+      "agent_queue",
       "agent_read_project",
       "agent_regenerate_title",
       "agent_reload",
@@ -49,6 +50,7 @@
       "agent_start",
       "agent_steer",
       "agent_turn_changes",
+      "agent_unqueue",
       "agent_update_project"
     ],
     "events": ["agent:event"],

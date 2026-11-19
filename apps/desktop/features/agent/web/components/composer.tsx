@@ -86,7 +86,7 @@ function placeholder(chat: Chat): string {
       return isComposerDisabled(chat) ? "Fix the problem above to continue" : "Ask anything";
     case "running":
       // a permission card owns Cmd+Enter (allow once), so the steer hint waits for it to close
-      return "Enter queues, Cmd+Enter sends now (stops the current step)";
+      return "Enter sends at the next step, Cmd+Enter sends now (stops the current step)";
     default:
       return "Ask anything, @ to add context, / for commands";
   }
@@ -374,7 +374,7 @@ export function Composer({
         e.stopPropagation();
         closeMenu();
       } else if (hasQueued) {
-        removeQueuedMessage(chatId);
+        void removeQueuedMessage(chatId);
       } else if (busy && chat.state !== "cancelling") {
         void stopAgent();
       } else {

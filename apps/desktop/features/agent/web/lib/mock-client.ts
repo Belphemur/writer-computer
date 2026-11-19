@@ -82,6 +82,8 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
   const log = new Map<ChatId, AgentEventEnvelope[]>();
   const waiters = new Map<ChatId, Map<string, Waiter>>();
   const cancelled = new Set<ChatId>();
+  /** Queued lines the demo CLI has not taken yet, by message id (its chat). */
+  const waiting = new Map<string, ChatId>();
   const running = new Map<ChatId, Promise<void>>();
   const multiCursor = new Map<ChatId, number>();
   const states = new Map<ChatId, AgentSessionState>();
@@ -146,7 +148,10 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
     states.set(chatId, "idle");
   }
 
-  const send: AgentClient["send"] = async ({ chatId, text }) => {
+  const send = async (
+    { chatId, text }: { chatId: ChatId; text: string },
+    receipt?: string,
+  ): Promise<void> => {
     const scenario = pick(text);
     const turns = splitTurns(opts.goldens[scenario]);
     let events: AgentEvent[];
@@ -157,7 +162,14 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
     } else events = turns.flat();
     states.set(chatId, "running");
     const prev = running.get(chatId) ?? Promise.resolve();
-    const p = prev.then(() => play(chatId, events));
+    const p = prev.then(() => {
+      // the demo's "CLI" takes a queued line when the running turn ends: the next turn starts
+      if (receipt) {
+        if (!waiting.delete(receipt)) return; // taken back
+        emit(chatId, { type: "message-received", messageId: receipt });
+      }
+      return play(chatId, events);
+    });
     running.set(chatId, p);
     void p.finally(() => {
       if (running.get(chatId) === p) running.delete(chatId);
@@ -175,11 +187,23 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
       account: null,
     }),
     start: async ({ chatId }) => ({ chatId, sessionId: "00000000-0000-4000-8000-000000000001" }),
-    send,
+    send: (a) => send(a),
     // The demo has no live turn to join: a steer plays as a message that follows the running one.
-    steer: send,
+    steer: (a) => send(a),
+    queue: (a) => {
+      waiting.set(a.messageId, a.chatId);
+      return send(a, a.messageId);
+    },
+    // true while the line still waits behind the running turn
+    unqueue: async ({ messageId }) => waiting.delete(messageId),
     cancel: async ({ chatId }) => {
       cancelled.add(chatId);
+      // a stop takes the waiting lines out of the CLI and tells their chips
+      for (const [messageId, chat] of waiting) {
+        if (chat !== chatId) continue;
+        waiting.delete(messageId);
+        emit(chatId, { type: "steer-undelivered", messageId });
+      }
       const m = waiters.get(chatId);
       if (m) {
         for (const w of m.values()) w("cancelled");

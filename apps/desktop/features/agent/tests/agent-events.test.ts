@@ -57,6 +57,7 @@ describe("agent event contract", () => {
       "session-changes", // the runner reads the files
       "session-reloaded",
       "steer-undelivered", // the runner's watchdog
+      "message-received", // the runner turns the CLI's echo of a queued line into this
       "subagent-started", // the runner resolves the role and the model
     ]);
     for (const t of AGENT_EVENT_TYPES) {
@@ -106,6 +107,7 @@ describe("agent event contract", () => {
         case "session-reloaded":
           return e.reason ?? "";
         case "steer-undelivered":
+        case "message-received":
           return e.messageId;
         case "subagent-message":
           return e.parentToolCallId;

@@ -68,6 +68,41 @@ function base(): ChatNoteDoc {
   };
 }
 
+/** A message the CLI took at a tool call (no `steer` mark, the assistant part before it has no
+ *  `reason`: that turn went on), then a message that ran as the next turn. */
+function withQueued(): ChatNoteDoc {
+  const d = base();
+  d.meta.turns = 3;
+  d.meta.preview = "List the notes.";
+  d.messages = [
+    { role: "user", id: "m-user-1", at: T0, text: "List the notes." },
+    {
+      role: "assistant",
+      id: "m-user-1-a",
+      at: T0 + 5_000,
+      text: "Listing the folder.",
+      tools: [{ id: "toolu_1", tool: "Bash", input: { command: "ls" }, outcome: "ok" }],
+    },
+    { role: "user", id: "m-queued-1", at: T0 + 6_000, text: "Only the ones tagged #client." },
+    {
+      role: "assistant",
+      id: "m-queued-1-a",
+      at: T0 + 60_000,
+      reason: "completed",
+      text: "Two notes are tagged #client.",
+    },
+    { role: "user", id: "m-queued-2", at: T0 + 61_000, text: "Thanks." },
+    {
+      role: "assistant",
+      id: "m-queued-2-a",
+      at: T0 + 62_000,
+      reason: "completed",
+      text: "You are welcome.",
+    },
+  ];
+  return d;
+}
+
 function escapes(): ChatNoteDoc {
   const d = base();
   d.meta.title = 'Tricky: a "quoted" title #1';
@@ -189,6 +224,7 @@ const CASES: Record<string, () => ChatNoteDoc> = {
   changes: withChanges,
   images: withImages,
   subagents: withSubagents,
+  queued: withQueued,
 };
 
 describe("chat note golden files", () => {

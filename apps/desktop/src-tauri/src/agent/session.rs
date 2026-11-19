@@ -51,10 +51,13 @@ pub struct Timing {
     pub mcp_backoff: [Duration; 3],
     /// A `claude mcp list` run is killed after this.
     pub mcp_probe_timeout: Duration,
-    /// A steer the CLI has not echoed after this long is reported undelivered. Measured: the echo
+    /// A steer (or a queued line whose turn ended) the CLI has not echoed after this long is
+    /// reported undelivered. Measured: the echo
     /// follows the aborted turn's `result` within about a second, so this only catches a broken
     /// process.
     pub steer_ack: Duration,
+    /// The CLI answers a cancel of a waiting line (`Session::unqueue`) within this long.
+    pub unqueue_ack: Duration,
 }
 
 impl Default for Timing {
@@ -73,6 +76,7 @@ impl Default for Timing {
             ],
             mcp_probe_timeout: Duration::from_secs(45),
             steer_ack: Duration::from_secs(30),
+            unqueue_ack: Duration::from_secs(5),
         }
     }
 }
@@ -634,6 +638,30 @@ impl AgentSessions {
             .map_err(|e| Rejected(format!("cannot send: {e:?}")))
     }
 
+    /// A message sent while a turn runs: written to the CLI at once as a plain line, which the CLI
+    /// injects after the next tool result or runs after the turn (see `Session::queue_line`);
+    /// `message_id` is the receipt id.
+    pub fn queue_line(
+        &self,
+        label: &str,
+        chat_id: &str,
+        message_id: &str,
+        text: String,
+        context: &[ContextRef],
+    ) -> Result<(), Rejected> {
+        let (s, out) = self.outgoing(label, chat_id, text, context)?;
+        s.queue_line(out, message_id)
+            .map_err(|e| Rejected(format!("cannot send: {e:?}")))
+    }
+
+    /// Takes a message written by `queue_line` back before the CLI took it: `true` when it was
+    /// still waiting and is gone, `false` when the CLI already took it (see `Session::unqueue`).
+    pub fn unqueue(&self, label: &str, chat_id: &str, message_id: &str) -> Result<bool, Rejected> {
+        self.get(label, chat_id)?
+            .unqueue(message_id)
+            .map_err(|e| Rejected(format!("cannot remove: {e:?}")))
+    }
+
     /// `send`, but forced into the running turn at once instead of after it (see `Session::steer`);
     /// `message_id` (the UI's card key) is the receipt id.
     pub fn steer(
@@ -660,7 +688,14 @@ impl AgentSessions {
         let s = self.get(label, chat_id)?;
         validate_context(&s.root, context).map_err(Rejected)?;
         let files = files::load_parts(&s.root, context).map_err(Rejected)?;
-        Ok((s, Outgoing { text, files }))
+        Ok((
+            s,
+            Outgoing {
+                text,
+                files,
+                receipt: None,
+            },
+        ))
     }
 
     pub fn cancel(&self, label: &str, chat_id: &str) -> Result<(), Rejected> {

@@ -424,3 +424,69 @@ describe("a forced steer (priority now) cuts the running turn cleanly", () => {
     expect(reduceEvent(sent, { type: "steer-undelivered", messageId: "other" }, 3000)).toBe(sent);
   });
 });
+
+describe("a message the CLI took mid-turn (message-received)", () => {
+  const LINE = { text: "go left", context: [] };
+  const lines = (id: string) => (id === "q1" ? LINE : undefined);
+  const start = () =>
+    appendUserTurn(createChat("c1"), { messageId: "u1", text: "go", context: [] }, 0, false);
+  const received: AgentEvent = { type: "message-received", messageId: "q1" };
+
+  it("injected after a tool result: a card in the running turn at that point, nothing interrupted", () => {
+    const events = goldens["steer-injected"]!;
+    const i = events.findIndex((e) => e.type === "tool-call-finished") + 1;
+    const before = reduceEvents(start(), events.slice(0, i), 1000);
+    const chat = reduceEvent(before, received, 1500, lines);
+    expect(chat.turns).toHaveLength(1);
+    const blocks = chat.turns[0]!.blocks;
+    expect(blocks.at(-1)).toMatchObject({
+      kind: "steer",
+      id: "steer:q1",
+      injected: true,
+      message: { messageId: "q1", text: "go left", ts: 1500 },
+    });
+    // the blocks before it are exactly what they were: unlike a steer, nothing is closed
+    expect(blocks.slice(0, -1)).toEqual(before.turns[0]!.blocks);
+    expect(chat.turns[0]!.status).toBe("running");
+    const rest = reduceEvents(chat, events.slice(i), 2000);
+    const kinds = rest.turns[0]!.blocks.map((b) => b.kind);
+    expect(kinds[kinds.indexOf("steer") + 1]).toBeDefined();
+    expect(rest.turns).toHaveLength(1);
+    expect(rest.turns[0]!.status).toBe("completed");
+  });
+
+  it("after the turn ended: the next turn's user card, the chat running again", () => {
+    const events = goldens["steer-deferred"]!;
+    const end = events.findIndex((e) => e.type === "turn-finished") + 1;
+    const second = events.slice(end);
+    // the CLI's second init comes first, then the receipt
+    expect(second[0]!.type).toBe("session-started");
+    let chat = reduceEvents(start(), events.slice(0, end), 1000);
+    expect(chat.state).toBe("idle");
+    chat = reduceEvents(chat, [second[0]!, received], 2000, lines);
+    expect(chat.turns).toHaveLength(2);
+    expect(chat.turns[1]!.user).toMatchObject({ text: "go left", ts: 2000 });
+    expect(chat.state).toBe("running");
+    chat = reduceEvents(chat, second.slice(1), 3000);
+    expect(chat.turns[1]!.status).toBe("completed");
+    expect(chat.turns[0]!.blocks.some((b) => b.kind === "steer")).toBe(false);
+  });
+
+  it("a receipt for a message nobody wrote changes nothing", () => {
+    const chat = reduceEvents(start(), goldens["steer-injected"]!.slice(0, 3), 1000);
+    expect(reduceEvent(chat, received, 1500, lines)).not.toBe(chat);
+    expect(reduceEvent(chat, { type: "message-received", messageId: "x" }, 1500, lines)).toBe(chat);
+    expect(reduceEvent(chat, received, 1500)).toBe(chat);
+  });
+
+  it("the timeline shows it between the tool groups, as its own segment", () => {
+    const events = goldens["steer-injected"]!;
+    const i = events.findIndex((e) => e.type === "tool-call-finished") + 1;
+    let chat = reduceEvents(start(), events.slice(0, i), 1000);
+    chat = reduceEvent(chat, received, 1500, lines);
+    chat = reduceEvents(chat, events.slice(i), 2000);
+    const kinds = segmentTurn(chat.turns[0]!).map((seg) => seg.kind);
+    expect(kinds).toContain("steer");
+    expect(kinds.indexOf("steer")).toBeGreaterThan(0);
+  });
+});

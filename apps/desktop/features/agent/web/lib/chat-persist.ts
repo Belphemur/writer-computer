@@ -24,6 +24,7 @@ import {
   titleFromMessage,
   titleSourceOf,
 } from "./chat-note";
+import type { LineLookup } from "./reduce";
 import type { Chat } from "./transcript";
 
 export type NoteState = {
@@ -87,12 +88,57 @@ export function recordSteer(note: NoteState, msg: SentMessage): NoteState {
   return { ...note, steers: [...(note.steers ?? []), { ...userNoteMessage(msg), steer: true }] };
 }
 
+/** The turn in flight (its pending events) closed into an assistant message of the note, with
+ *  its usage counted. A part with nothing to say (no text, no tool) is not written. */
+function closeAssistant(note: NoteState, now: number): NoteState {
+  const fold = foldAssistantEvents(note.pending);
+  const lastUser = [...note.messages].reverse().find((m) => m.role === "user");
+  // a steer the CLI ran as its own turn, or a message injected mid-turn, gives another
+  // assistant message after the same user message
+  const base = `${lastUser?.id ?? `m${note.messages.length}`}-a`;
+  const taken = note.messages.filter((m) => m.id.startsWith(base)).length;
+  const assistant: ChatNoteMessage = {
+    role: "assistant",
+    id: taken === 0 ? base : `${base}${taken + 1}`,
+    at: now,
+    text: fold.text,
+    ...(fold.reason ? { reason: fold.reason } : {}),
+    ...(fold.tools.length > 0 ? { tools: fold.tools } : {}),
+  };
+  const u = note.meta.usage ?? { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  return {
+    ...note,
+    pending: [],
+    messages:
+      fold.text || fold.tools.length > 0 || fold.reason
+        ? [...note.messages, assistant]
+        : note.messages,
+    meta: {
+      ...note.meta,
+      usage: {
+        inputTokens: u.inputTokens + fold.usage.inputTokens,
+        outputTokens: u.outputTokens + fold.usage.outputTokens,
+        costUsd: u.costUsd + fold.usage.costUsd,
+      },
+    },
+  };
+}
+
+/** A message the CLI took while a turn ran (`message-received`): the turn in flight is closed
+ *  into an assistant message (no `reason`: it goes on after the message) and the user message
+ *  follows it, where it landed. After a turn that already ended it is simply the next user message. */
+export function recordReceived(note: NoteState, msg: SentMessage, now: number): NoteState {
+  const closed = note.pending.length > 0 ? closeAssistant(note, now) : note;
+  return { ...closed, messages: [...closed.messages, userNoteMessage(msg)] };
+}
+
 /** Adds `events` to the turn in flight; a `turn-finished` closes it into an assistant message.
- *  `finished` says whether a note write is due. */
+ *  `finished` says whether a note write is due. `lines` finds the message a receipt names. */
 export function recordEvents(
   note: NoteState,
   events: readonly AgentEvent[],
   now: number,
+  lines?: LineLookup,
 ): { note: NoteState; finished: boolean } {
   let next = note;
   let finished = false;
@@ -116,6 +162,12 @@ export function recordEvents(
       if (next.pending.length === 0) finished = true;
       continue;
     }
+    if (ev.type === "message-received") {
+      const line = lines?.(ev.messageId);
+      // not a note write by itself: the turn's own end (or the store's save) writes it
+      if (line) next = recordReceived(next, { messageId: ev.messageId, ...line, ts: now }, now);
+      continue;
+    }
     if (ev.type === "subagent-status") {
       // a background run that ends after its turn was written: its message is updated in place
       const late = lateSubagent(next.messages, ev.toolCallId);
@@ -134,34 +186,9 @@ export function recordEvents(
       next = { ...next, pending };
       continue;
     }
-    const fold = foldAssistantEvents(pending);
-    const lastUser = [...next.messages].reverse().find((m) => m.role === "user");
-    // a steer the CLI ran as its own turn gives a second assistant message after the same user
-    const base = `${lastUser?.id ?? `m${next.messages.length}`}-a`;
-    const taken = next.messages.filter((m) => m.id.startsWith(base)).length;
-    const assistant: ChatNoteMessage = {
-      role: "assistant",
-      id: taken === 0 ? base : `${base}${taken + 1}`,
-      at: now,
-      text: fold.text,
-      ...(fold.reason ? { reason: fold.reason } : {}),
-      ...(fold.tools.length > 0 ? { tools: fold.tools } : {}),
-    };
-    const u = next.meta.usage ?? { inputTokens: 0, outputTokens: 0, costUsd: 0 };
-    next = {
-      ...next,
-      pending: [],
-      steers: [],
-      messages: [...next.messages, assistant, ...(next.steers ?? [])],
-      meta: {
-        ...next.meta,
-        usage: {
-          inputTokens: u.inputTokens + fold.usage.inputTokens,
-          outputTokens: u.outputTokens + fold.usage.outputTokens,
-          costUsd: u.costUsd + fold.usage.costUsd,
-        },
-      },
-    };
+    const closed = closeAssistant({ ...next, pending }, now);
+    // steers the turn cut short read after its assistant message
+    next = { ...closed, steers: [], messages: [...closed.messages, ...(next.steers ?? [])] };
     finished = true;
   }
   return { note: next, finished };

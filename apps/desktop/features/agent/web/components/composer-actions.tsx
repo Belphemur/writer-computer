@@ -142,7 +142,7 @@ export function ComposerActions({
           aria-label={busy ? "Queue message" : "Send"}
           title={
             busy && chat.pendingPermissions.length === 0
-              ? "Enter queues the message, Cmd+Enter sends it now (stops the current step)"
+              ? "Enter sends at the next step, Cmd+Enter sends now (stops the current step)"
               : "Send"
           }
           disabled={!canSend}

@@ -8,7 +8,9 @@
 //! (`Harness::go`), so a test can act between two lines (a tool "running" after its call was
 //! announced). A `{"type":"fake_take_stdin"}` line makes it read one stdin line right there, in
 //! the middle of the turn (a steer taken at a tool boundary); the `uuid` of the line it was given
-//! replaces `__STEER_UUID__` in the lines that follow, the way the real CLI echoes it. Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
+//! replaces `__STEER_UUID__` in the lines that follow, the way the real CLI echoes it. A
+//! `{"type":"fake_cancel"}` line makes it read one stdin line (a `cancel_async_message` request)
+//! and answer `cancelled:true` (or what the file `cancel-answer` holds). Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
 //! 2.1.326 run that delegated to a sub-agent (`system` `task_*` lines, `parent_tool_use_id`).
 //!
 //! Modes (read from `mode.txt` at every stdin line, and once at launch): `normal`,
@@ -57,6 +59,11 @@ play() { # fixture, max lines
     case "$l" in
       *'"type":"control_request"'*) read -r resp <&3 || exit 0; echo "$resp" >> "$D/stdin.log";;
       *'"type":"fake_take_stdin"'*) read -r resp <&3 || exit 0; echo "$resp" >> "$D/stdin.log"; STEER_UUID=$(uuid_of "$resp");;
+      *'"type":"fake_cancel"'*)
+        read -r req <&3 || exit 0; echo "$req" >> "$D/stdin.log"
+        rid=$(printf '%s' "$req" | sed -E 's/.*"request_id":"([^"]*)".*/\1/')
+        ans=$(cat "$D/cancel-answer" 2>/dev/null || echo true)
+        printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"cancelled":%s}}}\n' "$rid" "$ans";;
       *'"type":"fake_pause"'*) while [ ! -e "$D/go" ]; do sleep 0.05; done; rm -f "$D/go";;
     esac
   done
@@ -133,6 +140,7 @@ fn test_timing() -> Timing {
         mcp_backoff: [Duration::from_millis(200); 3],
         mcp_probe_timeout: Duration::from_secs(5),
         steer_ack: Duration::from_millis(600),
+        unqueue_ack: Duration::from_millis(1500),
     }
 }
 
@@ -485,7 +493,10 @@ fn use_steer_turns(h: &Harness, name: &str, first: &str, second: Option<&str>) {
         }
     }
     turns.retain(|t| !t.is_empty());
-    turns[0].insert(1, format!(r#"{{"type":"{first}"}}"#));
+    // `first` may list several markers (comma separated), placed in order
+    for (i, marker) in first.split(',').enumerate() {
+        turns[0].insert(1 + i, format!(r#"{{"type":"{marker}"}}"#));
+    }
     if let Some(line) = second {
         turns[1].insert(0, format!(r#"{{"type":"{line}"}}"#));
     }
@@ -599,6 +610,235 @@ fn a_steer_with_no_running_turn_is_an_ordinary_send() {
     assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
     let stdin = h.lines("stdin.log");
     assert!(stdin[1].contains("again") && !stdin[1].contains("\"uuid\""));
+}
+
+// ---- a plain line written while a turn runs (Enter, spec 3.13 "Queued lines") ----
+
+fn queue(h: &Harness, text: &str) {
+    h.sessions
+        .queue_line("w", CHAT, STEER_ID, text.into(), &[])
+        .unwrap();
+}
+
+fn received(h: &mut Harness) -> String {
+    match h.next(CHAT, "message-received", |e| {
+        matches!(e, AgentEvent::MessageReceived { .. })
+    }) {
+        AgentEvent::MessageReceived { message_id } => message_id,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn a_plain_line_sent_mid_turn_is_written_at_once_and_the_cli_injects_it() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(&h, "steer-injected", "fake_take_stdin", None);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "also the tagged ones");
+    // the fake blocks on stdin inside the turn: it can only finish when the line was written then
+    assert_eq!(
+        received(&mut h),
+        STEER_ID,
+        "the receipt comes inside the turn"
+    );
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+    let stdin = h.lines("stdin.log");
+    assert_eq!(stdin.len(), 2);
+    assert!(stdin[1].contains("also the tagged ones") && stdin[1].contains(STEER_ID));
+    assert!(!stdin[1].contains("priority"), "a plain line, not a steer");
+    h.drain();
+    assert_eq!(h.lines("stdin.log").len(), 2, "never sent a second time");
+}
+
+#[test]
+fn a_plain_line_waits_as_long_as_the_tool_runs_without_being_reported_late() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(&h, "steer-injected", "fake_pause,fake_take_stdin", None);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "later");
+    // well past the receipt time: the turn is still running, so nothing is overdue
+    std::thread::sleep(Duration::from_millis(1000));
+    h.drain();
+    assert!(!h
+        .seen
+        .iter()
+        .any(|e| matches!(e.event, AgentEvent::SteerUndelivered { .. })));
+    h.go();
+    assert_eq!(received(&mut h), STEER_ID);
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+}
+
+#[test]
+fn a_plain_line_with_no_tool_boundary_left_runs_as_the_next_turn_after_the_result() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(&h, "steer-deferred", "fake_pause", Some("fake_pause"));
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "also this");
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    // the CLI starts the line's turn by itself: the session is still working, no flush
+    assert_eq!(
+        h.sessions.get("w", CHAT).unwrap().state(),
+        AgentSessionState::Running
+    );
+    h.go();
+    assert_eq!(received(&mut h), STEER_ID, "the echo opens the next turn");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle after the line's turn", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+}
+
+#[test]
+fn a_plain_line_the_cli_never_echoes_is_reported_once_its_turn_ended_and_frees_the_session() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    paused_first_turn(&h, 1);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "lost");
+    h.go();
+    match h.next(CHAT, "steer-undelivered", |e| {
+        matches!(e, AgentEvent::SteerUndelivered { .. })
+    }) {
+        AgentEvent::SteerUndelivered { message_id } => assert_eq!(message_id, STEER_ID),
+        _ => unreachable!(),
+    }
+    h.wait_until("idle after the report", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+    // the CLI is told to drop it too, so it cannot run behind the chip that sends it again
+    h.wait_until("the cancel reached the CLI", || {
+        h.lines("stdin.log")
+            .iter()
+            .any(|l| l.contains("cancel_async_message") && l.contains(STEER_ID))
+    });
+}
+
+#[test]
+fn a_plain_line_with_no_running_turn_is_an_ordinary_send_that_keeps_its_receipt_id() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    h.sessions
+        .queue_line("w", CHAT, STEER_ID, "now".into(), &[])
+        .unwrap();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let stdin = h.lines("stdin.log");
+    assert!(stdin[0].contains("\"now\"") && stdin[0].contains(STEER_ID));
+    assert!(!stdin[0].contains("priority"));
+}
+
+#[test]
+fn a_waiting_plain_line_can_be_taken_back_and_is_never_run() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(
+        &h,
+        "steer-injected",
+        "fake_pause,fake_take_stdin,fake_cancel",
+        None,
+    );
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "never mind");
+    let session = h.sessions.get("w", CHAT).unwrap();
+    let removal = std::thread::spawn(move || session.unqueue(STEER_ID));
+    h.go();
+    assert_eq!(removal.join().unwrap().unwrap(), true);
+    // nothing waits for an echo any more: the turn ends normally and the session goes idle
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+    assert!(h
+        .lines("stdin.log")
+        .iter()
+        .any(|l| l.contains("cancel_async_message") && l.contains(STEER_ID)));
+}
+
+#[test]
+fn taking_back_a_line_the_cli_already_took_says_so_and_keeps_waiting_for_its_echo() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    std::fs::write(h.fdir.join("cancel-answer"), "false").unwrap();
+    use_steer_turns(
+        &h,
+        "steer-injected",
+        "fake_pause,fake_take_stdin,fake_cancel",
+        None,
+    );
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "too late");
+    let session = h.sessions.get("w", CHAT).unwrap();
+    let removal = std::thread::spawn(move || session.unqueue(STEER_ID));
+    h.go();
+    assert_eq!(removal.join().unwrap().unwrap(), false);
+    assert_eq!(received(&mut h), STEER_ID, "its echo still comes");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+}
+
+#[test]
+fn taking_back_a_line_that_is_not_waiting_is_a_no_op() {
+    let h = Harness::new(&["ok-turn"], "normal");
+    h.start(CHAT);
+    assert_eq!(h.sessions.unqueue("w", CHAT, STEER_ID).unwrap(), false);
+}
+
+#[test]
+fn stopping_takes_waiting_lines_out_of_the_cli_and_tells_the_chip() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    paused_first_turn(&h, 1);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "waiting");
+    h.sessions.cancel("w", CHAT).unwrap();
+    match h.next(CHAT, "steer-undelivered", |e| {
+        matches!(e, AgentEvent::SteerUndelivered { .. })
+    }) {
+        AgentEvent::SteerUndelivered { message_id } => assert_eq!(message_id, STEER_ID),
+        _ => unreachable!(),
+    }
+    h.go(); // the paused fake reads its stdin again
+    h.wait_until("the cancel reached the CLI", || {
+        h.lines("stdin.log")
+            .iter()
+            .any(|l| l.contains("cancel_async_message"))
+    });
+}
+
+#[test]
+fn a_plain_line_written_but_never_acknowledged_is_sent_again_once_with_its_id() {
+    const OTHER_SESSION: &str = "44444444-4444-4444-8444-444444444444";
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    paused_first_turn(&h, 1);
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    queue(&h, "left instead");
+    h.sessions.resume("w", CHAT, OTHER_SESSION).unwrap();
+    h.wait_until("the new process took it", || {
+        user_texts(&h).iter().any(|t| t == "left instead")
+    });
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+    assert_eq!(user_texts(&h), ["first", "left instead"], "once, not twice");
+    let again = &h.lines("stdin.log")[1];
+    assert!(
+        again.contains(STEER_ID) && !again.contains("priority"),
+        "a plain line with the same receipt id, so the chip still resolves"
+    );
 }
 
 #[test]

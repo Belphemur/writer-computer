@@ -29,6 +29,10 @@ export interface AgentClient {
   send(args: Args<"agent_send">): Promise<void>;
   /** Like `send`, but into the running turn at once instead of queued after it. */
   steer(args: Args<"agent_steer">): Promise<void>;
+  /** A plain line into the running turn at once (Enter while a turn runs). */
+  queue(args: Args<"agent_queue">): Promise<void>;
+  /** Takes a waiting queued line back: true when it is gone, false when the CLI already took it. */
+  unqueue(args: Args<"agent_unqueue">): Promise<boolean>;
   cancel(args: Args<"agent_cancel">): Promise<void>;
   permission(args: Args<"agent_permission">): Promise<void>;
   setPermissionMode(args: Args<"agent_set_permission_mode">): Promise<void>;
@@ -53,6 +57,8 @@ export function createTauriAgentClient(): AgentClient {
     start: (a) => call("agent_start", a),
     send: (a) => done(call("agent_send", a)),
     steer: (a) => done(call("agent_steer", a)),
+    queue: (a) => done(call("agent_queue", a)),
+    unqueue: (a) => call("agent_unqueue", a),
     cancel: (a) => done(call("agent_cancel", a)),
     permission: (a) => done(call("agent_permission", a)),
     setPermissionMode: (a) => done(call("agent_set_permission_mode", a)),

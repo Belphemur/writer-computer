@@ -758,6 +758,39 @@ pub fn encode_steer_message(text: &str, files: &[FilePart], uuid: &str) -> Strin
     line.to_string()
 }
 
+/// A message written while a turn runs without `priority`: the CLI injects it after the next
+/// tool result of the running turn, or runs it right after the turn when no tool boundary comes
+/// (captured: `queued-two`, `steer-injected`, `steer-deferred`; spec 3.13). Its `uuid` is the
+/// receipt (the echo) and the handle of [`encode_cancel_queued`].
+pub fn encode_queued_message(text: &str, files: &[FilePart], uuid: &str) -> String {
+    let mut line = user_value(text, files);
+    line["uuid"] = json!(uuid);
+    line.to_string()
+}
+
+/// Takes a waiting [`encode_queued_message`] line back out of the CLI's queue (the SDK's
+/// `cancel_async_message` control request, captured against the real CLI: `queued-cancel`). The
+/// answer is a `control_response` whose `response.cancelled` says whether it was still waiting;
+/// a line the CLI already took is a no-op (`cancelled:false`).
+pub fn encode_cancel_queued(request_id: &str, uuid: &str) -> String {
+    json!({"type":"control_request","request_id":request_id,
+           "request":{"subtype":"cancel_async_message","message_uuid":uuid}})
+    .to_string()
+}
+
+/// The answer to [`encode_cancel_queued`]: `(request id, cancelled)`. `None` for any other line.
+pub fn parse_cancel_queued_response(line: &str) -> Option<(String, bool)> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    let resp = v.get("response")?;
+    let id = resp.get("request_id")?.as_str()?.to_string();
+    let cancelled = resp
+        .get("response")
+        .and_then(|r| r.get("cancelled"))
+        .and_then(Value::as_bool)
+        == Some(true);
+    Some((id, cancelled))
+}
+
 fn user_value(text: &str, files: &[FilePart]) -> Value {
     if files.is_empty() {
         return json!({"type":"user","message":{"role":"user","content":text}});
@@ -1127,6 +1160,8 @@ mod tests {
             "steer-deferred" => include_str!("fixtures/steer-deferred.jsonl"),
             "steer-now-text" => include_str!("fixtures/steer-now-text.jsonl"),
             "steer-now-permission" => include_str!("fixtures/steer-now-permission.jsonl"),
+            "queued-two" => include_str!("fixtures/queued-two.jsonl"),
+            "queued-cancel" => include_str!("fixtures/queued-cancel.jsonl"),
             "subagent-parallel" => include_str!("fixtures/subagent-parallel.jsonl"),
             "subagent-background" => include_str!("fixtures/subagent-background.jsonl"),
             "subagent-auto-background" => {
@@ -1200,6 +1235,8 @@ mod tests {
             "steer-deferred",
             "steer-now-text",
             "steer-now-permission",
+            "queued-two",
+            "queued-cancel",
             "subagent-parallel",
             "subagent-background",
             "subagent-auto-background",
@@ -1250,6 +1287,94 @@ mod tests {
         let (echo, finished) = positions("steer-deferred");
         assert_eq!(finished.len(), 2, "the steer ran as a second turn");
         assert!(finished[0] < echo && echo < finished[1]);
+    }
+
+    /// Two plain lines written during one tool call (`queued-two`, real capture): the CLI does NOT
+    /// merge them. Both are echoed, one after the other, right after the tool's result and inside
+    /// the running turn (one `result`), each with its own `uuid`; the model answers both in one
+    /// message. This is why Writer merges queued messages itself (spec 3.13).
+    #[test]
+    fn two_lines_queued_at_one_boundary_are_delivered_as_two_messages() {
+        let mut m = ClaudeStreamMapper::new();
+        let mut echoes = Vec::new();
+        let (mut tool_result, mut finished) = (None, None);
+        for (i, line) in fixture("queued-two").lines().enumerate() {
+            let out = m.map_line(line);
+            if let Some(u) = out.user_echo {
+                echoes.push((i, u));
+            }
+            if out
+                .events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ToolCallFinished { .. }))
+            {
+                tool_result = Some(i);
+            }
+            if out
+                .events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TurnFinished { .. }))
+            {
+                finished = Some(i);
+            }
+        }
+        let ids: Vec<&str> = echoes.iter().map(|(_, u)| u.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "00000000-0000-4000-8000-000000000010",
+                "00000000-0000-4000-8000-000000000011",
+                "00000000-0000-4000-8000-000000000012"
+            ],
+            "the first message, then each queued line as its own message"
+        );
+        assert_eq!(echoes[2].0, echoes[1].0 + 1, "back to back");
+        assert!(tool_result.unwrap() < echoes[1].0 && echoes[2].0 < finished.unwrap());
+        let (events, _) = run("queued-two");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, AgentEvent::TurnFinished { .. }))
+                .count(),
+            1
+        );
+    }
+
+    /// `cancel_async_message` (`queued-cancel`, real capture): the answer says `cancelled:true`
+    /// for a waiting line, `false` for one the CLI no longer holds, and the cancelled line is
+    /// never echoed.
+    #[test]
+    fn cancelling_a_waiting_line_is_answered_and_the_line_is_never_echoed() {
+        let answers: Vec<(String, bool)> = fixture("queued-cancel")
+            .lines()
+            .filter_map(parse_cancel_queued_response)
+            .collect();
+        assert_eq!(
+            answers,
+            [
+                ("req_cancel_1".to_string(), true),
+                ("req_cancel_2".to_string(), false)
+            ]
+        );
+        let mut m = ClaudeStreamMapper::new();
+        let echoed: Vec<String> = fixture("queued-cancel")
+            .lines()
+            .filter_map(|l| m.map_line(l).user_echo)
+            .collect();
+        assert_eq!(echoed, ["00000000-0000-4000-8000-000000000010"]);
+        let v: Value = serde_json::from_str(&encode_cancel_queued("r1", "u-1")).unwrap();
+        assert_eq!(v["request"]["subtype"], "cancel_async_message");
+        assert_eq!(v["request"]["message_uuid"], "u-1");
+        assert_eq!(v["request_id"], "r1");
+        assert_eq!(parse_cancel_queued_response("not json"), None);
+    }
+
+    #[test]
+    fn a_queued_line_carries_a_uuid_and_no_priority() {
+        let v: Value = serde_json::from_str(&encode_queued_message("go left", &[], "u-1")).unwrap();
+        assert_eq!(v["uuid"], "u-1");
+        assert!(v.get("priority").is_none());
+        assert_eq!(v["message"]["content"], "go left");
     }
 
     #[test]

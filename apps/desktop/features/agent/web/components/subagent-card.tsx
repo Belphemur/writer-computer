@@ -42,7 +42,7 @@ export function SegmentList({
           <UserTurnCard
             key={seg.block.id}
             message={seg.block.message}
-            steer
+            steer={!seg.block.injected}
             undelivered={seg.block.undelivered}
           />
         ) : seg.kind === "text" ? (

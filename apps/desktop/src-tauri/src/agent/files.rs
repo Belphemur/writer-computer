@@ -109,6 +109,9 @@ pub struct FilePart {
 pub struct Outgoing {
     pub text: String,
     pub files: Vec<FilePart>,
+    /// Written as a plain line carrying this `uuid`, so the CLI's echo of it is the receipt (a
+    /// message sent while a turn ran, `Session::queue_line`; it keeps the id through a replay).
+    pub receipt: Option<String>,
 }
 
 impl Outgoing {
@@ -116,6 +119,7 @@ impl Outgoing {
         Self {
             text: text.into(),
             files: Vec::new(),
+            receipt: None,
         }
     }
 }

@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -131,6 +134,85 @@ describe("chat-persist: what the note holds", () => {
     ]);
     expect(note.messages[1]!.reason).toBe("interrupted");
     expect(firstEnd).toBeGreaterThan(1);
+  });
+
+  it("a message the CLI took mid-turn is an ordinary user message between the assistant's parts", () => {
+    let note = newNoteState("c", null, 0);
+    note = recordSend(note, { messageId: "m1", text: "go", context: [], ts: 1 });
+    const events = goldens["steer-injected"]!;
+    const at = events.findIndex((e) => e.type === "tool-call-finished") + 1;
+    const line = (id: string) => (id === "m2" ? { text: "only #client", context: [] } : undefined);
+    note = recordEvents(note, events.slice(0, at), 2).note;
+    note = recordEvents(note, [{ type: "message-received", messageId: "m2" }], 3, line).note;
+    expect(note.pending).toEqual([]); // the part before it is written
+    note = recordEvents(note, events.slice(at), 4).note;
+    expect(
+      note.messages.map((m) => `${m.role}:${m.id}${m.steer ? ":steer" : ""}:${m.reason ?? ""}`),
+    ).toEqual([
+      "user:m1:",
+      "assistant:m1-a:", // the turn went on: no reason
+      "user:m2:",
+      "assistant:m2-a:completed",
+    ]);
+    expect(note.messages[1]!.tools).toHaveLength(1);
+    // the saved note reads back as one turn with the message at the point it landed
+    const { markdown } = buildNote(
+      { chatId: "c", title: "t", projectPath: null, session: null, resumeSessionId: null },
+      note,
+      5,
+    );
+    const chat = chatFromNote(parseChatNote(markdown), { projectPath: null });
+    expect(chat.turns).toHaveLength(1);
+    const kinds = chat.turns[0]!.blocks.map((b) => b.kind);
+    expect(kinds.indexOf("steer")).toBeGreaterThan(0);
+    expect(chat.turns[0]!.blocks[kinds.indexOf("steer")]).toMatchObject({
+      injected: true,
+      message: { text: "only #client" },
+    });
+    expect(kinds.slice(kinds.indexOf("steer") + 1)).toContain("text");
+    expect(chat.turns[0]!.status).toBe("completed");
+  });
+
+  it("a message that ran after the turn is the next user message, a new turn when reopened", () => {
+    let note = newNoteState("c", null, 0);
+    note = recordSend(note, { messageId: "m1", text: "go", context: [], ts: 1 });
+    const events = goldens["steer-deferred"]!;
+    const end = events.findIndex((e) => e.type === "turn-finished") + 1;
+    note = recordEvents(note, events.slice(0, end), 2).note;
+    const line = () => ({ text: "also this", context: [] });
+    note = recordEvents(note, [{ type: "message-received", messageId: "m2" }], 3, line).note;
+    note = recordEvents(note, events.slice(end), 4).note;
+    expect(note.messages.map((m) => `${m.role}:${m.id}`)).toEqual([
+      "user:m1",
+      "assistant:m1-a",
+      "user:m2",
+      "assistant:m2-a",
+    ]);
+    const { markdown } = buildNote(
+      { chatId: "c", title: "t", projectPath: null, session: null, resumeSessionId: null },
+      note,
+      5,
+    );
+    const chat = chatFromNote(parseChatNote(markdown), { projectPath: null });
+    expect(chat.turns.map((t) => t.user?.text)).toEqual(["go", "also this"]);
+  });
+
+  it("the golden note reopens with the message where it landed, then the next turn", () => {
+    const text = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../../tests/fixtures/agent-chat-notes/queued.md",
+      ),
+      "utf8",
+    );
+    const chat = chatFromNote(parseChatNote(text), { projectPath: null });
+    expect(chat.turns).toHaveLength(2);
+    expect(chat.turns[0]!.blocks.map((b) => b.kind)).toEqual(["tool", "text", "steer", "text"]);
+    expect(chat.turns[0]!.blocks[2]).toMatchObject({
+      injected: true,
+      message: { text: "Only the ones tagged #client." },
+    });
+    expect(chat.turns[1]!.user?.text).toBe("Thanks.");
   });
 
   it("keeps a renamed title and the session id of a resumed chat", () => {

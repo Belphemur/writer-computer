@@ -32,7 +32,7 @@ export function PinnedStack({ chat, queued }: { chat: Chat; queued: QueuedMessag
           <button
             type="button"
             aria-label="Remove queued message"
-            onClick={() => removeQueuedMessage(chat.chatId)}
+            onClick={() => void removeQueuedMessage(chat.chatId)}
             className="rounded p-0.5 text-text-muted hover:text-text-primary"
           >
             <Ico icon={Cancel01Icon} size={12} />

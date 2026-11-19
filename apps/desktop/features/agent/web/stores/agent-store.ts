@@ -95,7 +95,14 @@ export type Draft = {
   parked?: ContextRef[];
 };
 
-export type QueuedMessage = { text: string; context: ContextRef[] };
+/** The message waiting behind the running turn (the "Queued" chip, one merged message). `id` null:
+ *  held in Writer until the chat is idle. Otherwise it was written to the CLI under that id (the
+ *  receipt id of `message-received`) and waits there for the next tool call, or for the end of
+ *  the turn. */
+export type QueuedMessage = { text: string; context: ContextRef[]; id: string | null };
+
+/** A message written to the CLI that it has not echoed yet: what the receipt turns into a card. */
+export type WrittenLine = { chatId: ChatId; text: string; context: ContextRef[] };
 
 const EMPTY_DRAFT: Draft = { text: "", mentions: [], activeNote: true };
 
@@ -106,6 +113,9 @@ interface AgentState {
   activeChatId: ChatId | null;
   drafts: Record<ChatId, Draft>;
   queued: Record<ChatId, QueuedMessage>;
+  /** Every message written to the CLI and not echoed yet, by message id: the chip shows the
+   *  latest, but one the CLI took while it was being merged still needs its text for its card. */
+  written: Record<string, WrittenLine>;
   /** Per-chat permission mode chosen in the composer; the setting is the default. */
   modes: Record<ChatId, AgentPermissionMode>;
   /** Per-chat model (and effort) chosen in the composer; null model is "Agent default". Absent:
@@ -161,13 +171,17 @@ interface AgentState {
   /** Adds image refs to the draft (read at call time, so a save that finished after more typing
    *  never overwrites it); an image already attached is not added twice. */
   addDraftImages: (chatId: ChatId, refs: readonly ContextRef[]) => void;
-  /** Enter: sends, or queues while a turn runs. `steer` (Cmd+Enter) writes it into the running
-   *  turn instead of queueing it (a normal send when idle). */
+  /** Enter: sends; while a turn runs the message is written to the CLI at once (it lands after
+   *  the next tool call, or runs after the turn) and shows as the "Queued" chip, several of them
+   *  merged into one message. `steer` (Cmd+Enter) cuts the current step instead (a normal send
+   *  when idle). */
   sendMessage: (text: string, opts?: { steer?: boolean }) => Promise<void>;
   /** Cmd+Enter and the chip's "Send now": the text in the composer is steered; with none, the
    *  queued messages are (one merged message, the chip clears). */
   sendNow: (text: string) => Promise<void>;
-  removeQueued: (chatId: ChatId) => void;
+  /** The chip's x and Esc: drops the message, and takes it back out of the CLI when it was
+   *  written there (nothing happens when the CLI has already taken it). */
+  removeQueued: (chatId: ChatId) => Promise<void>;
   /** The x of the changed-notes row: hidden until the list changes again. */
   hideSessionChanges: (chatId: ChatId) => void;
   stop: () => Promise<void>;
@@ -622,35 +636,38 @@ export const useAgentStore = create<AgentState>((set, get) => {
   /** Writes the user card and talks to the backend; the caller checked the chat is free.
    *  `replay`: start a fresh session seeded with the note's text (the CLI lost the old one).
    *  `steer`: the chat is mid-turn; the card joins that turn's timeline and the message goes into
-   *  the running turn. */
+   *  the running turn. `queue`: the chat is mid-turn and the message (this id) is written as a
+   *  plain line the CLI takes at its next tool call: no card yet, the receipt places it. */
   async function deliver(
     chatId: ChatId,
     text: string,
     context: ContextRef[],
-    opts: { replay?: boolean; steer?: boolean } = {},
+    opts: { replay?: boolean; steer?: boolean; queue?: string } = {},
   ) {
     const before = get().chats[chatId];
     if (!before) return;
     const live = before.session !== null && before.state !== "ended" && before.state !== "error";
-    const messageId = newId();
+    const messageId = opts.queue ?? newId();
     const resumeSessionId = opts.replay
       ? null
       : (before.session?.sessionId ?? before.resumeSessionId);
     const now = Date.now();
-    set((s) => {
-      const msg = { messageId, text, context };
-      const chat = opts.steer
-        ? appendSteer(s.chats[chatId]!, msg, now)
-        : appendUserTurn(s.chats[chatId]!, msg, now, live);
-      const note = s.notes[chatId];
-      const record = opts.steer ? recordSteer : recordSend;
-      return {
-        ...withChat(s, chatId, chat),
-        notes: note ? { ...s.notes, [chatId]: record(note, { ...msg, ts: now }) } : s.notes,
-        resuming: { ...s.resuming, [chatId]: !live && resumeSessionId !== null },
-      };
-    });
-    scheduleSave(chatId);
+    // a queued line has no card yet: the receipt places it (`message-received`)
+    if (!opts.queue)
+      set((s) => {
+        const msg = { messageId, text, context };
+        const chat = opts.steer
+          ? appendSteer(s.chats[chatId]!, msg, now)
+          : appendUserTurn(s.chats[chatId]!, msg, now, live);
+        const note = s.notes[chatId];
+        const record = opts.steer ? recordSteer : recordSend;
+        return {
+          ...withChat(s, chatId, chat),
+          notes: note ? { ...s.notes, [chatId]: record(note, { ...msg, ts: now }) } : s.notes,
+          resuming: { ...s.resuming, [chatId]: !live && resumeSessionId !== null },
+        };
+      });
+    if (!opts.queue) scheduleSave(chatId);
     try {
       const { client } = await ensureRuntime();
       if (!live) {
@@ -689,11 +706,17 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
       const message = { chatId, messageId, text: sendText, context: refs };
       if (opts.steer) await client.steer(message);
+      else if (opts.queue) await client.queue(message);
       else await client.send(message);
       if (tabsBlock !== null && sendText.includes(tabsBlock))
         lastOpenTabsSent.set(chatId, tabsBlock);
     } catch (e) {
       const { kind, message } = classifyStartError(e);
+      if (opts.queue) {
+        // the running turn is fine: the message goes back to waiting in Writer
+        revertLine(chatId, messageId);
+        return;
+      }
       if (!opts.replay && !live && resumeSessionId !== null && isSessionMissing(message)) {
         await recoverMissingSession(chatId);
         return;
@@ -732,12 +755,111 @@ export const useAgentStore = create<AgentState>((set, get) => {
     await deliver(chatId, text, context, { replay: true });
   }
 
+  // ---- messages sent while a turn runs (Enter): the chip, and the line written to the CLI ----
+
+  /** The chip, and the written line behind it (when `id` names one): gone. */
+  function dropChip(chatId: ChatId) {
+    set((s) => {
+      const { [chatId]: chip, ...queued } = s.queued;
+      if (!chip) return s;
+      return { queued, written: chip.id === null ? s.written : omitKey(s.written, chip.id) };
+    });
+  }
+
+  /** A written line the CLI no longer holds (its write failed, it was lost or stopped): the chip
+   *  waits in Writer again, and goes out as an ordinary message once the chat is idle. */
+  function revertLine(chatId: ChatId, messageId: string) {
+    set((s) => {
+      const chip = s.queued[chatId];
+      return {
+        written: omitKey(s.written, messageId),
+        queued:
+          chip?.id === messageId ? { ...s.queued, [chatId]: { ...chip, id: null } } : s.queued,
+      };
+    });
+    flushHeld(chatId);
+  }
+
+  /** The chip held in Writer goes out as an ordinary message once the chat is idle. */
+  function flushHeld(chatId: ChatId) {
+    const chip = get().queued[chatId];
+    if (!chip || chip.id !== null || get().chats[chatId]?.state !== "idle") return;
+    dropChip(chatId);
+    void deliver(chatId, chip.text, chip.context);
+  }
+
+  async function unqueueLine(chatId: ChatId, messageId: string): Promise<boolean> {
+    const { client } = await ensureRuntime();
+    return client.unqueue({ chatId, messageId });
+  }
+
+  /** Writes the message to the CLI now and shows it as the chip until the receipt. */
+  async function writeLine(chatId: ChatId, text: string, context: ContextRef[]) {
+    const id = newId();
+    set((s) => ({
+      queued: { ...s.queued, [chatId]: { text, context, id } },
+      written: { ...s.written, [id]: { chatId, text, context } },
+    }));
+    await deliver(chatId, text, context, { queue: id });
+  }
+
+  /** One chip operation at a time per chat: a second Enter waits for the answer of the first. */
+  const lineOps = new Map<ChatId, Promise<void>>();
+  function inOrder(chatId: ChatId, op: () => Promise<void>): Promise<void> {
+    const run = (lineOps.get(chatId) ?? Promise.resolve()).then(op);
+    lineOps.set(
+      chatId,
+      run.catch(() => undefined),
+    );
+    return run;
+  }
+
+  /** Enter while a turn runs (or a message already waits). Several messages become one: a line
+   *  still waiting in the CLI is taken back and written again joined with the new text; one the
+   *  CLI took in the meantime stays what it is and the new text waits as its own. */
+  function queueMessage(chatId: ChatId, text: string, context: ContextRef[]): Promise<void> {
+    return inOrder(chatId, async () => {
+      const chat = get().chats[chatId];
+      const chip = get().queued[chatId];
+      if (!chat) return;
+      if (chip?.id === null) {
+        // held in Writer (the chat was starting or stopping): the same merge as ever
+        set((s) => ({
+          queued: {
+            ...s.queued,
+            [chatId]: {
+              ...chip,
+              text: `${chip.text}\n\n${text}`,
+              context: [...chip.context, ...context],
+            },
+          },
+        }));
+      } else if (chip) {
+        const id = chip.id;
+        let gone = false;
+        try {
+          gone = await unqueueLine(chatId, id);
+        } catch {
+          // no answer: it stays where it is, the new text waits on its own
+        }
+        if (gone) {
+          set((s) => ({ written: omitKey(s.written, id) }));
+          await writeLine(chatId, `${chip.text}\n\n${text}`, [...chip.context, ...context]);
+        } else await writeLine(chatId, text, context);
+      } else if (canSteer(chat)) await writeLine(chatId, text, context);
+      else if (isBusy(chat)) {
+        set((s) => ({ queued: { ...s.queued, [chatId]: { text, context, id: null } } }));
+      } else await deliver(chatId, text, context);
+    });
+  }
+
   return {
     chats: {},
     order: [],
     activeChatId: null,
     drafts: {},
     queued: {},
+    written: {},
     modes: {},
     chatModels: {},
     modelPending: {},
@@ -770,6 +892,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         order: [],
         activeChatId: null,
         queued: {},
+        written: {},
         drafts: {},
         modes: {},
         chatModels: {},
@@ -837,6 +960,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const { [chatId]: _c, ...chats } = s.chats;
         const { [chatId]: _d, ...drafts } = s.drafts;
         const { [chatId]: _q, ...queued } = s.queued;
+        const written = Object.fromEntries(
+          Object.entries(s.written).filter(([, line]) => line.chatId !== chatId),
+        );
         const { [chatId]: _m, ...modes } = s.modes;
         const { [chatId]: _cm, ...chatModels } = s.chatModels;
         const { [chatId]: _mp, ...modelPending } = s.modelPending;
@@ -852,6 +978,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           order,
           drafts,
           queued,
+          written,
           modes,
           chatModels,
           modelPending,
@@ -933,18 +1060,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         await deliver(chatId, text, context, { steer: true });
         return;
       }
-      if (isBusy(chat)) {
-        set((s) => {
-          const q = s.queued[chatId];
-          return {
-            queued: {
-              ...s.queued,
-              [chatId]: q
-                ? { text: `${q.text}\n\n${text}`, context: [...q.context, ...context] }
-                : { text, context },
-            },
-          };
-        });
+      // a message already waiting, or a turn that runs: the chip (see `queueMessage`)
+      if (isBusy(chat) || get().queued[chatId]) {
+        await queueMessage(chatId, text, context);
         return;
       }
       await deliver(chatId, text, context);
@@ -955,7 +1073,17 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const chat = chatId ? get().chats[chatId] : null;
       const queued = chatId ? get().queued[chatId] : undefined;
       if (!chatId || !chat || !queued || !(canSteer(chat) || !isBusy(chat))) return;
-      get().removeQueued(chatId);
+      if (queued.id !== null) {
+        // written to the CLI: take it back first; one the CLI already took is on its way anyway
+        let gone = false;
+        try {
+          gone = await unqueueLine(chatId, queued.id);
+        } catch {
+          return;
+        }
+        if (!gone) return;
+      }
+      dropChip(chatId);
       await deliver(chatId, queued.text, queued.context, { steer: canSteer(chat) });
     },
     hideSessionChanges: (chatId) =>
@@ -967,11 +1095,19 @@ export const useAgentStore = create<AgentState>((set, get) => {
           sessionChanges: hideSessionChanges(chat.sessionChanges),
         });
       }),
-    removeQueued: (chatId) =>
-      set((s) => {
-        const { [chatId]: _q, ...queued } = s.queued;
-        return { queued };
-      }),
+    removeQueued: async (chatId) => {
+      const chip = get().queued[chatId];
+      if (!chip) return;
+      if (chip.id !== null) {
+        try {
+          // false: the CLI took it already; its card follows, the chip goes with the receipt
+          if (!(await unqueueLine(chatId, chip.id))) return;
+        } catch {
+          return;
+        }
+      }
+      if (get().queued[chatId]?.id === chip.id) dropChip(chatId);
+    },
     stop: async () => {
       const chatId = get().activeChatId;
       const chat = chatId ? get().chats[chatId] : null;
@@ -1139,15 +1275,33 @@ export const useAgentStore = create<AgentState>((set, get) => {
         : incoming.filter((e) => e.type !== "turn-changes" && e.type !== "session-changes");
       const now = Date.now();
       let finished = false;
+      let received = false;
       const refused = refusedModelFrom(events);
       set((s) => {
         const chat = s.chats[chatId];
         if (!chat) return s;
         const note = s.notes[chatId];
-        const folded = note ? recordEvents(note, events, now) : null;
+        // a receipt turns the message written earlier into a card (and a note entry) right where
+        // the CLI took it; a line that is gone (lost, stopped) goes back to waiting in Writer
+        const line = (id: string) => (s.written[id]?.chatId === chatId ? s.written[id] : undefined);
+        const folded = note ? recordEvents(note, events, now, line) : null;
         finished = folded?.finished ?? false;
+        let written = s.written;
+        let queued = s.queued;
+        for (const e of events) {
+          if (e.type !== "message-received" && e.type !== "steer-undelivered") continue;
+          if (!line(e.messageId)) continue;
+          written = omitKey(written, e.messageId);
+          received = received || e.type === "message-received";
+          const chip = queued[chatId];
+          if (chip?.id !== e.messageId) continue;
+          if (e.type === "message-received") queued = omitKey(queued, chatId);
+          else queued = { ...queued, [chatId]: { ...chip, id: null } };
+        }
         return {
-          ...withChat(s, chatId, { ...reduceEvents(chat, events, now), lastSeq }),
+          ...withChat(s, chatId, { ...reduceEvents(chat, events, now, line), lastSeq }),
+          written,
+          queued,
           notes: folded ? { ...s.notes, [chatId]: folded.note } : s.notes,
           cliCatalog: catalogFrom(events) ?? s.cliCatalog,
           modelPending:
@@ -1182,13 +1336,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
       if (finished) {
         scheduleSave(chatId);
         void maybeAutoTitle(chatId);
-      }
-      const after = get().chats[chatId];
-      const queued = get().queued[chatId];
-      if (after && queued && after.state === "idle") {
-        get().removeQueued(chatId);
-        void deliver(chatId, queued.text, queued.context);
-      }
+      } else if (received) scheduleSave(chatId);
+      flushHeld(chatId);
     },
 
     loadSkills: async (projectPath) => {
