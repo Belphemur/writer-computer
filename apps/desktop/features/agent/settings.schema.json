@@ -54,15 +54,15 @@
     {
       "key": "agent.allowed-tools",
       "label": "Always-allowed tools",
-      "description": "Permission rules passed as --allowedTools, one per entry, in Claude Code's rule syntax, for example Bash(git status). The defaults allow only read-only `writer` commands (search, backlinks, links, properties, bases); reads inside the vault already need no rule. Rules you chose with Always allow are stored by the CLI in the folder's .claude/settings.local.json and listed below.",
+      "description": "Permission rules passed as --allowedTools, one per entry, in Claude Code's rule syntax, for example Bash(git status). The defaults allow only read-only `writer` commands (search, graph:backlinks, graph:neighbors, properties, bases); reads inside the vault already need no rule. Rules you chose with Always allow are stored by the CLI in the folder's .claude/settings.local.json and listed below.",
       "category": "Agent",
       "type": "list",
       "scope": "global",
       "default": [
         "Bash(writer search *)",
         "Bash(writer search:context *)",
-        "Bash(writer backlinks *)",
-        "Bash(writer links *)",
+        "Bash(writer graph:backlinks *)",
+        "Bash(writer graph:neighbors *)",
         "Bash(writer properties *)",
         "Bash(writer property:read *)",
         "Bash(writer bases)",

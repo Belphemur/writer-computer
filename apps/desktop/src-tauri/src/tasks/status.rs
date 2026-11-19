@@ -138,6 +138,43 @@ impl StatusTable {
         self.get(symbol).map_or(StatusType::Todo, |s| s.kind)
     }
 
+    /// The symbol a user-typed status names: a registered symbol (`x`, ` `, `/`, a custom one) or
+    /// a status name (`done`, `todo`, `in-progress`, `cancelled`, a custom status's name; case and
+    /// `-`/`_`/space are not significant). A name that is a status type (`todo`) picks the first
+    /// status of that type. `None` when nothing matches; see [`StatusTable::describe`].
+    pub fn resolve(&self, input: &str) -> Option<char> {
+        let mut chars = input.chars();
+        if let (Some(c), None) = (chars.next(), chars.next()) {
+            return self.get(c).map(|s| s.symbol);
+        }
+        let norm = |s: &str| s.trim().to_ascii_lowercase().replace(['-', '_'], " ");
+        let want = norm(input);
+        self.list
+            .iter()
+            .find(|s| norm(&s.name) == want)
+            .or_else(|| {
+                self.list
+                    .iter()
+                    .find(|s| norm(&s.kind.as_str().replace('_', " ")) == want)
+            })
+            .map(|s| s.symbol)
+    }
+
+    /// The statuses a user can name, for an error message: `"x" done, " " todo, ...`.
+    pub fn describe(&self) -> String {
+        self.list
+            .iter()
+            .map(|s| {
+                format!(
+                    "\"{}\" ({})",
+                    s.symbol,
+                    s.name.to_ascii_lowercase().replace(' ', "-")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// The symbol a toggle moves to.
     pub fn next_symbol(&self, symbol: char) -> char {
         self.status_of(symbol).next
@@ -167,6 +204,28 @@ impl StatusTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_takes_symbols_and_names() {
+        let t = StatusTable::default().with_first(vec![Status::new(
+            '!',
+            "Important",
+            'x',
+            StatusType::Todo,
+        )]);
+        assert_eq!(t.resolve("x"), Some('x'));
+        assert_eq!(t.resolve(" "), Some(' '));
+        assert_eq!(t.resolve("!"), Some('!'));
+        assert_eq!(t.resolve("?"), None);
+        assert_eq!(t.resolve("Done"), Some('x'));
+        assert_eq!(t.resolve("in-progress"), Some('/'));
+        assert_eq!(t.resolve("cancelled"), Some('-'));
+        assert_eq!(t.resolve("important"), Some('!'));
+        // a status named "Todo" wins; a type name alone picks the first status of that type
+        assert_eq!(t.resolve("todo"), Some(' '));
+        assert_eq!(t.resolve("on-hold"), None);
+        assert_eq!(t.resolve("nope"), None);
+    }
 
     #[test]
     fn default_toggles() {

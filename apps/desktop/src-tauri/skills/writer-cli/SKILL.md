@@ -26,7 +26,7 @@ writer [vault=<name|id|path>] <command> [key=value ...] [flag ...] [--copy]
 ## Output and exit codes
 
 - Results go to stdout, errors and warnings to stderr as `writer: <message>`. Output is plain and line oriented, safe to pipe.
-- Commands with `format=` accept the formats listed in their help. Defaults: `search`/`search:context`/`tasks` text, `properties` yaml, `tags`/`backlinks`/`unresolved` tsv (no header), `outline` tree, `base:query` json.
+- Commands with `format=` accept the formats listed in their help. Defaults: `search`/`search:context`/`tasks` text, `properties` yaml, `tags` tsv (no header), `graph:*` text, `outline` tree, `base:query` json.
 - `total` prints only a count.
 - Exit `0` success. Exit `1` the command ran and failed (file not found, refused write, invalid value, unparsable frontmatter or `.base`, index busy). Exit `2` usage error (unknown command, parameter or flag, missing required parameter, command not available in the Writer CLI). Exit `4` `Writer is not running`: a command of the running app (`status`, `open`, `reveal`, `active`) found no app. Check the exit code, not just the output.
 
@@ -36,33 +36,32 @@ See [references/commands.md](references/commands.md) for every command with its 
 
 <!-- BEGIN GENERATED: groups (cargo test skill_doc) -->
 
-| Group      | Commands                                                                                                                                      |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Vault      | `vault`, `vaults`                                                                                                                             |
-| Files      | `files`, `file`, `folders`, `folder`                                                                                                          |
-| Content    | `read`, `create`, `append`, `prepend`, `move`, `rename`, `title`, `delete`                                                                    |
-| Search     | `search`, `search:context`                                                                                                                    |
-| Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases`                                                                   |
-| Tags       | `tags`, `tag`                                                                                                                                 |
-| Tasks      | `tasks`, `task`, `task:add`, `task:done`, `task:edit`                                                                                         |
-| Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                                                                                     |
-| Graph      | `graph:neighbors`, `graph:path`, `graph:relationships`, `graph:backlinks`, `graph:related`, `graph:hubs`, `graph:components`, `graph:orphans` |
-| Structure  | `outline`, `wordcount`                                                                                                                        |
-| App        | `status`, `open`, `reveal`, `active`                                                                                                          |
-| Skills     | `skills:sync`                                                                                                                                 |
-| Meta       | `help`, `version`                                                                                                                             |
-| Agent      | `project:archive`, `project:unarchive`                                                                                                        |
-| Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                            |
-| Dataview   | `dql`                                                                                                                                         |
-| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:export`, `excalidraw:preview`                      |
-| Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                         |
-| Spelling   | `check`                                                                                                                                       |
+| Group      | Commands                                                                                                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vault      | `vault`, `vaults`                                                                                                                                                                   |
+| Files      | `files`, `file`, `folders`, `folder`                                                                                                                                                |
+| Content    | `read`, `create`, `append`, `prepend`, `move`, `title`, `delete`                                                                                                                    |
+| Search     | `search`, `search:context`                                                                                                                                                          |
+| Properties | `properties`, `property:set`, `property:read`, `property:remove`                                                                                                                    |
+| Tags       | `tags`, `tag`                                                                                                                                                                       |
+| Tasks      | `tasks`, `task:add`, `task:done`, `task:edit`                                                                                                                                       |
+| Graph      | `graph:neighbors`, `graph:path`, `graph:relationships`, `graph:backlinks`, `graph:related`, `graph:hubs`, `graph:components`, `graph:orphans`, `graph:deadends`, `graph:unresolved` |
+| Structure  | `outline`, `wordcount`                                                                                                                                                              |
+| App        | `status`, `open`, `reveal`, `active`                                                                                                                                                |
+| Skills     | `skills:sync`                                                                                                                                                                       |
+| Meta       | `help`, `version`                                                                                                                                                                   |
+| Agent      | `project:archive`, `project:unarchive`                                                                                                                                              |
+| Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                                                                  |
+| Dataview   | `dql`                                                                                                                                                                               |
+| Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:export`, `excalidraw:preview`                                                            |
+| Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                                                               |
+| Spelling   | `check`                                                                                                                                                                             |
 
 <!-- END GENERATED: groups -->
 
 Search commands: see the `writer-search` skill. Bases commands: see `writer-bases`. `skills:sync` reinstalls the managed agent skills in this vault. `dql query="TABLE status FROM \"Projects\" WHERE priority > 1"` runs a Dataview query headless (TABLE, LIST, TASK, CALENDAR; same engine and rows as a ```dataview block, `dataviewjs` is never run) and prints it with `format=` (json default); add `file=` or `path=` to set `this`.
 
-Icons: `icon:set path=Projects icon=📁` (or `icon=icon:Rocket01Icon`, a Hugeicons name) gives a file or folder the icon Writer shows in the sidebar, tabs and links; `icon:get` prints it, `icon:remove` clears it. They live in `.writer/icons.json` (never `.obsidian`); an icon from the Iconize plugin shows too, read-only, and `icon:remove` hides it. Renaming or moving with `writer rename` / `move` keeps the icon.
+Icons: `icon:set path=Projects icon=📁` (or `icon=icon:Rocket01Icon`, a Hugeicons name) gives a file or folder the icon Writer shows in the sidebar, tabs and links; `icon:get` prints it, `icon:remove` clears it. They live in `.writer/icons.json` (never `.obsidian`); an icon from the Iconize plugin shows too, read-only, and `icon:remove` hides it. Renaming or moving with `writer move` keeps the icon.
 
 ## Typical tasks
 
@@ -75,12 +74,12 @@ writer append file="Weekly review" content="- [ ] follow up"
 writer append path=Inbox.md heading="Today" content="- call back"
 writer property:set file=Recipe name=status value=draft
 writer tags counts sort=count
-writer backlinks file=Recipe format=json
 writer graph:neighbors file=Recipe depth=2 format=json   # what surrounds a note, and why
 writer graph:backlinks file=Recipe context format=json   # who links here, with the line
 writer tasks todo verbose
-writer rename file=Recipe name="Best recipe"      # updates links in other notes
-writer rename file=Recipe name="Best recipe" dry-run   # show which files and how many links would change
+writer move file=Recipe name="Best recipe"        # rename; updates links in other notes
+writer move file=Recipe to=Archive                # move to a folder; also updates links
+writer move file=Recipe name="Best recipe" dry-run   # show which files and how many links would change
 writer title file=Recipe set="Best recipe"        # display title only (the `title` property); the file keeps its name
 writer title file=Recipe clear dry-run            # preview removing it
 ```
@@ -105,16 +104,16 @@ writer active format=json
 
 ## How notes relate (graph)
 
-Use the `graph:*` commands, with `format=json`, to understand how notes are connected before reading many files: `graph:neighbors` (notes within `depth=` links, each with how it is reached: a body `link`, an `embed` or a `property` such as `manager`), `graph:path from=A to=B`, `graph:relationships` (property links like `manager: [[Daniel]]`; with no `file=` it lists the property names in use, reuse those names when you write new ones), `graph:backlinks context` (the line that holds each link, capped), `graph:related` (notes that share linked notes), `graph:hubs`, `graph:components`, `graph:orphans` (no link in or out; `orphans` means no incoming link). Results are capped; `truncated: true` means raise `limit=` or lower `depth=`. A note with hundreds of links is listed but not expanded. Links resolve by file name, so a bare `[[index]]` that matches several files is reported by the index as ambiguous.
+Use the `graph:*` commands, with `format=json`, to understand how notes are connected before reading many files: `graph:neighbors` (notes within `depth=` links, each with how it is reached: a body `link`, an `embed` or a `property` such as `manager`), `graph:path from=A to=B`, `graph:relationships` (property links like `manager: [[Daniel]]`; with no `file=` it lists the property names in use, reuse those names when you write new ones), `graph:backlinks context` (the line that holds each link, capped), `graph:related` (notes that share linked notes), `graph:hubs`, `graph:components`, `graph:orphans` (no link in or out; add `incoming` for notes nothing links to), `graph:deadends` (no outgoing link), `graph:unresolved` (links that match no file, with the notes holding them). The outgoing links of one note are `graph:neighbors file=X direction=out depth=1`. Results are capped; `truncated: true` means raise `limit=` or lower `depth=`. A note with hundreds of links is listed but not expanded. Links resolve by file name, so a bare `[[index]]` that matches several files is reported by the index as ambiguous.
 
 ## Safety
 
-- Code and text files (py, ts, js, json, yaml, sh, rs, go, ... and `.agents/skills/<name>/` scripts) are listed by `files` and `search` (by name; their contents are not full-text indexed), and `read path=...` prints them. Generated folders (`node_modules`, `target`, `dist`, `build`, `__pycache__`, `.venv`, ...) and `.env`/secret-looking files are never listed. They are not link targets: `rename`/`move` of a code file moves it and rewrites no links.
-- `rename` and `move` rewrite wikilinks (`[[Old]]`, `[[Old|alias]]`, `[[Old#Heading]]`, `[[Old#^block]]`, `[[folder/Old]]`), embeds (`![[Old.png]]`), Markdown links (`[x](folder/Old%20Name.md)`), wikilink values in frontmatter properties and references in `.base` files, keeping each link's style, alias and heading; links in code spans and fences are untouched. They refuse an existing target, names with `/ \ : * ? " < > | # ^ [ ]`, control characters, hidden or reserved names, and anything inside `.obsidian`. They stage every edit first and roll back on an I/O error. `dry-run` prints the plan and writes nothing; `no-update-links` moves the file only. `format=json` prints `{from, to, dryRun, links, files, edits}`. Prefer them over renaming with `mv`, which leaves links broken.
-- A note's title is its file name; the first heading is never a title. `title file=X set=<new>` writes the frontmatter `title` property, an explicit display override that never renames the file or changes a link target, and rewrites links that show the old title as their alias (`[[X|Old]]` and `![[X|Old]]` become `[[X|New]]`; other links are untouched). `clear` removes the property and the old alias. `dry-run`, `no-update-links` and `format=json` (`{path, old, new, dryRun, links, files, edits}`) work like for `rename`; without `set=` or `clear` it prints the current title. To change the name links use, `rename` the file.
+- Code and text files (py, ts, js, json, yaml, sh, rs, go, ... and `.agents/skills/<name>/` scripts) are listed by `files` and `search` (by name; their contents are not full-text indexed), and `read path=...` prints them. Generated folders (`node_modules`, `target`, `dist`, `build`, `__pycache__`, `.venv`, ...) and `.env`/secret-looking files are never listed. They are not link targets: `move` of a code file moves it and rewrites no links.
+- `move` (to rename, give `name=`; to relocate, `to=`) rewrites wikilinks (`[[Old]]`, `[[Old|alias]]`, `[[Old#Heading]]`, `[[Old#^block]]`, `[[folder/Old]]`), embeds (`![[Old.png]]`), Markdown links (`[x](folder/Old%20Name.md)`), wikilink values in frontmatter properties and references in `.base` files, keeping each link's style, alias and heading; links in code spans and fences are untouched. It refuses an existing target, names with `/ \ : * ? " < > | # ^ [ ]`, control characters, hidden or reserved names, and anything inside `.obsidian`. It stages every edit first and roll back on an I/O error. `dry-run` prints the plan and writes nothing; `no-update-links` moves the file only. `format=json` prints `{from, to, dryRun, links, files, edits}`. Prefer it over renaming with `mv`, which leaves links broken.
+- A note's title is its file name; the first heading is never a title. `title file=X set=<new>` writes the frontmatter `title` property, an explicit display override that never renames the file or changes a link target, and rewrites links that show the old title as their alias (`[[X|Old]]` and `![[X|Old]]` become `[[X|New]]`; other links are untouched). `clear` removes the property and the old alias. `dry-run`, `no-update-links` and `format=json` (`{path, old, new, dryRun, links, files, edits}`) work like for `move`; without `set=` or `clear` it prints the current title. To change the name links use, `move file=X name=<new>`.
 - `delete` moves the file to the OS trash; `delete permanent` removes it for good. If the trash fails nothing is deleted.
 - `create` never overwrites unless the `overwrite` flag is given. It always produces a Markdown note (`.md` is appended), so it cannot create a `.base` file; write those with normal file edits.
-- `property:set`, `property:remove` and `task` edit only the targeted frontmatter line or checkbox character, so comments, key order and other text are preserved. Unparsable frontmatter is an error, not a rewrite.
+- `property:set`, `property:remove` and `task:edit` change only the targeted frontmatter line or checkbox character, so comments, key order and other text are preserved. Unparsable frontmatter is an error, not a rewrite.
 - A key inside a property's map (a skill's `metadata:`) is a dotted name: `writer property:set file=Recipe name=metadata.version value=2`. A property whose name really contains a dot wins; a flow map or a map deeper than two levels is refused, not rewritten.
 - Writer never reads or writes inside `.obsidian` or `.git`, and refuses paths that leave the vault (`..`, absolute paths elsewhere, symlinks pointing outside).
 - A note that is open in the Writer app with unsaved edits is not coordinated with the CLI; avoid editing the same note from both at once.
@@ -124,6 +123,8 @@ Use the `graph:*` commands, with `format=json`, to understand how notes are conn
 ## Not available in the CLI
 
 These Obsidian CLI commands need a running Obsidian-style app or features Writer does not have, and exit 2 with `Not available in the Writer CLI: <name>`: `search:open`, `templates` and `template*`, `bookmark*`, `diff`, `history*`, `sync*`, `plugin*`, `theme*`, `snippet*`, `publish*`, `workspace*`, `tab*`, `daily*`, `random*`, `unique*`, `web`, `dev*`, `command*`, `hotkey*`, `vault:*`, plus the `active` and `daily` flags. Use `file=` or `path=` instead of the active file, and ordinary file edits for anything else.
+
+Commands that were removed because another does the job exit 2 and name it (`writer: backlinks was removed: use graph:backlinks`): `links`, `backlinks`, `orphans`, `deadends`, `unresolved`, `rename`, `aliases` (use `property:read name=aliases`), `task` (use `tasks` to list, `task:add`, `task:done`, and `task:edit status=<symbol|name>` to set a status or reopen a task).
 
 ## When not to use it
 

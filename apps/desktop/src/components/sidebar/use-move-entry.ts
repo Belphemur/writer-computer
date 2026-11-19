@@ -35,7 +35,7 @@ export function useMoveEntry() {
       if (entry.is_dir) {
         await tauri.renameEntry(entry.path, newPath);
       } else {
-        // Files go through the Rust relocate (the code behind `writer rename`): every link to the
+        // Files go through the Rust relocate (the code behind `writer move`): every link to the
         // file in the vault is rewritten, like Obsidian's "Automatically update internal links".
         const result = await tauri.relocateEntry(entry.path, newPath);
         if (!result.linksUpdated) {

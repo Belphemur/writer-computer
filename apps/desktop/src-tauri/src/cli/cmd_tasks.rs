@@ -173,11 +173,21 @@ pub fn done(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError>
     Ok(out)
 }
 
-/// `task:edit ref=path:line [due=…] [scheduled=…] [start=…] [priority=…] [recurrence=…]
+/// `task:edit ref=path:line [status=<symbol|name>] [due=…] [scheduled=…] [start=…] [priority=…] [recurrence=…]
 /// [clear=due,priority]`: set or clear fields of one task; the line changes by those tokens only.
 pub fn edit(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
     let s = settings(ctx)?;
     let (t, line) = task_target(ctx, args)?;
+    // resolved before anything is written, so a bad status leaves the task alone
+    let status = match args.get("status") {
+        None => None,
+        Some(v) => Some(s.statuses.resolve(v).ok_or_else(|| {
+            CliError::fail(format!(
+                "unknown status \"{v}\"; valid: {}",
+                s.statuses.describe()
+            ))
+        })?),
+    };
     let mut edits: Vec<(Field, FieldValue)> = Vec::new();
     for name in ["due", "scheduled", "start", "priority", "recurrence"] {
         if let Some(v) = args.get(name) {
@@ -189,21 +199,39 @@ pub fn edit(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError>
             edits.push((field_of(name)?, FieldValue::Clear));
         }
     }
-    if edits.is_empty() {
+    if edits.is_empty() && status.is_none() {
         return Err(CliError::Usage(
-            "give at least one of due=, scheduled=, start=, priority=, recurrence= or clear="
+            "give at least one of status=, due=, scheduled=, start=, priority=, recurrence= or clear="
                 .into(),
         ));
     }
     // all edits land in one write: apply them to the line in order
     let root = ctx.root()?;
-    let c = ops::edit_line(root, &t.rel, line, None, |l, n| {
-        let mut cur = l.to_string();
-        for (field, value) in &edits {
-            cur = crate::tasks::edit::set_field_line(&cur, n, *field, value, &s)?;
-        }
-        Ok(cur)
-    })
-    .map_err(|e| CliError::fail(e.to_string()))?;
-    Ok(format!("Edited {}:{line}\n", c.path))
+    let mut path = t.rel.clone();
+    if !edits.is_empty() {
+        let c = ops::edit_line(root, &t.rel, line, None, |l, n| {
+            let mut cur = l.to_string();
+            for (field, value) in &edits {
+                cur = crate::tasks::edit::set_field_line(&cur, n, *field, value, &s)?;
+            }
+            Ok(cur)
+        })
+        .map_err(|e| CliError::fail(e.to_string()))?;
+        path = c.path;
+    }
+    // the status change is the feature's one write path for statuses (done dates, recurrence)
+    if let Some(symbol) = status {
+        let c = ops::change_status(
+            root,
+            &t.rel,
+            line,
+            None,
+            StatusChange::Set(symbol),
+            &s,
+            today(ctx),
+        )
+        .map_err(|e| CliError::fail(e.to_string()))?;
+        path = c.path;
+    }
+    Ok(format!("Edited {path}:{line}\n"))
 }

@@ -1,4 +1,4 @@
-# File-name links and `writer rename` Spec
+# File-name links and `writer move` Spec
 
 Decision: [ADR](../docs/decisions/2026-11-16-links-resolve-by-file-name-and-rename-rewrites-links-through-one-rust-function.md).
 
@@ -27,7 +27,7 @@ A note's title can come from frontmatter `title:` then a leading `# Heading` (`c
 | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Index `files.basename`, FTS `title` column, `SearchHit.title`                                                                                     | file stem (never the H1/frontmatter title)                                                | already file-name based; H1 is in the `headings` FTS column, frontmatter text in `props`; bm25 weights `title 10, headings 5, tags 4, props 2, body 1`, so a name match outranks all of them (test added) |
 | Index `links`, backlinks, unresolved, orphans (`index/build.rs`, `index/resolve.rs`)                                                              | `PathIndex::resolve`, file name                                                           | already file-name based; tests added                                                                                                                                                                      |
-| `writer` `file=`, `links`, `backlinks`, `unresolved`                                                                                              | `Index::resolve_link` (same resolver)                                                     | already file-name based                                                                                                                                                                                   |
+| `writer` `file=`, `graph:neighbors`, `graph:backlinks`, `graph:unresolved`                                                                        | `Index::resolve_link` (same resolver)                                                     | already file-name based                                                                                                                                                                                   |
 | Bases `file.name`, `link()`, `file.hasLink()`                                                                                                     | path basename, `RowContext::resolve_link` (same resolver)                                 | already file-name based                                                                                                                                                                                   |
 | Quick open / `fuzzy_search` / `find_file_by_name` (`index/names.rs`)                                                                              | file path/name                                                                            | already file-name based; file-name match ranks above folder match                                                                                                                                         |
 | **TS `resolveWikiLink` (editor click, property links, base cells, base embeds)**                                                                  | its own copy: `fuzzy_search` by stem, duplicate = unresolved, path link = exact path only | **changed**: calls the Rust resolver (`resolve_wiki_link` command), so duplicates, partial paths and attachments behave like backlinks                                                                    |
@@ -66,9 +66,9 @@ Decision: [`2026-11-17-file-name-is-the-title-...`](../docs/decisions/2026-11-17
 5. Several matches: closest folder, fewest components, shortest path, alphabetical. No match: unresolved.
 6. `#Heading`, `#^block` and `|alias` are split off before resolution.
 
-## `writer rename` and `writer move`
+## `writer move`
 
-`rename file=<name>|path=<path> name=<new>` and `move file=|path= to=<folder-or-path>` (both existed; this change makes them safe and complete).
+`move file=<name>|path=<path> [to=<folder-or-path>] [name=<new>]`: `name=` renames in the note's folder (or in `to=`), `to=` moves, both do both (a separate `rename` command was removed, ADR 2026-11-19).
 
 - Flags: `dry-run` (print the plan: renamed path, files and link counts; write nothing), `no-update-links` (move only). `format=json` prints `{from,to,dryRun,links,files,skipped,edits[{path,links}]}`. Exit codes: 0 ok, 1 failure/validation, 2 usage.
 - Name rules (`relocate::validate_file_name`): non-empty, no leading/trailing space or trailing dot, at most 255 bytes, none of `* " \ / < > : | ? # ^ [ ]` or control characters, not hidden (leading dot), not a Windows reserved name; the extension is kept when `name=` has none. Refuses to overwrite, to leave the vault and to touch `.obsidian`/`.git`.

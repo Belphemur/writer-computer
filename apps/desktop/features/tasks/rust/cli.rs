@@ -48,12 +48,16 @@ pub static COMMANDS: &[CommandSpec] = &[
         ..cmd!(
             "task:edit",
             "Tasks",
-            "Set or clear the fields of a task",
+            "Set the status or fields of a task, or clear fields",
             &[
                 p("ref", "path:line"),
                 FILE,
                 PATH,
                 p("line", "line number"),
+                p(
+                    "status",
+                    "status symbol (x, space, /, -, a custom one) or name (done, todo, in-progress, cancelled)"
+                ),
                 p("due", "YYYY-MM-DD"),
                 p("scheduled", "YYYY-MM-DD"),
                 p("start", "YYYY-MM-DD"),

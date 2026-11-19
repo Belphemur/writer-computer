@@ -66,7 +66,7 @@ Use the cheaper, exact commands when the question is structured:
 - Notes with a tag: `writer tag name=project verbose`, or `tag:project` inside a search to combine with words.
 - A frontmatter value of one note: `writer property:read file=Recipe name=status`; the property names in use: `writer properties counts`.
 - Files by name or folder: `writer files folder=Projects`, or `file:name` in a search.
-- Who links to a note: `writer backlinks file=Recipe`; unlinked mentions are a search for the file name. A note's name is its file name: `[[Recipe]]` links to `Recipe.md`, never to a note that merely has `title: Recipe` or a `# Recipe` heading (those are searchable text, ranked below file-name matches).
+- Who links to a note: `writer graph:backlinks file=Recipe format=json`; unlinked mentions are a search for the file name. A note's name is its file name: `[[Recipe]]` links to `Recipe.md`, never to a note that merely has `title: Recipe` or a `# Recipe` heading (those are searchable text, ranked below file-name matches).
 - Open tasks: `writer tasks todo verbose`.
 - Filtered tables over many properties: a base view, see the `writer-bases` skill.
 

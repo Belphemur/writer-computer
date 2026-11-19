@@ -6,7 +6,7 @@
 //! `WRITER_UPDATE_GOLDEN=1 cargo test skill_doc` rewrites it. A change here changes the bundled
 //! skill, so `managed_skills::BUNDLE_VERSION` must be bumped (a test says so).
 
-use super::registry::{commands, CommandSpec, ParamSpec, FILE, PATH};
+use super::registry::{commands, groups, CommandSpec, ParamSpec, FILE, PATH};
 
 /// Prose that belongs to a whole group, shown under its heading in the reference.
 const GROUP_NOTES: &[(&str, &str)] = &[
@@ -54,18 +54,6 @@ fn command_line(c: &CommandSpec) -> String {
             .map(|(f, d)| format!("`{}` ({d})", super::args::flag_display(f)))
             .collect();
         out.push_str(&format!(" Flags: {}.", flags.join(", ")));
-    }
-    out
-}
-
-/// Groups in registry order, each with its commands in registry order.
-fn groups() -> Vec<(&'static str, Vec<&'static CommandSpec>)> {
-    let mut out: Vec<(&'static str, Vec<&'static CommandSpec>)> = Vec::new();
-    for c in commands() {
-        match out.iter_mut().find(|(g, _)| *g == c.group) {
-            Some((_, list)) => list.push(c),
-            None => out.push((c.group, vec![c])),
-        }
     }
     out
 }

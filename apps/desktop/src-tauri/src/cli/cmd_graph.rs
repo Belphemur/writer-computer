@@ -315,14 +315,40 @@ pub fn components(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, 
     render_table(&table, &format)
 }
 
-/// Notes with no link in or out. (`orphans` keeps Obsidian's meaning, no incoming link.)
-pub fn orphans(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
+/// A list of notes as a one-column table, at most `limit=`.
+fn note_list(args: &Args, spec: &CommandSpec, list: Vec<String>) -> Result<String, CliError> {
     let format = args.format(spec)?;
     let mut table = Table::new(&["path"]);
-    let list = ctx.index()?.isolated_notes()?;
     let limit = number(args, "limit")?.unwrap_or(usize::MAX);
     for p in list.into_iter().take(limit) {
         table.push(vec![Json::String(p)]);
+    }
+    render_table(&table, &format)
+}
+
+/// Notes with no link in or out; `incoming` relaxes that to "nothing links to it".
+pub fn orphans(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
+    let index = ctx.index()?;
+    let list = if args.flag("incoming") {
+        index.orphans()?
+    } else {
+        index.isolated_notes()?
+    };
+    note_list(args, spec, list)
+}
+
+/// Notes with no outgoing link (an unresolved link counts as outgoing).
+pub fn deadends(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
+    note_list(args, spec, ctx.index()?.deadends()?)
+}
+
+/// Links that match no file: the target as written, how many times, and the notes holding them.
+pub fn unresolved(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
+    let format = args.format(spec)?;
+    let mut table = Table::new(&["link", "count", "sources"]);
+    let limit = number(args, "limit")?.unwrap_or(usize::MAX);
+    for u in ctx.index()?.unresolved()?.into_iter().take(limit) {
+        table.push(vec![json!(u.target), json!(u.count), json!(u.sources)]);
     }
     render_table(&table, &format)
 }

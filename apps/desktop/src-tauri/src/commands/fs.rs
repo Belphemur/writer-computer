@@ -926,7 +926,7 @@ fn vault_err(e: crate::vault_ops::VaultOpError) -> AppError {
 }
 
 /// Rename or move one file and rewrite every link to it, using the same
-/// `relocate` plan/apply as `writer rename` / `writer move`. Folders and
+/// `relocate` plan/apply as `writer move`. Folders and
 /// files outside an indexed vault go through plain [`rename_entry_impl`].
 #[tauri::command]
 pub async fn relocate_entry(

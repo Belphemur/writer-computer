@@ -436,24 +436,6 @@ pub fn property_remove(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String
     Ok(format!("Removed {name} from {}\n", t.rel))
 }
 
-pub fn aliases(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let target = ctx.target_opt(args)?;
-    let mut list = ctx.index()?.aliases()?;
-    if let Some(t) = &target {
-        list.retain(|a| a.path == t.rel);
-    }
-    if args.flag("total") {
-        return Ok(count(list.len()));
-    }
-    Ok(list_lines(list.into_iter().map(|a| {
-        if args.flag("verbose") {
-            format!("{}\t{}", a.path, a.alias)
-        } else {
-            a.alias
-        }
-    })))
-}
-
 // ---------------------------------------------------------------------------
 // tags
 // ---------------------------------------------------------------------------
@@ -598,98 +580,6 @@ pub fn tasks(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliEr
         ]);
     }
     render_table(&table, &format, false)
-}
-
-// ---------------------------------------------------------------------------
-// links
-// ---------------------------------------------------------------------------
-
-pub fn links(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let t = ctx.target(args)?;
-    let mut seen = std::collections::BTreeSet::new();
-    let mut out = Vec::new();
-    for l in ctx.index()?.links(&t.rel)? {
-        let shown = l.target.unwrap_or(l.raw);
-        if seen.insert(shown.clone()) {
-            out.push(shown);
-        }
-    }
-    if args.flag("total") {
-        return Ok(count(out.len()));
-    }
-    Ok(list_lines(out))
-}
-
-pub fn backlinks(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
-    let format = args.format(spec)?;
-    let t = ctx.target(args)?;
-    let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
-    for b in ctx.index()?.backlinks(&t.rel)? {
-        *by_source.entry(b.source).or_default() += 1;
-    }
-    if args.flag("total") {
-        return Ok(count(by_source.len()));
-    }
-    let counts = args.flag("counts");
-    let mut table = if counts {
-        Table::new(&["path", "count"])
-    } else {
-        Table::new(&["path"])
-    };
-    for (p, n) in by_source {
-        let mut row = vec![json!(p)];
-        if counts {
-            row.push(json!(n));
-        }
-        table.push(row);
-    }
-    render_table(&table, &format, false)
-}
-
-pub fn unresolved(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
-    let format = args.format(spec)?;
-    let list = ctx.index()?.unresolved()?;
-    if args.flag("total") {
-        return Ok(count(list.len()));
-    }
-    let (counts, verbose) = (args.flag("counts"), args.flag("verbose"));
-    let mut cols = vec!["link"];
-    if counts {
-        cols.push("count");
-    }
-    if verbose {
-        cols.push("sources");
-    }
-    let mut table = Table::new(&cols);
-    for u in list {
-        let mut row = vec![json!(u.target)];
-        if counts {
-            row.push(json!(u.count));
-        }
-        if verbose {
-            row.push(json!(u.sources));
-        }
-        table.push(row);
-    }
-    render_table(&table, &format, false)
-}
-
-pub fn orphans(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let list = ctx.index()?.orphans()?;
-    Ok(if args.flag("total") {
-        count(list.len())
-    } else {
-        list_lines(list)
-    })
-}
-
-pub fn deadends(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let list = ctx.index()?.deadends()?;
-    Ok(if args.flag("total") {
-        count(list.len())
-    } else {
-        list_lines(list)
-    })
 }
 
 // ---------------------------------------------------------------------------

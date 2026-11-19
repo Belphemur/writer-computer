@@ -61,9 +61,9 @@ Chosen option: **A**. Obsidian command parity is no longer a goal; the grammar (
 
 ### Verification
 
-- [ ] `writer help` has no duplicate group and none of the removed names.
-- [ ] `writer backlinks file=X` exits 2 and says `use graph:backlinks`.
-- [ ] The `writer-cli` skill names only surviving commands.
+- [x] `writer help` has no duplicate group and none of the removed names.
+- [x] `writer backlinks file=X` exits 2 and says `use graph:backlinks`.
+- [x] The `writer-cli` skill names only surviving commands.
 
 ## More Information
 

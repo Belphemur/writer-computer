@@ -221,32 +221,21 @@ pub static COMMANDS: &[CommandSpec] = &[
     cmd!(
         "move",
         "Content",
-        "Move (and optionally rename) a file and update links to it",
+        "Move and/or rename a file and update links to it",
         &[
             FILE,
             PATH,
-            req("to", "destination folder or path"),
+            p("to", "destination folder or path"),
+            p(
+                "name",
+                "new file name, in the destination folder (extension kept if omitted)"
+            ),
             p("format", "text | json")
         ],
         RELOCATE_FLAGS,
         &["text", "json"],
         Some("text"),
         cmd_notes::mv
-    ),
-    cmd!(
-        "rename",
-        "Content",
-        "Rename a file and update links to it",
-        &[
-            FILE,
-            PATH,
-            req("name", "new name (extension kept if omitted)"),
-            p("format", "text | json")
-        ],
-        RELOCATE_FLAGS,
-        &["text", "json"],
-        Some("text"),
-        cmd_notes::rename
     ),
     cmd!(
         "title",
@@ -394,19 +383,6 @@ pub static COMMANDS: &[CommandSpec] = &[
         None,
         cmd_query::property_remove
     ),
-    cmd!(
-        "aliases",
-        "Properties",
-        "List aliases",
-        &[FILE, PATH],
-        &[
-            ("total", "print only the count"),
-            ("verbose", "include file paths")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_query::aliases
-    ),
     // Tags
     cmd!(
         "tags",
@@ -466,50 +442,6 @@ pub static COMMANDS: &[CommandSpec] = &[
         &["text", "json", "tsv", "csv"],
         Some("text"),
         cmd_query::tasks
-    ),
-    cmd!(
-        "task",
-        "Tasks",
-        "Show or change one task",
-        &[
-            p("ref", "path:line"),
-            FILE,
-            PATH,
-            p("line", "line number"),
-            p("status", "set this status character")
-        ],
-        &[
-            ("toggle", "flip done/not done"),
-            ("done", "mark done"),
-            ("todo", "mark not done")
-        ],
-        NO_FORMATS,
-        None,
-        cmd_notes::task
-    ),
-    // Links
-    cmd!(
-        "links",
-        "Links",
-        "Outgoing links of a file",
-        &[FILE, PATH],
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_query::links
-    ),
-    cmd!(
-        "backlinks",
-        "Links",
-        "Files linking to a file",
-        &[FILE, PATH, p("format", "json | tsv | csv")],
-        &[
-            ("counts", "include link counts"),
-            ("total", "print only the count")
-        ],
-        &["json", "tsv", "csv"],
-        Some("tsv"),
-        cmd_query::backlinks
     ),
     // Graph (SPECs/note-graph-spec.md 8.1)
     cmd!(
@@ -623,46 +555,35 @@ pub static COMMANDS: &[CommandSpec] = &[
     cmd!(
         "graph:orphans",
         "Graph",
-        "Notes with no link in or out (orphans means no incoming link)",
+        "Notes with no link in or out",
         &[p("limit", "most notes"), p("format", "text | json | tsv")],
-        NO_FLAGS,
+        &[(
+            "incoming",
+            "only notes nothing links to (links out allowed)"
+        )],
         GRAPH_FORMATS,
         Some("text"),
         cmd_graph::orphans
     ),
     cmd!(
-        "unresolved",
-        "Links",
-        "Links that match no file",
-        &[p("format", "json | tsv | csv")],
-        &[
-            ("total", "print only the count"),
-            ("counts", "include counts"),
-            ("verbose", "include source files")
-        ],
-        &["json", "tsv", "csv"],
-        Some("tsv"),
-        cmd_query::unresolved
+        "graph:deadends",
+        "Graph",
+        "Notes with no outgoing link",
+        &[p("limit", "most notes"), p("format", "text | json | tsv")],
+        NO_FLAGS,
+        GRAPH_FORMATS,
+        Some("text"),
+        cmd_graph::deadends
     ),
     cmd!(
-        "orphans",
-        "Links",
-        "Files nothing links to",
-        NO_PARAMS,
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_query::orphans
-    ),
-    cmd!(
-        "deadends",
-        "Links",
-        "Files with no outgoing links",
-        NO_PARAMS,
-        &[("total", "print only the count")],
-        NO_FORMATS,
-        None,
-        cmd_query::deadends
+        "graph:unresolved",
+        "Graph",
+        "Links that match no file, with how many and which notes hold them",
+        &[p("limit", "most links"), p("format", "text | json | tsv")],
+        NO_FLAGS,
+        GRAPH_FORMATS,
+        Some("text"),
+        cmd_graph::unresolved
     ),
     // Structure
     cmd!(
@@ -777,6 +698,48 @@ pub fn commands() -> impl Iterator<Item = &'static CommandSpec> {
 
 pub fn find(name: &str) -> Option<&'static CommandSpec> {
     commands().find(|c| c.name == name)
+}
+
+/// Commands that were removed because a surviving one does the job (ADR 2026-11-19, prune the
+/// CLI): the removed name and what to run instead. The one table; asking for a removed name exits
+/// 2 and names the replacement, so old scripts and agents learn the new spelling. A name that is
+/// still registered runs (the table only answers for names `find` does not know).
+pub const REMOVED: &[(&str, &str)] = &[
+    ("links", "graph:neighbors file=<name> direction=out depth=1"),
+    ("backlinks", "graph:backlinks"),
+    ("orphans", "graph:orphans incoming"),
+    ("deadends", "graph:deadends"),
+    ("unresolved", "graph:unresolved"),
+    ("rename", "move file=<name> name=<new name>"),
+    ("aliases", "property:read name=aliases"),
+    (
+        "task",
+        "tasks to list, task:add, task:done or task:edit to change",
+    ),
+    ("excalidraw:connect", "excalidraw:add with edges"),
+];
+
+/// What replaces `name`, when it is a removed command.
+pub fn removed(name: &str) -> Option<&'static str> {
+    REMOVED.iter().find(|(n, _)| *n == name).map(|(_, r)| *r)
+}
+
+/// The error of a removed command.
+pub fn removed_message(name: &str, replacement: &str) -> String {
+    format!("{name} was removed: use {replacement}")
+}
+
+/// Every command grouped by its group name, in registry order (core and feature commands of one
+/// group merge): what `help` and the skill reference print.
+pub fn groups() -> Vec<(&'static str, Vec<&'static CommandSpec>)> {
+    let mut out: Vec<(&'static str, Vec<&'static CommandSpec>)> = Vec::new();
+    for c in commands() {
+        match out.iter_mut().find(|(g, _)| *g == c.group) {
+            Some((_, list)) => list.push(c),
+            None => out.push((c.group, vec![c])),
+        }
+    }
+    out
 }
 
 /// Commands of the public Obsidian CLI that need a running Obsidian-style app
@@ -896,19 +859,21 @@ fn help(_: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
             let mut out = String::from(
                 "Usage: writer [vault=<name|id|path>] <command> [param=value ...] [flag ...] [--copy]\n\nvault= must be the first argument; without it the vault containing the working directory is used.\nfile=<name> resolves like a wikilink; path=<path> is exact from the vault root.\n",
             );
-            let mut group = "";
-            for c in commands() {
-                if c.group != group {
-                    group = c.group;
-                    out.push_str(&format!("\n{group}:\n"));
+            for (group, list) in groups() {
+                out.push_str(&format!("\n{group}:\n"));
+                for c in list {
+                    out.push_str(&format!("  {:<16} {}\n", c.name, c.summary));
                 }
-                out.push_str(&format!("  {:<16} {}\n", c.name, c.summary));
             }
             out.push_str("\nRun `writer help <command>` for parameters and flags.\n");
             Ok(out)
         }
         [name] => match find(name) {
             Some(spec) => Ok(help_for(spec)),
+            None if removed(name).is_some() => Err(CliError::Usage(removed_message(
+                name,
+                removed(name).unwrap_or_default(),
+            ))),
             None if app_control(name) => Err(CliError::Usage(format!(
                 "Not available in the Writer CLI: {name}"
             ))),

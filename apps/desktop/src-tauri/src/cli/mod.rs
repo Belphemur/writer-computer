@@ -1,6 +1,6 @@
-//! The `writer` CLI's Obsidian-parity commands (spec: `SPECs/writer-cli-spec.md`,
-//! "Obsidian CLI parity"). `writer_cli.rs` stays the launcher and hands argv
-//! here when the first argument is `vault=...` or a parity command name.
+//! The `writer` CLI's key=value commands (spec: `SPECs/writer-cli-spec.md`,
+//! "The `writer` command surface"). `writer_cli.rs` stays the launcher and hands argv
+//! here when the first argument is `vault=...` or a command name.
 //!
 //! * `args.rs` — the key=value grammar and validation against a command spec
 //! * `registry.rs` — one entry per command (name, params, flags, formats,
@@ -297,7 +297,10 @@ pub fn is_parity_invocation(args: &[String]) -> bool {
     let Some(first) = args.first() else {
         return false;
     };
-    first.starts_with("vault=") || registry::find(first).is_some() || registry::app_control(first)
+    first.starts_with("vault=")
+        || registry::find(first).is_some()
+        || registry::removed(first).is_some()
+        || registry::app_control(first)
 }
 
 /// Why a command of a built-in feature cannot run: the feature's switch (`features.<id>.enabled`
@@ -339,6 +342,9 @@ pub fn execute(argv: &[String], cwd: &Path, env: &Env) -> Outcome {
         };
     }
     let Some(spec) = registry::find(&inv.command) else {
+        if let Some(replacement) = registry::removed(&inv.command) {
+            return usage_outcome(&registry::removed_message(&inv.command, replacement), None);
+        }
         return usage_outcome(&format!("unknown command \"{}\"", inv.command), Some(""));
     };
     if inv.help {

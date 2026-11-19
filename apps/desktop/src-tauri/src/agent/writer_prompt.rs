@@ -42,11 +42,17 @@ const MOVE_PLAIN: &str =
 /// With the CLI.
 const BASH_CLI: &str = "Use Bash only when no dedicated tool or `writer` command fits.";
 const MOVE_CLI: &str =
-    "Rename or move notes only with `writer rename`/`writer move` (they rewrite links); never mv.";
+    "Rename or move notes only with `writer move` (it rewrites links); never mv.";
 const PROPERTIES_CLI: &str = "Change properties with `writer property:set`, not by editing YAML.";
 /// The query commands the search line names, after `writer `: each is in the command registry and
 /// documented by a managed skill (a test says so).
-const SEARCH_COMMANDS: [&str; 5] = ["search", "backlinks", "links", "bases", "base:query"];
+const SEARCH_COMMANDS: [&str; 5] = [
+    "search",
+    "graph:backlinks",
+    "graph:neighbors",
+    "bases",
+    "base:query",
+];
 const SEARCH_SKILLS: &str = "writer-cli, writer-search, writer-bases";
 
 fn search_cli() -> String {
@@ -273,10 +279,10 @@ Vault: Notes. Working at the vault root.
 - Preserve YAML frontmatter: keys, order, quoting, comments.
 - Change properties with `writer property:set`, not by editing YAML.
 - Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.
-- Rename or move notes only with `writer rename`/`writer move` (they rewrite links); never mv.
+- Rename or move notes only with `writer move` (it rewrites links); never mv.
 - Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.
 - Find files with Glob and Grep, not Bash find or grep.
-- Before grepping the vault, try `writer search`, `backlinks`, `links`, `bases` or `base:query` (skills writer-cli, writer-search, writer-bases).
+- Before grepping the vault, try `writer search`, `graph:backlinks`, `graph:neighbors`, `bases` or `base:query` (skills writer-cli, writer-search, writer-bases).
 - Use Bash only when no dedicated tool or `writer` command fits.
 "
     );
@@ -620,12 +626,13 @@ Vault: Notes. Working at the vault root.
             "append",
             "prepend",
             "move",
-            "rename",
+            "task:add",
+            "task:done",
+            "task:edit",
             "title",
             "delete",
             "property:set",
             "property:remove",
-            "task",
             "base:create",
             "skills:sync",
         ];

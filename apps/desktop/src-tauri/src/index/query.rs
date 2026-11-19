@@ -263,13 +263,6 @@ pub struct TaskEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AliasEntry {
-    pub path: String,
-    pub alias: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct FolderEntry {
     pub path: String,
     /// Files directly inside.
@@ -322,6 +315,7 @@ fn link_entry(r: &rusqlite::Row, o: usize) -> rusqlite::Result<LinkEntry> {
     })
 }
 
+#[cfg(test)]
 fn require_file_id(conn: &Connection, path: &str) -> Res<i64> {
     conn.query_row("SELECT id FROM files WHERE path = ?1", [path], |r| r.get(0))
         .optional()?
@@ -482,7 +476,9 @@ impl Index {
         })
     }
 
-    /// Outgoing links of `path`, in document order (frontmatter first).
+    /// Outgoing links of `path`, in document order (frontmatter first). Only the index tests read
+    /// them this way (the app and CLI use `graph.rs`), so it is test code.
+    #[cfg(test)]
     pub fn links(&self, path: &str) -> Res<Vec<LinkEntry>> {
         self.read(|c| {
             let id = require_file_id(c, path)?;
@@ -766,41 +762,6 @@ impl Index {
                 })?
                 .collect::<Result<_, _>>()?;
             Ok(rows)
-        })
-    }
-
-    /// Aliases from the `aliases`/`alias` property (list items, or a
-    /// comma-separated string).
-    pub fn aliases(&self) -> Res<Vec<AliasEntry>> {
-        self.read(|c| {
-            let mut out = Vec::new();
-            let mut st = c.prepare(
-                "SELECT f.path, i.v_text FROM prop_items i JOIN files f ON f.id = i.file_id \
-                 WHERE i.key IN ('aliases','alias') AND i.v_text IS NOT NULL AND i.vtype != 'null' \
-                 UNION ALL \
-                 SELECT f.path, p.v_text FROM props p JOIN files f ON f.id = p.file_id \
-                 WHERE p.key IN ('aliases','alias') AND p.vtype = 'text' \
-                 ORDER BY 1, 2",
-            )?;
-            let mut rows = st.query([])?;
-            while let Some(r) = rows.next()? {
-                let path: String = r.get(0)?;
-                let text: String = r.get(1)?;
-                out.push((path, text));
-            }
-            Ok(out
-                .into_iter()
-                .flat_map(|(path, text)| {
-                    text.split(',')
-                        .map(str::trim)
-                        .filter(|a| !a.is_empty())
-                        .map(|a| AliasEntry {
-                            path: path.clone(),
-                            alias: a.to_string(),
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect())
         })
     }
 

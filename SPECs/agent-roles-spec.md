@@ -48,7 +48,7 @@ File: `apps/desktop/shared/agent-roles.json`, read by Rust (`include_str!`, serd
   "capabilities": {
     "read": "Read files in the working directory and added folders",
     "search": "Find files by name and content (glob, grep)",
-    "writer-cli-read": "Run read-only `writer` commands (search, backlinks, links, properties, bases, base:query)",
+    "writer-cli-read": "Run read-only `writer` commands (search, graph:backlinks, graph:neighbors, properties, bases, base:query)",
     "edit": "Modify existing files",
     "write": "Create files",
     "bash-limited": "Run shell commands; only the permission rules decide which"

@@ -27,8 +27,8 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 const DEFAULT_ALLOWED = [
   "Bash(writer search *)",
   "Bash(writer search:context *)",
-  "Bash(writer backlinks *)",
-  "Bash(writer links *)",
+  "Bash(writer graph:backlinks *)",
+  "Bash(writer graph:neighbors *)",
   "Bash(writer properties *)",
   "Bash(writer property:read *)",
   "Bash(writer bases)",

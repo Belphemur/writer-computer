@@ -1,5 +1,5 @@
 //! Commands that read or change file content: `read`, `create`, `append`,
-//! `prepend`, `move`, `rename`, `delete`, `task`. Writes go straight to the
+//! `prepend`, `move`, `delete`. Writes go straight to the
 //! files (atomic write), never through the index, never into `.obsidian`.
 
 use super::args::Args;
@@ -8,7 +8,6 @@ use super::{CliError, Ctx, Target};
 use crate::index::frontmatter;
 use crate::index::markdown;
 use crate::vault_ops;
-use std::path::Path;
 
 fn name_of(path: &str) -> &str {
     path.rfind('/').map_or(path, |i| &path[i + 1..])
@@ -319,49 +318,58 @@ fn relocate(
     Ok(out)
 }
 
+/// `move file=|path= [to=<folder|path>] [name=<new file name>]`: move, rename or both; at least
+/// one of `to=` and `name=`. `name=` is a file name in the destination folder (the note's own
+/// folder without `to=`); its extension is kept when omitted. A `to=` that is a full path
+/// already names the file, so it cannot be combined with `name=`.
 pub fn mv(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
     let t = ctx.target(args)?;
-    let to = args.require("to")?.trim();
-    if to.is_empty() {
+    let to = args.get("to").map(str::trim);
+    let name = args.get("name").map(str::trim);
+    if to.is_none() && name.is_none() {
+        return Err(CliError::Usage("give to= or name= (or both)".into()));
+    }
+    if to == Some("") {
         return Err(CliError::Usage("to= needs a folder or path".into()));
     }
-    let name = name_of(&t.rel);
-    let as_folder = to.ends_with('/') || ext_of(to).is_none();
-    let new_rel = if as_folder {
-        let folder = to.trim_matches('/');
-        if folder.is_empty() {
-            name.to_string()
-        } else {
-            format!("{folder}/{name}")
+    let file_name = match name {
+        None => name_of(&t.rel).to_string(),
+        Some(n) => {
+            if n.is_empty() || n.contains(['/', '\\']) {
+                return Err(CliError::Usage(
+                    "name= must be a file name without folders (use to= for the folder)".into(),
+                ));
+            }
+            crate::relocate::validate_file_name(n).map_err(|e| CliError::fail(e.to_string()))?;
+            match ext_of(&t.rel) {
+                Some(e) if ext_of(n).is_some_and(|x| x.eq_ignore_ascii_case(e)) => n.to_string(),
+                Some(e) => format!("{n}.{e}"),
+                None => n.to_string(),
+            }
         }
-    } else {
-        to.to_string()
     };
-    relocate(ctx, args, &t, &new_rel, "Moved")
+    let new_rel = match to {
+        Some(to) if !to.ends_with('/') && ext_of(to).is_some() => {
+            if name.is_some() {
+                return Err(CliError::Usage(
+                    "to= is a full path; give a folder with name=, or the path alone".into(),
+                ));
+            }
+            to.to_string()
+        }
+        Some(to) => join_folder(to.trim_matches('/'), &file_name),
+        None => join_folder(folder_of(&t.rel), &file_name),
+    };
+    let verb = if to.is_none() { "Renamed" } else { "Moved" };
+    relocate(ctx, args, &t, &new_rel, verb)
 }
 
-pub fn rename(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let t = ctx.target(args)?;
-    let name = args.require("name")?.trim();
-    if name.is_empty() || name.contains(['/', '\\']) {
-        return Err(CliError::Usage(
-            "name= must be a file name without folders (use move to change folders)".into(),
-        ));
-    }
-    crate::relocate::validate_file_name(name).map_err(|e| CliError::fail(e.to_string()))?;
-    let ext = ext_of(&t.rel);
-    let full = match ext {
-        Some(e) if ext_of(name).is_some_and(|n| n.eq_ignore_ascii_case(e)) => name.to_string(),
-        Some(e) => format!("{name}.{e}"),
-        None => name.to_string(),
-    };
-    let folder = folder_of(&t.rel);
-    let new_rel = if folder.is_empty() {
-        full
+fn join_folder(folder: &str, file: &str) -> String {
+    if folder.is_empty() {
+        file.to_string()
     } else {
-        format!("{folder}/{full}")
-    };
-    relocate(ctx, args, &t, &new_rel, "Renamed")
+        format!("{folder}/{file}")
+    }
 }
 
 /// `title file=|path= [set=<new>|clear]`: show, set or clear the display title (the frontmatter
@@ -482,14 +490,8 @@ pub fn delete(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
     Ok(format!("Trashed {}\n", t.rel))
 }
 
-/// Status character of the task on `line`, and its byte offset in the line.
-fn task_status(line: &str) -> Option<(char, usize)> {
-    let p = crate::tasks::grammar::parse_task(line)?;
-    Some((p.status, p.status_at))
-}
-
-/// The task a command names: `ref=path:line`, or `file=`/`path=` with `line=`. Shared by `task`
-/// and the `task:*` commands of the tasks feature.
+/// The task a command names: `ref=path:line`, or `file=`/`path=` with `line=`. Shared by the
+/// `task:*` commands of the tasks feature.
 pub(crate) fn task_target(ctx: &Ctx, args: &Args) -> Result<(Target, usize), CliError> {
     match args.get("ref") {
         Some(r) => {
@@ -528,72 +530,4 @@ pub(crate) fn task_target(ctx: &Ctx, args: &Args) -> Result<(Target, usize), Cli
             Ok((t, line))
         }
     }
-}
-
-pub fn task(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let (t, line_no) = task_target(ctx, args)?;
-    let actions = [
-        args.flag("toggle"),
-        args.flag("done"),
-        args.flag("todo"),
-        args.get("status").is_some(),
-    ]
-    .iter()
-    .filter(|b| **b)
-    .count();
-    if actions > 1 {
-        return Err(CliError::Usage(
-            "use only one of toggle, done, todo, status=".into(),
-        ));
-    }
-    let text = vault_ops::read_text(&t.abs)?;
-    let mut start = 0usize;
-    let mut found: Option<(usize, usize)> = None;
-    for (i, raw) in text.split_inclusive('\n').enumerate() {
-        if i + 1 == line_no {
-            found = Some((start, start + raw.trim_end_matches(['\n', '\r']).len()));
-            break;
-        }
-        start += raw.len();
-    }
-    let (ls, le) =
-        found.ok_or_else(|| CliError::fail(format!("{} has no line {line_no}", t.rel)))?;
-    let line = &text[ls..le];
-    let (status, at) = task_status(line)
-        .ok_or_else(|| CliError::fail(format!("{}:{line_no} is not a task", t.rel)))?;
-    let new_status = if args.flag("toggle") {
-        Some(if status == 'x' || status == 'X' {
-            ' '
-        } else {
-            'x'
-        })
-    } else if args.flag("done") {
-        Some('x')
-    } else if args.flag("todo") {
-        Some(' ')
-    } else if let Some(s) = args.get("status") {
-        let mut it = s.chars();
-        match (it.next(), it.next()) {
-            (Some(c), None) if c != '\n' && c != '\r' => Some(c),
-            _ => {
-                return Err(CliError::Usage(
-                    "status= must be exactly one character".into(),
-                ))
-            }
-        }
-    } else {
-        None
-    };
-    let Some(new_status) = new_status else {
-        return Ok(format!("[{status}]\n"));
-    };
-    if new_status != status {
-        let abs = ls + at;
-        let mut out = String::with_capacity(text.len());
-        out.push_str(&text[..abs]);
-        out.push(new_status);
-        out.push_str(&text[abs + status.len_utf8()..]);
-        vault_ops::write_text(Path::new(&t.abs), &out)?;
-    }
-    Ok(format!("[{new_status}]\n"))
 }

@@ -1,5 +1,5 @@
 //! Rename or move one vault file and keep every link to it working. The one
-//! implementation behind `writer rename` / `writer move` and the app's
+//! implementation behind `writer move` and the app's
 //! sidebar rename (`commands/fs.rs::relocate_entry`); spec:
 //! `SPECs/filename-links-and-rename-spec.md`, decision:
 //! `docs/decisions/2026-11-16-links-resolve-by-file-name-and-rename-rewrites-links-through-one-rust-function.md`.

@@ -143,7 +143,7 @@ fn the_graph_commands_answer_through_the_real_binary() {
         "People/Daniel.md"
     );
     assert_eq!(s.json(&["graph:components"])[0]["size"], 6);
-    assert_eq!(s.ok(&["graph:orphans"]).trim(), "lone.md");
+    assert_eq!(s.json(&["graph:orphans"])[0]["path"], "lone.md");
 
     // Usage errors exit 2 with a message, not a panic.
     let bad = s.run(&["graph:neighbors", "file=Daniel", "depth=9"]);

@@ -554,15 +554,7 @@ fn query_api_surface() {
         })
         .unwrap();
     assert_eq!(named.total, 0); // `_` is literal, not a wildcard
-                                // Aliases.
-    let aliases: Vec<_> = index
-        .aliases()
-        .unwrap()
-        .into_iter()
-        .map(|a| a.alias)
-        .collect();
-    assert_eq!(aliases, vec!["A. Lee", "Annie"]);
-    // Orphans / deadends: notes nothing links to, notes that link nowhere.
+                                // Orphans / deadends: notes nothing links to, notes that link nowhere.
     let orphans = index.orphans().unwrap();
     assert!(orphans.contains(&"Meta/tasks.md".to_string()));
     assert!(!orphans.contains(&"Home.md".to_string()));

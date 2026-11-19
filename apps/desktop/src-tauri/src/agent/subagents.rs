@@ -185,7 +185,7 @@ mod tests {
     /// `explorer` as the CLI got it before the roles registry existed (`agents_json(None, false)`
     /// and `(None, true)`, captured 2026-11-17): the registry must reproduce it byte for byte.
     const EXPLORER_PLAIN: &str = r#"{"writer-explorer":{"description":"Cheap read-only helper: finds, reads and summarises notes and runs read-only queries. Give it a self-contained question; it returns file paths and short findings.","model":"haiku","prompt":"You explore a vault of Markdown notes for another agent. Find and read files, summarise them, and report vault-relative paths with short findings (a few lines per file, no full note text). Never edit, create, move or delete anything, and never run a command that writes. Find files with Glob and Grep.","tools":["Read","Glob","Grep"]}}"#;
-    const EXPLORER_CLI: &str = r#"{"writer-explorer":{"description":"Cheap read-only helper: finds, reads and summarises notes and runs read-only queries. Give it a self-contained question; it returns file paths and short findings.","model":"haiku","prompt":"You explore a vault of Markdown notes for another agent. Find and read files, summarise them, and report vault-relative paths with short findings (a few lines per file, no full note text). Never edit, create, move or delete anything, and never run a command that writes. Find files with Glob and Grep. You may also run read-only `writer` commands (search, backlinks, links, properties, bases, base:query); no other command.","tools":["Read","Glob","Grep","Bash"]}}"#;
+    const EXPLORER_CLI: &str = r#"{"writer-explorer":{"description":"Cheap read-only helper: finds, reads and summarises notes and runs read-only queries. Give it a self-contained question; it returns file paths and short findings.","model":"haiku","prompt":"You explore a vault of Markdown notes for another agent. Find and read files, summarise them, and report vault-relative paths with short findings (a few lines per file, no full note text). Never edit, create, move or delete anything, and never run a command that writes. Find files with Glob and Grep. You may also run read-only `writer` commands (search, graph:backlinks, graph:neighbors, properties, bases, base:query); no other command.","tools":["Read","Glob","Grep","Bash"]}}"#;
 
     fn models(pairs: &[(&str, &str)]) -> BTreeMap<String, Option<String>> {
         pairs
@@ -378,8 +378,8 @@ mod tests {
         let prompt = &registry().roles[0].prompt_by_capability["writer-cli-read"];
         for name in [
             "search",
-            "backlinks",
-            "links",
+            "graph:backlinks",
+            "graph:neighbors",
             "properties",
             "bases",
             "base:query",

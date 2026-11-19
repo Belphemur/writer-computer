@@ -80,7 +80,7 @@ export interface RelocateResult {
 }
 
 /** Rename/move one file or folder and rewrite every link to a file (`relocate::plan`/`apply`,
- *  the code behind `writer rename`). */
+ *  the code behind `writer move`). */
 export function relocateEntry(oldPath: string, newPath: string): Promise<RelocateResult> {
   return invoke("relocate_entry", { oldPath, newPath });
 }

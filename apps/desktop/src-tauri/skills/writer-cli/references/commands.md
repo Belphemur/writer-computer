@@ -22,8 +22,7 @@ One bullet per command: `required` parameters are marked, everything else is opt
 - `create` — Create a note. Params: `name=` (note name (default Untitled)), `path=` (exact path), `content=` (initial text), `template=` (note whose text is the starting content). Flags: `overwrite` (replace an existing file), `open` (accepted, ignored (the app is not controlled)), `newtab` (accepted, ignored).
 - `append` — Append text to a file. Params: `file=`, `path=`, `content=` (required; text to add), `heading=` (append to the end of this section). Flags: `inline` (no newline between the existing text and the new text).
 - `prepend` — Insert text after the frontmatter. Params: `file=`, `path=`, `content=` (required; text to add), `heading=` (insert right after this heading). Flags: `inline` (no newline after the new text).
-- `move` — Move (and optionally rename) a file and update links to it. Params: `file=`, `path=`, `to=` (required; destination folder or path), `format=` (text | json). Flags: `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
-- `rename` — Rename a file and update links to it. Params: `file=`, `path=`, `name=` (required; new name (extension kept if omitted)), `format=` (text | json). Flags: `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
+- `move` — Move and/or rename a file and update links to it. Params: `file=`, `path=`, `to=` (destination folder or path), `name=` (new file name, in the destination folder (extension kept if omitted)), `format=` (text | json). Flags: `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links to the file (they are updated by default)).
 - `title` — Show, set or clear a note's display title (the title property); the file is not renamed. Params: `file=`, `path=`, `set=` (new display title (links showing the old title follow)), `format=` (text | json). Flags: `clear` (remove the title property (the note shows its file name)), `dry-run` (print the plan (files and link counts) and change nothing), `no-update-links` (do not rewrite links that show the old title as their alias).
 - `delete` — Move a file to the trash. Params: `file=`, `path=`. Flags: `permanent` (delete for good instead of using the trash).
 
@@ -38,7 +37,6 @@ One bullet per command: `required` parameters are marked, everything else is opt
 - `property:set` — Set a property in a note's frontmatter. Params: `name=` (required; property name, or a.b for a key in a map), `value=` (required; value), `type=` (text | list | number | checkbox | date | datetime), `file=`, `path=`.
 - `property:read` — Print a property value. Params: `name=` (required; property name, or a.b for a key in a map), `file=`, `path=`.
 - `property:remove` — Remove a property. Params: `name=` (required; property name, or a.b for a key in a map), `file=`, `path=`.
-- `aliases` — List aliases. Params: `file=`, `path=`. Flags: `total` (print only the count), `verbose` (include file paths).
 
 ## Tags
 
@@ -48,18 +46,9 @@ One bullet per command: `required` parameters are marked, everything else is opt
 ## Tasks
 
 - `tasks` — List tasks (filter= takes a Bases expression over task rows). Params: `file=`, `path=`, `status=` (status character), `filter=` (expression, e.g. task.due < today() && !task.checked), `sort=` (task property, e.g. task.due or task.urgency), `limit=` (at most this many tasks), `format=` (text | json | tsv | csv). Flags: `total` (print only the count), `done` (completed only), `todo` (not completed only), `desc` (with sort=: descending), `verbose` (group by file with line numbers).
-- `task` — Show or change one task. Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number), `status=` (set this status character). Flags: `toggle` (flip done/not done), `done` (mark done), `todo` (mark not done).
 - `task:add` — Add a task to the inbox note. Params: `text=` (task text), `due=` (YYYY-MM-DD), `scheduled=` (YYYY-MM-DD), `start=` (YYYY-MM-DD), `priority=` (highest | high | medium | low | lowest), `recurrence=` (e.g. every week), `path=`.
 - `task:done` — Complete a task (a recurring one writes its next occurrence). Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number).
-- `task:edit` — Set or clear the fields of a task. Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number), `due=` (YYYY-MM-DD), `scheduled=` (YYYY-MM-DD), `start=` (YYYY-MM-DD), `priority=` (highest | high | medium | low | lowest), `recurrence=` (e.g. every week), `clear=` (fields to remove, comma separated).
-
-## Links
-
-- `links` — Outgoing links of a file. Params: `file=`, `path=`. Flags: `total` (print only the count).
-- `backlinks` — Files linking to a file. Params: `file=`, `path=`, `format=` (json | tsv | csv). Flags: `counts` (include link counts), `total` (print only the count).
-- `unresolved` — Links that match no file. Params: `format=` (json | tsv | csv). Flags: `total` (print only the count), `counts` (include counts), `verbose` (include source files).
-- `orphans` — Files nothing links to. Flags: `total` (print only the count).
-- `deadends` — Files with no outgoing links. Flags: `total` (print only the count).
+- `task:edit` — Set the status or fields of a task, or clear fields. Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number), `status=` (status symbol (x, space, /, -, a custom one) or name (done, todo, in-progress, cancelled)), `due=` (YYYY-MM-DD), `scheduled=` (YYYY-MM-DD), `start=` (YYYY-MM-DD), `priority=` (highest | high | medium | low | lowest), `recurrence=` (e.g. every week), `clear=` (fields to remove, comma separated).
 
 ## Graph
 
@@ -72,7 +61,9 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `graph:related` — Notes not linked to a note but sharing linked notes with it. Params: `file=`, `path=`, `limit=` (most notes (default 10)), `format=` (text | json | tsv).
 - `graph:hubs` — The most linked notes. Params: `limit=` (most notes (default 20)), `format=` (text | json | tsv).
 - `graph:components` — Groups of connected notes, largest first, with one example each. Params: `limit=` (most groups (default 20)), `format=` (text | json | tsv).
-- `graph:orphans` — Notes with no link in or out (orphans means no incoming link). Params: `limit=` (most notes), `format=` (text | json | tsv).
+- `graph:orphans` — Notes with no link in or out. Params: `limit=` (most notes), `format=` (text | json | tsv). Flags: `incoming` (only notes nothing links to (links out allowed)).
+- `graph:deadends` — Notes with no outgoing link. Params: `limit=` (most notes), `format=` (text | json | tsv).
+- `graph:unresolved` — Links that match no file, with how many and which notes hold them. Params: `limit=` (most links), `format=` (text | json | tsv).
 
 ## Structure
 

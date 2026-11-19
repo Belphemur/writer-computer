@@ -92,6 +92,30 @@ impl T {
         o.stdout
     }
 
+    /// Rows of a command's `format=json` list.
+    fn count(&self, line: &[&str]) -> usize {
+        let mut args = line.to_vec();
+        args.push("format=json");
+        serde_json::from_str::<Vec<serde_json::Value>>(&self.ok(&args))
+            .unwrap()
+            .len()
+    }
+
+    /// Distinct notes linking to `target` (`file=...`/`path=...`), from `graph:backlinks`.
+    fn linking_notes(&self, target: &str) -> usize {
+        let v: Vec<serde_json::Value> = serde_json::from_str(&self.ok(&[
+            "graph:backlinks",
+            target,
+            "format=json",
+            "limit=1000",
+        ]))
+        .unwrap();
+        v.iter()
+            .map(|b| b["source"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    }
+
     fn code(&self, line: &[&str]) -> (u8, String) {
         let o = self.run(line);
         (o.code, o.stderr)
@@ -140,7 +164,7 @@ fn usage_errors_exit_2_and_app_control_is_declined() {
 fn help_and_version() {
     let t = T::new();
     let h = t.ok(&["help"]);
-    for c in ["base:query", "property:set", "backlinks", "wordcount"] {
+    for c in ["base:query", "property:set", "graph:backlinks", "wordcount"] {
         assert!(h.contains(c), "{c}");
     }
     let h = t.ok(&["help", "base:query"]);
@@ -363,7 +387,7 @@ fn append_and_prepend() {
 #[test]
 fn rename_and_move_update_links_everywhere() {
     let t = T::new();
-    let out = t.ok(&["rename", "file=Beta", "name=Gamma"]);
+    let out = t.ok(&["move", "file=Beta", "name=Gamma"]);
     assert_eq!(
         out,
         "Renamed Projects/Beta.md -> Projects/Gamma.md (updated 3 links in 3 files)\n"
@@ -375,7 +399,7 @@ fn rename_and_move_update_links_everywhere() {
     assert!(t.read("Projects/Alpha.md").contains("Links to [[Gamma]]."));
     assert_eq!(t.read("Archive/Old.md"), "old [[Gamma]]\n");
     // the index agrees after a fresh refresh
-    assert_eq!(t.ok(&["backlinks", "file=Gamma", "total"]), "3\n");
+    assert_eq!(t.linking_notes("file=Gamma"), 3);
     // move into another folder: bare links keep resolving, path links change
     t.write("Home.md", "[[Gamma]] and [[Projects/Gamma]]\n");
     let out = t.ok(&["move", "file=Gamma", "to=Archive"]);
@@ -391,8 +415,8 @@ fn rename_and_move_update_links_everywhere() {
     assert_eq!(t.read("Home.md"), "[[Delta]] and [[Deep/Delta]]\n");
     // explicit failures
     assert_eq!(t.code(&["move", "file=Alpha", "to=Archive/Old.md"]).0, 1);
-    assert_eq!(t.code(&["rename", "file=Alpha", "name=a/b"]).0, 2);
-    assert_eq!(t.code(&["rename", "file=Alpha", "name=Alpha"]).0, 1);
+    assert_eq!(t.code(&["move", "file=Alpha", "name=a/b"]).0, 2);
+    assert_eq!(t.code(&["move", "file=Alpha", "name=Alpha"]).0, 1);
     assert_eq!(t.code(&["move", "file=Alpha", "to=.obsidian"]).0, 1);
     assert!(!t.exists(".obsidian/Alpha.md"));
 }
@@ -863,11 +887,13 @@ fn an_exact_dotted_property_name_wins_over_a_nested_key() {
 }
 
 #[test]
-fn aliases_tags_and_tag() {
+fn aliases_property_tags_and_tag() {
     let t = T::new();
-    assert_eq!(t.ok(&["aliases"]), "Al\n");
-    assert_eq!(t.ok(&["aliases", "verbose"]), "Projects/Alpha.md\tAl\n");
-    assert_eq!(t.ok(&["aliases", "file=Beta", "total"]), "0\n");
+    assert_eq!(
+        t.ok(&["property:read", "file=Alpha", "name=aliases"]),
+        "Al\n"
+    );
+    assert_eq!(t.code(&["property:read", "file=Beta", "name=aliases"]).0, 1);
     assert_eq!(t.ok(&["tags"]), "#index\n#project\n#work\n");
     assert_eq!(
         t.ok(&["tags", "counts"]),
@@ -891,7 +917,7 @@ fn aliases_tags_and_tag() {
 }
 
 #[test]
-fn tasks_and_task() {
+fn tasks_list_and_filter() {
     let t = T::new();
     assert_eq!(
         t.ok(&["tasks"]),
@@ -921,30 +947,6 @@ fn tasks_and_task() {
         serde_json::json!({"path": "Home.md", "line": 6, "status": " ", "text": "top task"})
     );
     assert_eq!(t.code(&["tasks", "done", "todo"]).0, 2);
-    // task: show and change exactly one character
-    assert_eq!(t.ok(&["task", "file=Alpha", "line=15"]), "[x]\n");
-    let before = t.read("Projects/Alpha.md");
-    assert_eq!(t.ok(&["task", "file=Alpha", "line=15", "toggle"]), "[ ]\n");
-    assert_eq!(
-        t.read("Projects/Alpha.md"),
-        before.replace("- [x] done task", "- [ ] done task")
-    );
-    assert_eq!(t.ok(&["task", "ref=Projects/Alpha.md:15", "done"]), "[x]\n");
-    assert_eq!(t.read("Projects/Alpha.md"), before);
-    assert_eq!(
-        t.ok(&["task", "file=Alpha", "line=16", "status=-"]),
-        "[-]\n"
-    );
-    assert!(t.read("Projects/Alpha.md").contains("- [-] partial"));
-    assert_eq!(t.ok(&["task", "path=Home.md", "line=6", "todo"]), "[ ]\n");
-    assert_eq!(t.code(&["task", "file=Alpha", "line=1", "toggle"]).0, 1);
-    assert_eq!(t.code(&["task", "file=Alpha", "line=999", "toggle"]).0, 1);
-    assert_eq!(
-        t.code(&["task", "file=Alpha", "line=15", "toggle", "done"])
-            .0,
-        2
-    );
-    assert_eq!(t.code(&["task", "file=Alpha", "line=15", "status=ab"]).0, 2);
 }
 
 #[test]
@@ -1000,6 +1002,39 @@ fn task_add_done_edit_and_filtered_listing() {
         lines[1].starts_with("- [x] Pay rent") && lines[1].contains('\u{2705}'),
         "{text}"
     );
+    // status=: reopen a done task (the done date goes), a custom symbol, a name, an unknown one
+    t.write(
+        "S.md",
+        "- [x] Done one \u{2705} 2024-03-01\n- [ ] Open one\n- [ ] Third\n",
+    );
+    t.ok(&["task:edit", "ref=S.md:1", "status=todo"]);
+    assert_eq!(t.read("S.md").lines().next().unwrap(), "- [ ] Done one");
+    t.ok(&["task:edit", "ref=S.md:2", "status=/"]);
+    assert_eq!(t.read("S.md").lines().nth(1).unwrap(), "- [/] Open one");
+    t.ok(&["task:edit", "ref=S.md:2", "status=cancelled"]);
+    assert!(t
+        .read("S.md")
+        .lines()
+        .nth(1)
+        .unwrap()
+        .starts_with("- [-] Open one"));
+    t.ok(&["task:edit", "ref=S.md:3", "status=in-progress"]);
+    assert_eq!(t.read("S.md").lines().nth(2).unwrap(), "- [/] Third");
+    t.ok(&["task:edit", "ref=S.md:3", "status=x", "due=2024-05-01"]);
+    assert!(t
+        .read("S.md")
+        .lines()
+        .nth(2)
+        .unwrap()
+        .starts_with("- [x] Third"));
+    let before = t.read("S.md");
+    let (code, err) = t.code(&["task:edit", "ref=S.md:3", "status=nope"]);
+    assert_eq!(code, 1);
+    assert!(
+        err.contains("valid:") && err.contains("done") && err.contains("in-progress"),
+        "{err}"
+    );
+    assert_eq!(t.read("S.md"), before);
     // a stale or non-task line is refused and nothing is written
     let before = t.read("Tasks.md");
     assert_eq!(t.code(&["task:done", "ref=Tasks.md:99"]).0, 1);
@@ -1037,33 +1072,143 @@ fn tasks_filter_runs_a_bases_expression_over_task_rows() {
 }
 
 #[test]
-fn links_backlinks_unresolved_orphans_deadends() {
+fn graph_commands_cover_the_removed_link_listings() {
     let t = T::new();
-    assert_eq!(
-        t.ok(&["links", "file=Home"]),
-        "Projects/Alpha.md\nProjects/Beta.md\nmissing note\n"
-    );
-    assert_eq!(t.ok(&["links", "file=Home", "total"]), "3\n");
-    assert_eq!(
-        t.ok(&["backlinks", "file=Beta"]),
-        "Archive/Old.md\nHome.md\nProjects/Alpha.md\n"
-    );
-    assert_eq!(
-        t.ok(&["backlinks", "file=Beta", "counts", "format=csv"]),
-        "Archive/Old.md,1\nHome.md,1\nProjects/Alpha.md,1\n"
-    );
+    let paths = |args: &[&str]| -> Vec<String> {
+        let v: serde_json::Value = serde_json::from_str(&t.ok(args)).unwrap();
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["path"].as_str().unwrap().to_string())
+            .collect()
+    };
+    // links file=Home: depth 1, direction out
+    let hood: serde_json::Value = serde_json::from_str(&t.ok(&[
+        "graph:neighbors",
+        "file=Home",
+        "direction=out",
+        "depth=1",
+        "format=json",
+    ]))
+    .unwrap();
+    let mut out: Vec<&str> = hood["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|n| n["depth"] == 1)
+        .map(|n| n["path"].as_str().unwrap())
+        .collect();
+    out.sort();
+    assert_eq!(out, ["Projects/Alpha.md", "Projects/Beta.md"]);
+    // backlinks file=Beta
+    let mut sources: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(&t.ok(&[
+        "graph:backlinks",
+        "file=Beta",
+        "format=json",
+    ]))
+    .unwrap()
+    .iter()
+    .map(|b| b["source"].as_str().unwrap().to_string())
+    .collect();
+    sources.sort();
+    assert_eq!(sources, ["Archive/Old.md", "Home.md", "Projects/Alpha.md"]);
+    // unresolved
     let j: serde_json::Value =
-        serde_json::from_str(&t.ok(&["backlinks", "file=Alpha", "format=json"])).unwrap();
-    assert_eq!(j, serde_json::json!([{"path": "Home.md"}]));
-    assert_eq!(t.ok(&["unresolved"]), "missing note\n");
+        serde_json::from_str(&t.ok(&["graph:unresolved", "format=json"])).unwrap();
     assert_eq!(
-        t.ok(&["unresolved", "counts", "verbose"]),
-        "missing note\t1\tHome.md\n"
+        j,
+        serde_json::json!([{"link": "missing note", "count": 1, "sources": ["Home.md"]}])
     );
-    assert_eq!(t.ok(&["unresolved", "total"]), "1\n");
-    assert_eq!(t.ok(&["orphans"]), "Archive/Old.md\nHome.md\n");
-    assert_eq!(t.ok(&["deadends"]), "Projects/Beta.md\n");
-    assert_eq!(t.ok(&["orphans", "total"]), "2\n");
+    assert_eq!(
+        t.ok(&["graph:unresolved", "format=tsv"]),
+        "link\tcount\tsources\nmissing note\t1\tHome.md\n"
+    );
+    // orphans: no link at all by default; `incoming` is Obsidian's "nothing links to it"
+    assert!(paths(&["graph:orphans", "format=json"]).is_empty());
+    assert_eq!(
+        paths(&["graph:orphans", "incoming", "format=json"]),
+        ["Archive/Old.md", "Home.md"]
+    );
+    assert_eq!(
+        paths(&["graph:orphans", "incoming", "limit=1", "format=json"]),
+        ["Archive/Old.md"]
+    );
+    // deadends
+    assert_eq!(
+        paths(&["graph:deadends", "format=json"]),
+        ["Projects/Beta.md"]
+    );
+    assert_eq!(t.ok(&["graph:deadends"]), "Projects/Beta.md\n");
+}
+
+#[test]
+fn every_removed_command_exits_2_naming_its_replacement() {
+    let t = T::new();
+    for (name, replacement) in registry::REMOVED {
+        if registry::find(name).is_some() {
+            continue; // still registered in this tree (its feature removes it); the table then answers
+        }
+        let o = t.run(&[name, "file=Home"]);
+        assert_eq!(o.code, 2, "{name}");
+        assert_eq!(
+            o.stderr,
+            format!("writer: {name} was removed: use {replacement}\n"),
+            "{name}"
+        );
+        assert_eq!(t.run(&["help", name]).code, 2, "{name}");
+        // the first word of the replacement is a command that exists
+        let first = replacement.split_whitespace().next().unwrap();
+        assert!(registry::find(first).is_some(), "{name} -> {first}");
+    }
+    let o = t.run(&["backlinks", "file=Home"]);
+    assert!(o.stderr.contains("use graph:backlinks"), "{}", o.stderr);
+    // an unknown name stays a plain usage error
+    let o = t.run(&["nonsense"]);
+    assert_eq!(o.code, 2);
+    assert!(!o.stderr.contains("removed"));
+}
+
+#[test]
+fn help_lists_each_group_once_and_no_removed_command() {
+    let t = T::new();
+    let h = t.ok(&["help"]);
+    let groups: Vec<&str> = h
+        .lines()
+        .filter(|l| l.ends_with(':') && !l.starts_with(' '))
+        .collect();
+    let mut unique = groups.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(groups.len(), unique.len(), "{groups:?}");
+    let listed: Vec<&str> = h
+        .lines()
+        .filter(|l| l.starts_with("  "))
+        .filter_map(|l| l.split_whitespace().next())
+        .collect();
+    for (name, _) in registry::REMOVED {
+        // `excalidraw:connect` is the other lane's row; the contract test is on the name list
+        assert!(
+            !listed.contains(name) || *name == "excalidraw:connect",
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn move_name_renames_in_place_and_combines_with_to() {
+    let t = T::new();
+    assert_eq!(t.code(&["move", "file=Beta"]).0, 2);
+    assert_eq!(
+        t.code(&["move", "file=Beta", "to=Archive/B.md", "name=C"])
+            .0,
+        2
+    );
+    let out = t.ok(&["move", "file=Beta", "to=Archive", "name=Gamma"]);
+    assert!(
+        out.starts_with("Moved Projects/Beta.md -> Archive/Gamma.md"),
+        "{out}"
+    );
+    assert!(t.exists("Archive/Gamma.md") && !t.exists("Projects/Beta.md"));
 }
 
 #[test]
@@ -1348,7 +1493,7 @@ fn linky_vault() -> T {
 #[test]
 fn rename_rewrites_every_link_form_keeping_style() {
     let t = linky_vault();
-    let out = t.ok(&["rename", "file=Old Name", "name=New"]);
+    let out = t.ok(&["move", "file=Old Name", "name=New"]);
     assert!(
         out.starts_with("Renamed docs/Old Name.md -> docs/New.md (updated "),
         "{out}"
@@ -1365,17 +1510,17 @@ fn rename_rewrites_every_link_form_keeping_style() {
     );
     assert!(base.contains("displayName: \"[[New]]\""), "{base}");
     // the index agrees: backlinks and unresolved are computed by name
-    assert_eq!(t.ok(&["backlinks", "file=New", "total"]), "1\n");
-    assert_eq!(t.ok(&["unresolved", "total"]), "1\n"); // [[missing note]] only
-                                                       // idempotent: the old name no longer exists
-    assert_eq!(t.code(&["rename", "file=Old Name", "name=New"]).0, 1);
+    assert_eq!(t.linking_notes("file=New"), 1);
+    assert_eq!(t.count(&["graph:unresolved"]), 1); // [[missing note]] only
+                                                   // idempotent: the old name no longer exists
+    assert_eq!(t.code(&["move", "file=Old Name", "name=New"]).0, 1);
 }
 
 #[test]
 fn rename_dry_run_and_opt_out_write_nothing_to_links() {
     let t = linky_vault();
     let home = t.read("Home2.md");
-    let out = t.ok(&["rename", "file=Old Name", "name=New", "dry-run"]);
+    let out = t.ok(&["move", "file=Old Name", "name=New", "dry-run"]);
     assert!(
         out.starts_with("Would rename docs/Old Name.md -> docs/New.md (would update "),
         "{out}"
@@ -1387,7 +1532,7 @@ fn rename_dry_run_and_opt_out_write_nothing_to_links() {
     assert!(t.exists("docs/Old Name.md") && !t.exists("docs/New.md"));
     assert_eq!(t.read("Home2.md"), home);
     let json = t.ok(&[
-        "rename",
+        "move",
         "file=Old Name",
         "name=New",
         "dry-run",
@@ -1398,7 +1543,7 @@ fn rename_dry_run_and_opt_out_write_nothing_to_links() {
     assert_eq!(v["to"], "docs/New.md");
     assert!(v["links"].as_u64().unwrap() >= 10);
     // opt out: file moves, links stay
-    t.ok(&["rename", "file=Old Name", "name=New", "no-update-links"]);
+    t.ok(&["move", "file=Old Name", "name=New", "no-update-links"]);
     assert!(t.exists("docs/New.md"));
     assert_eq!(t.read("Home2.md"), home);
 }
@@ -1411,15 +1556,15 @@ fn rename_validates_names_and_never_overwrites() {
         "a\u{7}b",
     ] {
         let arg = format!("name={bad}");
-        let (code, err) = t.code(&["rename", "file=Old Name", &arg]);
+        let (code, err) = t.code(&["move", "file=Old Name", &arg]);
         assert!(code == 1 || code == 2, "{bad:?} accepted: {err}");
     }
     t.write("docs/Sibling.md", "s\n");
-    assert_eq!(t.code(&["rename", "file=Old Name", "name=Sibling"]).0, 1);
+    assert_eq!(t.code(&["move", "file=Old Name", "name=Sibling"]).0, 1);
     assert!(t.exists("docs/Old Name.md") && t.exists("docs/Sibling.md"));
     // a same-name file in another folder is not a collision
     t.write("elsewhere/Other.md", "x\n");
-    t.ok(&["rename", "file=Old Name", "name=Other"]);
+    t.ok(&["move", "file=Old Name", "name=Other"]);
     assert!(t.exists("docs/Other.md"));
     // the folder name stays; `.obsidian` is never a target
     assert_eq!(t.code(&["move", "file=Other", "to=.obsidian"]).0, 1);
@@ -1433,16 +1578,16 @@ fn rename_attachments_notes_with_path_and_extension_rules() {
         "A.md",
         "![[pic one.png]] ![[img/pic one.png|200]] ![p](img/pic%20one.png) [[pic one]]\n",
     );
-    t.ok(&["rename", "path=img/pic one.png", "name=photo"]);
+    t.ok(&["move", "path=img/pic one.png", "name=photo"]);
     assert!(t.exists("img/photo.png"));
     assert_eq!(
         t.read("A.md"),
         "![[photo.png]] ![[img/photo.png|200]] ![p](img/photo.png) [[pic one]]\n"
     );
     // explicit extension is accepted when it matches, appended otherwise
-    t.ok(&["rename", "path=img/photo.png", "name=shot.png"]);
+    t.ok(&["move", "path=img/photo.png", "name=shot.png"]);
     assert!(t.exists("img/shot.png"));
-    t.ok(&["rename", "path=Archive/Old.md", "name=v1.2"]);
+    t.ok(&["move", "path=Archive/Old.md", "name=v1.2"]);
     assert!(t.exists("Archive/v1.2.md"));
     assert_eq!(t.read("Projects/Beta.md").len() > 0, true);
 }
@@ -1452,7 +1597,7 @@ fn rename_case_only_goes_through_a_temporary_name() {
     let t = T::new();
     t.write("Notes/gamma.md", "# g\n");
     t.write("L.md", "[[gamma]] [[Notes/gamma]]\n");
-    let out = t.ok(&["rename", "path=Notes/gamma.md", "name=Gamma"]);
+    let out = t.ok(&["move", "path=Notes/gamma.md", "name=Gamma"]);
     assert!(
         out.starts_with("Renamed Notes/gamma.md -> Notes/Gamma.md"),
         "{out}"
@@ -1472,21 +1617,21 @@ fn rename_with_duplicate_names_keeps_links_unambiguous() {
     t.write("b/Other.md", "b\n");
     t.write("S.md", "[[a/Twin]] [[Twin]]\n");
     // renaming a/Twin to Other creates a second `Other`: bare links to it fall back to the path
-    t.ok(&["rename", "path=a/Twin.md", "name=Other"]);
+    t.ok(&["move", "path=a/Twin.md", "name=Other"]);
     let s = t.read("S.md");
     assert!(s.starts_with("[[a/Other]] "), "{s}");
     assert!(
         s.contains("[[a/Other]]\n") || s.ends_with("[[Other]]\n"),
         "{s}"
     );
-    assert_eq!(t.ok(&["backlinks", "path=a/Other.md", "total"]), "1\n");
+    assert_eq!(t.linking_notes("path=a/Other.md"), 1);
 }
 
 #[test]
 fn move_dry_run_and_rename_unresolved_target() {
     let t = T::new();
-    assert_eq!(t.code(&["rename", "file=does not exist", "name=x"]).0, 1);
-    assert_eq!(t.code(&["rename", "name=x"]).0, 2);
+    assert_eq!(t.code(&["move", "file=does not exist", "name=x"]).0, 1);
+    assert_eq!(t.code(&["move", "name=x"]).0, 2);
     let out = t.ok(&["move", "file=Beta", "to=Archive", "dry-run"]);
     assert!(
         out.starts_with("Would move Projects/Beta.md -> Archive/Beta.md"),
@@ -1739,7 +1884,7 @@ fn rename_and_delete_keep_the_icons_in_step() {
     crate::icons::set_enabled(true);
     let t = T::new();
     t.ok(&["icon:set", "path=Projects/Beta.md", "icon=🎯"]);
-    t.ok(&["rename", "path=Projects/Beta.md", "name=Gamma"]);
+    t.ok(&["move", "path=Projects/Beta.md", "name=Gamma"]);
     assert_eq!(t.ok(&["icon:get", "path=Projects/Gamma.md"]), "emoji:🎯\n");
     assert_eq!(t.code(&["icon:get", "path=Projects/Beta.md"]).0, EXIT_FAIL);
     t.ok(&["delete", "path=Projects/Gamma.md", "permanent"]);

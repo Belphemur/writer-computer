@@ -219,6 +219,8 @@ pub enum StatusChange {
     Toggle,
     /// To done.
     Complete,
+    /// To this status symbol (reopening a done task clears its done date).
+    Set(char),
 }
 
 impl StatusChange {
@@ -232,6 +234,7 @@ impl StatusChange {
         match self {
             StatusChange::Toggle => toggle_line(line, n, s, today),
             StatusChange::Complete => complete_line(line, n, s, today),
+            StatusChange::Set(symbol) => set_status_line(line, n, symbol, s, today),
         }
     }
 }

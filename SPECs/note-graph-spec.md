@@ -29,7 +29,7 @@ Source files: `apps/desktop/src-tauri/src/index/{schema,build,query,mod,resolve,
 | Resolution                 | `links.target_path` = vault path or NULL. Resolver: `index/resolve.rs::PathIndex` (NFC + lowercase name, optional `.md`, partial path suffix, `./` `../`, tie-break nearest folder then shortest path then alphabetical) | In Rust only; it cannot be written as SQL. No "ambiguous" marker; no stored target name key.                                                                                                           |
 | Unresolved                 | `links WHERE target_path IS NULL`; `Index::unresolved()` groups by `raw` case-insensitively in Rust                                                                                                                      |                                                                                                                                                                                                        |
 | Tags                       | `tags(file_id, tag, source)` with ancestors (`a/b` also stores `a`), `source` body or frontmatter                                                                                                                        | `tags_tag` index.                                                                                                                                                                                      |
-| Aliases                    | not a table: `Index::aliases()` reads the `aliases`/`alias` props. Aliases never resolve a link (ADR 2026-11-16)                                                                                                         |                                                                                                                                                                                                        |
+| Aliases                    | not a table: the `aliases`/`alias` props are read by `property:read` and Bases. Aliases never resolve a link (ADR 2026-11-16)                                                                                            |                                                                                                                                                                                                        |
 | Headings                   | `headings(file_id, level, text, line)`                                                                                                                                                                                   | Usable to derive a link's section from its line.                                                                                                                                                       |
 | Backlink cache for Bases   | `Index::cached_backlinks()`: `HashMap<target, Vec<source>>` rebuilt from a full `links` scan on every epoch change                                                                                                       | Feeds `file.backlinks` (`bases_source.rs`).                                                                                                                                                            |
 | Name cache for quick open  | `names.rs::NameCache`, fed by `ChangeBatch`                                                                                                                                                                              | The pattern to copy for a graph snapshot.                                                                                                                                                              |
@@ -49,7 +49,7 @@ Assumed (the user's real vault is private and not inspected): 5k notes, 50k edge
 
 ### 2.4 Readers of links today
 
-- `Index::backlinks(path)`, `links(path)`, `unresolved()`, `orphans()` (no incoming link from another file), `deadends()` (no outgoing link to another file) in `index/query.rs`; the `writer` commands `links`, `backlinks`, `unresolved`, `orphans`, `deadends` (`cli/cmd_query.rs`, `cli/registry.rs`; spec `writer-cli-spec.md`).
+- `Index::backlinks(path)`, `links(path)`, `unresolved()`, `orphans()` (no incoming link from another file), `deadends()` (no outgoing link to another file) in `index/query.rs`; the `writer` commands `graph:neighbors`, `graph:backlinks`, `graph:unresolved`, `graph:orphans`, `graph:deadends` (`cli/cmd_graph.rs`, `cli/registry.rs`; spec `writer-cli-spec.md`; the old `links`, `backlinks`, `unresolved`, `orphans`, `deadends` were removed by ADR 2026-11-19).
 - Bases: `file.links`, `file.embeds`, `file.backlinks`, `link()` through `bases_source.rs` and `cached_backlinks`.
 - `resolve_link` for the CLI `file=` parameter and the editor's `resolve_wiki_link` command; `relocate/` rewrites link text on rename using the index to find referrers.
 - Property links: `prop_items.link_target` for the properties panel and Bases.
@@ -319,7 +319,7 @@ WITH RECURSIVE walk(id, d) AS (
 )
 SELECT id, MIN(d) FROM walk GROUP BY id;
 
--- Orphans: markdown notes with no edges in or out (today's `orphans` command means "no incoming"; keep both)
+-- Orphans: markdown notes with no edges in or out (`graph:orphans`; the `incoming` flag relaxes it to "no incoming")
 SELECT f.id FROM files f WHERE f.ext = 'md'
   AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.dst_id = f.id AND e.src_id <> f.id)
   AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.src_id = f.id AND (e.dst_id IS NULL OR e.dst_id <> f.id));
@@ -382,7 +382,7 @@ Added through the existing registry (`cli/registry.rs`) and formatters; one func
 | `graph:related file=X [limit=10]`                                                                     | The related-notes query with `score` and `shared` (and the shared neighbours' names).                                                |
 | `graph:hubs [limit=20]`, `graph:components`                                                           | Degree ranking, component sizes with one example per component.                                                                      |
 
-`graph:` follows the existing `base:`/`search:context` colon style (ADR 2026-11-15, Obsidian-style grammar). The existing `links`, `backlinks`, `unresolved`, `orphans`, `deadends` keep their names and output; they are re-implemented on `edges` in phase 2 with identical output (golden test). The managed skill `writer-cli` gets a "Graph" section and `references/commands.md` the table above (the skill source is `src-tauri/skills/`, compiled in; changing it bumps `BUNDLE_VERSION`, a test enforces it). A new `writer-graph` skill is not needed unless the section outgrows the CLI skill.
+`graph:` follows the existing `base:`/`search:context` colon style (ADR 2026-11-15, Obsidian-style grammar). The former `links`, `backlinks`, `unresolved`, `orphans`, `deadends` were removed by ADR 2026-11-19 (their jobs are `graph:neighbors direction=out`, `graph:backlinks`, `graph:unresolved`, `graph:orphans`, `graph:deadends`); until then they were re-implemented on `edges` in phase 2 with identical output (golden test). The managed skill `writer-cli` gets a "Graph" section and `references/commands.md` the table above (the skill source is `src-tauri/skills/`, compiled in; changing it bumps `BUNDLE_VERSION`, a test enforces it). A new `writer-graph` skill is not needed unless the section outgrows the CLI skill.
 
 ### 8.2 Graph context for the prompt
 
@@ -469,7 +469,7 @@ Each phase is one commit and independently shippable; phase 1 changes nothing us
 ## 11. Open questions for the user
 
 1. **Decided (user, 2026-11-17): open vocabulary.** Any frontmatter key whose value holds a link (a single link or a list of links) becomes a `property` edge labelled with the key, whether or not the key is typed `relationships`. The type record decides only the UI, and `writer graph:relationships` shows the label vocabulary with counts. Body wikilinks and embeds are the primary edge source (`kind` = `link` / `embed`), also confirmed by the user.
-2. **Decided (user, 2026-11-17): spec default.** `graph:*` orphans mean "no edges at all"; the existing `orphans` command keeps Obsidian's "no incoming"; both stay, named separately.
+2. **Decided (user, 2026-11-17): spec default.** `graph:*` orphans mean "no edges at all"; `graph:orphans` is "no edges at all" and its `incoming` flag is "no incoming" (the `orphans` command was removed, ADR 2026-11-19).
 3. **Decided (user, 2026-11-17): spec default.** The capped context snippet is read from the note on demand, never stored in the index.
 4. **Decided (user, 2026-11-17): accepted.** About 120 MB at 1M edges is fine; revisit `edges_key` only if a real vault gets near it.
 5. **Decided (user, 2026-11-17): spec default.** No stable note identity across rename in phase 1; graph layouts key by path.
