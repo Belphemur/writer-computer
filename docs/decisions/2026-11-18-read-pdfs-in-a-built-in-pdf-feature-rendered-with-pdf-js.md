@@ -27,7 +27,7 @@ Writer cannot show PDFs: they are not listed, cannot be opened in a tab, `![[fil
 
 Chosen option: **A** (the user chose it).
 
-1. **Dependency**: `pdfjs-dist`, the latest 5.x at install time, exact version pinned (at least two weeks old), Apache-2.0. Its worker runs as a module worker from the app bundle (no CDN; CSP unchanged except what a same-origin worker needs). Loaded only when a PDF tab or embed mounts.
+1. **Dependency**: `pdfjs-dist` `6.5.438` (the current stable release, confirmed by the user on 2026-11-18), pinned exactly, Apache-2.0. Its worker runs as a module worker from the app bundle (no CDN; CSP unchanged except what a same-origin worker needs). Loaded only when a PDF tab or embed mounts.
 2. **Feature**: `apps/desktop/features/pdf/` (`feature.json`, kill switch `features.pdf.enabled` on by default, light `web/index.ts`, the viewer as the lazy slot `page-view:pdf`, `tests/`). A core `pdf` page kind with `feature: "pdf"` (like `image`/`code`); off, a PDF tab shows the shared off page (Turn on, Open in default app).
 3. **Tab viewer**: pages in one vertical scroller (virtualized: only pages near the viewport render, canvas plus pdf.js text layer); fit width by default; zoom with the same commands and gestures as the image viewer (shared view-transform helpers where they apply, keybinding registry commands active in a PDF tab); footer: page `x / n` (click to type a page), zoom percent, − and +. Links inside the PDF: external ones through `link-activation`, internal ones jump to their page.
 4. **Search and selection**: Cmd/Ctrl+F in a PDF tab opens a find bar (next/previous, match count, highlights in the text layer); text is selectable and copyable (`data-selectable`, `docs/design.md`).
