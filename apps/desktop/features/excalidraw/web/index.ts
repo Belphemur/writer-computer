@@ -75,17 +75,15 @@ export default defineFeature({
       },
     ],
     menus: {
-      "sidebar-folder": [
+      "sidebar-create": [
         {
           id: "excalidraw.new-drawing",
-          group: "create",
-          items: (entry) => [
+          items: (folder) => [
             {
               kind: "item",
               id: "excalidraw-new-drawing",
               text: "New Drawing",
-              action: () =>
-                void import("./lib/new-drawing").then((m) => m.createDrawing(entry.path)),
+              action: () => void import("./lib/new-drawing").then((m) => m.createDrawing(folder)),
             },
           ],
         },

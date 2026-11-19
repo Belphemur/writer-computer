@@ -40,7 +40,7 @@
     "editorExtensions": ["excalidraw.embeds"],
     "slots": ["excalidraw.drawing-tab"],
     "menus": {
-      "sidebar-folder": ["excalidraw.new-drawing"]
+      "sidebar-create": ["excalidraw.new-drawing"]
     },
     "workspaceListeners": ["excalidraw.disk-sync"],
     "ipcRequests": ["excalidraw.render"],

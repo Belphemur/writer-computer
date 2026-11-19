@@ -30,6 +30,7 @@ import { buildSidebarPanels, resolveSidebarPanel } from "../src/components/sideb
 import { showBulkContextMenu } from "../src/components/sidebar/bulk-context-menu";
 import { showFileContextMenu } from "../src/components/sidebar/file-context-menu";
 import { showFolderContextMenu } from "../src/components/sidebar/folder-context-menu";
+import { showSidebarSurfaceContextMenu } from "../src/components/sidebar/sidebar-surface-context-menu";
 import { syncBuiltinFeatures } from "../src/lib/features/builtin";
 import {
   contributedMenuItems,
@@ -269,26 +270,45 @@ describe("sidebar menus", () => {
     ]);
   });
 
-  it("puts a feature's create items right after New Note and New Folder", async () => {
-    menuContributions.add(menuKey("sidebar-folder", "fixture.new-thing"), {
+  it("puts the create items after New Note and New Folder, for the folder and the vault root", async () => {
+    const folders: string[] = [];
+    menuContributions.add(menuKey("sidebar-create", "fixture.new-thing"), {
       owner: "builtin:fixture-create",
-      surface: "sidebar-folder",
+      surface: "sidebar-create",
       id: "fixture.new-thing",
-      group: "create",
-      items: () => [{ kind: "item", id: "new-thing", text: "New Thing", action: () => {} }],
+      items: (folder: string) => {
+        folders.push(folder);
+        return [{ kind: "item", id: "new-thing", text: "New Thing", action: () => {} }];
+      },
     });
     try {
       const handlers = new Proxy({}, { get: () => () => {} }) as never;
       await showFolderContextMenu(handlers, entry("docs", true));
-      const spec = showNativeContextMenu.mock.calls.at(-1)![0] as Array<{ text?: string }>;
-      expect(spec.slice(0, 4).map((s) => s.text)).toEqual([
-        "New Note",
-        "New Folder",
-        "New Thing",
-        undefined,
-      ]);
-      expect(spec.at(-1)).toMatchObject({ text: "Folder docs" });
-      expect(spec.filter((s) => s.text === "New Thing")).toHaveLength(1);
+      const folderMenu = showNativeContextMenu.mock.calls.at(-1)![0] as Array<{ text?: string }>;
+      await showSidebarSurfaceContextMenu({
+        showSearch: true,
+        showRecents: true,
+        onToggleSearch: () => {},
+        onToggleRecents: () => {},
+        workspaceActions: {
+          ...(handlers as object),
+          root: "/v",
+          sortMode: "name-asc",
+          foldersFirst: true,
+        } as never,
+      });
+      const surfaceMenu = showNativeContextMenu.mock.calls.at(-1)![0] as Array<{ text?: string }>;
+      for (const spec of [folderMenu, surfaceMenu]) {
+        expect(spec.slice(0, 4).map((s) => s.text)).toEqual([
+          "New Note",
+          "New Folder",
+          "New Thing",
+          undefined,
+        ]);
+        expect(spec.filter((s) => s.text === "New Thing")).toHaveLength(1);
+      }
+      expect(folderMenu.at(-1)).toMatchObject({ text: "Folder docs" });
+      expect(folders).toEqual([entry("docs", true).path, "/v"]);
     } finally {
       menuContributions.removeOwner("builtin:fixture-create");
     }

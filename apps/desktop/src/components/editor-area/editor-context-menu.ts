@@ -2,6 +2,7 @@ import { contributedMenuItems, withContributedItems } from "@/lib/features/menus
 import { Menu } from "@tauri-apps/api/menu/menu";
 import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
 import { MenuItem } from "@tauri-apps/api/menu/menuItem";
+import { CheckMenuItem } from "@tauri-apps/api/menu/checkMenuItem";
 import { Submenu } from "@tauri-apps/api/menu/submenu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import {
@@ -309,12 +310,13 @@ export type MenuItemSpec =
       accelerator?: string;
       enabled?: boolean;
     }
+  | { kind: "check"; id: string; text: string; checked: boolean; action: () => void }
   | { kind: "separator" }
-  | { kind: "submenu"; text: string; items: MenuItemSpec[] };
+  | { kind: "submenu"; id?: string; text: string; items: MenuItemSpec[] };
 
 async function buildMenuItems(
   spec: MenuItemSpec[],
-): Promise<Array<MenuItem | PredefinedMenuItem | Submenu>> {
+): Promise<Array<MenuItem | CheckMenuItem | PredefinedMenuItem | Submenu>> {
   return Promise.all(
     spec.map(async (entry) => {
       if (entry.kind === "separator") {
@@ -322,7 +324,15 @@ async function buildMenuItems(
       }
       if (entry.kind === "submenu") {
         const children = await buildMenuItems(entry.items);
-        return Submenu.new({ text: entry.text, items: children });
+        return Submenu.new({
+          ...(entry.id ? { id: entry.id } : {}),
+          text: entry.text,
+          items: children,
+        });
+      }
+      if (entry.kind === "check") {
+        const { id, text, checked, action } = entry;
+        return CheckMenuItem.new({ id, text, checked, action });
       }
       return MenuItem.new({
         id: entry.id,

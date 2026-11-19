@@ -1,19 +1,14 @@
-import { Menu } from "@tauri-apps/api/menu/menu";
-import { CheckMenuItem } from "@tauri-apps/api/menu/checkMenuItem";
-import { MenuItem } from "@tauri-apps/api/menu/menuItem";
-import { PredefinedMenuItem } from "@tauri-apps/api/menu/predefinedMenuItem";
-import { Submenu } from "@tauri-apps/api/menu/submenu";
+import {
+  showNativeContextMenu,
+  type MenuItemSpec,
+} from "@/components/editor-area/editor-context-menu";
 import { detectPlatform, openFolderLabelForPlatform, type Platform } from "./context-menu-utils";
+import { contributedCreateItems, createMenuItems } from "./create-menu-items";
 import { SIDEBAR_SORT_MODES, type SidebarSortMode } from "./sidebar-sort";
 
-export type SidebarSurfaceToggleId = "toggle-search" | "toggle-recents" | "folders-first";
-export type SidebarSurfaceActionId =
-  | "new-file"
-  | "new-folder"
-  | "open-terminal"
-  | "open-file-manager";
-
 interface SidebarSurfaceWorkspaceActions {
+  /** The vault root: where New Note, New Folder and the contributed "New …" items create. */
+  root: string;
   sortMode: SidebarSortMode;
   foldersFirst: boolean;
   onNewFile: () => void;
@@ -32,22 +27,7 @@ export interface SidebarSurfaceMenuState {
   onToggleRecents: (visible: boolean) => void;
 }
 
-export type SidebarSurfaceMenuEntry =
-  | {
-      kind: "item";
-      id: SidebarSurfaceActionId;
-      text: string;
-      action: () => void;
-    }
-  | {
-      kind: "check";
-      id: SidebarSurfaceToggleId | SidebarSortMode;
-      text: string;
-      checked: boolean;
-      action: () => void;
-    }
-  | { kind: "submenu"; id: "sort"; text: string; items: SidebarSurfaceMenuEntry[] }
-  | { kind: "separator" };
+export type SidebarSurfaceMenuEntry = MenuItemSpec;
 
 /**
  * The "Sort by" submenu: one check item per sort mode, exactly one checked,
@@ -89,6 +69,7 @@ function buildSortSubmenu(actions: SidebarSurfaceWorkspaceActions): SidebarSurfa
 export function buildSidebarSurfaceMenuItemsSpec(
   state: SidebarSurfaceMenuState,
   platform: Platform = detectPlatform(),
+  contributedCreate: readonly MenuItemSpec[] = [],
 ): SidebarSurfaceMenuEntry[] {
   const toggles: SidebarSurfaceMenuEntry[] = [
     {
@@ -110,18 +91,7 @@ export function buildSidebarSurfaceMenuItemsSpec(
   if (!state.workspaceActions) return toggles;
 
   return [
-    {
-      kind: "item",
-      id: "new-file",
-      text: "New Note",
-      action: state.workspaceActions.onNewFile,
-    },
-    {
-      kind: "item",
-      id: "new-folder",
-      text: "New Folder",
-      action: state.workspaceActions.onNewFolder,
-    },
+    ...createMenuItems(state.workspaceActions, contributedCreate),
     { kind: "separator" },
     {
       kind: "item",
@@ -142,37 +112,10 @@ export function buildSidebarSurfaceMenuItemsSpec(
   ];
 }
 
-async function buildMenuItems(
-  spec: SidebarSurfaceMenuEntry[],
-): Promise<Array<MenuItem | CheckMenuItem | PredefinedMenuItem | Submenu>> {
-  return Promise.all(
-    spec.map(async (entry) => {
-      if (entry.kind === "separator") {
-        return PredefinedMenuItem.new({ item: "Separator" });
-      }
-      if (entry.kind === "submenu") {
-        const items = await buildMenuItems(entry.items);
-        return Submenu.new({ id: entry.id, text: entry.text, items });
-      }
-      if (entry.kind === "check") {
-        return CheckMenuItem.new({
-          id: entry.id,
-          text: entry.text,
-          checked: entry.checked,
-          action: entry.action,
-        });
-      }
-      return MenuItem.new({ id: entry.id, text: entry.text, action: entry.action });
-    }),
-  );
-}
-
-/**
- * Build a Tauri native menu of check items and pop it up at the cursor.
- * The menu dismisses through the OS, not via JS.
- */
+/** Pop up the sidebar surface menu at the cursor (the OS dismisses it). */
 export async function showSidebarSurfaceContextMenu(state: SidebarSurfaceMenuState): Promise<void> {
-  const items = await buildMenuItems(buildSidebarSurfaceMenuItemsSpec(state));
-  const menu = await Menu.new({ items });
-  await menu.popup();
+  const create = state.workspaceActions
+    ? await contributedCreateItems(state.workspaceActions.root)
+    : [];
+  await showNativeContextMenu(buildSidebarSurfaceMenuItemsSpec(state, detectPlatform(), create));
 }

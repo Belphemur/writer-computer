@@ -7,7 +7,7 @@ import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu"
 import { reportOwnerFailure } from "./health";
 import { withFeatureDivider } from "./origin";
 import { OwnedRegistry } from "@/lib/owned-registry";
-import type { MenuGroup, MenuSurface, MenuSurfaces } from "./types";
+import type { MenuSurface, MenuSurfaces } from "./types";
 
 export interface OwnedMenuContribution {
   owner: string;
@@ -16,7 +16,6 @@ export interface OwnedMenuContribution {
   id: string;
   /** The arguments are the surface's (`MenuSurfaces`); `contributedMenuItems` is the typed caller. */
   items: (...args: never[]) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
-  group?: MenuGroup;
 }
 
 export const menuContributions = new OwnedRegistry<OwnedMenuContribution>();
@@ -24,33 +23,16 @@ export const menuContributions = new OwnedRegistry<OwnedMenuContribution>();
 /** Registry key: the same id may appear on two surfaces. */
 export const menuKey = (surface: MenuSurface, id: string) => `${surface}:${id}`;
 
-/** The contributed items of `surface` that go after the core items (group `end`), in registration
- *  order; a failing contribution is logged, counted against its feature and skipped. */
-export function contributedMenuItems<S extends MenuSurface>(
+/** All contributed items of `surface` in registration order; a failing contribution is logged,
+ *  counted against its feature and skipped. */
+export async function contributedMenuItems<S extends MenuSurface>(
   surface: S,
   ...args: MenuSurfaces[S]
-): Promise<MenuItemSpec[]> {
-  return collect(surface, "end", args);
-}
-
-/** The contributed "New …" items of `surface` (group `create`), for a surface that shows them next
- *  to its own New Note / New Folder. */
-export function contributedCreateItems<S extends MenuSurface>(
-  surface: S,
-  ...args: MenuSurfaces[S]
-): Promise<MenuItemSpec[]> {
-  return collect(surface, "create", args);
-}
-
-async function collect<S extends MenuSurface>(
-  surface: S,
-  group: MenuGroup,
-  args: MenuSurfaces[S],
 ): Promise<MenuItemSpec[]> {
   const parts = await Promise.all(
     menuContributions
       .list()
-      .filter((c) => c.surface === surface && (c.group ?? "end") === group)
+      .filter((c) => c.surface === surface)
       .map(async (c) => {
         try {
           return await (

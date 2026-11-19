@@ -50,6 +50,7 @@ export function useSidebarSurface() {
       showRecents,
       workspaceActions: root
         ? {
+            root,
             sortMode,
             foldersFirst,
             onNewFile: () => createRootEntry("file"),

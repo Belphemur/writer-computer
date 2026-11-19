@@ -1,21 +1,9 @@
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
-import {
-  contributedCreateItems,
-  contributedMenuItems,
-  withContributedItems,
-} from "@/lib/features/menus";
+import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
+import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
+import { contributedCreateItems, createMenuItems } from "./create-menu-items";
 import type { DirEntry } from "@/types/fs";
 import { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
-
-export type FolderMenuActionId =
-  | "new-file"
-  | "new-folder"
-  | "copy-relative-path"
-  | "copy-absolute-path"
-  | "open-terminal"
-  | "reveal"
-  | "rename"
-  | "delete";
 
 export interface FolderContextMenuHandlers {
   onNewFile: () => void;
@@ -35,12 +23,10 @@ export interface FolderContextMenuHandlers {
 export function buildFolderMenuItemsSpec(
   handlers: FolderContextMenuHandlers,
   platform: Platform = detectPlatform(),
-): Array<
-  { kind: "item"; id: FolderMenuActionId; text: string; action: () => void } | { kind: "separator" }
-> {
+  contributedCreate: readonly MenuItemSpec[] = [],
+): MenuItemSpec[] {
   return [
-    { kind: "item", id: "new-file", text: "New Note", action: handlers.onNewFile },
-    { kind: "item", id: "new-folder", text: "New Folder", action: handlers.onNewFolder },
+    ...createMenuItems(handlers, contributedCreate),
     { kind: "separator" },
     {
       kind: "item",
@@ -82,12 +68,10 @@ export async function showFolderContextMenu(
   entry: DirEntry,
 ): Promise<void> {
   const [create, extra] = await Promise.all([
-    contributedCreateItems("sidebar-folder", entry),
+    contributedCreateItems(entry.path),
     contributedMenuItems("sidebar-folder", entry),
   ]);
-  const spec = buildFolderMenuItemsSpec(handlers);
-  // the "New …" items of features follow New Note / New Folder, before the first separator
-  const at = spec.findIndex((e) => e.kind === "separator");
-  const withCreate = [...spec.slice(0, at), ...create, ...spec.slice(at)];
-  await showNativeContextMenu(withContributedItems(withCreate, extra));
+  await showNativeContextMenu(
+    withContributedItems(buildFolderMenuItemsSpec(handlers, detectPlatform(), create), extra),
+  );
 }

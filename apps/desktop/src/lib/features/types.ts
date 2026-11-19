@@ -105,6 +105,9 @@ export interface MenuSurfaces {
   "sidebar-file": [entry: DirEntry];
   /** Right-click on a folder row of the sidebar. */
   "sidebar-folder": [entry: DirEntry];
+  /** The "New …" section of the sidebar menus (after New Note and New Folder), for the folder
+   *  the new file goes in (absolute path): a folder row, or the vault root on the empty area. */
+  "sidebar-create": [folder: string];
   /** Right-click on a multi-selection of the sidebar. */
   "sidebar-bulk": [paths: readonly string[]];
   /** Right-click on a tab that shows a file (`path` is absolute). */
@@ -117,14 +120,7 @@ export interface MenuContribution<S extends MenuSurface = MenuSurface> {
   id: string;
   /** Items for the right-click; empty when the feature has nothing to offer there. */
   items: (...args: MenuSurfaces[S]) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
-  /** `create`: "New …" items, shown with the surface's own New Note / New Folder (where it has
-   *  them) instead of after the core items. */
-  group?: MenuGroup;
 }
-
-/** Where a surface places a contribution: `end` (default) after the core items, `create` with
- *  its "New …" items. */
-export type MenuGroup = "create" | "end";
 
 /** A pane docked at the right edge (the agent pane). The layout shows the open dock with the
  *  highest `priority`, or the plugin pane when none is open, and reserves `width()` for it. */

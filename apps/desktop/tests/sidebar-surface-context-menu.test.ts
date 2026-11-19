@@ -42,6 +42,7 @@ function makeState(
     showRecents,
     workspaceActions: hasWorkspace
       ? {
+          root: "/v",
           sortMode: "modified-desc",
           foldersFirst: true,
           onNewFile: () => calls.push("new-file"),
