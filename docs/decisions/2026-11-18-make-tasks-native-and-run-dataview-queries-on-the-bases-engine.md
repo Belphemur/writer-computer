@@ -1,10 +1,12 @@
 ---
-status: accepted
+status: superseded
 date: 2026-11-18
 decision-makers: Writer maintainers
 ---
 
 # Make tasks native and run Dataview queries on the Bases engine
+
+> **Superseded (2026-11-18)** by [Make tasks a native built-in feature, with task rows in Bases](2026-11-18-make-tasks-a-native-built-in-feature-with-task-rows-in-bases.md) and [Run Dataview queries natively on the Bases engine](2026-11-18-run-dataview-queries-natively-on-the-bases-engine.md): the user asked for two plugins with two ADRs.
 
 ## Context and Problem Statement
 
