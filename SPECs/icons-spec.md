@@ -50,7 +50,7 @@ For a path: Writer's entry wins, then Iconize's, then none; a hiding entry shows
 
 ## 5. Rename, move, delete
 
-- **Move or rename** of a file goes through `relocate::apply`, which calls `icons::on_move` once the file is moved and its links rewritten. A folder rename or move (`relocate_entry`'s folder branch, `rename_entry`) calls `icons::on_move_abs`. Writer's entries at or under the old path are re-keyed to the new path in the same call. A failure never fails the move (the files are moved; icons are cosmetic) and is logged without paths.
+- **Move or rename** of a file goes through `relocate::apply`, which calls `vault_events::moved` (the one hook every per-path store follows; it calls `icons::on_move`) once the file is moved and its links rewritten. A folder rename or move (`relocate_entry`'s folder branch, `rename_entry`) calls `vault_events::moved_abs`. Writer's entries at or under the old path are re-keyed to the new path in the same call. A failure never fails the move (the files are moved; icons are cosmetic) and is logged without paths.
 - An Iconize-only icon at or under the old path is **copied** to the new path in Writer's file and **hidden** at the old path (so a new file with the old name does not inherit it). Iconize's file is never touched.
 - **Delete** (`delete_entry`, `writer delete`) drops the entries at and under the path. Hiding entries go with them.
 - A change made outside Writer (Finder, git, Obsidian) cannot be followed: the entry stays under the old path.

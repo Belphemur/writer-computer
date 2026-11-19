@@ -18,6 +18,7 @@ pub mod checker;
 pub mod dictionaries;
 pub mod harper;
 pub mod hunspell;
+pub mod ignored;
 pub mod lang;
 pub mod mask;
 pub mod options;
@@ -27,6 +28,7 @@ use self::cache::{Cache, Key};
 use self::checker::{dedupe, glued_to_mask, CheckProvider, Finding, Hit, Kind, Prose, Utf16Index};
 use self::harper::{HarperProvider, Spawner};
 use self::hunspell::HunspellProvider;
+use self::ignored::Ignored;
 use self::lang::{block_language, note_language, Detector, Lang, NoteLang, Source};
 use self::mask::Block;
 use self::options::Options;
@@ -43,11 +45,13 @@ const CACHE_BLOCKS: usize = 8192;
 /// Notes whose latest document version the engine remembers (for dropping stale requests).
 const TRACKED_NOTES: usize = 256;
 
-/// What a check reads besides the text: the user's settings and personal dictionary (the ADR's
-/// `ctx`).
+/// What a check reads besides the text: the user's settings, personal dictionary and the words
+/// ignored per note (the ADR's `ctx`).
 pub struct Context<'a> {
     pub options: &'a Options,
     pub personal: &'a Personal,
+    /// The vault's per-note ignored words; a note's are read by its path.
+    pub ignored: &'a Ignored,
 }
 
 /// The note a check is for.
@@ -121,7 +125,7 @@ impl Checker {
     /// [`Checker::check`] with the rest of the answer: the blocks and the language nobody could
     /// check (`writer check lang=de` says so when German is not installed).
     pub fn check_as(&self, text: &str, lang: &Lang, ctx: &Context<'_>) -> Checked {
-        self.run(text, ctx, |_, _| (lang.clone(), Source::Override))
+        self.run(text, None, ctx, |_, _| (lang.clone(), Source::Override))
     }
 
     /// Checks a note: each block in the language the precedence rules give it.
@@ -140,7 +144,7 @@ impl Checker {
             &ctx.options.languages,
             note.language.as_ref(),
         );
-        Ok(self.run(text, ctx, |chars, block| {
+        Ok(self.run(text, Some(note.path), ctx, |chars, block| {
             block_language(&decided, || block.prose(chars), &self.detector)
         }))
     }
@@ -161,6 +165,7 @@ impl Checker {
     fn run(
         &self,
         text: &str,
+        note: Option<&str>,
         ctx: &Context<'_>,
         language_of: impl Fn(&[char], &Block) -> (Lang, Source),
     ) -> Checked {
@@ -200,7 +205,7 @@ impl Checker {
             let text = &chars[block.start..block.end];
             out.findings.extend(
                 hits.iter()
-                    .filter(|h| keep(h, text, ctx))
+                    .filter(|h| keep(h, text, note, ctx))
                     .map(|h| index.finding(block.start, h)),
             );
         }
@@ -249,9 +254,9 @@ fn with_dialect(lang: Lang, options: &Options) -> Lang {
     }
 }
 
-/// The settings, the personal dictionary and the ignored rules apply after the cache: changing
-/// one never re-checks a paragraph.
-fn keep(hit: &Hit, block_text: &[char], ctx: &Context<'_>) -> bool {
+/// The settings, the personal dictionary, the ignored rules and the note's ignored words apply
+/// after the cache: changing one never re-checks a paragraph.
+fn keep(hit: &Hit, block_text: &[char], note: Option<&str>, ctx: &Context<'_>) -> bool {
     let enabled = match hit.kind {
         Kind::Spelling => ctx.options.spelling,
         Kind::Grammar => ctx.options.grammar,
@@ -265,7 +270,7 @@ fn keep(hit: &Hit, block_text: &[char], ctx: &Context<'_>) -> bool {
             .iter()
             .map(|&c| if c == '’' { '\'' } else { c })
             .collect();
-        if ctx.personal.contains(&word) {
+        if ctx.personal.contains(&word) || note.is_some_and(|n| ctx.ignored.contains(n, &word)) {
             return false;
         }
     }

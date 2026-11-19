@@ -40,6 +40,7 @@ mod telemetry;
 #[cfg(desktop)]
 mod updater;
 pub mod url_value;
+pub mod vault_events;
 pub mod vault_ops;
 mod watcher;
 pub mod writer_cli;

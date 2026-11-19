@@ -26,10 +26,13 @@ fn install_german(c: &Checker) {
     c.dictionary_changed("de");
 }
 
+static NOTHING_IGNORED: Ignored = Ignored::empty();
+
 fn ctx<'a>(o: &'a Options, p: &'a Personal) -> Context<'a> {
     Context {
         options: o,
         personal: p,
+        ignored: &NOTHING_IGNORED,
     }
 }
 
@@ -376,4 +379,48 @@ fn a_possessive_glued_to_a_link_is_not_underlined_but_neighbours_still_are() {
     }
     assert_eq!(flagged("I met [[Ben]] teh dog.\n"), vec!["teh"]);
     assert_eq!(flagged("I met [[Ben]] wrng today.\n"), vec!["wrng"]);
+}
+
+#[test]
+fn an_ignored_word_is_dropped_for_that_note_only_and_the_cache_is_not_re_run() {
+    let (data, c) = checker();
+    let vault = tempfile::tempdir().unwrap();
+    let (o, p) = (Options::default(), Personal::default());
+    let text = "This is a recieved note.";
+    let base = note(&c, text, "a.md", 1, &o, &p);
+    assert!(base.findings.iter().any(|f| covered(text, f) == "recieved"));
+    let cached = c.cached_blocks();
+
+    ignored::add(data.path(), vault.path(), "a.md", "Recieved").unwrap();
+    let store = ignored::load(data.path(), vault.path()).unwrap();
+    let with = |path: &str, version: u64| {
+        c.check_note(
+            text,
+            &NoteInput {
+                path,
+                version,
+                language: None,
+            },
+            &Context {
+                options: &o,
+                personal: &p,
+                ignored: &store,
+            },
+        )
+        .unwrap()
+        .findings
+    };
+    assert!(
+        !with("a.md", 2)
+            .iter()
+            .any(|f| covered(text, f) == "recieved"),
+        "ignored in a.md, in any case"
+    );
+    assert!(
+        with("b.md", 1)
+            .iter()
+            .any(|f| covered(text, f) == "recieved"),
+        "still flagged in another note"
+    );
+    assert_eq!(c.cached_blocks(), cached, "ignoring re-ran no provider");
 }

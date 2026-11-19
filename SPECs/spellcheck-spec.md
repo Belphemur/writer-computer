@@ -51,6 +51,10 @@ A request carries a document version; the engine refuses one older than an answe
 
 `.writer/dictionary.txt` in the vault, one word per line, matched case-insensitively for every language, written atomically through the vault's `.writer` folder (never `.obsidian`), at most 64 characters per word and 1 MB per file. It is re-read only when the file changes.
 
+### Ignored in a note
+
+"Ignore" on a misspelled word stops flagging that word (case and apostrophe folded) in that note only. Device-local, never in the vault: `<app data>/spellcheck/ignored-<vault key>.json`, `{version, notes: {<vault-relative path>: [words]}}` (vault key as the index's: `index::vault_key`), written atomically, at most 64 characters per word and 1 MB per file, never logged. `spellcheck/ignored.rs` is the Tauri-free store and the one write path; the checker applies it after the cache next to the personal dictionary (`Context.ignored`, read by the note's path), so it never re-runs a provider. It follows a move or rename of the note or its folder and is dropped with a delete, through `vault_events` (`src-tauri/src/vault_events.rs`), the one "file moved or deleted" hook that `relocate::apply`, the app's rename and delete and the CLI's delete call for every per-path store (icons and this one). There is no list or Clear in Settings: ignoring is one click and not undone from a list (`spellcheck_unignore_word` exists for a later one).
+
 ## Settings
 
 Fragment `features/spellcheck/settings.schema.json`; the kill switch `features.spellcheck.enabled` is in the shared schema.
@@ -68,7 +72,7 @@ Fragment `features/spellcheck/settings.schema.json`; the kill switch `features.s
 
 ## Commands (`plugin:spellcheck|*`, all `async` through `commands::blocking`)
 
-`spellcheck_check` (`{path, text, version, language}` to findings, blocks, missing languages, stale), `spellcheck_dictionaries`, `spellcheck_install_dictionary`, `spellcheck_remove_dictionary`, `spellcheck_personal_words`, `spellcheck_add_word`, `spellcheck_remove_word`. The TypeScript bindings are generated (`WRITER_UPDATE_BINDINGS=1 cargo test bindings`); `web/ipc.ts` is their only importer.
+`spellcheck_check` (`{path, text, version, language}` to findings, blocks, missing languages, stale), `spellcheck_dictionaries`, `spellcheck_install_dictionary`, `spellcheck_remove_dictionary`, `spellcheck_personal_words`, `spellcheck_add_word`, `spellcheck_remove_word`, `spellcheck_ignore_word` and `spellcheck_unignore_word` (`{path, word}`, path vault-relative, to the note's ignored words). The TypeScript bindings are generated (`WRITER_UPDATE_BINDINGS=1 cargo test bindings`); `web/ipc.ts` is their only importer.
 
 ## CLI
 
@@ -76,10 +80,10 @@ Fragment `features/spellcheck/settings.schema.json`; the kill switch `features.s
 
 ## Editor and Settings
 
-- A lazy `@codemirror/lint` source (750 ms after the last edit) sends the note and draws spelling and grammar as warnings and style as information. Actions: Replace with (up to 5), Add to dictionary (a spelling rule), Ignore rule (any other). Notes over 1,000,000 characters are not checked. A dictionary install, a word added, a rule ignored, a language picked, a setting changed and the LanguageTool plugin turning up or off all re-check the open notes.
-- The tooltip is a compact card (kind icon and title, the message, then a row of chips): each replacement as a word-only chip in the app accent (the first is stronger), "Add to dictionary" or "Ignore rule" as a quiet chip. It is CodeMirror's lint tooltip, built in `renderMessage` (`editor/diagnostics.ts`, styled by `editor/tooltip-theme.ts`); a chip looks the diagnostic's range up at click time (`liveDiagnostics`) so edits since the check are mapped.
+- A lazy `@codemirror/lint` source (750 ms after the last edit) sends the note and draws spelling and grammar as warnings and style as information. Actions: Replace with (up to 5), Add to dictionary and Ignore (this note only), for a spelling rule; Ignore rule for any other. Notes over 1,000,000 characters are not checked. A dictionary install, a word added, a rule ignored, a language picked, a setting changed and the LanguageTool plugin turning up or off all re-check the open notes.
+- The tooltip is a compact card (kind icon and title, the message, then a row of chips): each replacement as a word-only chip in the app accent (the first is stronger), "Add to dictionary" and "Ignore" (eye-off icon) for a misspelled word, or "Ignore rule", as quiet chips. It is CodeMirror's lint tooltip, built in `renderMessage` (`editor/diagnostics.ts`, styled by `editor/tooltip-theme.ts`); a chip looks the diagnostic's range up at click time (`liveDiagnostics`) so edits since the check are mapped.
 - A masked span counts as a word for its neighbours: a hit that is a suffix glued to one (`'s`, `’s`, `-based` after `[[Ben]]`, `[Ben](x.md)` or `#tag`) is dropped for every provider (`checker::glued_to_mask`, applied before the cache).
-- A footer item shows the note's issue count (spell-check icon and number, tooltip "3 spelling, 1 grammar", hidden at 0 or with the checker inactive), read from the groups the linter stores in `spell-store` (no second check). Its popover (`AnchoredPopover`) lists unique issues (`lib/issue-groups.ts`): spelling by word, case and apostrophe folded; grammar and style by rule plus text; spelling first, then grammar, then style, most frequent first; each with `x3`, up to 3 chips that replace every occurrence in one `input.complete` transaction, Add to dictionary or Ignore rule, and a click on the word selects the next occurrence through CodeMirror's `scrollIntoView` effect. A row leaves when the re-check comes back.
+- A footer item shows the note's issue count (spell-check icon and number, tooltip "3 spelling, 1 grammar", hidden at 0 or with the checker inactive), read from the groups the linter stores in `spell-store` (no second check). Its popover (`AnchoredPopover`) lists unique issues (`lib/issue-groups.ts`): spelling by word, case and apostrophe folded; grammar and style by rule plus text; spelling first, then grammar, then style, most frequent first; each with `x3`, up to 3 chips that replace every occurrence in one `input.complete` transaction, Add to dictionary and Ignore, or Ignore rule, and a click on the word selects the next occurrence through CodeMirror's `scrollIntoView` effect. A row leaves when the re-check comes back.
 - The footer item shows the language of the paragraph at the cursor; its menu lists English and the installed dictionaries. Picking one asks to confirm, then writes `lang:` into the note's front matter through the editor.
 - Settings > Spelling: the toggles and dialect, the default language and folder rules, the language list (installed, "Add language" with every catalog entry and its licence shown before the download, remove), and the personal dictionary. One hint line: "Grammar: English only for now; other languages check spelling".
 
@@ -97,7 +101,7 @@ Binary and memory cost: pending a release build (the debug build is not represen
 
 ## Tests
 
-Rust: mask, lang, harper, hunspell, dictionaries (local file server, sha256 mismatch, licence recorded), personal, cache, the pipeline (`spellcheck/tests.rs`: UTF-16 offsets, dialect, post-cache filters, German install, folder rule, per-paragraph detection, stale, 10,000-word timing), the feature glue and the CLI end to end (`features/spellcheck/rust/tests.rs`). jsdom (`features/spellcheck/tests/`): registration, manifest and schema contract, import boundaries and startup graph, IPC, diagnostics, language property edit, settings readers; `src/lib/plugin-takeover.test.ts`.
+Rust: mask, lang, harper, hunspell, dictionaries (local file server, sha256 mismatch, licence recorded), personal, ignored (per-note, re-key on move, drop on delete, nothing in the vault), `vault_events`, cache, the pipeline (`spellcheck/tests.rs`: UTF-16 offsets, dialect, post-cache filters (an ignored word hides in its note only), German install, folder rule, per-paragraph detection, stale, 10,000-word timing), the feature glue and the CLI end to end (`features/spellcheck/rust/tests.rs`). jsdom (`features/spellcheck/tests/`): registration, manifest and schema contract, import boundaries and startup graph, IPC, diagnostics, language property edit, settings readers; `src/lib/plugin-takeover.test.ts`.
 
 ## Not verified without a real window
 

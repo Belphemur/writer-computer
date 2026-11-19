@@ -208,6 +208,80 @@ fn the_personal_dictionary_needs_a_vault_and_writes_only_inside_it() {
 }
 
 #[test]
+fn ignoring_a_word_hides_it_in_that_note_only_and_writes_outside_the_vault() {
+    let app = app();
+    let args = |path: &str, word: &str| json!({ "path": path, "word": word });
+    let err = call(
+        &app,
+        "main",
+        "spellcheck_ignore_word",
+        args("a.md", "recieved"),
+    )
+    .unwrap_err();
+    assert!(err.contains("No workspace"), "{err}");
+
+    let vault = tempfile::tempdir().unwrap();
+    let state = app.state::<AppState>().get_or_create("main");
+    *state.workspace_root.write() = Some(vault.path().to_path_buf());
+    // never the platform app data dir: that is the user's live data
+    let data = tempfile::tempdir().unwrap();
+    *app.state::<Engine>().data_dir.write() = data.path().to_path_buf();
+
+    let flagged = |path: &str, version: u32| -> bool {
+        let checked = call(
+            &app,
+            "main",
+            "spellcheck_check",
+            json!({ "request": { "path": path, "text": "I recieved it.", "version": version, "language": null } }),
+        )
+        .unwrap();
+        checked["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["ruleId"] == "SpellCheck")
+    };
+    assert!(flagged("a.md", 1));
+    let words = call(
+        &app,
+        "main",
+        "spellcheck_ignore_word",
+        args("a.md", "Recieved"),
+    )
+    .unwrap();
+    assert_eq!(words, json!(["recieved"]));
+    assert!(!flagged("a.md", 2), "ignored in a.md");
+    assert!(flagged("b.md", 1), "still flagged in b.md");
+    assert_eq!(
+        std::fs::read_dir(vault.path()).unwrap().count(),
+        0,
+        "nothing in the vault"
+    );
+
+    let bad = call(
+        &app,
+        "main",
+        "spellcheck_ignore_word",
+        args("a.md", "two words"),
+    )
+    .unwrap_err();
+    assert!(bad.contains("no spaces"), "{bad}");
+    let words = call(
+        &app,
+        "main",
+        "spellcheck_unignore_word",
+        args("a.md", "RECIEVED"),
+    )
+    .unwrap();
+    assert_eq!(words, json!([]));
+    assert!(flagged("a.md", 3), "flagged again once un-ignored");
+    assert!(
+        data.path().join("spellcheck").exists(),
+        "the store is under the data dir"
+    );
+}
+
+#[test]
 fn the_catalog_lists_every_dictionary_and_an_unknown_id_is_refused_without_a_request() {
     let app = app();
     let list = call(&app, "main", "spellcheck_dictionaries", json!({})).unwrap();

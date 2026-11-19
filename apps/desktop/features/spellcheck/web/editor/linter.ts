@@ -19,7 +19,7 @@ import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { logger } from "@/lib/logger";
 import { getFileName } from "@/lib/paths";
 import { useSettingsStore } from "@/stores/settings-store";
-import { addWord, check } from "../ipc";
+import { addWord, check, ignoreWord } from "../ipc";
 import {
   anyKindEnabled,
   checkSignature,
@@ -39,18 +39,30 @@ export const CHECK_DELAY_MS = 750;
 
 let version = 0;
 
+/** Silences a misspelled word: the underlines go at once (in every open editor, or only in the
+ *  ones showing `filePath`), then the write runs and the re-check after it confirms. The one path
+ *  of "Add to dictionary" (vault-wide) and "Ignore" (one note). */
+function silenceWord(
+  word: string,
+  filePath: string | null,
+  write: () => Promise<unknown>,
+  failure: string,
+) {
+  for (const [view, getPath] of liveEditorViews) {
+    if (filePath !== null && getPath() !== filePath) continue;
+    const kept = withoutWord(view.state, word);
+    if (kept) view.dispatch(setDiagnostics(view.state, kept));
+  }
+  write().then(
+    () => useSpellStore.getState().bump(),
+    (e: unknown) => showEditorNotice(`${failure} "${word}": ${String(e)}`),
+  );
+}
+
 export const handlers: ActionHandlers = {
-  addWord: (word) => {
-    // the underlines go at once in every open editor; the re-check after the write confirms
-    for (const view of liveEditorViews.keys()) {
-      const kept = withoutWord(view.state, word);
-      if (kept) view.dispatch(setDiagnostics(view.state, kept));
-    }
-    addWord(word).then(
-      () => useSpellStore.getState().bump(),
-      (e: unknown) => showEditorNotice(`Could not add "${word}": ${String(e)}`),
-    );
-  },
+  addWord: (word) => silenceWord(word, null, () => addWord(word), "Could not add"),
+  ignoreWord: (word, filePath) =>
+    silenceWord(word, filePath, () => ignoreWord(notePath(filePath), word), "Could not ignore"),
   ignoreRule: (ruleId) => {
     const rules = ignoredRules();
     if (rules.includes(ruleId)) return;

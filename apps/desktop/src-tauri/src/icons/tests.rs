@@ -317,24 +317,11 @@ fn with_the_feature_off_a_move_and_a_delete_write_nothing() {
     on_move(&root, "W.md", "X.md").unwrap();
     on_move(&root, "A.md", "B.md").unwrap();
     on_delete(&root, "W.md").unwrap();
-    on_move_abs(&root, &root.join("W.md"), &root.join("X.md"));
-    on_delete_abs(&root, &root.join("W.md"));
     set_enabled(true);
     assert_eq!(
         fs::read_to_string(root.join(".writer/icons.json")).unwrap(),
         before
     );
-}
-
-#[test]
-fn absolute_paths_map_to_vault_paths() {
-    let (_d, root) = vault();
-    assert_eq!(
-        rel_of(&root, &root.join("a").join("b.md")).as_deref(),
-        Some("a/b.md")
-    );
-    assert_eq!(rel_of(&root, &root), None);
-    assert_eq!(rel_of(&root, Path::new("/elsewhere/x.md")), None);
 }
 
 #[test]

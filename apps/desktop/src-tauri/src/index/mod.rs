@@ -61,7 +61,7 @@ pub(crate) const NESTED_TAG_NOTES: &[(&str, &str)] = &[
 
 pub use build::ScanStats;
 pub use fts::{fts_size_bytes, FtsMaintenance, FTS_MAX_BODY_BYTES};
-pub use paths::{cli_app_data_dir, index_db_path, INDEX_DIR_ENV, RELEASE_IDENTIFIER};
+pub use paths::{cli_app_data_dir, index_db_path, vault_key, INDEX_DIR_ENV, RELEASE_IDENTIFIER};
 pub use query::*;
 pub use schema::{schema_version, PARSER_VERSION};
 pub use search::{SearchHit, SearchOptions, SearchPage, Snippet};

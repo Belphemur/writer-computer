@@ -12,7 +12,7 @@ use crate::spellcheck::checker::{Finding, Kind};
 use crate::spellcheck::harper::std_spawner;
 use crate::spellcheck::lang::Lang;
 use crate::spellcheck::options::Options;
-use crate::spellcheck::{dictionaries, personal, Checked, Checker, Context, NoteInput};
+use crate::spellcheck::{dictionaries, ignored, personal, Checked, Checker, Context, NoteInput};
 use crate::vault_ops;
 use serde_json::json;
 
@@ -57,9 +57,12 @@ fn check(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError>
     let options = Options::from_lookup(|k| config::read_global_value(&data_dir, k));
     let personal = personal::load(ctx.root()?).map_err(|e| CliError::fail(e.to_string()))?;
     let checker = Checker::new(dictionaries::dir(&data_dir), std_spawner());
+    let ignored =
+        ignored::load(&data_dir, ctx.root()?).map_err(|e| CliError::fail(e.to_string()))?;
     let context = Context {
         options: &options,
         personal: &personal,
+        ignored: &ignored,
     };
     let checked = match &language {
         Some(lang) => checker.check_as(&text, lang, &context),

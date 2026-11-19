@@ -17,12 +17,13 @@
 //! - **Resolution**: Writer's entry, then Iconize's, then none; a folder passes nothing to its
 //!   contents ([`resolve`]).
 //! - **Moves and deletes**: [`on_move`] re-keys the entries of a file, or of a folder and every
-//!   descendant, in the same operation as the move (`relocate::apply` calls it; the app's folder
-//!   rename calls it too); an Iconize-only icon is copied to the new path and hidden at the old
-//!   one. [`on_delete`] drops them. Both write nothing while the feature is off ([`set_enabled`]).
+//!   descendant, in the same operation as the move (`vault_events` calls it, from
+//!   `relocate::apply`, the app's rename and delete and the CLI's delete); an Iconize-only icon is
+//!   copied to the new path and hidden at the old one. [`on_delete`] drops them. Both write nothing while the feature is off ([`set_enabled`]).
 
 use crate::plugins::write_atomic;
 use crate::property_types::{valid_icon, writer_dir, PropertyTypeError};
+use crate::vault_events::moved_key;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -384,17 +385,6 @@ pub fn remove(root: &Path, paths: &[String]) -> Result<(), IconError> {
     })
 }
 
-/// The new key of `key` after `from` (a file or a folder) moved to `to`: `to` itself, or the
-/// same descendant path under it; `None` when `key` is neither `from` nor under it.
-fn moved_key(key: &str, from: &str, to: &str) -> Option<String> {
-    if key == from {
-        return Some(to.to_string());
-    }
-    key.strip_prefix(from)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .map(|rest| format!("{to}/{rest}"))
-}
-
 /// Re-key every icon at or under `from` to the same place under `to` (vault-relative). Writer's
 /// entries move; an Iconize-only icon is copied to the new path and hidden at the old one (its
 /// file is never touched). Nothing happens, and nothing is written, with the feature off or when
@@ -460,47 +450,6 @@ fn drop_under(root: &Path, path: &str) -> Result<(), IconError> {
             .retain(|k, _| moved_key(k, path, path).is_none());
         (store.icons.len() != before, ())
     })
-}
-
-/// The vault-relative form of `abs` (forward slashes), `None` outside the vault.
-pub fn rel_of(root: &Path, abs: &Path) -> Option<String> {
-    let rel = abs
-        .strip_prefix(root)
-        .ok()
-        .map(Path::to_path_buf)
-        .or_else(|| {
-            let canonical = root.canonicalize().ok()?;
-            abs.strip_prefix(canonical).ok().map(Path::to_path_buf)
-        })?;
-    let text = rel.to_str()?.replace('\\', "/");
-    (!text.is_empty()).then_some(text)
-}
-
-/// [`on_move`] for a caller that has absolute paths (the app's folder rename), logging a failure
-/// instead of failing the move: the files were moved, the icons are cosmetic.
-pub fn on_move_abs(root: &Path, from: &Path, to: &Path) {
-    if !enabled() {
-        return;
-    }
-    let (Some(from), Some(to)) = (rel_of(root, from), rel_of(root, to)) else {
-        return;
-    };
-    if let Err(e) = on_move(root, &from, &to) {
-        log::warn!("icons: could not re-key after a move: {e}");
-    }
-}
-
-/// [`on_delete`] for a caller that has an absolute path, logging a failure.
-pub fn on_delete_abs(root: &Path, path: &Path) {
-    if !enabled() {
-        return;
-    }
-    let Some(rel) = rel_of(root, path) else {
-        return;
-    };
-    if let Err(e) = on_delete(root, &rel) {
-        log::warn!("icons: could not drop icons after a delete: {e}");
-    }
 }
 
 #[cfg(test)]

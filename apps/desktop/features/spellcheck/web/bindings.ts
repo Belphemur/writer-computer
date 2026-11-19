@@ -24,6 +24,12 @@ export const commands = {
 	/**  "Add to dictionary": the one write path of `.writer/dictionary.txt`. Returns the words. */
 	spellcheckAddWord: (word: string, options?: InvokeOptions) => __TAURI_INVOKE<string[]>("plugin:spellcheck|spellcheck_add_word", { word }, options),
 	spellcheckRemoveWord: (word: string, options?: InvokeOptions) => __TAURI_INVOKE<string[]>("plugin:spellcheck|spellcheck_remove_word", { word }, options),
+	/**
+	 *  "Ignore" on a misspelled word: stop flagging `word` in the note at `path` (vault-relative),
+	 *  remembered on this device only. The one write path of the store. Returns the note's words.
+	 */
+	spellcheckIgnoreWord: (path: string, word: string, options?: InvokeOptions) => __TAURI_INVOKE<string[]>("plugin:spellcheck|spellcheck_ignore_word", { path, word }, options),
+	spellcheckUnignoreWord: (path: string, word: string, options?: InvokeOptions) => __TAURI_INVOKE<string[]>("plugin:spellcheck|spellcheck_unignore_word", { path, word }, options),
 };
 
 /* Types */

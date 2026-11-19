@@ -2,10 +2,11 @@
 // settings readers (including which checker runs next to LanguageTool).
 // @vitest-environment jsdom
 import { setDiagnostics, type Diagnostic } from "@codemirror/lint";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { setRunningCommunityPlugins } from "@/lib/community-plugins";
+import { editorNotePath } from "@/lib/editor-views";
 import { toDiagnostics, MAX_REPLACEMENTS } from "../web/editor/diagnostics";
 import { languagePropertyChange } from "../web/lib/lang-property";
 import { blockAt, languageName } from "../web/lib/languages";
@@ -32,8 +33,8 @@ const finding = (over: Partial<Finding> = {}): Finding => ({
 });
 
 describe("diagnostics", () => {
-  const lintState = [];
-  const handlers = { addWord: vi.fn(), ignoreRule: vi.fn() };
+  const lintState: Extension[] = [];
+  const handlers = { addWord: vi.fn(), ignoreWord: vi.fn(), ignoreRule: vi.fn() };
 
   const cardOf = (d: Diagnostic, view: EditorView) => d.renderMessage!(view) as HTMLElement;
   const chips = (card: HTMLElement) => [...card.querySelectorAll<HTMLButtonElement>("button")];
@@ -65,8 +66,8 @@ describe("diagnostics", () => {
     expect(card.querySelector(".cm-spell-title")!.textContent).toBe("Spelling");
     expect(card.querySelector(".cm-spell-message")!.textContent).toBe("Possible misspelling");
     const labels = chips(card).map((b) => b.textContent);
-    expect(labels).toEqual(["a", "b", "c", "d", "e", "Add to dictionary"]);
-    expect(labels.length - 1).toBe(MAX_REPLACEMENTS);
+    expect(labels).toEqual(["a", "b", "c", "d", "e", "Add to dictionary", "Ignore"]);
+    expect(labels.length - 2).toBe(MAX_REPLACEMENTS);
     expect(chips(card).at(-1)!.querySelector("svg")).not.toBeNull();
     const style = cardOf(s!, view);
     expect(chips(style).map((b) => b.textContent)).toEqual(["Remove", "x", "Ignore rule"]);
@@ -84,12 +85,48 @@ describe("diagnostics", () => {
     const card = cardOf(d!, view);
     chips(card)[0]!.click();
     expect(view.state.doc.toString()).toBe(">> the cat");
-    chips(card).at(-1)!.click();
+    chips(card).at(-2)!.click();
     expect(handlers.addWord).toHaveBeenCalled();
     const [g] = toDiagnostics([finding({ ruleId: "ShouldOf", kind: "grammar" })], 7, handlers);
     chips(cardOf(g!, view)).at(-1)!.click();
     expect(handlers.ignoreRule).toHaveBeenCalledWith("ShouldOf");
     view.destroy();
+  });
+
+  describe("the Ignore chip", () => {
+    const card = (kind: "spelling" | "grammar", extensions: Extension[]) => {
+      const view = new EditorView({ state: EditorState.create({ doc: "teh cat", extensions }) });
+      const over = kind === "grammar" ? { kind, ruleId: "ShouldOf" } : {};
+      const [d] = toDiagnostics([finding({ end: 3, ...over })], 7, handlers);
+      view.dispatch(setDiagnostics(view.state, [d!]));
+      return { view, card: cardOf(d!, view) };
+    };
+
+    it("is on a misspelled word only, and ignores that word in the note the editor shows", () => {
+      handlers.ignoreWord.mockClear();
+      const { view, card: spelling } = card("spelling", [
+        lintState,
+        editorNotePath.of(() => "/v/a.md"),
+      ]);
+      const ignore = chips(spelling).find((b) => b.textContent === "Ignore")!;
+      expect(ignore.querySelector("svg")).not.toBeNull();
+      ignore.click();
+      expect(handlers.ignoreWord).toHaveBeenCalledWith("teh", "/v/a.md");
+      expect(chips(card("grammar", [lintState]).card).map((b) => b.textContent)).not.toContain(
+        "Ignore",
+      );
+      view.destroy();
+    });
+
+    it("does nothing in an editor with no note", () => {
+      handlers.ignoreWord.mockClear();
+      const { view, card: spelling } = card("spelling", [lintState]);
+      chips(spelling)
+        .find((b) => b.textContent === "Ignore")!
+        .click();
+      expect(handlers.ignoreWord).not.toHaveBeenCalled();
+      view.destroy();
+    });
   });
 });
 

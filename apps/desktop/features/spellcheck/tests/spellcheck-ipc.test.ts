@@ -37,6 +37,8 @@ describe("the wrappers", () => {
     await ipc.addWord("Zettel");
     await ipc.removeWord("Zettel");
     await ipc.personalWords();
+    await ipc.ignoreWord("a.md", "Zettel");
+    await ipc.unignoreWord("a.md", "Zettel");
     expect(seen).toEqual([
       [
         "plugin:spellcheck|spellcheck_check",
@@ -46,6 +48,8 @@ describe("the wrappers", () => {
       ["plugin:spellcheck|spellcheck_add_word", { word: "Zettel" }],
       ["plugin:spellcheck|spellcheck_remove_word", { word: "Zettel" }],
       ["plugin:spellcheck|spellcheck_personal_words", {}],
+      ["plugin:spellcheck|spellcheck_ignore_word", { path: "a.md", word: "Zettel" }],
+      ["plugin:spellcheck|spellcheck_unignore_word", { path: "a.md", word: "Zettel" }],
     ]);
   });
 });

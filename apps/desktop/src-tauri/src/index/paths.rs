@@ -14,9 +14,16 @@ pub const INDEX_DIR_ENV: &str = "WRITER_INDEX_DIR";
 /// `<app_data_dir>/index/<sha256(root)[0..16]>.sqlite3`. `canonical_root` must
 /// already be canonical so the app and the CLI agree on the key.
 pub fn index_db_path(app_data_dir: &Path, canonical_root: &Path) -> PathBuf {
+    app_data_dir
+        .join("index")
+        .join(format!("{}.sqlite3", vault_key(canonical_root)))
+}
+
+/// The 16 hex digits that name one vault in the app data directory (`sha256(root)[0..8]`): the
+/// key of every per-vault, per-device file kept there, so no two disagree on it.
+pub fn vault_key(canonical_root: &Path) -> String {
     let digest = Sha256::digest(canonical_root.to_string_lossy().as_bytes());
-    let hex: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
-    app_data_dir.join("index").join(format!("{hex}.sqlite3"))
+    digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
 /// The platform app data directory for `identifier`, mirroring Tauri's

@@ -880,18 +880,18 @@ pub async fn rename_entry(
     let state = authorized_state(&app, &webview, &[&old_path, &new_path])?;
     blocking(move || {
         rename_entry_impl(&old_path, &new_path)?;
-        icons_followed(&state, &old_path, &new_path);
+        stores_followed(&state, &old_path, &new_path);
         Ok(())
     })
     .await
 }
 
-/// The icons of a renamed or moved file or folder follow it (`icons::on_move_abs`: nothing
-/// without icons or with the feature off). The files are already moved, so this never fails.
-fn icons_followed(state: &WorkspaceState, old_path: &str, new_path: &str) {
+/// The per-path stores (icons, ignored words) of a renamed or moved file or folder follow it
+/// (`vault_events::moved_abs`). The files are already moved, so this never fails.
+fn stores_followed(state: &WorkspaceState, old_path: &str, new_path: &str) {
     let root = state.workspace_root.read().clone();
     if let Some(root) = root {
-        crate::icons::on_move_abs(&root, Path::new(old_path), Path::new(new_path));
+        crate::vault_events::moved_abs(&root, Path::new(old_path), Path::new(new_path));
     }
 }
 
@@ -942,7 +942,11 @@ pub async fn relocate_entry(
         };
         if Path::new(&old_path).is_dir() || !index.is_ready() {
             rename_entry_impl(&old_path, &new_path)?;
-            crate::icons::on_move_abs(index.root(), Path::new(&old_path), Path::new(&new_path));
+            crate::vault_events::moved_abs(
+                index.root(),
+                Path::new(&old_path),
+                Path::new(&new_path),
+            );
             return Ok(plain);
         }
         let root = index.root().canonicalize()?;
@@ -1047,7 +1051,7 @@ pub async fn delete_entry(
         delete_entry_with(&path, permanent.unwrap_or(false))?;
         let root = state.workspace_root.read().clone();
         if let Some(root) = root {
-            crate::icons::on_delete_abs(&root, Path::new(&path));
+            crate::vault_events::deleted_abs(&root, Path::new(&path));
         }
         Ok(())
     })

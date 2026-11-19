@@ -1,5 +1,6 @@
 // Findings as CodeMirror diagnostics: severity and the tooltip card (a kind icon and the message,
-// then one chip per replacement and "Add to dictionary" or "Ignore rule"). The card is built in
+// then one chip per replacement and, for a misspelled word, "Add to dictionary" and "Ignore" (this
+// note only), else "Ignore rule"). The card is built in
 // `renderMessage`, so the diagnostic carries no default `actions`. Pure apart from the handlers it
 // is given, so it is tested without a full editor.
 import { forEachDiagnostic, type Diagnostic } from "@codemirror/lint";
@@ -15,6 +16,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 import { svgFromIcon } from "@/lib/icon-picker/icon-dom";
+import { editorNotePath } from "@/lib/editor-views";
 import type { Finding } from "../ipc";
 import { encodeSource, keyFromSource, matchCase, type IssueGroup } from "../lib/issue-groups";
 
@@ -26,6 +28,8 @@ export const WORD_RULES: ReadonlySet<string> = new Set(["SpellCheck", "hunspell.
 
 export interface ActionHandlers {
   addWord: (word: string) => void;
+  /** Stop flagging `word` in the note at `filePath` (absolute) only. */
+  ignoreWord: (word: string, filePath: string) => void;
   ignoreRule: (ruleId: string) => void;
 }
 
@@ -163,6 +167,13 @@ function renderCard(
       run((from, to) => handlers.addWord(view.state.sliceDoc(from, to)));
     });
     row.append(button);
+    const ignore = chip("Ignore", ViewOffIcon, true);
+    ignore.addEventListener("click", (e) => {
+      e.preventDefault();
+      const filePath = view.state.facet(editorNotePath)();
+      run((from, to) => filePath && handlers.ignoreWord(view.state.sliceDoc(from, to), filePath));
+    });
+    row.append(ignore);
   } else {
     const button = chip("Ignore rule", ViewOffIcon, true);
     button.addEventListener("click", (e) => {

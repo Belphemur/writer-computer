@@ -54,10 +54,24 @@ function IssueRow({ group, filePath }: { group: IssueGroup; filePath: string }) 
           </button>
         ))}
         {group.kind === "spelling" ? (
-          <button type="button" className={QUIET_CHIP} onClick={() => handlers.addWord(group.text)}>
-            <HugeiconsIcon icon={PlusSignIcon} size={14} aria-hidden />
-            Add to dictionary
-          </button>
+          <>
+            <button
+              type="button"
+              className={QUIET_CHIP}
+              onClick={() => handlers.addWord(group.text)}
+            >
+              <HugeiconsIcon icon={PlusSignIcon} size={14} aria-hidden />
+              Add to dictionary
+            </button>
+            <button
+              type="button"
+              className={QUIET_CHIP}
+              onClick={() => handlers.ignoreWord(group.text, filePath)}
+            >
+              <HugeiconsIcon icon={ViewOffIcon} size={14} aria-hidden />
+              Ignore
+            </button>
+          </>
         ) : (
           <button
             type="button"

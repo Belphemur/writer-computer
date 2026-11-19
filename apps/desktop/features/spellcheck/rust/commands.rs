@@ -8,6 +8,7 @@ use crate::error::AppError;
 use crate::plugin_store;
 use crate::spellcheck::checker::Finding;
 use crate::spellcheck::dictionaries::{self, DictError, Installed};
+use crate::spellcheck::ignored::{self, Ignored, IgnoredError};
 use crate::spellcheck::lang::Lang;
 use crate::spellcheck::options::Options;
 use crate::spellcheck::personal::{Personal, PersonalError};
@@ -100,6 +101,25 @@ fn personal_of(engine: &Engine, root: Option<&PathBuf>) -> Arc<Personal> {
     }
 }
 
+fn ignored_err(e: IgnoredError) -> AppError {
+    match e {
+        IgnoredError::Invalid(m) => AppError::Refused(m),
+        IgnoredError::Io(m) => AppError::Io(m),
+    }
+}
+
+fn ignored_of(engine: &Engine, root: Option<&PathBuf>) -> Arc<Ignored> {
+    match root.map(|r| engine.ignored.get(&engine.data_dir.read(), r)) {
+        Some(Ok(i)) => i,
+        Some(Err(e)) => {
+            // an unreadable store must not stop the check
+            log::warn!("spellcheck: ignored words not read: {e}");
+            Arc::new(Ignored::default())
+        }
+        None => Arc::new(Ignored::default()),
+    }
+}
+
 fn require_root<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Result<PathBuf, AppError> {
     root_of(app, label).ok_or(AppError::NoWorkspace)
 }
@@ -116,7 +136,9 @@ pub async fn spellcheck_check<R: Runtime>(
     blocking(move || {
         let engine = app.state::<Engine>();
         let options = options_of(&app, &label);
-        let personal = personal_of(&engine, root_of(&app, &label).as_ref());
+        let root = root_of(&app, &label);
+        let personal = personal_of(&engine, root.as_ref());
+        let ignored = ignored_of(&engine, root.as_ref());
         let version = request.version;
         let input = NoteInput {
             path: &request.path,
@@ -126,6 +148,7 @@ pub async fn spellcheck_check<R: Runtime>(
         let ctx = Context {
             options: &options,
             personal: &personal,
+            ignored: &ignored,
         };
         Ok(
             match engine.checker.check_note(&request.text, &input, &ctx) {
@@ -269,6 +292,44 @@ pub async fn spellcheck_remove_word<R: Runtime>(
         Ok(crate::spellcheck::personal::remove(&root, &word)
             .map_err(personal_err)?
             .words())
+    })
+    .await
+}
+
+/// "Ignore" on a misspelled word: stop flagging `word` in the note at `path` (vault-relative),
+/// remembered on this device only. The one write path of the store. Returns the note's words.
+#[tauri::command]
+#[specta::specta]
+pub async fn spellcheck_ignore_word<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    path: String,
+    word: String,
+) -> Result<Vec<String>, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = require_root(&app, &label)?;
+        let engine = app.state::<Engine>();
+        let dir = engine.data_dir.read().clone();
+        ignored::add(&dir, &root, &path, &word).map_err(ignored_err)
+    })
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn spellcheck_unignore_word<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    path: String,
+    word: String,
+) -> Result<Vec<String>, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = require_root(&app, &label)?;
+        let engine = app.state::<Engine>();
+        let dir = engine.data_dir.read().clone();
+        ignored::remove(&dir, &root, &path, &word).map_err(ignored_err)
     })
     .await
 }

@@ -11,13 +11,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn() }));
 
+vi.mock("../web/ipc", async (original) => ({
+  ...(await original<typeof import("../web/ipc")>()),
+  ignoreWord: vi.fn(async () => []),
+  addWord: vi.fn(async () => []),
+}));
+
 import { registerEditorView } from "@/lib/editor-views";
 import { useSettingsStore } from "@/stores/settings-store";
 import { liveDiagnostics, toDiagnostics, withoutWord } from "../web/editor/diagnostics";
 import IssuesStatus from "../web/components/issues-status";
 import { groupFindings } from "../web/lib/issue-groups";
 import { useSpellStore } from "../web/lib/spell-store";
-import type { Finding } from "../web/ipc";
+import { ignoreWord, type Finding } from "../web/ipc";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -39,7 +45,7 @@ const FINDINGS = [
   find("wrng", TEXT.indexOf("wrng"), { replacements: ["wrong"] }),
   find("teh", TEXT.lastIndexOf("teh")),
 ];
-const noop = { addWord: vi.fn(), ignoreRule: vi.fn() };
+const noop = { addWord: vi.fn(), ignoreWord: vi.fn(), ignoreRule: vi.fn() };
 
 let container: HTMLElement;
 let root: Root;
@@ -133,6 +139,40 @@ describe("the popover", () => {
     );
     await click(btn);
     expect(add).toHaveBeenCalledWith("wrng");
+  });
+
+  it("offers Ignore on spelling rows only, next to Add to dictionary", async () => {
+    load(TEXT, [...FINDINGS, find("should of", 0, { kind: "grammar", ruleId: "ShouldOf" })]);
+    await mount();
+    await click(footer()!);
+    const labels = (row: HTMLElement) =>
+      [...row.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels(rows()[0]!)).toEqual(["teh", "the", "Add to dictionary", "Ignore"]);
+    expect(labels(rows()[2]!)).toContain("Ignore rule");
+    expect(labels(rows()[2]!)).not.toContain("Ignore");
+  });
+
+  it("Ignore drops that word's underlines in this note only and calls the command", async () => {
+    load(TEXT, FINDINGS);
+    const other = new EditorView({ state: EditorState.create({ doc: TEXT }) });
+    other.dispatch(setDiagnostics(other.state, toDiagnostics(FINDINGS, TEXT.length, noop)));
+    const stop = registerEditorView(other, () => "/v/b.md");
+    try {
+      await mount();
+      await click(footer()!);
+      const btn = [...rows()[0]!.querySelectorAll("button")].find(
+        (b) => b.textContent === "Ignore",
+      );
+      await click(btn);
+      const left = (v: EditorView) =>
+        liveDiagnostics(v.state).map((l) => v.state.sliceDoc(l.from, l.to).toLowerCase());
+      expect(left(view)).toEqual(["wrng"]);
+      expect(left(other)).toHaveLength(4);
+      expect(ignoreWord).toHaveBeenCalledWith("a.md", "teh");
+    } finally {
+      stop();
+      other.destroy();
+    }
   });
 
   it("withoutWord drops that word's spelling hits in any case and keeps the rest", () => {

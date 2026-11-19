@@ -22,6 +22,8 @@ export interface SpellcheckCommands {
   spellcheck_personal_words: { args: undefined; result: string[] };
   spellcheck_add_word: { args: { word: string }; result: string[] };
   spellcheck_remove_word: { args: { word: string }; result: string[] };
+  spellcheck_ignore_word: { args: { path: string; word: string }; result: string[] };
+  spellcheck_unignore_word: { args: { path: string; word: string }; result: string[] };
 }
 
 const call = featureInvoke<SpellcheckCommands>(manifest.id, manifest.rust.commands);
@@ -55,4 +57,13 @@ export function addWord(word: string): Promise<string[]> {
 
 export function removeWord(word: string): Promise<string[]> {
   return call("spellcheck_remove_word", { word });
+}
+
+/** Stops flagging `word` in one note (vault-relative `path`), on this device only. */
+export function ignoreWord(path: string, word: string): Promise<string[]> {
+  return call("spellcheck_ignore_word", { path, word });
+}
+
+export function unignoreWord(path: string, word: string): Promise<string[]> {
+  return call("spellcheck_unignore_word", { path, word });
 }

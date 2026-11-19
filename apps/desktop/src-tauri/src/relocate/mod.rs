@@ -397,12 +397,10 @@ pub fn apply(plan: &Plan) -> Result<(), ApplyError> {
         }
     }
     let Some(message) = error else {
-        // The icons of the moved file or folder follow it (a no-op without any, or with the
-        // feature off); a failure here never fails the move.
+        // The per-path stores (icons, ignored words) of the moved file or folder follow it;
+        // a failure there never fails the move.
         if moves {
-            if let Err(e) = crate::icons::on_move(&plan.root, &plan.from, &plan.to) {
-                log::warn!("icons: could not re-key after a move: {e}");
-            }
+            crate::vault_events::moved(&plan.root, &plan.from, &plan.to);
         }
         return Ok(());
     };

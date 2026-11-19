@@ -18,6 +18,8 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::spellcheck_personal_words::<Wry>,
             commands::spellcheck_add_word::<Wry>,
             commands::spellcheck_remove_word::<Wry>,
+            commands::spellcheck_ignore_word::<Wry>,
+            commands::spellcheck_unignore_word::<Wry>,
         ])
 }
 

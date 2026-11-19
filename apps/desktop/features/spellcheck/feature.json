@@ -17,7 +17,9 @@
       "spellcheck_remove_dictionary",
       "spellcheck_personal_words",
       "spellcheck_add_word",
-      "spellcheck_remove_word"
+      "spellcheck_remove_word",
+      "spellcheck_ignore_word",
+      "spellcheck_unignore_word"
     ],
     "hooks": ["setup"],
     "cliCommands": ["check"]
