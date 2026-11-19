@@ -2,14 +2,12 @@
 // through the `bases.views` service) and the quick add. One scroller, its root.
 import { useEffect, useState, type ComponentType } from "react";
 import { getService } from "@/lib/features/services";
-import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import { logger } from "@/lib/logger";
 import type { BasesViewsService, EmbeddedBaseProps } from "@features/bases/web/api";
 import { tasksSections, type TaskSection } from "../ipc";
 import { openQuickAdd } from "../actions";
 
 const BASES_VIEWS = "bases.views";
-const noop = () => {};
 
 function useSections(): TaskSection[] | null {
   const [sections, setSections] = useState<TaskSection[] | null>(null);
@@ -55,9 +53,6 @@ function useTextEmbed(): ComponentType<EmbeddedBaseProps> | null | undefined {
 export function TasksPage() {
   const sections = useSections();
   const Embed = useTextEmbed();
-  const root = getWorkspaceRoot() ?? "";
-  // `this` inside a section: the vault itself (the sections do not use it)
-  const notePath = `${root.replace(/[\\/]+$/, "")}/Tasks.md`;
   return (
     <div data-testid="tasks-page" className="h-full overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[880px] flex-col gap-6 px-6 py-8">
@@ -75,9 +70,9 @@ export function TasksPage() {
           <p className="text-[13px] text-[var(--text-muted)]">Bases is turned off.</p>
         ) : Embed && sections ? (
           sections.map((s) => (
-            <section key={s.id} aria-label={s.label} className="flex flex-col gap-2">
-              <h2 className="text-[13px] font-semibold text-[var(--text-muted)]">{s.label}</h2>
-              <Embed embed={{ kind: "block", text: s.base }} notePath={notePath} onEdit={noop} />
+            <section key={s.id} aria-label={s.label} className="flex flex-col">
+              {/* the base toolbar's view name is the section title; no host note, no Edit */}
+              <Embed embed={{ kind: "block", text: s.base }} />
             </section>
           ))
         ) : null}

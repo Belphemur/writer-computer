@@ -301,9 +301,10 @@ impl<'a> Interp<'a> {
         })
     }
 
-    /// `this.<name>` (U15): file fields first, then note properties.
+    /// `this.<name>` (U15): file fields first, then note properties. Null without a `this`
+    /// (a base no note hosts, such as a built-in page's section).
     fn this_member(&self, name: &str) -> Value {
-        let Some(ctx) = self.this.clone().or_else(|| Some(self.row.clone())) else {
+        let Some(ctx) = self.this.clone() else {
             return Value::Null;
         };
         let path = ctx.path();

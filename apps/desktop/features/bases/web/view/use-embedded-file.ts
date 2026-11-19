@@ -15,10 +15,10 @@ export type EmbeddedFile =
  * A missing file is a state, not an error: it re-resolves when the index reports a change, so
  * creating the base makes the embed appear. Resolution failures are surfaced, never swallowed.
  */
-export function useEmbeddedFile(target: string, notePath: string): EmbeddedFile {
+export function useEmbeddedFile(target: string, notePath: string | undefined): EmbeddedFile {
   const [state, setState] = useState<{ key: string; value: EmbeddedFile } | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const key = `${notePath}\0${target}`;
+  const key = `${notePath ?? ""}\0${target}`;
 
   useEffect(() => {
     let current = true;
@@ -27,7 +27,7 @@ export function useEmbeddedFile(target: string, notePath: string): EmbeddedFile 
       setState({ key, value: { status: "error", message: "No workspace is open" } });
       return;
     }
-    resolveVaultLink(target, notePath).then(
+    resolveVaultLink(target, notePath ?? null).then(
       (result) => {
         if (!current) return;
         setState({

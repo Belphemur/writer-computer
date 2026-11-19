@@ -583,6 +583,19 @@ describe("embedded base: behaviour", () => {
     expect(m.baseQueryText.mock.calls[0]![0].thisPath).toBe(NOTE);
   });
 
+  it("a base with no host note has no `this` and no Edit button", async () => {
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(<EmbeddedBase embed={{ kind: "block", text: "views: []" }} />);
+    });
+    await flush();
+    expect(m.baseQueryText).toHaveBeenCalled();
+    expect(m.baseQueryText.mock.calls[0]![0]).not.toHaveProperty("thisPath");
+    expect(host.querySelector("[data-embed-edit]")).toBeNull();
+  });
+
   it("selects the view named in the embed and lets the switcher change it", async () => {
     await mountEmbed({ ...fileEmbed, view: "Board" });
     expect(m.baseQuery.mock.calls[0]![0]).toMatchObject({ view: "Board" });

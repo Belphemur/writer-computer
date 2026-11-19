@@ -24,10 +24,17 @@ export const EMBED_READ_ONLY = "Embedded bases are read-only. Open the base to e
 
 export interface EmbeddedBaseProps {
   embed: BaseEmbed;
-  /** Absolute path of the embedding note: `this` inside the base (spec 2.2). */
-  notePath: string;
-  /** Put the caret in the embed's source so it can be edited (the widget owns the dispatch). */
-  onEdit: () => void;
+  /**
+   * Absolute path of the embedding note: `this` inside the base (spec 2.2). Omitted for a base a
+   * page hosts without a note: `this` is absent (a read of it is null) and a `![[x.base]]` link
+   * resolves vault-wide.
+   */
+  notePath?: string;
+  /**
+   * Put the caret in the embed's source so it can be edited (the widget owns the dispatch).
+   * Omitted when nothing can be edited in place (a built-in section of a page): no Edit button.
+   */
+  onEdit?: () => void;
 }
 
 /** docs/editor.md: a button that dispatches into the editor must not take focus on mousedown. */
@@ -40,6 +47,21 @@ const holdEditorFocus = {
 
 const buttonClass =
   "shrink-0 cursor-pointer rounded-md bg-transparent px-2 py-1 text-[12px] text-text-muted hover:bg-[var(--item-hover-bg)] hover:text-text-primary";
+
+function EditButton({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-embed-edit
+      title={title}
+      onClick={onClick}
+      className={buttonClass}
+      {...holdEditorFocus}
+    >
+      Edit
+    </button>
+  );
+}
 
 function Frame({ children, label }: { children: React.ReactNode; label: string }) {
   return (
@@ -99,17 +121,7 @@ function FileEmbed({
         onSelect={() => {}}
         counts={null}
         querying={false}
-        trailing={
-          <button
-            type="button"
-            data-embed-edit
-            onClick={onEdit}
-            className={buttonClass}
-            {...holdEditorFocus}
-          >
-            Edit
-          </button>
-        }
+        trailing={onEdit ? <EditButton title="Edit the embed link" onClick={onEdit} /> : null}
       />
       {file.status === "loading" ? (
         <div
@@ -139,10 +151,10 @@ function Body({
   onEdit,
 }: {
   source: BaseSource;
-  notePath: string;
+  notePath?: string;
   label: string;
   initialView?: string;
-  onEdit: () => void;
+  onEdit?: () => void;
 }) {
   const [chosen, setChosen] = useState<string | undefined>(initialView);
   const { state, refresh, reload } = useBaseQuery({
@@ -160,7 +172,7 @@ function Body({
   // do, for a file embed, through the same write path as the Bases tab (`useBaseConfig`); a fenced
   // block has no file, so its widths only last until the block's result reloads.
   const filePathForConfig = source.kind === "file" ? source.path : null;
-  const configApi = useBaseConfig({ path: filePathForConfig ?? notePath, reload, notify });
+  const configApi = useBaseConfig({ path: filePathForConfig ?? notePath ?? "", reload, notify });
   const viewIndex = state.result?.view.index ?? null;
   const viewOfState = viewOfResult(state.document, state.result);
   const config = useMemo<ViewConfig>(() => {
@@ -198,7 +210,7 @@ function Body({
   );
 
   const editYaml = useCallback(() => {
-    if (!filePath) return onEdit();
+    if (!filePath) return onEdit?.();
     editorApi
       .openFileAsTextInNewTab(filePath)
       .catch((e) => notify("error", `Could not open ${filePath}: ${errorMessage(e)}`));
@@ -206,7 +218,7 @@ function Body({
 
   const viewProps: BaseViewProps | null = result
     ? {
-        path: filePath ?? notePath,
+        path: filePath ?? notePath ?? "",
         result,
         shown: Math.min(state.shown, result.columns.length),
         view,
@@ -241,16 +253,12 @@ function Body({
                 Open base
               </button>
             ) : null}
-            <button
-              type="button"
-              data-embed-edit
-              title={filePath ? "Edit the embed link" : "Edit the base block source"}
-              onClick={onEdit}
-              className={buttonClass}
-              {...holdEditorFocus}
-            >
-              Edit
-            </button>
+            {onEdit ? (
+              <EditButton
+                title={filePath ? "Edit the embed link" : "Edit the base block source"}
+                onClick={onEdit}
+              />
+            ) : null}
           </>
         }
       />

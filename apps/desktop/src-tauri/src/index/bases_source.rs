@@ -1053,6 +1053,21 @@ mod tests {
     }
 
     #[test]
+    fn no_host_runs_and_reads_of_this_are_null() {
+        let v = vault();
+        let base = "formulas:\n  s: this.status\n  n: this.file.name\nviews:\n  - type: table\n    name: T\n    order: [file.name, formula.s, formula.n]\n";
+        let (r, _) = query(&v, base, true, None);
+        assert_eq!(r.error, None);
+        assert_eq!(r.rows.len(), 24);
+        for row in &r.rows {
+            assert_eq!(row.cells[1].display, "");
+            assert_eq!(row.cells[2].display, "");
+        }
+        // a given host that is missing still fails
+        assert!(IndexSource::new(Arc::clone(&v.index), 0, Some("Tasks.md".into())).is_err());
+    }
+
+    #[test]
     fn backlink_snapshot_follows_the_index_epoch() {
         let v = vault();
         let first = v.index.graph_snapshot().unwrap();
