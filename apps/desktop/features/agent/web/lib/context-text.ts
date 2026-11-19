@@ -23,6 +23,7 @@ export function contextRefLabel(ref: ContextRef): string {
     case "property":
       return ref.value === null ? ref.name : `${ref.name}: ${ref.value}`;
     case "image":
+    case "document":
     case "project-instructions":
       return ref.path;
     case "project-source":
@@ -117,6 +118,12 @@ export function buildPrompt({ text, refs, cwd, skills = [], openTabs = [] }: Pro
         // no longer carries the pixels) can name and re-read the file
         const token = sentToken(r.path);
         add(`image:${token}`, `- ${token} (image, also attached to this message)`);
+        break;
+      }
+      case "document": {
+        // sent natively as a document block too; the line lets a later turn name and re-read it
+        const token = sentToken(r.path);
+        add(`document:${token}`, `- ${token} (PDF, also attached to this message)`);
         break;
       }
       case "tag": {

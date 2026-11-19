@@ -30,23 +30,28 @@ export function consumePendingAnchor(path: string): string | undefined {
   return takePendingAnchor(path)?.anchor;
 }
 
-/** Scrolls the live editor showing `path` to the heading `anchor` (a slug) and says whether one
- *  did. The editor area registers it; core callers (`openPathAtAnchor`) reach it without
- *  importing a component. */
+/** Scrolls the live view showing `path` to `anchor` (a heading slug in an editor, `page=N` in the
+ *  PDF reader) and says whether one did. The editor area registers one for the editors; a viewer
+ *  of another kind registers its own while mounted. Core callers (`openPathAtAnchor`) reach them
+ *  without importing a component. */
 type AnchorReveal = (path: string, anchor: string, opts: AnchorOptions) => boolean;
 
-let reveal: AnchorReveal | null = null;
+const reveals = new Set<AnchorReveal>();
 
-export function registerAnchorReveal(fn: AnchorReveal): void {
-  reveal = fn;
+/** Add a reveal; the returned function removes it. */
+export function registerAnchorReveal(fn: AnchorReveal): () => void {
+  reveals.add(fn);
+  return () => void reveals.delete(fn);
 }
 
+/** The first registered reveal that shows `path` takes the anchor. */
 export function revealAnchorInPlace(
   path: string,
   anchor: string,
   opts: AnchorOptions = {},
 ): boolean {
-  return reveal?.(path, anchor, opts) ?? false;
+  for (const reveal of reveals) if (reveal(path, anchor, opts)) return true;
+  return false;
 }
 
 // A 1-based line to reveal after a file opens (content search). Same lifecycle as the heading

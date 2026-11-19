@@ -104,7 +104,8 @@ const always = {
   "editor-not-focused": () => true,
   "outside-agent-pane": () => true,
   "image-viewer": () => true,
-  "no-image-viewer": () => true,
+  "pdf-viewer": () => true,
+  "no-viewer": () => true,
 };
 const binding = (
   id: string,

@@ -514,6 +514,7 @@ export function contextLine(refs: readonly ContextRef[]): string {
         items.push(r.value === null ? `property ${r.name}` : `${r.name}: ${r.value}`);
         break;
       case "image": // shown as thumbnails (the message's images), not named here
+      case "document": // a PDF is listed with the message's files, not named here
       case "project-instructions":
         break;
       case "project-source":

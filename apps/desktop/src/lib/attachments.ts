@@ -19,6 +19,15 @@ export function isRenderableImageName(name: string): boolean {
   return RENDERABLE_IMAGE_EXTENSIONS.has(extensionOf(name));
 }
 
+/** Document types (`documentExtensions`, PDFs): listed by `files.show-pdfs`, opened by the PDF
+ *  reader, attached in the agent composer. */
+const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set(shared.documentExtensions);
+
+/** Does this file name open in the PDF reader (a document type, whatever the sidebar setting)? */
+export function isDocumentName(name: string): boolean {
+  return DOCUMENT_EXTENSIONS.has(extensionOf(name));
+}
+
 const IMPORT_EXTENSIONS: ReadonlySet<string> = new Set(shared.importExtensions);
 
 const MIME_EXTENSIONS: Readonly<Record<string, string>> = shared.mimeExtensions;

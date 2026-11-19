@@ -31,7 +31,7 @@ const sources = import.meta.glob<string>(
   [
     "../src/components/{editor-area,settings-panel}/**/*.{ts,tsx}",
     "../src/components/{feature-off-page,feature-pane}.tsx",
-    "../features/{graph,bases,code-files,images}/web/**/*.{ts,tsx}",
+    "../features/{graph,bases,code-files,images,pdf}/web/**/*.{ts,tsx}",
     "../features/obsidian-host/web/components/**/*.{ts,tsx}",
   ],
   { query: "?raw", import: "default", eager: true },
@@ -122,6 +122,7 @@ describe("kept-alive page bodies hide when inactive", () => {
   // over the active tab (an SVG once did). These views take `isActive` and hide with `invisible`.
   const KEPT_ALIVE = [
     "features/images/web/components/image-viewer.tsx",
+    "features/pdf/web/components/pdf-viewer.tsx",
     "features/code-files/web/components/code-editor-pane.tsx",
   ];
 

@@ -74,6 +74,8 @@ pub const SETTING_IGNORED: &str = "code-files.ignored-folders";
 pub const SETTING_AGENT_FOLDERS: &str = "code-files.show-agent-folders";
 /// Images are core (the image viewer and attachments), not a code-files setting.
 pub const SETTING_IMAGES: &str = "files.show-images";
+/// PDFs are core too (the reader is the `pdf` feature, the listing is not).
+pub const SETTING_PDFS: &str = "files.show-pdfs";
 
 /// Folders that are hidden whatever the setting says.
 const ALWAYS_HIDDEN: &[&str] = &["node_modules", ".DS_Store"];
@@ -88,6 +90,8 @@ pub struct Policy {
     pub show_agent_folders: bool,
     /// List the renderable image files (`shared/attachments.json`) in the tree and quick open.
     pub show_images: bool,
+    /// List the document files (`documentExtensions` of `shared/attachments.json`, PDFs).
+    pub show_pdfs: bool,
 }
 
 impl Policy {
@@ -100,6 +104,7 @@ impl Policy {
             ignored_folders: HashSet::new(),
             show_agent_folders: false,
             show_images: true,
+            show_pdfs: true,
         }
     }
 }
@@ -114,6 +119,7 @@ impl Default for Policy {
             ignored_folders: schema_default_list(SETTING_IGNORED).into_iter().collect(),
             show_agent_folders: true,
             show_images: true,
+            show_pdfs: true,
         }
     }
 }
@@ -159,18 +165,23 @@ pub fn set_policy(policy: Policy) {
 }
 
 /// Build a policy from the raw setting values; `None` keeps the default for that key. With the
-/// feature off (`enabled` false) only `show_images` (a core setting) counts: [`Policy::notes_only`].
+/// feature off (`enabled` false) only `show_images` and `show_pdfs` (core settings) count:
+/// [`Policy::notes_only`].
 pub fn policy_from_settings(
     enabled: bool,
     extensions: Option<Vec<String>>,
     ignored: Option<Vec<String>>,
     show_agent_folders: Option<bool>,
     show_images: Option<bool>,
+    show_pdfs: Option<bool>,
 ) -> Policy {
     if !enabled {
         let mut p = Policy::notes_only();
         if let Some(b) = show_images {
             p.show_images = b;
+        }
+        if let Some(b) = show_pdfs {
+            p.show_pdfs = b;
         }
         return p;
     }
@@ -194,6 +205,9 @@ pub fn policy_from_settings(
     }
     if let Some(b) = show_images {
         p.show_images = b;
+    }
+    if let Some(b) = show_pdfs {
+        p.show_pdfs = b;
     }
     p
 }
@@ -267,15 +281,26 @@ pub fn is_image_name_with(policy: &Policy, name: &str) -> bool {
         && ext_of(name).is_some_and(|e| crate::attachments::render_extensions().contains(&e))
 }
 
+/// Does `name` open in the PDF reader under `policy`: a document extension and `files.show-pdfs`
+/// on. The extension list is `documentExtensions` of `shared/attachments.json`.
+pub fn is_document_name_with(policy: &Policy, name: &str) -> bool {
+    policy.show_pdfs
+        && ext_of(name).is_some_and(|e| crate::attachments::document_extensions().contains(&e))
+}
+
 /// Extensions listed whatever the settings: notes, Bases, and Excalidraw's plain `.excalidraw`
 /// drawings (the `.excalidraw.md` ones are notes). The one list the three listing rules below and
 /// `index::names::LISTED_EXTS` share.
 pub const ALWAYS_LISTED_EXTS: [&str; 3] = ["md", "base", "excalidraw"];
 
-/// A listed file: a note, a `.base`, a drawing, a code file, or (setting on) an image.
+/// A listed file: a note, a `.base`, a drawing, a code file, or (setting on) an image or a PDF.
 pub fn is_listed_name(name: &str) -> bool {
     ext_of(name).is_some_and(|e| ALWAYS_LISTED_EXTS.contains(&e.as_str()))
-        || with_current(|p| is_code_name_with(p, name) || is_image_name_with(p, name))
+        || with_current(|p| {
+            is_code_name_with(p, name)
+                || is_image_name_with(p, name)
+                || is_document_name_with(p, name)
+        })
 }
 
 /// [`is_listed_name`] for a path (its file name).
@@ -300,6 +325,9 @@ pub fn listed_sql_predicate_with(p: &Policy) -> String {
     }
     if p.show_images {
         exts.extend(crate::attachments::render_extensions().iter().cloned());
+    }
+    if p.show_pdfs {
+        exts.extend(crate::attachments::document_extensions().iter().cloned());
     }
     let list = exts
         .iter()
@@ -328,6 +356,13 @@ pub fn is_listed_row_with(p: &Policy, name: &str, ext: &str) -> bool {
     }
     if p.show_images
         && crate::attachments::render_extensions()
+            .iter()
+            .any(|e| e == ext)
+    {
+        return true;
+    }
+    if p.show_pdfs
+        && crate::attachments::document_extensions()
             .iter()
             .any(|e| e == ext)
     {
@@ -512,6 +547,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(p.extensions.contains("py"));
         assert_eq!(p.extensions.len(), 1);
@@ -550,18 +586,18 @@ mod tests {
 
     #[test]
     fn agent_exception_follows_the_setting() {
-        let off = policy_from_settings(true, None, None, Some(false), None);
+        let off = policy_from_settings(true, None, None, Some(false), None, None);
         assert!(!rel_is_visible_with(
             &off,
             Path::new(".agents/skills/x/run.py")
         ));
-        let on = policy_from_settings(true, None, None, Some(true), None);
+        let on = policy_from_settings(true, None, None, Some(true), None, None);
         assert!(rel_is_visible_with(
             &on,
             Path::new(".agents/skills/x/run.py")
         ));
         // a custom ignore list replaces the default one
-        let custom = policy_from_settings(true, None, Some(vec!["gen".into()]), None, None);
+        let custom = policy_from_settings(true, None, Some(vec!["gen".into()]), None, None, None);
         assert!(!rel_is_visible_with(&custom, Path::new("a/gen/x.py")));
         assert!(rel_is_visible_with(&custom, Path::new("a/dist/x.py")));
     }
@@ -602,8 +638,8 @@ mod tests {
 
     #[test]
     fn images_are_listed_only_while_the_setting_is_on() {
-        let on = policy_from_settings(true, None, None, None, Some(true));
-        let off = policy_from_settings(true, None, None, None, Some(false));
+        let on = policy_from_settings(true, None, None, None, Some(true), None);
+        let off = policy_from_settings(true, None, None, None, Some(false), None);
         // the one list: `renderExtensions` of shared/attachments.json, case-blind
         for ext in crate::attachments::render_extensions() {
             for n in [format!("a.{ext}"), format!("B.{}", ext.to_uppercase())] {
@@ -626,11 +662,36 @@ mod tests {
     }
 
     #[test]
+    fn pdfs_are_listed_only_while_the_setting_is_on() {
+        let on = policy_from_settings(true, None, None, None, None, Some(true));
+        let off = policy_from_settings(true, None, None, None, None, Some(false));
+        // the one list: `documentExtensions` of shared/attachments.json, case-blind
+        for ext in crate::attachments::document_extensions() {
+            for n in [format!("a.{ext}"), format!("B.{}", ext.to_uppercase())] {
+                assert!(is_document_name_with(&on, &n), "{n}");
+                assert!(!is_document_name_with(&off, &n), "{n}");
+            }
+        }
+        for n in ["a.png", "pdf", ".pdf", "a.txt"] {
+            assert!(!is_document_name_with(&on, n), "{n}");
+        }
+        assert!(Policy::default().show_pdfs && Policy::notes_only().show_pdfs);
+        assert!(listed_sql_predicate_with(&on).contains("'pdf'"));
+        assert!(is_listed_row_with(&on, "a.pdf", "pdf"));
+        assert!(!listed_sql_predicate_with(&off).contains("'pdf'"));
+        assert!(!is_listed_row_with(&off, "a.pdf", "pdf"));
+        // the feature switch does not hide PDFs: only their own setting does
+        let notes_off = policy_from_settings(false, None, None, None, None, Some(false));
+        assert!(!notes_off.show_pdfs);
+        assert!(policy_from_settings(false, None, None, None, None, None).show_pdfs);
+    }
+
+    #[test]
     fn images_follow_the_folder_rules() {
         // hidden and ignored folders hide images exactly as they hide code
         let v = |s: &str| rel_is_visible(Path::new(s));
-        assert!(v("attachments/a.png"));
-        assert!(!v(".obsidian/a.png"));
+        assert!(v("attachments/a.png") && v("papers/a.pdf"));
+        assert!(!v(".obsidian/a.png") && !v(".obsidian/a.pdf") && !v("node_modules/x/a.pdf"));
         assert!(!v("node_modules/x/a.png"));
         assert!(!v("dist/a.png"));
     }

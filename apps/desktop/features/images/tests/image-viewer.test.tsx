@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string, args: { path?: string }) => {
     host.calls.push([cmd, args]);
     if (cmd === "read_file") return { path: args.path, content: host.files[args.path!] ?? "" };
-    if (cmd === "open_image_in_default_app" && host.fail) throw new Error("no");
+    if (cmd === "open_attachment_in_default_app" && host.fail) throw new Error("no");
     return undefined;
   }),
   convertFileSrc: (p: string) => `asset://${p}`,
@@ -313,7 +313,7 @@ describe("failures", () => {
         .find((b) => b.textContent === "Open in default app")!
         .click();
     });
-    expect(host.calls).toContainEqual(["open_image_in_default_app", { path: "/v/a.heic" }]);
+    expect(host.calls).toContainEqual(["open_attachment_in_default_app", { path: "/v/a.heic" }]);
   });
 
   it("says so when opening in the default app fails", async () => {

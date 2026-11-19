@@ -25,6 +25,7 @@ describe("text selection contract", () => {
   it.each([
     ["the agent pane", "features/agent/web/components/agent-pane.tsx"],
     ["the session changes tab", "features/agent/web/components/session-changes-tab.tsx"],
+    ["the PDF reader (tab and embed)", "features/pdf/web/components/pdf-reader.tsx"],
   ])("%s opts in", (_, file) => {
     expect(read(file)).toMatch(/\bdata-selectable\b/);
   });

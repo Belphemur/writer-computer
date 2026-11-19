@@ -12,7 +12,8 @@ export type WhenName =
   | "editor-not-focused"
   | "outside-agent-pane"
   | "image-viewer"
-  | "no-image-viewer";
+  | "pdf-viewer"
+  | "no-viewer";
 
 export function isEditableTargetFocused(): boolean {
   const active = document.activeElement;
@@ -37,13 +38,23 @@ export function isImageViewerActive(): boolean {
   return tab?.location.kind === "image" && isFeatureActive("images");
 }
 
+/** The active tab is a PDF shown by the `pdf` feature's reader (off, its tab is the off page and
+ *  the editor's keys apply). */
+export function isPdfViewerActive(): boolean {
+  const { tabs, activeTabId } = useEditorStore.getState();
+  const tab = tabs.find((t) => t.id === activeTabId);
+  return tab?.location.kind === "pdf" && isFeatureActive("pdf");
+}
+
 export const WHEN: Record<WhenName, (e: KeyboardEvent) => boolean> = {
   "not-compact": () => !isCompactFileMode(),
   "editor-not-focused": () => !isEditableTargetFocused(),
   // The agent pane keeps Cmd+[ / Cmd+] for its chat switcher.
-  // The viewer takes the zoom chords in an image tab (`features/images`), the editor elsewhere.
+  // A viewer takes the zoom chords in its own tab (`features/images`, `features/pdf`), the editor
+  // elsewhere.
   "image-viewer": () => isImageViewerActive(),
-  "no-image-viewer": () => !isImageViewerActive(),
+  "pdf-viewer": () => isPdfViewerActive(),
+  "no-viewer": () => !isImageViewerActive() && !isPdfViewerActive(),
   "outside-agent-pane": (e) =>
     !(e.target instanceof Element && e.target.closest("[data-agent-pane]")),
 };

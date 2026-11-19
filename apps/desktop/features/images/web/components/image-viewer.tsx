@@ -1,58 +1,29 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { ImageLocation } from "@/components/editor-area/page-kinds/image";
+import { ZoomControl } from "@/components/zoom-control";
+import { useElementSize } from "@/hooks/use-element-size";
+import { useZoomGestures } from "@/hooks/use-zoom-gestures";
 import type { PageViewProps } from "@/lib/features/slots";
 import { logger } from "@/lib/logger";
 import { getFileName } from "@/lib/paths";
-import { openImageInDefaultApp, readFile } from "@/lib/tauri";
+import { openAttachmentInDefaultApp, readFile } from "@/lib/tauri";
+import { ZOOM_STEP, type Point, type Size } from "@/lib/viewer-zoom";
 import { useDiskStore, withVersion } from "../disk-sync";
 import { svgIntrinsicSize } from "../lib/svg-size";
 import { registerViewer } from "../lib/viewer-controller";
 import {
-  ZOOM_STEP,
   canPan,
   pageCenter,
   panBy,
-  percent,
   resolveView,
   toggleActualSize,
-  wheelFactor,
   zoomBy,
   zoomTo,
-  type Point,
-  type Size,
   type View,
 } from "../lib/view-transform";
 
-/** WebKit's pinch events (WKWebView sends these instead of a ctrl+wheel). */
-interface GestureEvent extends Event {
-  scale: number;
-  clientX: number;
-  clientY: number;
-}
-
 const isSvg = (path: string) => path.toLowerCase().endsWith(".svg");
-
-/** The size of an element, kept current by a ResizeObserver. */
-function useElementSize(ref: RefObject<HTMLElement | null>): Size {
-  const [size, setSize] = useState<Size>({ width: 0, height: 0 });
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () =>
-      setSize((prev) =>
-        prev.width === el.clientWidth && prev.height === el.clientHeight
-          ? prev
-          : { width: el.clientWidth, height: el.clientHeight },
-      );
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return size;
-}
 
 /**
  * The image viewer (page kind `image`, slot `page-view:image`): one `<img>` under the view
@@ -136,47 +107,27 @@ export function ImageViewer({ location, isActive }: PageViewProps<ImageLocation>
 
   useEffect(() => (isActive ? registerViewer(actions) : undefined), [isActive, actions]);
 
-  // Wheel and pinch. Non-passive so the webview itself does not zoom or scroll.
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const anchorOf = (clientX: number, clientY: number): Point => {
-      const rect = stage.getBoundingClientRect();
-      return { x: clientX - rect.left, y: clientY - rect.top };
-    };
-    const onWheel = (event: WheelEvent) => {
+  // Wheel and pinch (`hooks/use-zoom-gestures.ts`): zoom toward the pointer, pan with the wheel.
+  const pinch = useRef<{ view: View; scale: number } | null>(null);
+  useZoomGestures(stageRef, {
+    zoomBy: (factor, anchor) => {
       const { view: v, content: c, page: p } = latest.current;
-      if (!c) return;
-      event.preventDefault();
-      if (event.ctrlKey || event.metaKey) {
-        const anchor = anchorOf(event.clientX, event.clientY);
-        commit(zoomBy(v, wheelFactor(event.deltaY), anchor, c, p));
-      } else {
-        commit(panBy(v, -event.deltaX, -event.deltaY, c, p));
-      }
-    };
-    let start: { view: View; scale: number } | null = null;
-    const onGestureStart = (event: Event) => {
-      event.preventDefault();
+      if (c) commit(zoomBy(v, factor, anchor, c, p));
+    },
+    pinchStart: () => {
       const { view: v, content: c, page: p } = latest.current;
-      start = c ? { view: v, scale: resolveView(v, c, p).scale } : null;
-    };
-    const onGestureChange = (event: Event) => {
-      event.preventDefault();
+      pinch.current = c ? { view: v, scale: resolveView(v, c, p).scale } : null;
+    },
+    pinchTo: (scale, anchor) => {
       const { content: c, page: p } = latest.current;
-      if (!start || !c) return;
-      const g = event as GestureEvent;
-      commit(zoomTo(start.view, start.scale * g.scale, anchorOf(g.clientX, g.clientY), c, p));
-    };
-    stage.addEventListener("wheel", onWheel, { passive: false });
-    stage.addEventListener("gesturestart", onGestureStart);
-    stage.addEventListener("gesturechange", onGestureChange);
-    return () => {
-      stage.removeEventListener("wheel", onWheel);
-      stage.removeEventListener("gesturestart", onGestureStart);
-      stage.removeEventListener("gesturechange", onGestureChange);
-    };
-  }, []);
+      const start = pinch.current;
+      if (start && c) commit(zoomTo(start.view, start.scale * scale, anchor, c, p));
+    },
+    scroll: (event) => {
+      const { view: v, content: c, page: p } = latest.current;
+      if (c) commit(panBy(v, -event.deltaX, -event.deltaY, c, p));
+    },
+  });
 
   const drag = useRef<Point | null>(null);
   const transform = content && ready ? resolveView(view, content, page) : null;
@@ -240,7 +191,7 @@ export function ImageViewer({ location, isActive }: PageViewProps<ImageLocation>
               className="rounded-md border border-[var(--line-subtle)] px-2.5 py-1 text-[var(--text-primary)] hover:bg-[var(--item-hover-bg)]"
               onClick={() => {
                 setOpenError(false);
-                openImageInDefaultApp(path).catch((error: unknown) => {
+                openAttachmentInDefaultApp(path).catch((error: unknown) => {
                   logger.warn("images", `open in default app failed: ${String(error)}`);
                   setOpenError(true);
                 });
@@ -298,10 +249,7 @@ function Message({ testId, children }: { testId: string; children: ReactNode }) 
   );
 }
 
-const iconButton =
-  "flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--item-hover-bg)] hover:text-[var(--text-primary)]";
-
-/** File name, pixel size and the zoom control (− Fit or percent +; a click on it returns to Fit). */
+/** File name, pixel size and the zoom control. */
 function Footer({
   name,
   size,
@@ -332,35 +280,14 @@ function Footer({
         </span>
       ) : null}
       {scale !== null ? (
-        <span className="flex items-center gap-0.5">
-          <button
-            type="button"
-            aria-label="Zoom out"
-            data-testid="image-zoom-out"
-            className={iconButton}
-            onClick={onZoomOut}
-          >
-            −
-          </button>
-          <button
-            type="button"
-            title="Fit to page"
-            data-testid="image-zoom-fit"
-            className="min-w-12 rounded px-1 text-center tabular-nums hover:bg-[var(--item-hover-bg)] hover:text-[var(--text-primary)]"
-            onClick={onFit}
-          >
-            {fitted ? "Fit" : `${percent(scale)}%`}
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            data-testid="image-zoom-in"
-            className={iconButton}
-            onClick={onZoomIn}
-          >
-            +
-          </button>
-        </span>
+        <ZoomControl
+          scale={scale}
+          fitted={fitted}
+          testId="image-zoom"
+          onZoomIn={onZoomIn}
+          onZoomOut={onZoomOut}
+          onFit={onFit}
+        />
       ) : null}
     </div>
   );

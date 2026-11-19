@@ -1117,19 +1117,22 @@ pub async fn reveal_in_file_manager(
     blocking(move || reveal_in_file_manager_impl(&path)).await
 }
 
-/// Open an image file in the OS default app (the image viewer's fallback for a type the webview
-/// cannot decode). Only the image types of `shared/attachments.json`: this never launches an
-/// arbitrary file, and the path must be one this window may reach.
+/// Open an image or document (PDF) file in the OS default app (the viewers' fallback and the off
+/// page's button). Only the types of `shared/attachments.json` (`renderExtensions`,
+/// `documentExtensions`): this never launches an arbitrary file, and the path must be one this
+/// window may reach.
 #[tauri::command]
-pub async fn open_image_in_default_app(
+pub async fn open_attachment_in_default_app(
     path: String,
     webview: tauri::Webview,
     app: tauri::AppHandle,
 ) -> Result<(), AppError> {
     use tauri_plugin_opener::OpenerExt;
     authorized_state(&app, &webview, &[&path])?;
-    if !crate::attachments::is_render_name(&path) {
-        return Err(AppError::Io("Only image files open this way".into()));
+    if !crate::attachments::is_render_name(&path) && !crate::attachments::is_document_name(&path) {
+        return Err(AppError::Io(
+            "Only image and PDF files open this way".into(),
+        ));
     }
     blocking(move || {
         if !Path::new(&path).is_file() {
@@ -1140,6 +1143,35 @@ pub async fn open_image_in_default_app(
             .map_err(|e| AppError::Io(e.to_string()))
     })
     .await
+}
+
+/// The bytes of a document file (a PDF) for the reader: read-only, a document type of
+/// `shared/attachments.json` only, never past `documentMaxBytes`. Binary over the IPC (no base64),
+/// confined to the window's roots like every path command; hidden folders inside the vault (a
+/// chat's pasted PDF) are reachable this way without any asset-protocol grant.
+pub fn read_document_impl(path: &str) -> Result<Vec<u8>, AppError> {
+    if !crate::attachments::is_document_name(path) {
+        return Err(AppError::Io("Only PDF files open this way".into()));
+    }
+    let file_path = Path::new(path);
+    let meta = fs::metadata(file_path).map_err(|_| AppError::NotFound(path.to_string()))?;
+    if !meta.is_file() {
+        return Err(AppError::NotFound(path.to_string()));
+    }
+    if meta.len() > crate::attachments::document_max_bytes() {
+        return Err(AppError::Io("This file is too large to open here".into()));
+    }
+    Ok(fs::read(file_path)?)
+}
+
+#[tauri::command]
+pub async fn read_document(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<tauri::ipc::Response, AppError> {
+    authorized_state(&app, &webview, &[&path])?;
+    blocking(move || read_document_impl(&path).map(tauri::ipc::Response::new)).await
 }
 
 #[cfg(test)]
@@ -1156,6 +1188,38 @@ mod tests {
         assert_eq!(with[0].title.as_deref(), Some("Real"));
         assert_eq!(without[0].title, None);
         assert_eq!(without[0].name, "a.md");
+    }
+
+    #[test]
+    fn documents_are_read_as_bytes_only_for_the_document_types() {
+        let dir = TempDir::new().unwrap();
+        let hidden = dir.path().join(".writer/chats/assets");
+        fs::create_dir_all(&hidden).unwrap();
+        let pdf = hidden.join("a.PDF");
+        fs::write(&pdf, b"%PDF-1.7\n\xff\x00bytes").unwrap();
+        // binary-safe, and a hidden folder is fine (the caller confines the path)
+        assert_eq!(
+            read_document_impl(pdf.to_str().unwrap()).unwrap(),
+            b"%PDF-1.7\n\xff\x00bytes"
+        );
+        // nothing else is served this way
+        let note = dir.path().join("a.md");
+        fs::write(&note, "secret").unwrap();
+        assert!(read_document_impl(note.to_str().unwrap()).is_err());
+        let png = dir.path().join("a.png");
+        fs::write(&png, "x").unwrap();
+        assert!(read_document_impl(png.to_str().unwrap()).is_err());
+        // missing and directory named like a PDF
+        assert!(matches!(
+            read_document_impl(dir.path().join("gone.pdf").to_str().unwrap()),
+            Err(AppError::NotFound(_))
+        ));
+        let folder = dir.path().join("dir.pdf");
+        fs::create_dir(&folder).unwrap();
+        assert!(matches!(
+            read_document_impl(folder.to_str().unwrap()),
+            Err(AppError::NotFound(_))
+        ));
     }
 
     /// Synthetic perf probe: `cargo test --lib read_directory_titles_cost -- --ignored --nocapture`.

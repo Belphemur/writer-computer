@@ -24,7 +24,7 @@ const ACTIONS = {
 } as const;
 
 // The same chords as the editor's text zoom: core's bindings apply outside an image tab
-// (`no-image-viewer`), these inside it (`image-viewer`), so the context tells them apart.
+// (`no-viewer`), these inside it (`image-viewer`), so the context tells them apart.
 const KEY_OPTIONS: Record<string, Partial<KeybindingContribution>> = {
   "images.zoom-in": { physicalKeys: ["NumpadAdd"] },
   "images.zoom-out": { alsoKeys: ["_"], physicalKeys: ["NumpadSubtract"] },

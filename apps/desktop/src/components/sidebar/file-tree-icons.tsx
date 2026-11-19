@@ -7,13 +7,14 @@ import {
   File02Icon,
   GlobeIcon,
   ImageIcon,
+  Pdf02Icon as PdfIcon,
   Link01Icon,
   RoboticIcon,
   Settings02Icon,
   SparklesIcon,
   Table01Icon,
 } from "@hugeicons/core-free-icons";
-import { isRenderableImageName } from "@/lib/attachments";
+import { isDocumentName, isRenderableImageName } from "@/lib/attachments";
 import type { FileTreeBadge } from "@/lib/features/types";
 import { codeIconFamily, isCodeName, type CodeIconFamily } from "@/lib/code-files";
 import { useFileIcon } from "@/lib/file-icons";
@@ -75,9 +76,11 @@ export function FileIcon({ name }: { name?: string }) {
     ? Database02Icon
     : name && isRenderableImageName(name)
       ? ImageIcon
-      : name && isCodeName(name)
-        ? CODE_FAMILY_ICON[codeIconFamily(name)]
-        : File02Icon;
+      : name && isDocumentName(name)
+        ? PdfIcon
+        : name && isCodeName(name)
+          ? CODE_FAMILY_ICON[codeIconFamily(name)]
+          : File02Icon;
   return (
     <HugeiconsIcon
       icon={icon}

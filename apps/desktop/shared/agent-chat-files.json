@@ -1,0 +1,15 @@
+{
+  "$comment": "What an agent chat accepts, by file extension, with the media type the model reads it as. mediaTypes are the image formats of a native image content block: a subset of attachments.json importExtensions (svg, avif, bmp and heic are importable into a note but the model cannot read them). documentMediaTypes are the formats of a native document content block (PDF), a subset of attachments.json documentExtensions; documentMaxBytes and documentMaxPages are the API's request caps (32 MB for the whole request with the base64 overhead, 100 pages), so the file is refused before it is sent. Read by src-tauri/src/agent/files.rs (include_str!) and features/agent/web/lib/chat-files.ts (JSON import); the image size cap is attachments.json maxBytes. Spec: SPECs/native-agent-spec.md, Files in the composer; SPECs/pdf-spec.md, Agent attachments.",
+  "mediaTypes": {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp"
+  },
+  "documentMediaTypes": {
+    "pdf": "application/pdf"
+  },
+  "documentMaxBytes": 23068672,
+  "documentMaxPages": 100
+}

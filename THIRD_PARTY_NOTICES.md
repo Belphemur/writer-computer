@@ -1,5 +1,14 @@
 # Third-party notices
 
+Components bundled in Writer that ask for a notice. Each keeps its own license; the full text ships with the package.
+
+## pdf.js
+
+- Package: `pdfjs-dist` 6.5.438 (pinned exactly in `pnpm-workspace.yaml`), loaded lazily by the `pdf` feature (`apps/desktop/features/pdf/`) and run in a same-origin worker from the app bundle.
+- Project: <https://mozilla.github.io/pdf.js/>, source <https://github.com/mozilla/pdf.js>.
+- License: Apache License, Version 2.0 (<https://www.apache.org/licenses/LICENSE-2.0>), copyright the pdf.js authors and Mozilla Foundation.
+- Use: renders PDF pages and their text layer for the PDF reader and embeds. Writer never writes a PDF.
+
 ## Dataview
 
 The inline-field scanner (`apps/desktop/src-tauri/src/index/inline_fields.rs`) and the Dataview query grammar and function semantics implemented in `apps/desktop/src-tauri/src/dql/` and `bases/dialect.rs` are adapted from Dataview by Michael Brenan (blacksmithgu), https://github.com/blacksmithgu/obsidian-dataview.

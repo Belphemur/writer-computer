@@ -140,13 +140,13 @@ export interface AgentCommands {
   >;
   agent_chat_replay: Command<"agent_chat_replay", { chatId: string; maxTokens?: Opt<number> }>;
   /** A pasted or browser-dropped image (base64) into the chat's hidden `assets/` folder. */
-  agent_save_chat_image: Command<
-    "agent_save_chat_image",
+  agent_save_chat_file: Command<
+    "agent_save_chat_file",
     { projectPath: string | null; name: string; dataBase64: string }
   >;
   /** A Finder-dropped image file (absolute path), copied into the chat's `assets/` folder. */
-  agent_import_chat_image_file: Command<
-    "agent_import_chat_image_file",
+  agent_import_chat_file: Command<
+    "agent_import_chat_file",
     { projectPath: string | null; sourcePath: string }
   >;
   agent_permission_rules: Command<"agent_permission_rules", { projectPath: string | null }>;

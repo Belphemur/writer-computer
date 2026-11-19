@@ -1,7 +1,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useState } from "react";
 import { dropOnChatComposer, isOverChatComposer } from "@features/agent/web/lib/chat-image-target";
-import { isImportableImageName } from "@/lib/attachments";
+import { isDocumentName, isImportableImageName } from "@/lib/attachments";
 import { getFileName } from "@/lib/paths";
 
 /**
@@ -34,7 +34,9 @@ export function useChatImageOsDrop(enabled: boolean): boolean {
           const y = payload.position.y / ratio;
           const paths =
             payload.type === "enter" || payload.type === "drop"
-              ? payload.paths.filter((p) => isImportableImageName(getFileName(p)))
+              ? payload.paths.filter(
+                  (p) => isImportableImageName(getFileName(p)) || isDocumentName(getFileName(p)),
+                )
               : [];
           if (payload.type === "enter") hasImages = paths.length > 0;
           if (payload.type !== "drop") {

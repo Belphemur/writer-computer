@@ -13,7 +13,7 @@ use super::binary;
 use super::changes::ChangeStore;
 use super::config_sync::{CliMcpProbe, McpProbe, Msg, Worker};
 use super::events::*;
-use super::images::{self, Outgoing};
+use super::files::{self, Outgoing};
 use super::memory;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
 use super::roles::{Flags, RenderInput, RoleAdapter};
@@ -652,8 +652,8 @@ impl AgentSessions {
     ) -> Result<(Arc<Session>, Outgoing), Rejected> {
         let s = self.get(label, chat_id)?;
         validate_context(&s.root, context).map_err(Rejected)?;
-        let images = images::load_parts(&s.root, context).map_err(Rejected)?;
-        Ok((s, Outgoing { text, images }))
+        let files = files::load_parts(&s.root, context).map_err(Rejected)?;
+        Ok((s, Outgoing { text, files }))
     }
 
     pub fn cancel(&self, label: &str, chat_id: &str) -> Result<(), Rejected> {
@@ -817,6 +817,7 @@ pub fn validate_context(root: &Path, refs: &[ContextRef]) -> Result<(), String> 
             | ContextRef::Note { path }
             | ContextRef::Folder { path }
             | ContextRef::Image { path }
+            | ContextRef::Document { path }
             | ContextRef::ProjectInstructions { path } => Some(path.as_str()),
             ContextRef::ProjectSource {
                 source: ProjectSource::Folder { path, .. } | ProjectSource::Note { path, .. },

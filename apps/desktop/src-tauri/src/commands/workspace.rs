@@ -446,12 +446,12 @@ pub(crate) fn allow_chat_assets_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>
 
 /// Grants the chat images folder of the vault itself and of every project that has chats, at
 /// workspace open. A project or folder first used later is granted by the save that creates it
-/// (`agent_save_chat_image`, `agent_import_chat_image_file`).
+/// (`agent_save_chat_file`, `agent_import_chat_file`).
 pub(crate) fn allow_chat_assets_in_vault<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     root: &Path,
 ) {
-    use crate::agent::{chat_store, images::ASSETS_DIR};
+    use crate::agent::{chat_store, files::ASSETS_DIR};
     allow_chat_assets_dir(
         app,
         &root.join(chat_store::VAULT_CHATS_DIR).join(ASSETS_DIR),
@@ -1155,7 +1155,7 @@ mod tests {
         let img = root.join("New project/.chats/assets/x.png");
         assert!(!scope.is_allowed(&img));
         let saved =
-            crate::agent::images::save_bytes(&root, Some("New project"), "x.png", &[1, 2]).unwrap();
+            crate::agent::files::save_bytes(&root, Some("New project"), "x.png", &[1, 2]).unwrap();
         allow_chat_assets_dir(app.handle(), saved.abs_path.parent().unwrap());
         assert!(scope.is_allowed(&img));
         assert!(!scope.is_allowed(root.join("New project/.chats/chat.md")));

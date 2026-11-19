@@ -46,7 +46,7 @@ pub fn manifest() -> Manifest {
 }
 
 /// The policy the settings ask for: the switch (`features.code-files.enabled`) and the four
-/// settings the rules read.
+/// settings the rules read (plus the two core listing settings, images and PDFs).
 pub fn policy_for(settings: &Settings) -> cf::Policy {
     let list = |key: &str| match settings.get_global_or_default(key) {
         Some(ConfigValue::List(items)) => Some(items.clone()),
@@ -63,6 +63,7 @@ pub fn policy_for(settings: &Settings) -> cf::Policy {
         list(cf::SETTING_IGNORED),
         flag(cf::SETTING_AGENT_FOLDERS),
         flag(cf::SETTING_IMAGES),
+        flag(cf::SETTING_PDFS),
     )
 }
 
@@ -75,7 +76,9 @@ pub fn apply(settings: &Settings) {
 /// `config` file) and uses the defaults for the rest.
 pub fn apply_for_cli(data_dir: &Path) {
     let enabled = features::cli_enabled(data_dir, &manifest().id);
-    cf::set_policy(cf::policy_from_settings(enabled, None, None, None, None));
+    cf::set_policy(cf::policy_from_settings(
+        enabled, None, None, None, None, None,
+    ));
 }
 
 #[cfg(test)]

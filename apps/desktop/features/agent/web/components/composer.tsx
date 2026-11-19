@@ -32,11 +32,12 @@ import {
   type MentionCandidate,
 } from "@features/agent/web/lib/mentions";
 import {
-  attachChatImages,
+  attachChatFiles,
   fileToBase64,
-  isChatImageRef,
-  type ChatImageSource,
-} from "@features/agent/web/lib/chat-images";
+  isChatFileRef,
+  type ChatFileSource,
+} from "@features/agent/web/lib/chat-files";
+import { pdfPagesIo } from "@features/agent/web/lib/pdf-pages";
 import { registerChatImageTarget } from "@features/agent/web/lib/chat-image-target";
 import { chatHistoryClient } from "@features/agent/web/lib/chat-history-client";
 import { isBusy, isComposerDisabled } from "@features/agent/web/lib/reduce";
@@ -141,22 +142,23 @@ export function Composer({
       ? "Loading skills…"
       : SLASH_EMPTY_TEXT;
 
-  // Images: paste, a browser drag, Finder files (OS drop) and vault files (sidebar drag) become
-  // image chips; one that is refused (type, size) shows a notice that goes away by itself.
+  // Images and PDFs: paste, a browser drag, Finder files (OS drop) and vault files (sidebar drag)
+  // become chips; one that is refused (type, size, pages) shows a notice that goes away by itself.
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | null>(null);
   const projectPath = chat.projectPath;
   const attachImages = useCallback(
-    async (sources: readonly ChatImageSource[]) => {
+    async (sources: readonly ChatFileSource[]) => {
       const root = getWorkspaceRoot();
       const resolved = sources.map((s) =>
         s.kind === "vault" && root ? { ...s, path: getRelativePath(s.path, root) } : s,
       );
-      const { refs, notices } = await attachChatImages(resolved, {
+      const { refs, notices } = await attachChatFiles(resolved, {
         projectPath,
         saveImage: chatHistoryClient.saveImage,
         importImageFile: chatHistoryClient.importImageFile,
         readBase64: fileToBase64,
+        pdfPages: pdfPagesIo(root),
       });
       if (refs.length > 0) addAgentDraftImages(chatId, refs);
       if (notices.length > 0) {
@@ -410,7 +412,7 @@ export function Composer({
     if (e.key === "Backspace" && !mod) {
       const sel = view.current?.state.selection.main;
       if (sel && sel.empty && sel.head === 0) {
-        const last = [...draft.mentions].reverse().find(isChatImageRef);
+        const last = [...draft.mentions].reverse().find(isChatFileRef);
         if (last) {
           e.preventDefault();
           setAgentDraft(chatId, { mentions: draft.mentions.filter((m) => m !== last) });

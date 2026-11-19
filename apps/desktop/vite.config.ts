@@ -1,6 +1,8 @@
 import { defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { staticAssets } from "./vite-static-assets";
+import { pdfjsAssets } from "./features/pdf/vite-assets";
 import { excalidrawAssets } from "./features/excalidraw/vite-assets";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -12,7 +14,8 @@ export default defineConfig(async () => ({
       jsxImportSource: "@welldone-software/why-did-you-render",
     }),
     tailwindcss(),
-    excalidrawAssets(),
+    staticAssets(excalidrawAssets()),
+    staticAssets(pdfjsAssets()),
   ],
   resolve: {
     alias: {

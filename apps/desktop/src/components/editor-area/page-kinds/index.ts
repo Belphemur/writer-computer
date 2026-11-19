@@ -5,6 +5,7 @@ import { fileKind, type FileLocation } from "./file";
 import { graphKind, type GraphLocation } from "./graph";
 import { imageKind, type ImageLocation } from "./image";
 import { launcherKind, type LauncherLocation } from "./launcher";
+import { pdfKind, type PdfLocation } from "./pdf";
 import { pluginFileKind, type PluginFileLocation } from "./plugin-file";
 import { pluginViewKind, type PluginViewLocation } from "./plugin-view";
 import { sessionChangesKind, type SessionChangesLocation } from "./session-changes";
@@ -25,6 +26,7 @@ const kinds = [
   graphKind,
   codeKind,
   imageKind,
+  pdfKind,
   drawingKind,
   launcherKind,
   settingsKind,
@@ -39,6 +41,7 @@ export type Location =
   | GraphLocation
   | CodeLocation
   | ImageLocation
+  | PdfLocation
   | DrawingLocation
   | LauncherLocation
   | SettingsLocation
@@ -71,6 +74,7 @@ export function locationForPath(
   | BaseLocation
   | CodeLocation
   | ImageLocation
+  | PdfLocation
   | DrawingLocation
   | PluginFileLocation {
   for (const k of kinds) {
@@ -85,6 +89,7 @@ export function locationForPath(
         | BaseLocation
         | CodeLocation
         | ImageLocation
+        | PdfLocation
         | DrawingLocation
         | PluginFileLocation
         | null
@@ -123,6 +128,7 @@ export type { GraphLocation, GraphCamera } from "./graph";
 export { withGraphState } from "./graph";
 export type { CodeLocation } from "./code";
 export type { ImageLocation } from "./image";
+export type { PdfLocation } from "./pdf";
 export type { DrawingLocation } from "./drawing";
 export type { LauncherLocation } from "./launcher";
 export type { SettingsLocation } from "./settings";

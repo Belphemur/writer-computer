@@ -225,7 +225,7 @@ describe("switched off", () => {
     const buttons = [...el.querySelectorAll("button")];
     expect(buttons.map((b) => b.textContent)).toEqual(["Turn on", "Open in default app"]);
     await act(async () => buttons[1]!.click());
-    expect(invoke).toHaveBeenCalledWith("open_image_in_default_app", { path: "/v/a.png" });
+    expect(invoke).toHaveBeenCalledWith("open_attachment_in_default_app", { path: "/v/a.png" });
     await act(async () => buttons[0]!.click());
     expect(useSettingsStore.getState().setSetting).toHaveBeenCalledWith(
       "features.images.enabled",

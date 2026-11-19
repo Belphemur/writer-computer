@@ -1,4 +1,4 @@
-import type { Size } from "./view-transform";
+import type { Size } from "@/lib/viewer-zoom";
 
 // The size an SVG draws at: its `width` and `height` when they are usable (absolute units), else
 // its `viewBox`. The webview reports 0 or a default for an SVG that only has a viewBox, or one with

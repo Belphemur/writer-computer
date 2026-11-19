@@ -1,0 +1,50 @@
+{
+  "id": "pdf",
+  "name": "PDF",
+  "version": "1.0.0",
+  "description": "Read PDFs in a tab: scroll, zoom, find and copy text, follow #page=N links, and embed them in notes.",
+  "enabledByDefault": true,
+  "activation": ["onFileKind:pdf"],
+  "memory": {
+    "level": "medium",
+    "note": "pdf.js (about 3 MB with its worker) loads when the first PDF tab opens or a note shows an embedded PDF; nothing runs in the background. Listing PDFs, links to them and PDF chips in the agent composer are part of core and unaffected."
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "pdf.zoom-in",
+        "label": "Zoom PDF in",
+        "description": "Zoom the PDF in",
+        "when": "pdf-viewer"
+      },
+      {
+        "id": "pdf.zoom-out",
+        "label": "Zoom PDF out",
+        "description": "Zoom the PDF out",
+        "when": "pdf-viewer"
+      },
+      {
+        "id": "pdf.fit",
+        "label": "Fit PDF to width",
+        "description": "Fit the PDF to the width of the page",
+        "when": "pdf-viewer"
+      },
+      {
+        "id": "pdf.find",
+        "label": "Find in PDF",
+        "description": "Find text in the PDF",
+        "when": "pdf-viewer"
+      }
+    ],
+    "keybindings": [
+      { "id": "pdf.zoom-in", "keys": ["Mod+=", "Mod++"], "description": "Zoom PDF in" },
+      { "id": "pdf.zoom-out", "keys": ["Mod+-"], "description": "Zoom PDF out" },
+      { "id": "pdf.fit", "keys": ["Mod+0"], "description": "Fit PDF to width" },
+      { "id": "pdf.find", "keys": ["Mod+F"], "description": "Find in PDF" }
+    ],
+    "editorExtensions": ["pdf.embeds"],
+    "slots": ["pdf.pdf-tab"],
+    "services": ["pdf.info"]
+  },
+  "provides": ["pdf.info"]
+}

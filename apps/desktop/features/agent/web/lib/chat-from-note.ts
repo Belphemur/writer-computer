@@ -4,7 +4,7 @@
  * output is never stored, so it is absent.
  */
 import type { ChatNoteDoc, ChatNoteMessage } from "./chat-note";
-import { imageRef } from "./chat-images";
+import { chatFileRef } from "./chat-files";
 import type { ChatSummary } from "./events";
 import { createChat } from "./reduce";
 import type { Chat, SubagentMeta, ToolBlock, Turn, UserMessage } from "./transcript";
@@ -49,8 +49,8 @@ function userMessage(m: ChatNoteMessage): UserMessage {
   return {
     messageId: m.id,
     text: m.text,
-    // the images come back as refs (thumbnails); the other attachments only as the label
-    context: (m.images ?? []).map(imageRef),
+    // the attached files come back as refs (thumbnails, PDF chips); the other attachments only as the label
+    context: (m.images ?? []).map(chatFileRef),
     ...(m.context ? { contextLabel: m.context } : {}),
     ts: m.at,
   };

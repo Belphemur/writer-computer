@@ -9,15 +9,13 @@ import {
   clampScale,
   fitScale,
   panBy,
-  percent,
   resolveView,
   toggleActualSize,
-  wheelFactor,
   zoomBy,
   zoomTo,
-  type Size,
   type Transform,
 } from "../web/lib/view-transform";
+import { percent, wheelFactor, type Size } from "@/lib/viewer-zoom";
 
 const page: Size = { width: 800, height: 600 };
 const inner = { width: page.width - 2 * FIT_MARGIN, height: page.height - 2 * FIT_MARGIN };

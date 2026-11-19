@@ -1,7 +1,8 @@
-import { RENDERABLE_IMAGE_EXTENSIONS } from "./attachments";
+import { RENDERABLE_IMAGE_EXTENSIONS, isDocumentName } from "./attachments";
 import { slugifyHeading } from "./heading-slug";
 import { noteLabel } from "./note-title";
-import { getFileStem, getParentDir, isBasePath, normalizePath } from "./paths";
+import { parsePdfAnchor } from "./pdf-anchor";
+import { getFileName, getFileStem, getParentDir, isBasePath, normalizePath } from "./paths";
 import type { SearchResult } from "@/types/fs";
 
 export type WikiLinkTarget =
@@ -9,7 +10,7 @@ export type WikiLinkTarget =
       kind: "internal";
       path: string;
       /** What to reveal once the file shows (`linkAnchor`): the heading slug for a note, the view
-       *  name for a `.base` file. Absent when the link has no usable fragment. */
+       *  name for a `.base` file, `page=N` for a PDF. Absent when the link has no usable fragment. */
       fragment?: string;
     }
   | { kind: "unresolved" };
@@ -125,6 +126,14 @@ export function normalizeWikiTarget(raw: string): string {
 }
 
 /**
+ * The anchor of a PDF link's `#fragment`: the fragment as written when it carries `page=N` (and
+ * `height=` for an embed), else none (the PDF opens at its first page). `lib/pdf-anchor.ts` reads it.
+ */
+function pdfFragmentAnchor(fragment: string): string | null {
+  return parsePdfAnchor(fragment).page !== null ? fragment : null;
+}
+
+/**
  * The anchor a link's `#fragment` asks for in the file it opens: the view name of a `.base` file,
  * otherwise the slug of the heading (`#A#B` means the last segment, matched case-insensitively
  * like Obsidian; the slug is the one `findHeadingBySlug` indexes). `#^block` ids and empty
@@ -133,6 +142,7 @@ export function normalizeWikiTarget(raw: string): string {
 export function linkAnchor(target: string, fragment: string | null): string | null {
   if (!fragment) return null;
   if (isBasePath(target)) return fragment;
+  if (isDocumentName(getFileName(target))) return pdfFragmentAnchor(fragment);
   const last = fragment
     .split("#")
     .filter((segment) => segment.trim() !== "")

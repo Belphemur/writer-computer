@@ -1,10 +1,12 @@
-import { Cancel01Icon, File02Icon, Folder01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, File02Icon, Folder01Icon, Pdf02Icon } from "@hugeicons/core-free-icons";
+import { useEffect, useState } from "react";
 import { setAgentDraft } from "@features/agent/web/hooks/agent-api";
 import { useActiveFilePath } from "@/hooks/use-tabs";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useAttachActiveNoteSetting, type Draft } from "@features/agent/web/hooks/use-agent";
 import { contextRefLabel } from "@features/agent/web/lib/context-text";
-import { IMAGE_TOKEN_ESTIMATE } from "@features/agent/web/lib/chat-images";
+import { IMAGE_TOKEN_ESTIMATE } from "@features/agent/web/lib/chat-files";
+import { pageCountOf } from "@features/agent/web/lib/pdf-pages";
 import type { ChatId, ContextRef } from "@features/agent/web/lib/events";
 import { Ico } from "./agent-icon";
 import { vaultLinkHandlers } from "./agent-links";
@@ -20,6 +22,7 @@ function Chip({
   label,
   title,
   folder,
+  pdf,
   imagePath,
   openPath,
   onRemove,
@@ -27,6 +30,8 @@ function Chip({
   label: string;
   title: string;
   folder?: boolean;
+  /** A PDF chip: the PDF icon instead of the file icon. */
+  pdf?: boolean;
   /** An image chip: a thumbnail instead of the file icon. */
   imagePath?: string;
   /** Vault-relative path a click opens (a link: left, middle and modifier clicks). */
@@ -37,12 +42,17 @@ function Chip({
     <span
       data-agent-chip
       data-agent-chip-image={imagePath ? "" : undefined}
+      data-agent-chip-pdf={pdf ? "" : undefined}
       className="inline-flex max-w-[14rem] items-center gap-1 rounded-md bg-[var(--surface-subtle)] py-0.5 pr-0.5 pl-1.5 text-[11.5px] text-text-secondary"
     >
       {imagePath ? (
         <ChatImageThumb path={imagePath} className="size-5 shrink-0 rounded-[3px]" />
       ) : (
-        <Ico icon={folder ? Folder01Icon : File02Icon} size={12} className="shrink-0" />
+        <Ico
+          icon={folder ? Folder01Icon : pdf ? Pdf02Icon : File02Icon}
+          size={12}
+          className="shrink-0"
+        />
       )}
       <button
         type="button"
@@ -62,6 +72,41 @@ function Chip({
         <Ico icon={Cancel01Icon} size={11} />
       </button>
     </span>
+  );
+}
+
+/** `paper.pdf, 12 pages`: the name with the page count once the PDF feature has counted it. */
+function usePdfLabel(root: string | null, path: string): string {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const [pages, setPages] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    void pageCountOf(root, path).then((n) => live && setPages(n));
+    return () => {
+      live = false;
+    };
+  }, [root, path]);
+  return pages === null ? name : `${name} · ${pages} ${pages === 1 ? "page" : "pages"}`;
+}
+
+/** A chip for a PDF in the draft. */
+function PdfChip({
+  root,
+  path,
+  onRemove,
+}: {
+  root: string | null;
+  path: string;
+  onRemove: () => void;
+}) {
+  return (
+    <Chip
+      label={usePdfLabel(root, path)}
+      title={`${path} (PDF)`}
+      pdf
+      openPath={path}
+      onRemove={onRemove}
+    />
   );
 }
 
@@ -91,21 +136,30 @@ export function ContextChips({ chatId, draft }: { chatId: ChatId; draft: Draft }
           onRemove={() => setAgentDraft(chatId, { activeNote: false })}
         />
       )}
-      {draft.mentions.map((ref, i) => (
-        <Chip
-          key={`${ref.kind}:${contextRefLabel(ref)}:${i}`}
-          label={"label" in ref && ref.label ? ref.label : nameOf(contextRefLabel(ref))}
-          title={
-            ref.kind === "image"
-              ? `${ref.path} (image, about ${IMAGE_TOKEN_ESTIMATE.toLocaleString("en-US")} tokens)`
-              : contextRefLabel(ref)
-          }
-          folder={ref.kind === "folder"}
-          imagePath={ref.kind === "image" ? ref.path : undefined}
-          openPath={ref.kind === "note" || ref.kind === "image" ? ref.path : undefined}
-          onRemove={() => remove(ref)}
-        />
-      ))}
+      {draft.mentions.map((ref, i) =>
+        ref.kind === "document" ? (
+          <PdfChip
+            key={`document:${ref.path}:${i}`}
+            root={root}
+            path={ref.path}
+            onRemove={() => remove(ref)}
+          />
+        ) : (
+          <Chip
+            key={`${ref.kind}:${contextRefLabel(ref)}:${i}`}
+            label={"label" in ref && ref.label ? ref.label : nameOf(contextRefLabel(ref))}
+            title={
+              ref.kind === "image"
+                ? `${ref.path} (image, about ${IMAGE_TOKEN_ESTIMATE.toLocaleString("en-US")} tokens)`
+                : contextRefLabel(ref)
+            }
+            folder={ref.kind === "folder"}
+            imagePath={ref.kind === "image" ? ref.path : undefined}
+            openPath={ref.kind === "note" || ref.kind === "image" ? ref.path : undefined}
+            onRemove={() => remove(ref)}
+          />
+        ),
+      )}
     </div>
   );
 }

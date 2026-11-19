@@ -3,6 +3,7 @@
  * transcript and folded from the same events. Pure: the store owns the state, `chat-saver.ts` owns
  * the debounced writes, `chat-note.ts` (lane 4) owns the format.
  */
+import { isChatFileRef } from "./chat-files";
 import type { AgentEvent, ContextRef } from "./events";
 import {
   foldSessionChanges,
@@ -64,7 +65,8 @@ type SentMessage = { messageId: string; text: string; context: ContextRef[]; ts:
 
 function userNoteMessage(msg: SentMessage): ChatNoteMessage {
   const context = contextLine(msg.context);
-  const images = msg.context.flatMap((r) => (r.kind === "image" ? [r.path] : []));
+  // the note's `images` list holds every attached file (images and PDFs); the extension tells them apart
+  const images = msg.context.flatMap((r) => (isChatFileRef(r) ? [r.path] : []));
   return {
     role: "user",
     id: msg.messageId,

@@ -137,9 +137,15 @@ export function revealInFileManager(path: string): Promise<void> {
   return invoke("reveal_in_file_manager", { path });
 }
 
-/** An image file in the OS default app (Rust refuses anything that is not an image type). */
-export function openImageInDefaultApp(path: string): Promise<void> {
-  return invoke("open_image_in_default_app", { path });
+/** The bytes of a PDF for the reader (Rust refuses anything that is not a document type, or a
+ *  path this window may not reach). */
+export async function readDocument(path: string): Promise<Uint8Array> {
+  return new Uint8Array(await invoke<ArrayBuffer>("read_document", { path }));
+}
+
+/** An image or PDF file in the OS default app (Rust refuses any other type). */
+export function openAttachmentInDefaultApp(path: string): Promise<void> {
+  return invoke("open_attachment_in_default_app", { path });
 }
 
 // Workspace commands

@@ -2,6 +2,8 @@ import { formatRelativeTime } from "@/lib/relative-time";
 import { contextRefLabel } from "@features/agent/web/lib/context-text";
 import type { UserMessage } from "@features/agent/web/lib/transcript";
 import { sendAgentNow } from "@features/agent/web/hooks/agent-api";
+import { Pdf02Icon } from "@hugeicons/core-free-icons";
+import { Ico } from "./agent-icon";
 import { vaultLinkHandlers } from "./agent-links";
 import { ChatImageThumb } from "./chat-image-thumb";
 import { MessageText } from "./message-text";
@@ -17,7 +19,8 @@ export function UserTurnCard({
 }) {
   const when = formatRelativeTime(Math.floor(message.ts / 1000));
   const images = message.context.flatMap((r) => (r.kind === "image" ? [r.path] : []));
-  const others = message.context.filter((r) => r.kind !== "image");
+  const documents = message.context.flatMap((r) => (r.kind === "document" ? [r.path] : []));
+  const others = message.context.filter((r) => r.kind !== "image" && r.kind !== "document");
   return (
     <article
       data-agent-user-turn
@@ -25,8 +28,21 @@ export function UserTurnCard({
       aria-label={steer ? "Your steer message" : "Your message"}
       className="rounded-xl border border-[var(--line-subtle)] bg-[var(--surface-card)] px-3 py-2.5"
     >
-      {images.length > 0 && (
+      {(images.length > 0 || documents.length > 0) && (
         <div data-agent-turn-images className="mb-2 flex flex-wrap gap-1.5">
+          {documents.map((path) => (
+            <button
+              key={path}
+              type="button"
+              title={path}
+              data-agent-turn-pdf
+              {...vaultLinkHandlers(path)}
+              className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-lg border border-[var(--line-subtle)] px-2 py-1 text-[12px] text-text-secondary hover:border-[var(--focus-border)]"
+            >
+              <Ico icon={Pdf02Icon} size={14} className="shrink-0" />
+              <span className="truncate">{path.slice(path.lastIndexOf("/") + 1)}</span>
+            </button>
+          ))}
           {images.map((path) => (
             <button
               key={path}

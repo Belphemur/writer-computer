@@ -18,7 +18,7 @@
 //! The mapper never keeps or logs content; it only keeps ids.
 
 use super::events::*;
-use super::images::ImagePart;
+use super::files::{FileKind, FilePart};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -714,31 +714,36 @@ impl ClaudeStreamMapper {
 // -------------------------------------------------------------------------------------------
 // stdin encoders. Each returns one JSON line WITHOUT the trailing newline.
 
-/// A user turn. Plain text goes as a string; with images the content is an array of native
-/// `image` blocks (base64) followed by the text block (shape verified against the real CLI).
-pub fn encode_user_message(text: &str, images: &[ImagePart]) -> String {
-    user_value(text, images).to_string()
+/// A user turn. Plain text goes as a string; with files the content is an array of native
+/// `image` and `document` blocks (base64) followed by the text block (the image shape verified
+/// against the real CLI; the document block is the API's own shape).
+pub fn encode_user_message(text: &str, files: &[FilePart]) -> String {
+    user_value(text, files).to_string()
 }
 
 /// A steer: a user message written while a turn runs, with `priority:"now"` so the CLI aborts the
 /// running tool or text, ends that turn with a `result` and starts this message's turn at once
 /// (verified, spec 3.13). The `uuid` comes back on stdout as the receipt
 /// (`--replay-user-messages`, see [`MapOutput::user_echo`]).
-pub fn encode_steer_message(text: &str, images: &[ImagePart], uuid: &str) -> String {
-    let mut line = user_value(text, images);
+pub fn encode_steer_message(text: &str, files: &[FilePart], uuid: &str) -> String {
+    let mut line = user_value(text, files);
     line["uuid"] = json!(uuid);
     line["priority"] = json!("now");
     line.to_string()
 }
 
-fn user_value(text: &str, images: &[ImagePart]) -> Value {
-    if images.is_empty() {
+fn user_value(text: &str, files: &[FilePart]) -> Value {
+    if files.is_empty() {
         return json!({"type":"user","message":{"role":"user","content":text}});
     }
-    let mut content: Vec<Value> = images
+    let mut content: Vec<Value> = files
         .iter()
-        .map(|i| {
-            json!({"type":"image","source":{"type":"base64","media_type":i.media_type,"data":i.data}})
+        .map(|f| {
+            let block = match f.kind {
+                FileKind::Image => "image",
+                FileKind::Document => "document",
+            };
+            json!({"type":block,"source":{"type":"base64","media_type":f.media_type,"data":f.data}})
         })
         .collect();
     content.push(json!({"type":"text","text":text}));
@@ -1844,8 +1849,36 @@ mod tests {
     }
 
     #[test]
+    fn a_pdf_is_a_base64_document_block_in_attach_order_before_the_text() {
+        let part = |kind, m, d: &str| FilePart {
+            kind,
+            media_type: m,
+            data: d.into(),
+        };
+        let files = [
+            part(FileKind::Document, "application/pdf", "JVBERg=="),
+            part(FileKind::Image, "image/png", "AAAA"),
+        ];
+        // Golden: the API's document block (`source.type: base64`, `application/pdf`), the
+        // stream-json stdin shape of an image block carrying a different `type`.
+        let expected = json!({"type":"user","message":{"role":"user","content":[
+            {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERg=="}},
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}},
+            {"type":"text","text":"summarise"}
+        ]}});
+        let v: Value = serde_json::from_str(&encode_user_message("summarise", &files)).unwrap();
+        assert_eq!(v, expected);
+        // a steer carries the same blocks plus its receipt
+        let s: Value =
+            serde_json::from_str(&encode_steer_message("summarise", &files, "u-9")).unwrap();
+        assert_eq!(s["message"], expected["message"]);
+        assert_eq!(s["uuid"], "u-9");
+    }
+
+    #[test]
     fn a_message_with_images_is_a_content_array_of_image_blocks_then_the_text() {
-        let part = |m, d: &str| ImagePart {
+        let part = |m, d: &str| FilePart {
+            kind: FileKind::Image,
             media_type: m,
             data: d.into(),
         };

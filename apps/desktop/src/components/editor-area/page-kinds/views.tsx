@@ -6,7 +6,7 @@ import { ManagedSkillBanner } from "../managed-skill-banner";
 import { FeatureOffPage } from "@/components/feature-off-page";
 import { FeatureSlot } from "@/components/feature-slot";
 import { openFileAsTextInNewTab } from "@/hooks/editor-api";
-import { openImageInDefaultApp } from "@/lib/tauri";
+import { openAttachmentInDefaultApp } from "@/lib/tauri";
 import { useFeatureActive } from "@/lib/features/active";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { PageViewProps } from "@/lib/features/slots";
@@ -18,6 +18,7 @@ import type { FileLocation } from "./file";
 import type { GraphLocation } from "./graph";
 import type { ImageLocation } from "./image";
 import type { LauncherLocation } from "./launcher";
+import type { PdfLocation } from "./pdf";
 import type { PluginFileLocation } from "./plugin-file";
 import type { PluginViewLocation } from "./plugin-view";
 import type { SessionChangesLocation } from "./session-changes";
@@ -84,7 +85,7 @@ function OpenInDefaultAppButton({ path }: { path: string }) {
   return (
     <button
       type="button"
-      onClick={() => void openImageInDefaultApp(path)}
+      onClick={() => void openAttachmentInDefaultApp(path)}
       className="rounded-md border border-[var(--line-subtle)] px-2.5 py-1 text-[var(--text-primary)] hover:bg-[var(--item-hover-bg)]"
     >
       Open in default app
@@ -105,6 +106,10 @@ const views = {
     feature: "images",
     actions: (location) => <OpenInDefaultAppButton path={location.path} />,
   }) satisfies PageKindView<ImageLocation>,
+  pdf: featureView("pdf", {
+    feature: "pdf",
+    actions: (location) => <OpenInDefaultAppButton path={location.path} />,
+  }) satisfies PageKindView<PdfLocation>,
   drawing: featureView("drawing", {
     feature: "excalidraw",
     actions: (location) => <OpenAsTextButton path={location.path} />,

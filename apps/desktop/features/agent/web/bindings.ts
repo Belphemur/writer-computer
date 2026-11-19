@@ -102,9 +102,9 @@ export const commands = {
 	 *  Saves a pasted or browser-dropped image (bytes as base64) into the chat's hidden `assets/`
 	 *  folder; the composer then attaches the returned path (spec "Images in the composer").
 	 */
-	agentSaveChatImage: (projectPath: string | null, name: string, dataBase64: string, options?: InvokeOptions) => __TAURI_INVOKE<ChatImage>("plugin:agent|agent_save_chat_image", { projectPath, name, dataBase64 }, options),
+	agentSaveChatFile: (projectPath: string | null, name: string, dataBase64: string, options?: InvokeOptions) => __TAURI_INVOKE<ChatFile>("plugin:agent|agent_save_chat_file", { projectPath, name, dataBase64 }, options),
 	/**  Copies an image file dropped from Finder (absolute path) into the chat's `assets/` folder. */
-	agentImportChatImageFile: (projectPath: string | null, sourcePath: string, options?: InvokeOptions) => __TAURI_INVOKE<ChatImage>("plugin:agent|agent_import_chat_image_file", { projectPath, sourcePath }, options),
+	agentImportChatFile: (projectPath: string | null, sourcePath: string, options?: InvokeOptions) => __TAURI_INVOKE<ChatFile>("plugin:agent|agent_import_chat_file", { projectPath, sourcePath }, options),
 	agentPermissionRules: (projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<PermissionRules>("plugin:agent|agent_permission_rules", { projectPath }, options),
 	agentRemovePermissionRule: (projectPath: string | null, rule: string, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_remove_permission_rule", { projectPath, rule }, options),
 	agentListProjects: (includeArchived: boolean | null, options?: InvokeOptions) => __TAURI_INVOKE<ProjectDetail[]>("plugin:agent|agent_list_projects", { includeArchived }, options),
@@ -301,10 +301,10 @@ export type ChangeStatus = "added" | "modified" | "deleted" | "renamed";
 export type ChatActionName = "rename" | "autotitle" | "pin" | "unpin" | "archive" | "unarchive" | "delete";
 
 /**
- *  A saved chat image as the composer needs it: the vault-relative path (what the draft keeps and
- *  the chat note embeds) and the file name (the chip label).
+ *  A saved chat file (image or PDF) as the composer needs it: the vault-relative path (what the
+ *  draft keeps and the chat note embeds) and the file name (the chip label).
  */
-export type ChatImage = {
+export type ChatFile = {
 	path: string,
 	name: string,
 };
@@ -333,9 +333,14 @@ export type ContextRef = { kind: "active-note"; path: string; inline: boolean } 
 /**
  *  An image attached to the message (vault-relative path): sent to the model as a native
  *  image block and listed in the references footer. Pasted images live in the chat's hidden
- *  `assets/` folder (`images.rs`), an image from the sidebar is referenced where it is.
+ *  `assets/` folder (`files.rs`), an image from the sidebar is referenced where it is.
  */
-{ kind: "image"; path: string };
+{ kind: "image"; path: string } | 
+/**
+ *  A PDF attached to the message (vault-relative path): sent to the model as a native
+ *  `document` block and listed in the references footer, stored like an image.
+ */
+{ kind: "document"; path: string };
 
 export type DiffRow = {
 	kind: DiffRowKind,

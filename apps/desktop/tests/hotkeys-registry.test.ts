@@ -30,7 +30,8 @@ const always = {
   "editor-not-focused": () => true,
   "outside-agent-pane": () => true,
   "image-viewer": () => true,
-  "no-image-viewer": () => true,
+  "pdf-viewer": () => true,
+  "no-viewer": () => true,
 };
 const key = (init: KeyboardEventInit & { code?: string }) =>
   new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });

@@ -22,7 +22,7 @@ import {
   placeholder,
   type DecorationSet,
 } from "@codemirror/view";
-import { imageFilesOfTransfer } from "@features/agent/web/lib/chat-images";
+import { chatFilesOfTransfer } from "@features/agent/web/lib/chat-files";
 import { linkActivationExtension, linkIntent } from "@/lib/link-activation";
 import { vaultTarget } from "./agent-links";
 import { composerMarkdown } from "./composer-markdown";
@@ -124,7 +124,7 @@ const pillElement = (t: EventTarget | null) =>
 function imageTransfer(onImageFiles: (files: File[]) => void): Extension {
   const take = (e: ClipboardEvent | DragEvent) => {
     const data = "clipboardData" in e ? e.clipboardData : e.dataTransfer;
-    const files = data ? imageFilesOfTransfer(data) : [];
+    const files = data ? chatFilesOfTransfer(data) : [];
     if (files.length === 0) return false;
     e.preventDefault();
     onImageFiles(files);

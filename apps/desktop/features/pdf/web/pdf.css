@@ -1,0 +1,93 @@
+/* The PDF reader's own rules: the stack of pages, the paper, pdf.js's text layer (selectable text
+   laid over the canvas, transparent until selected or marked by find) and the link hit areas.
+   Colours of the chrome come from the theme; the paper is white because a PDF page is. */
+
+.pdf-stack {
+  position: relative;
+}
+
+.pdf-page {
+  --pdf-paper: #fff;
+  position: absolute;
+  background: var(--pdf-paper);
+  box-shadow:
+    0 0 0 1px var(--border-color),
+    0 1px 4px rgb(0 0 0 / 0.18);
+  overflow: clip;
+}
+
+.pdf-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  forced-color-adjust: none;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-text-layer-body {
+  position: absolute;
+  inset: 0;
+}
+
+.pdf-text-layer-body :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdf-text-layer-body > :not(.markedContent),
+.pdf-text-layer-body .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer-body .markedContent {
+  display: contents;
+}
+
+.pdf-text-layer-body ::selection {
+  background: color-mix(in srgb, var(--focus-border) 35%, transparent);
+  color: transparent;
+}
+
+.pdf-hit {
+  background: color-mix(in srgb, #f5c542 55%, transparent);
+  color: transparent;
+  border-radius: 2px;
+}
+
+.pdf-hit[data-current] {
+  background: color-mix(in srgb, #f08a24 70%, transparent);
+  outline: 1px solid #f08a24;
+}
+
+.pdf-link {
+  position: absolute;
+  z-index: 2;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pdf-link:hover {
+  background: color-mix(in srgb, var(--focus-border) 12%, transparent);
+}

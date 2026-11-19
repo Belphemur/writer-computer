@@ -6,15 +6,7 @@
 // resize) or a `Transform` (a scale and the position of the image's top-left corner). Every
 // operation returns a view that already respects the bounds, so the component never clamps.
 
-export interface Size {
-  width: number;
-  height: number;
-}
-
-export interface Point {
-  x: number;
-  y: number;
-}
+import type { Point, Size } from "@/lib/viewer-zoom";
 
 export interface Transform {
   /** Drawn size over intrinsic size (1 is 100%). */
@@ -31,8 +23,6 @@ export const ZOOM_MIN = 0.05;
 export const ZOOM_MAX = 32;
 /** The space left around the image in Fit. */
 export const FIT_MARGIN = 16;
-/** One step of the zoom keys and buttons. */
-export const ZOOM_STEP = 1.25;
 /** A zoom that lands this close to Fit becomes Fit (so a resize keeps following the page). */
 const FIT_SNAP = 0.005;
 
@@ -109,11 +99,6 @@ export function zoomBy(view: View, factor: number, anchor: Point, content: Size,
   return zoomTo(view, current.scale * factor, anchor, content, page);
 }
 
-/** The factor of a Cmd/Ctrl + wheel notch or a trackpad pinch (`deltaY` < 0 zooms in). */
-export function wheelFactor(deltaY: number): number {
-  return Math.exp(-Math.min(50, Math.max(-50, deltaY)) * 0.01);
-}
-
 /** Move the image by (`dx`, `dy`) page pixels, within bounds. Fit stays Fit when nothing overflows. */
 export function panBy(view: View, dx: number, dy: number, content: Size, page: Size): View {
   const current = resolveView(view, content, page);
@@ -129,5 +114,3 @@ export function toggleActualSize(view: View, anchor: Point, content: Size, page:
 }
 
 export const pageCenter = (page: Size): Point => ({ x: page.width / 2, y: page.height / 2 });
-
-export const percent = (scale: number): number => Math.round(scale * 100);

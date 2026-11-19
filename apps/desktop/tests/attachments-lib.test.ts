@@ -8,6 +8,7 @@ import {
   relativeVaultPath,
   extensionForMime,
   isGenericClipboardName,
+  isDocumentName,
   isImportableImageName,
   pastedImageName,
   vaultRelative,
@@ -33,6 +34,27 @@ describe("pasted image names", () => {
       expect(isGenericClipboardName(name)).toBe(true);
     for (const name of ["Holiday.png", "image 2.png", "my-image.png"]) {
       expect(isGenericClipboardName(name)).toBe(false);
+    }
+  });
+});
+
+describe("document types", () => {
+  test("documentExtensions is the one list of PDFs, recognised by name case-blind", () => {
+    expect(shared.documentExtensions).toEqual(["pdf"]);
+    for (const ext of shared.documentExtensions) {
+      expect(isDocumentName(`a.${ext}`)).toBe(true);
+      expect(isDocumentName(`A.${ext.toUpperCase()}`)).toBe(true);
+    }
+    for (const name of ["a.png", "pdf", ".pdf", "a.pdf.txt", "a.md"]) {
+      expect(isDocumentName(name)).toBe(false);
+    }
+  });
+
+  test("a PDF is not an image: the two lists never overlap", () => {
+    for (const ext of shared.documentExtensions) {
+      expect(shared.renderExtensions).not.toContain(ext);
+      expect(shared.importExtensions).not.toContain(ext);
+      expect(isImportableImageName(`a.${ext}`)).toBe(false);
     }
   });
 });

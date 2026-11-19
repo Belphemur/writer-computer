@@ -152,10 +152,10 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
     },
   },
   // Editor text zoom (a percent on top of Font Size), so it needs no workspace and compact windows
-  // take it too (an image tab's viewer has the same chords, `features/images`). Alt chords are left alone: Cmd+Alt+0 is the editor's "strip heading".
+  // take it too (an image or PDF tab's viewer has the same chords, `features/images`, `features/pdf`). Alt chords are left alone: Cmd+Alt+0 is the editor's "strip heading".
   {
     id: "zoom-in",
-    when: "no-image-viewer",
+    when: "no-viewer",
     keys: ["Mod+=", "Mod++"],
     description: "Zoom editor text in",
     category: "View",
@@ -165,7 +165,7 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
   },
   {
     id: "zoom-out",
-    when: "no-image-viewer",
+    when: "no-viewer",
     keys: ["Mod+-"],
     description: "Zoom editor text out",
     category: "View",
@@ -176,7 +176,7 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
   },
   {
     id: "zoom-reset",
-    when: "no-image-viewer",
+    when: "no-viewer",
     keys: ["Mod+0"],
     description: "Actual size",
     category: "View",

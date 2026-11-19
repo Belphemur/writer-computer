@@ -1,4 +1,4 @@
-import { isRenderableImageName } from "./attachments";
+import { isDocumentName, isRenderableImageName } from "./attachments";
 import { isCodePath } from "./code-files";
 import { getFileName, getFileStem } from "./paths";
 
@@ -17,9 +17,13 @@ export interface NoteLabel {
 }
 
 export function noteLabel(path: string, override?: string | null): NoteLabel {
-  // A code file or an image keeps its extension (`run.py`, `Dockerfile`, `shot.png`): it is part
-  // of what the file is.
-  if (isCodePath(path) || isRenderableImageName(getFileName(path)))
+  // A code file, an image or a PDF keeps its extension (`run.py`, `Dockerfile`, `shot.png`,
+  // `paper.pdf`): it is part of what the file is.
+  if (
+    isCodePath(path) ||
+    isRenderableImageName(getFileName(path)) ||
+    isDocumentName(getFileName(path))
+  )
     return { text: getFileName(path), isOverride: false, tooltip: undefined };
   const stem = getFileStem(path);
   const title = override?.trim();

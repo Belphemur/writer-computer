@@ -120,6 +120,32 @@ fn images_are_listed_in_the_tree_but_not_in_hidden_or_ignored_folders() {
 }
 
 #[test]
+fn pdfs_are_listed_in_the_tree_but_not_in_hidden_or_ignored_folders() {
+    let (_d, root) = vault();
+    for f in [
+        "papers/a.pdf",
+        "papers/B.PDF",
+        "web/node_modules/dep/c.pdf",
+        ".obsidian/d.pdf",
+        ".git/e.pdf",
+    ] {
+        touch(&root, f, "x");
+    }
+    let mut listed = names(&root, "papers");
+    listed.sort();
+    assert_eq!(listed, vec!["B.PDF", "a.pdf"]);
+    assert!(names(&root, "web").is_empty());
+    let top = names(&root, "");
+    assert!(!top.contains(&".obsidian".to_string()) && !top.contains(&".git".to_string()));
+    // with the PDF setting off they are not listed (the feature switch is irrelevant)
+    let hidden = crate::code_files::Policy {
+        show_pdfs: false,
+        ..crate::code_files::Policy::notes_only()
+    };
+    assert!(crate::code_files::with_policy_for_test(hidden, || names(&root, "papers")).is_empty());
+}
+
+#[test]
 fn image_entries_have_no_title() {
     let (_d, root) = vault();
     touch(&root, "a.png", "x");

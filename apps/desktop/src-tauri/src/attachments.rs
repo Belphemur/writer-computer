@@ -21,6 +21,8 @@ struct Shared {
     max_bytes: u64,
     import_extensions: Vec<String>,
     render_extensions: Vec<String>,
+    document_extensions: Vec<String>,
+    document_max_bytes: u64,
     mime_extensions: std::collections::HashMap<String, String>,
     default_folder: String,
 }
@@ -111,6 +113,25 @@ pub fn is_render_name(name: &str) -> bool {
         .extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| render_extensions().contains(&e.to_ascii_lowercase()))
+}
+
+/// The document types (`documentExtensions`, `pdf`): listed by `files.show-pdfs`, opened by the
+/// PDF reader, attached in the agent composer.
+pub fn document_extensions() -> &'static [String] {
+    &SHARED.document_extensions
+}
+
+/// The largest document the reader opens (`documentMaxBytes`): a PDF is read whole into the webview.
+pub fn document_max_bytes() -> u64 {
+    SHARED.document_max_bytes
+}
+
+/// Is `name` one of the document types of [`document_extensions`] (case-blind)?
+pub fn is_document_name(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| document_extensions().contains(&e.to_ascii_lowercase()))
 }
 
 /// `name`, `name 1`, `name 2`, ... : the `n`th candidate for a file name.
@@ -205,13 +226,36 @@ pub fn save(
     name: &str,
     source: Source<'_>,
 ) -> Result<Saved, AttachmentError> {
+    save_typed(root, folder, name, source, false)
+}
+
+/// [`save`] for a file an agent chat takes: an image, or (`documents`) a document type (a PDF).
+/// The same write path, so confinement, naming and no-clobber are shared; a note's attachment
+/// commands keep calling [`save`] and stay image-only.
+pub fn save_chat_file(
+    root: &Path,
+    folder: &str,
+    name: &str,
+    source: Source<'_>,
+) -> Result<Saved, AttachmentError> {
+    save_typed(root, folder, name, source, true)
+}
+
+fn save_typed(
+    root: &Path,
+    folder: &str,
+    name: &str,
+    source: Source<'_>,
+    documents: bool,
+) -> Result<Saved, AttachmentError> {
     let clean = sanitize_name(name);
-    image_extension(&clean).ok_or_else(|| {
-        AttachmentError::Unsupported(format!(
-            "Not saved: \"{}\" is not a supported image type",
-            clean
-        ))
-    })?;
+    if image_extension(&clean).is_none() && !(documents && is_document_name(&clean)) {
+        return Err(AttachmentError::Unsupported(format!(
+            "Not saved: \"{}\" is not a supported {} type",
+            clean,
+            if documents { "file" } else { "image" }
+        )));
+    }
     // The name keeps its own extension case ("Photo.JPG"); only the type check is case-blind.
     let ext = Path::new(&clean)
         .extension()
@@ -583,6 +627,42 @@ mod tests {
         for bad in ["a.pdf", "a.sh", "a.app", "png", "a.png.exe"] {
             assert!(!is_render_name(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_note_saves_images_only_and_a_chat_file_may_be_a_pdf() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let note = save(&root, "attachments", "a.pdf", Source::Bytes(b"%PDF-1.7")).unwrap_err();
+        assert!(
+            note.to_string().contains("not a supported image type"),
+            "{note}"
+        );
+        assert!(!root.join("attachments/a.pdf").exists());
+        let chat = save_chat_file(&root, "chat", "a.pdf", Source::Bytes(b"%PDF-1.7")).unwrap();
+        assert_eq!(chat.rel_path, "chat/a.pdf");
+        // the same write path: no clobber, images still fine, other types still refused
+        let again = save_chat_file(&root, "chat", "a.pdf", Source::Bytes(b"%PDF-1.7")).unwrap();
+        assert_eq!(again.rel_path, "chat/a 1.pdf");
+        assert!(save_chat_file(&root, "chat", "p.png", Source::Bytes(b"x")).is_ok());
+        let other = save_chat_file(&root, "chat", "a.docx", Source::Bytes(b"x")).unwrap_err();
+        assert!(
+            other.to_string().contains("not a supported file type"),
+            "{other}"
+        );
+    }
+
+    #[test]
+    fn document_names_follow_the_one_list() {
+        assert_eq!(document_extensions(), ["pdf".to_string()]);
+        for ok in ["a.pdf", "A.PDF", "dir.v2/a.Pdf"] {
+            assert!(is_document_name(ok), "{ok}");
+        }
+        for bad in ["a.png", "pdf", "a.pdf.exe", "a.docx"] {
+            assert!(!is_document_name(bad), "{bad}");
+        }
+        // images and documents are different lists
+        assert!(!is_render_name("a.pdf"));
     }
 
     #[test]

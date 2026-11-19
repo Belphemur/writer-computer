@@ -613,8 +613,13 @@ pub enum ContextRef {
     },
     /// An image attached to the message (vault-relative path): sent to the model as a native
     /// image block and listed in the references footer. Pasted images live in the chat's hidden
-    /// `assets/` folder (`images.rs`), an image from the sidebar is referenced where it is.
+    /// `assets/` folder (`files.rs`), an image from the sidebar is referenced where it is.
     Image {
+        path: String,
+    },
+    /// A PDF attached to the message (vault-relative path): sent to the model as a native
+    /// `document` block and listed in the references footer, stored like an image.
+    Document {
         path: String,
     },
 }

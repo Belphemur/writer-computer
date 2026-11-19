@@ -24,7 +24,7 @@ use super::claude_stream::{
 use super::config_sync::{self, Decision, McpWatch, Msg, ProbeTarget, Reason, StaleView};
 use super::env;
 use super::events::*;
-use super::images::Outgoing;
+use super::files::Outgoing;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::{Author, SubTracker};
@@ -1393,7 +1393,7 @@ impl Session {
         if g.state == AgentSessionState::Idle || g.state == AgentSessionState::Reconnecting {
             g.state = AgentSessionState::Running;
         }
-        self.write(encode_user_message(&sent, &out.images));
+        self.write(encode_user_message(&sent, &out.files));
     }
 
     // -------------------------------------------------------------- commands
@@ -1464,7 +1464,7 @@ impl Session {
             });
             g.inflight.push(out.clone());
             g.last_activity = Instant::now();
-            self.write(encode_steer_message(&out.text, &out.images, &uuid));
+            self.write(encode_steer_message(&out.text, &out.files, &uuid));
             (g.live_gen, uuid)
         };
         let (gen, uuid) = gen;

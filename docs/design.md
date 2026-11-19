@@ -14,7 +14,7 @@ The layout and UI rules that keep the same bugs from coming back (a page drawn o
 - Every page kind (note, graph, base, code file, plugin view, session changes, settings, ...) mounts in `PageBody` (`src/components/editor-area/page-body.tsx`): positioned, clipped, starting below the chrome bar. Enforced by: `tests/page-body-contract.test.tsx`.
 - A page owns exactly one scroller (its root, `h-full overflow-y-auto`, or its editor's scroller). Frame boxes and ancestors never scroll.
 - A page positions itself against `PageBody`, never the window: no `position: fixed`, no portal, no top padding for the chrome. Menus and popovers that must leave the body portal on purpose and are listed in that test's `OVERLAYS`, with the reason.
-- A kept-alive page (`keepAlive`: its tab stays mounted while another is active) hides itself when `isActive` is false: `absolute inset-0 invisible pointer-events-none`, never left in the flow. The page body mounts every kept-alive tab, so a body that ignores `isActive` stays drawn over the active tab. Enforced by: `tests/page-body-contract.test.tsx` ("kept-alive page bodies hide when inactive") and per view, for example `features/images/tests/image-viewer.test.tsx`.
+- A kept-alive page (`keepAlive`: its tab stays mounted while another is active) hides itself when `isActive` is false: `absolute inset-0 invisible pointer-events-none`, never left in the flow. The page body mounts every kept-alive tab, so a body that ignores `isActive` stays drawn over the active tab. Enforced by: `tests/page-body-contract.test.tsx` ("kept-alive page bodies hide when inactive") and per view, for example `features/images/tests/image-viewer.test.tsx` and `features/pdf/tests/pdf-viewer.test.tsx`.
 - Adding a page kind: register it (`src/components/editor-area/page-kinds`), render inside `PageBody` and add nothing else to the frame. Built-in features follow `.agents/skills/writer-feature/SKILL.md`.
 
 ## 3. Scroll ownership
@@ -41,7 +41,7 @@ What exists; do not add a layer.
 
 ## 6. Text selection
 
-- The app is not selectable by default (`src/App.css`): chrome, rows and buttons do not catch a drag. Text a user reads and may copy (the agent pane, the Session changes tab, any future reading surface) opts in with `data-selectable` on its root; buttons, tabs and icons inside stay non-selectable. Editors, inputs and plugin content are already selectable. Never a per-component `select-text` patch for a whole surface. Enforced by: `apps/desktop/tests/text-selection-contract.test.ts` (jsdom applies no CSS, so a selection test alone cannot catch it).
+- The app is not selectable by default (`src/App.css`): chrome, rows and buttons do not catch a drag. Text a user reads and may copy (the agent pane, the Session changes tab, the PDF reader's scroller, any future reading surface) opts in with `data-selectable` on its root; buttons, tabs and icons inside stay non-selectable. Editors, inputs and plugin content are already selectable. Never a per-component `select-text` patch for a whole surface. Enforced by: `apps/desktop/tests/text-selection-contract.test.ts` (jsdom applies no CSS, so a selection test alone cannot catch it).
 
 ## 7. UI text
 

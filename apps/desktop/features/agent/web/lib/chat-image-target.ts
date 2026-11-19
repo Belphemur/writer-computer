@@ -6,12 +6,12 @@
  * handled here (the editor's own image drop is separate).
  */
 import { registerVaultDropTarget } from "@/lib/vault-drop-target";
-import type { ChatImageSource } from "./chat-images";
+import type { ChatFileSource } from "./chat-files";
 
 export type ChatImageTarget = {
   /** Is the screen point (CSS pixels) over the composer? */
   contains(x: number, y: number): boolean;
-  attach(sources: readonly ChatImageSource[]): void;
+  attach(sources: readonly ChatFileSource[]): void;
 };
 
 let target: ChatImageTarget | null = null;
@@ -37,7 +37,7 @@ export const isOverChatComposer = (x: number, y: number): boolean =>
 export function dropOnChatComposer(
   x: number,
   y: number,
-  sources: readonly ChatImageSource[],
+  sources: readonly ChatFileSource[],
 ): boolean {
   if (!target?.contains(x, y)) return false;
   target.attach(sources);
