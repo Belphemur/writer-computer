@@ -1,3 +1,4 @@
+import { ArchiveRestoreIcon } from "@hugeicons/core-free-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { linkHandlers } from "@/lib/link-activation";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -247,7 +248,15 @@ function ArchivedRow({
       </button>
       {menu ? (
         <RowMenu
-          items={[{ id: "unarchive", label: "Unarchive", onSelect: onUnarchive, disabled }]}
+          items={[
+            {
+              id: "unarchive",
+              label: "Unarchive",
+              icon: ArchiveRestoreIcon,
+              onSelect: onUnarchive,
+              disabled,
+            },
+          ]}
           anchorRef={dotsRef}
           label={`Actions for ${project.name}`}
           onClose={() => setMenu(false)}

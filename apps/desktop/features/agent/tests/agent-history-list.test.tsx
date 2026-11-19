@@ -46,6 +46,17 @@ const ids = () => rows().map((r) => r.dataset.agentHistoryRow);
 const button = (row: HTMLElement | Document, text: string) =>
   [...(row as HTMLElement).querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!;
 
+/** Runs a row action the only way the row offers it: its "..." menu. */
+async function pick(row: HTMLElement, label: string) {
+  await act(async () =>
+    row.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click(),
+  );
+  const entry = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (b) => b.textContent === label,
+  )!;
+  await act(async () => entry.click());
+}
+
 async function mount(props: Partial<Parameters<typeof HistoryList>[0]> = {}) {
   const onOpen = vi.fn();
   await act(async () => {
@@ -153,7 +164,7 @@ describe("HistoryList", () => {
 
   it("renames inline and refreshes", async () => {
     await mount();
-    await act(async () => button(rows()[0], "Rename").click());
+    await pick(rows()[0], "Rename");
     const input = container.querySelector<HTMLInputElement>('input[aria-label="Chat title"]')!;
     await type(input, "Renamed chat");
     await act(async () => {
@@ -166,15 +177,15 @@ describe("HistoryList", () => {
 
   it("pins, archives and asks before deleting", async () => {
     await mount();
-    await act(async () => button(rows()[0], "Pin").click());
-    await act(async () => button(rows()[0], "Archive").click());
+    await pick(rows()[0], "Pin");
+    await pick(rows()[0], "Archive");
     expect(calls).toEqual(["pin:alpha", "archive:alpha"]);
-    await act(async () => button(rows()[0], "Delete").click());
+    await pick(rows()[0], "Delete");
     expect(calls).toHaveLength(2);
     expect(container.textContent).toContain("Move this chat note to the Trash?");
     await act(async () => button(rows()[0], "Cancel").click());
     expect(calls).toHaveLength(2);
-    await act(async () => button(rows()[0], "Delete").click());
+    await pick(rows()[0], "Delete");
     await act(async () => button(rows()[0], "Move to Trash").click());
     await flush();
     expect(calls.at(-1)).toMatch(/^delete:/);
@@ -185,10 +196,10 @@ describe("HistoryList", () => {
     const copyText = vi.fn(async () => {});
     const onReveal = vi.fn();
     await mount({ copyText, onReveal });
-    await act(async () => button(rows()[0], "Copy as markdown").click());
+    await pick(rows()[0], "Copy as markdown");
     await flush();
     expect(copyText).toHaveBeenCalledWith("**user**\n\nhello there");
-    await act(async () => button(rows()[0], "Reveal note").click());
+    await pick(rows()[0], "Reveal note");
     expect(onReveal).toHaveBeenCalledWith(expect.objectContaining({ chatId: "alpha" }));
   });
 

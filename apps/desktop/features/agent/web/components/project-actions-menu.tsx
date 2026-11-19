@@ -1,3 +1,4 @@
+import { Archive01Icon, InformationCircleIcon, SmileIcon } from "@hugeicons/core-free-icons";
 import type { RefObject } from "react";
 import { openArchiveProject, openProjectDetail } from "@features/agent/web/lib/project-actions";
 import { RowMenu, type RowMenuItem } from "./row-menu";
@@ -18,13 +19,15 @@ export function projectMenuItems(
     items.push({
       id: "details",
       label: "Open details",
+      icon: InformationCircleIcon,
       onSelect: () => openProjectDetail(projectPath),
     });
   }
-  items.push({ id: "icon", label: "Change icon…", onSelect: onChangeIcon });
+  items.push({ id: "icon", label: "Change icon…", icon: SmileIcon, onSelect: onChangeIcon });
   items.push({
     id: "archive",
     label: "Archive project…",
+    icon: Archive01Icon,
     onSelect: () => openArchiveProject(projectPath),
     destructive: true,
   });

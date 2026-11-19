@@ -26,6 +26,18 @@ import {
 } from "@features/agent/web/lib/chat-history-client";
 import type { ChatSummary } from "@features/agent/web/lib/events";
 import { formatRelativeTime } from "@/lib/relative-time";
+import {
+  AiMagicIcon,
+  Archive01Icon,
+  ArchiveRestoreIcon,
+  Copy01Icon,
+  Delete02Icon,
+  FolderOpenIcon,
+  PencilEdit01Icon,
+  PinIcon,
+  PinOffIcon,
+  PlayIcon,
+} from "@hugeicons/core-free-icons";
 import { RowMenu, type RowMenuItem } from "./row-menu";
 import { Spinner } from "./agent-icon";
 import { ProjectPathIcon } from "./project-icon";
@@ -64,42 +76,37 @@ type RowProps = {
   onMenu: (open: boolean) => void;
 };
 
-type RowAction = RowMenuItem & {
-  /** Also a button in the row (the frequent ones); every action is in the menu. */
-  inline: boolean;
-};
-
-/** The ONE list of per-chat actions: the row's inline buttons and its menu both render it. */
-function rowActions(p: RowProps): RowAction[] {
+/** The ONE list of per-chat actions, shown by the row's "..." and right-click menu. */
+function rowActions(p: RowProps): RowMenuItem[] {
   const { chat } = p;
   const regenerating = p.regen?.phase === "running";
   const noTitleInput = !canRegenerateTitle(chat);
   return [
-    { id: "resume", label: "Resume", onSelect: p.onOpen, inline: true },
-    { id: "rename", label: "Rename", onSelect: p.onStartRename, inline: true },
+    { id: "resume", label: "Resume", icon: PlayIcon, onSelect: p.onOpen },
+    { id: "rename", label: "Rename", icon: PencilEdit01Icon, onSelect: p.onStartRename },
     {
       id: "pin",
       label: chat.pinned ? "Unpin" : "Pin",
+      icon: chat.pinned ? PinOffIcon : PinIcon,
       onSelect: () => p.onAction(chat.pinned ? "unpin" : "pin"),
-      inline: true,
     },
     {
       id: "archive",
       label: chat.archived ? "Unarchive" : "Archive",
+      icon: chat.archived ? ArchiveRestoreIcon : Archive01Icon,
       onSelect: () => p.onAction(chat.archived ? "unarchive" : "archive"),
-      inline: true,
     },
     {
       id: "regenerate",
       label: "Regenerate title",
+      icon: AiMagicIcon,
       onSelect: p.onRegenerate,
       disabled: regenerating || noTitleInput,
       hint: regenerating ? "Generating…" : noTitleInput ? NOTHING_TO_TITLE_TEXT : undefined,
-      inline: false,
     },
-    { id: "copy", label: "Copy as markdown", onSelect: p.onCopy, inline: true },
-    { id: "reveal", label: "Reveal note", onSelect: p.onReveal, inline: true },
-    { id: "delete", label: "Delete", onSelect: () => p.onAskDelete(true), inline: true },
+    { id: "copy", label: "Copy as markdown", icon: Copy01Icon, onSelect: p.onCopy },
+    { id: "reveal", label: "Reveal note", icon: FolderOpenIcon, onSelect: p.onReveal },
+    { id: "delete", label: "Delete", icon: Delete02Icon, onSelect: () => p.onAskDelete(true) },
   ];
 }
 
@@ -118,7 +125,7 @@ function ChatRow(p: RowProps) {
         e.preventDefault();
         p.onMenu(true);
       }}
-      className="group rounded-lg px-2 py-1.5 hover:bg-[var(--item-hover-bg)]"
+      className="group relative rounded-lg px-2 py-1.5 hover:bg-[var(--item-hover-bg)]"
     >
       {p.renaming ? (
         <form
@@ -190,26 +197,17 @@ function ChatRow(p: RowProps) {
           </button>
         </div>
       ) : (
-        <div className="mt-0.5 flex flex-wrap gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          {actions
-            .filter((a) => a.inline)
-            .map((a) => (
-              <button key={a.id} type="button" className={SMALL} onClick={a.onSelect}>
-                {a.label}
-              </button>
-            ))}
-          <button
-            ref={moreRef}
-            type="button"
-            className={SMALL}
-            aria-label="More actions"
-            aria-haspopup="menu"
-            aria-expanded={p.menuOpen}
-            onClick={() => p.onMenu(!p.menuOpen)}
-          >
-            …
-          </button>
-        </div>
+        <button
+          ref={moreRef}
+          type="button"
+          aria-label="More actions"
+          aria-haspopup="menu"
+          aria-expanded={p.menuOpen}
+          onClick={() => p.onMenu(!p.menuOpen)}
+          className={`absolute right-1.5 top-1.5 rounded-md bg-[var(--bg-base)] px-1.5 text-[13px] leading-5 text-[var(--text-muted)] transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100 ${p.menuOpen ? "opacity-100" : "opacity-0"}`}
+        >
+          …
+        </button>
       )}
       {p.menuOpen && (
         <RowMenu

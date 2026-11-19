@@ -1,9 +1,12 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { AnchoredPopover } from "@/components/editor-area/anchored-popover";
 
 export type RowMenuItem = {
   id: string;
   label: string;
+  /** Every entry has an icon, drawn before its label. */
+  icon: IconSvgElement;
   onSelect: () => void;
   disabled?: boolean;
   /** Tooltip; explains a disabled entry. */
@@ -80,10 +83,11 @@ export function RowMenu({
               onClose();
               item.onSelect();
             }}
-            className={`block w-full rounded-md px-2 py-1.5 text-left text-[12.5px] ${
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] ${
               item.destructive ? "text-[var(--danger)]" : "text-[var(--text-secondary)]"
             } hover:bg-[var(--item-hover-bg)] focus:bg-[var(--item-hover-bg)] focus:outline-none disabled:opacity-50 disabled:hover:bg-transparent`}
           >
+            <HugeiconsIcon icon={item.icon} size={14} strokeWidth={1.8} className="shrink-0" />
             {item.label}
           </button>
         ))}
