@@ -1,11 +1,13 @@
 ---
-status: accepted
+status: superseded
 date: 2026-11-15
 decision-makers: Writer maintainers
 backfilled: 2026-11-16
 ---
 
 # Give the `writer` binary an Obsidian-style command grammar on the shared index
+
+> **Superseded (2026-11-19)** by [Prune the `writer` CLI to one command per job](2026-11-19-prune-the-writer-cli-to-one-command-per-job.md): Obsidian command parity is dropped; the grammar decided here stays.
 
 > Backfilled on 2026-11-16. Date = `0e9ad64`, which added the "Obsidian CLI parity" section to `SPECs/writer-cli-spec.md`; the code landed in `a41b2ff` (`cli/`). The original `writer` launcher and its spec predate the history (`594cabd`, 2026-04-30). Spec: [`SPECs/writer-cli-spec.md`](../../SPECs/writer-cli-spec.md) "Obsidian CLI parity".
 
