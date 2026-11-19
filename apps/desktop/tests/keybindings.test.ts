@@ -35,6 +35,8 @@ const always = {
   "not-compact": () => true,
   "editor-not-focused": () => true,
   "outside-agent-pane": () => true,
+  "image-viewer": () => true,
+  "no-image-viewer": () => true,
 };
 const binding = (id: string, keys: string[], over: Partial<Keybinding> = {}): Keybinding => ({
   id,

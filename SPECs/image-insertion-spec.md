@@ -34,7 +34,7 @@ One Rust write path, `attachments.rs` (Tauri-free): `sanitize_name`, `resolve_fo
 
 - `http` and `https` only, checked with `plugin_http::check_url` (the same gate as the plugin host: no `file:`, `data:`, `ftp:`, no cloud-metadata hosts, also on every DNS answer). Redirects are followed up to 5 hops, each hop through the same gate; a hop to another scheme stops the download ("the server answered 302"). Timeout 15 s for the whole download.
 - The size cap (50 MB, `maxBytes`) is checked on `Content-Length` and again while streaming, so a server that lies or sends no length never fills memory.
-- The type is the `Content-Type` when it is an allowed image (`mimeExtensions` in `shared/attachments.json`, the one MIME table for Rust and TypeScript), else the leading bytes must match one (`sniff_extension`: png, jpeg, gif, webp, bmp, avif, heic, svg). An HTML error page served as `text/html` is refused. The saved extension follows the detected type, not the URL.
+- The type is the `Content-Type` when it is an allowed image (`mimeExtensions` in `shared/attachments.json`, the one MIME table for Rust and TypeScript), else the leading bytes must match one (`sniff_extension`: png, jpeg, gif, webp, bmp, avif, heic, svg; the other types need a Content-Type or a file name). An HTML error page served as `text/html` is refused. The saved extension follows the detected type, not the URL.
 - The name is the stem of `Content-Disposition` `filename` or of the last URL path segment, sanitised (as above); a missing or generic stem (`image`, `download`, `file`, `photo`, `index`, `blob`) becomes `Pasted image <timestamp>`. The file then goes through the same `save` (attachment folder, collisions, confinement), and `![[name]]` is inserted.
 - If the download fails or is refused, the editor inserts a plain `![](url)` (spaces and parentheses percent-encoded) and shows the reason, for example "Image not downloaded: the server answered 404. Inserted a link to the address instead."
 - The URL is never logged, not even its host on the happy path; a failure logs the host at debug level only.
@@ -45,7 +45,7 @@ One Rust write path, `attachments.rs` (Tauri-free): `sanitize_name`, `resolve_fo
 - Pasted blobs: `Pasted image YYYYMMDDHHmmss.<ext>` in local time. A browser's generic `image.png` counts as pasted. The extension comes from the MIME type.
 - Dropped files keep their name. Forbidden characters (`/ \ : * ? " < > |` and the wikilink-breaking `# ^ [ ]`) become `-`, leading dots are dropped.
 - A taken name gets ` 1`, ` 2`, ... before the extension.
-- Types (`shared/attachments.json`, read by Rust and TypeScript): png jpg jpeg gif webp svg avif bmp heic. heic is saved as is; the webview cannot draw it, so its embed shows as a plain link. Anything else is refused with a notice and nothing is saved.
+- Types (`shared/attachments.json`, read by Rust and TypeScript): the one list in the file (png jpg jpeg gif webp svg avif bmp ico apng tif tiff heic heif jxl); the system webview decodes what it can, and the image viewer shows a fallback for a type it cannot. Anything else is refused with a notice and nothing is saved.
 - Size cap 50 MB (`maxBytes` in the same file). Over it: a notice naming the size and the limit; checked in the frontend before reading the bytes and again in Rust.
 
 ## What is inserted

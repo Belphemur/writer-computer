@@ -65,6 +65,10 @@ export interface PageKindInput<K extends string, L extends { kind: K }> {
    *  running the kind claims no path (`locationForPath` leaves the file to the text kinds) and an
    *  already open tab shows the "turned off" page instead of the view. Default: core's own. */
   feature?: string;
+  /** With `feature` off, keep claiming this kind's paths so the tab shows the "turned off" page
+   *  instead of the file opening as text. For a kind whose files are not text (an image).
+   *  Default: false. */
+  claimsWhenOff?: boolean;
 }
 
 /** A registered page kind — what you actually dispatch through at runtime
@@ -89,6 +93,7 @@ export interface PageKind<K extends string = string, L extends { kind: K } = { k
   forPath: (path: string) => L | null;
   loadsDocument: boolean;
   feature: string | undefined;
+  claimsWhenOff: boolean;
 }
 
 /** Widest `PageKind` type — used by the registry map where the specific kind
@@ -126,6 +131,7 @@ export function definePageKind<K extends string, L extends { kind: K }>(
     forPath: () => null,
     loadsDocument: true,
     feature: undefined,
+    claimsWhenOff: false,
     ...input,
   };
 }

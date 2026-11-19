@@ -7,6 +7,8 @@ import { definePageKind } from "./types";
  * `forPath` for the renderable image extensions (`shared/attachments.json`), whatever
  * `files.show-images` says: that setting only decides whether the sidebar lists images. The path
  * is not a text document (`loadsDocument: false`): the view loads it through the asset protocol.
+ * The view is the `images` feature's (`page-view:image`, the list is `renderExtensions`); off, a
+ * image tab (opened or restored) shows the "turned off" page with Open in default app.
  */
 export type ImageLocation = { kind: "image"; path: string };
 
@@ -17,6 +19,8 @@ export const imageKind = definePageKind<"image", ImageLocation>({
   keepAlive: true,
   supportsFileContextMenu: true,
   loadsDocument: false,
+  feature: "images",
+  claimsWhenOff: true, // not text: off, the tab shows the off page rather than a text read
   forPath: (path) => (isRenderableImageName(getFileName(path)) ? { kind: "image", path } : null),
   fromPayload: (data) =>
     typeof data.path === "string" ? { kind: "image", path: data.path } : null,

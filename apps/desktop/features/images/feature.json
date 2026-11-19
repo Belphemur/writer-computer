@@ -1,0 +1,41 @@
+{
+  "id": "images",
+  "name": "Images",
+  "version": "1.0.0",
+  "description": "Open image files in a viewer that fits the page, zooms and pans.",
+  "enabledByDefault": true,
+  "activation": ["onFileKind:image"],
+  "memory": {
+    "level": "low",
+    "note": "The viewer loads when the first image tab opens; nothing runs in the background. Images in notes, the sidebar listing and paste or insert are part of core and unaffected."
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "images.zoom-in",
+        "label": "Zoom image in",
+        "description": "Zoom the image in",
+        "when": "image-viewer"
+      },
+      {
+        "id": "images.zoom-out",
+        "label": "Zoom image out",
+        "description": "Zoom the image out",
+        "when": "image-viewer"
+      },
+      {
+        "id": "images.fit",
+        "label": "Fit image to page",
+        "description": "Fit the image to the page",
+        "when": "image-viewer"
+      }
+    ],
+    "keybindings": [
+      { "id": "images.zoom-in", "keys": ["Mod+=", "Mod++"], "description": "Zoom image in" },
+      { "id": "images.zoom-out", "keys": ["Mod+-"], "description": "Zoom image out" },
+      { "id": "images.fit", "keys": ["Mod+0"], "description": "Fit image to page" }
+    ],
+    "slots": ["images.image-tab"],
+    "workspaceListeners": ["images.disk-sync"]
+  }
+}

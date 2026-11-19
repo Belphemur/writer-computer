@@ -137,6 +137,11 @@ export function revealInFileManager(path: string): Promise<void> {
   return invoke("reveal_in_file_manager", { path });
 }
 
+/** An image file in the OS default app (Rust refuses anything that is not an image type). */
+export function openImageInDefaultApp(path: string): Promise<void> {
+  return invoke("open_image_in_default_app", { path });
+}
+
 // Workspace commands
 export function openWorkspace(path: string): Promise<WorkspaceInfo> {
   return invoke("open_workspace", { path });

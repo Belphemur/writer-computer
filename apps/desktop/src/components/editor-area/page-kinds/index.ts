@@ -65,8 +65,9 @@ export function locationForPath(
   path: string,
 ): FileLocation | BaseLocation | CodeLocation | ImageLocation | PluginFileLocation {
   for (const k of kinds) {
-    // A kind whose feature is off claims nothing: its files open as text.
-    if (k.feature && !isFeatureActive(k.feature)) continue;
+    // A kind whose feature is off claims nothing: its files open as text (unless they are not
+    // text: `claimsWhenOff` keeps the tab, which then shows the "turned off" page).
+    if (k.feature && !k.claimsWhenOff && !isFeatureActive(k.feature)) continue;
     const location = (
       k.forPath as (
         path: string,

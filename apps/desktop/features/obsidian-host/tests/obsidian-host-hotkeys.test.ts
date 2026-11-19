@@ -19,6 +19,8 @@ const always = {
   "not-compact": () => true,
   "editor-not-focused": () => true,
   "outside-agent-pane": () => true,
+  "image-viewer": () => true,
+  "no-image-viewer": () => true,
 };
 const key = (init: KeyboardEventInit) =>
   new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });

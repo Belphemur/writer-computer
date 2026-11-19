@@ -29,9 +29,9 @@ describe("PageBody", () => {
 
 const sources = import.meta.glob<string>(
   [
-    "../src/components/{editor-area,image-viewer,settings-panel}/**/*.{ts,tsx}",
+    "../src/components/{editor-area,settings-panel}/**/*.{ts,tsx}",
     "../src/components/{feature-off-page,feature-pane}.tsx",
-    "../features/{graph,bases,code-files}/web/**/*.{ts,tsx}",
+    "../features/{graph,bases,code-files,images}/web/**/*.{ts,tsx}",
     "../features/obsidian-host/web/components/**/*.{ts,tsx}",
   ],
   { query: "?raw", import: "default", eager: true },
@@ -114,5 +114,27 @@ describe("frame containers are overflow: clip", () => {
     const css = read("src/App.css");
     const rule = /^html,\s*body,\s*#root\s*\{([^}]*)\}/m.exec(css)?.[1] ?? "";
     expect(rule).toMatch(/overflow:\s*clip\s*;/);
+  });
+});
+
+describe("kept-alive page bodies hide when inactive", () => {
+  // The page body mounts every `keepAlive` tab; a body that does not honour `isActive` stays drawn
+  // over the active tab (an SVG once did). These views take `isActive` and hide with `invisible`.
+  const KEPT_ALIVE = [
+    "features/images/web/components/image-viewer.tsx",
+    "features/code-files/web/components/code-editor-pane.tsx",
+  ];
+
+  it("each one switches to invisible, absolutely placed, on isActive", () => {
+    const byPath = Object.fromEntries(
+      Object.entries(sources).map(([p, src]) => [RELATIVE_PATH(p), src]),
+    );
+    for (const file of KEPT_ALIVE) {
+      const src = byPath[file];
+      expect(src, file).toBeTruthy();
+      expect(src, file).toMatch(
+        /isActive\s*\?[\s\S]{0,200}absolute inset-0 invisible pointer-events-none/,
+      );
+    }
   });
 });

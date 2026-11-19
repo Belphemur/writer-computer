@@ -1094,6 +1094,31 @@ pub async fn reveal_in_file_manager(
     blocking(move || reveal_in_file_manager_impl(&path)).await
 }
 
+/// Open an image file in the OS default app (the image viewer's fallback for a type the webview
+/// cannot decode). Only the image types of `shared/attachments.json`: this never launches an
+/// arbitrary file, and the path must be one this window may reach.
+#[tauri::command]
+pub async fn open_image_in_default_app(
+    path: String,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<(), AppError> {
+    use tauri_plugin_opener::OpenerExt;
+    authorized_state(&app, &webview, &[&path])?;
+    if !crate::attachments::is_render_name(&path) {
+        return Err(AppError::Io("Only image files open this way".into()));
+    }
+    blocking(move || {
+        if !Path::new(&path).is_file() {
+            return Err(AppError::NotFound(path));
+        }
+        app.opener()
+            .open_path(path, None::<String>)
+            .map_err(|e| AppError::Io(e.to_string()))
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

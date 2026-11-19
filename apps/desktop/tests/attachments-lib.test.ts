@@ -50,15 +50,17 @@ describe("image types", () => {
     expect(extensionForMime("image/png")).toBe("png");
     expect(extensionForMime("image/jpeg")).toBe("jpg");
     expect(extensionForMime("image/svg+xml")).toBe("svg");
+    expect(extensionForMime("image/x-icon")).toBe("ico");
+    expect(extensionForMime("image/tiff")).toBe("tif");
     expect(extensionForMime("text/plain")).toBeNull();
   });
 
-  test("wiki embeds render exactly the renderable list (heic is kept but not drawn)", () => {
+  test("wiki embeds render exactly the renderable list (one list for the viewer, the sidebar and inline images)", () => {
     for (const ext of shared.renderExtensions) {
       expect(parseWikiImageEmbedTarget(`pic.${ext}`)).toBe(`pic.${ext}`);
     }
-    expect(RENDERABLE_IMAGE_EXTENSIONS.has("heic")).toBe(false);
-    expect(parseWikiImageEmbedTarget("pic.heic")).toBeNull();
+    expect(RENDERABLE_IMAGE_EXTENSIONS).toEqual(new Set(shared.renderExtensions));
+    expect(parseWikiImageEmbedTarget("pic.pdf")).toBeNull();
   });
 });
 

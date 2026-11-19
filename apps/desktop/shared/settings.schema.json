@@ -363,7 +363,7 @@
     {
       "key": "files.show-images",
       "label": "Show Images in the Sidebar",
-      "description": "List image files (png, jpg, gif, webp, svg, avif, bmp) in the sidebar and quick open, so you can open them in a viewer and drag one into a note. Respects the ignored folders. Takes effect for quick open the next time the workspace opens.",
+      "description": "List image files in the sidebar and quick open, to open them or drag one into a note. Respects the ignored folders. Quick open follows the next time the workspace opens.",
       "category": "Files",
       "type": "boolean",
       "scope": "global",
@@ -465,6 +465,15 @@
       "key": "features.code-files.enabled",
       "label": "Code files",
       "description": "Turns the Code files feature on or off.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
+      "key": "features.images.enabled",
+      "label": "Images",
+      "description": "Turns the Images feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,

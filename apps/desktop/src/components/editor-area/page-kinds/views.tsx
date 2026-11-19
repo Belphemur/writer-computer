@@ -3,10 +3,10 @@ import { EditorPane } from "../editor-pane";
 import { DocumentFooter } from "../document-footer";
 import { NewTabPage } from "../new-tab-page";
 import { ManagedSkillBanner } from "../managed-skill-banner";
-import { ImageViewer, ImageViewerFooter } from "@/components/image-viewer/image-viewer";
 import { FeatureOffPage } from "@/components/feature-off-page";
 import { FeatureSlot } from "@/components/feature-slot";
 import { openFileAsTextInNewTab } from "@/hooks/editor-api";
+import { openImageInDefaultApp } from "@/lib/tauri";
 import { useFeatureActive } from "@/lib/features/active";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { PageViewProps } from "@/lib/features/slots";
@@ -79,6 +79,18 @@ function OpenAsTextButton({ path }: { path: string }) {
   );
 }
 
+function OpenInDefaultAppButton({ path }: { path: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => void openImageInDefaultApp(path)}
+      className="rounded-md border border-[var(--line-subtle)] px-2.5 py-1 text-[var(--text-primary)] hover:bg-[var(--item-hover-bg)]"
+    >
+      Open in default app
+    </button>
+  );
+}
+
 const views = {
   file: {
     Component: FileTabBody,
@@ -88,10 +100,10 @@ const views = {
     feature: "code-files",
     actions: (location) => <OpenAsTextButton path={location.path} />,
   }) satisfies PageKindView<CodeLocation>,
-  image: {
-    Component: ImageViewer,
-    renderFooter: (l) => <ImageViewerFooter path={l.path} />,
-  } satisfies PageKindView<ImageLocation>,
+  image: featureView("image", {
+    feature: "images",
+    actions: (location) => <OpenInDefaultAppButton path={location.path} />,
+  }) satisfies PageKindView<ImageLocation>,
   base: featureView("base", {
     feature: "bases",
     actions: (location) => <OpenAsTextButton path={location.path} />,

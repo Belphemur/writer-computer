@@ -14,6 +14,7 @@ The layout and UI rules that keep the same bugs from coming back (a page drawn o
 - Every page kind (note, graph, base, code file, plugin view, session changes, settings, ...) mounts in `PageBody` (`src/components/editor-area/page-body.tsx`): positioned, clipped, starting below the chrome bar. Enforced by: `tests/page-body-contract.test.tsx`.
 - A page owns exactly one scroller (its root, `h-full overflow-y-auto`, or its editor's scroller). Frame boxes and ancestors never scroll.
 - A page positions itself against `PageBody`, never the window: no `position: fixed`, no portal, no top padding for the chrome. Menus and popovers that must leave the body portal on purpose and are listed in that test's `OVERLAYS`, with the reason.
+- A kept-alive page (`keepAlive`: its tab stays mounted while another is active) hides itself when `isActive` is false: `absolute inset-0 invisible pointer-events-none`, never left in the flow. The page body mounts every kept-alive tab, so a body that ignores `isActive` stays drawn over the active tab. Enforced by: `tests/page-body-contract.test.tsx` ("kept-alive page bodies hide when inactive") and per view, for example `features/images/tests/image-viewer.test.tsx`.
 - Adding a page kind: register it (`src/components/editor-area/page-kinds`), render inside `PageBody` and add nothing else to the frame. Built-in features follow `.agents/skills/writer-feature/SKILL.md`.
 
 ## 3. Scroll ownership

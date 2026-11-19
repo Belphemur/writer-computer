@@ -31,7 +31,7 @@ These work anywhere in the window, whether or not you are typing in a note.
 | Cmd+1 ... Cmd+9 | Jump to Nth tab                                                                                         |
 | Cmd+= / Cmd++   | Zoom editor text in (numpad + works too)                                                                |
 | Cmd+-           | Zoom editor text out (Cmd+Shift+- and numpad − work too)                                                |
-| Cmd+0           | Actual size (zoom back to 100%); in an image tab, fit the image to the width                            |
+| Cmd+0           | Actual size (zoom back to 100%); in an image tab, fit the image to the page                            |
 | Alt+ArrowLeft   | Navigate back (outside the note; inside it, moves by word)                                              |
 | Alt+ArrowRight  | Navigate forward (outside the note; inside it, moves by word)                                           |
 | Cmd+[           | Navigate back, everywhere including the note (Tab / Shift+Tab indent)                                   |
@@ -44,7 +44,7 @@ Pinned tabs (right-click a tab, "Pin tab", or "Pin Tab" in the palette) stay at 
 Zoom scales the note text only, in preset stops (50–300%); the sidebar, tab
 strip, and status bar keep their size. The current zoom is also in
 Preferences → Editor → Zoom, is kept between launches, and applies on top of
-the editor font size, which it never changes. In an image tab the same chords zoom the image instead (Cmd+0 fits it to the width).
+the editor font size, which it never changes. In an image tab the same chords zoom the image instead (Cmd+0 fits it to the page; double-click toggles Fit and 100%).
 
 <!-- The zoom is the global `editor.zoom` setting, multiplied on top of `editor.font-size`. -->
 

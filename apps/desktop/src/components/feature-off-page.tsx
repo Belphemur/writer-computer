@@ -15,7 +15,7 @@ export function FeatureOffPage({ feature, actions }: { feature: string; actions?
       className="flex h-full min-w-0 flex-col items-start gap-2 p-6 text-[13px] text-[var(--text-muted)]"
     >
       <div className="text-[var(--text-primary)]">{name} is turned off</div>
-      <div>Turn it on to show this page, or open the file as text.</div>
+      <div>Turn it on to show this page.</div>
       <div className="flex gap-2">
         <button
           type="button"

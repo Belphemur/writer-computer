@@ -112,8 +112,8 @@ fn images_are_listed_in_the_tree_but_not_in_hidden_or_ignored_folders() {
     }
     let mut listed = names(&root, "attachments");
     listed.sort();
-    // heic does not render in the webview, so it is not a listed image
-    assert_eq!(listed, vec!["photo.jpg", "shot.PNG"]);
+    // heic is on the one image list, so it is listed (the viewer shows a fallback if undecodable)
+    assert_eq!(listed, vec!["photo.jpg", "scan.heic", "shot.PNG"]);
     assert!(names(&root, "web").is_empty());
     let top = names(&root, "");
     assert!(!top.contains(&".obsidian".to_string()) && !top.contains(&".git".to_string()));

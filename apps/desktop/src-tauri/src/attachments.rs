@@ -105,6 +105,14 @@ pub fn render_extensions() -> &'static [String] {
     &SHARED.render_extensions
 }
 
+/// Is `name` one of the image types of [`render_extensions`] (case-blind)?
+pub fn is_render_name(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| render_extensions().contains(&e.to_ascii_lowercase()))
+}
+
 /// `name`, `name 1`, `name 2`, ... : the `n`th candidate for a file name.
 fn numbered(stem: &str, ext: &str, n: u32) -> String {
     if n == 0 {
@@ -554,11 +562,26 @@ mod tests {
     fn image_types_are_checked_case_insensitively() {
         for ok in [
             "a.png", "a.JPG", "a.jpeg", "a.gif", "a.webp", "a.svg", "a.avif", "a.bmp", "a.heic",
+            "a.ico", "a.apng", "a.tif", "a.tiff", "a.heif", "a.jxl",
         ] {
             assert!(image_extension(ok).is_some(), "{ok}");
         }
         for bad in ["a.pdf", "a.txt", "a", "a.png.exe", ".png"] {
             assert!(image_extension(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn render_names_follow_the_one_list() {
+        for ext in render_extensions() {
+            assert!(is_render_name(&format!("a.{ext}")), "{ext}");
+            assert!(
+                is_render_name(&format!("A.{}", ext.to_uppercase())),
+                "{ext}"
+            );
+        }
+        for bad in ["a.pdf", "a.sh", "a.app", "png", "a.png.exe"] {
+            assert!(!is_render_name(bad), "{bad}");
         }
     }
 

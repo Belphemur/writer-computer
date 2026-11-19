@@ -581,9 +581,9 @@ mod tests {
     fn sql_predicate_lists_code_and_names() {
         let sql = listed_sql_predicate();
         assert!(sql.contains("'py'") && sql.contains("'md'") && sql.contains("'Dockerfile'"));
-        // images are listed by default; never secrets, notebooks or unrenderable heic
+        // images are listed by default; never secrets or notebooks
         assert!(sql.contains("'svg'") && sql.contains("'png'"));
-        assert!(!sql.contains("'env'") && !sql.contains("'ipynb'") && !sql.contains("'heic'"));
+        assert!(!sql.contains("'env'") && !sql.contains("'ipynb'"));
     }
 
     #[test]
@@ -601,14 +601,16 @@ mod tests {
     fn images_are_listed_only_while_the_setting_is_on() {
         let on = policy_from_settings(true, None, None, None, Some(true));
         let off = policy_from_settings(true, None, None, None, Some(false));
-        for n in [
-            "a.png", "B.JPG", "x.jpeg", "a.gif", "a.webp", "a.svg", "a.avif", "a.bmp",
-        ] {
-            assert!(is_image_name_with(&on, n), "{n}");
-            assert!(!is_image_name_with(&off, n), "{n}");
+        // the one list: `renderExtensions` of shared/attachments.json, case-blind
+        for ext in crate::attachments::render_extensions() {
+            for n in [format!("a.{ext}"), format!("B.{}", ext.to_uppercase())] {
+                assert!(is_image_name_with(&on, &n), "{n}");
+                assert!(!is_image_name_with(&off, &n), "{n}");
+            }
         }
-        // heic does not render in the webview; other files are not images
-        for n in ["a.heic", "a.pdf", "png", ".png", "a.txt"] {
+        assert!(is_image_name_with(&on, "a.svg") && is_image_name_with(&on, "a.heic"));
+        // other files are not images
+        for n in ["a.pdf", "png", ".png", "a.txt"] {
             assert!(!is_image_name_with(&on, n), "{n}");
         }
         // the default is on, and the SQL predicate follows the same list
@@ -617,7 +619,7 @@ mod tests {
         assert!(is_listed_row_with(&on, "a.png", "png"));
         assert!(!listed_sql_predicate_with(&off).contains("'png'"));
         assert!(!is_listed_row_with(&off, "a.png", "png"));
-        assert!(!listed_sql_predicate_with(&on).contains("'heic'"));
+        assert!(listed_sql_predicate_with(&on).contains("'heic'"));
     }
 
     #[test]

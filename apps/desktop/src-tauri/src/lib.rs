@@ -679,6 +679,7 @@ pub fn run() {
             commands::fs::delete_entry,
             commands::fs::file_exists,
             commands::fs::reveal_in_file_manager,
+            commands::fs::open_image_in_default_app,
             commands::workspace::open_workspace,
             commands::workspace::open_workspace_in_file_manager,
             commands::workspace::close_workspace,
