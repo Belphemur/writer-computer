@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Excalidraw: a drawing embedded in a note (`![[x.excalidraw]]`) is edited in place. Click it to get the canvas inside the note at the picture's height; Esc or a click outside returns to the picture. Cmd/Ctrl+click and middle click still open the drawing's tab. The tab and the inline canvas share one session per drawing, so edits show in both and a change from outside (the CLI) reaches both. Zoom shortcuts leave the note's text alone while a drawing canvas has focus.
 - Agent: a streaming code block no longer jitters. Text not yet rendered was shown under the open code block in prose type and jumped into it at the next pass (every 120 ms); it is now added inside the block as code. Tested in jsdom; not seen in a real window.
 - Sidebar: Reveal in sidebar (and the automatic reveal of the open file) now always goes to the file in the vault tree, instead of stopping at the same file in Recents or Pinned above it.
 - Excalidraw: new drawings are native `.excalidraw` files (plain Excalidraw JSON), from New Drawing and from `writer excalidraw:create` with a path without a suffix. Give `.excalidraw.md` to get the Obsidian plugin's Markdown shape; existing `.excalidraw.md` drawings keep their format. The `writer-excalidraw` skill says so (bundle v20).

@@ -295,3 +295,72 @@ describe("reloading a change from outside", () => {
     expect(t.due()).toEqual([]);
   });
 });
+
+describe("canvases sharing one session", () => {
+  const bg = { viewBackgroundColor: "#ffffff" };
+
+  it("an edit in one canvas shows in the other, with one save", async () => {
+    const t = await opened([el("a")]);
+    const other = new FakeCanvas();
+    other.elements = [el("a")];
+    t.session.attach(other);
+
+    t.session.handleChange([el("a"), el("b")], bg, {}, t.canvas);
+    expect(other.elements.map((e) => e.id)).toEqual(["a", "b"]);
+    expect(other.updates[0]!.captureUpdate).toBe(NEVER); // not an undo step there
+
+    // the other canvas echoes what it now holds: nothing new to share or save
+    t.session.handleChange(other.elements, bg, {}, other);
+    expect(t.canvas.updates).toEqual([]);
+    await t.session.flush();
+    expect(t.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("a deletion travels too, and the canvas that made the edit is left alone", async () => {
+    const t = await opened([el("a"), el("b")]);
+    const other = new FakeCanvas();
+    other.elements = [el("a"), el("b")];
+    t.session.attach(other);
+    const edited = [el("a"), el("b", 2, { isDeleted: true })];
+    t.session.handleChange(edited, bg, {}, t.canvas);
+    expect(other.elements.find((e) => e.id === "b")!.isDeleted).toBe(true);
+    expect(t.canvas.updates).toEqual([]);
+  });
+
+  it("a reload from outside reaches every canvas", async () => {
+    const t = await opened([el("a")]);
+    const other = new FakeCanvas();
+    other.elements = [el("a")];
+    t.session.attach(other);
+    t.setDisk([el("a"), el("n")]);
+    const reloaded = t.session.reload();
+    await reloaded;
+    t.advance(1000);
+    await vi.waitFor(() => expect(other.elements.map((e) => e.id)).toEqual(["a", "n"]));
+    expect(t.canvas.elements.map((e) => e.id)).toEqual(["a", "n"]);
+  });
+
+  it("a canvas that joins starts from the unsaved edits, and one that leaves is not touched", async () => {
+    const t = await opened([el("a")]);
+    t.session.handleChange([el("a"), el("b")], bg, {}, t.canvas);
+    const joined = t.session.initial();
+    expect(joined.elements.map((e) => e.id)).toEqual(["a", "b"]);
+
+    const other = new FakeCanvas();
+    const detach = t.session.attach(other);
+    detach();
+    t.session.handleChange([el("a"), el("b"), el("c")], bg, {}, t.canvas);
+    expect(other.updates).toEqual([]);
+  });
+
+  it("a reload that comes while no canvas shows the file is applied when one attaches", async () => {
+    const t = setup([el("a")]);
+    await t.session.open();
+    t.setDisk([el("a"), el("n")]);
+    await t.session.reload(); // nobody to show it to
+    t.canvas.elements = [el("a")];
+    t.session.attach(t.canvas);
+    t.advance(1000);
+    await vi.waitFor(() => expect(t.canvas.elements.map((e) => e.id)).toEqual(["a", "n"]));
+  });
+});

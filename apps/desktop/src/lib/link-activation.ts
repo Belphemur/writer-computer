@@ -168,6 +168,9 @@ export interface LinkHandlerOptions {
   /** Only the middle button opens the link: for a row whose left and modifier clicks mean
    *  something else (the file tree selects on Cmd/Shift+click, a cmdk item selects on click). */
   middleOnly?: boolean;
+  /** What a plain left click does instead of opening the link (an embed that edits in place);
+   *  middle click and Cmd/Ctrl+click still open it. */
+  onCurrent?: () => void;
 }
 
 /** Event props for a React element that is a link to `target`: spread them on it. A middle
@@ -180,7 +183,8 @@ export function linkHandlers(target: LinkTarget, options: LinkHandlerOptions = {
     if (options.middleOnly && e.button !== MIDDLE) return;
     e.preventDefault();
     e.stopPropagation();
-    activateLink(target, intent);
+    if (intent === "current" && options.onCurrent) options.onCurrent();
+    else activateLink(target, intent);
   };
   return {
     onClick: run,

@@ -16,6 +16,9 @@ export const DISK_SYNC_DEBOUNCE_MS = 150;
 
 export interface DiskState {
   version: number;
+  /** Writer's own saves of the file (the watcher does not report them): a picture of the drawing
+   *  redraws on it. The session does not reload on it. */
+  saves: number;
   deleted: boolean;
   /** Tabs and embeds showing the path: it is tracked until the last one lets go. */
   refs: number;
@@ -26,6 +29,7 @@ interface DiskStore {
   track: (path: string) => void;
   forget: (path: string) => void;
   reload: (path: string) => void;
+  noteSaved: (path: string) => void;
   markDeleted: (path: string) => void;
 }
 
@@ -33,7 +37,7 @@ export const useDiskStore = create<DiskStore>((set) => ({
   views: {},
   track: (path) =>
     set((s) => {
-      const prev = s.views[path] ?? { version: 0, deleted: false, refs: 0 };
+      const prev = s.views[path] ?? { version: 0, saves: 0, deleted: false, refs: 0 };
       return { views: { ...s.views, [path]: { ...prev, refs: prev.refs + 1 } } };
     }),
   forget: (path) =>
@@ -50,6 +54,11 @@ export const useDiskStore = create<DiskStore>((set) => ({
       return prev
         ? { views: { ...s.views, [path]: { ...prev, version: prev.version + 1, deleted: false } } }
         : s;
+    }),
+  noteSaved: (path) =>
+    set((s) => {
+      const prev = s.views[path];
+      return prev ? { views: { ...s.views, [path]: { ...prev, saves: prev.saves + 1 } } } : s;
     }),
   markDeleted: (path) =>
     set((s) => {

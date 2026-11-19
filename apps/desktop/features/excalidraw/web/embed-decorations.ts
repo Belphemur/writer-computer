@@ -54,8 +54,12 @@ class DrawingEmbedWidget extends ReactBlockWidget {
     return this.embed.target;
   }
 
-  protected content(): ReactElement {
-    return createElement(DrawingEmbed, { target: this.embed.target, notePath: this.notePath });
+  protected content(host: HTMLElement): ReactElement {
+    return createElement(DrawingEmbed, {
+      target: this.embed.target,
+      notePath: this.notePath,
+      host,
+    });
   }
 }
 

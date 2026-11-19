@@ -46,6 +46,12 @@ export function isPdfViewerActive(): boolean {
   return tab?.location.kind === "pdf" && isFeatureActive("pdf");
 }
 
+/** Focus is in a drawing's canvas, the tab's or an embed's (`features/excalidraw`, which marks its
+ *  stage `data-drawing-canvas`): Excalidraw has its own zoom chords there. */
+export function isDrawingCanvasFocused(): boolean {
+  return document.activeElement?.closest("[data-drawing-canvas]") != null;
+}
+
 export const WHEN: Record<WhenName, (e: KeyboardEvent) => boolean> = {
   "not-compact": () => !isCompactFileMode(),
   "editor-not-focused": () => !isEditableTargetFocused(),
@@ -54,7 +60,7 @@ export const WHEN: Record<WhenName, (e: KeyboardEvent) => boolean> = {
   // elsewhere.
   "image-viewer": () => isImageViewerActive(),
   "pdf-viewer": () => isPdfViewerActive(),
-  "no-viewer": () => !isImageViewerActive() && !isPdfViewerActive(),
+  "no-viewer": () => !isImageViewerActive() && !isPdfViewerActive() && !isDrawingCanvasFocused(),
   "outside-agent-pane": (e) =>
     !(e.target instanceof Element && e.target.closest("[data-agent-pane]")),
 };

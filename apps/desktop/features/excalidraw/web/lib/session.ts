@@ -1,6 +1,7 @@
-// One open drawing: what a tab keeps between the canvas and the file (ADR 2026-11-18, points 5
-// and 9). The canvas reports changes; the session saves them after a quiet moment through the
-// codec (one write path), reloads the file when it changes from outside and merges it into the
+// One open drawing: what a tab and the embeds of a note keep between the canvases and the file
+// (ADR 2026-11-18, points 5 and 9; one session per file, `sessions.ts` shares it). A canvas
+// reports changes, the session hands them to the other canvases on the same file and saves
+// them after a quiet moment through the codec (one write path), reloads the file when it changes from outside and merges it into the
 // canvas by id and version (`reconcile.ts`), revealing what is new with a short draw-in
 // (`draw-in.ts`). Plain code over an injected canvas API and injected IO, so all of it is tested
 // without Excalidraw.
@@ -45,7 +46,12 @@ export function signature(
 }
 
 export class DrawingSession {
-  private api: ExcalidrawApi | null = null;
+  /** The canvases showing the file (a tab, inline editors). The first one animates a reload. */
+  private readonly canvases = new Set<ExcalidrawApi>();
+  /** A reload came while no canvas was attached: the next one to attach catches up. */
+  private stale = false;
+  private files: Loaded["files"] = {};
+  private latestSignature = "";
   private baseline: ParsedDrawing | null = null;
   private base: Base = new Map();
   private savedSignature = "";
@@ -65,11 +71,45 @@ export class DrawingSession {
   async open(): Promise<Loaded> {
     const loaded = await this.deps.load(await this.deps.read());
     this.adopt(loaded.parsed);
+    this.files = loaded.files;
     return loaded;
   }
 
-  attach(api: ExcalidrawApi): void {
-    this.api = api;
+  /** A canvas shows the file; the returned function lets go of it. */
+  attach(api: ExcalidrawApi): () => void {
+    this.canvases.add(api);
+    if (this.stale) {
+      this.stale = false;
+      void this.reload();
+    }
+    return () => void this.canvases.delete(api);
+  }
+
+  private get api(): ExcalidrawApi | null {
+    return this.canvases.values().next().value ?? null;
+  }
+
+  /** What a canvas that joins now starts from: the edits not yet saved count. */
+  initial(): {
+    elements: readonly SceneElement[];
+    appState: Record<string, unknown>;
+    files: Loaded["files"];
+  } {
+    const scene = this.baseline?.scene;
+    const latest = this.latest;
+    return {
+      elements: latest?.elements ?? scene?.elements ?? [],
+      appState: {
+        ...scene?.appState,
+        ...(latest
+          ? {
+              viewBackgroundColor: latest.appState.viewBackgroundColor,
+              gridSize: latest.appState.gridSize,
+            }
+          : {}),
+      },
+      files: { ...this.files, ...latest?.files },
+    };
   }
 
   private adopt(parsed: ParsedDrawing): void {
@@ -82,18 +122,42 @@ export class DrawingSession {
     return this.dirty;
   }
 
-  /** The canvas changed (or only its selection or scroll did: the signature tells). */
+  /** A canvas changed (or only its selection or scroll did: the signature tells). `from` is the
+   *  canvas that reported it: the others on the file are brought up to date. */
   handleChange(
     elements: readonly SceneElement[],
     appState: Record<string, unknown>,
     files: Snapshot["files"],
+    from?: ExcalidrawApi,
   ): void {
     if (this.disposed || this.animating || !this.baseline) return;
     this.latest = { elements, appState, files };
-    const changed = signature(elements, appState) !== this.savedSignature;
+    const sig = signature(elements, appState);
+    const moved = sig !== this.latestSignature;
+    this.latestSignature = sig;
+    if (moved && from) this.share(elements, files, from);
+    const changed = sig !== this.savedSignature;
     if (changed === this.dirty && !changed) return;
     this.dirty = changed;
     if (changed) this.arm();
+  }
+
+  /** Show what `from` holds in the other canvases, merged by id and version like a reload. Their
+   *  own `onChange` echoes the same signature, so it stops here. */
+  private share(
+    elements: readonly SceneElement[],
+    files: Snapshot["files"],
+    from: ExcalidrawApi,
+  ): void {
+    for (const peer of this.canvases) {
+      if (peer === from) continue;
+      const fresh = Object.values(files).filter((f) => !peer.getFiles()[f.id]);
+      if (fresh.length > 0) peer.addFiles(fresh);
+      const merge = reconcile(peer.getSceneElementsIncludingDeleted(), elements, this.base);
+      if (merge.changed) {
+        peer.updateScene({ elements: merge.elements, captureUpdate: this.deps.neverCapture });
+      }
+    }
   }
 
   private arm(): void {
@@ -150,7 +214,11 @@ export class DrawingSession {
   /** The file changed on disk from outside: merge it into the canvas. */
   async reload(): Promise<void> {
     const api = this.api;
-    if (!api || this.disposed || !this.baseline) return;
+    if (this.disposed || !this.baseline) return;
+    if (!api) {
+      this.stale = true;
+      return;
+    }
     let loaded: Loaded;
     try {
       const text = await this.deps.read();
@@ -167,9 +235,13 @@ export class DrawingSession {
       this.base,
     );
     this.adopt(loaded.parsed);
-    const known = api.getFiles();
-    const fresh = Object.values(loaded.files).filter((f) => !known[f.id]);
-    if (fresh.length > 0) api.addFiles(fresh);
+    this.files = { ...this.files, ...loaded.files };
+    const fresh = (peer: ExcalidrawApi) =>
+      Object.values(loaded.files).filter((f) => !peer.getFiles()[f.id]);
+    for (const peer of this.canvases) {
+      const add = fresh(peer);
+      if (add.length > 0) peer.addFiles(add);
+    }
     if (!merge.changed) return;
 
     this.animating?.finish();
@@ -182,7 +254,7 @@ export class DrawingSession {
       // The canvas now holds the merge. It differs from the file only where the user's own
       // unsaved edits won, and then it is saved.
       const elements = api.getSceneElementsIncludingDeleted();
-      this.handleChange(elements, api.getAppState(), api.getFiles());
+      this.handleChange(elements, api.getAppState(), api.getFiles(), api);
     };
     const run = runDrawIn(
       merge.elements,
@@ -199,6 +271,7 @@ export class DrawingSession {
     this.cancelTimer?.();
     this.cancelTimer = null;
     this.animating?.finish();
+    this.canvases.clear();
     // a tab closed with edits pending still saves them
     const pending = this.dirty && this.latest && this.baseline ? this.write() : null;
     this.disposed = true;
