@@ -423,7 +423,12 @@ fn a_chat_searches_through_the_writer_mcp_server() {
         Path::new(env!("CARGO_BIN_EXE_desktop")),
     )
     .unwrap();
-    let wiring = mcp_wiring::wiring(&bin.join(cli_launcher::LAUNCHER_NAME), &vault_root).unwrap();
+    let wiring = mcp_wiring::wiring(
+        &desktop_lib::agent::subagents::ClaudeAdapter,
+        &bin.join(cli_launcher::LAUNCHER_NAME),
+        &vault_root,
+    )
+    .unwrap();
     let settings = AgentSettings {
         binary_path: None,
         model: None,

@@ -436,6 +436,9 @@ impl AgentSessions {
                 settings.permission_mode = mode;
             }
         }
+        // The chat's backend: its adapter names the tools, takes the MCP server and renders the
+        // roles (`claude` is the only one today).
+        let backend = ClaudeAdapter;
         let add_dirs = if cwd != p.root {
             vec![p.root.to_string_lossy().into_owned()]
         } else {
@@ -448,7 +451,7 @@ impl AgentSessions {
         // The roles the Claude adapter produces for this session: the `--agents` JSON and, from
         // the same output, the orchestration line of the system block.
         let rendered = settings.orchestrate.then(|| {
-            ClaudeAdapter.render(&RenderInput {
+            backend.render(&RenderInput {
                 writer_cli,
                 tier_models: &settings.tier_models,
                 flags: &Flags::current(),
@@ -488,11 +491,16 @@ impl AgentSessions {
             writer_cli,
             orchestration: rendered.as_ref(),
             memory: memory_note,
+            tools: &backend,
         })?;
         let agents = rendered.and_then(|r| r.config);
         // Writer's own MCP server (the search and vault tools), when the launcher exists.
         let mcp = p.cli_dir.as_ref().and_then(|dir| {
-            mcp_wiring::wiring(&dir.join(super::cli_launcher::LAUNCHER_NAME), &p.root)
+            mcp_wiring::wiring(
+                &backend,
+                &dir.join(super::cli_launcher::LAUNCHER_NAME),
+                &p.root,
+            )
         });
         let program = info.path.as_deref().map(PathBuf::from);
         let missing = (!info.found).then_some(SpawnError::NotFound);
@@ -507,7 +515,7 @@ impl AgentSessions {
                 memory_dir,
                 mcp,
                 settings,
-                restart_on_config_change: ClaudeAdapter.restart_on_config_change(),
+                restart_on_config_change: backend.restart_on_config_change(),
             },
             missing,
         ))

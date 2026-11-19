@@ -13,6 +13,7 @@
 //! Writer never creates or edits a `CLAUDE.md`.
 
 use super::events::{AgentPermissionMode, ProjectSource};
+use super::mcp_wiring::ToolsAdapter;
 use super::ports::{InjectAgentsMd, ProjectPort, SpawnContext};
 use super::project::{self, ProjectDetail, ProjectUpdate, AGENTS_FILE, CLAUDE_FILE};
 use super::roles::Rendered;
@@ -591,6 +592,8 @@ pub struct BundleInput<'a> {
     pub orchestration: Option<&'a Rendered>,
     /// The Writer block's memory line (`None`: no memory line).
     pub memory: Option<MemoryNote<'a>>,
+    /// The chat's backend: how its Writer block names Writer's tools.
+    pub tools: &'a dyn ToolsAdapter,
 }
 
 /// The Writer system block for a chat: the vault's folder name and, for a project chat, its name
@@ -605,6 +608,7 @@ fn writer_block(input: &BundleInput) -> String {
         writer_cli: input.writer_cli,
         orchestration: input.orchestration,
         memory: input.memory,
+        tools: input.tools,
         place: writer_prompt::Place {
             vault,
             project: input
@@ -751,6 +755,7 @@ impl ProjectPort for ProjectLibrary {
             writer_cli: ctx.writer_cli,
             orchestration: ctx.orchestration,
             memory: ctx.memory,
+            tools: ctx.tools,
         })
         .map_err(|e| e.to_string())?;
         Ok(
@@ -795,6 +800,7 @@ mod tests {
     use super::*;
     use crate::agent::events::NewProjectRequest;
     use crate::agent::project::{self, ProjectUpdate};
+    use crate::agent::subagents::ClaudeAdapter;
     use std::collections::HashMap;
     use tempfile::TempDir;
 
@@ -826,6 +832,7 @@ mod tests {
             writer_cli,
             orchestration: None,
             memory: None,
+            tools: &ClaudeAdapter,
         })
     }
 
@@ -957,6 +964,7 @@ mod tests {
             writer_cli: false,
             orchestration: None,
             memory: None,
+            tools: &ClaudeAdapter,
         };
         let s = lib.append_system_prompt(&ctx).unwrap().unwrap();
         assert!(s.starts_with("from ui\n\n"));
@@ -1115,6 +1123,7 @@ mod tests {
             writer_cli: true,
             orchestration: None,
             memory: None,
+            tools: &ClaudeAdapter,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
@@ -1139,6 +1148,7 @@ mod tests {
             writer_cli,
             orchestration: None,
             memory: None,
+            tools: &ClaudeAdapter,
         };
         for cli in [false, true] {
             let b = build(&input(cli)).unwrap();
@@ -1158,6 +1168,7 @@ mod tests {
             writer_cli: false,
             orchestration: None,
             memory: None,
+            tools: &ClaudeAdapter,
         })
         .unwrap();
         let s = b.append_system_prompt.unwrap();
@@ -1181,6 +1192,7 @@ mod tests {
             writer_cli: true,
             orchestration: None,
             memory: None,
+            tools: &ClaudeAdapter,
         })
         .unwrap();
         let expected = format!(

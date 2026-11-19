@@ -91,6 +91,15 @@ trait RoleAdapter {
 
 Capability tables are data in the adapter (a `match`), not branches in callers; adding a capability touches the registry and each adapter table, and a test fails if an adapter does not cover every capability (no silent drop).
 
+Writer's own tools are the other half of an adapter (ADR 2026-11-19, "Hand Writer's MCP server to every agent backend through its adapter"): `RoleAdapter` requires `ToolsAdapter` (`tool_name`, `launch`, `read_rules`, in `agent/mcp_wiring.rs`), so the capability `writer-cli-read` is the adapter's `read_rules` over the registry's tools and `{search-line}` in a role prompt is the main prompt's search line in the adapter's tool names. Per backend:
+
+| Backend  | Tool name             | Launch                     | Read rules               | Status                               |
+| -------- | --------------------- | -------------------------- | ------------------------ | ------------------------------------ |
+| Claude   | `mcp__writer__<tool>` | argv `--mcp-config <json>` | `--allowedTools` entries | verified with the fake `claude` only |
+| OpenCode | to verify             | to verify                  | to verify                | to verify                            |
+| Codex    | to verify             | to verify                  | to verify                | to verify                            |
+| Gemini   | to verify             | to verify                  | to verify                | to verify                            |
+
 ### 4.1 Claude Code (exists, refactored)
 
 `--agents <json>`: `{ "writer-<id>": { description: purpose, prompt, tools: [...], model: <alias> } }`.

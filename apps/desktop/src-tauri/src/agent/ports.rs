@@ -11,6 +11,7 @@
 //! may log note contents (spec section 8).
 
 use super::events::AgentPermissionMode;
+use super::mcp_wiring::ToolsAdapter;
 use super::roles::Rendered;
 use super::writer_prompt::MemoryNote;
 use parking_lot::RwLock;
@@ -59,6 +60,8 @@ pub struct SpawnContext<'a> {
     pub orchestration: Option<&'a Rendered>,
     /// Where this chat's memory is (`agent.memory` = `vault`); the Writer block's memory line.
     pub memory: Option<MemoryNote<'a>>,
+    /// The chat's backend: how the Writer block names Writer's tools.
+    pub tools: &'a dyn ToolsAdapter,
 }
 
 /// Facts about a chat's CLI session, reported to the chat store.

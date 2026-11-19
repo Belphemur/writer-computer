@@ -62,3 +62,5 @@ Chosen option: **A**.
 Related: [Prune the `writer` CLI to one command per job](2026-11-19-prune-the-writer-cli-to-one-command-per-job.md), [Let the writer CLI talk to the running app over a local socket](2026-11-18-let-the-writer-cli-talk-to-the-running-app-over-a-local-authenticated-socket.md), [Build a first-party agent pane over the claude CLI's stream-json protocol](2026-11-17-build-a-first-party-agent-pane-over-the-claude-clis-stream-json-protocol.md).
 
 2026-11-19: the `writer-explorer` and `writer-worker` sub-agents use the same tools: the roles' `writer-cli-read` capability maps to every `mcp__writer__*` read tool of the registry (no Glob, Grep or Bash), and their prompts end with the main prompt's search line.
+
+2026-11-19: the Claude-specific wiring moved behind a per-backend `ToolsAdapter` (tool name, launch, read rules): [Hand Writer's MCP server to every agent backend through its adapter](2026-11-19-hand-writers-mcp-server-to-every-agent-backend-through-its-adapter.md). The server and its tools stay neutral; `mcp__writer__` is written only by the Claude adapter.

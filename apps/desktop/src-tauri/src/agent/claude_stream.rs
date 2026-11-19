@@ -19,7 +19,7 @@
 
 use super::events::*;
 use super::files::{FileKind, FilePart};
-use super::mcp_wiring::McpWiring;
+use super::mcp_wiring::{Launch, McpWiring};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -1061,11 +1061,17 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
     }
     if let Some(mcp) = spawn.mcp {
         // Added to the servers of the user's own settings, never `--strict-mcp-config`.
-        if mcp.config.is_empty() || mcp.config.contains('\0') {
-            return Err("invalid MCP config".into());
+        match &mcp.launch {
+            Launch::Argv(args) => {
+                if args.iter().any(|v| v.is_empty() || v.contains('\0')) {
+                    return Err("invalid MCP config".into());
+                }
+                a.extend(args.iter().cloned());
+            }
+            Launch::Env(_) | Launch::Config(_) => {
+                return Err("this launch is not implemented for claude".into());
+            }
         }
-        a.push("--mcp-config".into());
-        a.push(mcp.config.clone());
     }
     let allowed: Vec<String> = spawn
         .settings
@@ -2458,10 +2464,15 @@ mod tests {
         let mut s = settings();
         s.allowed_tools = vec!["Bash(git status)".into()];
         let wiring = crate::agent::mcp_wiring::wiring(
+            &crate::agent::subagents::ClaudeAdapter,
             Path::new("/data/bin/writer"),
             Path::new("/Users/me/Notes"),
         )
         .unwrap();
+        let Launch::Argv(launch) = &wiring.launch else {
+            panic!("claude takes the server as argv")
+        };
+        assert_eq!(launch[0], "--mcp-config");
         let argv = |mcp: Option<&McpWiring>| {
             build_args(&ClaudeSpawn {
                 session: SessionRef::New(UUID.into()),
@@ -2484,7 +2495,7 @@ mod tests {
         );
         let on = argv(Some(&wiring));
         let pos = |f: &str| on.iter().position(|a| a == f).unwrap();
-        assert_eq!(on[pos("--mcp-config") + 1], wiring.config);
+        assert_eq!(on[pos("--mcp-config") + 1], launch[1]);
         assert!(on[pos("--mcp-config") + 1].starts_with('{'));
         assert!(!on.contains(&"--strict-mcp-config".to_string()));
         // the user's rule first, then every read tool, in one flag
@@ -2521,7 +2532,7 @@ mod tests {
             .unwrap()
             .contains(&"--mcp-config".to_string()));
         let bad = McpWiring {
-            config: "{\0}".into(),
+            launch: Launch::Argv(vec!["--mcp-config".into(), "{\0}".into()]),
             allowed: vec![],
         };
         assert!(build_args(&ClaudeSpawn {

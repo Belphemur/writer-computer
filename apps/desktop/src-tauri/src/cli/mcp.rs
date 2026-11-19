@@ -14,10 +14,9 @@ use serde_json::{json, Map, Value};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-/// The server's name in the client's config; tools reach the model as `mcp__writer__<tool>`.
+/// The server's name in the client's config. How a tool is named to the model is the backend
+/// adapter's business (`agent::mcp_wiring::ToolsAdapter`), never decided here.
 pub const SERVER_NAME: &str = "writer";
-/// What the model sees in front of a tool name (the Claude CLI's `mcp__<server>__<tool>`).
-pub const TOOL_PREFIX: &str = "mcp__writer__";
 /// Commands that are not tools: meta commands, the server itself, and the one that rewrites the
 /// agent's own skill files.
 const EXCLUDED: &[&str] = &["help", "version", "mcp", "skills:sync"];
@@ -45,9 +44,31 @@ pub fn tool_name_of(command: &str) -> String {
     command.replace(':', "_")
 }
 
-/// The name the model calls the tool by.
-pub fn qualified_name(spec: &CommandSpec) -> String {
-    format!("{TOOL_PREFIX}{}", tool_name(spec))
+/// A tool of the server as the registry defines it, with no backend's naming or format in it
+/// (ADR 2026-11-19 "Hand Writer's MCP server to every agent backend through its adapter").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolSpec {
+    /// The server's name of the tool ([`tool_name`]); a backend prefixes it its own way.
+    pub name: String,
+    /// The tool changes the vault, so a call asks first.
+    pub writes: bool,
+}
+
+impl From<&CommandSpec> for ToolSpec {
+    fn from(spec: &CommandSpec) -> Self {
+        ToolSpec {
+            name: tool_name(spec),
+            writes: spec.writes,
+        }
+    }
+}
+
+/// The tool a command is served as, for text that names tools (the agent's prompts).
+pub fn tool_of(command: &str) -> ToolSpec {
+    ToolSpec {
+        name: tool_name_of(command),
+        writes: registry::find(command).is_some_and(|c| c.writes),
+    }
 }
 
 /// Is this command served as a tool at all (feature switches aside)?
@@ -63,12 +84,12 @@ pub fn tool_specs(env: &Env) -> Vec<&'static CommandSpec> {
         .collect()
 }
 
-/// The permission rules that allow the read-only tools without a prompt (`--allowedTools`); the
-/// write tools are left out, so each call asks.
-pub fn read_tool_rules() -> Vec<String> {
+/// Every tool the server can serve, read and write, from the registry (feature switches aside,
+/// like [`is_tool`]): the one list a backend adapter derives its names and rules from.
+pub fn tools() -> Vec<ToolSpec> {
     registry::commands()
-        .filter(|c| is_tool(c) && !c.writes)
-        .map(qualified_name)
+        .filter(|c| is_tool(c))
+        .map(ToolSpec::from)
         .collect()
 }
 
@@ -587,13 +608,12 @@ mod tests {
             let n = tool_name(c);
             assert!(
                 !n.is_empty()
-                    && n.len() + TOOL_PREFIX.len() <= 64
+                    && n.len() + "mcp__writer__".len() <= 64
                     && n.chars()
                         .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'),
                 "{n}"
             );
             assert!(seen.insert(n.clone()), "two commands make the tool {n}");
-            assert_eq!(qualified_name(c), format!("mcp__writer__{n}"));
         }
     }
 
@@ -655,11 +675,11 @@ mod tests {
                 assert!(!c.writes, "{name} only reads but says `writes`");
             }
         }
-        let rules = read_tool_rules();
-        assert!(rules.contains(&"mcp__writer__search".to_string()));
-        assert!(!rules.contains(&"mcp__writer__create".to_string()));
-        assert!(!rules.contains(&"mcp__writer__mcp".to_string()));
-        assert!(rules.iter().all(|r| r.starts_with(TOOL_PREFIX)));
+        let all = tools();
+        let read = |n: &str| all.iter().find(|t| t.name == n).map(|t| !t.writes);
+        assert_eq!(read("search"), Some(true));
+        assert_eq!(read("create"), Some(false));
+        assert_eq!(read("mcp"), None);
         let f = Fixture::new();
         let tools = f.request("tools/list", Value::Null)["result"]["tools"].clone();
         let by = |n: &str| {

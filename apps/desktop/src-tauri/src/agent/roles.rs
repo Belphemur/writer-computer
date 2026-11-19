@@ -9,6 +9,8 @@
 //! prompt and delegation text with the adapter's tool names filled in, and the one `writer-<id>`
 //! name.
 
+use super::mcp_wiring::ToolsAdapter;
+use crate::cli::mcp;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -199,8 +201,9 @@ impl Rendered {
     }
 }
 
-/// One backend's translation of the registry. Pure: no IO, no Tauri.
-pub trait RoleAdapter {
+/// One backend's translation of the registry. Pure: no IO, no Tauri. A backend's role text names
+/// Writer's own tools, so its adapter is also its [`ToolsAdapter`] (ADR 2026-11-19).
+pub trait RoleAdapter: ToolsAdapter {
     /// Capability to this backend's tools. Every registry capability must answer (a test).
     fn capability(&self, capability: &str) -> CapabilitySupport;
     /// Roles, tiers and flags to this backend's config.
@@ -210,6 +213,19 @@ pub trait RoleAdapter {
     /// (`config_sync.rs`, `agent.auto-reload`). A backend that reloads them itself answers
     /// `false` and none of that applies to it.
     fn restart_on_config_change(&self) -> bool;
+}
+
+/// The names the backend gives every read tool of Writer's server (the `writer-cli-read`
+/// capability): the registry's read tools through the adapter's [`ToolsAdapter::read_rules`],
+/// never a hand-kept list. Leaked, so a capability can hand them out as `'static`: an adapter
+/// calls it once and keeps the result (the registry is static, so there are as many as backends).
+pub fn leak_read_tools(adapter: &dyn ToolsAdapter) -> &'static [&'static str] {
+    let names: Vec<&'static str> = adapter
+        .read_rules(&mcp::tools())
+        .into_iter()
+        .map(|n| &*Box::leak(n.into_boxed_str()))
+        .collect();
+    Box::leak(names.into_boxed_slice())
 }
 
 /// The tool names a backend gives a role's granted capabilities, in order, without repeats.
@@ -227,9 +243,13 @@ pub fn role_tools(adapter: &dyn RoleAdapter, role: &Role, writer_cli: bool) -> V
     tools
 }
 
+/// Where a role's `promptByCapability` text asks for the search line (the one wording of the
+/// main prompt, `writer_prompt::search_line`, with the backend's tool names).
+const SEARCH_LINE_TOKEN: &str = "{search-line}";
+
 /// The role's prompt for this backend: the neutral text with each `{<capability>}` replaced by the
 /// backend's tool names (`A and B`), then the `promptByCapability` sentences of the granted
-/// capabilities.
+/// capabilities, with the search line in the backend's tool names.
 pub fn role_prompt(adapter: &dyn RoleAdapter, role: &Role, writer_cli: bool) -> String {
     let mut prompt = role.prompt.clone();
     for cap in registry().capabilities.keys() {
@@ -249,6 +269,12 @@ pub fn role_prompt(adapter: &dyn RoleAdapter, role: &Role, writer_cli: bool) -> 
             prompt.push(' ');
             prompt.push_str(extra);
         }
+    }
+    if prompt.contains(SEARCH_LINE_TOKEN) {
+        prompt = prompt.replace(
+            SEARCH_LINE_TOKEN,
+            &super::writer_prompt::search_line(adapter),
+        );
     }
     prompt
 }

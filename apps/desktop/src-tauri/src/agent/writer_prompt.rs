@@ -8,6 +8,7 @@
 //! installed for the spawned CLI ([`crate::managed_skills::claude_skills_installed`]), so the
 //! prompt never names a tool that is not there.
 
+use super::mcp_wiring::ToolsAdapter;
 use super::memory;
 use super::roles::Rendered;
 use crate::cli::mcp;
@@ -59,19 +60,19 @@ const SEARCH_COMMANDS: [&str; 7] = [
 /// Read a note's structure without reading its text.
 const OUTLINE_COMMAND: &str = "outline";
 
-/// The one line that tells an agent how to search the vault with the `writer` tools. The main
-/// block adds [`BASH_AFTER_SEARCH`]; the read-only sub-agents (`subagents.rs`, which have no Bash)
-/// take it as it is.
-pub fn search_line() -> String {
+/// The one line that tells an agent how to search the vault with the `writer` tools, named the
+/// way `tools`' backend names them. The main block adds [`BASH_AFTER_SEARCH`]; the read-only
+/// sub-agents (`roles::role_prompt`, which have no Bash) take it as it is.
+pub fn search_line(tools: &dyn ToolsAdapter) -> String {
+    let name = |c: &str| tools.tool_name(&mcp::tool_of(c));
     let [first, rest @ ..] = SEARCH_COMMANDS;
     let rest: Vec<String> = rest
         .iter()
         .map(|c| format!("`{}`", mcp::tool_name_of(c)))
         .collect();
     format!(
-        "Search the vault with the `writer` tools, not Bash grep or find: `{}{}` first, also {}, and `{}` for a note's headings.",
-        mcp::TOOL_PREFIX,
-        mcp::tool_name_of(first),
+        "Search the vault with the `writer` tools, not Bash grep or find: `{}` first, also {}, and `{}` for a note's headings.",
+        name(first),
         rest.join(", "),
         mcp::tool_name_of(OUTLINE_COMMAND),
     )
@@ -175,6 +176,8 @@ pub struct PromptInput<'a> {
     /// Where the chat's memory is (`None`: no memory line).
     pub memory: Option<MemoryNote<'a>>,
     pub place: Place<'a>,
+    /// The chat's backend: how it names Writer's tools in the search line.
+    pub tools: &'a dyn ToolsAdapter,
 }
 
 /// The block: the soul, where the chat works, then the rules (the `writer` lines when
@@ -186,8 +189,9 @@ pub fn render(input: &PromptInput<'_>) -> String {
         orchestration,
         memory,
         place,
+        tools,
     } = *input;
-    let search = format!("{} {BASH_AFTER_SEARCH}", search_line());
+    let search = format!("{} {BASH_AFTER_SEARCH}", search_line(tools));
     let mut lines = vec![INTRO, READ_EDIT, FRONTMATTER];
     if writer_cli {
         lines.push(PROPERTIES_CLI);
@@ -224,10 +228,14 @@ pub fn render(input: &PromptInput<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::mcp_wiring::FakeAdapter;
     use crate::agent::roles::{Flags, RenderInput, RoleAdapter};
     use crate::agent::subagents::ClaudeAdapter;
     use crate::cli::registry;
     use crate::managed_skills::all_skills;
+
+    /// What the Claude adapter puts in front of a tool name.
+    const PREFIX: &str = "mcp__writer__";
 
     const PLACE: Place<'static> = Place {
         vault: "Notes",
@@ -245,6 +253,7 @@ mod tests {
             orchestration,
             memory,
             place,
+            tools: &ClaudeAdapter,
         })
     }
 
@@ -635,11 +644,29 @@ Vault: Notes. Working at the vault root.
             let tool = mcp::tool_name_of(name);
             assert!(
                 text.contains(&format!("`{tool}`"))
-                    || text.contains(&format!("`{}{tool}`", mcp::TOOL_PREFIX))
+                    || text.contains(&format!(
+                        "`{}`",
+                        ClaudeAdapter.tool_name(&mcp::tool_of(name))
+                    ))
             );
         }
         // the line carries the prefix once, in front of the first tool
-        assert_eq!(text.matches(mcp::TOOL_PREFIX).count(), 1);
+        assert_eq!(text.matches(PREFIX).count(), 1);
+    }
+
+    /// The block takes the tool names of the chat's backend, never a fixed prefix.
+    #[test]
+    fn the_search_line_names_tools_the_way_the_backend_does() {
+        let text = render(&PromptInput {
+            writer_cli: true,
+            orchestration: None,
+            memory: None,
+            place: PLACE,
+            tools: &FakeAdapter,
+        });
+        assert!(text.contains("`writer.search` first, also `files`, `graph_backlinks`"));
+        assert!(!text.contains("mcp__"));
+        assert_eq!(text.matches("writer.search").count(), 1);
     }
 
     /// The agent's CLI has no Glob or Grep: the block never sends it to them, and the search line
@@ -652,7 +679,7 @@ Vault: Notes. Working at the vault root.
             assert!(!text.contains("Find files with"), "cli={cli}");
         }
         assert!(r(true, None, None).contains("Search the vault with the `writer` tools"));
-        assert!(!r(false, None, None).contains(mcp::TOOL_PREFIX));
+        assert!(!r(false, None, None).contains(PREFIX));
     }
 
     /// The default `agent.allowed-tools` allow only `Bash(writer <read-only command> ...)`: each

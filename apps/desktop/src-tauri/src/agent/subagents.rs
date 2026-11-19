@@ -13,10 +13,12 @@
 //! key": the sub-agent uses the chat's own model.
 
 use super::claude_stream::is_safe_value;
+use super::mcp_wiring::{Launch, ToolsAdapter, WriterServer};
 use super::roles::{
-    backend_name, delegation_sentence, offered_roles, role_prompt, role_tools, CapabilitySupport,
-    RenderInput, Rendered, RenderedRole, RoleAdapter,
+    backend_name, delegation_sentence, leak_read_tools, offered_roles, role_prompt, role_tools,
+    CapabilitySupport, RenderInput, Rendered, RenderedRole, RoleAdapter,
 };
+use crate::cli::mcp::{self, ToolSpec};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -114,25 +116,49 @@ pub fn resolve_launch(
     })
 }
 
-/// The `mcp__writer__*` names of every command the registry marks as a read (the rules that let
-/// the main agent call them without a prompt, `mcp::read_tool_rules`): never a hand-kept list.
-/// Made once; the registry is static, so the names live as long as the process.
-fn writer_read_tools() -> &'static [&'static str] {
-    static TOOLS: OnceLock<Vec<&'static str>> = OnceLock::new();
-    TOOLS.get_or_init(|| {
-        crate::cli::mcp::read_tool_rules()
-            .into_iter()
-            .map(|n| &*Box::leak(n.into_boxed_str()))
+/// The adapter for the `claude` CLI.
+#[derive(Debug)]
+pub struct ClaudeAdapter;
+
+/// Writer's MCP server for the CLI (ADR 2026-11-19 "Hand Writer's MCP server to every agent
+/// backend through its adapter"): the CLI names a server's tool `mcp__<server>__<tool>`, takes
+/// the server as `--mcp-config` JSON (added to the servers of the user's own settings, the argv
+/// never carries `--strict-mcp-config`, no config file of the user is touched) and lets a tool
+/// run without a prompt through an `--allowedTools` rule of that same name. The one place of
+/// the app that knows these formats.
+impl ToolsAdapter for ClaudeAdapter {
+    fn tool_name(&self, tool: &ToolSpec) -> String {
+        format!("mcp__{}__{}", mcp::SERVER_NAME, tool.name)
+    }
+
+    fn launch(&self, server: &WriterServer) -> Launch {
+        let config = json!({
+            "mcpServers": {
+                mcp::SERVER_NAME: {
+                    "type": "stdio",
+                    "command": server.command,
+                    "args": server.args,
+                }
+            }
+        });
+        Launch::Argv(vec!["--mcp-config".into(), config.to_string()])
+    }
+
+    fn read_rules(&self, tools: &[ToolSpec]) -> Vec<String> {
+        tools
+            .iter()
+            .filter(|t| !t.writes)
+            .map(|t| self.tool_name(t))
             .collect()
-    })
+    }
 }
 
-/// Where a role's `promptByCapability` text asks for the search line (the one wording of the
-/// main prompt, `writer_prompt::search_line`).
-const SEARCH_LINE_TOKEN: &str = "{search-line}";
-
-/// The adapter for the `claude` CLI.
-pub struct ClaudeAdapter;
+/// The `mcp__writer__*` names of every command the registry marks as a read (the same rules that
+/// let the main agent call them without a prompt, [`ToolsAdapter::read_rules`]). Made once.
+fn writer_read_tools() -> &'static [&'static str] {
+    static TOOLS: OnceLock<&'static [&'static str]> = OnceLock::new();
+    TOOLS.get_or_init(|| leak_read_tools(&ClaudeAdapter))
+}
 
 impl RoleAdapter for ClaudeAdapter {
     /// The CLI reads all of them once, at start.
@@ -165,8 +191,7 @@ impl RoleAdapter for ClaudeAdapter {
             def.insert("description".into(), json!(role.purpose));
             def.insert(
                 "prompt".into(),
-                json!(role_prompt(self, role, input.writer_cli)
-                    .replace(SEARCH_LINE_TOKEN, &super::writer_prompt::search_line())),
+                json!(role_prompt(self, role, input.writer_cli)),
             );
             def.insert(
                 "tools".into(),
@@ -196,8 +221,13 @@ impl RoleAdapter for ClaudeAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::mcp_wiring::{wiring, FakeAdapter};
     use crate::agent::roles::{registry, Flags};
     use std::collections::BTreeMap;
+    use std::path::Path;
+
+    /// What the Claude CLI puts in front of a tool of the server.
+    const PREFIX: &str = "mcp__writer__";
 
     fn models(pairs: &[(&str, &str)]) -> BTreeMap<String, Option<String>> {
         pairs
@@ -226,7 +256,7 @@ mod tests {
     fn registry_read_tools() -> Vec<String> {
         crate::cli::registry::commands()
             .filter(|c| crate::cli::mcp::is_tool(c) && !c.writes)
-            .map(crate::cli::mcp::qualified_name)
+            .map(|c| ClaudeAdapter.tool_name(&ToolSpec::from(c)))
             .collect()
     }
 
@@ -254,7 +284,7 @@ mod tests {
         // no write tool of the registry either
         for c in crate::cli::registry::commands().filter(|c| c.writes) {
             assert!(
-                !tools.contains(&crate::cli::mcp::qualified_name(c)),
+                !tools.contains(&ClaudeAdapter.tool_name(&ToolSpec::from(c))),
                 "{}",
                 c.name
             );
@@ -276,7 +306,7 @@ mod tests {
         for role in ["writer-explorer", "writer-worker"] {
             let prompt = v[role]["prompt"].as_str().unwrap();
             assert!(
-                prompt.contains(&crate::agent::writer_prompt::search_line()),
+                prompt.contains(&crate::agent::writer_prompt::search_line(&ClaudeAdapter)),
                 "{role}"
             );
             assert!(!prompt.contains("{search-line}"), "{role}");
@@ -287,17 +317,15 @@ mod tests {
         }
         // every `mcp__writer__x` and the bare tool names the line gives exist and are granted
         let prompt = v["writer-explorer"]["prompt"].as_str().unwrap();
-        let line = crate::agent::writer_prompt::search_line();
-        let first = format!("{}search", crate::cli::mcp::TOOL_PREFIX);
+        let line = crate::agent::writer_prompt::search_line(&ClaudeAdapter);
+        let first = ClaudeAdapter.tool_name(&mcp::tool_of("search"));
         assert!(line.contains(&first) && granted.contains(&first));
         for word in line.split('`').skip(1).step_by(2) {
-            let name = word
-                .strip_prefix(crate::cli::mcp::TOOL_PREFIX)
-                .unwrap_or(word);
+            let name = word.strip_prefix(PREFIX).unwrap_or(word);
             if name == "writer" {
                 continue;
             }
-            let qualified = format!("{}{name}", crate::cli::mcp::TOOL_PREFIX);
+            let qualified = format!("{PREFIX}{name}");
             assert!(granted.contains(&qualified), "{qualified} is not granted");
         }
         assert!(prompt.starts_with("You explore a vault of Markdown notes"));
@@ -451,5 +479,99 @@ mod tests {
                 tier_setting_key(tier)
             );
         }
+    }
+
+    #[test]
+    fn claude_names_a_tool_after_its_server() {
+        for c in crate::cli::registry::commands().filter(|c| mcp::is_tool(c)) {
+            let t = ToolSpec::from(c);
+            assert_eq!(ClaudeAdapter.tool_name(&t), format!("{PREFIX}{}", t.name));
+        }
+    }
+
+    #[test]
+    fn claude_takes_the_server_as_mcp_config_argv() {
+        let w = wiring(
+            &ClaudeAdapter,
+            Path::new("/data/bin/writer"),
+            Path::new("/Users/me/Notes"),
+        )
+        .unwrap();
+        let Launch::Argv(argv) = &w.launch else {
+            panic!("claude takes the server as argv")
+        };
+        assert_eq!(argv[0], "--mcp-config");
+        assert_eq!(argv.len(), 2);
+        let v: Value = serde_json::from_str(&argv[1]).unwrap();
+        let server = &v["mcpServers"]["writer"];
+        assert_eq!(server["type"], "stdio");
+        assert_eq!(server["command"], "/data/bin/writer");
+        assert_eq!(server["args"], json!(["vault=/Users/me/Notes", "mcp"]));
+        // the only server named: the user's own are the CLI's to merge, never ours to replace
+        assert_eq!(v["mcpServers"].as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn only_read_tools_are_allowed_without_a_prompt() {
+        let w = wiring(&ClaudeAdapter, Path::new("/bin/writer"), Path::new("/v")).unwrap();
+        assert!(w.allowed.contains(&"mcp__writer__search".to_string()));
+        assert!(w
+            .allowed
+            .contains(&"mcp__writer__graph_backlinks".to_string()));
+        for write in ["create", "append", "delete", "property_set", "move"] {
+            assert!(
+                !w.allowed.contains(&format!("{PREFIX}{write}")),
+                "{write} must ask"
+            );
+        }
+        assert!(!w.allowed.iter().any(|r| r.ends_with("__mcp")));
+        let none = wiring(&ClaudeAdapter, Path::new(""), Path::new("/v"));
+        assert!(none.is_none());
+    }
+
+    /// The rules cover exactly the registry's read tools, for any backend's naming.
+    #[test]
+    fn read_rules_are_exactly_the_registry_read_tools() {
+        let tools = mcp::tools();
+        let reads: Vec<&ToolSpec> = tools.iter().filter(|t| !t.writes).collect();
+        assert!(!reads.is_empty() && reads.len() < tools.len());
+        for adapter in [&ClaudeAdapter as &dyn ToolsAdapter, &FakeAdapter] {
+            let expected: Vec<String> = reads.iter().map(|t| adapter.tool_name(t)).collect();
+            assert_eq!(adapter.read_rules(&tools), expected, "{adapter:?}");
+        }
+        let registry_reads: Vec<String> = crate::cli::registry::commands()
+            .filter(|c| mcp::is_tool(c) && !c.writes)
+            .map(mcp::tool_name)
+            .collect();
+        assert_eq!(
+            reads.iter().map(|t| t.name.clone()).collect::<Vec<_>>(),
+            registry_reads
+        );
+    }
+
+    /// The seam: a second adapter with another naming changes every tool name in the role tools
+    /// and prompts, with no edit to the roles, the prompt builder or the server.
+    #[test]
+    fn another_backends_naming_reaches_the_role_tools_and_prompts() {
+        use crate::agent::roles::{role_prompt, role_tools};
+        let explorer = registry()
+            .roles
+            .iter()
+            .find(|r| r.id == "explorer")
+            .unwrap();
+        let tools = role_tools(&FakeAdapter, explorer, true);
+        let mut expected = vec!["Read".to_string()];
+        expected.extend(FakeAdapter.read_rules(&mcp::tools()));
+        assert_eq!(tools, expected);
+        assert!(tools.contains(&"writer.search"));
+        assert!(!tools.iter().any(|t| t.starts_with("mcp__")));
+
+        let prompt = role_prompt(&FakeAdapter, explorer, true);
+        let line = crate::agent::writer_prompt::search_line(&FakeAdapter);
+        assert!(prompt.contains(&line) && line.contains("`writer.search` first"));
+        assert!(!prompt.contains("mcp__") && !prompt.contains("{search-line}"));
+        // Claude's text is untouched by the other adapter existing
+        let claude = role_prompt(&ClaudeAdapter, explorer, true);
+        assert!(claude.contains("`mcp__writer__search` first"));
     }
 }
