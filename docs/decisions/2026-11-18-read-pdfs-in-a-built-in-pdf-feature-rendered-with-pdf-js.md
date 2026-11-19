@@ -77,4 +77,4 @@ Chosen option: **A** (the user chose it).
 
 ## More Information
 
-Related: the images ADR `2026-11-18-make-images-a-built-in-feature-with-a-rebuilt-zoomable-viewer` (shared viewer pieces), the link activation ADR, [native agent spec](../../SPECs/native-agent-spec.md) (Images in the composer). Sequenced after the images feature lands.
+Spec: [`SPECs/pdf-spec.md`](../../SPECs/pdf-spec.md). Related: the images ADR `2026-11-18-make-images-a-built-in-feature-with-a-rebuilt-zoomable-viewer` (shared viewer pieces), the link activation ADR, [native agent spec](../../SPECs/native-agent-spec.md) (Images in the composer). Sequenced after the images feature lands.
