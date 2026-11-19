@@ -280,9 +280,7 @@ pub(crate) mod test_support {
                     match listener.accept() {
                         Ok((mut s, _)) => {
                             s.set_nonblocking(false).unwrap();
-                            let mut buf = [0u8; 2048];
-                            let n = s.read(&mut buf).unwrap_or(0);
-                            let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+                            let req = read_request(&mut s);
                             let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
                             match files.iter().find(|(p, _)| *p == path) {
                                 Some((_, body)) => {
@@ -307,6 +305,25 @@ pub(crate) mod test_support {
             });
             Self { base, stop }
         }
+    }
+
+    /// The request head, read until its blank line: one `read` could return early under load
+    /// (interrupted, or only part of the request yet), and answering then closed the socket
+    /// before the client had written, which failed the client with a broken pipe.
+    fn read_request(s: &mut TcpStream) -> String {
+        s.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut head = Vec::new();
+        let mut buf = [0u8; 2048];
+        while !head.windows(4).any(|w| w == b"\r\n\r\n") && head.len() < 64 * 1024 {
+            match s.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => head.extend_from_slice(&buf[..n]),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
+            }
+        }
+        String::from_utf8_lossy(&head).into_owned()
     }
 
     impl Drop for FileServer {
