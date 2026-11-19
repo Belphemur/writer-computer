@@ -88,6 +88,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 | 2026-11-18 | [Make tasks native and run Dataview queries on the Bases engine](2026-11-18-make-tasks-native-and-run-dataview-queries-on-the-bases-engine.md) | superseded | split into the two ADRs below |
 | 2026-11-18 | [Make tasks a native built-in feature, with task rows in Bases](2026-11-18-make-tasks-a-native-built-in-feature-with-task-rows-in-bases.md) | accepted   | spec to come: `SPECs/tasks-spec.md` |
 | 2026-11-18 | [Run Dataview queries natively on the Bases engine](2026-11-18-run-dataview-queries-natively-on-the-bases-engine.md) | accepted   | spec to come: `SPECs/dataview-spec.md` |
+| 2026-11-18 | [Check spelling and grammar locally with Harper, Hunspell dictionaries and lingua](2026-11-18-check-spelling-and-grammar-locally-with-harper-hunspell-and-lingua.md) | accepted   | spec to come: `SPECs/spellcheck-spec.md` |
 
 Dates are the day the decision was made. ADRs marked "Backfilled" in their first note were written on 2026-11-16 from specs, commits and code; their date is the first commit that introduced the decision (decisions older than the git history take 2026-04-30, the first commit). Specs hold behaviour, schemas and test matrices; ADRs link to them instead of copying them.
 
