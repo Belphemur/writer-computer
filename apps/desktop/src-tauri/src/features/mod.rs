@@ -103,6 +103,8 @@ mod tasks;
 // registers (see the module), it has no plugin, setup or hook for the runner to run.
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
 pub(crate) mod obsidian_host;
+#[path = "../../../features/spellcheck/rust/mod.rs"]
+mod spellcheck;
 
 /// The parts of `feature.json` Rust reads. `build.rs` reads the same file for the ACL, so the
 /// manifest is the only place a command name is declared.
@@ -288,6 +290,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &excalidraw::Excalidraw,
         &graph::Graph,
         &icons::Icons,
+        &spellcheck::Spellcheck,
         &tasks::Tasks,
     ]
 }
@@ -1134,6 +1137,7 @@ mod tests {
                 "excalidraw",
                 "graph",
                 "icons",
+                "spellcheck",
                 "tasks"
             ]
         );
@@ -1186,8 +1190,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            8,
-            "the agent, bases, code-files, dataview, excalidraw, graph, icons and tasks still start"
+            9,
+            "the agent, bases, code-files, dataview, excalidraw, graph, icons, spellcheck and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1383,6 +1387,7 @@ mod tests {
                 "icon:set",
                 "icon:get",
                 "icon:remove",
+                "check",
                 "task:add",
                 "task:done",
                 "task:edit"
@@ -1399,6 +1404,8 @@ mod tests {
                 "tasks"
             } else if c.name == "dql" {
                 "dataview"
+            } else if c.name == "check" {
+                "spellcheck"
             } else {
                 "bases"
             })));
@@ -1411,7 +1418,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 18
+            crate::cli::registry::COMMANDS.len() + 19
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

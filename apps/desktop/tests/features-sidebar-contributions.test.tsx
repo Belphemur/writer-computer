@@ -74,9 +74,14 @@ let root: Root;
 
 beforeEach(() => {
   // Importing the loader registers the shipped features; the graph and tasks features contribute
-  // a sidebar action of their own, which these fixture-only counts must not see.
+  // a sidebar action of their own and spellcheck a status item, which these fixture-only counts
+  // must not see.
   useSettingsStore.setState({
-    settings: { "features.graph.enabled": false, "features.tasks.enabled": false },
+    settings: {
+      "features.graph.enabled": false,
+      "features.tasks.enabled": false,
+      "features.spellcheck.enabled": false,
+    },
   });
   container = document.createElement("div");
   document.body.append(container);

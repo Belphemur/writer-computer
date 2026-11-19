@@ -125,4 +125,10 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `icon:get` — Print the icon of a file or folder (exit 1 when it has none). Params: `file=`, `path=`, `format=` (text | json).
 - `icon:remove` — Remove the icon of a file or folder. Params: `file=`, `path=`.
 
+## Spelling
+
+`check` runs the same local checker as the app (Harper for English, an installed Hunspell dictionary for other languages; no network). It skips code, links, front matter and math, reads the note's `lang:` property (or `lang=`) and the vault's `.writer/dictionary.txt`. `format=json` prints `{path, findings, missingLanguages}`; each finding has `line`, `column`, `start`, `end` (UTF-16), `text`, `kind` (spelling, grammar or style), `rule`, `message` and `replacements`. Findings are advice: change the note with an ordinary edit.
+
+- `check` — Check a note's spelling and grammar with Writer's local checker. Params: `file=`, `path=`, `lang=` (check as this language, for example fr (default: the note's own)), `format=` (text | json).
+
 <!-- END GENERATED: commands -->

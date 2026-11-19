@@ -304,7 +304,9 @@ pub fn read_global_string(global_config_dir: &Path, key: &str) -> Option<String>
         .map(str::to_string)
 }
 
-fn read_global_value(global_config_dir: &Path, key: &str) -> Option<ConfigValue> {
+/// One value of the global `config` file in `global_config_dir`, whatever its type: what the
+/// `writer` CLI reads to honour a feature's settings. `None` when the file or the key is absent.
+pub fn read_global_value(global_config_dir: &Path, key: &str) -> Option<ConfigValue> {
     let raw = std::fs::read_to_string(global_config_dir.join("config")).ok()?;
     parse_config_with_defaults(&raw, None).remove(key)
 }

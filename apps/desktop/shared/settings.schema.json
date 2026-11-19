@@ -534,6 +534,15 @@
       "scope": "global"
     },
     {
+      "key": "features.spellcheck.enabled",
+      "label": "Spelling and grammar",
+      "description": "Turns the Spelling and grammar feature on or off. The Rust part takes effect after a restart.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
       "key": "features.hotkeys.enabled",
       "label": "Hotkeys",
       "description": "Turns the Hotkeys feature on or off.",

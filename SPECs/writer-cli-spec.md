@@ -950,6 +950,10 @@ Writes keep unknown sections and front matter byte for byte and never touch `.ob
 
 The Windows pipe, a second OS user being refused, `writer status`/`open`/`active` against the built app, window focus and the timing of `--launch` and of a window `open` creates.
 
+## Spelling
+
+`writer check path=Note.md [lang=fr] [format=text|json]` (group "Spelling", contributed by the built-in feature `spellcheck`, so it exists only while the feature is on). It runs the same engine as the editor ([`spellcheck-spec.md`](spellcheck-spec.md)): text output is one `path:line:column kind rule "word" message -> suggestions` row per finding (columns in characters), then a "no dictionary for <lang>" row per language nobody could check, JSON carries UTF-16 `start` and `end`, `kind`, `ruleId`, `replacements` and `missingLanguages` (languages with no installed dictionary). Settings come from the global config file and the personal dictionary from the vault's `.writer/dictionary.txt`; nothing is written and no network is used. Tested end to end in `features/spellcheck/rust/tests.rs`.
+
 ## Launcher for the agent pane
 
 The agent pane's `claude` process gets a `writer` command without any user setup: Writer links `<app data>/bin/writer` to its own binary and puts that directory first on the child's PATH. It does not replace the optional "Install 'writer' Command Line Tool" symlink. Details and tests: [`native-agent-spec.md`](native-agent-spec.md) "Writer CLI for the agent".

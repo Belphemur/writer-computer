@@ -17,6 +17,12 @@ MIT License
 
 Copyright (c) 2021 Michael Brenan
 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Tasks
 
 The task grammar (emoji and Dataview signifiers, the end-anchored order-independent pass order), the status model, the recurrence phrases, the urgency weights and the toggle semantics implemented in `apps/desktop/src-tauri/src/tasks/` follow the Obsidian Tasks plugin by Clare Macrae, Ilyas Landikov and Martin Schenck, https://github.com/obsidian-tasks-group/obsidian-tasks. The ` ```tasks ` query grammar converted by `tasks/block.rs` is read from its public documentation.
@@ -30,3 +36,10 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Spelling and grammar
+
+- Harper (`harper-core`), Apache-2.0, Automattic. English grammar and spelling.
+- spellbook, MPL-2.0, the Helix project. Reads Hunspell dictionaries.
+- lingua (`lingua-rs`), Apache-2.0. Language detection (English and French models).
+- Hunspell dictionaries from `wooorm/dictionaries` are not bundled. A dictionary the user chooses to install keeps its own licence, recorded in `<app data>/spellcheck/dictionaries/<id>/meta.json` and shown in Settings > Spelling before the download.

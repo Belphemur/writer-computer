@@ -1,0 +1,78 @@
+{
+  "settings": [
+    {
+      "key": "spellcheck.check-spelling",
+      "label": "Spelling",
+      "description": "Underline misspelled words.",
+      "category": "Spelling",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
+      "key": "spellcheck.check-grammar",
+      "label": "Grammar",
+      "description": "Underline grammar mistakes. English only for now.",
+      "category": "Spelling",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
+      "key": "spellcheck.check-style",
+      "label": "Style",
+      "description": "Show suggestions about wording and clarity.",
+      "category": "Spelling",
+      "type": "boolean",
+      "default": false,
+      "scope": "global"
+    },
+    {
+      "key": "spellcheck.english-dialect",
+      "label": "English",
+      "description": "The spelling English is checked against.",
+      "category": "Spelling",
+      "type": "enum",
+      "options": ["american", "british", "canadian", "australian", "indian"],
+      "default": "american",
+      "scope": "global"
+    },
+    {
+      "key": "spellcheck.default-language",
+      "label": "Default language",
+      "description": "For notes with no language set and paragraphs too short to detect. A tag such as en or fr.",
+      "category": "Spelling",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "en",
+      "default": "en"
+    },
+    {
+      "key": "spellcheck.folder-languages",
+      "label": "Folder languages",
+      "description": "One folder=language per entry, for example Journal=fr.",
+      "category": "Spelling",
+      "type": "list",
+      "default": []
+    },
+    {
+      "key": "spellcheck.ignored-rules",
+      "label": "Ignored rules",
+      "description": "Grammar and style rules you turned off. Remove one to bring it back.",
+      "category": "Spelling",
+      "type": "list",
+      "default": [],
+      "scope": "global"
+    },
+    {
+      "key": "spellcheck.provider-with-languagetool",
+      "label": "With the LanguageTool plugin",
+      "description": "Which checker runs when the LanguageTool plugin is on. Asked once.",
+      "category": "Spelling",
+      "type": "enum",
+      "options": ["ask", "writer", "languagetool", "both"],
+      "default": "ask",
+      "scope": "global"
+    }
+  ]
+}

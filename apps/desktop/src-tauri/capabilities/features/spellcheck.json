@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-spellcheck",
+  "description": "Grants the spellcheck feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["spellcheck:default"]
+}

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { ask, message as messageDialog, open as openDialog } from "@tauri-apps/plugin-dialog";
 import sidebarEntryKinds from "@shared/sidebar-entry-kinds.json";
 import type { FeaturesStatus } from "@/stores/feature-health-store";
 import type { DirEntry, FileContent, SearchResult, WriteResult, WorkspaceInfo } from "@/types/fs";
@@ -458,4 +458,20 @@ export function importAttachmentUrl(
 /** Native yes/no confirmation. Resolves to whether the user accepted. */
 export function confirmAction(message: string, title: string): Promise<boolean> {
   return ask(message, { title, kind: "warning" });
+}
+
+/** Native three-button choice. Resolves to the index of the button pressed; the last button is
+ *  also what closing the dialog answers, so make it the one that changes nothing. */
+export async function chooseAction(
+  message: string,
+  title: string,
+  labels: readonly [string, string, string],
+): Promise<0 | 1 | 2> {
+  const pressed = await messageDialog(message, {
+    title,
+    kind: "info",
+    buttons: { yes: labels[0], no: labels[1], cancel: labels[2] },
+  });
+  const index = labels.indexOf(pressed);
+  return index === 0 || index === 1 ? index : 2;
 }

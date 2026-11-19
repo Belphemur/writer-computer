@@ -1,0 +1,38 @@
+{
+  "id": "spellcheck",
+  "name": "Spelling and grammar",
+  "version": "1.0.0",
+  "description": "Checks spelling and grammar in notes without a network: Harper for English, Hunspell dictionaries for other languages, a personal dictionary, and `writer check` for agents.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "medium",
+    "note": "Harper's English dictionary and rules load on the first check of an English note (tens of MB) and a Hunspell dictionary loads when a note in that language is first checked; the language detector loads when a long paragraph is first checked. Nothing runs until a note is open. The Rust part needs a restart to start or stop."
+  },
+  "rust": {
+    "commands": [
+      "spellcheck_check",
+      "spellcheck_dictionaries",
+      "spellcheck_install_dictionary",
+      "spellcheck_remove_dictionary",
+      "spellcheck_personal_words",
+      "spellcheck_add_word",
+      "spellcheck_remove_word"
+    ],
+    "hooks": ["setup"],
+    "cliCommands": ["check"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "spellcheck.settings",
+        "label": "Spelling settings",
+        "description": "Languages, dictionary and checks",
+        "when": "workspace-window"
+      }
+    ],
+    "editorExtensions": ["spellcheck.linter"],
+    "statusItems": ["spellcheck.language"],
+    "overlays": ["spellcheck.languagetool-choice"]
+  }
+}

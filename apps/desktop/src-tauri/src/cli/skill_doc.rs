@@ -9,10 +9,16 @@
 use super::registry::{commands, CommandSpec, ParamSpec, FILE, PATH};
 
 /// Prose that belongs to a whole group, shown under its heading in the reference.
-const GROUP_NOTES: &[(&str, &str)] = &[(
+const GROUP_NOTES: &[(&str, &str)] = &[
+    (
+    "Spelling",
+    "`check` runs the same local checker as the app (Harper for English, an installed Hunspell dictionary for other languages; no network). It skips code, links, front matter and math, reads the note's `lang:` property (or `lang=`) and the vault's `.writer/dictionary.txt`. `format=json` prints `{path, findings, missingLanguages}`; each finding has `line`, `column`, `start`, `end` (UTF-16), `text`, `kind` (spelling, grammar or style), `rule`, `message` and `replacements`. Findings are advice: change the note with an ordinary edit.",
+    ),
+    (
     "Graph",
     "Every `graph:*` command takes `format=` (text, json or tsv; default text, use json from an agent) and prints errors as `writer: ...` on stderr. `file=` and `path=` work as elsewhere. Traversals are bounded (depth at most 4) and results are capped. `graph:neighbors` JSON is `{center, nodes, edges, truncated}`; `graph:path` exits 1 with `no path within N hops` when there is none.",
-)];
+    ),
+];
 
 /// The `file=` and `path=` parameters are explained once in the page's intro, so a command that
 /// takes them with the registry's standard text lists just the name.

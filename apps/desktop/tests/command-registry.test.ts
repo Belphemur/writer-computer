@@ -83,6 +83,7 @@ describe("palette built-in commands", () => {
       "graph.open",
       "hotkeys.open",
       "icons.change",
+      "spellcheck.settings",
       "tasks.open",
       "tasks.add",
       "tasks.toggle",

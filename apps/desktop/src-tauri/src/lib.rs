@@ -33,6 +33,7 @@ mod plugin_store;
 mod plugins;
 pub mod property_types;
 pub mod relocate;
+pub mod spellcheck;
 mod state;
 pub mod tasks;
 mod telemetry;
