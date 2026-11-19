@@ -85,6 +85,7 @@ An Architecture Decision Record (ADR) captures an important architecture decisio
 | 2026-11-18 | [Let the writer CLI talk to the running app over a local, authenticated socket](2026-11-18-let-the-writer-cli-talk-to-the-running-app-over-a-local-authenticated-socket.md) | accepted   | [spec](../../SPECs/writer-cli-spec.md) |
 | 2026-11-18 | [Sync vaults with a built-in Git feature: Rust logic and merge, system git for transport](2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md) | proposed   | [spec](../../SPECs/git-sync-spec.md), deferred: future work |
 | 2026-11-18 | [Show file and folder icons natively, over Iconize's data read-only](2026-11-18-show-file-and-folder-icons-natively-over-iconize-data-read-only.md) | accepted   | spec to come: `SPECs/icons-spec.md` |
+| 2026-11-18 | [Make tasks native and run Dataview queries on the Bases engine](2026-11-18-make-tasks-native-and-run-dataview-queries-on-the-bases-engine.md) | accepted   | specs to come: `SPECs/tasks-spec.md`, `SPECs/dataview-spec.md` |
 
 Dates are the day the decision was made. ADRs marked "Backfilled" in their first note were written on 2026-11-16 from specs, commits and code; their date is the first commit that introduced the decision (decisions older than the git history take 2026-04-30, the first commit). Specs hold behaviour, schemas and test matrices; ADRs link to them instead of copying them.
 
