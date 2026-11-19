@@ -105,6 +105,9 @@ pub struct ClaudeStreamMapper {
     /// The launch call (`tool_use_id`) of each sub-agent task id: `task_updated` carries only
     /// the task id.
     task_calls: HashMap<String, String>,
+    /// Each model's cumulative `outputTokens` at the last `result`: `modelUsage` sums the whole
+    /// session, so the model of a turn is the one whose total grew.
+    model_output: HashMap<String, u64>,
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -643,15 +646,37 @@ impl ClaudeStreamMapper {
                     .filter_map(|e| e.get("contextWindow").and_then(Value::as_u64))
                     .max()
             });
-        // The model that did the work: the `modelUsage` key with the most output tokens.
-        let model = v
+        // The model that did this turn's work: `modelUsage` is cumulative over the session (after
+        // a switch it still lists the old model with the larger total), so the winner is the key
+        // whose output grew since the last result; a total that went down (new process) counts
+        // in full.
+        let totals: Vec<(String, u64)> = v
             .get("modelUsage")
             .and_then(Value::as_object)
-            .and_then(|m| {
+            .map(|m| {
                 m.iter()
-                    .max_by_key(|(_, e)| e.get("outputTokens").and_then(Value::as_u64).unwrap_or(0))
-                    .map(|(k, _)| k.clone())
-            });
+                    .map(|(k, e)| {
+                        (
+                            k.clone(),
+                            e.get("outputTokens").and_then(Value::as_u64).unwrap_or(0),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let model = totals
+            .iter()
+            .max_by_key(|(k, total)| {
+                let before = self.model_output.get(k).copied().unwrap_or(0);
+                if *total >= before {
+                    total - before
+                } else {
+                    *total
+                }
+            })
+            .map(|(k, _)| k.clone());
+        log::debug!(target: "agent", "agent: turn model {:?} from {} usage entries", model, totals.len());
+        self.model_output = totals.into_iter().collect();
         out.events.push(usage_event(
             UsageScope::Turn,
             &usage,
@@ -1029,6 +1054,41 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn turn_model_is_the_one_whose_usage_grew_not_the_cumulative_leader() {
+        let result = |sonnet: u64, opus: u64| {
+            json!({"type":"result","subtype":"success","is_error":false,"usage":{},
+                "modelUsage":{"claude-sonnet-5-5":{"outputTokens":sonnet},
+                              "claude-opus-5-5":{"outputTokens":opus}}})
+            .to_string()
+        };
+        let model_of = |m: &mut ClaudeStreamMapper, line: String| {
+            m.map_line(&line).events.into_iter().find_map(|e| match e {
+                AgentEvent::Usage { model, .. } => model,
+                _ => None,
+            })
+        };
+        let mut m = ClaudeStreamMapper::default();
+        assert_eq!(
+            model_of(&mut m, result(500, 0)).as_deref(),
+            Some("claude-sonnet-5-5")
+        );
+        // switched to Opus: Sonnet still leads the session total, Opus did this turn
+        assert_eq!(
+            model_of(&mut m, result(500, 40)).as_deref(),
+            Some("claude-opus-5-5")
+        );
+        assert_eq!(
+            model_of(&mut m, result(500, 90)).as_deref(),
+            Some("claude-opus-5-5")
+        );
+        // a real fallback to Sonnet for this turn shows
+        assert_eq!(
+            model_of(&mut m, result(530, 90)).as_deref(),
+            Some("claude-sonnet-5-5")
+        );
+    }
 
     fn golden_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/agent-golden")
