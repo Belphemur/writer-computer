@@ -250,6 +250,7 @@ fn delete_children(conn: &Connection, id: i64) -> rusqlite::Result<()> {
         "DELETE FROM tags WHERE file_id = ?1",
         "DELETE FROM edges WHERE src_id = ?1",
         "DELETE FROM tasks WHERE file_id = ?1",
+        "DELETE FROM list_items WHERE file_id = ?1",
         "DELETE FROM headings WHERE file_id = ?1",
         "DELETE FROM inline_fields WHERE file_id = ?1",
     ] {
@@ -444,10 +445,52 @@ fn write_children(
         st.execute(params![id, t.tag, t.source])?;
     }
     edges::write_edges(conn, id, path, &note.links, resolver)?;
-    let mut st =
-        conn.prepare_cached("INSERT INTO tasks(file_id,line,status,text) VALUES(?1,?2,?3,?4)")?;
+    let mut st = conn.prepare_cached(
+        "INSERT INTO list_items(file_id,line,parent_line,indent,marker,task_status,text,section_heading) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+    )?;
+    for i in &note.list_items {
+        st.execute(params![
+            id,
+            i.line,
+            i.parent_line,
+            i.indent,
+            i.marker,
+            i.task_status,
+            i.text,
+            i.section
+        ])?;
+    }
+    let mut st = conn.prepare_cached(
+        "INSERT INTO tasks(file_id,line,status_symbol,text,description,due,scheduled,start,created,done,\
+         cancelled,priority,recurrence,on_completion,task_id,depends_on,tags,block_id,parent_line) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+    )?;
     for t in &note.tasks {
-        st.execute(params![id, t.line, t.status, t.text])?;
+        let f = &t.fields;
+        let day = |d: Option<crate::tasks::date::Day>| d.map(|d| d.to_string());
+        let joined = |v: &[String]| Some(v.join(",")).filter(|s| !s.is_empty());
+        st.execute(params![
+            id,
+            t.line,
+            t.status,
+            t.text,
+            f.description,
+            day(f.due),
+            day(f.scheduled),
+            day(f.start),
+            day(f.created),
+            day(f.done),
+            day(f.cancelled),
+            f.priority.map(|p| p.name()),
+            f.recurrence,
+            f.on_completion,
+            f.id,
+            joined(&f.depends_on),
+            joined(&f.tags),
+            f.block_id,
+            t.parent_line
+        ])?;
     }
     let mut st =
         conn.prepare_cached("INSERT INTO headings(file_id,level,text,line) VALUES(?1,?2,?3,?4)")?;

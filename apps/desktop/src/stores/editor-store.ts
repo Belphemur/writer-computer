@@ -184,6 +184,10 @@ export function createSettingsTab(id = createTabId()): Tab {
   return { id, location: { kind: "settings" }, back: [], forward: [] };
 }
 
+export function createTasksTab(id = createTabId()): Tab {
+  return { id, location: { kind: "tasks" }, back: [], forward: [] };
+}
+
 /** A tab for the global graph, optionally centered on a vault-relative note. */
 export function createGraphTab(
   target: { center?: string; depth?: number } = {},

@@ -151,17 +151,19 @@ impl Expr {
 }
 
 /// A property reference as used in `order`, `sort`, `groupBy`, `summaries` and
-/// `properties` keys: `note.x` (or bare `x`), `file.x`, `formula.x`.
+/// `properties` keys: `note.x` (or bare `x`), `file.x`, `formula.x`, and `task.x` on the rows of
+/// a `rows: tasks` base.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PropertyId {
     Note(String),
     File(String),
     Formula(String),
+    Task(String),
 }
 
 impl PropertyId {
     /// A bare name (which may contain spaces, hyphens or dots) is a note
-    /// property; only the exact prefixes `note.`, `file.` and `formula.`
+    /// property; only the exact prefixes `note.`, `file.`, `formula.` and `task.`
     /// select a namespace.
     pub fn parse(s: &str) -> PropertyId {
         if let Some(r) = s.strip_prefix("note.") {
@@ -170,6 +172,8 @@ impl PropertyId {
             PropertyId::File(r.to_string())
         } else if let Some(r) = s.strip_prefix("formula.") {
             PropertyId::Formula(r.to_string())
+        } else if let Some(r) = s.strip_prefix("task.") {
+            PropertyId::Task(r.to_string())
         } else {
             PropertyId::Note(s.to_string())
         }
@@ -182,6 +186,7 @@ impl PropertyId {
             PropertyId::Note(n) => n.clone(),
             PropertyId::File(n) => format!("file.{n}"),
             PropertyId::Formula(n) => format!("formula.{n}"),
+            PropertyId::Task(n) => format!("task.{n}"),
         }
     }
 }

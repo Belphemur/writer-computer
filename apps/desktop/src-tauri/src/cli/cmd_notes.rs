@@ -484,14 +484,14 @@ pub fn delete(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErro
 
 /// Status character of the task on `line`, and its byte offset in the line.
 fn task_status(line: &str) -> Option<(char, usize)> {
-    markdown::task(line, 0)?;
-    let re = regex_lite::Regex::new(r"^\s*(?:>\s*)*(?:[-*+]|\d{1,9}[.)])[ \t]+\[(.)\]").ok()?;
-    let m = re.captures(line)?.get(1)?;
-    Some((line[m.start()..m.end()].chars().next()?, m.start()))
+    let p = crate::tasks::grammar::parse_task(line)?;
+    Some((p.status, p.status_at))
 }
 
-pub fn task(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
-    let (t, line_no): (Target, usize) = match args.get("ref") {
+/// The task a command names: `ref=path:line`, or `file=`/`path=` with `line=`. Shared by `task`
+/// and the `task:*` commands of the tasks feature.
+pub(crate) fn task_target(ctx: &Ctx, args: &Args) -> Result<(Target, usize), CliError> {
+    match args.get("ref") {
         Some(r) => {
             if args.get("file").is_some()
                 || args.get("path").is_some()
@@ -510,13 +510,13 @@ pub fn task(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError>
             if !c.abs.is_file() {
                 return Err(CliError::fail(format!("file not found: {}", c.rel)));
             }
-            (
+            Ok((
                 Target {
                     rel: c.rel,
                     abs: c.abs,
                 },
                 line,
-            )
+            ))
         }
         None => {
             let t = ctx.target(args)?;
@@ -525,9 +525,13 @@ pub fn task(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError>
                 .trim()
                 .parse::<usize>()
                 .map_err(|_| CliError::Usage("line= must be a number".into()))?;
-            (t, line)
+            Ok((t, line))
         }
-    };
+    }
+}
+
+pub fn task(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let (t, line_no) = task_target(ctx, args)?;
     let actions = [
         args.flag("toggle"),
         args.flag("done"),

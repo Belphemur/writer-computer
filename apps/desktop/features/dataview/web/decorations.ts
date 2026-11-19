@@ -3,13 +3,13 @@
 // by the widget while the selection is away and stays editable, with the widget under it, while
 // the selection touches it. The widget (`dataview-block.tsx`) lowers the query in Rust and shows
 // it through the Bases views; `dataviewjs` is a placeholder, nothing is ever evaluated here.
-import { EditorSelection, type EditorState } from "@codemirror/state";
+import type { EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { Decoration, EditorView } from "@codemirror/view";
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import { createElement, type ReactElement } from "react";
 import { editorNotePath } from "@/lib/editor-views";
-import { HeightMemory, ReactBlockWidget } from "@/lib/react-block-widget";
+import { enterBlockEditMode, HeightMemory, ReactBlockWidget } from "@/lib/react-block-widget";
 import { foldableSyntaxFacet } from "@/lib/prosemark-core/main";
 import { parseFencedCode } from "@/components/editor-area/fenced-code";
 import { blockKey, blockKindOfInfo, type DataviewBlock } from "./blocks";
@@ -62,16 +62,11 @@ function findBlockAtHost(view: EditorView, host: HTMLElement): FoundBlock | null
   return null;
 }
 
-/** Range-select the whole block (reverse anchor) so the source unfolds (docs/editor.md). */
+/** Range-select the whole block so the source unfolds (`enterBlockEditMode`). */
 function enterEditMode(view: EditorView, host: HTMLElement): boolean {
   const found = findBlockAtHost(view, host);
   if (!found) return false;
-  view.dispatch({
-    selection: EditorSelection.single(found.to, found.from),
-    effects: view.scrollSnapshot(),
-    scrollIntoView: true,
-  });
-  view.contentDOM.focus({ preventScroll: true });
+  enterBlockEditMode(view, found);
   return true;
 }
 

@@ -12,6 +12,8 @@
 //!   (Obsidian matches tags case-insensitively), and a nested tag `a/b/c` also
 //!   yields the ancestors `a` and `a/b`.
 
+use crate::tasks::grammar;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkKind {
     Wikilink,
@@ -72,11 +74,32 @@ pub struct LocatedLink {
     pub section: Option<String>,
 }
 
+/// A list item of the body (`- a`, `1. b`, a task): the rows of `list_items`, so nesting is
+/// known to the Bases task rows and the Dataview queries.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListItem {
+    pub line: u32,
+    /// The line of the nearest enclosing item (smaller indent), if any.
+    pub parent_line: Option<u32>,
+    /// Columns of indentation after any blockquote prefix.
+    pub indent: u32,
+    pub marker: String,
+    /// The status character when the item is a task.
+    pub task_status: Option<String>,
+    /// The text after the marker (and the checkbox), trimmed.
+    pub text: String,
+    /// The text of the nearest heading at or above the item.
+    pub section: Option<String>,
+}
+
+/// A task: a list item with a checkbox, and what `tasks::grammar` reads from its text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskItem {
     pub line: u32,
     pub status: String,
     pub text: String,
+    pub parent_line: Option<u32>,
+    pub fields: crate::tasks::grammar::TaskFields,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +123,7 @@ pub struct BodyScan {
     /// Normalised (lowercase) tags exactly as written; ancestors are added by
     /// [`with_ancestors`].
     pub tags: Vec<String>,
+    pub list_items: Vec<ListItem>,
     pub tasks: Vec<TaskItem>,
     pub headings: Vec<Heading>,
     pub words: u32,
@@ -519,42 +543,56 @@ pub(crate) fn heading(line: &str, line_no: u32) -> Option<Heading> {
     })
 }
 
-pub(crate) fn task(line: &str, line_no: u32) -> Option<TaskItem> {
-    let mut t = line.trim_start();
-    while let Some(rest) = t.strip_prefix('>') {
-        t = rest.trim_start();
-    }
-    let t = if let Some(rest) = t.strip_prefix(['-', '*', '+']) {
-        rest
-    } else {
-        let digits = t.chars().take_while(char::is_ascii_digit).count();
-        if digits == 0 || digits > 9 {
-            return None;
-        }
-        t[digits..].strip_prefix(['.', ')'])?
-    };
-    let t = t.strip_prefix([' ', '\t'])?.trim_start();
-    let inner = t.strip_prefix('[')?;
-    let mut it = inner.chars();
-    let status = it.next()?;
-    if it.next()? != ']' {
-        return None;
-    }
-    let rest = &inner[status.len_utf8() + 1..];
-    if !rest.is_empty() && !rest.starts_with([' ', '\t']) {
-        return None;
-    }
-    Some(TaskItem {
-        line: line_no,
-        status: status.to_string(),
-        text: rest.trim().to_string(),
-    })
-}
-
 fn count_words(line: &str) -> u32 {
     line.split_whitespace()
         .filter(|w| w.chars().any(char::is_alphanumeric))
         .count() as u32
+}
+
+/// One list item (and task) of the line, with its parent from the items still open. A line that
+/// is not indented and not an item ends the lists; a heading does too.
+fn scan_list_item(
+    line: &str,
+    line_no: u32,
+    section: &Option<String>,
+    open: &mut Vec<(u32, u32)>,
+    scan: &mut BodyScan,
+) {
+    let Some(item) = grammar::list_line(line) else {
+        let indented = line.starts_with([' ', '\t']);
+        if !line.trim().is_empty() && !indented {
+            open.clear();
+        }
+        return;
+    };
+    while open
+        .last()
+        .is_some_and(|(indent, _)| *indent >= item.indent)
+    {
+        open.pop();
+    }
+    let parent_line = open.last().map(|(_, l)| *l);
+    open.push((item.indent, line_no));
+    let text = line[item.text_start..].trim().to_string();
+    let status = item.checkbox.map(|(_, c)| c.to_string());
+    scan.list_items.push(ListItem {
+        line: line_no,
+        parent_line,
+        indent: item.indent,
+        marker: line[item.marker.clone()].to_string(),
+        task_status: status.clone(),
+        text: text.clone(),
+        section: section.clone(),
+    });
+    if let (Some(status), Some(parsed)) = (status, grammar::parse_task(line)) {
+        scan.tasks.push(TaskItem {
+            line: line_no,
+            status,
+            text,
+            parent_line,
+            fields: parsed.fields,
+        });
+    }
 }
 
 /// Scan a markdown body. `first_line` is the 1-based line number of its first
@@ -563,6 +601,8 @@ pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
     let mut scan = BodyScan::default();
     let mut fence: Option<(char, usize)> = None;
     let mut section: Option<String> = None;
+    // open list items, outermost first: (indent, line)
+    let mut open_items: Vec<(u32, u32)> = Vec::new();
     for (i, raw_line) in body.split('\n').enumerate() {
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
         let line_no = first_line + i as u32;
@@ -582,9 +622,7 @@ pub fn scan_body(body: &str, first_line: u32) -> BodyScan {
             section = Some(h.text.clone());
             scan.headings.push(h);
         }
-        if let Some(t) = task(line, line_no) {
-            scan.tasks.push(t);
-        }
+        scan_list_item(line, line_no, &section, &mut open_items, &mut scan);
         scan.inline_fields.extend(
             super::inline_fields::scan_line(line)
                 .into_iter()

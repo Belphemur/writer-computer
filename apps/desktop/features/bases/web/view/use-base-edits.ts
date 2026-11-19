@@ -6,9 +6,11 @@ import {
   classifyValue,
   columnReadOnlyReason,
   editTargetFor,
+  isTaskRowColumn,
   jsonEqual,
   parseCellText,
   rawToCell,
+  TASK_CHECKED_KEY,
   toWireType,
   valueTypeOfRaw,
   type EditKind,
@@ -16,7 +18,12 @@ import {
 } from "../lib/cells";
 import { noteProperties, notePropertyRemove, notePropertySet } from "../ipc";
 import { toAbsolutePath } from "../lib/paths";
-import type { BaseQueryResult, Cell, PropertyJson } from "../lib/types";
+import type { BaseQueryResult, Cell, Column, PropertyJson, Row } from "../lib/types";
+import { getService } from "@/lib/features/services";
+import type { TasksRowsService } from "@features/tasks/web/api";
+
+/** The id of the tasks feature's service (its `provides`); a type-only import cannot carry it. */
+const TASKS_ROWS = "tasks.rows";
 import { errorMessage } from "./use-base-query";
 import { hasUnsavedEditorChanges, reloadOpenNoteAfterWrite } from "@/lib/open-note-sync";
 
@@ -57,6 +64,16 @@ function invert(op: EditOp): EditOp {
     beforeType: op.afterType,
     afterType: op.beforeType,
   };
+}
+
+/** The tasks feature's service, while it is on. A task row's checkbox is written by it. */
+const tasksService = () => getService<TasksRowsService>(TASKS_ROWS);
+
+/** The description a task row lists, so the write can refuse a line that moved. */
+function listedDescription(result: BaseQueryResult, row: Row): string | undefined {
+  const at = result.columns.findIndex((c) => c.key === "task.description");
+  const cell = at >= 0 ? row.cells[at] : undefined;
+  return cell?.type === "string" ? cell.value : undefined;
 }
 
 const overrideKey = (rowPath: string, name: string) => `${rowPath}\u0000${name}`;
@@ -144,13 +161,25 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
 
   // ---- read-only reasons -------------------------------------------------
 
+  /** Why this field of a task row cannot be edited right now, or `null` (the checkbox). */
+  const taskReason = useCallback((row: Row, column: Column): string | null => {
+    if (column.key !== TASK_CHECKED_KEY) return READ_ONLY_REASONS.task;
+    if (!tasksService()) return READ_ONLY_REASONS.tasksOff;
+    const root = getWorkspaceRoot();
+    if (root && hasUnsavedEditorChanges(toAbsolutePath(root, row.path)))
+      return READ_ONLY_REASONS.unsaved;
+    return null;
+  }, []);
+
   /** Why this cell cannot be edited right now, or `null`. */
   const readOnlyReason = useCallback(
     (rowIndex: number, colIndex: number): string | null => {
+      const row = result?.rows[rowIndex];
+      const column = result?.columns[colIndex];
+      // A task row's checkbox is the tasks feature's write, so it stays live in an embedded base.
+      if (row && column && isTaskRowColumn(column, row)) return taskReason(row, column);
       if (readOnly) return readOnly;
       if (!result) return "No data";
-      const row = result.rows[rowIndex];
-      const column = result.columns[colIndex];
       const cell = row?.cells[colIndex];
       if (!row || !column || !cell) return "No such cell";
       // Reasons only: no column-kind inference here, this runs for rendered cells.
@@ -165,7 +194,7 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
         return READ_ONLY_REASONS.unsaved;
       return null;
     },
-    [result, frontmatterErrorOf, readOnly],
+    [result, frontmatterErrorOf, readOnly, taskReason],
   );
 
   /** Look up the note's frontmatter once per result so a read-only reason can show before an edit. */
@@ -174,7 +203,8 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
       if (readOnly) return;
       const current = latestResult.current;
       const row = current?.rows[rowIndex];
-      if (!current || !row) return;
+      // a task row's note is edited as text by the tasks feature, whatever its frontmatter
+      if (!current || !row || row.line != null) return;
       if (probed.current.result !== current) probed.current = { result: current, rows: new Set() };
       if (probed.current.rows.has(row.path)) return;
       probed.current.rows.add(row.path);
@@ -335,7 +365,9 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
       if (reason) return { error: reason };
       const row = result!.rows[rowIndex]!;
       const column = result!.columns[colIndex]!;
-      const target = editTargetFor(column, row.cells[colIndex]!, result!.rows, colIndex);
+      // Nothing a task row's cell holds is a frontmatter property.
+      if (isTaskRowColumn(column, row)) return { error: READ_ONLY_REASONS.task };
+      const target = editTargetFor(column, row.cells[colIndex]!, result!.rows, colIndex, row);
       const beforeType =
         target.editable && row.cells[colIndex]!.type !== "null" ? target.kind : undefined;
       return { rowPath: row.path, name: column.key, next, nextType, beforeType };
@@ -351,8 +383,9 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
       const current = latestResult.current!;
       const row = current.rows[rowIndex]!;
       const column = current.columns[colIndex]!;
-      const target = editTargetFor(column, row.cells[colIndex]!, current.rows, colIndex);
+      const target = editTargetFor(column, row.cells[colIndex]!, current.rows, colIndex, row);
       if (!target.editable) return { ok: false, reason: target.reason };
+      if (isTaskRowColumn(column, row)) return { ok: true, kind: "checkbox", raw: undefined };
       try {
         const props = await noteProperties(absoluteOf(row.path));
         if (props.error) {
@@ -418,8 +451,45 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
     [applyParsed],
   );
 
+  /** Toggle the task of a task row through the tasks feature (its status cycle, done date and
+   *  next occurrence), then requery: the command reindexes the note before it answers. */
+  const toggleTask = useCallback(
+    async (row: Row) => {
+      const service = tasksService();
+      const current = latestResult.current;
+      if (!service || !current || row.line == null) return;
+      try {
+        const abs = absoluteOf(row.path);
+        if (hasUnsavedEditorChanges(abs)) throw new EditRejected(READ_ONLY_REASONS.unsaved);
+        await service.toggle({
+          path: row.path,
+          line: row.line,
+          expect: listedDescription(current, row),
+        });
+        try {
+          await reloadOpenNoteAfterWrite(abs);
+        } catch (e) {
+          notify("error", errorMessage(e));
+        }
+        await refresh();
+      } catch (e) {
+        notify(
+          "error",
+          e instanceof EditRejected ? e.message : `Could not change the task: ${errorMessage(e)}`,
+        );
+      }
+    },
+    [absoluteOf, notify, refresh],
+  );
+
   const toggleCheckbox = useCallback(
     (rowIndex: number, colIndex: number) => {
+      const taskRow = result?.rows[rowIndex];
+      const taskColumn = result?.columns[colIndex];
+      if (taskRow && taskColumn && isTaskRowColumn(taskColumn, taskRow)) {
+        void toggleTask(taskRow);
+        return;
+      }
       const cell = result?.rows[rowIndex]?.cells[colIndex];
       if (!cell) return;
       const current =
@@ -433,7 +503,7 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
         valueType: "checkbox",
       });
     },
-    [applyParsed, overrides, result],
+    [applyParsed, overrides, result, toggleTask],
   );
 
   /** Clear (remove the property of) every cell of the range. One undo step. */
@@ -500,7 +570,11 @@ export function useBaseEdits({ result, refresh, readOnly = null }: Params) {
           }
           const column = result.columns[c]!;
           const row = result.rows[rowIndex]!;
-          const target = editTargetFor(column, row.cells[c]!, result.rows, c);
+          if (isTaskRowColumn(column, row)) {
+            notify("error", `Nothing pasted: ${READ_ONLY_REASONS.task} (${row.path})`);
+            return;
+          }
+          const target = editTargetFor(column, row.cells[c]!, result.rows, c, row);
           if (!target.editable) {
             notify("error", `Nothing pasted: ${target.reason} (${column.displayName})`);
             return;

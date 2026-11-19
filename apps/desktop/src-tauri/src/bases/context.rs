@@ -117,6 +117,17 @@ pub trait RowContext {
     /// `#heading`, no `|alias`) as written in this file to a vault path.
     fn resolve_link(&self, text: &str) -> Option<String>;
 
+    /// `task.<name>` of a task row (`rows: tasks`); `None` on a file row, where `task.*` is an
+    /// error, and for a name a task row does not have.
+    fn task_field(&self, _name: &str) -> Option<Value> {
+        None
+    }
+
+    /// The 1-based line of a task row in its file; `None` on a file row.
+    fn line(&self) -> Option<u32> {
+        None
+    }
+
     /// Row context of another file by vault path, for linked-note lookups
     /// (`link.asFile().properties`, `file("x").hasTag(..)`).
     fn context_for_path(&self, path: &str) -> Option<Rc<dyn RowContext>>;

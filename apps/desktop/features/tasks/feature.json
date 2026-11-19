@@ -1,0 +1,68 @@
+{
+  "id": "tasks",
+  "name": "Tasks",
+  "version": "1.0.0",
+  "description": "Tasks in your notes: dates, priorities and recurrence on task lines, the Tasks page, task bases, quick add, and the writer task commands.",
+  "enabledByDefault": true,
+  "activation": ["onView:tasks"],
+  "memory": {
+    "level": "low",
+    "note": "The editor extension is small and runs only on task lines. The Tasks page loads when first shown; nothing runs in the background. The Rust half (write commands, the writer task commands) takes effect at the next launch."
+  },
+  "provides": ["tasks.rows"],
+  "rust": {
+    "commands": [
+      "task_add",
+      "task_line_info",
+      "task_line_set",
+      "task_line_toggle",
+      "task_set_field",
+      "task_toggle",
+      "tasks_convert_block",
+      "tasks_sections"
+    ],
+    "cliCommands": ["task:add", "task:done", "task:edit"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "tasks.open",
+        "label": "Open tasks",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "tasks.add",
+        "label": "Add task",
+        "description": "Command",
+        "when": "workspace-window"
+      },
+      {
+        "id": "tasks.toggle",
+        "label": "Toggle task",
+        "description": "Command",
+        "when": "active-note"
+      },
+      {
+        "id": "tasks.edit",
+        "label": "Edit task",
+        "description": "Command",
+        "when": "active-note"
+      },
+      {
+        "id": "tasks.convert-block",
+        "label": "Convert tasks block to base",
+        "description": "Command",
+        "when": "active-note"
+      }
+    ],
+    "sidebarActions": ["tasks.open-action"],
+    "overlays": ["tasks.quick-add", "tasks.edit-dialog"],
+    "menus": {
+      "editor-body": ["tasks.editor-menu"]
+    },
+    "editorExtensions": ["tasks.editor"],
+    "slots": ["tasks.page"],
+    "services": ["tasks.rows"]
+  }
+}

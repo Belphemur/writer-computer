@@ -499,6 +499,14 @@ pub fn tag(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> 
 // ---------------------------------------------------------------------------
 
 pub fn tasks(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
+    // a filter, a sort or a limit asks for rows of the Bases engine (the tasks feature's core)
+    if ["filter", "sort", "limit"]
+        .iter()
+        .any(|k| args.get(k).is_some())
+        || args.flag("desc")
+    {
+        return super::cmd_tasks::query(ctx, args, spec);
+    }
     let format = args.format(spec)?;
     let (done, todo) = (args.flag("done"), args.flag("todo"));
     if done && todo {

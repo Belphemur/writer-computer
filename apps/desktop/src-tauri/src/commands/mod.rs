@@ -14,6 +14,7 @@ pub mod settings;
 pub mod shell_install;
 pub mod skills;
 pub mod startup;
+pub mod vault_edit;
 pub mod workspace;
 
 use crate::error::AppError;

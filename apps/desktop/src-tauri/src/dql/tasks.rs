@@ -7,7 +7,7 @@
 //! file's `file.*` and `note.*`. This table is the one place that names them for DQL, so the
 //! day the Tasks feature settles a name (is `task.status` the status type or the symbol?) it is
 //! one line here. The lowering is pinned by unit tests; executing a task query needs the Tasks
-//! feature's rows (`#[ignore = "needs tasks-feature rows"]` tests in `tests.rs`).
+//! feature's rows; `a_task_query_returns_the_task_rows_the_fixture_expects` in `tests.rs` runs one.
 
 /// What a Dataview task field becomes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -44,7 +44,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Search     | `search`, `search:context`                                                                                                                    |
 | Properties | `properties`, `property:set`, `property:read`, `property:remove`, `aliases`                                                                   |
 | Tags       | `tags`, `tag`                                                                                                                                 |
-| Tasks      | `tasks`, `task`                                                                                                                               |
+| Tasks      | `tasks`, `task`, `task:add`, `task:done`, `task:edit`                                                                                         |
 | Links      | `links`, `backlinks`, `unresolved`, `orphans`, `deadends`                                                                                     |
 | Graph      | `graph:neighbors`, `graph:path`, `graph:relationships`, `graph:backlinks`, `graph:related`, `graph:hubs`, `graph:components`, `graph:orphans` |
 | Structure  | `outline`, `wordcount`                                                                                                                        |

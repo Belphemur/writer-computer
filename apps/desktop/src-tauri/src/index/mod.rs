@@ -37,6 +37,8 @@ mod graph_tests;
 #[cfg(test)]
 mod search_tests;
 #[cfg(test)]
+mod task_rows_tests;
+#[cfg(test)]
 mod tests;
 
 /// Notes shared by the nested-tag tests of the index, search, CLI and Bases

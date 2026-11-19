@@ -31,7 +31,7 @@ const sources = import.meta.glob<string>(
   [
     "../src/components/{editor-area,settings-panel}/**/*.{ts,tsx}",
     "../src/components/{feature-off-page,feature-pane}.tsx",
-    "../features/{graph,bases,code-files,images,pdf}/web/**/*.{ts,tsx}",
+    "../features/{graph,bases,code-files,images,pdf,tasks}/web/**/*.{ts,tsx}",
     "../features/obsidian-host/web/components/**/*.{ts,tsx}",
   ],
   { query: "?raw", import: "default", eager: true },

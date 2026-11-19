@@ -7,13 +7,13 @@
 /// Bump when any bundled file changes (`tests::bundle_fingerprint_is_current`
 /// tells you the new fingerprint). The version orders installs: a vault whose
 /// installed version is newer than this binary's is left alone.
-pub const BUNDLE_VERSION: u32 = 13;
+pub const BUNDLE_VERSION: u32 = 14;
 
 /// SHA-256 over every bundled file (see `mod.rs::bundle_fingerprint`). It exists
 /// only to make a forgotten `BUNDLE_VERSION` bump a failing test.
 #[cfg(test)]
 pub const BUNDLE_FINGERPRINT: &str =
-    "cb0e47cbad0025f4d2e86f3d104cc8695e39f59894ecd0bc2b6f6b9b76045a29";
+    "c5dc44597e10ee6d73ded955b0ba7c206999cfe807d2ec6872fac8339482a5be";
 
 pub struct BundledFile {
     /// Path inside the skill directory, forward slashes.

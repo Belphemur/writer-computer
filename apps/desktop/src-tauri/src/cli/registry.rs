@@ -443,17 +443,24 @@ pub static COMMANDS: &[CommandSpec] = &[
     cmd!(
         "tasks",
         "Tasks",
-        "List tasks",
+        "List tasks (filter= takes a Bases expression over task rows)",
         &[
             FILE,
             PATH,
             p("status", "status character"),
+            p(
+                "filter",
+                "expression, e.g. task.due < today() && !task.checked"
+            ),
+            p("sort", "task property, e.g. task.due or task.urgency"),
+            p("limit", "at most this many tasks"),
             p("format", "text | json | tsv | csv")
         ],
         &[
             ("total", "print only the count"),
             ("done", "completed only"),
             ("todo", "not completed only"),
+            ("desc", "with sort=: descending"),
             ("verbose", "group by file with line numbers")
         ],
         &["text", "json", "tsv", "csv"],

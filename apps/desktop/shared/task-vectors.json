@@ -1,0 +1,305 @@
+{
+  "_comment": "Pins the task grammar twice: the Rust grammar (src-tauri/src/tasks, test `task_vectors`) and the TypeScript editor helpers (features/tasks/tests). `signifiers` is the one table of what each field is written with; `parse` is line -> fields (absent keys are empty); `write` is line + op -> line; `toggle` is line + today -> the lines left in the file.",
+  "signifiers": {
+    "priority": {
+      "emoji": ["🔺", "⏫", "🔼", "🔽", "⏬"],
+      "names": ["highest", "high", "medium", "low", "lowest"],
+      "dataview": "priority"
+    },
+    "due": { "emoji": ["📅"], "read": ["📆", "🗓"], "dataview": "due" },
+    "scheduled": { "emoji": ["⏳"], "read": ["⌛"], "dataview": "scheduled" },
+    "start": { "emoji": ["🛫"], "dataview": "start" },
+    "created": { "emoji": ["➕"], "dataview": "created" },
+    "done": { "emoji": ["✅"], "dataview": "completion" },
+    "cancelled": { "emoji": ["❌"], "dataview": "cancelled" },
+    "recurrence": { "emoji": ["🔁"], "dataview": "repeat" },
+    "on_completion": { "emoji": ["🏁"], "dataview": "onCompletion" },
+    "id": { "emoji": ["🆔"], "dataview": "id" },
+    "depends_on": { "emoji": ["⛔"], "dataview": "dependsOn" }
+  },
+  "parse": [
+    { "line": "- [ ] plain", "status": " ", "fields": { "description": "plain" } },
+    {
+      "line": "- [x] done thing ✅ 2024-03-10",
+      "status": "x",
+      "fields": { "description": "done thing", "done": "2024-03-10" }
+    },
+    { "line": "* [/] star marker", "status": "/", "fields": { "description": "star marker" } },
+    { "line": "+ [-] plus marker", "status": "-", "fields": { "description": "plus marker" } },
+    { "line": "12. [ ] numbered", "status": " ", "fields": { "description": "numbered" } },
+    {
+      "line": "3) [ ] paren numbered",
+      "status": " ",
+      "fields": { "description": "paren numbered" }
+    },
+    { "line": "    - [ ] indented", "status": " ", "fields": { "description": "indented" } },
+    { "line": "> - [ ] quoted", "status": " ", "fields": { "description": "quoted" } },
+    {
+      "line": "- [ ] t 📅 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t 📆 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t 🗓 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t ⏳ 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "scheduled": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t ⌛ 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "scheduled": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t 🛫 2024-03-15 ➕ 2024-03-01",
+      "status": " ",
+      "fields": { "description": "t", "start": "2024-03-15", "created": "2024-03-01" }
+    },
+    {
+      "line": "- [ ] t ❌ 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "cancelled": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t 🔺",
+      "status": " ",
+      "fields": { "description": "t", "priority": "highest" }
+    },
+    { "line": "- [ ] t ⏫", "status": " ", "fields": { "description": "t", "priority": "high" } },
+    { "line": "- [ ] t 🔼", "status": " ", "fields": { "description": "t", "priority": "medium" } },
+    { "line": "- [ ] t 🔽", "status": " ", "fields": { "description": "t", "priority": "low" } },
+    { "line": "- [ ] t ⏬", "status": " ", "fields": { "description": "t", "priority": "lowest" } },
+    {
+      "line": "- [ ] t ⏫️ 📅️ 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "priority": "high", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t 🔁 every 2 weeks when done",
+      "status": " ",
+      "fields": { "description": "t", "recurrence": "every 2 weeks when done" }
+    },
+    {
+      "line": "- [ ] t 🔁 every week 📅 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t", "recurrence": "every week", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-15 🔁 every week ⏫",
+      "status": " ",
+      "fields": {
+        "description": "t",
+        "recurrence": "every week",
+        "due": "2024-03-15",
+        "priority": "high"
+      }
+    },
+    {
+      "line": "- [ ] t 🏁 delete",
+      "status": " ",
+      "fields": { "description": "t", "on_completion": "delete" }
+    },
+    {
+      "line": "- [ ] t 🆔 a1 ⛔ b2,c3",
+      "status": " ",
+      "fields": { "description": "t", "id": "a1", "depends_on": ["b2", "c3"] }
+    },
+    {
+      "line": "- [ ] t #a 📅 2024-03-15 #b",
+      "status": " ",
+      "fields": { "description": "t #a #b", "due": "2024-03-15", "tags": ["a", "b"] }
+    },
+    {
+      "line": "- [ ] t #Mixed/Case 📅 2024-03-15",
+      "status": " ",
+      "fields": { "description": "t #Mixed/Case", "due": "2024-03-15", "tags": ["mixed/case"] }
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-15 ^abc-1",
+      "status": " ",
+      "fields": { "description": "t", "due": "2024-03-15", "block_id": "abc-1" }
+    },
+    {
+      "line": "- [ ] see http://x.test/p#frag",
+      "status": " ",
+      "fields": { "description": "see http://x.test/p#frag" }
+    },
+    {
+      "line": "- [ ] t 📅 2024-02-30",
+      "status": " ",
+      "fields": { "description": "t 📅 2024-02-30" }
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-15 after",
+      "status": " ",
+      "fields": { "description": "t 📅 2024-03-15 after" }
+    },
+    {
+      "line": "- [ ] t  [due:: 2024-03-15]",
+      "status": " ",
+      "fields": { "description": "t", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t (due:: 2024-03-15)",
+      "status": " ",
+      "fields": { "description": "t", "due": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t  [priority:: highest]  [scheduled:: 2024-03-14]",
+      "status": " ",
+      "fields": { "description": "t", "priority": "highest", "scheduled": "2024-03-14" }
+    },
+    {
+      "line": "- [x] t  [completion:: 2024-03-15]",
+      "status": "x",
+      "fields": { "description": "t", "done": "2024-03-15" }
+    },
+    {
+      "line": "- [ ] t [repeat:: every day],",
+      "status": " ",
+      "fields": { "description": "t", "recurrence": "every day" }
+    },
+    {
+      "line": "- [ ] t [mood:: good]",
+      "status": " ",
+      "fields": { "description": "t [mood:: good]" }
+    },
+    {
+      "line": "- [ ] 🔁 every day",
+      "status": " ",
+      "fields": { "description": "", "recurrence": "every day" }
+    }
+  ],
+  "write": [
+    {
+      "line": "- [ ] t",
+      "format": "emoji",
+      "field": "due",
+      "value": "2024-04-01",
+      "result": "- [ ] t 📅 2024-04-01"
+    },
+    {
+      "line": "- [ ] t",
+      "format": "dataview",
+      "field": "due",
+      "value": "2024-04-01",
+      "result": "- [ ] t  [due:: 2024-04-01]"
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-15",
+      "format": "emoji",
+      "field": "due",
+      "value": "2024-04-01",
+      "result": "- [ ] t 📅 2024-04-01"
+    },
+    {
+      "line": "- [ ] t 📆 2024-03-15",
+      "format": "emoji",
+      "field": "due",
+      "value": "2024-04-01",
+      "result": "- [ ] t 📅 2024-04-01"
+    },
+    {
+      "line": "- [ ] t ⌛ 2024-03-15",
+      "format": "emoji",
+      "field": "scheduled",
+      "value": "2024-04-01",
+      "result": "- [ ] t ⏳ 2024-04-01"
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-15 ^b",
+      "format": "emoji",
+      "field": "done",
+      "value": "2024-03-16",
+      "result": "- [ ] t 📅 2024-03-15 ✅ 2024-03-16 ^b"
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-15 ⏫",
+      "format": "emoji",
+      "field": "due",
+      "value": null,
+      "result": "- [ ] t ⏫"
+    },
+    {
+      "line": "- [ ] t",
+      "format": "emoji",
+      "field": "priority",
+      "value": "highest",
+      "result": "- [ ] t 🔺"
+    },
+    {
+      "line": "- [ ] t",
+      "format": "dataview",
+      "field": "priority",
+      "value": "low",
+      "result": "- [ ] t  [priority:: low]"
+    },
+    {
+      "line": "- [ ] t ⏫",
+      "format": "emoji",
+      "field": "priority",
+      "value": "lowest",
+      "result": "- [ ] t ⏬"
+    },
+    {
+      "line": "- [ ] t",
+      "format": "emoji",
+      "field": "recurrence",
+      "value": "every month on the 15th",
+      "result": "- [ ] t 🔁 every month on the 15th"
+    },
+    {
+      "line": "- [ ] t [due:: 2024-01-01]",
+      "format": "emoji",
+      "field": "due",
+      "value": "2024-02-02",
+      "result": "- [ ] t [due:: 2024-02-02]"
+    },
+    {
+      "line": "> - [ ] quoted #a",
+      "format": "emoji",
+      "field": "due",
+      "value": "2024-02-02",
+      "result": "> - [ ] quoted #a 📅 2024-02-02"
+    }
+  ],
+  "toggle": [
+    { "line": "- [ ] t", "today": "2024-03-15", "result": ["- [x] t ✅ 2024-03-15"] },
+    { "line": "- [x] t ✅ 2024-03-15", "today": "2024-03-16", "result": ["- [ ] t"] },
+    { "line": "- [/] t", "today": "2024-03-15", "result": ["- [x] t ✅ 2024-03-15"] },
+    {
+      "line": "- [ ] t 📅 2024-03-15 🔁 every day",
+      "today": "2024-03-15",
+      "result": [
+        "- [ ] t 📅 2024-03-16 🔁 every day",
+        "- [x] t 📅 2024-03-15 🔁 every day ✅ 2024-03-15"
+      ]
+    },
+    {
+      "line": "- [ ] t 📅 2024-03-01 🔁 every week when done",
+      "today": "2024-03-15",
+      "result": [
+        "- [ ] t 📅 2024-03-22 🔁 every week when done",
+        "- [x] t 📅 2024-03-01 🔁 every week when done ✅ 2024-03-15"
+      ]
+    },
+    {
+      "line": "- [ ] t 📅 2024-01-31 🔁 every month",
+      "today": "2024-03-15",
+      "result": [
+        "- [ ] t 📅 2024-02-29 🔁 every month",
+        "- [x] t 📅 2024-01-31 🔁 every month ✅ 2024-03-15"
+      ]
+    },
+    { "line": "- [ ] t 🏁 delete", "today": "2024-03-15", "result": [] }
+  ]
+}

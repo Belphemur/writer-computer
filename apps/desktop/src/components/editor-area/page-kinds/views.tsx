@@ -23,6 +23,7 @@ import type { PluginFileLocation } from "./plugin-file";
 import type { PluginViewLocation } from "./plugin-view";
 import type { SessionChangesLocation } from "./session-changes";
 import type { SettingsLocation } from "./settings";
+import type { TasksLocation } from "./tasks";
 import type { PageKindView } from "./types";
 
 /**
@@ -119,6 +120,7 @@ const views = {
     actions: (location) => <OpenAsTextButton path={location.path} />,
   }) satisfies PageKindView<BaseLocation>,
   graph: featureView("graph", { feature: "graph" }) satisfies PageKindView<GraphLocation>,
+  tasks: featureView("tasks", { feature: "tasks" }) satisfies PageKindView<TasksLocation>,
   launcher: {
     Component: NewTabPage,
   } satisfies PageKindView<LauncherLocation>,

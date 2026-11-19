@@ -581,3 +581,7 @@ Rust (done for Phase 0): `apps/desktop/src-tauri/Cargo.toml`, `src/index/` (sche
 ## Dataview dialect, `calendar` view and extension keys
 
 The engine also serves DQL (spec [`SPECs/dataview-spec.md`](dataview-spec.md)). A document with the Writer key `dialect: dql` runs under `Dialect::Dql` (DQL truthiness, list swizzling, inline fields, extra `file.*` fields, the function table in `bases/dialect.rs`, filter errors drop the row); without it nothing changes, pinned by `the_dialect_never_changes_bases_results`. Writer extension keys, kept in `View.extra` and ignored by Obsidian: `flatten`, `dqlGroup`, `dateProperty`, `separator`; `rows: tasks` selects task rows (Tasks feature). The built-in `calendar` view type draws a Monday-first month grid from `dateProperty` (default: the last column).
+
+## Task rows (Writer extension)
+
+A base may set `rows: tasks` (default `files`): rows are the tasks of the vault with the `task.*` properties and the file's `file.*` / `note.*`. Spec: [`tasks-spec.md`](tasks-spec.md) section 4.

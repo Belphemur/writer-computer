@@ -47,6 +47,8 @@ export const READ_ONLY_REASONS = {
   complexList: "Lists with nested or non-text items cannot be edited in the table",
   frontmatter: "This note's frontmatter cannot be parsed, so its properties are read-only",
   unsaved: "This note is open in an editor tab with unsaved changes; save or close it first",
+  task: "Edit this task in its note",
+  tasksOff: "Tasks is turned off",
 } as const;
 
 export type ReadOnlyReason = (typeof READ_ONLY_REASONS)[keyof typeof READ_ONLY_REASONS];
@@ -57,6 +59,15 @@ export function columnReadOnlyReason(column: Column): ReadOnlyReason | null {
   if (ns === "formula") return READ_ONLY_REASONS.formula;
   if (ns === "file") return READ_ONLY_REASONS.file;
   return null;
+}
+
+/** The one editable column of a task row: the checkbox (`rows: tasks`, SPECs/tasks-spec.md). */
+export const TASK_CHECKED_KEY = "task.checked";
+
+/** Is `column` of `row` a field of the task on that line? A task row carries its line; in a file
+ *  base `task.x` is an ordinary note property. */
+export function isTaskRowColumn(column: Column, row: Row): boolean {
+  return row.line != null && column.key.startsWith("task.");
 }
 
 function isTextItem(item: CellValue): boolean {
@@ -137,7 +148,15 @@ export function editTargetFor(
   cell: Cell,
   rows: readonly Row[],
   columnIndex: number,
+  row?: Row,
 ): EditTarget {
+  // A task's fields live in its note's text, not in frontmatter: only the checkbox, which the
+  // tasks feature writes, can be edited.
+  if (row && isTaskRowColumn(column, row)) {
+    return column.key === TASK_CHECKED_KEY
+      ? { editable: true, kind: "checkbox" }
+      : { editable: false, reason: READ_ONLY_REASONS.task };
+  }
   const columnReason = columnReadOnlyReason(column);
   if (columnReason) return { editable: false, reason: columnReason };
   const c = classifyValue(cell);

@@ -897,7 +897,7 @@ impl<'a> Lowering<'a> {
         doc.properties = self.props;
         doc.views = vec![view];
         if self.task {
-            doc.extra.push(("rows".into(), Node::Str("tasks".into())));
+            doc.rows = crate::bases::document::RowKind::Tasks;
         }
         Ok(Lowered {
             document: doc,

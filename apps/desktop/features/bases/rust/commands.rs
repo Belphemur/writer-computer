@@ -22,17 +22,10 @@ use crate::vault_ops::{self, Confined, VaultOpError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Emitter, Runtime};
+use tauri::Runtime;
 
-pub(crate) fn op_err(e: VaultOpError) -> AppError {
-    match e {
-        VaultOpError::NotFound(m) => AppError::NotFound(m),
-        VaultOpError::Invalid(m) => AppError::InvalidPath(m),
-        other => AppError::Io(other.to_string()),
-    }
-}
+pub(crate) use crate::commands::vault_edit::op_err;
 
 fn require_base(c: &Confined) -> Result<(), AppError> {
     if c.rel.to_ascii_lowercase().ends_with(".base") {
@@ -305,46 +298,18 @@ pub async fn note_property_remove<R: Runtime>(
 }
 
 /// Confine, mark the write as ours (the watcher must not treat it as an
-/// external change), edit, refresh the index row and the sidebar metadata.
+/// external change), edit, refresh the index row and the sidebar metadata
+/// (`commands::vault_edit`, shared with the tasks feature).
 async fn edit_property<R: Runtime>(
     path: String,
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
     edit: impl FnOnce(&std::path::Path) -> Result<bool, VaultOpError> + Send + 'static,
 ) -> Result<(), AppError> {
-    let label = webview.label().to_string();
-    let (state, index) = window_index(&app, &webview)?;
-    let c = vault_ops::confine_markdown(index.root(), &path).map_err(op_err)?;
-    // Record every spelling of the path the watcher may report.
-    crate::watcher::record_write(&state, &c.abs);
-    let lexical: PathBuf = index.root().join(&c.rel);
-    if lexical != c.abs {
-        crate::watcher::record_write(&state, &lexical);
-    }
-    let abs = c.abs.clone();
-    let idx = Arc::clone(&index);
-    blocking(move || {
-        let changed = edit(&abs).map_err(op_err)?;
-        if changed {
-            idx.index_paths_blocking(vec![abs]).map_err(app_err)?;
-        }
-        Ok(changed)
+    crate::commands::vault_edit::edit_vault_file(path, true, webview, app, move |_, c| {
+        Ok((edit(&c.abs)?, ()))
     })
     .await
-    .map(|changed| {
-        if changed {
-            let modified_at = crate::commands::fs::modified_time(&c.abs);
-            state.update_index_modified_at(&c.abs, modified_at);
-            let _ = app.emit_to(
-                label,
-                "sidebar:metadata-changed",
-                &crate::commands::fs::WriteResult {
-                    path: c.abs.to_string_lossy().into_owned(),
-                    modified_at,
-                },
-            );
-        }
-    })
 }
 
 /// Frontmatter of a note, read fresh from disk (not from the index). `order` is file order (a

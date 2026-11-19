@@ -8,9 +8,24 @@
 //  - the measured height is remembered per key, so scrolling past an embed whose data loads late
 //    does not insert a placeholder that later snaps to size under the viewport;
 //  - events inside belong to the React tree (`ignoreEvent`).
+import { EditorSelection } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import type { ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+
+/**
+ * "Edit" on a block widget: range-select the whole block with a reverse anchor so its source
+ * unfolds and the caret lands in it (docs/editor.md), keep the scroll position and focus the
+ * editor without scrolling. The caller finds the block's range live; a widget keeps no position.
+ */
+export function enterBlockEditMode(view: EditorView, block: { from: number; to: number }): void {
+  view.dispatch({
+    selection: EditorSelection.single(block.to, block.from),
+    effects: view.scrollSnapshot(),
+    scrollIntoView: true,
+  });
+  view.contentDOM.focus({ preventScroll: true });
+}
 
 /** Last measured height per key, least recently set evicted first. */
 export class HeightMemory {

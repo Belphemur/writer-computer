@@ -957,3 +957,7 @@ The agent pane's `claude` process gets a `writer` command without any user setup
 ## `writer dql` (Dataview feature)
 
 `writer dql query="TABLE file.name FROM #todo" [file=<note>|path=<note>] [format=json|csv|md|tsv|paths]` runs a Dataview query on the vault index with the same Rust engine as the note blocks and prints the rows; `file`/`path` sets `this`. Errors print the DQL line and column and exit non-zero. Provided by the `dataview` feature (absent when it is off); documented in the `writer-cli` skill. Spec: [`SPECs/dataview-spec.md`](dataview-spec.md).
+
+## Tasks commands
+
+`writer tasks filter=<expression> [sort=] [desc] [limit=]` filters task rows with a Bases expression; `task:add`, `task:done`, `task:edit` write one task line (feature `tasks`, answer "turned off" with it off). Spec: [`tasks-spec.md`](tasks-spec.md) section 5.

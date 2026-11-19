@@ -25,6 +25,7 @@ mod cmd_notes;
 pub(crate) mod cmd_project;
 mod cmd_query;
 mod cmd_skills;
+pub(crate) mod cmd_tasks;
 pub mod format;
 pub mod registry;
 #[cfg(test)]

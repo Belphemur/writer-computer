@@ -405,7 +405,6 @@ fn the_dialect_never_changes_bases_results() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "needs tasks-feature rows"]
 fn a_task_query_returns_the_task_rows_the_fixture_expects() {
     let vault = fixture();
     let l = lower(r#"TASK FROM "Projects" WHERE !completed"#).unwrap();

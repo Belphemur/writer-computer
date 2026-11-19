@@ -10,6 +10,7 @@ import { pluginFileKind, type PluginFileLocation } from "./plugin-file";
 import { pluginViewKind, type PluginViewLocation } from "./plugin-view";
 import { sessionChangesKind, type SessionChangesLocation } from "./session-changes";
 import { settingsKind, type SettingsLocation } from "./settings";
+import { tasksKind, type TasksLocation } from "./tasks";
 import { isFeatureActive } from "@/lib/features/active";
 import type { AnyPageKind, PageKind, SerializedLocation } from "./types";
 
@@ -33,6 +34,7 @@ const kinds = [
   pluginViewKind,
   pluginFileKind,
   sessionChangesKind,
+  tasksKind,
 ] as const;
 
 export type Location =
@@ -47,7 +49,8 @@ export type Location =
   | SettingsLocation
   | PluginViewLocation
   | PluginFileLocation
-  | SessionChangesLocation;
+  | SessionChangesLocation
+  | TasksLocation;
 
 const byKind: Map<string, AnyPageKind> = new Map(
   kinds.map((k) => [k.kind, k as unknown as AnyPageKind]),

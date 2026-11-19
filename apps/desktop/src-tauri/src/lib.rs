@@ -34,6 +34,7 @@ mod plugins;
 pub mod property_types;
 pub mod relocate;
 mod state;
+pub mod tasks;
 mod telemetry;
 #[cfg(desktop)]
 mod updater;

@@ -23,6 +23,8 @@ The Tasks plugin (MIT, 4.6M downloads) is among the most used in Obsidian. Write
 - B. Port the Tasks plugin's own query engine and UI.
 - C. Keep the Obsidian plugin through the plugin host.
 
+Spec: [`SPECs/tasks-spec.md`](../../SPECs/tasks-spec.md).
+
 ## Decision Outcome
 
 Chosen option: **A**.
@@ -62,11 +64,11 @@ Chosen option: **A**.
 
 ### Verification
 
-- [ ] A vault's Tasks-format tasks show their due dates and priorities in a `rows: tasks` base; checking one writes the done date and the next recurrence.
-- [ ] `![[Tasks.base]]` embeds a task base in a note.
-- [ ] The Tasks page shows Today, Upcoming, Overdue, No date and By folder; quick add appends to `Tasks.md` (created if missing).
-- [ ] `writer task:add` / `task:done` change one line only.
-- [ ] "Convert to Base" turns a ` ```tasks ` block into a working task base.
+- [x] A vault's Tasks-format tasks show their due dates and priorities in a `rows: tasks` base; checking one writes the done date and the next recurrence.
+- [x] `![[Tasks.base]]` embeds a task base in a note.
+- [x] The Tasks page shows Today, Upcoming, Overdue, No date and By folder; quick add appends to `Tasks.md` (created if missing).
+- [x] `writer task:add` / `task:done` change one line only.
+- [x] "Convert to Base" turns a ` ```tasks ` block into a working task base.
 
 ## Pros and Cons of the Options
 

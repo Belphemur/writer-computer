@@ -97,6 +97,8 @@ mod excalidraw;
 mod graph;
 #[path = "../../../features/icons/rust/mod.rs"]
 pub(crate) mod icons;
+#[path = "../../../features/tasks/rust/mod.rs"]
+mod tasks;
 // Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
 // registers (see the module), it has no plugin, setup or hook for the runner to run.
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
@@ -286,6 +288,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &excalidraw::Excalidraw,
         &graph::Graph,
         &icons::Icons,
+        &tasks::Tasks,
     ]
 }
 
@@ -1130,7 +1133,8 @@ mod tests {
                 "dataview",
                 "excalidraw",
                 "graph",
-                "icons"
+                "icons",
+                "tasks"
             ]
         );
     }
@@ -1182,8 +1186,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            7,
-            "the agent, bases, code-files, dataview, excalidraw, graph and icons still start"
+            8,
+            "the agent, bases, code-files, dataview, excalidraw, graph, icons and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1378,7 +1382,10 @@ mod tests {
                 "excalidraw:export",
                 "icon:set",
                 "icon:get",
-                "icon:remove"
+                "icon:remove",
+                "task:add",
+                "task:done",
+                "task:edit"
             ]
         );
         assert!(cli_commands().iter().all(|c| c.feature
@@ -1388,6 +1395,8 @@ mod tests {
                 "excalidraw"
             } else if c.name.starts_with("icon:") {
                 "icons"
+            } else if c.name.starts_with("task:") {
+                "tasks"
             } else if c.name == "dql" {
                 "dataview"
             } else {
@@ -1402,7 +1411,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 15
+            crate::cli::registry::COMMANDS.len() + 18
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

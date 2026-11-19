@@ -83,6 +83,11 @@ describe("palette built-in commands", () => {
       "graph.open",
       "hotkeys.open",
       "icons.change",
+      "tasks.open",
+      "tasks.add",
+      "tasks.toggle",
+      "tasks.edit",
+      "tasks.convert-block",
     ]);
   });
 

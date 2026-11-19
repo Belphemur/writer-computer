@@ -16,15 +16,19 @@
 
 use super::markdown::{normalize_tag, LinkKind};
 use super::{edges, Index, IndexError};
-use crate::bases::context::{Clock, FileMeta, RowContext};
+use crate::bases::context::{Clock, FileMeta, RowContext, SystemClock};
 use crate::bases::datetime;
-use crate::bases::document::Document;
+use crate::bases::document::{Document, RowKind};
 use crate::bases::interp::{FormulaSet, Interp};
 use crate::bases::query::{
     run_view, BaseQueryResult, Cell as QueryCell, CompareOp, Comparison, PushdownHint,
     QueryOptions, RowSource,
 };
 use crate::bases::value::{LinkValue, Value};
+use crate::tasks::date::Day;
+use crate::tasks::grammar::{Priority, TaskFields};
+use crate::tasks::status::StatusTable;
+use crate::tasks::urgency;
 use rusqlite::{params_from_iter, types::Value as SqlValue};
 use serde_json::{Map, Value as Json};
 use std::cell::{Cell, OnceCell, RefCell};
@@ -37,6 +41,10 @@ type Res<T> = Result<T, IndexError>;
 struct Env {
     index: Arc<Index>,
     offset: i32,
+    /// "Today" for `task.urgency`: the clock's local day.
+    today: Cell<Day>,
+    /// The vault's task statuses (custom ones included), read on first use.
+    statuses: OnceCell<StatusTable>,
     rows: RefCell<HashMap<String, Option<Rc<IndexRow>>>>,
     error: RefCell<Option<String>>,
 }
@@ -280,12 +288,11 @@ impl IndexRow {
         })
     }
 
-    /// The note's tasks as list-item objects (`file.tasks` of the DQL dialect). The Tasks
-    /// feature's `list_items` table widens this to every list item.
+    /// The note's tasks as list-item objects (`file.tasks` of the DQL dialect).
     fn load_items(&self) -> Res<Vec<Value>> {
         self.env.index.read(|c| {
             let mut st = c.prepare_cached(
-                "SELECT line, status, text FROM tasks WHERE file_id = ?1 ORDER BY line",
+                "SELECT line, status_symbol, text FROM tasks WHERE file_id = ?1 ORDER BY line",
             )?;
             let items = st
                 .query_map([self.id], |r| {
@@ -509,6 +516,13 @@ impl IndexSource {
         }
         Ok(IndexSource {
             env: Rc::new(Env {
+                today: Cell::new(Day::from_local_ms(
+                    SystemClock {
+                        offset_minutes: utc_offset_minutes,
+                    }
+                    .now_local_ms(),
+                )),
+                statuses: OnceCell::new(),
                 index,
                 offset: utc_offset_minutes,
                 rows: RefCell::new(HashMap::new()),
@@ -532,18 +546,19 @@ impl IndexSource {
     }
 }
 
-impl RowSource for IndexSource {
-    fn candidates(&self, hint: &PushdownHint) -> Result<Vec<Rc<dyn RowContext>>, String> {
-        let (conds, args) = if self.narrow {
-            hint_sql(hint)
-        } else {
-            (Vec::new(), Vec::new())
-        };
-        let wh = if conds.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {}", conds.join(" AND "))
-        };
+impl IndexSource {
+    /// Day `task.urgency` counts from (the clock of the query; the system day by default).
+    pub fn with_today(self, today: Day) -> Self {
+        self.env.today.set(today);
+        self
+    }
+
+    fn file_candidates(
+        &self,
+        conds: &[String],
+        args: &[SqlValue],
+    ) -> Result<Vec<Rc<dyn RowContext>>, String> {
+        let wh = where_clause(conds);
         let sql = format!(
             "SELECT f.id, f.path, f.size, f.ctime, f.mtime FROM files f{wh} ORDER BY f.path"
         );
@@ -569,9 +584,221 @@ impl RowSource for IndexSource {
             .collect())
     }
 
+    /// One row per task of the files the hint leaves (SPECs/tasks-spec.md 5).
+    fn task_candidates(
+        &self,
+        conds: &[String],
+        args: &[SqlValue],
+    ) -> Result<Vec<Rc<dyn RowContext>>, String> {
+        let wh = where_clause(conds);
+        let sql = format!(
+            "SELECT f.id, f.path, f.size, f.ctime, f.mtime, t.line, t.status_symbol, t.text, \
+             t.description, t.due, t.scheduled, t.start, t.created, t.done, t.cancelled, \
+             t.priority, t.recurrence, t.on_completion, t.task_id, t.depends_on, t.tags, \
+             t.block_id, t.parent_line, li.section_heading, li.indent \
+             FROM tasks t JOIN files f ON f.id = t.file_id \
+             LEFT JOIN list_items li ON li.file_id = t.file_id AND li.line = t.line{wh} \
+             ORDER BY f.path, t.line"
+        );
+        let recs = self
+            .env
+            .index
+            .read(|c| {
+                let mut st = c.prepare(&sql)?;
+                let rows = st
+                    .query_map(params_from_iter(args.iter()), |r| {
+                        let text = |i: usize| r.get::<_, Option<String>>(i);
+                        let list = |i: usize| -> rusqlite::Result<Vec<String>> {
+                            Ok(text(i)?
+                                .map(|s| s.split(',').map(str::to_string).collect())
+                                .unwrap_or_default())
+                        };
+                        let day = |i: usize| -> rusqlite::Result<Option<Day>> {
+                            Ok(text(i)?.as_deref().and_then(Day::parse))
+                        };
+                        let symbol: String = r.get(6)?;
+                        let fields = TaskFields {
+                            description: r.get(8)?,
+                            due: day(9)?,
+                            scheduled: day(10)?,
+                            start: day(11)?,
+                            created: day(12)?,
+                            done: day(13)?,
+                            cancelled: day(14)?,
+                            priority: text(15)?.as_deref().and_then(Priority::parse),
+                            recurrence: text(16)?,
+                            on_completion: text(17)?,
+                            id: text(18)?,
+                            depends_on: list(19)?,
+                            tags: list(20)?,
+                            block_id: text(21)?,
+                        };
+                        Ok((
+                            (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?),
+                            TaskRecord {
+                                line: r.get(5)?,
+                                symbol: symbol.chars().next().unwrap_or(' '),
+                                text: r.get(7)?,
+                                fields,
+                                parent_line: r.get(22)?,
+                                heading: r.get(23)?,
+                                indent: r.get::<_, Option<u32>>(24)?.unwrap_or(0),
+                            },
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .map_err(|e| e.to_string())?;
+        self.last_candidates.set(recs.len());
+        Ok(recs
+            .into_iter()
+            .map(|((id, path, size, ctime, mtime), task)| {
+                Rc::new(TaskRow {
+                    file: self.env.make_row(id, path, size, ctime, mtime),
+                    task,
+                }) as Rc<dyn RowContext>
+            })
+            .collect())
+    }
+}
+
+fn where_clause(conds: &[String]) -> String {
+    if conds.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conds.join(" AND "))
+    }
+}
+
+impl RowSource for IndexSource {
+    fn candidates(&self, hint: &PushdownHint) -> Result<Vec<Rc<dyn RowContext>>, String> {
+        let (conds, args) = if self.narrow {
+            hint_sql(hint)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        match hint.rows {
+            RowKind::Files => self.file_candidates(&conds, &args),
+            RowKind::Tasks => self.task_candidates(&conds, &args),
+        }
+    }
+
     fn this_row(&self) -> Option<Rc<dyn RowContext>> {
         let p = self.this_path.as_deref()?;
         self.env.row_by_path(p).map(|r| r as Rc<dyn RowContext>)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task rows
+// ---------------------------------------------------------------------------
+
+/// One `tasks` row with its list item's context.
+struct TaskRecord {
+    line: u32,
+    symbol: char,
+    text: String,
+    fields: TaskFields,
+    parent_line: Option<u32>,
+    heading: Option<String>,
+    indent: u32,
+}
+
+/// A row of a `rows: tasks` base: the task's own properties as `task.*`, everything else
+/// (`file.*`, `note.*`, tags, links) the file's.
+struct TaskRow {
+    file: Rc<IndexRow>,
+    task: TaskRecord,
+}
+
+fn date_value(day: Option<Day>) -> Value {
+    day.map_or(Value::Null, |d| Value::date(d.0 * 86_400_000, false))
+}
+
+fn opt_string(s: &Option<String>) -> Value {
+    s.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))
+}
+
+fn string_list(v: &[String]) -> Value {
+    Value::List(v.iter().cloned().map(Value::String).collect())
+}
+
+impl RowContext for TaskRow {
+    fn path(&self) -> String {
+        self.file.path()
+    }
+    fn meta(&self) -> FileMeta {
+        self.file.meta()
+    }
+    fn properties(&self) -> Vec<(String, Value)> {
+        self.file.properties()
+    }
+    fn property(&self, key: &str) -> Option<Value> {
+        self.file.property(key)
+    }
+    fn tags(&self) -> Vec<String> {
+        self.file.tags()
+    }
+    fn links(&self) -> Vec<LinkValue> {
+        self.file.links()
+    }
+    fn embeds(&self) -> Vec<LinkValue> {
+        self.file.embeds()
+    }
+    fn backlinks(&self) -> Vec<String> {
+        self.file.backlinks()
+    }
+    fn resolve_link(&self, text: &str) -> Option<String> {
+        self.file.resolve_link(text)
+    }
+    fn context_for_path(&self, path: &str) -> Option<Rc<dyn RowContext>> {
+        self.file.context_for_path(path)
+    }
+
+    fn line(&self) -> Option<u32> {
+        Some(self.task.line)
+    }
+
+    /// The `task.*` properties (SPECs/tasks-spec.md 5.2). The status type comes from the vault's
+    /// statuses, so custom ones count.
+    fn task_field(&self, name: &str) -> Option<Value> {
+        let t = &self.task;
+        let f = &t.fields;
+        let env = &self.file.env;
+        let kind = || {
+            env.statuses
+                .get_or_init(|| crate::tasks::settings::load_statuses(env.index.root()))
+                .kind_of(t.symbol)
+        };
+        Some(match name {
+            "description" => Value::String(f.description.clone()),
+            "text" => Value::String(t.text.clone()),
+            "status" => Value::str(kind().as_str()),
+            "symbol" => Value::String(t.symbol.to_string()),
+            "checked" => Value::Bool(kind().is_closed()),
+            "due" => date_value(f.due),
+            "scheduled" => date_value(f.scheduled),
+            "start" => date_value(f.start),
+            "created" => date_value(f.created),
+            "done" => date_value(f.done),
+            "cancelled" => date_value(f.cancelled),
+            "priority" => f.priority.map_or(Value::Null, |p| Value::str(p.name())),
+            "recurrence" => opt_string(&f.recurrence),
+            "on_completion" => opt_string(&f.on_completion),
+            "id" => opt_string(&f.id),
+            "depends_on" => string_list(&f.depends_on),
+            "tags" => string_list(&f.tags),
+            "block" => opt_string(&f.block_id),
+            "urgency" => Value::Number(urgency::urgency(f, env.today.get())),
+            "line" => Value::Number(t.line as f64),
+            "parent" => t
+                .parent_line
+                .map_or(Value::Null, |l| Value::Number(l as f64)),
+            "indent" => Value::Number(t.indent as f64),
+            "heading" => opt_string(&t.heading),
+            _ => return None,
+        })
     }
 }
 
@@ -589,6 +816,7 @@ pub fn run_base_view(
         clock.utc_offset_minutes(),
         this_path.map(str::to_string),
     )?;
+    let source = source.with_today(Day::from_local_ms(clock.now_local_ms()));
     let result = run_view(doc, view, &source, clock, &QueryOptions::default());
     match source.take_error() {
         Some(e) => Err(IndexError::Internal(e)),

@@ -73,9 +73,11 @@ let container: HTMLElement;
 let root: Root;
 
 beforeEach(() => {
-  // Importing the loader registers the shipped features; the graph feature contributes a sidebar
-  // panel and action of its own, which these fixture-only counts must not see.
-  useSettingsStore.setState({ settings: { "features.graph.enabled": false } });
+  // Importing the loader registers the shipped features; the graph and tasks features contribute
+  // a sidebar action of their own, which these fixture-only counts must not see.
+  useSettingsStore.setState({
+    settings: { "features.graph.enabled": false, "features.tasks.enabled": false },
+  });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);

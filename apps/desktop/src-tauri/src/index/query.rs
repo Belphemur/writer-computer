@@ -747,18 +747,18 @@ impl Index {
                 }
             }
             if let Some(s) = &filter.status {
-                conds.push("t.status = ?".into());
+                conds.push("t.status_symbol = ?".into());
                 args.push(s.clone().into());
             }
             match filter.done {
-                Some(true) => conds.push("t.status IN ('x','X')".into()),
-                Some(false) => conds.push("t.status NOT IN ('x','X')".into()),
+                Some(true) => conds.push("t.status_symbol IN ('x','X')".into()),
+                Some(false) => conds.push("t.status_symbol NOT IN ('x','X')".into()),
                 None => {}
             }
             let wh = if conds.is_empty() { String::new() } else { format!(" WHERE {}", conds.join(" AND ")) };
             let limit = filter.limit.map_or(String::new(), |l| format!(" LIMIT {l}"));
             let mut st = c.prepare(&format!(
-                "SELECT f.path, t.line, t.status, t.text FROM tasks t JOIN files f ON f.id = t.file_id{wh} ORDER BY f.path, t.line{limit}"
+                "SELECT f.path, t.line, t.status_symbol, t.text FROM tasks t JOIN files f ON f.id = t.file_id{wh} ORDER BY f.path, t.line{limit}"
             ))?;
             let rows = st
                 .query_map(params_from_iter(args.iter()), |r| {

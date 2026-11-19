@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-tasks",
+  "description": "Grants the tasks feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["tasks:default"]
+}

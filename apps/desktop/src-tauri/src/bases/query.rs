@@ -13,7 +13,7 @@
 use super::ast::{BinaryOp, Expr, PropertyId};
 use super::choices::{self, FilterErrorPolicy};
 use super::context::{Clock, FileMeta, RowContext};
-use super::document::{Direction, Document, Filter, Node, View};
+use super::document::{Direction, Document, Filter, Node, RowKind, View};
 use super::interp::{Dialect, FormulaSet, Interp, Scope};
 use super::lexer::ParseError;
 use super::parser;
@@ -33,6 +33,8 @@ use std::rc::Rc;
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PushdownHint {
+    /// What the base's rows are (`rows:`): one per file, or one per task of the files below.
+    pub rows: RowKind,
     /// `file.inFolder("x")`: every listed folder must contain the file.
     pub folders: Vec<String>,
     /// `file.ext == "md"` (without the dot).
@@ -170,6 +172,10 @@ pub struct Column {
 pub struct Row {
     /// Vault-relative path of the file.
     pub path: String,
+    /// The task's 1-based line in that file (rows of a `rows: tasks` base only; absent for a file).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub line: Option<u32>,
     /// One cell per column.
     pub cells: Vec<Cell>,
 }
@@ -485,6 +491,7 @@ impl RowContext for NullRow {
 struct Matched<'a> {
     interp: Interp<'a>,
     path: String,
+    line: Option<u32>,
     sort: Vec<Value>,
     group: Value,
 }
@@ -493,6 +500,7 @@ struct Matched<'a> {
 fn keys_of<'a>(
     interp: Interp<'a>,
     path: String,
+    line: Option<u32>,
     sort_ids: &[PropertyId],
     group_id: &Option<PropertyId>,
 ) -> Matched<'a> {
@@ -504,6 +512,7 @@ fn keys_of<'a>(
     Matched {
         interp,
         path,
+        line,
         sort,
         group,
     }
@@ -665,7 +674,8 @@ fn execute(
     let this = source.this_row();
 
     // 2. candidates, verified
-    let hint = pushdown_hint(&filters);
+    let mut hint = pushdown_hint(&filters);
+    hint.rows = doc.rows;
     let candidates = match source.candidates(&hint) {
         Ok(c) => c,
         Err(msg) => return fail(result, QueryErrorKind::Source, msg, None, None),
@@ -736,15 +746,21 @@ fn execute(
             }
         }
         if steps.is_empty() {
-            matched.push(keys_of(interp, row.path(), &sort_ids, &group_id));
+            matched.push(keys_of(
+                interp,
+                row.path(),
+                row.line(),
+                &sort_ids,
+                &group_id,
+            ));
         } else {
             passed.push(row);
         }
     }
     if !steps.is_empty() {
         for row in flatten_rows(passed, &steps, &new_interp) {
-            let path = row.path();
-            matched.push(keys_of(new_interp(row), path, &sort_ids, &group_id));
+            let (path, line) = (row.path(), row.line());
+            matched.push(keys_of(new_interp(row), path, line, &sort_ids, &group_id));
         }
     }
     result.total_matched = matched.len();
@@ -823,6 +839,7 @@ fn execute(
         }
         result.rows.push(Row {
             path: m.path.clone(),
+            line: m.line,
             cells,
         });
     }
@@ -1151,6 +1168,12 @@ impl RowContext for FlatRow {
     fn tags(&self) -> Vec<String> {
         self.inner.tags()
     }
+    fn task_field(&self, name: &str) -> Option<Value> {
+        self.inner.task_field(name)
+    }
+    fn line(&self) -> Option<u32> {
+        self.inner.line()
+    }
     fn links(&self) -> Vec<super::value::LinkValue> {
         self.inner.links()
     }
@@ -1419,6 +1442,7 @@ fn group_rows<'a>(
         .iter()
         .map(|it| Row {
             path: String::new(),
+            line: None,
             cells: cols
                 .iter()
                 .map(|(_, pid)| Cell::new(it.eval_property(pid)))

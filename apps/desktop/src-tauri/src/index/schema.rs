@@ -1,4 +1,5 @@
-//! Schema v5 (`inline_fields` joins v4's `edges`, the note-graph table), open-or-rebuild.
+//! Schema v6 (`edges`, the note-graph table; `inline_fields`; `list_items` and the extended
+//! `tasks`), open-or-rebuild.
 
 use super::IndexError;
 use rusqlite::{Connection, OpenFlags};
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// The core schema's version. The version stored in `meta` and compared on open is
 /// [`schema_version`]: this plus the suffix for the DDL features contribute.
-pub const SCHEMA_VERSION: &str = "5";
+pub const SCHEMA_VERSION: &str = "6";
 
 /// Core version plus `features::index_schema_suffix` (empty while no feature adds DDL), so a
 /// feature adding or changing a table rebuilds the rebuildable cache from its own folder.
@@ -17,7 +18,7 @@ pub fn schema_version() -> &'static str {
 }
 /// Bump whenever the parsing output changes (tag rules, link rules, property
 /// typing, counts) so stale rows are rebuilt instead of trusted.
-pub const PARSER_VERSION: &str = "4";
+pub const PARSER_VERSION: &str = "5";
 
 const SCHEMA: &str = "
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -72,11 +73,28 @@ CREATE TABLE edges(
   display TEXT,
   subpath TEXT
 ) STRICT;
+-- Every list item with its parent (SPECs/tasks-spec.md 4.1): nesting for the task rows and the
+-- Dataview queries. `parent_line` is the line of the enclosing item in the same file.
+CREATE TABLE list_items(
+  file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  line INTEGER NOT NULL, parent_line INTEGER, indent INTEGER NOT NULL, marker TEXT NOT NULL,
+  task_status TEXT, text TEXT NOT NULL, section_heading TEXT
+);
+CREATE INDEX list_items_file ON list_items(file_id, line);
+-- A task is a list item with a checkbox (`task_status` set), parsed by `tasks::grammar`. Dates are
+-- `YYYY-MM-DD` text, `priority` is `highest..lowest` (NULL = none), `tags` and `depends_on` are
+-- comma-joined. The status *type* is not stored: it depends on the vault's custom statuses, which
+-- are read when the rows are (Bases `task.status`).
 CREATE TABLE tasks(
   file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  line INTEGER NOT NULL, status TEXT NOT NULL, text TEXT NOT NULL
+  line INTEGER NOT NULL, status_symbol TEXT NOT NULL, text TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  due TEXT, scheduled TEXT, start TEXT, created TEXT, done TEXT, cancelled TEXT,
+  priority TEXT, recurrence TEXT, on_completion TEXT, task_id TEXT, depends_on TEXT,
+  tags TEXT, block_id TEXT, parent_line INTEGER
 );
 CREATE INDEX tasks_file ON tasks(file_id);
+CREATE INDEX tasks_due ON tasks(due) WHERE due IS NOT NULL;
 CREATE TABLE headings(
   file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
   level INTEGER NOT NULL, text TEXT NOT NULL, line INTEGER NOT NULL

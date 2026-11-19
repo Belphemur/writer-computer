@@ -363,11 +363,32 @@ impl View {
     }
 }
 
+/// What the rows of a base are: the vault's files (Obsidian's, the default) or its tasks (a Writer
+/// extension, top-level `rows: tasks`; SPECs/tasks-spec.md 5).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RowKind {
+    #[default]
+    Files,
+    Tasks,
+}
+
+impl RowKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RowKind::Files => "files",
+            RowKind::Tasks => "tasks",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Document {
     /// Top-level `name:`; meaning unknown (U1), preserved only.
     pub name: Option<String>,
+    /// Top-level `rows:` (Writer extension); `files` when absent.
+    pub rows: RowKind,
     pub filters: Option<Filter>,
     /// Formula name -> expression source.
     #[serde(serialize_with = "ser_pairs")]
@@ -658,6 +679,15 @@ fn parse_view(j: &Node, path: &str, warnings: &mut Vec<String>) -> Result<View, 
 }
 
 impl Document {
+    /// An empty document of `rows` kind, for code that builds a base (the `tasks` block
+    /// conversion, the Tasks page).
+    pub fn empty(rows: RowKind) -> Document {
+        Document {
+            rows,
+            ..Document::default()
+        }
+    }
+
     pub fn parse(src: &str) -> Result<Document, DocumentError> {
         let docs = YamlLoader::load_from_str(src).map_err(|e| DocumentError::Yaml {
             message: e.info().to_string(),
@@ -692,6 +722,16 @@ impl Document {
                 warnings.push("name: expected text, kept as unknown".into());
                 extra_back.push(("name".into(), other));
                 None
+            }
+        };
+        let rows = match r.take("rows") {
+            None | Some(Node::Null) => RowKind::Files,
+            Some(Node::Str(s)) if s == "files" => RowKind::Files,
+            Some(Node::Str(s)) if s == "tasks" => RowKind::Tasks,
+            Some(other) => {
+                warnings.push("rows: expected `files` or `tasks`, kept as unknown".into());
+                extra_back.push(("rows".into(), other));
+                RowKind::Files
             }
         };
         let filters = match r.take("filters") {
@@ -751,6 +791,7 @@ impl Document {
         extra.extend(extra_back);
         Ok(Document {
             name,
+            rows,
             filters,
             formulas,
             properties,
@@ -789,6 +830,9 @@ impl Document {
         let mut pairs: Vec<(String, Node)> = Vec::new();
         if let Some(n) = &self.name {
             pairs.push(("name".into(), Node::Str(n.clone())));
+        }
+        if self.rows != RowKind::Files {
+            pairs.push(("rows".into(), Node::Str(self.rows.as_str().into())));
         }
         if let Some(f) = &self.filters {
             pairs.push(("filters".into(), f.to_node()));

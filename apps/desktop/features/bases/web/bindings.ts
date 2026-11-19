@@ -184,6 +184,8 @@ export type RegexpWire = {
 export type Row = {
 	/**  Vault-relative path of the file. */
 	path: string,
+	/**  The task's 1-based line in that file (rows of a `rows: tasks` base only; absent for a file). */
+	line?: number | null,
 	/**  One cell per column. */
 	cells: CellWire[],
 };

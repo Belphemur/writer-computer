@@ -1,0 +1,44 @@
+{
+  "settings": [
+    {
+      "key": "tasks.format",
+      "label": "Task format",
+      "description": "How new dates and priorities are written on a task line. vault follows the Tasks plugin's setting when the vault has one, else emoji.",
+      "category": "Tasks",
+      "type": "enum",
+      "options": ["vault", "emoji", "dataview"],
+      "scope": "global",
+      "default": "vault"
+    },
+    {
+      "key": "tasks.set-done-date",
+      "label": "Done date",
+      "description": "Add a done date when a task is completed.",
+      "category": "Tasks",
+      "type": "boolean",
+      "scope": "global",
+      "default": true
+    },
+    {
+      "key": "tasks.recurrence-position",
+      "label": "Next occurrence",
+      "description": "Where the next occurrence of a recurring task goes: above or below the completed one.",
+      "category": "Tasks",
+      "type": "enum",
+      "options": ["above", "below"],
+      "scope": "global",
+      "default": "above"
+    },
+    {
+      "key": "tasks.inbox",
+      "label": "Inbox note",
+      "description": "The note quick add writes to, relative to the vault. Created on first use.",
+      "category": "Tasks",
+      "type": "string",
+      "normalize": "trim",
+      "placeholder": "Tasks.md",
+      "scope": "global",
+      "default": "Tasks.md"
+    }
+  ]
+}

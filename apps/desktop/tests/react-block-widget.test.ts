@@ -4,9 +4,26 @@
 import { createElement, type ReactElement } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { EditorView } from "@codemirror/view";
-import { HeightMemory, ReactBlockWidget } from "@/lib/react-block-widget";
+import { EditorState } from "@codemirror/state";
+import { EditorView as RealView } from "@codemirror/view";
+import { enterBlockEditMode, HeightMemory, ReactBlockWidget } from "@/lib/react-block-widget";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe("enterBlockEditMode", () => {
+  it("range-selects the block with a reverse anchor and focuses the editor", () => {
+    const doc = "intro\n```tasks\nnot done\n```\nafter";
+    const view = new RealView({ parent: document.body, state: EditorState.create({ doc }) });
+    const focus = vi.spyOn(view.contentDOM, "focus");
+    const from = doc.indexOf("```");
+    const to = doc.indexOf("after") - 1;
+    enterBlockEditMode(view, { from, to });
+    const sel = view.state.selection.main;
+    expect([sel.anchor, sel.head]).toEqual([to, from]);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    view.destroy();
+  });
+});
 
 describe("HeightMemory", () => {
   it("falls back, remembers, and evicts the least recently set", () => {

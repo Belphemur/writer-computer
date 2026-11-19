@@ -47,8 +47,11 @@ One bullet per command: `required` parameters are marked, everything else is opt
 
 ## Tasks
 
-- `tasks` — List tasks. Params: `file=`, `path=`, `status=` (status character), `format=` (text | json | tsv | csv). Flags: `total` (print only the count), `done` (completed only), `todo` (not completed only), `verbose` (group by file with line numbers).
+- `tasks` — List tasks (filter= takes a Bases expression over task rows). Params: `file=`, `path=`, `status=` (status character), `filter=` (expression, e.g. task.due < today() && !task.checked), `sort=` (task property, e.g. task.due or task.urgency), `limit=` (at most this many tasks), `format=` (text | json | tsv | csv). Flags: `total` (print only the count), `done` (completed only), `todo` (not completed only), `desc` (with sort=: descending), `verbose` (group by file with line numbers).
 - `task` — Show or change one task. Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number), `status=` (set this status character). Flags: `toggle` (flip done/not done), `done` (mark done), `todo` (mark not done).
+- `task:add` — Add a task to the inbox note. Params: `text=` (task text), `due=` (YYYY-MM-DD), `scheduled=` (YYYY-MM-DD), `start=` (YYYY-MM-DD), `priority=` (highest | high | medium | low | lowest), `recurrence=` (e.g. every week), `path=`.
+- `task:done` — Complete a task (a recurring one writes its next occurrence). Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number).
+- `task:edit` — Set or clear the fields of a task. Params: `ref=` (path:line), `file=`, `path=`, `line=` (line number), `due=` (YYYY-MM-DD), `scheduled=` (YYYY-MM-DD), `start=` (YYYY-MM-DD), `priority=` (highest | high | medium | low | lowest), `recurrence=` (e.g. every week), `clear=` (fields to remove, comma separated).
 
 ## Links
 

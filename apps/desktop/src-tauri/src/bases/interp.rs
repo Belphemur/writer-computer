@@ -290,6 +290,17 @@ impl<'a> Interp<'a> {
         }
     }
 
+    /// `task.<name>` of the current row (only reached on a task row, `rows: tasks`; on a file
+    /// row `task` stays an ordinary note property).
+    fn task_value(&self, name: &str) -> Value {
+        self.row.task_field(name).unwrap_or_else(|| {
+            Value::err(
+                ErrorKind::UnknownField,
+                format!("unknown task property \"{name}\""),
+            )
+        })
+    }
+
     /// `this.<name>` (U15): file fields first, then note properties.
     fn this_member(&self, name: &str) -> Value {
         let Some(ctx) = self.this.clone().or_else(|| Some(self.row.clone())) else {
@@ -352,6 +363,11 @@ impl<'a> Interp<'a> {
             PropertyId::Note(k) => self.note_value(&self.row.clone(), k),
             PropertyId::File(f) => self.file_field(&self.row.path(), f),
             PropertyId::Formula(n) => self.eval_formula(n),
+            // on a file row `task.x` is a note property with a dot in its name, as it always was
+            PropertyId::Task(n) if self.row.line().is_none() => {
+                self.note_value(&self.row.clone(), &format!("task.{n}"))
+            }
+            PropertyId::Task(n) => self.task_value(n),
         }
     }
 
@@ -399,6 +415,7 @@ impl<'a> Interp<'a> {
                             "formula" => return self.eval_formula(name),
                             "this" => return self.this_member(name),
                             "note" => return self.note_value(&self.row.clone(), name),
+                            "task" if self.row.line().is_some() => return self.task_value(name),
                             _ => {}
                         }
                     }
@@ -417,6 +434,7 @@ impl<'a> Interp<'a> {
                             "formula" => return self.eval_formula(k),
                             "this" => return self.this_member(k),
                             "note" => return self.note_value(&self.row.clone(), k),
+                            "task" if self.row.line().is_some() => return self.task_value(k),
                             _ => {}
                         }
                     }
@@ -469,6 +487,10 @@ impl<'a> Interp<'a> {
             "formula" => Value::err(
                 ErrorKind::Type,
                 "\"formula\" must be followed by a formula name",
+            ),
+            "task" if self.row.line().is_some() => Value::err(
+                ErrorKind::Type,
+                "\"task\" must be followed by a task property name",
             ),
             _ => self.note_value(&self.row.clone(), name),
         }

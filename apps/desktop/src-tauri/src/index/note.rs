@@ -2,7 +2,7 @@
 
 use super::frontmatter::{self, ItemRow, PropRow};
 use super::fts::{space_cjk, FtsDoc, FTS_MAX_BODY_BYTES};
-use super::markdown::{self, Heading, LocatedField, ParsedLink, TaskItem};
+use super::markdown::{self, Heading, ListItem, LocatedField, ParsedLink, TaskItem};
 use sha2::{Digest, Sha256};
 
 /// A tag row: lowercased tag and where it came from.
@@ -36,6 +36,7 @@ pub struct ParsedNote {
     pub items: Vec<ItemRow>,
     pub tags: Vec<TagRow>,
     pub links: Vec<LinkRow>,
+    pub list_items: Vec<ListItem>,
     pub tasks: Vec<TaskItem>,
     pub headings: Vec<Heading>,
     pub inline_fields: Vec<LocatedField>,
@@ -98,6 +99,7 @@ pub fn parse_note(content: &str) -> ParsedNote {
         line: Some(l.line),
         section: l.section,
     }));
+    note.list_items = scan.list_items;
     note.tasks = scan.tasks;
     note.headings = scan.headings;
     note.inline_fields = scan.inline_fields;

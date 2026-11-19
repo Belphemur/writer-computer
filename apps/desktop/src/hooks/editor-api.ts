@@ -5,6 +5,7 @@ import {
   createPluginViewTab,
   createSessionChangesTab,
   createSettingsTab,
+  createTasksTab,
   useEditorStore,
 } from "@/stores/editor-store";
 import type { GraphLocation, Location } from "@/components/editor-area/page-kinds";
@@ -77,6 +78,11 @@ export function openGraphTab(target: { center?: string; depth?: number } = {}) {
     (tab) => tab.location.kind === "graph",
     () => createGraphTab(target),
   );
+}
+
+/** Opens (or focuses) the Tasks page. */
+export function openTasksTab() {
+  useEditorStore.getState().openOrFocus((tab) => tab.location.kind === "tasks", createTasksTab);
 }
 
 /** Opens (or focuses) the Session changes tab of a chat, scrolled to `focus` (a vault-relative

@@ -887,6 +887,95 @@ fn tasks_and_task() {
 }
 
 #[test]
+fn task_add_done_edit_and_filtered_listing() {
+    let t = T::new();
+    // add: one line appended to the inbox, created on first use
+    let out = t.ok(&[
+        "task:add",
+        "text=Pay rent",
+        "due=2024-03-20",
+        "priority=high",
+    ]);
+    assert_eq!(out, "Added Tasks.md:1\n");
+    assert_eq!(
+        t.read("Tasks.md"),
+        "- [ ] Pay rent \u{1F4C5} 2024-03-20 \u{23EB}\n"
+    );
+    t.ok(&["task:add", "text=Call", "path=Inbox/More.md"]);
+    assert_eq!(t.read("Inbox/More.md"), "- [ ] Call\n");
+    assert_eq!(t.code(&["task:add", "text= ", "due=2024-03-20"]).0, 1);
+    assert_eq!(t.code(&["task:add", "text=x", "due=2024-13-45"]).0, 1);
+    // edit: only the named tokens change; clear removes one
+    t.ok(&[
+        "task:edit",
+        "ref=Tasks.md:1",
+        "due=2024-04-01",
+        "recurrence=every week",
+    ]);
+    let line = t.read("Tasks.md");
+    assert!(
+        line.starts_with("- [ ] Pay rent")
+            && line.contains("2024-04-01")
+            && line.contains("every week"),
+        "{line}"
+    );
+    assert!(
+        line.contains('\u{23EB}') && !line.contains("2024-03-20"),
+        "{line}"
+    );
+    t.ok(&["task:edit", "ref=Tasks.md:1", "clear=priority"]);
+    assert!(!t.read("Tasks.md").contains('\u{23EB}'));
+    assert_eq!(t.code(&["task:edit", "ref=Tasks.md:1"]).0, 2);
+    // done: a recurring task writes its next occurrence above the completed line
+    t.ok(&["task:done", "ref=Tasks.md:1"]);
+    let text = t.read("Tasks.md");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert!(
+        lines[0].starts_with("- [ ] Pay rent") && lines[0].contains("2024-04-08"),
+        "{text}"
+    );
+    assert!(
+        lines[1].starts_with("- [x] Pay rent") && lines[1].contains('\u{2705}'),
+        "{text}"
+    );
+    // a stale or non-task line is refused and nothing is written
+    let before = t.read("Tasks.md");
+    assert_eq!(t.code(&["task:done", "ref=Tasks.md:99"]).0, 1);
+    assert_eq!(t.read("Tasks.md"), before);
+}
+
+#[test]
+fn tasks_filter_runs_a_bases_expression_over_task_rows() {
+    let t = T::new();
+    t.write(
+        "Work.md",
+        "- [ ] A \u{1F4C5} 2024-03-01\n- [ ] B \u{1F4C5} 2024-05-01\n- [x] C \u{1F4C5} 2024-03-02\n- [ ] D\n",
+    );
+    let o = t.ok(&[
+        "tasks",
+        "filter=!task.checked && task.due != null",
+        "sort=task.due",
+        "format=tsv",
+    ]);
+    let rows: Vec<&str> = o.lines().filter(|l| l.starts_with("Work.md")).collect();
+    assert_eq!(rows.len(), 2, "{o}");
+    assert!(rows[0].contains("A") && rows[1].contains("B"), "{o}");
+    let o = t.ok(&["tasks", "filter=task.checked", "file=Work", "total"]);
+    assert_eq!(o, "1\n");
+    let o = t.ok(&[
+        "tasks",
+        "filter=!task.checked && task.due != null",
+        "sort=task.due",
+        "desc",
+        "limit=1",
+        "format=tsv",
+    ]);
+    assert!(o.contains("B") && !o.contains("\tA"), "{o}");
+    assert_eq!(t.code(&["tasks", "filter=((("]).0, 2);
+}
+
+#[test]
 fn links_backlinks_unresolved_orphans_deadends() {
     let t = T::new();
     assert_eq!(

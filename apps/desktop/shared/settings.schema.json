@@ -568,6 +568,15 @@
       "type": "boolean",
       "default": true,
       "scope": "global"
+    },
+    {
+      "key": "features.tasks.enabled",
+      "label": "Tasks",
+      "description": "Turns the Tasks feature on or off. The Rust part takes effect after a restart.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
     }
   ]
 }
