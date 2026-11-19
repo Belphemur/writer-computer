@@ -83,7 +83,7 @@ afterEach(async () => {
 describe("registration", () => {
   it("registers every contribution and removes exactly them on unregister", async () => {
     host.register(icons);
-    expect(counts()).toEqual([4, 1, 1, 1, 1]);
+    expect(counts()).toEqual([4, 1, 0, 2, 1]);
     await host.unregister("icons");
     expect(counts()).toEqual([0, 0, 0, 0, 0]);
   });
@@ -315,18 +315,19 @@ describe("manifest and settings contract", () => {
     const ids = [
       ...c.commands!,
       ...c.overlays!,
-      ...c.slots!,
       ...c.editorExtensions!,
       ...Object.values(c.menus!).flat(),
     ].map((x) => x.id);
     expect(ids.every((id) => id.startsWith("icons."))).toBe(true);
     expect(manifest.contributes.overlays).toEqual(c.overlays!.map((o) => o.id));
-    expect(manifest.contributes.slots).toEqual(c.slots!.map((s) => s.id));
     expect(manifest.contributes.editorExtensions).toEqual(c.editorExtensions!.map((e) => e.id));
     expect(manifest.contributes.menus).toEqual(
       Object.fromEntries(Object.entries(c.menus!).map(([s, m]) => [s, m.map((i) => i.id)])),
     );
-    expect(c.slots![0]!.slot).toBe("editor-note-header");
+    // the note icon is an editor extension next to the first H1; the old slot above the properties is gone
+    expect((c as { slots?: unknown }).slots).toBeUndefined();
+    expect("slots" in manifest.contributes).toBe(false);
+    expect(c.editorExtensions!.map((e) => e.id)).toContain("icons.note-icon");
   });
 
   it("has its kill switch in the shared settings schema", () => {

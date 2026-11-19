@@ -19,9 +19,6 @@ export type SlotMap = {
   "sidebar-ribbon": object;
   /** The strip pinned to the bottom right of the editor column. */
   "editor-status": object;
-  /** Above a note's properties, inside the editor column (a note's icon); `path` is the note's
-   *  absolute path. Draws nothing when the feature has nothing to show: no reserved space. */
-  "editor-note-header": { path: string };
 } & {
   [K in Location["kind"] as `page-view:${K}`]: PageViewProps<Extract<Location, { kind: K }>>;
 };

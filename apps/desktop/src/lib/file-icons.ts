@@ -66,6 +66,23 @@ export function fileIconOf(path: string | null | undefined): FileIconEntry | und
     : undefined;
 }
 
+/** Calls `onChange` whenever the icon of the file `getPath()` names (now) is set, changed or
+ *  removed in the store, until the returned function is called. For a long-lived DOM owner (a
+ *  CodeMirror plugin) that redraws itself; it never reads the icon, `fileIconOf` does. */
+export function watchFileIcon(
+  getPath: () => string | null | undefined,
+  onChange: () => void,
+): () => void {
+  return useFileIconStore.subscribe((state, prev) => {
+    const path = getPath();
+    if (!path) return;
+    const key = relativeTo(path, getWorkspaceRoot());
+    const was = prev.icons.get(key);
+    const now = state.icons.get(key);
+    if (was?.icon !== now?.icon || was?.color !== now?.color) onChange();
+  });
+}
+
 const RESOLVE_TTL_MS = 5_000;
 const resolved = new Map<string, { at: number; path: Promise<string | null> }>();
 

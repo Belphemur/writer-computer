@@ -2,7 +2,7 @@
   "id": "icons",
   "name": "Icons",
   "version": "1.0.0",
-  "description": "Icons on files and folders: shown in the sidebar, tabs, note title and links, set from the context menu, kept when you rename or move; Iconize icons show with no setup (read-only), and :shortcodes render inline.",
+  "description": "Icons on files and folders: shown in the sidebar, tabs, next to a note's first heading and links, set from the context menu, kept when you rename or move; Iconize icons show with no setup (read-only), and :shortcodes render inline.",
   "enabledByDefault": true,
   "activation": ["onStartup"],
   "memory": {
@@ -31,7 +31,6 @@
       "editor-tab": ["icons.editor-tab"]
     },
     "overlays": ["icons.picker"],
-    "slots": ["icons.note-icon"],
-    "editorExtensions": ["icons.shortcodes"]
+    "editorExtensions": ["icons.note-icon", "icons.shortcodes"]
   }
 }

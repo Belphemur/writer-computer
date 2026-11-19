@@ -1,5 +1,4 @@
 import type { EditorView } from "@codemirror/view";
-import { FeatureSlot } from "@/components/feature-slot";
 import { ProseMarkEditor } from "./prosemark-editor";
 import { PropertiesPanel } from "./properties-panel";
 import { EditorScrollContainer } from "./editor-scroll-container";
@@ -65,7 +64,6 @@ export const EditorPane = memo(function EditorPane({ path, isActive }: EditorPan
             paddingRight: "var(--writer-editor-side-padding)",
           }}
         >
-          <FeatureSlot slot="editor-note-header" path={path} />
           <PropertiesPanel filePath={path} />
         </div>
         <ProseMarkEditor

@@ -1,5 +1,5 @@
 // The icons feature (SPECs/icons-spec.md): icons on files and folders, in the sidebar, tabs, note
-// title and links, set from "Change icon..." and shown inline as `:shortcodes:`. The one store and
+// first heading and links, set from "Change icon..." and shown inline as `:shortcodes:`. The one store and
 // hook every surface reads is core's (`lib/file-icons.ts`); this feature fills it from Rust and
 // owns the picker, the menu items and the shortcode extension. Import-light: the picker, the note
 // icon, the shortcodes and the Settings page are lazy chunks.
@@ -47,14 +47,11 @@ export default defineFeature({
         load: () => import("./picker").then((m) => m.default),
       },
     ],
-    slots: [
+    editorExtensions: [
       {
         id: "icons.note-icon",
-        slot: "editor-note-header",
-        load: () => import("./note-icon").then((m) => m.default),
+        load: () => import("./note-icon").then((m) => m.noteIconExtension()),
       },
-    ],
-    editorExtensions: [
       {
         id: "icons.shortcodes",
         load: () => import("./shortcodes").then((m) => m.shortcodesExtension()),

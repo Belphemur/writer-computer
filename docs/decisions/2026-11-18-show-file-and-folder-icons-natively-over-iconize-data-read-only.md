@@ -88,3 +88,5 @@ Ticked 2026-11-18 on code and tests (Rust and jsdom); not yet seen in a real win
 ## More Information
 
 Research: the four-plugin source review of 2026-11-18 (Iconize is MIT; data shape, prefixes, emoji detection, rules). Spec: [`SPECs/icons-spec.md`](../../SPECs/icons-spec.md). Related: the enum icons ADR (core picker and icon values), the property types ADR (the read-only Obsidian layer pattern).
+
+Amendment, the user, 2026-11-18: a note's own icon goes next to its first H1, else nowhere in the note body (no slot above the properties).

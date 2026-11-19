@@ -1,5 +1,4 @@
-// The note icon above a note's properties (the slot `editor-note-header`) and the Settings > Icons
-// line: nothing and no reserved space without an icon, a click opens the picker for that note.
+// The Settings > Icons line (how many Iconize icons use packs Writer does not show).
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -7,9 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
-import { clearFileIcons, setFileIcons } from "@/lib/file-icons";
+import { clearFileIcons } from "@/lib/file-icons";
 import { useWorkspaceStore } from "@/stores/workspace-store";
-import NoteIcon from "../web/note-icon";
 import { useIconPickerStore } from "../web/picker-store";
 import { IconsSection } from "../web/settings-page";
 import { useIconizeStatus } from "../web/sync";
@@ -29,29 +27,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-});
-
-describe("the note icon", () => {
-  it("draws nothing, and reserves no space, for a note without an icon", async () => {
-    await act(async () => root.render(<NoteIcon path="/vault/a.md" />));
-    expect(host.innerHTML).toBe("");
-  });
-
-  it("shows the note's icon, and a click opens the picker for that note", async () => {
-    setFileIcons([{ path: "a.md", icon: "emoji:🚀", color: "#ff0000" }]);
-    await act(async () => root.render(<NoteIcon path="/vault/a.md" />));
-    const button = host.querySelector<HTMLButtonElement>("[data-note-icon]")!;
-    expect(button.querySelector("[data-icon-glyph]")?.textContent).toBe("🚀");
-    expect(button.getAttribute("aria-label")).toBe("Change icon");
-    await act(async () => button.click());
-    expect(useIconPickerStore.getState().paths).toEqual(["/vault/a.md"]);
-  });
-
-  it("follows another note's icon only", async () => {
-    setFileIcons([{ path: "b.md", icon: "emoji:🚀" }]);
-    await act(async () => root.render(<NoteIcon path="/vault/a.md" />));
-    expect(host.innerHTML).toBe("");
-  });
 });
 
 describe("Settings > Icons", () => {
