@@ -3,16 +3,19 @@
  * the composer"; `SPECs/pdf-spec.md`, "Agent attachments"). Pure rules plus one attach routine
  * whose IO is injected, so it is testable without a window.
  *
- * - What is accepted: the formats the model reads as an image block or a PDF document block
- *   (`shared/agent-chat-files.json`, Rust twin `agent/files.rs`) up to the shared attachment cap
- *   (`shared/attachments.json`) and, for a PDF, the API's byte and page caps.
- * - Where it goes: pasted and dropped bytes or Finder files are saved by Rust into the chat
- *   folder's hidden `assets/` (`agent_save_chat_file`, `agent_import_chat_file`: the
- *   command names predate PDFs); a file dragged from the vault sidebar is referenced where it is,
- *   nothing is copied.
- * - What the draft keeps: a `{ kind: "image" | "document", path }` ref (vault-relative) per file,
- *   shown as a chip (thumbnail, or a PDF icon with its page count), sent as a native block plus a
- *   line in `<references>`.
+ * - What is accepted: a paste or browser drag of an image or PDF; from Finder any file (secret
+ *   names and the shared cap are refused in Rust, `dropped.rs`); from the sidebar anything in the
+ *   vault, a folder included. The formats the model reads as an image block or a PDF document block
+ *   are `shared/agent-chat-files.json` (Rust twin `agent/files.rs`), with the shared attachment cap
+ *   and, for a PDF, the API's byte and page caps.
+ * - Where it goes: pasted bytes are saved, and a Finder file from outside the vault is copied, by
+ *   Rust into the chat folder's hidden `assets/` (`agent_save_chat_file`, `agent_import_chat_file`);
+ *   anything already in the vault (the sidebar, or a Finder drag of a vault file) is referenced
+ *   where it is, nothing is copied.
+ * - What the draft keeps: an image or PDF is a `{ kind: "image" | "document", path }` ref
+ *   (vault-relative) shown as a chip (thumbnail, or a PDF icon with its page count) and sent as a
+ *   native block plus a line in `<references>`; any other file or a folder is the `@` mention chip
+ *   (`mentions.ts`, `mentionPatch`).
  */
 import shared from "@shared/agent-chat-files.json";
 import {
@@ -25,6 +28,7 @@ import {
 import { getFileName } from "@/lib/paths";
 import type { ChatFile } from "./chat-history-client";
 import type { ContextRef } from "./events";
+import type { MentionTarget } from "./mentions";
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = shared.mediaTypes;
 const DOCUMENT_TYPES: Readonly<Record<string, string>> = shared.documentMediaTypes;
@@ -88,15 +92,19 @@ export const pageRefusal = (name: string, pages: number | null): string | null =
 export type ChatFileSource =
   /** Bytes of a paste or a browser drag. */
   | { kind: "file"; file: File }
-  /** A Finder file (absolute path), copied into the chat's assets. */
+  /** A Finder file or folder (absolute path): copied into the chat's assets when it is outside the
+   *  vault, referenced where it is when it is inside (decided in Rust, `agent_import_chat_file`). */
   | { kind: "path"; path: string }
-  /** A vault file (vault-relative path), referenced in place. */
-  | { kind: "vault"; path: string };
+  /** A vault file or folder (vault-relative path), referenced in place. */
+  | { kind: "vault"; path: string; isDir?: boolean };
 
 export type ChatFileIo = {
   projectPath: string | null;
   saveImage(projectPath: string | null, name: string, dataBase64: string): Promise<ChatFile>;
-  importImageFile(projectPath: string | null, sourcePath: string): Promise<ChatFile>;
+  /** A Finder item of any type: copied into the chat's assets, or, already in the vault, returned
+   *  as is (`copied` false). Throws a terse sentence for a secret name, an oversize file or a
+   *  folder from outside the vault. */
+  importFile(projectPath: string | null, sourcePath: string): Promise<ChatFile>;
   readBase64(file: File): Promise<string>;
   /** Counts a PDF's pages (the `pdf.info` service); absent while the PDF feature is off, then no
    *  page cap is checked and a PDF is sent as is. Throws for a file that is not a readable PDF. */
@@ -107,7 +115,13 @@ export type ChatFileIo = {
   };
 };
 
-export type AttachResult = { refs: ChatFileRef[]; notices: string[] };
+/** What a drop or paste becomes: image and document chips (`refs`, sent as blocks), files and
+ *  folders to mention (`mentions`, the same chip as typing `@File`) and the refusals. */
+export type AttachResult = {
+  refs: ChatFileRef[];
+  mentions: MentionTarget[];
+  notices: string[];
+};
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -125,26 +139,50 @@ async function pagesRefusal(
   }
 }
 
-/** Attaches every source it can; one that cannot (type, size, pages, a failed save) becomes a
- *  notice and never blocks the others. */
+/** The one rule for a vault file or folder that stays where it is: an image or a PDF is a block
+ *  chip, anything else (any type, a folder) is an `@` mention. */
+function place(out: AttachResult, path: string, isDir: boolean) {
+  if (!isDir && isChatFileName(path)) out.refs.push(chatFileRef(path));
+  else out.mentions.push({ path, isDir });
+}
+
+/** Attaches every source it can; one that cannot (size, pages, secret name, a failed copy) becomes
+ *  a notice and never blocks the others. */
 export async function attachChatFiles(
   sources: readonly ChatFileSource[],
   io: ChatFileIo,
   now: Date = new Date(),
 ): Promise<AttachResult> {
-  const refs: ChatFileRef[] = [];
-  const notices: string[] = [];
+  const out: AttachResult = { refs: [], mentions: [], notices: [] };
   for (const source of sources) {
     try {
-      if (source.kind === "vault" || source.kind === "path") {
-        const { kind, path } = source;
-        const name = getFileName(path);
-        const no =
-          refusal(name, null) ??
-          (await pagesRefusal(name, io.pdfPages ? () => io.pdfPages!.ofPath(path, kind) : null));
-        if (no) notices.push(no);
-        else if (kind === "vault") refs.push(chatFileRef(path));
-        else refs.push(chatFileRef((await io.importImageFile(io.projectPath, path)).path));
+      if (source.kind === "vault") {
+        const name = getFileName(source.path);
+        const media = !source.isDir && isChatFileName(name);
+        const no = media
+          ? (refusal(name, null) ??
+            (await pagesRefusal(
+              name,
+              io.pdfPages ? () => io.pdfPages!.ofPath(source.path, "vault") : null,
+            )))
+          : null;
+        if (no) out.notices.push(no);
+        else place(out, source.path, source.isDir === true);
+      } else if (source.kind === "path") {
+        const name = getFileName(source.path);
+        // an image or PDF is checked before anything is copied
+        const no = isChatFileName(name)
+          ? (refusal(name, null) ??
+            (await pagesRefusal(
+              name,
+              io.pdfPages ? () => io.pdfPages!.ofPath(source.path, "path") : null,
+            )))
+          : null;
+        if (no) out.notices.push(no);
+        else {
+          const file = await io.importFile(io.projectPath, source.path);
+          place(out, file.path, file.isDir);
+        }
       } else {
         const { file } = source;
         const ext = extensionForMime(file.type);
@@ -157,17 +195,18 @@ export async function attachChatFiles(
               ? async () => io.pdfPages!.ofBytes(new Uint8Array(await file.arrayBuffer()))
               : null,
           ));
-        if (no) notices.push(no);
+        if (no) out.notices.push(no);
         else
-          refs.push(
+          out.refs.push(
             chatFileRef((await io.saveImage(io.projectPath, name, await io.readBase64(file))).path),
           );
       }
     } catch (e) {
-      notices.push(`Not attached: ${reason(e)}`);
+      const why = reason(e);
+      out.notices.push(why.startsWith("Not attached") ? why : `Not attached: ${why}`);
     }
   }
-  return { refs, notices };
+  return out;
 }
 
 /** A file's own name, or a dated "Pasted image" name when it has none worth keeping (a clipboard

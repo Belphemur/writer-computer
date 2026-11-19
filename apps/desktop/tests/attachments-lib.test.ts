@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vite-plus/test";
 import {
   attachmentLinkTarget,
   embedLine,
+  linkLine,
   embedText,
   imageUrlsFromTransfer,
   markdownImage,
@@ -171,5 +172,24 @@ describe("imageUrlsFromTransfer", () => {
     expect(
       imageUrlsFromTransfer('<img src="https://x.test/a.png">', "https://x.test/a.png"),
     ).toEqual(["https://x.test/a.png"]);
+  });
+});
+
+describe("linkLine", () => {
+  test("embeds an image or a PDF and links anything else, a note without its extension", () => {
+    expect(linkLine("notes/attachments/a.png", "notes")).toBe("![[notes/attachments/a.png]]");
+    expect(linkLine("notes/a.png", "notes")).toBe("![[a.png]]");
+    expect(linkLine("notes/p.PDF", "notes")).toBe("![[p.PDF]]");
+    expect(linkLine("notes/data.csv", "notes")).toBe("[[data.csv]]");
+    expect(linkLine("notes/Plan.md", "notes")).toBe("[[Plan]]");
+    expect(linkLine("other/Plan.md", "notes")).toBe("[[other/Plan]]");
+  });
+
+  test("falls back to a markdown link for a name a wikilink cannot carry", () => {
+    expect(linkLine("notes/a [v2].zip", "notes")).toBe("[a v2.zip](a%20%5Bv2%5D.zip)");
+  });
+
+  test("without a vault the path is already note-relative", () => {
+    expect(linkLine("x-assets/d.csv", null)).toBe("[[x-assets/d.csv]]");
   });
 });

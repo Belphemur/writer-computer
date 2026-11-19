@@ -10,6 +10,7 @@ mod config;
 #[cfg(target_os = "macos")]
 mod dock_menu;
 pub mod dql;
+pub mod dropped;
 mod error;
 mod features;
 pub mod fs_entry;
@@ -729,6 +730,7 @@ pub fn run() {
             commands::search::resolve_wiki_link,
             commands::images::save_attachment,
             commands::images::import_attachment_file,
+            commands::images::drop_import,
             commands::images::import_attachment_url,
             commands::settings::get_settings,
             commands::settings::get_setting,

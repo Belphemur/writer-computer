@@ -14,17 +14,17 @@ Dropping or pasting an image into a note saves it into the vault's attachment fo
 | Drag an image from the sidebar                       | the tree's pointer drag (`use-tree-drag.ts`) released over a note; the sidebar lists images (`files.show-images`, [`code-files-spec.md`](code-files-spec.md) "Images")        | link only, nothing copied                  |
 | Browser drag or paste that carries only an image URL | `text/html` with an `<img src>` and no text of its own, or `text/uri-list` whose path ends in an image extension (`imageUrlsFromTransfer`); used only when no file came along | downloaded in Rust (below)                 |
 
-All of them end in `insertImages` (`editor-image-insert.ts`). Non-image drops and pastes keep the old behaviour (a `.md` file dropped opens it, text pastes as text).
+All of them end in `insertImages` (`editor-image-insert.ts`). A browser drop or paste of a non-image keeps the old behaviour (text pastes as text); a Finder drop of any file is copied (or, if already in the vault, linked in place) and linked: `![[name.ext]]` for an image or PDF, `[[name.ext]]` otherwise, `[[Note]]` for a note. Secret-looking names and files over 25 MB are refused.
 
 ## Where files go
 
-Setting `files.attachment-folder` (string, default empty). Forms, from Obsidian's public "Default location for new attachments" semantics:
+Setting `files.attachment-folder` (string, default empty; any file dropped from Finder goes here too, spec [`os-drop-spec.md`](os-drop-spec.md)). Forms, from Obsidian's public "Default location for new attachments" semantics:
 
 - `attachments`, `assets/img`: a folder from the vault root. A leading or trailing `/` is ignored; `/` alone is the vault root.
 - `./`: next to the note.
 - `./name`: the subfolder `name` of the note's folder.
 
-Empty: the vault's `.obsidian/app.json` `attachmentFolderPath` when it has one (read-only, same forms), else `attachments` at the root. The folder is created on demand. A window with no vault (a standalone file) saves to `<note stem>-assets/` next to the file.
+Empty: the vault's `.obsidian/app.json` `attachmentFolderPath` when it has one (read-only, same forms), else `./attachments`: an `attachments` folder next to the note (a note at `Projects/X/Plan.md` saves to `Projects/X/attachments/`; before, the default was `attachments` at the vault root). The folder is created on first use. A paste, a drop and a copy use the one resolver (`attachments.rs`). A window with no vault (a standalone file) saves to `<note stem>-assets/` next to the file.
 
 One Rust write path, `attachments.rs` (Tauri-free): `sanitize_name`, `resolve_folder`, `save`. Paths go through `vault_ops::confine` (no `..`, no escape by symlink, never `.obsidian` or `.git`), the file is created with `create_new` (never overwrites), and nothing is ever written into `.obsidian`. Commands `save_attachment` (raw bytes as the request body, note and name in a header) and `import_attachment_file` (by path) in `commands/images.rs` are async, do their IO through `commands::blocking`, authorize the note with the window's workspace, and log nothing about image bytes or paths.
 

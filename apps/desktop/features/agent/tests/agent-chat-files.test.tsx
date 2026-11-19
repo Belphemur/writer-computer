@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const hoisted = vi.hoisted(() => ({
   saveImage: vi.fn(),
-  importImageFile: vi.fn(),
+  importFile: vi.fn(),
   opened: [] as (string | string[])[],
 }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -48,13 +48,14 @@ vi.mock("@features/agent/web/lib/chat-history-client", async (orig) => {
     chatHistoryClient: {
       ...real.chatHistoryClient,
       saveImage: hoisted.saveImage,
-      importImageFile: hoisted.importImageFile,
+      importFile: hoisted.importFile,
     },
   };
 });
 
 import { AgentPane } from "@features/agent/web/components/agent-pane";
-import { dropOnChatComposer } from "@features/agent/web/lib/chat-image-target";
+import { dropVaultFilesOnTarget } from "@/lib/vault-drop-target";
+import { useEditorNoticeStore } from "@/components/editor-area/editor-notice-store";
 import {
   DOCUMENT_MAX_PAGES,
   IMAGE_TOKEN_ESTIMATE,
@@ -93,10 +94,17 @@ const file = (name: string, type: string, size = 4) => {
 describe("attaching images to a chat draft", () => {
   const io = (over: Partial<ChatFileIo> = {}): ChatFileIo => ({
     projectPath: null,
-    saveImage: vi.fn(async (_p, name) => ({ path: `.writer/chats/assets/${name}`, name })),
-    importImageFile: vi.fn(async (_p, src) => ({
+    saveImage: vi.fn(async (_p, name) => ({
+      path: `.writer/chats/assets/${name}`,
+      name,
+      copied: true,
+      isDir: false,
+    })),
+    importFile: vi.fn(async (_p, src) => ({
       path: `.writer/chats/assets/${src.split("/").pop()}`,
       name: "x",
+      copied: true,
+      isDir: false,
     })),
     readBase64: vi.fn(async () => "AAAA"),
     ...over,
@@ -122,36 +130,36 @@ describe("attaching images to a chat draft", () => {
       "pics/chart.gif",
     ]);
     expect(i.saveImage).toHaveBeenCalledTimes(2);
-    expect(i.importImageFile).toHaveBeenCalledWith(null, "/Users/me/Desktop/photo.jpg");
+    expect(i.importFile).toHaveBeenCalledWith(null, "/Users/me/Desktop/photo.jpg");
   });
 
-  it("refuses unsupported types and oversize files with a notice and keeps the rest", async () => {
+  it("refuses an unsupported pasted type and an oversize image, keeps the rest", async () => {
     const i = io();
     const big = file("big.png", "image/png", 51 * 1024 * 1024);
     const r = await attachChatFiles(
       [
         { kind: "file", file: file("a.svg", "image/svg+xml") },
-        { kind: "path", path: "/x/b.heic" },
-        { kind: "vault", path: "pics/c.bmp" },
         { kind: "file", file: big },
         { kind: "file", file: file("ok.png", "image/png") },
       ],
       i,
     );
     expect(r.refs.map((x) => x.path)).toEqual([".writer/chats/assets/ok.png"]);
-    expect(r.notices).toHaveLength(4);
+    expect(r.notices).toHaveLength(2);
     expect(r.notices[0]).toMatch(/a\.svg is not an image or PDF Claude can read/);
-    expect(r.notices[3]).toMatch(/big\.png is over the \d+ MB limit/);
+    expect(r.notices[1]).toMatch(/big\.png is over the \d+ MB limit/);
     expect(i.saveImage).toHaveBeenCalledTimes(1); // oversize bytes never cross the IPC
     expect(refusal("a.png", 1)).toBeNull();
   });
 
   it("turns a failed save into a notice without losing the other images", async () => {
     const i = io({
-      saveImage: vi
-        .fn()
-        .mockRejectedValueOnce(new Error("disk full"))
-        .mockResolvedValueOnce({ path: ".writer/chats/assets/b.png", name: "b.png" }),
+      saveImage: vi.fn().mockRejectedValueOnce(new Error("disk full")).mockResolvedValueOnce({
+        path: ".writer/chats/assets/b.png",
+        name: "b.png",
+        copied: true,
+        isDir: false,
+      }),
     });
     const r = await attachChatFiles(
       [
@@ -165,13 +173,107 @@ describe("attaching images to a chat draft", () => {
   });
 });
 
+describe("dropping any file or folder on a chat draft", () => {
+  /** Rust's answer: outside the vault a file is copied into the assets; inside it comes back. */
+  const rust = (inVault: Record<string, boolean>) =>
+    vi.fn(async (_p: string | null, src: string) => {
+      const name = src.split("/").pop()!;
+      if (src in inVault)
+        return { path: src.replace("/v/", ""), name, copied: false, isDir: inVault[src]! };
+      return { path: `.writer/chats/assets/${name}`, name, copied: true, isDir: false };
+    });
+  const io = (importFile: ChatFileIo["importFile"]): ChatFileIo => ({
+    projectPath: null,
+    saveImage: vi.fn(),
+    importFile,
+    readBase64: vi.fn(),
+  });
+
+  it("an outside file of any type is copied and becomes a file chip, a vault file is mentioned, a folder is a folder chip", async () => {
+    const importFile = rust({ "/v/docs/n.md": false, "/v/docs": true });
+    const r = await attachChatFiles(
+      [
+        { kind: "path", path: "/Users/me/Downloads/data.zip" },
+        { kind: "path", path: "/v/docs/n.md" },
+        { kind: "path", path: "/v/docs" },
+        { kind: "vault", path: "src/main.rs" },
+        { kind: "vault", path: "src", isDir: true },
+      ],
+      io(importFile),
+    );
+    expect(r.notices).toEqual([]);
+    expect(r.refs).toEqual([]);
+    expect(r.mentions).toEqual([
+      { path: ".writer/chats/assets/data.zip", isDir: false },
+      { path: "docs/n.md", isDir: false },
+      { path: "docs", isDir: true },
+      { path: "src/main.rs", isDir: false },
+      { path: "src", isDir: true },
+    ]);
+    // the vault sources never reach Rust
+    expect(importFile).toHaveBeenCalledTimes(3);
+  });
+
+  it("a mixed drop: images and PDFs stay block chips, in the vault or out, the rest are mentions", async () => {
+    const importFile = rust({ "/v/pics/a.png": false, "/v/papers/p.pdf": false });
+    const r = await attachChatFiles(
+      [
+        { kind: "path", path: "/Users/me/Desktop/shot.png" },
+        { kind: "path", path: "/v/pics/a.png" },
+        { kind: "path", path: "/v/papers/p.pdf" },
+        { kind: "path", path: "/Users/me/Desktop/notes.txt" },
+        { kind: "vault", path: "b.pdf" },
+      ],
+      io(importFile),
+    );
+    expect(r.refs).toEqual([
+      { kind: "image", path: ".writer/chats/assets/shot.png" },
+      { kind: "image", path: "pics/a.png" },
+      { kind: "document", path: "papers/p.pdf" },
+      { kind: "document", path: "b.pdf" },
+    ]);
+    expect(r.mentions).toEqual([{ path: ".writer/chats/assets/notes.txt", isDir: false }]);
+  });
+
+  it("a refusal from Rust (secret name, over the cap, a folder from outside) is one notice and the rest still attach", async () => {
+    const importFile = vi.fn(async (_p: string | null, src: string) => {
+      if (src.endsWith(".env")) throw new Error(".env looks like a secret");
+      if (src.endsWith("big.bin")) throw new Error("big.bin is over the 25 MB limit");
+      if (src.endsWith("tree")) throw new Error("folders from outside the vault can't be added");
+      return { path: ".writer/chats/assets/ok.txt", name: "ok.txt", copied: true, isDir: false };
+    });
+    const r = await attachChatFiles(
+      [
+        { kind: "path", path: "/x/.env" },
+        { kind: "path", path: "/x/big.bin" },
+        { kind: "path", path: "/x/tree" },
+        { kind: "path", path: "/x/ok.txt" },
+      ],
+      io(importFile),
+    );
+    expect(r.notices).toEqual([
+      "Not attached: .env looks like a secret",
+      "Not attached: big.bin is over the 25 MB limit",
+      "Not attached: folders from outside the vault can't be added",
+    ]);
+    expect(r.mentions).toEqual([{ path: ".writer/chats/assets/ok.txt", isDir: false }]);
+  });
+});
+
 describe("attaching PDFs to a chat draft", () => {
   const io = (over: Partial<ChatFileIo> = {}): ChatFileIo => ({
     projectPath: null,
-    saveImage: vi.fn(async (_p, name) => ({ path: `.writer/chats/assets/${name}`, name })),
-    importImageFile: vi.fn(async (_p, src) => ({
+    saveImage: vi.fn(async (_p, name) => ({
+      path: `.writer/chats/assets/${name}`,
+      name,
+      copied: true,
+      isDir: false,
+    })),
+    importFile: vi.fn(async (_p, src) => ({
       path: `.writer/chats/assets/${src.split("/").pop()}`,
       name: "x",
+      copied: true,
+      isDir: false,
     })),
     readBase64: vi.fn(async () => "AAAA"),
     ...over,
@@ -201,7 +303,7 @@ describe("attaching PDFs to a chat draft", () => {
       { kind: "image", path: ".writer/chats/assets/Pasted image 20261117091205.png" },
     ]);
     expect(i.saveImage).toHaveBeenCalledTimes(2);
-    expect(i.importImageFile).toHaveBeenCalledWith(null, "/Users/me/Desktop/invoice.pdf");
+    expect(i.importFile).toHaveBeenCalledWith(null, "/Users/me/Desktop/invoice.pdf");
     expect(refs(chatFileRef("a.pdf"))).toBe("document");
     expect(refs(chatFileRef("a.png"))).toBe("image");
   });
@@ -247,7 +349,7 @@ describe("attaching PDFs to a chat draft", () => {
     expect(counter.ofPath).toHaveBeenCalledWith("/x/long3.pdf", "path");
     expect(counter.ofBytes).toHaveBeenCalledOnce();
     expect(i.saveImage).not.toHaveBeenCalled(); // nothing saved for a refused PDF
-    expect(i.importImageFile).not.toHaveBeenCalled();
+    expect(i.importFile).not.toHaveBeenCalled();
   });
 
   it("accepts exactly the cap, and a PDF whose pages cannot be counted", async () => {
@@ -494,12 +596,10 @@ describe("the composer and the transcript", () => {
     paste([file("a.svg", "image/svg+xml")]);
     await flush(5);
     expect(draft()).toHaveLength(0);
-    expect($("[data-agent-image-notice]")!.textContent).toMatch(
-      /a\.svg is not an image or PDF Claude/,
-    );
+    expect(useEditorNoticeStore.getState().message).toMatch(/a\.svg is not an image or PDF Claude/);
     paste([file("big.png", "image/png", 51 * 1024 * 1024)]);
     await flush(5);
-    expect($("[data-agent-image-notice]")!.textContent).toMatch(/over the \d+ MB limit/);
+    expect(useEditorNoticeStore.getState().message).toMatch(/over the \d+ MB limit/);
     expect(hoisted.saveImage).not.toHaveBeenCalled();
   });
 
@@ -547,7 +647,7 @@ describe("the composer and the transcript", () => {
       await flush(5);
       expect(draft()).toHaveLength(0);
       expect(hoisted.saveImage).not.toHaveBeenCalled();
-      expect($("[data-agent-image-notice]")!.textContent).toMatch(
+      expect(useEditorNoticeStore.getState().message).toMatch(
         /huge\.pdf has 250 pages, Claude reads up to 100/,
       );
     });
@@ -582,7 +682,7 @@ describe("the composer and the transcript", () => {
       const over = vi
         .spyOn($("[data-agent-composer-box]")!.parentElement!, "getBoundingClientRect")
         .mockReturnValue({ left: 0, right: 100, top: 0, bottom: 100 } as DOMRect);
-      expect(dropOnChatComposer(10, 10, [{ kind: "vault", path: "/v/papers/survey.pdf" }])).toBe(
+      expect(dropVaultFilesOnTarget(10, 10, [{ path: "/v/papers/survey.pdf", isDir: false }])).toBe(
         true,
       );
       await flush(5);
@@ -596,10 +696,12 @@ describe("the composer and the transcript", () => {
     const over = vi
       .spyOn($("[data-agent-composer-box]")!.parentElement!, "getBoundingClientRect")
       .mockReturnValue({ left: 0, right: 100, top: 0, bottom: 100 } as DOMRect);
-    expect(dropOnChatComposer(500, 500, [{ kind: "vault", path: "/v/pics/chart.png" }])).toBe(
+    expect(dropVaultFilesOnTarget(500, 500, [{ path: "/v/pics/chart.png", isDir: false }])).toBe(
       false,
     );
-    expect(dropOnChatComposer(10, 10, [{ kind: "vault", path: "/v/pics/chart.png" }])).toBe(true);
+    expect(dropVaultFilesOnTarget(10, 10, [{ path: "/v/pics/chart.png", isDir: false }])).toBe(
+      true,
+    );
     await flush(5);
     over.mockRestore();
     expect(draft()).toEqual([{ kind: "image", path: "pics/chart.png" }]);

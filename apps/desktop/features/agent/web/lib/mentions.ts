@@ -29,6 +29,37 @@ export function toContextRef(c: MentionCandidate, label?: string): ContextRef {
     : { kind: "folder", path: c.path, ...l };
 }
 
+/** A vault path to attach as an `@` mention chip: a file (any type) or a folder. */
+export type MentionTarget = { path: string; isDir: boolean };
+
+/**
+ * The draft change that attaches `targets` the way picking them from `@` does (the one place that
+ * builds it: the sidebar's "attach", a drop on the composer): each readable name goes into the text
+ * as a mention token and its ref into the mentions (refs follow the text, `draft-refs.ts`). A path
+ * already attached is skipped. Pure; the caller writes the result to the draft.
+ */
+export function mentionPatch(
+  draft: { text: string; mentions: readonly ContextRef[] },
+  targets: readonly MentionTarget[],
+): { text: string; mentions: ContextRef[] } {
+  let text = draft.text;
+  const mentions = [...draft.mentions];
+  for (const { path, isDir } of targets) {
+    const kind = isDir ? "folder" : "note";
+    if (mentions.some((m) => m.kind === kind && "path" in m && m.path === path)) continue;
+    const candidate: MentionCandidate = {
+      kind,
+      path,
+      label: isDir ? nameOf(path) : noteLabel(path).text,
+      detail: path,
+    };
+    const label = pickLabel(candidate, mentions);
+    mentions.push(toContextRef(candidate, label));
+    text += `${text === "" || text.endsWith(" ") ? "" : " "}${mentionToken(label)} `;
+  }
+  return { text, mentions };
+}
+
 /**
  * The one rule for the readable name a pick puts in the text: the candidate's label (display
  * title or file name). When another attached path already uses that label, parent folders are

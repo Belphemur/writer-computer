@@ -145,7 +145,7 @@ function history(over: Partial<ChatHistoryClient> = {}) {
     regenerateTitle: vi.fn(),
     replay: vi.fn(),
     saveImage: vi.fn(),
-    importImageFile: vi.fn(),
+    importFile: vi.fn(),
     permissionRules: vi.fn(async () => ({ allow: [], deny: [] })),
     removePermissionRule: vi.fn(async () => {}),
     ...over,

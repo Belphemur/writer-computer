@@ -26,6 +26,7 @@ import * as tauri from "@/lib/tauri";
 import { getFileStem, getParentDir } from "@/lib/paths";
 import { useMoveEntry } from "./use-move-entry";
 import { useTreeDrag } from "./use-tree-drag";
+import { useTreeOsDrop } from "./use-tree-os-drop";
 import { useFileTreeContextMenus } from "./use-file-tree-context-menus";
 import { DragGhost } from "./drag-ghost";
 import { FileTreeNode } from "./file-tree-node";
@@ -97,16 +98,35 @@ export function FileTree({
     selectionAnchorRef.current = null;
   }, []);
 
-  const { containerRef, ghostRef, draggingPaths, dropHighlight, dragGhost, beginDrag } =
-    useTreeDrag({
-      rootPath,
-      flatItems,
-      entryByPath,
-      expandedDirs,
-      moveEntry,
-      toggleDirectory,
-      clearSelection,
-    });
+  const {
+    containerRef,
+    ghostRef,
+    draggingPaths,
+    dropHighlight,
+    dragGhost,
+    beginDrag,
+    setHighlightDir,
+  } = useTreeDrag({
+    rootPath,
+    flatItems,
+    entryByPath,
+    expandedDirs,
+    moveEntry,
+    toggleDirectory,
+    clearSelection,
+  });
+
+  // Finder items dropped on the tree are copied into the folder under the pointer (or moved when
+  // they already are in the vault).
+  useTreeOsDrop({
+    containerRef,
+    rootPath,
+    entryByPath,
+    moveEntry,
+    refreshDirectory,
+    select: (paths) => setSelectedPaths(new Set(paths)),
+    setHighlightDir,
+  });
 
   // Clear selection on Escape
   useEffect(() => {

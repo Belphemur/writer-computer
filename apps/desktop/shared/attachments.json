@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared by src-tauri/src/attachments.rs and src/lib/attachments.ts (spec: SPECs/image-insertion-spec.md). importExtensions are the image types dropped or pasted into a note and saved to the attachment folder; renderExtensions are the ones shown inline as ![[name.ext]], listed in the sidebar and opened in the image viewer (the system webview decodes what it can: a type it cannot shows the viewer's fallback). It is the one list of image types. documentExtensions are the document types the sidebar lists (setting files.show-pdfs), the PDF reader opens and the agent composer attaches (spec: SPECs/pdf-spec.md). mimeExtensions maps an image Content-Type to the extension it is saved under (clipboard and drag types in the webview, download responses in Rust).",
+  "$comment": "Shared by src-tauri/src/attachments.rs and src/lib/attachments.ts (spec: SPECs/image-insertion-spec.md). importExtensions are the image types dropped or pasted into a note and saved to the attachment folder; renderExtensions are the ones shown inline as ![[name.ext]], listed in the sidebar and opened in the image viewer (the system webview decodes what it can: a type it cannot shows the viewer's fallback). It is the one list of image types. documentExtensions are the document types the sidebar lists (setting files.show-pdfs), the PDF reader opens and the agent composer attaches (spec: SPECs/pdf-spec.md). mimeExtensions maps an image Content-Type to the extension it is saved under (clipboard and drag types in the webview, download responses in Rust). defaultFolder is the attachment folder when neither the Writer setting nor the vault's Obsidian setting says (\"./attachments\": next to the note). maxFileBytes caps any file of any type dropped from the OS (an image keeps maxBytes, a PDF into a chat its own cap); maxTreeBytes and maxTreeFiles cap a whole folder dropped on the sidebar (src-tauri/src/dropped.rs, spec SPECs/os-drop-spec.md).",
   "maxBytes": 52428800,
   "importExtensions": [
     "png",
@@ -37,7 +37,10 @@
   ],
   "documentExtensions": ["pdf"],
   "documentMaxBytes": 268435456,
-  "defaultFolder": "attachments",
+  "defaultFolder": "./attachments",
+  "maxFileBytes": 26214400,
+  "maxTreeBytes": 524288000,
+  "maxTreeFiles": 5000,
   "mimeExtensions": {
     "image/png": "png",
     "image/jpeg": "jpg",

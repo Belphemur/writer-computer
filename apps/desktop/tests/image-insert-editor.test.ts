@@ -18,12 +18,13 @@ vi.mock("../src/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn() } 
 import { editorClipboardExtension } from "../src/components/editor-area/editor-clipboard";
 import {
   dropImagesAt,
+  editorOsDropTarget,
   imageFilesOf,
   imageInsertExtension,
   insertImages,
-  vaultImageSources,
+  vaultFileSources,
 } from "../src/components/editor-area/editor-image-insert";
-import { createOsImageDropHandler } from "../src/components/editor-area/use-os-image-drop";
+import { createOsDropHandler, registerOsDropTarget } from "../src/lib/os-drop";
 import { useEditorNoticeStore } from "../src/components/editor-area/editor-notice-store";
 import { flushPromises } from "@tests/helpers/events";
 
@@ -292,60 +293,82 @@ describe("drops", () => {
     expect(imageFilesOf([png("a.png"), new File(["t"], "n.txt")])).toHaveLength(1);
   });
 
-  test("Finder: image paths are copied by path at the pointer, other files ignored", async () => {
-    importAttachmentFile.mockResolvedValue({ relative_path: "attachments/F.png" });
+  /** The Finder drop as the app routes it: the dispatcher over the editor's registered target. */
+  function finderDrop(paths: string[], x = 40, y = 80) {
+    const off = registerOsDropTarget(editorOsDropTarget);
+    const handle = createOsDropHandler("macos");
+    handle({ type: "enter", paths, position: { x, y } } as never);
+    handle({ type: "drop", paths, position: { x, y } } as never);
+    off();
+  }
+
+  test("Finder: an image is copied by path and embedded at the pointer", async () => {
+    importAttachmentFile.mockResolvedValue({
+      relative_path: "notes/attachments/F.png",
+      copied: true,
+    });
     const view = makeView("0123456789", 0);
     const posAtCoords = vi.spyOn(view, "posAtCoords").mockReturnValue(6);
     document.elementFromPoint = () => view.dom;
-    const handle = createOsImageDropHandler(() => 2);
-    handle({
-      type: "enter",
-      paths: ["/Users/me/F.png", "/Users/me/n.txt"],
-      position: { x: 40, y: 80 },
-    } as never);
-    handle({
-      type: "drop",
-      paths: ["/Users/me/F.png", "/Users/me/n.txt"],
-      position: { x: 40, y: 80 },
-    } as never);
+    finderDrop(["/Users/me/F.png"]);
     await flushPromises();
-
-    expect(importAttachmentFile).toHaveBeenCalledTimes(1);
     expect(importAttachmentFile).toHaveBeenCalledWith(NOTE, "/Users/me/F.png");
     expect(saveAttachment).not.toHaveBeenCalled();
-    // Physical pixels become CSS pixels.
-    expect(posAtCoords).toHaveBeenCalledWith({ x: 20, y: 40 }, false);
-    expect(view.state.doc.toString()).toBe("012345![[attachments/F.png]]6789");
+    // macOS reports CSS pixels: the point is the pointer's, not halved
+    expect(posAtCoords).toHaveBeenCalledWith({ x: 40, y: 80 }, false);
+    expect(view.state.doc.toString()).toBe("012345![[notes/attachments/F.png]]6789");
   });
 
-  test("Finder: a drop with no image does nothing", async () => {
-    const view = makeView("x");
+  test("Finder: any file is copied and linked, an image or PDF embedded, several on separate lines", async () => {
+    importAttachmentFile.mockImplementation(async (_note: string, src: string) => ({
+      relative_path: `notes/attachments/${src.split("/").pop()}`,
+      copied: true,
+    }));
+    const view = makeView("ab", 1);
+    vi.spyOn(view, "posAtCoords").mockReturnValue(1);
     document.elementFromPoint = () => view.dom;
-    createOsImageDropHandler(() => 1)({
-      type: "drop",
-      paths: ["/Users/me/doc.pdf"],
-      position: { x: 1, y: 1 },
-    } as never);
+    finderDrop(["/Users/me/data.csv", "/Users/me/p.pdf", "/Users/me/shot.png"]);
     await flushPromises();
-    expect(importAttachmentFile).not.toHaveBeenCalled();
-    expect(view.state.doc.toString()).toBe("x");
+    expect(importAttachmentFile).toHaveBeenCalledTimes(3);
+    expect(view.state.doc.toString()).toBe(
+      "a[[notes/attachments/data.csv]]\n![[notes/attachments/p.pdf]]\n![[notes/attachments/shot.png]]b",
+    );
+    // one undo step undoes the whole drop
+    undo(view);
+    expect(view.state.doc.toString()).toBe("ab");
   });
 
-  test("sidebar: a vault image is linked, never copied", async () => {
+  test("Finder: a file already in the vault is linked in place, a refusal is a notice", async () => {
+    importAttachmentFile.mockImplementation(async (_note: string, src: string) => {
+      if (src.endsWith(".env")) throw "looks like a secret";
+      return { relative_path: "notes/Plan.md", copied: false };
+    });
+    const view = makeView("", 0);
+    vi.spyOn(view, "posAtCoords").mockReturnValue(0);
+    document.elementFromPoint = () => view.dom;
+    finderDrop(["/vault/notes/Plan.md", "/Users/me/.env"]);
+    await flushPromises();
+    expect(view.state.doc.toString()).toBe("[[Plan]]");
+    expect(useEditorNoticeStore.getState().message).toBe("Not added: looks like a secret");
+  });
+
+  test("sidebar: vault files are linked (a note as [[Note]], an image embedded), never copied", async () => {
     const view = makeView("0123456789", 0);
     vi.spyOn(view, "posAtCoords").mockReturnValue(2);
     document.elementFromPoint = () => view.dom;
-    const sources = vaultImageSources([
+    const sources = vaultFileSources([
       { path: "/vault/attachments/logo.png", is_dir: false },
-      { path: "/vault/notes/a.md", is_dir: false },
+      { path: "/vault/projects/Plan.md", is_dir: false },
       { path: "/vault/attachments", is_dir: true },
     ]);
-    expect(sources).toHaveLength(1);
+    expect(sources).toHaveLength(2); // a folder cannot be linked
     expect(dropImagesAt(5, 5, sources)).toBe(true);
     await flushPromises();
     expect(saveAttachment).not.toHaveBeenCalled();
     expect(importAttachmentFile).not.toHaveBeenCalled();
-    expect(view.state.doc.toString()).toBe("01![[attachments/logo.png]]23456789");
+    expect(view.state.doc.toString()).toBe(
+      "01![[attachments/logo.png]]\n[[projects/Plan]]23456789",
+    );
   });
 
   test("sidebar: an image beside the note is linked by bare name; none over the editor is a miss", async () => {

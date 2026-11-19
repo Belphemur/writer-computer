@@ -9,7 +9,7 @@ import {
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
 import {
-  embedLine,
+  linkLine,
   extensionForMime,
   isGenericClipboardName,
   isImportableImageName,
@@ -22,25 +22,29 @@ import {
   vaultRelative,
 } from "@/lib/attachments";
 import { logger } from "@/lib/logger";
-import { getFileName, getParentDir } from "@/lib/paths";
+import type { OsDropTarget } from "@/lib/os-drop";
+import { getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
 import { dismissEditorNotice, showEditorNotice, useEditorNoticeStore } from "./editor-notice-store";
 
 /**
- * Inserting images into a note (spec: SPECs/image-insertion-spec.md): paste, drops from the
- * browser (HTML5), Finder (Tauri's OS drop, routed here by `use-os-image-drop`) and a vault
- * image dragged from the sidebar (pointer drag, routed by `use-tree-drag`). Every source ends in
- * `insertImages`: save (one Rust write path) or link, then ONE transaction inserting
- * `![[target]]` per image, so one undo step undoes the whole insertion.
+ * Inserting images and files into a note (specs: SPECs/image-insertion-spec.md,
+ * SPECs/os-drop-spec.md): paste, drops from the browser (HTML5), Finder (Tauri's OS drop, routed
+ * here by the `lib/os-drop` dispatcher: any file) and a vault file dragged from the sidebar
+ * (pointer drag, routed by `use-tree-drag`). Every source ends in `insertImages`: save or copy
+ * (one Rust write path) or link, then ONE transaction inserting one line per file (`linkLine`:
+ * `![[target]]` for an image or PDF, `[[target]]` otherwise), so one undo step undoes the whole
+ * insertion.
  */
 
 /** Where an image comes from. */
 export type ImageSource =
   /** Bytes from the clipboard or a browser drag: saved to the attachment folder. */
   | { kind: "file"; file: File }
-  /** A file on disk (Finder drop): copied to the attachment folder by path. */
+  /** A file of any type on disk (Finder drop): copied to the attachment folder by path, or, when
+   *  it is already in the vault, linked where it is. */
   | { kind: "path"; path: string }
-  /** An image already in the vault (sidebar drag): linked, never copied. */
+  /** A file already in the vault (sidebar drag): linked, never copied. */
   | { kind: "vault"; path: string }
   /** An image a browser drag or paste carried only as a link: downloaded in Rust, else linked. */
   | { kind: "url"; url: string };
@@ -164,19 +168,15 @@ async function resolveSource(
   root: string | null,
 ): Promise<string> {
   if (source.kind === "vault") return root ? vaultRelative(source.path, root) : source.path;
-  if (source.kind === "path") {
-    if (!isImportableImageName(getFileName(source.path))) {
-      throw new Refusal(`Not saved: "${getFileName(source.path)}" is not a supported image type`);
-    }
+  if (source.kind === "path")
     return (await tauri.importAttachmentFile(notePath, source.path)).relative_path;
-  }
   const name = nameForFile(source.file);
   if (source.file.size > MAX_ATTACHMENT_BYTES) throw new Refusal(sizeMessage(source.file.size));
   const bytes = new Uint8Array(await source.file.arrayBuffer());
   return (await tauri.saveAttachment(notePath, name, bytes)).relative_path;
 }
 
-/** The line to insert for one source: a wikilink embed of the saved or linked file; for a URL
+/** The line to insert for one source: a wikilink (embed for an image or PDF) of the saved or linked file; for a URL
  *  source that cannot be downloaded, a plain `![](url)` and a notice saying why. */
 async function lineFor(
   source: ImageSource,
@@ -185,11 +185,11 @@ async function lineFor(
   noteDirRel: string | null,
 ): Promise<string> {
   if (source.kind !== "url") {
-    return embedLine(await resolveSource(source, notePath, root), noteDirRel);
+    return linkLine(await resolveSource(source, notePath, root), noteDirRel);
   }
   try {
     const saved = await tauri.importAttachmentUrl(notePath, source.url, pastedImageStem());
-    return embedLine(saved.relative_path, noteDirRel);
+    return linkLine(saved.relative_path, noteDirRel);
   } catch (error) {
     // The address is never logged.
     logger.warn("app", "image download failed");
@@ -206,11 +206,11 @@ function reportFailure(error: unknown) {
   }
   // Rust refusals (type, size) are plain strings already written for the user.
   const message = typeof error === "string" ? error : "something went wrong";
-  logger.warn("app", "image attachment failed");
+  logger.warn("app", "attachment failed");
   showEditorNotice(
     message.startsWith("Image not saved") || message.startsWith("Not saved")
       ? message
-      : `Image not saved: ${message}`,
+      : `Not added: ${message}`,
   );
 }
 
@@ -296,12 +296,13 @@ export function imageSourcesOfTransfer(data: DataTransfer): ImageSource[] {
   );
 }
 
-/** The image files among tree entries, as link-only sources (a sidebar drag copies nothing). */
-export function vaultImageSources(
+/** The files among tree entries (folders cannot be linked), as link-only sources: a sidebar drag
+ *  copies nothing. */
+export function vaultFileSources(
   entries: readonly { path: string; is_dir: boolean }[],
 ): ImageSource[] {
   return entries
-    .filter((entry) => !entry.is_dir && isImportableImageName(getFileName(entry.path)))
+    .filter((entry) => !entry.is_dir)
     .map((entry) => ({ kind: "vault", path: entry.path }));
 }
 
@@ -364,6 +365,20 @@ export function dropImagesAt(x: number, y: number, sources: readonly ImageSource
   void insertImages(view, sources, dropPosition(view, x, y));
   return true;
 }
+
+/** The note editor as a drop target of Finder files (`lib/os-drop`): the drop caret while the
+ *  drag is over it, the files copied or linked at the drop point. */
+export const editorOsDropTarget: OsDropTarget = {
+  contains: ({ x, y }) => targetViewAt(x, y) !== null,
+  hover: (point, paths) =>
+    point && paths.length > 0 ? previewImageDropAt(point.x, point.y) : clearImageDropPreview(),
+  drop: ({ x, y }, paths) =>
+    void dropImagesAt(
+      x,
+      y,
+      paths.map((path) => ({ kind: "path" as const, path })),
+    ),
+};
 
 /** Whether an insert-target editor is under a screen point. */
 export function isOverImageTarget(x: number, y: number): boolean {

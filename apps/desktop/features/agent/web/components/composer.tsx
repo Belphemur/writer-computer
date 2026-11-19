@@ -1,5 +1,7 @@
 import { isolateHistory } from "@codemirror/commands";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
+import { mentionInDraft } from "@features/agent/web/lib/attach-notes";
 import {
   decideAgentPermission,
   hasPendingAgentPermission,
@@ -59,7 +61,6 @@ import { ComposerActions } from "./composer-actions";
 import { ContextChips } from "./context-chips";
 import { SuggestionMenu, type Suggestion } from "./suggestion-menu";
 import { pillRanges, type PillContext } from "@features/agent/web/lib/pill";
-import { useChatImageOsDrop } from "./use-chat-image-drop";
 import { useComposerView } from "./use-composer-view";
 import { useFocusOnTick } from "./use-focus-on-tick";
 import { useLoadSkillsOnMount } from "./use-load-skills";
@@ -142,35 +143,32 @@ export function Composer({
       ? "Loading skills…"
       : SLASH_EMPTY_TEXT;
 
-  // Images and PDFs: paste, a browser drag, Finder files (OS drop) and vault files (sidebar drag)
-  // become chips; one that is refused (type, size, pages) shows a notice that goes away by itself.
-  const [notice, setNotice] = useState<string | null>(null);
-  const noticeTimer = useRef<number | null>(null);
+  // Files: paste and a browser drag (images, PDFs), Finder files and folders (OS drop) and vault
+  // files and folders (sidebar drag). Images and PDFs become block chips, any other file or folder
+  // the `@` mention chip; one that is refused (type, size, pages, secret name) is a notice.
   const projectPath = chat.projectPath;
-  const attachImages = useCallback(
+  const [dropOver, setDropOver] = useState(false);
+  const attachFiles = useCallback(
     async (sources: readonly ChatFileSource[]) => {
       const root = getWorkspaceRoot();
       const resolved = sources.map((s) =>
         s.kind === "vault" && root ? { ...s, path: getRelativePath(s.path, root) } : s,
       );
-      const { refs, notices } = await attachChatFiles(resolved, {
+      const { refs, mentions, notices } = await attachChatFiles(resolved, {
         projectPath,
         saveImage: chatHistoryClient.saveImage,
-        importImageFile: chatHistoryClient.importImageFile,
+        importFile: chatHistoryClient.importFile,
         readBase64: fileToBase64,
         pdfPages: pdfPagesIo(root),
       });
       if (refs.length > 0) addAgentDraftImages(chatId, refs);
-      if (notices.length > 0) {
-        setNotice(notices.join("\n"));
-        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
-        noticeTimer.current = window.setTimeout(() => setNotice(null), 6000);
-      }
+      mentionInDraft(chatId, mentions);
+      if (notices.length > 0) showEditorNotice(notices.join("\n"));
     },
     [chatId, projectPath],
   );
-  const latestAttach = useRef(attachImages);
-  latestAttach.current = attachImages;
+  const latestAttach = useRef(attachFiles);
+  latestAttach.current = attachFiles;
   useEffect(
     () =>
       registerChatImageTarget({
@@ -179,16 +177,10 @@ export function Composer({
           return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
         },
         attach: (sources) => void latestAttach.current(sources),
+        setOver: setDropOver,
       }),
     [],
   );
-  useEffect(
-    () => () => {
-      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
-    },
-    [],
-  );
-  const dropOver = useChatImageOsDrop(true);
 
   const disabled = isComposerDisabled(chat);
   const busy = isBusy(chat);
@@ -452,7 +444,7 @@ export function Composer({
         refresh(value, caret, isComposing);
       },
       onImageFiles: (files) =>
-        void attachImages(files.map((file) => ({ kind: "file" as const, file }))),
+        void attachFiles(files.map((file) => ({ kind: "file" as const, file }))),
       onCompositionStart: () => {
         composing.current = true;
         closeMenu();
@@ -529,23 +521,6 @@ export function Composer({
           onSend={send}
         />
       </div>
-      {notice && (
-        <p
-          role="status"
-          data-agent-image-notice
-          className="mx-3 -mt-1 mb-2 flex items-start gap-2 whitespace-pre-line text-[11.5px] text-text-muted"
-        >
-          <span className="min-w-0 flex-1">{notice}</span>
-          <button
-            type="button"
-            aria-label="Dismiss"
-            className="shrink-0 rounded px-1 hover:bg-[var(--item-hover-bg)] hover:text-text-primary"
-            onClick={() => setNotice(null)}
-          >
-            ×
-          </button>
-        </p>
-      )}
       {unattached.length > 0 && (
         <p
           role="status"

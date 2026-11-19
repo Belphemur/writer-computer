@@ -144,7 +144,8 @@ export interface AgentCommands {
     "agent_save_chat_file",
     { projectPath: string | null; name: string; dataBase64: string }
   >;
-  /** A Finder-dropped image file (absolute path), copied into the chat's `assets/` folder. */
+  /** A Finder-dropped file or folder (absolute path): copied into the chat's `assets/` folder, or
+   *  referenced in place when it is already in the vault. */
   agent_import_chat_file: Command<
     "agent_import_chat_file",
     { projectPath: string | null; sourcePath: string }

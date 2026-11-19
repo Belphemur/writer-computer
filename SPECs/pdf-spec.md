@@ -46,7 +46,7 @@ Cmd/Ctrl+F in a PDF tab opens a find bar over the viewer (the core find command,
 
 ## Agent attachments
 
-- The composer accepts PDFs from the file picker, paste, OS drop and a vault drag, beside images.
+- The composer accepts PDFs from the file picker, paste, OS drop and a vault drag, beside images. A PDF is still a document block when it comes by the OS drop or the sidebar (in the vault or out); other file types and folders are `@` mention chips or copied file chips ([`os-drop-spec.md`](os-drop-spec.md)).
 - `shared/agent-chat-images.json` becomes `shared/agent-chat-files.json` (images and documents: extensions, media types, the API's size and page caps), read by `agent/images.rs` (renamed for files) and `features/agent/web/lib/chat-images.ts` (renamed).
 - A PDF is sent as a `document` content block (`source.type: base64`, `media_type: application/pdf`). Over the caps it is refused with one short line in the composer.
 - The chip shows a PDF icon, the file name and the page count; a click opens the PDF tab.

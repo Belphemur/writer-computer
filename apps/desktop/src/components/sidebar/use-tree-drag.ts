@@ -10,12 +10,12 @@ import {
   clearImageDropPreview,
   dropImagesAt,
   previewImageDropAt,
-  vaultImageSources,
+  vaultFileSources,
 } from "@/components/editor-area/editor-image-insert";
 import { dropVaultFilesOnTarget } from "@/lib/vault-drop-target";
 import type { DirEntry } from "@/types/fs";
 import type { FlatTreeItem } from "./flatten-tree";
-import { canMoveInto, resolveDropDir, resolveDropRange } from "./tree-move";
+import { canMoveInto, folderAtPoint, resolveDropRange } from "./tree-move";
 import type { MoveOutcome } from "./use-move-entry";
 
 export interface DropHighlight {
@@ -81,24 +81,6 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
     node = node.parentElement;
   }
   return null;
-}
-
-/**
- * `data-tree-path` of the row whose vertical band contains `y` (1px gaps attach
- * to the row above), or null when `y` is above the first row. Rows are ordered
- * top-to-bottom, so iteration stops once a row begins below `y`. Used instead of
- * `elementFromPoint` because rows are non-hit-testable during a drag.
- */
-function rowPathAtY(container: HTMLElement, y: number): string | null {
-  const rows = container.querySelectorAll<HTMLElement>("[data-tree-path]");
-  let above: string | null = null;
-  for (const row of rows) {
-    const rect = row.getBoundingClientRect();
-    if (y < rect.top) break;
-    if (y <= rect.bottom) return row.getAttribute("data-tree-path");
-    above = row.getAttribute("data-tree-path");
-  }
-  return above;
 }
 
 /**
@@ -191,16 +173,7 @@ export function useTreeDrag({
     // Hit-test by geometry rather than `elementFromPoint`: rows are made
     // non-hit-testable during a drag (to avoid stuck `:hover`), so they wouldn't
     // be returned by `elementFromPoint` anyway.
-    let dest: string | null = null;
-    if (container) {
-      const rect = container.getBoundingClientRect();
-      const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-      if (inside) {
-        const path = rowPathAtY(container, y);
-        const target = path ? (entries.get(path) ?? null) : null;
-        dest = resolveDropDir(target, root);
-      }
-    }
+    const dest = container ? folderAtPoint(container, entries, root, x, y) : null;
 
     const valid =
       dest !== null && pending.entries.some((en) => canMoveInto(en.path, en.is_dir, dest!));
@@ -305,7 +278,7 @@ export function useTreeDrag({
       positionGhost();
       updateDropTarget();
       // A drag of vault images over the editor shows where the link would land.
-      if (vaultImageSources(pending.entries).length > 0 && dropTargetRef.current === null) {
+      if (vaultFileSources(pending.entries).length > 0 && dropTargetRef.current === null) {
         previewImageDropAt(event.clientX, event.clientY);
       } else {
         clearImageDropPreview();
@@ -328,16 +301,16 @@ export function useTreeDrag({
         void performDrop(entries, dest);
         return;
       }
-      // Released over a note: link the dragged images there, copying nothing.
-      const images = vaultImageSources(entries);
-      if (images.length > 0 && !dropImagesAt(event.clientX, event.clientY, images)) {
-        // not over a note: a registered target (the agent composer) takes them by reference
-        dropVaultFilesOnTarget(
-          event.clientX,
-          event.clientY,
-          images.flatMap((i) => (i.kind === "vault" ? [i.path] : [])),
-        );
-      }
+      // Released over a note: link the dragged files there, copying nothing.
+      const files = vaultFileSources(entries);
+      if (files.length > 0 && dropImagesAt(event.clientX, event.clientY, files)) return;
+      // not over a note: a registered target (the agent composer) takes files and folders by
+      // reference
+      dropVaultFilesOnTarget(
+        event.clientX,
+        event.clientY,
+        entries.map((e) => ({ path: e.path, isDir: e.is_dir })),
+      );
     },
     [endDrag, performDrop],
   );
@@ -406,5 +379,14 @@ export function useTreeDrag({
     setDropHighlight({ top, height: endEl.offsetTop + endEl.offsetHeight - top });
   }, [dropTargetDir, flatItems, rootPath]);
 
-  return { containerRef, ghostRef, draggingPaths, dropHighlight, dragGhost, beginDrag };
+  return {
+    containerRef,
+    ghostRef,
+    draggingPaths,
+    dropHighlight,
+    dragGhost,
+    beginDrag,
+    /** Highlights a folder row from outside the pointer drag (a Finder drag, `use-tree-os-drop`). */
+    setHighlightDir: setDropTargetDir,
+  };
 }

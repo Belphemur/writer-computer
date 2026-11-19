@@ -25,12 +25,25 @@ struct Shared {
     document_max_bytes: u64,
     mime_extensions: std::collections::HashMap<String, String>,
     default_folder: String,
+    max_file_bytes: u64,
+    max_tree_bytes: u64,
+    max_tree_files: usize,
 }
 
 static SHARED: LazyLock<Shared> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../shared/attachments.json"))
         .expect("shared/attachments.json is valid")
 });
+
+/// The cap on any file dropped from the OS (images keep [`max_bytes`]).
+pub fn max_file_bytes() -> u64 {
+    SHARED.max_file_bytes
+}
+
+/// The caps on a whole folder dropped on the sidebar: total bytes and file count.
+pub fn max_tree() -> (u64, usize) {
+    (SHARED.max_tree_bytes, SHARED.max_tree_files)
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AttachmentError {
@@ -136,10 +149,15 @@ pub fn is_document_name(name: &str) -> bool {
 
 /// `name`, `name 1`, `name 2`, ... : the `n`th candidate for a file name.
 fn numbered(stem: &str, ext: &str, n: u32) -> String {
-    if n == 0 {
-        format!("{stem}.{ext}")
+    let dot_ext = if ext.is_empty() {
+        String::new()
     } else {
-        format!("{stem} {n}.{ext}")
+        format!(".{ext}")
+    };
+    if n == 0 {
+        format!("{stem}{dot_ext}")
+    } else {
+        format!("{stem} {n}{dot_ext}")
     }
 }
 
@@ -229,9 +247,10 @@ pub fn save(
     save_typed(root, folder, name, source, false)
 }
 
-/// [`save`] for a file an agent chat takes: an image, or (`documents`) a document type (a PDF).
-/// The same write path, so confinement, naming and no-clobber are shared; a note's attachment
-/// commands keep calling [`save`] and stay image-only.
+/// [`save`] for a file an agent chat takes: any type (the chat's drop accepts every file; what
+/// the model reads as a block is decided elsewhere, `agent/files.rs`). The same write path, so
+/// confinement, naming and no-clobber are shared; a note's attachment commands keep calling
+/// [`save`] and stay image-only.
 pub fn save_chat_file(
     root: &Path,
     folder: &str,
@@ -246,14 +265,15 @@ fn save_typed(
     folder: &str,
     name: &str,
     source: Source<'_>,
-    documents: bool,
+    any_type: bool,
 ) -> Result<Saved, AttachmentError> {
     let clean = sanitize_name(name);
-    if image_extension(&clean).is_none() && !(documents && is_document_name(&clean)) {
+    if clean.is_empty() {
+        return Err(AttachmentError::Invalid("the file has no name".into()));
+    }
+    if !any_type && image_extension(&clean).is_none() {
         return Err(AttachmentError::Unsupported(format!(
-            "Not saved: \"{}\" is not a supported {} type",
-            clean,
-            if documents { "file" } else { "image" }
+            "Not saved: \"{clean}\" is not a supported image type"
         )));
     }
     // The name keeps its own extension case ("Photo.JPG"); only the type check is case-blind.
@@ -630,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn a_note_saves_images_only_and_a_chat_file_may_be_a_pdf() {
+    fn a_note_saves_images_only_and_a_chat_file_may_be_any_type() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let note = save(&root, "attachments", "a.pdf", Source::Bytes(b"%PDF-1.7")).unwrap_err();
@@ -641,14 +661,18 @@ mod tests {
         assert!(!root.join("attachments/a.pdf").exists());
         let chat = save_chat_file(&root, "chat", "a.pdf", Source::Bytes(b"%PDF-1.7")).unwrap();
         assert_eq!(chat.rel_path, "chat/a.pdf");
-        // the same write path: no clobber, images still fine, other types still refused
+        // the same write path: no clobber, images still fine, any other type too
         let again = save_chat_file(&root, "chat", "a.pdf", Source::Bytes(b"%PDF-1.7")).unwrap();
         assert_eq!(again.rel_path, "chat/a 1.pdf");
         assert!(save_chat_file(&root, "chat", "p.png", Source::Bytes(b"x")).is_ok());
-        let other = save_chat_file(&root, "chat", "a.docx", Source::Bytes(b"x")).unwrap_err();
-        assert!(
-            other.to_string().contains("not a supported file type"),
-            "{other}"
+        let other = save_chat_file(&root, "chat", "a.docx", Source::Bytes(b"x")).unwrap();
+        assert_eq!(other.rel_path, "chat/a.docx");
+        // a name without an extension keeps none, also when numbered
+        let one = save_chat_file(&root, "chat", "Makefile", Source::Bytes(b"x")).unwrap();
+        let two = save_chat_file(&root, "chat", "Makefile", Source::Bytes(b"x")).unwrap();
+        assert_eq!(
+            (one.rel_path.as_str(), two.rel_path.as_str()),
+            ("chat/Makefile", "chat/Makefile 1")
         );
     }
 
@@ -684,19 +708,20 @@ mod tests {
     }
 
     #[test]
-    fn the_setting_exists_with_an_empty_default_and_the_shared_default_folder_is_attachments() {
+    fn the_setting_exists_with_an_empty_default_and_the_shared_default_folder_is_next_to_the_note()
+    {
         let defaults = crate::config::default_settings();
         let value = defaults.get(SETTING_KEY).expect("setting is in the schema");
         assert_eq!(value.as_str(), Some(""));
-        assert_eq!(effective_setting("", None), "attachments");
+        assert_eq!(effective_setting("", None), "./attachments");
     }
 
     #[test]
     fn effective_setting_prefers_writer_then_obsidian_then_default() {
         assert_eq!(effective_setting("pics", Some("obs")), "pics");
         assert_eq!(effective_setting("  ", Some("obs")), "obs");
-        assert_eq!(effective_setting("", Some("")), "attachments");
-        assert_eq!(effective_setting("", None), "attachments");
+        assert_eq!(effective_setting("", Some("")), "./attachments");
+        assert_eq!(effective_setting("", None), "./attachments");
     }
 
     #[test]

@@ -4,7 +4,9 @@ import { pageKindView } from "./page-kinds/views";
 import { PageBody } from "./page-body";
 import { EditorSearchOverlay } from "./editor-search-overlay";
 import { EditorNoticeBanner } from "./editor-notice-banner";
-import { useOsImageDrop } from "./use-os-image-drop";
+import { useEffect } from "react";
+import { registerOsDropTarget, useOsDrop } from "@/lib/os-drop";
+import { editorOsDropTarget } from "./editor-image-insert";
 
 interface EditorAreaProps {
   showFooter?: boolean;
@@ -14,7 +16,8 @@ function EditorArea({ showFooter = true }: EditorAreaProps) {
   const activeTab = useActiveTab();
   const activeTabId = useActiveTabId();
   const tabs = useOpenTabs();
-  useOsImageDrop();
+  useOsDrop();
+  useEffect(() => registerOsDropTarget(editorOsDropTarget), []);
 
   return (
     <div className="relative h-full overflow-clip">

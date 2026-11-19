@@ -3,6 +3,7 @@
 //! authorizes, reads the setting and moves bytes.
 
 use crate::attachments::{self, AttachmentError, Source};
+use crate::dropped;
 use crate::error::AppError;
 use crate::state::AppState;
 use base64::Engine;
@@ -16,6 +17,8 @@ pub struct AttachmentSaved {
     /// Relative to the vault (or, in a standalone window, to the note's folder).
     pub relative_path: String,
     pub file_name: String,
+    /// False: the file was already in the vault and is linked in place, nothing was copied.
+    pub copied: bool,
 }
 
 impl From<AttachmentError> for AppError {
@@ -87,6 +90,7 @@ fn saved(s: attachments::Saved) -> AttachmentSaved {
         absolute_path: s.abs_path.to_string_lossy().to_string(),
         relative_path: s.rel_path,
         file_name: s.file_name,
+        copied: true,
     }
 }
 
@@ -129,8 +133,9 @@ pub async fn save_attachment(
     .await
 }
 
-/// Copy a dropped file (Finder) into the attachment folder by path, so its bytes
-/// never cross IPC. The file keeps its name.
+/// A file dropped from Finder onto a note, any type (`dropped`): copied into the attachment folder
+/// by path (bytes never cross IPC; secret names and the shared cap refused), or, already in the
+/// vault, returned to be linked in place (`copied` false). The file keeps its name.
 #[tauri::command]
 pub async fn import_attachment_file(
     note_path: String,
@@ -143,17 +148,24 @@ pub async fn import_attachment_file(
         super::settings::get_merged_string_setting(&app, &label, attachments::SETTING_KEY)?;
     super::blocking(move || {
         let source = Path::new(&source_path);
-        let name = source
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .ok_or_else(|| AppError::InvalidPath("the dropped item has no name".into()))?;
         let target = target_for(&app, &label, &note_path, &setting)?;
-        Ok(saved(attachments::save(
-            &target.root,
-            &target.folder,
-            &name,
-            Source::File(source),
-        )?))
+        match dropped::classify(&target.root, source).map_err(AppError::Refused)? {
+            dropped::Dropped::InVault { rel, is_dir: false } => Ok(AttachmentSaved {
+                absolute_path: target.root.join(&rel).to_string_lossy().to_string(),
+                file_name: rel.rsplit('/').next().unwrap_or(&rel).to_string(),
+                relative_path: rel,
+                copied: false,
+            }),
+            dropped::Dropped::InVault { is_dir: true, .. }
+            | dropped::Dropped::Outside { is_dir: true } => Err(AppError::Refused(
+                "a folder can't be linked into a note".into(),
+            )),
+            dropped::Dropped::Outside { is_dir: false } => {
+                dropped::copy_file(&target.root, &target.folder, source)
+                    .map(saved)
+                    .map_err(AppError::Refused)
+            }
+        }
     })
     .await
 }
@@ -181,6 +193,33 @@ pub async fn import_attachment_url(
             &downloaded.name,
             Source::Bytes(&downloaded.bytes),
         )?))
+    })
+    .await
+}
+
+/// The sidebar's drop of Finder items onto a vault folder (`dest_dir`, absolute): items from outside
+/// are copied in (folders recursively, `dropped::import_into`), items already in the vault come back
+/// as `InVault` for the frontend to move through `relocate_entry` (links rewritten, never copied).
+/// Paths in the outcomes are vault-relative.
+#[tauri::command]
+pub async fn drop_import(
+    dest_dir: String,
+    sources: Vec<String>,
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+) -> Result<Vec<dropped::Outcome>, AppError> {
+    let state = app.state::<AppState>().get_or_create(webview.label());
+    state.authorize_path(Path::new(&dest_dir))?;
+    let root = state
+        .workspace_root
+        .read()
+        .clone()
+        .ok_or_else(|| AppError::InvalidPath("no vault is open".into()))?;
+    super::blocking(move || {
+        let root = root.canonicalize()?;
+        let dest = dropped::folder_rel(&root, Path::new(&dest_dir)).map_err(AppError::Refused)?;
+        let sources: Vec<PathBuf> = sources.into_iter().map(PathBuf::from).collect();
+        Ok(dropped::import_into(&root, &dest, &sources))
     })
     .await
 }

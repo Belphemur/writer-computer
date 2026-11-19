@@ -13,6 +13,7 @@
 use super::chat_store;
 use super::events::ContextRef;
 use crate::attachments::{self, Saved, Source};
+use crate::dropped;
 use base64::Engine as _;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -57,6 +58,9 @@ pub enum FileKind {
 pub struct ChatFile {
     pub path: String,
     pub name: String,
+    /// Copied into the chat's assets (false: it was already in the vault and is referenced).
+    pub copied: bool,
+    pub is_dir: bool,
 }
 
 impl From<Saved> for ChatFile {
@@ -64,6 +68,8 @@ impl From<Saved> for ChatFile {
         Self {
             path: s.rel_path,
             name: s.file_name,
+            copied: true,
+            is_dir: false,
         }
     }
 }
@@ -137,20 +143,43 @@ pub fn save_bytes(
         .map_err(|e| e.to_string())
 }
 
-/// Copies a dropped file (Finder) into the chat's assets folder by path.
-pub fn import_file(
+/// A file or folder dropped from the OS onto the composer, any type. Already inside the vault: not
+/// copied, the path comes back to be mentioned (`copied` false). From outside: copied into the
+/// chat's assets folder (`dropped::copy_file`: secret names and the shared cap refused, no clobber);
+/// a folder from outside is refused. Images and PDFs keep their type and PDF size rules.
+pub fn import_path(
     root: &Path,
     project_path: Option<&str>,
     source: &Path,
-) -> Result<Saved, String> {
-    let name = source
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .ok_or_else(|| "the dropped item has no name".to_string())?;
-    check_native(&name, std::fs::metadata(source).ok().map(|m| m.len()))?;
-    let folder = assets_folder(root, project_path)?;
-    attachments::save_chat_file(root, &folder, &name, Source::File(source))
-        .map_err(|e| e.to_string())
+) -> Result<ChatFile, String> {
+    match dropped::classify(root, source)? {
+        dropped::Dropped::InVault { rel, is_dir } => {
+            let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+            if !is_dir && crate::code_files::is_secret_name(&name) {
+                return Err(format!("{name} looks like a secret"));
+            }
+            Ok(ChatFile {
+                path: rel,
+                name,
+                copied: false,
+                is_dir,
+            })
+        }
+        dropped::Dropped::Outside { is_dir: true } => {
+            Err("folders from outside the vault can't be added; drag one from the sidebar".into())
+        }
+        dropped::Dropped::Outside { is_dir: false } => {
+            let name = source
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .ok_or_else(|| "the dropped item has no name".to_string())?;
+            if native_type(&name).is_some() {
+                check_native(&name, std::fs::metadata(source).ok().map(|m| m.len()))?;
+            }
+            let folder = assets_folder(root, project_path)?;
+            dropped::copy_file(root, &folder, source).map(ChatFile::from)
+        }
+    }
 }
 
 /// Refuses, with a sentence the composer shows, a file the model cannot read, or a PDF over the
@@ -323,9 +352,64 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         let src = outside.path().join("shot.png");
         std::fs::write(&src, PNG).unwrap();
-        let saved = import_file(&root, None, &src).unwrap();
-        assert_eq!(saved.rel_path, ".writer/chats/assets/shot.png");
-        assert!(import_file(&root, None, &outside.path().join("a.svg")).is_err());
+        let saved = import_path(&root, None, &src).unwrap();
+        assert_eq!(saved.path, ".writer/chats/assets/shot.png");
+        assert!(saved.copied && !saved.is_dir);
+    }
+
+    #[test]
+    fn any_file_type_is_copied_from_outside_and_referenced_in_place_inside() {
+        let (_d, root) = vault();
+        let outside = tempfile::tempdir().unwrap();
+        let zip = outside.path().join("data.zip");
+        std::fs::write(&zip, b"PK").unwrap();
+        let copied = import_path(&root, None, &zip).unwrap();
+        assert_eq!(copied.path, ".writer/chats/assets/data.zip");
+        assert!(copied.copied);
+        // a clash gets a suffix
+        assert_eq!(
+            import_path(&root, None, &zip).unwrap().path,
+            ".writer/chats/assets/data 1.zip"
+        );
+        // inside the vault: no copy, the same path back; a folder too
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("docs/n.md"), "x").unwrap();
+        let note = import_path(&root, None, &root.join("docs/n.md")).unwrap();
+        assert_eq!(
+            (note.path.as_str(), note.copied, note.is_dir),
+            ("docs/n.md", false, false)
+        );
+        let dir = import_path(&root, None, &root.join("docs")).unwrap();
+        assert_eq!(
+            (dir.path.as_str(), dir.copied, dir.is_dir),
+            ("docs", false, true)
+        );
+        assert!(!root.join(".writer/chats/assets/n.md").exists());
+    }
+
+    #[test]
+    fn secret_names_folders_from_outside_and_over_cap_files_are_refused() {
+        let (_d, root) = vault();
+        let outside = tempfile::tempdir().unwrap();
+        let env = outside.path().join(".env.local");
+        std::fs::write(&env, "K=1").unwrap();
+        assert!(import_path(&root, None, &env)
+            .unwrap_err()
+            .contains("secret"));
+        std::fs::write(root.join("passwords.txt"), "k").unwrap();
+        assert!(import_path(&root, None, &root.join("passwords.txt")).is_err());
+        assert!(import_path(&root, None, outside.path())
+            .unwrap_err()
+            .contains("folders from outside"));
+        let big = outside.path().join("big.bin");
+        std::fs::File::create(&big)
+            .unwrap()
+            .set_len(attachments::max_file_bytes() + 1)
+            .unwrap();
+        assert!(import_path(&root, None, &big)
+            .unwrap_err()
+            .contains("25 MB"));
+        assert!(!root.join(".writer/chats/assets").exists());
     }
 
     #[test]

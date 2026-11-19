@@ -422,6 +422,8 @@ export interface AttachmentSaved {
   relative_path: string;
   absolute_path: string;
   file_name: string;
+  /** False: already in the vault, linked in place (nothing was copied). */
+  copied: boolean;
 }
 
 function utf8ToBase64(text: string): string {
@@ -441,12 +443,27 @@ export function saveAttachment(
   return invoke("save_attachment", bytes, { headers: { "x-writer-meta": meta } });
 }
 
-/** Copy a dropped file (Finder) into the attachment folder by path. */
+/** A file of any type dropped from Finder onto a note: copied into the attachment folder by path,
+ *  or, already in the vault, returned to be linked in place (`copied` false). Rejects with a
+ *  terse sentence for a secret-looking name, an oversize file or a folder. */
 export function importAttachmentFile(
   notePath: string,
   sourcePath: string,
 ): Promise<AttachmentSaved> {
   return invoke("import_attachment_file", { notePath, sourcePath });
+}
+
+/** What dropping one Finder item on a vault folder did (`src-tauri/src/dropped.rs`); paths are
+ *  vault-relative. */
+export type DropOutcome =
+  | { kind: "copied"; path: string; isDir: boolean; files: number; skipped: number }
+  | { kind: "inVault"; path: string; isDir: boolean }
+  | { kind: "refused"; name: string; message: string };
+
+/** The sidebar's drop: copies Finder items into `destDir` (absolute; folders recursively) and
+ *  reports the ones already in the vault so the caller moves them. */
+export function dropImport(destDir: string, sources: string[]): Promise<DropOutcome[]> {
+  return invoke("drop_import", { destDir, sources });
 }
 
 /** Download an image a browser drag or paste carried only as a link (http and https), save it

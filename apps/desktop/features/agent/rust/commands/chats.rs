@@ -320,7 +320,8 @@ pub async fn agent_save_chat_file<R: Runtime>(
     .await
 }
 
-/// Copies an image file dropped from Finder (absolute path) into the chat's `assets/` folder.
+/// A file or folder dropped from Finder (absolute path), any type: copied into the chat's `assets/`
+/// folder, or, already in the vault, returned to be referenced in place (`files::import_path`).
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_import_chat_file<R: Runtime>(
@@ -331,13 +332,18 @@ pub async fn agent_import_chat_file<R: Runtime>(
 ) -> Result<ChatFile, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
-        files::import_file(
+        let file = files::import_path(
             &root,
             project_path.as_deref(),
             std::path::Path::new(&source_path),
         )
-        .map(|saved| served(&app, saved))
-        .map_err(AppError::InvalidPath)
+        .map_err(AppError::InvalidPath)?;
+        if file.copied {
+            if let Some(dir) = root.join(&file.path).parent() {
+                crate::commands::workspace::allow_chat_assets_dir(&app, dir);
+            }
+        }
+        Ok(file)
     })
     .await
 }

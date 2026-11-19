@@ -103,7 +103,10 @@ export const commands = {
 	 *  folder; the composer then attaches the returned path (spec "Images in the composer").
 	 */
 	agentSaveChatFile: (projectPath: string | null, name: string, dataBase64: string, options?: InvokeOptions) => __TAURI_INVOKE<ChatFile>("plugin:agent|agent_save_chat_file", { projectPath, name, dataBase64 }, options),
-	/**  Copies an image file dropped from Finder (absolute path) into the chat's `assets/` folder. */
+	/**
+	 *  A file or folder dropped from Finder (absolute path), any type: copied into the chat's `assets/`
+	 *  folder, or, already in the vault, returned to be referenced in place (`files::import_path`).
+	 */
 	agentImportChatFile: (projectPath: string | null, sourcePath: string, options?: InvokeOptions) => __TAURI_INVOKE<ChatFile>("plugin:agent|agent_import_chat_file", { projectPath, sourcePath }, options),
 	agentPermissionRules: (projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<PermissionRules>("plugin:agent|agent_permission_rules", { projectPath }, options),
 	agentRemovePermissionRule: (projectPath: string | null, rule: string, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_remove_permission_rule", { projectPath, rule }, options),
@@ -307,6 +310,9 @@ export type ChatActionName = "rename" | "autotitle" | "pin" | "unpin" | "archive
 export type ChatFile = {
 	path: string,
 	name: string,
+	/**  Copied into the chat's assets (false: it was already in the vault and is referenced). */
+	copied: boolean,
+	isDir: boolean,
 };
 
 export type ChatSummary = {

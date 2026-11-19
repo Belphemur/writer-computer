@@ -11,6 +11,11 @@ import { getFileName, getRelativePath } from "@/lib/paths";
 export const MAX_ATTACHMENT_BYTES: number = shared.maxBytes;
 export const MAX_ATTACHMENT_MB = Math.round(shared.maxBytes / (1024 * 1024));
 
+/** The cap on any file of any type dropped from the OS, in bytes and whole MB (Rust twin
+ *  `attachments::max_file_bytes`; the Rust side enforces it, this is for the sentence). */
+export const MAX_FILE_BYTES: number = shared.maxFileBytes;
+export const MAX_FILE_MB = Math.round(shared.maxFileBytes / (1024 * 1024));
+
 /** Image types the webview shows inline as `![[name.ext]]`. */
 export const RENDERABLE_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(shared.renderExtensions);
 
@@ -116,6 +121,22 @@ export function embedLine(fileRel: string, noteDirRel: string | null): string {
   if (!WIKILINK_BREAKERS.test(target)) return embedText([target]);
   const relative = noteDirRel === null ? fileRel : relativeVaultPath(noteDirRel, fileRel);
   return markdownImage(relative.split("/").map(encodeURIComponent).join("/"));
+}
+
+/**
+ * The text that puts the vault file `fileRel` in a note, whatever its type: an image or a PDF is
+ * embedded (`embedLine`), anything else is linked, `[[Note]]` for a note (no extension) and
+ * `[[name.ext]]` for other files. A name a wikilink cannot carry becomes a markdown link with the
+ * note-relative path percent-encoded.
+ */
+export function linkLine(fileRel: string, noteDirRel: string | null): string {
+  if (isRenderableImageName(fileRel) || isDocumentName(fileRel))
+    return embedLine(fileRel, noteDirRel);
+  const target = attachmentLinkTarget(fileRel, noteDirRel).replace(/\.md$/i, "");
+  if (!WIKILINK_BREAKERS.test(target)) return `[[${target}]]`;
+  const relative = noteDirRel === null ? fileRel : relativeVaultPath(noteDirRel, fileRel);
+  const encoded = relative.split("/").map(encodeURIComponent).join("/");
+  return `[${getFileName(fileRel).replace(/[[\]]/g, "")}](${encoded})`;
 }
 
 /** The `http(s)` image URLs a drag or paste carries without any file: `<img src>` of a drag or

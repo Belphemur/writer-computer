@@ -38,8 +38,9 @@ export interface ChatHistoryClient {
   replay(chatId: ChatId, maxTokens?: number): Promise<ReplaySeed>;
   /** A pasted or browser-dropped image (base64) into the chat folder's hidden `assets/`. */
   saveImage(projectPath: string | null, name: string, dataBase64: string): Promise<ChatFile>;
-  /** A Finder-dropped image file (absolute path), copied into the same folder. */
-  importImageFile(projectPath: string | null, sourcePath: string): Promise<ChatFile>;
+  /** A Finder-dropped file or folder (absolute path): copied into the same folder, or, already in
+   *  the vault, returned to be referenced in place. */
+  importFile(projectPath: string | null, sourcePath: string): Promise<ChatFile>;
   permissionRules(projectPath: string | null): Promise<Result<"agent_permission_rules">>;
   removePermissionRule(projectPath: string | null, rule: string): Promise<void>;
 }
@@ -54,7 +55,7 @@ export const chatHistoryClient: ChatHistoryClient = {
   replay: (chatId, maxTokens) => call("agent_chat_replay", { chatId, maxTokens }),
   saveImage: (projectPath, name, dataBase64) =>
     call("agent_save_chat_file", { projectPath, name, dataBase64 }),
-  importImageFile: (projectPath, sourcePath) =>
+  importFile: (projectPath, sourcePath) =>
     call("agent_import_chat_file", { projectPath, sourcePath }),
   permissionRules: (projectPath) => call("agent_permission_rules", { projectPath }),
   removePermissionRule: (projectPath, rule) =>

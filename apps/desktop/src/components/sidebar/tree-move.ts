@@ -61,3 +61,39 @@ export function resolveDropRange(
   }
   return { startPath: rows[startIndex].path, endPath: rows[endIndex].path };
 }
+
+/**
+ * `data-tree-path` of the row whose vertical band contains `y` (1px gaps attach
+ * to the row above), or null when `y` is above the first row. Rows are ordered
+ * top-to-bottom, so iteration stops once a row begins below `y`. Used instead of
+ * `elementFromPoint` because rows are non-hit-testable during a drag.
+ */
+function rowPathAtY(container: HTMLElement, y: number): string | null {
+  const rows = container.querySelectorAll<HTMLElement>("[data-tree-path]");
+  let above: string | null = null;
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (y < rect.top) break;
+    if (y <= rect.bottom) return row.getAttribute("data-tree-path");
+    above = row.getAttribute("data-tree-path");
+  }
+  return above;
+}
+
+/**
+ * The folder a drop at the screen point `(x, y)` lands in: the folder row under it (a file row
+ * means its folder, empty space the vault root), or null when the point is outside the tree. The
+ * one hit test of the tree's pointer drag and of Finder drops.
+ */
+export function folderAtPoint(
+  container: HTMLElement,
+  entries: ReadonlyMap<string, DirEntry>,
+  rootPath: string,
+  x: number,
+  y: number,
+): string | null {
+  const rect = container.getBoundingClientRect();
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+  const path = rowPathAtY(container, y);
+  return resolveDropDir(path ? (entries.get(path) ?? null) : null, rootPath);
+}

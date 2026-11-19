@@ -323,7 +323,7 @@
     {
       "key": "files.attachment-folder",
       "label": "Attachment Folder",
-      "description": "Where images dropped or pasted into a note are saved. A folder path from the vault root (\"attachments\"), \"./\" for next to the note, or \"./name\" for a subfolder of the note's folder. Empty uses the vault's Obsidian attachment setting (read-only) when it has one, otherwise \"attachments\" at the vault root.",
+      "description": "Where files dropped or pasted into a note are saved. A folder path from the vault root (\"attachments\"), \"./\" for next to the note, or \"./name\" for a subfolder of the note's folder. Empty uses the vault's Obsidian attachment setting (read-only) when it has one, otherwise \"./attachments\": an attachments folder next to the note, created on first use.",
       "category": "Files",
       "type": "string",
       "default": ""

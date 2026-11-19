@@ -3,6 +3,8 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { dropVaultFilesOnTarget, registerVaultDropTarget } from "@/lib/vault-drop-target";
 
+const A = { path: "a.png", isDir: false };
+const B = { path: "b", isDir: true };
 const target = (over: Partial<Parameters<typeof registerVaultDropTarget>[0]> = {}) => ({
   contains: vi.fn(() => true),
   attachVaultFiles: vi.fn(),
@@ -13,21 +15,21 @@ afterEach(() => unregister.splice(0).forEach((u) => u()));
 
 describe("vault drop target", () => {
   it("takes nothing without a registered target", () => {
-    expect(dropVaultFilesOnTarget(1, 2, ["a.png"])).toBe(false);
+    expect(dropVaultFilesOnTarget(1, 2, [A])).toBe(false);
   });
 
   it("hands the paths to the target under the point", () => {
     const t = target();
     unregister.push(registerVaultDropTarget(t));
-    expect(dropVaultFilesOnTarget(10, 20, ["a.png", "b.png"])).toBe(true);
+    expect(dropVaultFilesOnTarget(10, 20, [A, B])).toBe(true);
     expect(t.contains).toHaveBeenCalledWith(10, 20);
-    expect(t.attachVaultFiles).toHaveBeenCalledWith(["a.png", "b.png"]);
+    expect(t.attachVaultFiles).toHaveBeenCalledWith([A, B]);
   });
 
   it("leaves a drop elsewhere alone", () => {
     const t = target({ contains: vi.fn(() => false) });
     unregister.push(registerVaultDropTarget(t));
-    expect(dropVaultFilesOnTarget(0, 0, ["a.png"])).toBe(false);
+    expect(dropVaultFilesOnTarget(0, 0, [A])).toBe(false);
     expect(t.attachVaultFiles).not.toHaveBeenCalled();
   });
 
@@ -37,7 +39,7 @@ describe("vault drop target", () => {
     const offFirst = registerVaultDropTarget(first);
     unregister.push(registerVaultDropTarget(second));
     offFirst();
-    expect(dropVaultFilesOnTarget(0, 0, ["a.png"])).toBe(true);
+    expect(dropVaultFilesOnTarget(0, 0, [A])).toBe(true);
     expect(second.attachVaultFiles).toHaveBeenCalled();
     expect(first.attachVaultFiles).not.toHaveBeenCalled();
   });
