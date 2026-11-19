@@ -305,6 +305,81 @@ describe("the model chip", () => {
     expect(setSetting).toHaveBeenCalledWith("agent.effort", "default");
   });
 
+  it("keeps the picked model through the send, the running turn and the next send", async () => {
+    await sendHello();
+    const id = chatId();
+    // an earlier turn reported Sonnet
+    act(() =>
+      useAgentStore.getState().ingest(
+        id,
+        [
+          {
+            type: "usage",
+            scope: "turn",
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: null,
+            contextWindow: null,
+            model: "claude-sonnet-5-5",
+          },
+        ],
+        useAgentStore.getState().chats[id]!.lastSeq + 1,
+      ),
+    );
+    expect(chip().textContent).toContain("Sonnet 5.5");
+    await choose(/^Opus$/);
+    expect(chip().textContent).toContain("Opus");
+    // the CLI confirms the switch without a turn report: the stale Sonnet report must not return
+    act(() =>
+      useAgentStore.setState((s) => ({
+        modelPending: { ...s.modelPending, [id]: undefined } as never,
+      })),
+    );
+    act(() =>
+      useAgentStore.setState((s) => {
+        const { [id]: _p, ...rest } = s.modelPending;
+        return { modelPending: rest };
+      }),
+    );
+    expect(chip().textContent).toContain("Opus");
+    expect(chip().textContent).not.toContain("Sonnet");
+    expect(chip().hasAttribute("data-pending")).toBe(false);
+    await sendHello(); // the mock CLI then reports its own model: that one may show, the pick stays
+    expect(useAgentStore.getState().chatModels[id]!.model).toBe("opus");
+  });
+
+  it("picking a model after a finished turn on an ended session shows it, not the old report", async () => {
+    await sendHello();
+    const id = chatId();
+    act(() =>
+      useAgentStore.setState((s) => ({
+        chats: {
+          ...s.chats,
+          [id]: {
+            ...s.chats[id]!,
+            reportedModel: "claude-sonnet-5-5",
+            session: null,
+            state: "idle",
+          },
+        },
+      })),
+    );
+    await choose(/^Opus$/);
+    expect(chip().textContent).toContain("Opus");
+    expect(chip().textContent).not.toContain("Sonnet");
+    await sendHello();
+    expect(start.mock.calls.at(-1)![0].settings.model).toBe("opus");
+  });
+
+  it("the permission mode stays on the pick through a send", async () => {
+    await sendHello();
+    await act(async () => await useAgentStore.getState().setPermissionMode("plan"));
+    await sendHello();
+    expect(useAgentStore.getState().modes[chatId()]).toBe("plan");
+  });
+
   it("a chat without its own choice follows the agent.model setting", () => {
     act(() => useSettingsStore.setState({ settings: { "agent.model": "opus" } } as never));
     expect(chip().textContent).toContain("Opus");

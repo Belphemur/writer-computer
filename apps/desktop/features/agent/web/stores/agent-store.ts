@@ -1055,11 +1055,17 @@ export const useAgentStore = create<AgentState>((set, get) => {
         effort: effort === undefined ? (prev?.effort ?? settings.effort) : effort,
       };
       const chat = get().chats[chatId];
+      const prevReported = chat?.reportedModel ?? null;
       const live = !!chat?.session && chat.state !== "ended";
-      // Optimistic: the chip shows the selection at once; a live session confirms it later.
+      // Optimistic: the chip shows the selection at once; a live session confirms it later. The
+      // CLI's earlier report described the old model: dropped, so it can never outvote the pick
+      // (only a report arriving after it, a fallback, shows).
       set((s) => ({
         chatModels: { ...s.chatModels, [chatId]: choice },
         modelPending: live ? { ...s.modelPending, [chatId]: true } : s.modelPending,
+        ...(s.chats[chatId]
+          ? withChat(s, chatId, { ...s.chats[chatId]!, reportedModel: null })
+          : {}),
       }));
       if (live) {
         try {
@@ -1082,7 +1088,15 @@ export const useAgentStore = create<AgentState>((set, get) => {
               retryable: true,
               at: Date.now(),
             } as const;
-            const chats = s.chats[chatId] ? withChat(s, chatId, { ...s.chats[chatId]!, error }) : s;
+            const chats = s.chats[chatId]
+              ? withChat(s, chatId, {
+                  ...s.chats[chatId]!,
+                  error,
+                  ...(superseded
+                    ? {}
+                    : { reportedModel: s.chats[chatId]!.reportedModel ?? prevReported }),
+                })
+              : s;
             return superseded ? chats : { ...chats, ...reverted };
           });
           return;
