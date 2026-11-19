@@ -35,7 +35,7 @@ describe("buildFolderMenuItemsSpec", () => {
     );
 
     expect(summary).toEqual([
-      "new-file:New File",
+      "new-file:New Note",
       "new-folder:New Folder",
       "---",
       "copy-relative-path:Copy relative path",

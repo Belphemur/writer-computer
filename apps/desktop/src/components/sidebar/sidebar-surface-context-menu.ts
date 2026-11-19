@@ -113,7 +113,7 @@ export function buildSidebarSurfaceMenuItemsSpec(
     {
       kind: "item",
       id: "new-file",
-      text: "New File",
+      text: "New Note",
       action: state.workspaceActions.onNewFile,
     },
     {

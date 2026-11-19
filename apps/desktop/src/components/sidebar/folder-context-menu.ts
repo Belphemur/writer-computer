@@ -1,5 +1,9 @@
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
-import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
+import {
+  contributedCreateItems,
+  contributedMenuItems,
+  withContributedItems,
+} from "@/lib/features/menus";
 import type { DirEntry } from "@/types/fs";
 import { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
 
@@ -35,7 +39,7 @@ export function buildFolderMenuItemsSpec(
   { kind: "item"; id: FolderMenuActionId; text: string; action: () => void } | { kind: "separator" }
 > {
   return [
-    { kind: "item", id: "new-file", text: "New File", action: handlers.onNewFile },
+    { kind: "item", id: "new-file", text: "New Note", action: handlers.onNewFile },
     { kind: "item", id: "new-folder", text: "New Folder", action: handlers.onNewFolder },
     { kind: "separator" },
     {
@@ -77,6 +81,13 @@ export async function showFolderContextMenu(
   handlers: FolderContextMenuHandlers,
   entry: DirEntry,
 ): Promise<void> {
-  const extra = await contributedMenuItems("sidebar-folder", entry);
-  await showNativeContextMenu(withContributedItems(buildFolderMenuItemsSpec(handlers), extra));
+  const [create, extra] = await Promise.all([
+    contributedCreateItems("sidebar-folder", entry),
+    contributedMenuItems("sidebar-folder", entry),
+  ]);
+  const spec = buildFolderMenuItemsSpec(handlers);
+  // the "New …" items of features follow New Note / New Folder, before the first separator
+  const at = spec.findIndex((e) => e.kind === "separator");
+  const withCreate = [...spec.slice(0, at), ...create, ...spec.slice(at)];
+  await showNativeContextMenu(withContributedItems(withCreate, extra));
 }

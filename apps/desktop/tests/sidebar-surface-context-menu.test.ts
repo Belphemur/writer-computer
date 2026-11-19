@@ -62,7 +62,7 @@ describe("buildSidebarSurfaceMenuItemsSpec", () => {
     const spec = buildSidebarSurfaceMenuItemsSpec(makeState(true, false), "macos");
 
     expect(spec.map(describeEntry)).toEqual([
-      "item:new-file:New File",
+      "item:new-file:New Note",
       "item:new-folder:New Folder",
       "---",
       "item:open-terminal:Open in Terminal",

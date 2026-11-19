@@ -117,7 +117,14 @@ export interface MenuContribution<S extends MenuSurface = MenuSurface> {
   id: string;
   /** Items for the right-click; empty when the feature has nothing to offer there. */
   items: (...args: MenuSurfaces[S]) => MenuItemSpec[] | Promise<MenuItemSpec[]>;
+  /** `create`: "New …" items, shown with the surface's own New Note / New Folder (where it has
+   *  them) instead of after the core items. */
+  group?: MenuGroup;
 }
+
+/** Where a surface places a contribution: `end` (default) after the core items, `create` with
+ *  its "New …" items. */
+export type MenuGroup = "create" | "end";
 
 /** A pane docked at the right edge (the agent pane). The layout shows the open dock with the
  *  highest `priority`, or the plugin pane when none is open, and reserves `width()` for it. */

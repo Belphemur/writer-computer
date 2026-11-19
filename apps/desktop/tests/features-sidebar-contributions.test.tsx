@@ -34,6 +34,7 @@ import { syncBuiltinFeatures } from "../src/lib/features/builtin";
 import {
   contributedMenuItems,
   menuContributions,
+  menuKey,
   withContributedItems,
 } from "../src/lib/features/menus";
 import { createFeatureHost, defineFeature } from "../src/lib/features/registry";
@@ -266,6 +267,31 @@ describe("sidebar menus", () => {
       [{ kind: "separator" }, expect.objectContaining({ text: "Folder docs" })],
       [{ kind: "separator" }, expect.objectContaining({ text: "Bulk 2" })],
     ]);
+  });
+
+  it("puts a feature's create items right after New Note and New Folder", async () => {
+    menuContributions.add(menuKey("sidebar-folder", "fixture.new-thing"), {
+      owner: "builtin:fixture-create",
+      surface: "sidebar-folder",
+      id: "fixture.new-thing",
+      group: "create",
+      items: () => [{ kind: "item", id: "new-thing", text: "New Thing", action: () => {} }],
+    });
+    try {
+      const handlers = new Proxy({}, { get: () => () => {} }) as never;
+      await showFolderContextMenu(handlers, entry("docs", true));
+      const spec = showNativeContextMenu.mock.calls.at(-1)![0] as Array<{ text?: string }>;
+      expect(spec.slice(0, 4).map((s) => s.text)).toEqual([
+        "New Note",
+        "New Folder",
+        "New Thing",
+        undefined,
+      ]);
+      expect(spec.at(-1)).toMatchObject({ text: "Folder docs" });
+      expect(spec.filter((s) => s.text === "New Thing")).toHaveLength(1);
+    } finally {
+      menuContributions.removeOwner("builtin:fixture-create");
+    }
   });
 
   it("never doubles the separator when the core menu already ends with one", () => {

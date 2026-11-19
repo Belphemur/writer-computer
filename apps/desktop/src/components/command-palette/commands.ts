@@ -77,7 +77,7 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   },
   {
     id: "new-file",
-    label: "Create New File",
+    label: "Create New Note",
     description: COMMAND,
     when: (c) => c.hasWorkspace || (c.isCompactFileMode && c.activeFilePath !== null),
     keepOpen: true,
