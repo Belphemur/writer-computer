@@ -2,6 +2,8 @@ import { reportedMatches } from "@features/agent/web/lib/model-label";
 import { RELOAD_NOT_STARTED_TEXT, reloadNoticeFor } from "@features/agent/web/lib/session-reload";
 import { parseWriterCommand } from "@features/agent/web/lib/writer-commands";
 import { create } from "zustand";
+import { getPreference, setPreference } from "@/lib/preferences";
+import { useProjectsStore } from "@features/agent/web/stores/projects-store";
 import {
   createEventPump,
   createTauriAgentClient,
@@ -472,11 +474,44 @@ export function configureChatPersistenceForTests(opts: {
   chatsIo?: ChatsIo;
 }) {
   chatRestore.reset(opts.chatsIo, opts.delayMs);
+  lastProject.root = null;
   persistence.instance = null;
   persistence.titleAttempts = new Set();
   persistence.history = opts.history ?? chatHistoryClient;
   persistence.delayMs = opts.delayMs ?? 500;
   persistence.reload = opts.reload ?? reloadChatNoteIfOpen;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The last used project, per vault: the project of the chat the user last worked in. One rule:
+// `currentProjectPath` follows the active chat's project (the subscription at the end of this
+// file), and is saved under the vault's key from there. Picking a project, switching tabs and
+// changing a chat's project all end in a change of the active chat, so no call site updates it.
+
+const lastProject = {
+  /** Vault whose value is loaded: writes are allowed. */
+  root: null as string | null,
+};
+
+export const lastProjectPreferenceKey = (root: string) => `workspace:${root}:agent-last-project`;
+
+async function loadLastProject(root: string) {
+  lastProject.root = null;
+  const saved = await getPreference<unknown>(lastProjectPreferenceKey(root), null);
+  if (useWorkspaceStore.getState().root !== root) return;
+  useAgentStore.setState({ currentProjectPath: typeof saved === "string" && saved ? saved : null });
+  lastProject.root = root;
+}
+
+/** The project a new chat starts in: the last used one, unless the project list (once loaded for
+ *  this vault) no longer has it (archived, deleted or moved): then the vault root. */
+function defaultProjectPath(): string | null {
+  const path = useAgentStore.getState().currentProjectPath;
+  if (!path) return null;
+  const projects = useProjectsStore.getState();
+  const loaded =
+    projects.loadedRoot !== null && projects.loadedRoot === useWorkspaceStore.getState().root;
+  return loaded && !projects.projects.some((p) => p.path === path) ? null : path;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -917,7 +952,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         active &&
         isUntouchedChat(active, get().drafts[active.chatId])
       ) {
-        const target = projectPath ?? get().currentProjectPath;
+        const target = projectPath ?? defaultProjectPath();
         set((s) => ({
           chats: { ...s.chats, [active.chatId]: { ...active, projectPath: target } },
           notes: s.notes[active.chatId]
@@ -935,7 +970,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         return active.chatId;
       }
       const chatId = newId();
-      const chat = createChat(chatId, { projectPath: projectPath ?? get().currentProjectPath });
+      const chat = createChat(chatId, { projectPath: projectPath ?? defaultProjectPath() });
       set((s) => ({
         chats: { ...s.chats, [chatId]: chat },
         notes: { ...s.notes, [chatId]: newNoteState(chatId, chat.projectPath, Date.now()) },
@@ -1371,6 +1406,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
       chatRestore.root = root;
       chatRestore.ready = false;
       chatRestore.lastKey = null;
+      // The vault's own last project first, so nothing made below starts in another one.
+      await loadLastProject(root);
+      if (chatRestore.root !== root || useWorkspaceStore.getState().root !== root) return;
       const saved = await chatRestore.io.load(root);
       const restored: { chat: Chat; note: NoteState; model: string | null }[] = [];
       for (const ref of saved?.chats ?? []) {
@@ -1418,6 +1456,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
           return { chats, notes, chatModels, order, activeChatId: current ?? wanted };
         });
       }
+      // No chat came back and the first tab is still empty: it starts in the remembered project.
+      const first = get().activeChatId ? get().chats[get().activeChatId!] : undefined;
+      if (restored.length === 0 && first && isUntouchedChat(first, get().drafts[first.chatId]))
+        get().newChat(defaultProjectPath());
       chatRestore.ready = true;
       // what is saved may have lost chats whose notes are gone
       const now = openChatsSnapshot(get());
@@ -1495,3 +1537,18 @@ useAgentStore.subscribe((s, prev) => {
     scheduleOpenChatsSave();
 });
 if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOpenChats);
+
+// The last used project follows the active chat (a tab switch, a new chat, a changed project) and
+// is saved per vault once that vault's value was loaded.
+useAgentStore.subscribe((s, prev) => {
+  const chat = s.activeChatId ? s.chats[s.activeChatId] : undefined;
+  const before = prev.activeChatId ? prev.chats[prev.activeChatId] : undefined;
+  if (chat && (s.activeChatId !== prev.activeChatId || chat.projectPath !== before?.projectPath))
+    if (chat.projectPath !== s.currentProjectPath)
+      useAgentStore.setState({ currentProjectPath: chat.projectPath });
+  if (s.currentProjectPath !== prev.currentProjectPath) {
+    const root = useWorkspaceStore.getState().root;
+    if (root && root === lastProject.root)
+      void setPreference(lastProjectPreferenceKey(root), s.currentProjectPath);
+  }
+});
