@@ -40,6 +40,8 @@ const sources = import.meta.glob<string>(
 /** Files that draw outside the page body on purpose, with the reason. */
 const OVERLAYS: Record<string, string> = {
   "src/components/editor-area/anchored-popover.tsx": "popover under its anchor, portalled to body",
+  "src/components/editor-area/editor-notice-banner.tsx":
+    "the app notice (toast), bottom of the window above every layer",
   "features/bases/web/view/expression-input.tsx": "autocomplete popover",
   "features/bases/web/view/view-switcher.tsx": "view menu popover",
 };

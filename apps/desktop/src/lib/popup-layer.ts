@@ -15,6 +15,8 @@ import {
 export const POPUP_LAYER_ID = "writer-popup-layer";
 /** Above the app chrome (z-50 modals) and below nothing a plugin shows. */
 export const POPUP_LAYER_Z = 10_000;
+/** The app notice (toast): above everything, plugin popups included (docs/design.md). */
+export const NOTICE_Z = POPUP_LAYER_Z + 1;
 
 export function getPopupLayer(doc: Document = document): HTMLElement {
   const existing = doc.getElementById(POPUP_LAYER_ID);

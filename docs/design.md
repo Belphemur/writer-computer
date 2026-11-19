@@ -29,6 +29,7 @@ What exists; do not add a layer.
 - **Modal**: `ModalShell` (`src/components/modal-shell.tsx`): fixed backdrop and card, `z-50`, Escape, Tab trap, focus restore. No hand-written `aria-modal` or Tab trap. Enforced by: `tests/modal-inventory.test.ts`.
 - **Popover under an anchor** (menus, pickers): `AnchoredPopover` (`src/components/editor-area/anchored-popover.tsx`): portalled to `document.body`, fixed, `z-50`.
 - **Plugin popups** (Obsidian Menu, EditorSuggest, input suggest): the one body-level `popup-layer` (`src/lib/popup-layer.ts`, `POPUP_LAYER_Z = 10000`, click-through, no transform or filter so `fixed` children anchor to the viewport). `trackPopup` keeps the popup inside the window. Enforced by: `features/obsidian-host/tests/obsidian-host-popups.test.ts`.
+- **Notice (toast)**: `showEditorNotice(message)` (`src/components/editor-area/editor-notice-store.ts`) is the one transient message; `EditorNoticeBanner` portals it to the body, fixed at the bottom centre, opaque (`--bg-base`), `NOTICE_Z` (`src/lib/popup-layer.ts`) above every other layer. No second toast. Enforced by: `tests/page-body-contract.test.tsx` (`OVERLAYS`).
 - Tab strip `z-40`, toggle `z-50`, drag region `z-30`: the chrome sits above pages and below modals. A page never uses a z-index above its own content; if it needs to, it is an overlay and belongs in a list above.
 
 ## 5. Theme tokens and canvases
