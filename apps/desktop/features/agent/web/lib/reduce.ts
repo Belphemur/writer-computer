@@ -454,8 +454,10 @@ export function reduceEvent(
     case "subagent-status":
       return patchSubagent(chat, event.toolCallId, (meta) => {
         const base = meta ?? blankSubagent();
-        // a run that ended stays ended; its report may follow the end once
-        if (base.status !== null && base.status !== "running")
+        // a run that ended stays ended; its report may follow the end once. The exception: a run
+        // cut off with its process (`interrupted`) that the orchestrator resumed works again.
+        const resumed = base.status === "interrupted" && event.status === "running";
+        if (base.status !== null && base.status !== "running" && !resumed)
           return event.report && !base.summary ? { ...base, summary: event.report } : base;
         const status: SubagentRunStatus = event.status;
         return {

@@ -52,7 +52,12 @@ pub struct SubTracker {
     parents: HashMap<String, String>,
     launches: HashMap<String, Launch>,
     tasks: HashSet<String>,
+    /// The `SubagentHandback` calls (a sub-agent delivering its report), by call id.
+    handbacks: HashSet<String>,
 }
+
+/// The sub-agent's last tool: it delivers the run's report, so the run is over when it returns.
+const HANDBACK_TOOL: &str = "SubagentHandback";
 
 impl SubTracker {
     /// Feeds one mapped event; returns the `subagent-status` events it decides.
@@ -64,14 +69,22 @@ impl SubTracker {
                 parent_tool_call_id,
                 ..
             } => {
-                if let Some(p) = parent_tool_call_id {
-                    self.parents.insert(tool_call_id.clone(), p.clone());
-                }
                 if is_launch_tool(tool) {
                     self.launches.entry(tool_call_id.clone()).or_default();
                 }
-                Vec::new()
+                let Some(p) = parent_tool_call_id else {
+                    return Vec::new();
+                };
+                self.parents.insert(tool_call_id.clone(), p.clone());
+                if tool == HANDBACK_TOOL {
+                    self.handbacks.insert(tool_call_id.clone());
+                }
+                self.resumed(p)
             }
+            AgentEvent::SubagentMessage {
+                parent_tool_call_id,
+                ..
+            } => self.resumed(parent_tool_call_id),
             AgentEvent::ToolCallInput {
                 tool_call_id,
                 input,
@@ -87,7 +100,19 @@ impl SubTracker {
                 output,
                 outcome,
                 ..
-            } => self.on_launch_result(tool_call_id, output, *outcome),
+            } => {
+                // the sub-agent handed its report back: the run is over, whatever else is said
+                let handed_back = self
+                    .handbacks
+                    .contains(tool_call_id)
+                    .then(|| self.parents.get(tool_call_id).cloned())
+                    .flatten()
+                    .filter(|_| *outcome == ToolOutcome::Ok);
+                match handed_back {
+                    Some(run) => self.settle(&run, SubagentRunStatus::Completed, None),
+                    None => self.on_launch_result(tool_call_id, output, *outcome),
+                }
+            }
             _ => Vec::new(),
         }
     }
@@ -205,6 +230,36 @@ impl SubTracker {
         }
     }
 
+    /// A run that was cut off (`interrupted`) works again: the orchestrator resumed it (the CLI
+    /// keeps the run's launch call as the parent of everything it does). Any other final state
+    /// stays final.
+    fn resumed(&mut self, run: &str) -> Vec<AgentEvent> {
+        match self.launches.get_mut(run) {
+            Some(l) if l.status == Some(SubagentRunStatus::Interrupted) => {
+                l.status = Some(SubagentRunStatus::Running);
+                l.reported = false;
+                vec![status_event(run, SubagentRunStatus::Running, None)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Every run still `running` ends as `status`: its process is gone, or the last turn ended
+    /// and nothing can say more. The one place a card without an end signal gets its end.
+    pub fn end_running(&mut self, status: SubagentRunStatus) -> Vec<AgentEvent> {
+        let mut calls: Vec<String> = self
+            .launches
+            .iter()
+            .filter(|(_, l)| l.status == Some(SubagentRunStatus::Running))
+            .map(|(c, _)| c.clone())
+            .collect();
+        calls.sort();
+        calls
+            .iter()
+            .flat_map(|c| self.settle(c, status, None))
+            .collect()
+    }
+
     /// The sub-agent that made `call_id`; `None` for the main agent's own calls.
     pub fn author_of(&self, call_id: Option<&str>) -> Option<Author> {
         let parent = self.parents.get(call_id?)?;
@@ -214,9 +269,19 @@ impl SubTracker {
         })
     }
 
-    /// A launch call has no result yet, or a task is running.
+    #[cfg(test)]
+    fn status_of(&self, call: &str) -> Option<SubagentRunStatus> {
+        self.launches.get(call)?.status
+    }
+
+    /// A launch call has no result yet, a run is working (a background run has no end before its
+    /// notification or handback), or a task is running.
     pub fn busy(&self) -> bool {
-        !self.tasks.is_empty() || self.launches.values().any(|l| !l.finished)
+        !self.tasks.is_empty()
+            || self
+                .launches
+                .values()
+                .any(|l| !l.finished || l.status == Some(SubagentRunStatus::Running))
     }
 
     pub fn clear(&mut self) {
@@ -448,6 +513,55 @@ mod tests {
         assert!(t.busy(), "the main turn may end; the run has not");
         t.on_task(&notified("a1", Completed, None));
         assert!(!t.busy());
+    }
+
+    #[test]
+    fn a_sub_agents_handback_ends_its_run_even_without_a_notification() {
+        let mut t = SubTracker::default();
+        started(&mut t, "a1", "Agent", None);
+        t.on_task(&TaskSignal::AsyncLaunched { call: "a1".into() });
+        result(&mut t, "a1", "", ToolOutcome::Ok);
+        started(&mut t, "h1", "SubagentHandback", Some("a1"));
+        assert_eq!(
+            result(&mut t, "h1", "ok", ToolOutcome::Ok),
+            vec![st("a1", Completed, None)]
+        );
+        // a notification that does come later still adds the report once
+        assert_eq!(
+            t.on_task(&notified("a1", Completed, Some("done"))),
+            vec![st("a1", Completed, Some("done"))]
+        );
+    }
+
+    #[test]
+    fn a_process_exit_ends_every_running_run_as_interrupted_and_a_resume_revives_it() {
+        let mut t = SubTracker::default();
+        for c in ["a1", "a2"] {
+            started(&mut t, c, "Agent", None);
+            t.on_task(&TaskSignal::AsyncLaunched { call: c.into() });
+            result(&mut t, c, "", ToolOutcome::Ok);
+        }
+        // a2 had ended already
+        t.on_task(&TaskSignal::Notified {
+            task: "t2".into(),
+            call: Some("a2".into()),
+            status: Completed,
+            report: None,
+        });
+        assert_eq!(
+            t.end_running(Interrupted),
+            vec![st("a1", Interrupted, None)]
+        );
+        assert!(t.end_running(Interrupted).is_empty());
+        // the orchestrator resumes a1: its next call has the launch call as parent
+        started(&mut t, "w1", "Write", Some("a1"));
+        assert_eq!(t.status_of("a1"), Some(Running));
+        started(&mut t, "h1", "SubagentHandback", Some("a1"));
+        result(&mut t, "h1", "ok", ToolOutcome::Ok);
+        assert_eq!(t.status_of("a1"), Some(Completed));
+        // a completed run is never revived by late calls
+        started(&mut t, "w2", "Write", Some("a2"));
+        assert_eq!(t.status_of("a2"), Some(Completed));
     }
 
     #[test]

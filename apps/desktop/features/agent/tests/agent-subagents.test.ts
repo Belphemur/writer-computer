@@ -189,6 +189,53 @@ describe("running, waiting and parallel runs", () => {
     expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!)).toBe("interrupted");
   });
 
+  it("keeps the chat's own model after a turn whose sub-agents ran on another one", () => {
+    // Rust names the main agent's model on the turn's usage (a sub-agent's never decides it);
+    // a sub-agent's model stays on its card
+    let chat = appendUserTurn(
+      createChat("c"),
+      { messageId: "u", text: "go", context: [] },
+      0,
+      true,
+    );
+    const events = withRunnerStarts(goldens["subagent-parallel"]!).map((e) =>
+      e.type === "usage" && e.scope === "turn" ? { ...e, model: "claude-opus-5-5" } : e,
+    );
+    chat = reduceEvents(chat, events, 100);
+    expect(chat.reportedModel).toBe("claude-opus-5-5");
+  });
+
+  it("shows a run cut off by a restart as interrupted, running again when resumed, done on its end", () => {
+    let chat = appendUserTurn(
+      createChat("c"),
+      { messageId: "u", text: "go", context: [] },
+      0,
+      true,
+    );
+    const events = withRunnerStarts(goldens["subagent-background"]!);
+    chat = reduceEvents(
+      chat,
+      events.slice(0, events.findIndex((e) => e.type === "turn-finished") + 1),
+      100,
+    );
+    const status = (s: "running" | "interrupted" | "completed"): AgentEvent => ({
+      type: "subagent-status",
+      toolCallId: "toolu_agent1",
+      status: s,
+      report: null,
+    });
+    const state = () => subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_agent1")!);
+    chat = reduceEvent(chat, status("interrupted"), 200);
+    expect(state()).toBe("interrupted");
+    chat = reduceEvent(chat, status("running"), 300);
+    expect(state()).toBe("running");
+    chat = reduceEvent(chat, status("completed"), 400);
+    expect(state()).toBe("done");
+    // a finished run is never revived
+    chat = reduceEvent(chat, status("running"), 500);
+    expect(state()).toBe("done");
+  });
+
   it("keeps a background run running when its turn ends, and the next send does not end it", () => {
     const events = withRunnerStarts(goldens["subagent-background"]!);
     const finished = events.findIndex((e) => e.type === "turn-finished");

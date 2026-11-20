@@ -2896,3 +2896,100 @@ fn the_mcp_recheck_is_off_with_auto_reload_off() {
     std::thread::sleep(Duration::from_millis(700));
     assert_eq!(probe.count(), 0);
 }
+
+// ------------------------------------------------- background sub-agents are busy (spec 8.1)
+
+/// A chat whose first `result` came while a background sub-agent still works (fixture
+/// `subagent-background`): the fake waits at its pauses for [`Harness::go`].
+fn chat_with_a_background_sub_agent(h: &mut Harness) {
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-background", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "edit it in the background");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+}
+
+/// Lets the background sub-agent finish (both pauses of the fixture) and its notification wake
+/// the main agent.
+fn finish_the_background_sub_agent(h: &mut Harness) {
+    h.go();
+    h.next(CHAT, "the late edit's input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_write1")
+    });
+    h.go();
+}
+
+#[test]
+fn a_config_change_waits_for_the_background_sub_agent_and_the_turn_that_reports_it() {
+    let mut h = Harness::new(&["subagent-background"], "normal");
+    chat_with_a_background_sub_agent(&mut h);
+    skill_change(&h);
+    std::thread::sleep(Duration::from_millis(600)); // well past the debounce
+    assert_eq!(
+        h.lines("pids.log").len(),
+        1,
+        "the sub-agent's process lives"
+    );
+    h.drain();
+    assert!(reloads(&h).is_empty());
+    // the sub-agent finishes and its notification wakes the main agent: still the same process
+    h.go();
+    h.next(CHAT, "the late edit's input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_write1")
+    });
+    assert_eq!(h.lines("pids.log").len(), 1);
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    assert_eq!(reason(&mut h).as_deref(), Some("skill new changed"));
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+}
+
+#[test]
+fn a_manual_reload_is_refused_while_a_background_sub_agent_runs() {
+    let mut h = Harness::new(&["subagent-background"], "normal");
+    chat_with_a_background_sub_agent(&mut h);
+    assert_eq!(h.sessions.reload("w", CHAT).unwrap(), ReloadOutcome::Busy);
+    h.drain();
+    assert_eq!(h.lines("pids.log").len(), 1);
+    assert!(reloads(&h).is_empty());
+    finish_the_background_sub_agent(&mut h);
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle", || !h.sessions.get("w", CHAT).unwrap().is_working());
+    assert_eq!(
+        h.sessions.reload("w", CHAT).unwrap(),
+        ReloadOutcome::Started
+    );
+}
+
+#[test]
+fn a_changed_effort_restarts_only_after_the_background_sub_agent_ended() {
+    let mut h = Harness::new(&["subagent-background"], "normal");
+    chat_with_a_background_sub_agent(&mut h);
+    let pid: i32 = h.lines("pids.log")[0].parse().unwrap();
+    h.sessions
+        .set_model("w", CHAT, None, Some(Effort::High))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(alive(pid), "the sub-agent's process lives");
+    finish_the_background_sub_agent(&mut h);
+    h.turn_finished(CHAT);
+    h.wait_until("old process restarted away", || !alive(pid));
+}
+
+#[test]
+fn a_process_that_goes_away_ends_its_running_sub_agent_cards_as_interrupted() {
+    let mut h = Harness::new(&["subagent-background"], "normal");
+    chat_with_a_background_sub_agent(&mut h);
+    h.sessions.get("w", CHAT).unwrap().shutdown();
+    let ev = h.next(
+        CHAT,
+        "the card's end",
+        |e| matches!(e, AgentEvent::SubagentStatus { status, .. } if status.is_final()),
+    );
+    assert!(matches!(
+        ev,
+        AgentEvent::SubagentStatus { tool_call_id, status: SubagentRunStatus::Interrupted, .. }
+            if tool_call_id == "toolu_agent1"
+    ));
+}

@@ -109,6 +109,10 @@ pub struct ClaudeStreamMapper {
     /// Each model's cumulative `outputTokens` at the last `result`: `modelUsage` sums the whole
     /// session, so the model of a turn is the one whose total grew.
     model_output: HashMap<String, u64>,
+    /// The model of the last message the MAIN agent made this turn (`message.model` of a message
+    /// with no `parent_tool_use_id`): the chat's own model. `modelUsage` also counts every
+    /// sub-agent, which often runs on another model, so it only decides when this is unknown.
+    main_model: Option<String>,
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -364,6 +368,20 @@ impl ClaudeStreamMapper {
         self.thinking_block = None;
     }
 
+    /// Remembers the model of a message of the main agent (never a sub-agent's, never the
+    /// CLI's `<synthetic>` placeholder).
+    fn note_main_model(&mut self, v: &Value, msg: Option<&Value>) {
+        if Self::parent_tool(v).is_some() {
+            return;
+        }
+        if let Some(m) = msg
+            .and_then(|m| str_of(m, "model"))
+            .filter(|m| !m.is_empty() && !m.starts_with('<'))
+        {
+            self.main_model = Some(m.to_string());
+        }
+    }
+
     fn parent_tool(v: &Value) -> Option<String> {
         str_of(v, "parent_tool_use_id").map(String::from)
     }
@@ -388,6 +406,7 @@ impl ClaudeStreamMapper {
                     .unwrap_or("")
                     .to_string();
                 self.start_message(&id, true);
+                self.note_main_model(v, ev.get("message"));
                 Self::note_message_parent(v, &id, out);
             }
             Some("content_block_start") => {
@@ -483,6 +502,7 @@ impl ClaudeStreamMapper {
         let Some(msg) = v.get("message") else { return };
         let id = str_of(msg, "id").unwrap_or("").to_string();
         let new_message = self.message_id.as_deref() != Some(id.as_str());
+        self.note_main_model(v, Some(msg));
         if new_message {
             // No stream_event preceded it (partial messages off): a complete message.
             self.start_message(&id, false);
@@ -665,7 +685,7 @@ impl ClaudeStreamMapper {
                     .collect()
             })
             .unwrap_or_default();
-        let model = totals
+        let by_usage = totals
             .iter()
             .max_by_key(|(k, total)| {
                 let before = self.model_output.get(k).copied().unwrap_or(0);
@@ -676,6 +696,9 @@ impl ClaudeStreamMapper {
                 }
             })
             .map(|(k, _)| k.clone());
+        // the main agent's own message names the chat's model; a turn with none falls back to
+        // the usage that grew (sub-agents' usage must not decide it)
+        let model = self.main_model.take().or(by_usage);
         log::debug!(target: "agent", "agent: turn model {:?} from {} usage entries", model, totals.len());
         self.model_output = totals.into_iter().collect();
         out.events.push(usage_event(
@@ -1146,6 +1169,45 @@ mod tests {
             model_of(&mut m, result(530, 90)).as_deref(),
             Some("claude-sonnet-5-5")
         );
+    }
+
+    /// Sub-agents on another model add to `modelUsage` (more than the main agent does): the turn's
+    /// model is still the one the main agent's own messages name.
+    #[test]
+    fn a_sub_agents_model_never_becomes_the_turns_model() {
+        let mut m = ClaudeStreamMapper::default();
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5",
+                "content":[{"type":"text","text":"on it"}]},"parent_tool_use_id":null}),
+            json!({"type":"assistant","message":{"id":"s1","model":"claude-sonnet-5-5",
+                "content":[{"type":"text","text":"worker"}]},"parent_tool_use_id":"toolu_a"}),
+            json!({"type":"result","subtype":"success","is_error":false,"usage":{},
+                "modelUsage":{"claude-opus-5-5":{"outputTokens":50},
+                              "claude-sonnet-5-5":{"outputTokens":9000}}}),
+        ];
+        let mut model = None;
+        for l in lines {
+            for e in m.map_value(&l).events {
+                if let AgentEvent::Usage {
+                    scope: UsageScope::Turn,
+                    model: mo,
+                    ..
+                } = e
+                {
+                    model = mo;
+                }
+            }
+        }
+        assert_eq!(model.as_deref(), Some("claude-opus-5-5"));
+        // a turn where only sub-agents spoke falls back to the usage that grew
+        let r = json!({"type":"result","subtype":"success","is_error":false,"usage":{},
+            "modelUsage":{"claude-opus-5-5":{"outputTokens":80},
+                          "claude-sonnet-5-5":{"outputTokens":9000}}});
+        let again = m.map_value(&r).events.into_iter().find_map(|e| match e {
+            AgentEvent::Usage { model, .. } => model,
+            _ => None,
+        });
+        assert_eq!(again.as_deref(), Some("claude-opus-5-5"));
     }
 
     fn golden_dir() -> PathBuf {

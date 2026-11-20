@@ -116,7 +116,8 @@
     "cacheReadTokens": 0,
     "cacheCreationTokens": 0,
     "costUsd": 0.001,
-    "contextWindow": null
+    "contextWindow": null,
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "turn-finished",
@@ -239,7 +240,8 @@
     "cacheReadTokens": 0,
     "cacheCreationTokens": 0,
     "costUsd": 0.001,
-    "contextWindow": null
+    "contextWindow": null,
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "turn-finished",

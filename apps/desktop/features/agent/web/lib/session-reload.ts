@@ -7,7 +7,7 @@
 import type { ReloadOutcome } from "./events";
 
 export const RELOAD_BUSY_TEXT =
-  "Can't reload while the agent is working or waiting for your answer. Try again when it's done.";
+  "Can't reload while the agent or its sub-agents are working, or while it waits for your answer. Try again when they're done.";
 export const RELOAD_NOT_STARTED_TEXT =
   "Nothing to reload yet: the session starts with your first message.";
 

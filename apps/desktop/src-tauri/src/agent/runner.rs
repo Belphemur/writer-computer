@@ -250,10 +250,13 @@ struct Inner {
     /// launch's model from.
     agent_tiers: BTreeMap<String, Option<String>>,
     session_model: Option<String>,
-    /// The first `turn-finished` came while a sub-agent still worked: the Changes card stays open
-    /// (late sub-agent edits join it) until a later `turn-finished` finds none working, or the
-    /// process ends.
-    changes_deferred: bool,
+    /// The first `turn-finished` came while a sub-agent still worked (a background task is a
+    /// child of the CLI process, woken later by its `task_notification`): the Changes card stays
+    /// open (late sub-agent edits join it) until a later `turn-finished` finds none working, or
+    /// the process ends. Also part of [`Session::is_busy`], the one "busy" fact of every planned
+    /// restart: the process must not be replaced while it holds a running sub-agent or the turn
+    /// that reports it.
+    background_open: bool,
     /// The last `session-changes` event sent, so an unchanged list is not sent again.
     last_session: Option<SessionChangesSummary>,
     pending: HashMap<String, PendingPerm>,
@@ -464,7 +467,7 @@ impl Session {
                 mapper: ClaudeStreamMapper::new(),
                 tool_names: HashMap::new(),
                 subs: SubTracker::default(),
-                changes_deferred: false,
+                background_open: false,
                 last_session: None,
                 pending: HashMap::new(),
                 turn_active: false,
@@ -900,8 +903,10 @@ impl Session {
                         // A sub-agent still working after a normal end (a background task, woken
                         // later) keeps the card open for its late edits; any other end closes it.
                         let keep_open = *reason == TurnFinishReason::Completed && g.subs.busy();
-                        g.changes_deferred = keep_open;
+                        g.background_open = keep_open;
                         if !keep_open {
+                            // a run that never got its end signal ends with the last turn
+                            extra.extend(g.subs.end_running(SubagentRunStatus::Interrupted));
                             self.changes.commands_ended(&self.chat_id, Instant::now());
                             g.tool_names.clear();
                             g.subs.clear();
@@ -1072,13 +1077,15 @@ impl Session {
                 g.state = AgentSessionState::Idle;
                 self.log.push(ev);
                 // stale: restart right after the turn (a waiting message is sent after it)
+                // (not while a background sub-agent runs or its report turn is still to come)
                 let stale_restart = g.stale.is_some()
-                    && config_sync::decide(self.stale_view(g, false)) == Decision::RestartNow;
+                    && config_sync::decide(self.stale_view(g, g.background_open))
+                        == Decision::RestartNow;
                 if stale_restart {
                     g.restart_after_turn = false;
                     let why = self.config_why(g);
                     self.begin_reload(g, why);
-                } else if g.restart_after_turn {
+                } else if g.restart_after_turn && !g.background_open {
                     g.restart_after_turn = false;
                     g.closing = Some(Closing::Restart);
                     self.terminate(g);
@@ -1170,9 +1177,10 @@ impl Session {
         self.restart_when_idle(g);
     }
 
-    /// Restart with `--resume` now, or once the running turn has finished.
+    /// Restart with `--resume` now, or once the running turn (and any background sub-agent and
+    /// the turn that reports it) has finished.
     fn restart_when_idle(&self, g: &mut Inner) {
-        if g.turn_active {
+        if g.turn_active || g.background_open {
             g.restart_after_turn = true;
         } else {
             g.closing = Some(Closing::Restart);
@@ -1191,8 +1199,12 @@ impl Session {
             }
             // no command of this chat runs once its process is gone
             self.changes.commands_ended(&self.chat_id, Instant::now());
+            // a sub-agent is a child of the process: its card ends with it (stopped, not running)
+            for ev in g.subs.end_running(SubagentRunStatus::Interrupted) {
+                self.log.push(ev);
+            }
             // a card kept open for a sub-agent ends with the process: nothing more can arrive
-            if std::mem::take(&mut g.changes_deferred) {
+            if std::mem::take(&mut g.background_open) {
                 g.subs.clear();
                 g.tool_names.clear();
                 closed = self.changes.close_turn(&self.chat_id);
@@ -1758,10 +1770,13 @@ impl Session {
 
     // ----------------------------------------------------------- config change (config_sync)
 
-    /// A turn runs, a permission card is open, a process is starting or being replaced, or a
-    /// message waits: a restart must not cut into it.
+    /// A turn runs, a background sub-agent still works (or the turn that reports it is to come),
+    /// a permission card is open, a process is starting or being replaced, or a message waits: a
+    /// restart must not cut into it. The one fact behind the manual reload, the config sync and
+    /// the project move.
     fn is_busy(&self, g: &Inner) -> bool {
         g.turn_active
+            || g.background_open
             || !g.pending.is_empty()
             || g.spawning
             || !g.queue.is_empty()
@@ -2096,6 +2111,7 @@ impl Session {
             && g.ready
             && g.closing.is_none()
             && !g.turn_active
+            && !g.background_open
             && g.pending.is_empty()
             && g.queue.is_empty()
             && g.last_activity.elapsed() >= self.timing.idle_after
