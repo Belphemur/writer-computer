@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { Add01Icon, Alert02Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import {
@@ -13,6 +14,8 @@ import {
   useChatTitle,
 } from "@features/agent/web/hooks/use-agent";
 import type { ChatId } from "@features/agent/web/lib/events";
+import { useHoverTooltip } from "@/components/hover-tooltip";
+import { getFileName } from "@/lib/paths";
 import { useScrollTabIntoView } from "@/hooks/use-scroll-active-tab-into-view";
 import { Ico, Spinner } from "./agent-icon";
 import { ProjectPathIcon } from "./project-icon";
@@ -55,9 +58,15 @@ function Tab({
         : busy
           ? "working"
           : "";
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const { triggerProps, tooltip } = useHoverTooltip({
+    labelRef,
+    content: { title, detail: projectPath ? getFileName(projectPath) : undefined },
+  });
   return (
     <div
       role="tab"
+      {...triggerProps}
       id={`agent-tab-${id}`}
       aria-selected={active}
       aria-controls="agent-chat-panel"
@@ -95,7 +104,9 @@ function Tab({
         <Ico icon={Alert02Icon} size={12} className="text-[var(--agent-error)]" />
       )}
       {projectPath && <ProjectPathIcon path={projectPath} size={12} />}
-      <span className="truncate">{title}</span>
+      <span ref={labelRef} className="truncate">
+        {title}
+      </span>
       {status && <span className="sr-only">({status})</span>}
       <button
         type="button"
@@ -109,6 +120,7 @@ function Tab({
       >
         <Ico icon={Cancel01Icon} size={11} />
       </button>
+      {tooltip}
     </div>
   );
 }

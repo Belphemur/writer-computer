@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useHoverTooltip } from "@/components/hover-tooltip";
 import { openSavedAgentChat } from "@features/agent/web/hooks/agent-api";
 import {
   chatHistoryClient,
@@ -45,16 +46,29 @@ export function ProjectRecentChats({
   return (
     <ul className="mt-1.5" data-agent-recent-chats>
       {chats.map((c) => (
-        <li key={c.chatId}>
-          <button
-            type="button"
-            onClick={() => void openSavedAgentChat(c.chatId)}
-            className="w-full truncate rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[var(--item-hover-bg)]"
-          >
-            {c.title || "New chat"}
-          </button>
-        </li>
+        <RecentChatRow key={c.chatId} chat={c} />
       ))}
     </ul>
+  );
+}
+
+function RecentChatRow({ chat }: { chat: ChatSummary }) {
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const title = chat.title || "New chat";
+  const { triggerProps, tooltip } = useHoverTooltip({ labelRef, content: { title } });
+  return (
+    <li>
+      <button
+        type="button"
+        {...triggerProps}
+        onClick={() => void openSavedAgentChat(chat.chatId)}
+        className="flex w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[var(--item-hover-bg)]"
+      >
+        <span ref={labelRef} className="min-w-0 truncate">
+          {title}
+        </span>
+        {tooltip}
+      </button>
+    </li>
   );
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useHoverTooltip } from "@/components/hover-tooltip";
 import { openPath } from "@/lib/link-activation";
 import { useSetting } from "@/hooks/use-settings";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
@@ -114,6 +115,11 @@ function ChatRow(p: RowProps) {
   const { chat } = p;
   const [draft, setDraft] = useState(chat.title);
   const moreRef = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const { triggerProps, tooltip } = useHoverTooltip({
+    labelRef: titleRef,
+    content: { title: chat.title },
+  });
   const when = formatRelativeTime(Math.floor(chat.updatedAt / 1000), Math.floor(p.now / 1000));
   const actions = rowActions(p);
   return (
@@ -144,9 +150,17 @@ function ChatRow(p: RowProps) {
           />
         </form>
       ) : (
-        <button type="button" onClick={p.onOpen} className="block w-full text-left">
+        <button
+          type="button"
+          {...triggerProps}
+          onClick={p.onOpen}
+          className="block w-full text-left"
+        >
           <div className="flex items-baseline gap-2">
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--text-primary)]">
+            <span
+              ref={titleRef}
+              className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--text-primary)]"
+            >
               {chat.pinned ? "\u{1F4CC} " : ""}
               {chat.title}
             </span>
@@ -155,6 +169,7 @@ function ChatRow(p: RowProps) {
           {chat.preview && (
             <div className="truncate text-[12px] text-[var(--text-muted)]">{chat.preview}</div>
           )}
+          {tooltip}
         </button>
       )}
       {p.regen?.phase === "running" && (

@@ -78,10 +78,11 @@ describe("pinned rendering", () => {
     act(() => root.render(createElement(EditorTabs)));
   });
 
-  it("shows a pin glyph and the full title as tooltip, and no close button, on a pinned tab", () => {
+  it("shows a pin glyph, and no close button, on a pinned tab", () => {
     expect(tabEl("a").dataset.tabPinned).toBe("true");
     expect(tabEl("a").querySelector("[data-pin-glyph]")).not.toBeNull();
-    expect(buttonOf("a").getAttribute("title")).toBe("alpha (pinned)");
+    expect(buttonOf("a").getAttribute("title")).toBeNull(); // the tooltip is hover-tooltip.tsx
+    expect(buttonOf("a").getAttribute("aria-label")).toBe("alpha, pinned");
     expect(tabEl("a").querySelector("button")).toBeNull();
     expect(tabEl("b").querySelector("button[aria-label^='Close']")).not.toBeNull();
     expect(tabEl("b").querySelector("[data-pin-glyph]")).toBeNull();

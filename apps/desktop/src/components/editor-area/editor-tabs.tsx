@@ -1,4 +1,4 @@
-import { useCallback, useTransition, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useRef, useTransition, type MouseEvent, type PointerEvent } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PinIcon } from "@hugeicons/core-free-icons";
@@ -26,7 +26,8 @@ import {
 } from "@/hooks/use-tabs";
 import { ScrollFade } from "@/components/scroll-fade";
 import { useScrollActiveTabIntoView } from "@/hooks/use-scroll-active-tab-into-view";
-import { getRelativePath } from "@/lib/paths";
+import { getParentDir, getRelativePath } from "@/lib/paths";
+import { useHoverTooltip } from "@/components/hover-tooltip";
 import { pageKind } from "./page-kinds";
 import { buildTabMenuItemsSpec, showTabContextMenu } from "./editor-context-menu";
 import { noteLabel } from "@/lib/note-title";
@@ -68,6 +69,20 @@ function EditorTabButton({
   const title = titleOverride ? titleOverride.text : kind.title(tab.location);
   const pinned = isTabPinned(tab);
   const fileIcon = useFileIcon(filePath);
+  const workspaceRoot = useWorkspaceRoot();
+  const labelRef = useRef<HTMLSpanElement>(null);
+  // The vault-relative folder tells two same-named notes apart; nothing at the root.
+  const folder = filePath && workspaceRoot ? vaultFolder(filePath, workspaceRoot) : undefined;
+  const alert = saveError ? `Save failed: ${saveError}` : undefined;
+  const { triggerProps, tooltip } = useHoverTooltip({
+    labelRef,
+    content: {
+      title,
+      detail: [folder, titleOverride?.tooltip].filter(Boolean).join("\n") || undefined,
+      alert,
+    },
+    always: pinned || !!alert,
+  });
 
   return (
     // tab row wraps a native <button> close control; HTML forbids nested buttons so it cannot become a <button>.
@@ -78,13 +93,11 @@ function EditorTabButton({
       onClick={() => {
         if (!shouldIgnoreClick?.()) onSelect(tab.id);
       }}
-      onPointerDown={(event) => onPointerDown?.(event, tab)}
-      // Tooltip with the full title: a pinned tab is narrow and shows it truncated.
-      title={
-        [titleOverride?.tooltip, pinned ? `${title} (pinned)` : undefined]
-          .filter(Boolean)
-          .join(" - ") || undefined
-      }
+      {...triggerProps}
+      onPointerDown={(event) => {
+        triggerProps.onPointerDown();
+        onPointerDown?.(event, tab);
+      }}
       aria-label={pinned ? `${title}, pinned` : undefined}
       // Middle-click closes the tab (as in browsers) and unpins a pinned one (the close rule is
       // the store's `closeTabByUser`); preventDefault stops middle-button autoscroll.
@@ -117,7 +130,6 @@ function EditorTabButton({
       {saveError ? (
         <span
           aria-label={`Save failed: ${saveError}`}
-          title={`Save failed: ${saveError}`}
           className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff5f57]"
         />
       ) : null}
@@ -152,6 +164,7 @@ function EditorTabButton({
         />
       ) : null}
       <span
+        ref={labelRef}
         className={`truncate ${pinned ? "" : "group-hover:[mask-image:linear-gradient(to_right,black,black_calc(100%_-_28px),transparent)] group-hover:[-webkit-mask-image:linear-gradient(to_right,black,black_calc(100%_-_32px),transparent_calc(100%_-_8px))]"} ${isLoading ? "animate-pulse opacity-60" : ""} ${titleOverride ? "italic" : ""}`}
       >
         {title}
@@ -174,8 +187,17 @@ function EditorTabButton({
           </button>
         </div>
       )}
+      {tooltip}
     </div>
   );
+}
+
+/** The folder of `filePath` relative to the vault, `undefined` at the root or outside it. */
+function vaultFolder(filePath: string, root: string): string | undefined {
+  const relative = getRelativePath(filePath, root);
+  if (relative.startsWith("/")) return undefined;
+  const dir = getParentDir(relative);
+  return dir === "/" || dir === "" || dir === "." ? undefined : dir;
 }
 
 export function EditorTabs() {
