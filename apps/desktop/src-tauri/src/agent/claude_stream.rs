@@ -48,6 +48,10 @@ pub struct MapOutput {
     /// The `uuid` of a user message the CLI echoed back (`--replay-user-messages`, `isReplay`):
     /// the receipt that it took a message Writer wrote mid-turn (a steer). Not a UI event.
     pub user_echo: Option<String>,
+    /// The `command_uuid` of a `command_lifecycle` line in state `queued`: the CLI accepted the
+    /// message and will run it, which can be long before the echo (a steer waits for the running
+    /// sub-agents' tool calls to end, `steer-now-subagents`). Not a UI event.
+    pub command_queued: Option<String>,
 }
 
 /// A task line of the stream, by the CLI's task id. Facts only: what they mean for a sub-agent's
@@ -208,6 +212,7 @@ impl ClaudeStreamMapper {
                 unsupported_control_request: None,
                 tasks: Vec::new(),
                 user_echo: None,
+                command_queued: None,
             },
         }
     }
@@ -233,6 +238,11 @@ impl ClaudeStreamMapper {
                             resolution: PermissionResolution::Cancelled,
                         });
                     }
+                }
+            }
+            Some("command_lifecycle") => {
+                if str_of(v, "state") == Some("queued") {
+                    out.command_queued = str_of(v, "command_uuid").map(String::from);
                 }
             }
             Some("rate_limit_event") => {
@@ -1228,6 +1238,7 @@ mod tests {
             "steer-deferred" => include_str!("fixtures/steer-deferred.jsonl"),
             "steer-now-text" => include_str!("fixtures/steer-now-text.jsonl"),
             "steer-now-permission" => include_str!("fixtures/steer-now-permission.jsonl"),
+            "steer-now-subagents" => include_str!("fixtures/steer-now-subagents.jsonl"),
             "queued-two" => include_str!("fixtures/queued-two.jsonl"),
             "queued-cancel" => include_str!("fixtures/queued-cancel.jsonl"),
             "subagent-parallel" => include_str!("fixtures/subagent-parallel.jsonl"),
@@ -1303,6 +1314,7 @@ mod tests {
             "steer-deferred",
             "steer-now-text",
             "steer-now-permission",
+            "steer-now-subagents",
             "queued-two",
             "queued-cancel",
             "subagent-parallel",
@@ -1355,6 +1367,42 @@ mod tests {
         let (echo, finished) = positions("steer-deferred");
         assert_eq!(finished.len(), 2, "the steer ran as a second turn");
         assert!(finished[0] < echo && echo < finished[1]);
+    }
+
+    /// A steer written while sub-agents run tool calls (`steer-now-subagents`, real capture, 2.1.326:
+    /// three foreground sub-agents each in a 40 s Bash call, `priority:"now"` 4 s in): the CLI
+    /// accepts the line at once (`command_lifecycle` `queued`) but aborts and echoes it only when
+    /// those calls end, ~37 s later, past `Timing::steer_ack`. The acceptance is what the runner
+    /// must treat as the receipt of delivery.
+    #[test]
+    fn a_steer_among_running_sub_agents_is_accepted_long_before_it_is_echoed() {
+        const STEER: &str = "00000000-0000-4000-8000-0000000000a1";
+        let mut m = ClaudeStreamMapper::new();
+        let (mut queued, mut echo, mut finished) = (None, None, None);
+        for (i, line) in fixture("steer-now-subagents").lines().enumerate() {
+            let out = m.map_line(line);
+            if out.command_queued.as_deref() == Some(STEER) {
+                queued = Some(i);
+            }
+            if out.user_echo.as_deref() == Some(STEER) {
+                echo = Some(i);
+            }
+            if out
+                .events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TurnFinished { .. }))
+                && finished.is_none()
+            {
+                finished = Some(i);
+            }
+        }
+        let (queued, echo, finished) = (queued.unwrap(), echo.unwrap(), finished.unwrap());
+        assert!(
+            queued < finished && finished < echo,
+            "{queued} {finished} {echo}"
+        );
+        // the lines between are the sub-agents' calls running on: nothing else says "taken"
+        assert!(echo - queued > 10);
     }
 
     /// Two plain lines written during one tool call (`queued-two`, real capture): the CLI does NOT

@@ -1,0 +1,631 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "x",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q6",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q6",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 50
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q6",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 275
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q6",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q16",
+    "messageId": "msg_q6",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "{\"description\": \"Run s"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "leep command"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": ", reply ok"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "\", \"prompt\": \"Run this exact"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " command with the Bash tool"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": ","
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " then reply with"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " the single"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " word:"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " ok"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "\\n\\npython"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "3 -c 'import time"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "; time.sleep(40"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": ")'\\n\\nDo"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " not touch files outside the current"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " directory. Do"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " not run any"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": " other commands."
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "\", \"subagent_type\": \"general-pur"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "pose"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "\", \"run_in_background\": false"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q16",
+    "partialJson": "}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q16",
+    "input": {
+      "description": "Run sleep command, reply ok",
+      "prompt": "Run this exact command with the Bash tool, then reply with the single word: ok\n\npython3 -c 'import time; time.sleep(40)'\n\nDo not touch files outside the current directory. Do not run any other commands.",
+      "subagent_type": "general-purpose",
+      "run_in_background": false
+    }
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q43",
+    "messageId": "msg_q6",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "{\"description\": \"Run"
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q16",
+    "status": "running",
+    "report": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": " sleep command, reply "
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "ok"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "\", \"prompt\": \"Run this exact command with the"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": " Bash tool, then reply"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": " with the single word: ok"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "\\n\\npython3 -c 'import"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": " time; time.sleep("
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "40)'\\n\\nDo not tou"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "ch files outside the current directory"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": ". Do not run any other comm"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "ands."
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "\", \"subagent_type\": \"general-purpose"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "\", \"run_in_background\": false"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q43",
+    "partialJson": "}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q43",
+    "input": {
+      "description": "Run sleep command, reply ok",
+      "prompt": "Run this exact command with the Bash tool, then reply with the single word: ok\n\npython3 -c 'import time; time.sleep(40)'\n\nDo not touch files outside the current directory. Do not run any other commands.",
+      "subagent_type": "general-purpose",
+      "run_in_background": false
+    }
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q65",
+    "messageId": "msg_q6",
+    "tool": "Agent",
+    "parentToolCallId": null
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q43",
+    "status": "running",
+    "report": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "{\"description\": \"Run s"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "leep command, reply ok"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "\", \"prompt\": \"Run"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": " this exact command with the B"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "ash tool, then reply with"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": " the single word: ok\\n\\npython"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "3 -c 'import time"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "; time.sleep(40"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": ")'\\n\\nDo not touch"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": " files outside the current directory."
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": " Do not run any other commands"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "."
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "\", \"subagent_type\": \"general-purpose"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "\", \"run_in_background\": false"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q65",
+    "partialJson": "}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q65",
+    "input": {
+      "description": "Run sleep command, reply ok",
+      "prompt": "Run this exact command with the Bash tool, then reply with the single word: ok\n\npython3 -c 'import time; time.sleep(40)'\n\nDo not touch files outside the current directory. Do not run any other commands.",
+      "subagent_type": "general-purpose",
+      "run_in_background": false
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 710,
+    "cacheReadTokens": 13942,
+    "cacheCreationTokens": 13984,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q65",
+    "status": "running",
+    "report": null
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_q92",
+    "parentToolCallId": "toolu_q16"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 16,
+    "cacheReadTokens": 8925,
+    "cacheCreationTokens": 26351,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q93",
+    "messageId": "msg_q92",
+    "tool": "Bash",
+    "parentToolCallId": "toolu_q16"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q93",
+    "input": {
+      "command": "python3 -c 'import time; time.sleep(40)'",
+      "description": "Sleep for 40 seconds"
+    }
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_q96",
+    "parentToolCallId": "toolu_q43"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 16,
+    "cacheReadTokens": 8925,
+    "cacheCreationTokens": 26351,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q97",
+    "messageId": "msg_q96",
+    "tool": "Bash",
+    "parentToolCallId": "toolu_q43"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q97",
+    "input": {
+      "command": "python3 -c 'import time; time.sleep(40)'",
+      "timeout": 60000
+    }
+  },
+  {
+    "type": "subagent-message",
+    "messageId": "msg_q100",
+    "parentToolCallId": "toolu_q65"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 16,
+    "cacheReadTokens": 35276,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q101",
+    "messageId": "msg_q100",
+    "tool": "Bash",
+    "parentToolCallId": "toolu_q65"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q101",
+    "input": {
+      "command": "python3 -c 'import time; time.sleep(40)'",
+      "timeout": 60000
+    }
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q97",
+    "output": "(Bash completed with no output)",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q43",
+    "status": "stopped",
+    "report": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q93",
+    "output": "(Bash completed with no output)",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q16",
+    "status": "stopped",
+    "report": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q43",
+    "output": "[Request interrupted by user for tool use]",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q16",
+    "output": "[Request interrupted by user for tool use]",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q101",
+    "output": "(Bash completed with no output)",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q65",
+    "status": "stopped",
+    "report": null
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q65",
+    "output": "[Request interrupted by user for tool use]",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 710,
+    "cacheReadTokens": 13942,
+    "cacheCreationTokens": 13984,
+    "costUsd": 0.14311102,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "interrupted",
+    "durationMs": 45098,
+    "apiDurationMs": 7884,
+    "numTurns": 4,
+    "isError": false,
+    "result": "",
+    "sessionId": "00000000-0000-4000-8000-000000001002",
+    "errors": []
+  },
+  {
+    "type": "session-started",
+    "sessionId": "x",
+    "model": "claude-haiku-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Read"
+    ],
+    "slashCommands": [],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.326"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q125",
+    "blockIndex": 0,
+    "text": "PINEA"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q125",
+    "blockIndex": 0,
+    "text": "PPLE"
+  },
+  {
+    "type": "text",
+    "messageId": "msg_q125",
+    "blockIndex": 0,
+    "text": "PINEAPPLE"
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 27926,
+    "cacheCreationTokens": 20727,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 2,
+    "outputTokens": 10,
+    "cacheReadTokens": 27926,
+    "cacheCreationTokens": 20727,
+    "costUsd": 0.14754088,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 703,
+    "apiDurationMs": 8506,
+    "numTurns": 1,
+    "isError": false,
+    "result": "PINEAPPLE",
+    "sessionId": "00000000-0000-4000-8000-000000001002",
+    "errors": []
+  }
+]

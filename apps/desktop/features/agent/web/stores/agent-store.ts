@@ -1340,7 +1340,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
           notes: folded ? { ...s.notes, [chatId]: folded.note } : s.notes,
           cliCatalog: catalogFrom(events) ?? s.cliCatalog,
           modelPending:
-            s.modelPending[chatId] && confirmsModel(events, s.chatModels[chatId])
+            // a process that ended can no longer confirm the pick: the next one starts with it
+            s.modelPending[chatId] &&
+            (events.some((e) => e.type === "session-ended") ||
+              confirmsModel(events, s.chatModels[chatId]))
               ? omitKey(s.modelPending, chatId)
               : s.modelPending,
           chatModels: refused

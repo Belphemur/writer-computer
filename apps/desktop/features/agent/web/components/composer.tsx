@@ -80,8 +80,6 @@ function placeholder(chat: Chat): string {
       return "Stopping…";
     case "reconnecting":
       return "Reconnecting…";
-    case "ended":
-      return "This chat has ended";
     case "error":
       return isComposerDisabled(chat) ? "Fix the problem above to continue" : "Ask anything";
     case "running":

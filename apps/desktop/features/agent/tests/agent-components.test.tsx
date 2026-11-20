@@ -392,6 +392,18 @@ describe("AgentPane", () => {
     expect($("[data-agent-error=binary-not-found]")!.textContent).toContain("Choose binary");
   });
 
+  it("an ended chat keeps a usable composer: the next message resumes it", async () => {
+    await openPane();
+    act(() =>
+      useAgentStore.setState((s) => {
+        const c = s.chats[s.activeChatId!]!;
+        return { chats: { ...s.chats, [c.chatId]: { ...c, state: "ended" } } };
+      }),
+    );
+    expect($("[data-agent-composer]")!.getAttribute("contenteditable")).not.toBe("false");
+    expect($(".cm-placeholder")!.textContent).not.toContain("ended");
+  });
+
   it("an auth error asks to sign in with /login and offers Retry", async () => {
     await openPane();
     act(() =>

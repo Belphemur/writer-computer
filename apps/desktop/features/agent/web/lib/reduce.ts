@@ -610,10 +610,13 @@ export function reduceEvent(
         now,
         "interrupted",
       );
+      // A killed process (a stop the CLI ignored) ends the turn, never the chat: the session
+      // lives on in Rust and the next message resumes it. Other ends are resumable by a send too
+      // (`deliver` starts a session with `--resume`), so the composer stays usable in "ended".
       return {
         ...closed,
         pendingPermissions: [],
-        state: lost ? "reconnecting" : "ended",
+        state: lost ? "reconnecting" : event.reason === "killed" ? "idle" : "ended",
         banner: lost ? "Connection lost, resuming" : null,
       };
     }
@@ -782,7 +785,6 @@ export const BLOCKING_ERROR_KINDS = ["binary-not-found", "spawn-denied", "auth"]
 export const isComposerDisabled = (chat: Chat): boolean =>
   chat.state === "cancelling" ||
   chat.state === "reconnecting" ||
-  chat.state === "ended" ||
   (chat.state === "error" &&
     chat.error !== null &&
     (BLOCKING_ERROR_KINDS as readonly string[]).includes(chat.error.kind));

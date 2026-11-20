@@ -598,6 +598,99 @@ fn a_steer_the_cli_never_acknowledges_is_reported_and_frees_the_session() {
     });
 }
 
+/// `steer-now-subagents` (real capture): the CLI accepts a steer at once (`command_lifecycle`
+/// `queued`) but echoes it only when the running sub-agents' tool calls end, far later than
+/// `Timing::steer_ack`. `fake_pause` sits right after the acceptance to hold the echo back.
+#[test]
+fn a_steer_the_cli_accepted_is_not_reported_while_sub_agent_tools_keep_running() {
+    let mut h = Harness::new(&["ok-turn"], "normal");
+    use_steer_turns(&h, "steer-now-subagents", "fake_pause", None);
+    let first = h.fdir.join("steer-turn-0.jsonl");
+    let mut lines: Vec<String> = std::fs::read_to_string(&first)
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect();
+    let queued = lines
+        .iter()
+        .position(|l| l.contains("\"command_lifecycle\"") && l.contains("\"queued\""))
+        .expect("the capture has the acceptance");
+    lines.insert(queued + 1, r#"{"type":"fake_pause"}"#.into());
+    // the fake only learns the steer's uuid when it reads the line, after this turn: the
+    // acceptance inside it already names it
+    let text = lines.join("\n").replace("__STEER_UUID__", STEER_ID);
+    std::fs::write(&first, text + "\n").unwrap();
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "check this instead".into(), &[])
+        .unwrap();
+    // the fake reads the line after this turn; the acceptance line is what the CLI emits at once
+    h.go();
+    // well past the watchdog (600 ms in tests): accepted, not echoed, still working
+    std::thread::sleep(Duration::from_millis(1500));
+    h.drain();
+    assert!(
+        !h.seen
+            .iter()
+            .any(|e| matches!(e.event, AgentEvent::SteerUndelivered { .. })),
+        "an accepted steer is not reported undelivered"
+    );
+    assert_eq!(
+        h.sessions.get("w", CHAT).unwrap().state(),
+        AgentSessionState::Running
+    );
+    // the sub-agents' calls end: the turn is cut, the echo comes, the steer's turn runs
+    h.go();
+    h.turn_finished(CHAT);
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("idle after the steer's turn", || {
+        h.sessions.get("w", CHAT).unwrap().state() == AgentSessionState::Idle
+    });
+}
+
+/// A stop ends the turn, never the chat: after a steer the CLI never took, the user's stop meets
+/// a process that ignores the interrupt; it is killed, and the chat is still there to be written
+/// to (the next send resumes it with `--resume`).
+#[test]
+fn a_stop_after_an_undelivered_steer_leaves_a_chat_the_next_message_resumes() {
+    let mut h = Harness::new(&["interrupt"], "hang");
+    h.start(CHAT);
+    h.send(CHAT, "go");
+    h.next(CHAT, "request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    });
+    h.sessions
+        .steer("w", CHAT, STEER_ID, "also this".into(), &[])
+        .unwrap();
+    h.next(CHAT, "steer-undelivered", |e| {
+        matches!(e, AgentEvent::SteerUndelivered { .. })
+    });
+    h.sessions.cancel("w", CHAT).unwrap();
+    h.next(CHAT, "session-ended", |e| {
+        matches!(
+            e,
+            AgentEvent::SessionEnded {
+                reason: SessionEndReason::Killed,
+                ..
+            }
+        )
+    });
+    let session = h.sessions.get("w", CHAT).expect("the chat is still there");
+    assert!(
+        !session.is_terminal(),
+        "a killed process is not an ended chat"
+    );
+    h.set_mode("normal");
+    h.set_turns(&["ok-turn"]);
+    h.send(CHAT, "again");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let argv = h.lines("argv.log");
+    assert_eq!(argv.len(), 2);
+    assert!(argv[1].contains(&format!("--resume {CHAT}")), "{}", argv[1]);
+}
+
 #[test]
 fn a_steer_with_no_running_turn_is_an_ordinary_send() {
     let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");

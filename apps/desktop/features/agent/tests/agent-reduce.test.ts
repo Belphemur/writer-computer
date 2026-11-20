@@ -3,6 +3,7 @@ import {
   createChat,
   appendSteer,
   appendUserTurn,
+  isComposerDisabled,
   markCancelling,
   reduceEvent,
   reduceEvents,
@@ -248,6 +249,18 @@ describe("thinking, errors and session end", () => {
       signal: null,
     });
     expect(closed.state).toBe("ended");
+    // a killed process (a stop the CLI ignored) ends the turn, never the chat
+    const killed = reduceEvent(base(), {
+      type: "session-ended",
+      reason: "killed",
+      exitCode: null,
+      signal: null,
+    });
+    expect(killed.state).toBe("idle");
+    expect(killed.turns[0]!.status).toBe("interrupted");
+    // every state a chat can be left in accepts the next message, an ended one included
+    expect(isComposerDisabled(closed)).toBe(false);
+    expect(isComposerDisabled(killed)).toBe(false);
   });
 
   it("stop moves a running chat to cancelling and turn-finished returns it to idle", () => {

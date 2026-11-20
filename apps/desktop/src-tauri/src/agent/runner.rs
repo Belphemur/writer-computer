@@ -174,6 +174,10 @@ struct Unechoed {
     /// The receipt watchdog runs (`Session::watch_receipt`). A steer's starts at the write; a
     /// queued line's when the turn ended without taking it (it may wait as long as a tool runs).
     watching: bool,
+    /// The CLI said it accepted the line (`MapOutput::command_queued`). It will run it, but a
+    /// steer waits for the running sub-agents' tool calls to end, so the echo can be far later
+    /// than `Timing::steer_ack`: an accepted line is never reported undelivered by the watchdog.
+    accepted: bool,
 }
 
 /// A `cancel_async_message` request in flight: the line it takes back and who waits for the
@@ -811,6 +815,11 @@ impl Session {
                 self.on_control_response(&mut g, line);
             }
             let out = g.mapper.map_line(line);
+            if let Some(uuid) = &out.command_queued {
+                if let Some(u) = g.unechoed.iter_mut().find(|u| u.uuid == *uuid) {
+                    u.accepted = true;
+                }
+            }
             if let Some(uuid) = &out.user_echo {
                 // the receipt: the CLI took the message (at a tool boundary or as its next turn)
                 if let Some(i) = g.unechoed.iter().position(|u| u.uuid == *uuid) {
@@ -1489,6 +1498,7 @@ impl Session {
                     out: out.clone(),
                     kind: LineKind::Queued,
                     watching: true,
+                    accepted: false,
                 });
                 self.watch_receipt(g.live_gen, uuid);
                 self.write(encode_queued_message(&sent, &out.files, uuid));
@@ -1608,6 +1618,7 @@ impl Session {
             out: out.clone(),
             kind,
             watching: kind == LineKind::Steer,
+            accepted: false,
         });
         g.inflight.push(out);
         g.last_activity = Instant::now();
@@ -1719,6 +1730,11 @@ impl Session {
         let Some(i) = g.unechoed.iter().position(|u| u.uuid == uuid) else {
             return;
         };
+        if g.unechoed[i].accepted {
+            // the CLI has it and will run it when its running tool calls end: keep waiting
+            // (a stop, a failed turn or the process ending forgets it)
+            return;
+        }
         let late = g.unechoed.remove(i);
         log::warn!(target: "agent", "agent: a message written to claude was not acknowledged");
         if late.kind == LineKind::Queued && g.ready {
