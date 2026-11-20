@@ -101,7 +101,17 @@ export type Draft = {
  *  held in Writer until the chat is idle. Otherwise it was written to the CLI under that id (the
  *  receipt id of `message-received`) and waits there for the next tool call, or for the end of
  *  the turn. */
-export type QueuedMessage = { text: string; context: ContextRef[]; id: string | null };
+export type QueuedMessage = {
+  text: string;
+  context: ContextRef[];
+  id: string | null;
+  /** The part of `text` (the end of it) not written to the CLI yet: a later Enter shows at once
+   *  and is merged into the written line by `reconcileLine`. Absent: `text` is what the CLI has. */
+  tail?: PendingText;
+};
+
+/** Text (and its context) the user sent that is not written to the CLI yet. */
+type PendingText = { text: string; context: ContextRef[] };
 
 /** A message written to the CLI that it has not echoed yet: what the receipt turns into a card. */
 export type WrittenLine = { chatId: ChatId; text: string; context: ContextRef[] };
@@ -838,6 +848,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
     await deliver(chatId, text, context, { queue: id });
   }
 
+  /** Bumped by every removal of the chip: a merge started before it must not write anything. */
+  const removals = new Map<ChatId, number>();
+
   /** One chip operation at a time per chat: a second Enter waits for the answer of the first. */
   const lineOps = new Map<ChatId, Promise<void>>();
   function inOrder(chatId: ChatId, op: () => Promise<void>): Promise<void> {
@@ -849,10 +862,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
     return run;
   }
 
-  /** Enter while a turn runs (or a message already waits). Several messages become one: a line
-   *  still waiting in the CLI is taken back and written again joined with the new text; one the
-   *  CLI took in the meantime stays what it is and the new text waits as its own. */
+  /** Enter while a turn runs (or a message already waits). Several messages become one: the chip
+   *  shows the merged text at once (`appendTail`), then `reconcileLine` takes the line still
+   *  waiting in the CLI back and writes it again joined; one the CLI took in the meantime stays
+   *  what it is (its card) and the new text waits as its own chip. */
   function queueMessage(chatId: ChatId, text: string, context: ContextRef[]): Promise<void> {
+    const gen = removals.get(chatId) ?? 0;
+    if (get().queued[chatId]?.id) {
+      appendTail(chatId, { text, context });
+      return inOrder(chatId, () => reconcileLine(chatId, gen));
+    }
     return inOrder(chatId, async () => {
       const chat = get().chats[chatId];
       const chip = get().queued[chatId];
@@ -870,22 +889,61 @@ export const useAgentStore = create<AgentState>((set, get) => {
           },
         }));
       } else if (chip) {
-        const id = chip.id;
-        let gone = false;
-        try {
-          gone = await unqueueLine(chatId, id);
-        } catch {
-          // no answer: it stays where it is, the new text waits on its own
-        }
-        if (gone) {
-          set((s) => ({ written: omitKey(s.written, id) }));
-          await writeLine(chatId, `${chip.text}\n\n${text}`, [...chip.context, ...context]);
-        } else await writeLine(chatId, text, context);
+        appendTail(chatId, { text, context });
+        await reconcileLine(chatId, gen);
       } else if (canSteer(chat)) await writeLine(chatId, text, context);
       else if (isBusy(chat)) {
         set((s) => ({ queued: { ...s.queued, [chatId]: { text, context, id: null } } }));
       } else await deliver(chatId, text, context);
     });
+  }
+
+  /** The chip shows `more` after its text right now, before the CLI has been asked anything. */
+  function appendTail(chatId: ChatId, more: PendingText) {
+    set((s) => {
+      const chip = s.queued[chatId];
+      if (!chip) return s;
+      const tail = chip.tail
+        ? {
+            text: `${chip.tail.text}\n\n${more.text}`,
+            context: [...chip.tail.context, ...more.context],
+          }
+        : more;
+      const joined = {
+        text: `${chip.text}\n\n${more.text}`,
+        context: [...chip.context, ...more.context],
+      };
+      return { queued: { ...s.queued, [chatId]: { ...chip, ...joined, tail } } };
+    });
+  }
+
+  /** Writes what the chip shows but the CLI does not have yet. The line waiting there is taken
+   *  back first: gone, the whole text is written as one line; already taken (its receipt is on
+   *  its way), it keeps its own card and only the tail is written, as the new chip. The chip
+   *  never shows less than what will be delivered. */
+  async function reconcileLine(chatId: ChatId, gen: number) {
+    const chip = get().queued[chatId];
+    if (!chip?.tail || chip.id === null || (removals.get(chatId) ?? 0) !== gen) return;
+    const id = chip.id;
+    let gone = false;
+    try {
+      gone = await unqueueLine(chatId, id);
+    } catch {
+      // no answer: it stays where it is, the tail waits on its own
+    }
+    // the receipt may have come while waiting: the chip is then the tail alone, held in Writer
+    const now = get().queued[chatId];
+    if (!now || now.id !== id || !now.tail) return;
+    if ((removals.get(chatId) ?? 0) !== gen) {
+      // the user removed the chip meanwhile: nothing is written or shown again; a line the CLI
+      // gave up is gone for good, one it took keeps its card (the removal settles the chip)
+      if (gone) dropChip(chatId);
+      return;
+    }
+    if (gone) {
+      set((s) => ({ written: omitKey(s.written, id) }));
+      await writeLine(chatId, now.text, now.context);
+    } else await writeLine(chatId, now.tail.text, now.tail.context);
   }
 
   return {
@@ -1131,17 +1189,34 @@ export const useAgentStore = create<AgentState>((set, get) => {
         });
       }),
     removeQueued: async (chatId) => {
-      const chip = get().queued[chatId];
-      if (!chip) return;
-      if (chip.id !== null) {
-        try {
-          // false: the CLI took it already; its card follows, the chip goes with the receipt
-          if (!(await unqueueLine(chatId, chip.id))) return;
-        } catch {
-          return;
+      if (!get().queued[chatId]) return;
+      // a removal wins over a merge in flight (`reconcileLine` checks it), and waits its turn
+      removals.set(chatId, (removals.get(chatId) ?? 0) + 1);
+      await inOrder(chatId, async () => {
+        const chip = get().queued[chatId];
+        if (!chip) return;
+        if (chip.id !== null) {
+          try {
+            // false: the CLI took it already; its card follows with the receipt
+            if (!(await unqueueLine(chatId, chip.id))) {
+              // what the CLI took is what the chip keeps showing until then, nothing else
+              const taken = get().written[chip.id];
+              if (taken && get().queued[chatId]?.id === chip.id) {
+                set((s) => ({
+                  queued: {
+                    ...s.queued,
+                    [chatId]: { text: taken.text, context: taken.context, id: chip.id },
+                  },
+                }));
+              }
+              return;
+            }
+          } catch {
+            return;
+          }
         }
-      }
-      if (get().queued[chatId]?.id === chip.id) dropChip(chatId);
+        if (get().queued[chatId]?.id === chip.id) dropChip(chatId);
+      });
     },
     stop: async () => {
       const chatId = get().activeChatId;
@@ -1330,8 +1405,17 @@ export const useAgentStore = create<AgentState>((set, get) => {
           received = received || e.type === "message-received";
           const chip = queued[chatId];
           if (chip?.id !== e.messageId) continue;
-          if (e.type === "message-received") queued = omitKey(queued, chatId);
-          else queued = { ...queued, [chatId]: { ...chip, id: null } };
+          // the tail not written yet (a merge was under way) is all that is left waiting
+          if (e.type === "message-received") {
+            queued = chip.tail
+              ? { ...queued, [chatId]: { ...chip.tail, id: null } }
+              : omitKey(queued, chatId);
+          } else {
+            queued = {
+              ...queued,
+              [chatId]: { text: chip.text, context: chip.context, id: null },
+            };
+          }
         }
         return {
           ...withChat(s, chatId, { ...reduceEvents(chat, events, now, line), lastSeq }),

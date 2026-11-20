@@ -20,7 +20,9 @@ export function PinnedStack({ chat, queued }: { chat: Chat; queued: QueuedMessag
           <span className="rounded bg-[var(--surface-selected)] px-1.5 py-0.5 text-[10.5px] font-medium">
             Queued
           </span>
-          <span className="min-w-0 flex-1 truncate">{queued.text}</span>
+          <span className="line-clamp-3 min-w-0 flex-1 break-words whitespace-pre-line">
+            {queued.text}
+          </span>
           <button
             type="button"
             title="Cmd+Enter"

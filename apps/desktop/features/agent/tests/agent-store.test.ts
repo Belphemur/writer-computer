@@ -388,6 +388,139 @@ describe("agent store: a turn against the recorded backend", () => {
       await finish(id);
     });
 
+    /** An `unqueue` that answers when told: the chip is looked at while the CLI is asked. */
+    function slowUnqueue(answer: boolean) {
+      let release: () => void = () => undefined;
+      const spy = vi.spyOn(mock, "unqueue").mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            release = () => resolve(answer);
+          }),
+      );
+      return {
+        spy,
+        // the request reaches the client a tick after Enter (the runtime is awaited first)
+        answer: async () => {
+          await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+          release();
+        },
+      };
+    }
+
+    it("the chip shows the merged text at once, while the CLI is still asked, then holds the same text", async () => {
+      const id = await awaitingPermission();
+      const queue = vi.spyOn(mock, "queue");
+      await get().sendMessage("first");
+      const first = get().queued[id]!.id!;
+      const asked = slowUnqueue(true);
+      const second = get().sendMessage("second");
+      // before any answer: merged, still keyed by the line the CLI has
+      expect(get().queued[id]).toMatchObject({ text: "first\n\nsecond", id: first });
+      const third = get().sendMessage("third");
+      expect(get().queued[id]!.text).toBe("first\n\nsecond\n\nthird");
+      await asked.answer();
+      await Promise.all([second, third]);
+      // one more line only: the CLI saw "first", then one merged line with all three
+      expect(queue).toHaveBeenCalledTimes(2);
+      expect(queue.mock.calls[1]![0].text).toContain("first\n\nsecond\n\nthird");
+      expect(asked.spy).toHaveBeenCalledTimes(1);
+      expect(get().queued[id]).toMatchObject({
+        text: "first\n\nsecond\n\nthird",
+        id: queue.mock.calls[1]![0].messageId,
+      });
+      expect(get().queued[id]!.tail).toBeUndefined();
+      expect(Object.keys(get().written)).toEqual([queue.mock.calls[1]![0].messageId]);
+      await finish(id);
+    });
+
+    it("three Enters one after the other show first, first+second, first+second+third", async () => {
+      const id = await awaitingPermission();
+      const seen: string[] = [];
+      for (const text of ["a", "b", "c"]) {
+        await get().sendMessage(text);
+        seen.push(get().queued[id]!.text);
+      }
+      expect(seen).toEqual(["a", "a\n\nb", "a\n\nb\n\nc"]);
+      await finish(id);
+    });
+
+    it("when the CLI took the first line during the merge, it keeps its card and the rest is the chip", async () => {
+      const id = await awaitingPermission();
+      await get().sendMessage("first");
+      const first = get().queued[id]!.id!;
+      const asked = slowUnqueue(false);
+      const second = get().sendMessage("second");
+      const third = get().sendMessage("third");
+      expect(get().queued[id]!.text).toBe("first\n\nsecond\n\nthird");
+      // the receipt of the first arrives before the answer: only what it did not hold is left
+      await vi.waitFor(() => expect(asked.spy).toHaveBeenCalled());
+      get().ingest(id, [{ type: "message-received", messageId: first }], 60);
+      expect(get().queued[id]).toMatchObject({ text: "second\n\nthird", id: null });
+      expect(chat().turns[0]!.blocks.at(-1)).toMatchObject({
+        injected: true,
+        message: { text: "first" },
+      });
+      await asked.answer();
+      await Promise.all([second, third]);
+      // held in Writer until the chat is idle; never shown stale
+      expect(get().queued[id]).toMatchObject({ text: "second\n\nthird", id: null });
+      await finish(id);
+    });
+
+    it("a refused cancel (the answer comes before the receipt) writes the rest as its own chip", async () => {
+      const id = await awaitingPermission();
+      const queue = vi.spyOn(mock, "queue");
+      await get().sendMessage("first");
+      const first = get().queued[id]!.id!;
+      const asked = slowUnqueue(false);
+      const second = get().sendMessage("second");
+      expect(get().queued[id]!.text).toBe("first\n\nsecond");
+      await asked.answer();
+      await second;
+      expect(get().queued[id]).toMatchObject({ text: "second" });
+      expect(get().queued[id]!.id).toBe(queue.mock.calls[1]![0].messageId);
+      // the first line's receipt still finds its text and leaves the new chip alone
+      get().ingest(id, [{ type: "message-received", messageId: first }], 60);
+      expect(chat().turns[0]!.blocks.at(-1)).toMatchObject({ message: { text: "first" } });
+      expect(get().queued[id]!.text).toBe("second");
+      // no stale chip after the receipt of the new line either
+      get().ingest(
+        id,
+        [{ type: "message-received", messageId: queue.mock.calls[1]![0].messageId }],
+        61,
+      );
+      expect(get().queued[id]).toBeUndefined();
+      expect(get().written).toEqual({});
+      await finish(id);
+    });
+
+    for (const answer of [true, false]) {
+      it(`removing the chip while a merge waits for the CLI (answer ${answer}) never brings text back`, async () => {
+        const id = await awaitingPermission();
+        const queue = vi.spyOn(mock, "queue");
+        await get().sendMessage("first");
+        const first = get().queued[id]!.id!;
+        const asked = slowUnqueue(answer);
+        const second = get().sendMessage("second");
+        expect(get().queued[id]!.text).toBe("first\n\nsecond");
+        const removed = get().removeQueued(id);
+        await asked.answer();
+        await Promise.all([second, removed]);
+        // B was never written; A is gone (cancelled) or kept as the line the CLI took
+        expect(queue).toHaveBeenCalledTimes(1);
+        if (answer) {
+          expect(get().queued[id]).toBeUndefined();
+          expect(get().written).toEqual({});
+        } else {
+          expect(get().queued[id]).toMatchObject({ text: "first", id: first });
+          get().ingest(id, [{ type: "message-received", messageId: first }], 60);
+          expect(get().queued[id]).toBeUndefined();
+          expect(chat().turns[0]!.blocks.at(-1)).toMatchObject({ message: { text: "first" } });
+        }
+        await finish(id);
+      });
+    }
+
     it("quick Enters are handled one after the other", async () => {
       const id = await awaitingPermission();
       const queue = vi.spyOn(mock, "queue");

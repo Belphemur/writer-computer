@@ -304,6 +304,19 @@ describe("AgentPane", () => {
       expect(chat().state).toBe("awaiting-permission");
     }
 
+    it("a second Enter shows the merged text in the chip, wrapped rather than cut to one line", async () => {
+      await running();
+      for (const text of ["first long message", "second one"]) {
+        type(null, text);
+        key($("[data-agent-composer]")!, "Enter");
+        await flush(10);
+      }
+      const chip = $("[data-agent-queued]")!;
+      expect(chip.textContent).toContain("first long message");
+      expect(chip.textContent).toContain("second one");
+      expect(chip.querySelector(".truncate")).toBeNull();
+    });
+
     it("writes the line to the CLI and shows the Queued chip; the receipt turns it into a card with no Steer mark", async () => {
       await running();
       const queue = vi.spyOn(mock, "queue");
