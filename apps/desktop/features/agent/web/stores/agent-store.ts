@@ -23,6 +23,7 @@ import type {
   ContextRef,
   DiskSkill,
   PermissionPersist,
+  QuestionAnswer,
 } from "@features/agent/web/lib/events";
 import {
   appendSteer,
@@ -203,6 +204,8 @@ interface AgentState {
     persist?: PermissionPersist,
     message?: string,
   ) => Promise<void>;
+  /** Answers the open question card; `answers` null skips it. */
+  answerQuestion: (requestId: string, answers: QuestionAnswer[] | null) => Promise<void>;
   setPermissionMode: (mode: AgentPermissionMode) => Promise<void>;
   retry: () => Promise<void>;
   detectBinary: (override?: string | null) => Promise<void>;
@@ -678,6 +681,30 @@ export async function regenerateChatTitle(chatId: ChatId): Promise<RegenerateOut
 // Store
 
 export const useAgentStore = create<AgentState>((set, get) => {
+  /** Answers an open card (permission or question) of the active chat. A refusal means it was
+   *  already resolved elsewhere (cancelled by the CLI): the event clears the card, the error is
+   *  shown. */
+  async function answerOpenRequest(
+    call: (client: AgentClient, chatId: ChatId) => Promise<void>,
+  ): Promise<void> {
+    const chatId = get().activeChatId;
+    if (!chatId) return;
+    try {
+      const { client } = await ensureRuntime();
+      await call(client, chatId);
+    } catch (e) {
+      const { message: m } = classifyStartError(e);
+      set((s) =>
+        s.chats[chatId]
+          ? withChat(s, chatId, {
+              ...s.chats[chatId]!,
+              error: { kind: "unknown", message: m, retryable: true, at: Date.now() },
+            })
+          : s,
+      );
+    }
+  }
+
   /** Writes the user card and talks to the backend; the caller checked the chat is free.
    *  `replay`: start a fresh session seeded with the note's text (the CLI lost the old one).
    *  `steer`: the chat is mid-turn; the card joins that turn's timeline and the message goes into
@@ -1240,23 +1267,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
     },
     decidePermission: async (requestId, decision, persist, message) => {
-      const chatId = get().activeChatId;
-      if (!chatId) return;
-      try {
-        const { client } = await ensureRuntime();
-        await client.permission({ chatId, requestId, decision, persist, message });
-      } catch (e) {
-        // Already resolved elsewhere (cancelled by the CLI): the event will clear the card.
-        const { message: m } = classifyStartError(e);
-        set((s) =>
-          s.chats[chatId]
-            ? withChat(s, chatId, {
-                ...s.chats[chatId]!,
-                error: { kind: "unknown", message: m, retryable: true, at: Date.now() },
-              })
-            : s,
-        );
-      }
+      await answerOpenRequest((client, chatId) =>
+        client.permission({ chatId, requestId, decision, persist, message }),
+      );
+    },
+    answerQuestion: async (requestId, answers) => {
+      await answerOpenRequest((client, chatId) =>
+        client.answerQuestion({ chatId, requestId, answers }),
+      );
     },
     reloadSession: async () => {
       const chatId = get().activeChatId;

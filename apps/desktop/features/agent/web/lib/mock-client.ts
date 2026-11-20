@@ -216,6 +216,7 @@ export function createMockAgentClient(opts: MockOptions): AgentClient & {
       waiters.get(chatId)!.delete(requestId);
       w(decision === "allow" ? "allowed" : "denied");
     },
+    answerQuestion: async () => {},
     setPermissionMode: async () => {},
     setModel: async () => {},
     reload: async () => "started",

@@ -15,6 +15,7 @@ import type {
   ChatId,
   ContextRef,
   PermissionPersist,
+  QuestionAnswer,
 } from "@features/agent/web/lib/events";
 import { logger } from "@/lib/logger";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -69,6 +70,8 @@ export const decideAgentPermission = (
   persist?: PermissionPersist,
   message?: string,
 ) => useAgentStore.getState().decidePermission(requestId, decision, persist, message);
+export const answerAgentQuestion = (requestId: string, answers: QuestionAnswer[] | null) =>
+  useAgentStore.getState().answerQuestion(requestId, answers);
 export const setAgentPermissionMode = (m: AgentPermissionMode) =>
   useAgentStore.getState().setPermissionMode(m);
 export const setAgentChatModel = (model: string | null, effort?: ChatModelChoice["effort"]) =>

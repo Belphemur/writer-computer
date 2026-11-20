@@ -41,6 +41,49 @@ pub enum PermissionResolution {
     Cancelled,
 }
 
+/// How a question card ended: `Skipped` is the user's decline, `Cancelled` the chat's (stop,
+/// steer, process end, the CLI withdrawing the request).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum QuestionResolution {
+    Answered,
+    Skipped,
+    Cancelled,
+}
+
+/// One choice of a [`Question`]; `preview` is optional monospace content shown while the option
+/// is focused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionOption {
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+/// A question the agent asks the user (backend-neutral: the Claude `AskUserQuestion` tool is one
+/// source of it, see `claude_stream.rs`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Question {
+    pub question: String,
+    /// The short chip label.
+    pub header: String,
+    pub multi_select: bool,
+    pub options: Vec<QuestionOption>,
+}
+
+/// The user's answer to one question: the labels of the chosen options and, for "Other", the
+/// typed text, each as one entry (several in a multi-select).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionAnswer {
+    pub question: String,
+    pub answers: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum UsageScope {
@@ -213,6 +256,24 @@ pub enum AgentEvent {
     PermissionResolved {
         request_id: PermissionRequestId,
         resolution: PermissionResolution,
+    },
+    /// The agent asks the user a question and waits (never a permission card, whatever the
+    /// permission mode). Answered by `agent_answer_question`.
+    QuestionRequest {
+        request_id: PermissionRequestId,
+        tool_call_id: Option<ToolCallId>,
+        questions: Vec<Question>,
+        /// The sub-agent role asking; absent: the main agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
+    },
+    QuestionResolved {
+        request_id: PermissionRequestId,
+        tool_call_id: Option<ToolCallId>,
+        resolution: QuestionResolution,
+        /// What the user answered; empty unless `answered`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        answers: Vec<QuestionAnswer>,
     },
     Usage {
         scope: UsageScope,
@@ -654,6 +715,12 @@ pub enum AgentCommand {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
+    /// `answers: None` declines the questions.
+    AnswerQuestion {
+        request_id: PermissionRequestId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        answers: Option<Vec<QuestionAnswer>>,
+    },
     Resume {
         session_id: String,
     },
@@ -899,6 +966,30 @@ mod tests {
                 ],
                 by: None,
             },
+            AgentEvent::QuestionRequest {
+                request_id: "q".into(),
+                tool_call_id: Some("t".into()),
+                questions: vec![Question {
+                    question: "Which?".into(),
+                    header: "Pick".into(),
+                    multi_select: true,
+                    options: vec![QuestionOption {
+                        label: "A".into(),
+                        description: "first".into(),
+                        preview: Some("x".into()),
+                    }],
+                }],
+                by: None,
+            },
+            AgentEvent::QuestionResolved {
+                request_id: "q".into(),
+                tool_call_id: Some("t".into()),
+                resolution: QuestionResolution::Answered,
+                answers: vec![QuestionAnswer {
+                    question: "Which?".into(),
+                    answers: vec!["A".into(), "typed".into()],
+                }],
+            },
             AgentEvent::Usage {
                 scope: UsageScope::Turn,
                 input_tokens: 1,
@@ -1100,6 +1191,14 @@ mod tests {
                 persist: None,
                 message: None
             }
+        );
+        let skip = AgentCommand::AnswerQuestion {
+            request_id: "q".into(),
+            answers: None,
+        };
+        assert_eq!(
+            round_trip(&skip),
+            json!({"type":"answer-question","requestId":"q"})
         );
         let send = AgentCommand::SendMessage {
             message_id: "m".into(),

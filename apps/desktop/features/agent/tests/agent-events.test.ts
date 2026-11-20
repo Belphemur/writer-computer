@@ -52,6 +52,7 @@ describe("agent event contract", () => {
       "session-ended",
       "error",
       "permission-resolved",
+      "question-resolved", // the runner resolves a question the user answered (the CLI's withdrawal is the mapper's)
       "model-refused",
       "turn-changes",
       "session-changes", // the runner reads the files
@@ -87,6 +88,10 @@ describe("agent event contract", () => {
         case "permission-request":
           return e.requestId;
         case "permission-resolved":
+          return e.resolution;
+        case "question-request":
+          return e.requestId;
+        case "question-resolved":
           return e.resolution;
         case "usage":
           return e.scope;

@@ -23,6 +23,7 @@ import {
 import { Ico } from "./agent-icon";
 import { AssistantText } from "./assistant-text";
 import { roleIcon } from "./role-icons";
+import { QuestionCard } from "./question-card";
 import { TimelineGroup } from "./timeline-group";
 import { UserTurnCard } from "./user-turn-card";
 
@@ -47,6 +48,8 @@ export function SegmentList({
           />
         ) : seg.kind === "text" ? (
           <AssistantText key={seg.block.id} block={seg.block} />
+        ) : seg.kind === "question" ? (
+          <QuestionCard key={seg.block.id} block={seg.block} />
         ) : seg.kind === "subagent" ? (
           <SubagentRun key={seg.run.id} run={seg.run} />
         ) : (

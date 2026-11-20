@@ -12,6 +12,8 @@ import { embedLine } from "@/lib/attachments";
 import type {
   AgentEvent,
   ContextRef,
+  QuestionAnswer,
+  QuestionResolution,
   TitleSource,
   ToolOutcome,
   FileChangeSummary,
@@ -62,8 +64,16 @@ export type ChatNoteTool = {
   /** The launch call of the sub-agent run that made this call (absent: the main agent). A note
    *  without it still opens: the rows are then listed flat. */
   parent?: string;
+  /** A question to the user: how it ended and what was answered (the questions themselves are in
+   *  the answers, by text). Absent on other calls. */
+  ask?: ChatNoteAsk;
   /** On a launch call: who ran and its closing answer. Absent on notes written before cards. */
   sub?: ChatNoteSubagent;
+};
+
+export type ChatNoteAsk = {
+  status: QuestionResolution;
+  answers: QuestionAnswer[];
 };
 
 export type ChatNoteSubagent = {
@@ -600,6 +610,11 @@ export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFol
       case "subagent-status": {
         const t = tools.get(ev.toolCallId);
         if (t?.sub) applySubagentStatus(t.sub, ev);
+        break;
+      }
+      case "question-resolved": {
+        const t = ev.toolCallId ? tools.get(ev.toolCallId) : undefined;
+        if (t) t.ask = { status: ev.resolution, answers: ev.answers ?? [] };
         break;
       }
       case "usage":

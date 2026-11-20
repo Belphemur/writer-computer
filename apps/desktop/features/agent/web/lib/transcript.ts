@@ -12,6 +12,9 @@ import type {
   MessageId,
   PermissionRequestId,
   PermissionSuggestion,
+  Question,
+  QuestionAnswer,
+  QuestionResolution,
   SubagentRunStatus,
   ToolCallId,
   TurnChangesSummary,
@@ -53,6 +56,18 @@ export type ThinkingBlock = {
   parentToolCallId?: ToolCallId | null;
 };
 
+/** The question card of a tool call (`question-request`): pending until the user answers or skips,
+ *  then what happened. A restored chat keeps only the answers (`questions` empty). */
+export type QuestionState = {
+  /** The open request; null in a restored chat. */
+  requestId: string | null;
+  questions: Question[];
+  status: "pending" | QuestionResolution;
+  answers: QuestionAnswer[];
+  /** The sub-agent role asking; absent: the main agent. */
+  by?: string | null;
+};
+
 export type ToolBlock = {
   kind: "tool";
   /** The tool call id. */
@@ -69,6 +84,8 @@ export type ToolBlock = {
   output: string | null;
   truncated: boolean;
   permission: ToolPermission | null;
+  /** Set when the call is a question to the user: it renders as a question card, not a tool row. */
+  question?: QuestionState;
 };
 
 /** A message the user sent into the running turn, at the point of the timeline where it landed: a

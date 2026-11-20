@@ -24,6 +24,16 @@ function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
     output: null,
     truncated: false,
     permission: null,
+    ...(t.ask
+      ? {
+          question: {
+            requestId: null,
+            questions: [],
+            status: t.ask.status,
+            answers: t.ask.answers,
+          },
+        }
+      : {}),
   }));
 }
 

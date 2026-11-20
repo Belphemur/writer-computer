@@ -35,6 +35,7 @@ export interface AgentClient {
   unqueue(args: Args<"agent_unqueue">): Promise<boolean>;
   cancel(args: Args<"agent_cancel">): Promise<void>;
   permission(args: Args<"agent_permission">): Promise<void>;
+  answerQuestion(args: Args<"agent_answer_question">): Promise<void>;
   setPermissionMode(args: Args<"agent_set_permission_mode">): Promise<void>;
   setModel(args: Args<"agent_set_model">): Promise<void>;
   reload(args: Args<"agent_reload">): Promise<Result<"agent_reload">>;
@@ -61,6 +62,7 @@ export function createTauriAgentClient(): AgentClient {
     unqueue: (a) => call("agent_unqueue", a),
     cancel: (a) => done(call("agent_cancel", a)),
     permission: (a) => done(call("agent_permission", a)),
+    answerQuestion: (a) => done(call("agent_answer_question", a)),
     setPermissionMode: (a) => done(call("agent_set_permission_mode", a)),
     setModel: (a) => done(call("agent_set_model", a)),
     reload: (a) => call("agent_reload", a),

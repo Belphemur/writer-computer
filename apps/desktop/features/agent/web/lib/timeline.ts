@@ -8,6 +8,7 @@ export type Segment =
   | { kind: "text"; block: TextBlock }
   | { kind: "steer"; block: SteerBlock }
   | { kind: "subagent"; run: SubagentSegmentData }
+  | { kind: "question"; block: ToolBlock }
   | { kind: "group"; id: string; blocks: (ToolBlock | ThinkingBlock)[] };
 
 /** Render segments of a list of blocks; a launch call that has a run in `runs` becomes the
@@ -20,6 +21,11 @@ export function segmentBlocks(
   for (const block of blocks) {
     if (block.kind === "text" || block.kind === "steer") {
       out.push({ kind: block.kind, block } as Segment);
+      continue;
+    }
+    // a question to the user is its own card, always in view (never inside a collapsed group)
+    if (block.kind === "tool" && block.question) {
+      out.push({ kind: "question", block });
       continue;
     }
     const run = block.kind === "tool" ? runs?.get(block.id) : undefined;

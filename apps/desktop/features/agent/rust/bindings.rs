@@ -29,6 +29,7 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             session::agent_unqueue::<Wry>,
             session::agent_cancel::<Wry>,
             session::agent_permission::<Wry>,
+            session::agent_answer_question::<Wry>,
             session::agent_set_permission_mode::<Wry>,
             session::agent_set_model::<Wry>,
             session::agent_reload::<Wry>,

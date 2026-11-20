@@ -30,6 +30,7 @@
       "agent_memory_list",
       "agent_load_chat",
       "agent_make_project",
+      "agent_answer_question",
       "agent_permission",
       "agent_permission_rules",
       "agent_project_manifest",

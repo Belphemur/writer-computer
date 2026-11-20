@@ -23,6 +23,7 @@ import type {
   PermissionDecision,
   PermissionPersist,
   ProjectUpdate,
+  QuestionAnswer,
   commands,
 } from "./bindings";
 
@@ -83,6 +84,11 @@ export interface AgentCommands {
       /** Shown to the model on deny. */
       message?: Opt<string>;
     }
+  >;
+  /** Answers an open question card; `answers` null (or left out) declines it. */
+  agent_answer_question: Command<
+    "agent_answer_question",
+    { chatId: string; requestId: string; answers?: Opt<QuestionAnswer[]> }
   >;
   agent_set_permission_mode: Command<
     "agent_set_permission_mode",

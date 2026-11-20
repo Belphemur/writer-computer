@@ -725,6 +725,18 @@ impl AgentSessions {
             .map_err(Rejected)
     }
 
+    pub fn answer_question(
+        &self,
+        label: &str,
+        chat_id: &str,
+        request_id: &str,
+        answers: Option<Vec<QuestionAnswer>>,
+    ) -> Result<(), Rejected> {
+        self.get(label, chat_id)?
+            .answer_question(request_id, answers)
+            .map_err(Rejected)
+    }
+
     pub fn set_permission_mode(
         &self,
         label: &str,

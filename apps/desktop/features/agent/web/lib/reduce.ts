@@ -218,10 +218,20 @@ function removePending(chat: Chat, requestId: string): PermissionView[] {
   return chat.pendingPermissions.filter((p) => p.requestId !== requestId);
 }
 
+/** A question card is open in the running turn: the chat waits for the user like for a permission. */
+function hasOpenQuestion(chat: Chat): boolean {
+  const last = chat.turns[chat.turns.length - 1];
+  return (
+    isRunning(last) &&
+    last.blocks.some((b) => b.kind === "tool" && b.question?.status === "pending")
+  );
+}
+
 function afterPermissionChange(chat: Chat, pending: PermissionView[]): Chat {
   let state: AgentSessionState = chat.state;
-  if (state === "awaiting-permission" && pending.length === 0) state = "running";
-  if (pending.length > 0 && state === "running") state = "awaiting-permission";
+  const waiting = pending.length > 0 || hasOpenQuestion(chat);
+  if (state === "awaiting-permission" && !waiting) state = "running";
+  if (waiting && state === "running") state = "awaiting-permission";
   return { ...chat, pendingPermissions: pending, state };
 }
 
@@ -235,6 +245,9 @@ function closeBlocks(blocks: Block[], now: number, toolStatus: ToolBlock["status
           ...b,
           status: toolStatus,
           permission: b.permission === "pending" ? "cancelled" : b.permission,
+          ...(b.question?.status === "pending"
+            ? { question: { ...b.question, status: "cancelled" as const } }
+            : {}),
         }
       : b;
   });
@@ -417,6 +430,10 @@ export function reduceEvent(
       const pending = chat.pendingPermissions.find((p) => p.toolCallId === event.toolCallId);
       let next = patchTool(chat, event.toolCallId, (b) => ({
         ...b,
+        // a question the CLI settled itself (its result came first): nothing is left to answer
+        ...(b.question?.status === "pending"
+          ? { question: { ...b.question, status: "cancelled" as const } }
+          : {}),
         status:
           b.status === "interrupted" ||
           (event.outcome === "rejected" && b.permission === "cancelled")
@@ -432,6 +449,8 @@ export function reduceEvent(
             : b.permission,
       }));
       if (pending) next = afterPermissionChange(next, removePending(next, pending.requestId));
+      else if (next.state === "awaiting-permission")
+        next = afterPermissionChange(next, next.pendingPermissions);
       // a sub-agent's end is Rust's word (`subagent-status`), never this result
       return next;
     }
@@ -517,6 +536,45 @@ export function reduceEvent(
         }));
       }
       return afterPermissionChange(next, removePending(next, event.requestId));
+    }
+
+    case "question-request": {
+      let next = inTurn(active(chat), now, (t) => t);
+      if (!event.toolCallId) return next;
+      next = patchTool(next, event.toolCallId, (b) => ({
+        ...b,
+        status: "waiting",
+        question: {
+          requestId: event.requestId,
+          questions: event.questions,
+          status: "pending",
+          answers: [],
+          by: event.by,
+        },
+      }));
+      return {
+        ...next,
+        state: next.state === "cancelling" ? "cancelling" : "awaiting-permission",
+      };
+    }
+
+    case "question-resolved": {
+      if (!event.toolCallId) return chat;
+      const next = patchTool(chat, event.toolCallId, (b) =>
+        b.question
+          ? {
+              ...b,
+              question: { ...b.question, status: event.resolution, answers: event.answers ?? [] },
+              status:
+                b.status !== "waiting"
+                  ? b.status
+                  : event.resolution === "cancelled"
+                    ? "interrupted"
+                    : "running",
+            }
+          : b,
+      );
+      return afterPermissionChange(next, chat.pendingPermissions);
     }
 
     case "usage": {

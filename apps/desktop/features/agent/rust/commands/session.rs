@@ -246,6 +246,25 @@ pub async fn agent_permission<R: Runtime>(
     .await
 }
 
+/// Answers an open question card; `answers` `None` declines it.
+#[tauri::command]
+#[specta::specta]
+pub async fn agent_answer_question<R: Runtime>(
+    chat_id: ChatId,
+    request_id: PermissionRequestId,
+    answers: Option<Vec<QuestionAnswer>>,
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<(), AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        sessions(&app)
+            .answer_question(&label, &chat_id, &request_id, answers)
+            .map_err(rejected)
+    })
+    .await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_set_permission_mode<R: Runtime>(

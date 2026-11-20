@@ -1,0 +1,327 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q1",
+    "messageId": "msg_q2",
+    "tool": "AskUserQuestion",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "{\"questions\": [{\"question\": \"What"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " color do you prefer?\","
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " \"header\": \"Color"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\", \"multiSelect\":"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " false, \"options\": [{\""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "label\": \"Red\", \"description"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\": \"Cho"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "ose red"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\"}, {\"label\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Blue\", \"description\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Choose blue\"}]"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "}, {\"question\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Which fruits do"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " you like?\", \"header\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Fruit\", \"multi"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Select\": true, \"options"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\": [{\"label\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Apple\", \"description\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Choose apple\"}, {"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\"label\": \"Pear\","
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " \"description\": \"Choose p"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "ear\"}, {\"label\":"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " \"Fig\", \"description\":"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " \"Choose fig\"}"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "]}]"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q1",
+    "input": {
+      "questions": [
+        {
+          "question": "What color do you prefer?",
+          "header": "Color",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Red",
+              "description": "Choose red"
+            },
+            {
+              "label": "Blue",
+              "description": "Choose blue"
+            }
+          ]
+        },
+        {
+          "question": "Which fruits do you like?",
+          "header": "Fruit",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "Apple",
+              "description": "Choose apple"
+            },
+            {
+              "label": "Pear",
+              "description": "Choose pear"
+            },
+            {
+              "label": "Fig",
+              "description": "Choose fig"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 231,
+    "cacheReadTokens": 16603,
+    "cacheCreationTokens": 11239,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1796083200
+  },
+  {
+    "type": "question-request",
+    "requestId": "00000000-0000-4000-8000-000000000034",
+    "toolCallId": "toolu_q1",
+    "questions": [
+      {
+        "question": "What color do you prefer?",
+        "header": "Color",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Red",
+            "description": "Choose red"
+          },
+          {
+            "label": "Blue",
+            "description": "Choose blue"
+          }
+        ]
+      },
+      {
+        "question": "Which fruits do you like?",
+        "header": "Fruit",
+        "multiSelect": true,
+        "options": [
+          {
+            "label": "Apple",
+            "description": "Choose apple"
+          },
+          {
+            "label": "Pear",
+            "description": "Choose pear"
+          },
+          {
+            "label": "Fig",
+            "description": "Choose fig"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q1",
+    "output": "Your questions have been answered: \"What color do you prefer?\"=\"Red\", \"Which fruits do you like?\"=\"Apple, Pear\". You can now continue with these answers in mind.",
+    "isError": false,
+    "outcome": "ok",
+    "truncated": false
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "text": "Answers: Color"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "text": " = Red;"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "text": " Fruit ="
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "text": " Apple, Pear."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "text": "Answers: Color = Red; Fruit = Apple, Pear."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 25,
+    "cacheReadTokens": 27842,
+    "cacheCreationTokens": 20161,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 256,
+    "cacheReadTokens": 44445,
+    "cacheCreationTokens": 31400,
+    "costUsd": 0.00685285,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 3231,
+    "apiDurationMs": 2393,
+    "numTurns": 2,
+    "isError": false,
+    "result": "Answers: Color = Red; Fruit = Apple, Pear.",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

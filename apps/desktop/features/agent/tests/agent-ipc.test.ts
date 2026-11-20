@@ -17,7 +17,7 @@ const call = agentCommand as unknown as (c: string, a?: object) => Promise<unkno
 describe("the agent's commands", () => {
   it("are the same set in the manifest and in the generated bindings", () => {
     expect(Object.keys(commands).map(snake).sort()).toEqual([...manifest.rust.commands].sort());
-    expect(manifest.rust.commands).toHaveLength(41);
+    expect(manifest.rust.commands).toHaveLength(42);
   });
 
   it("are invoked by the generated bindings on the plugin route", () => {

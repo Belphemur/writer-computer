@@ -203,6 +203,13 @@ struct PendingPerm {
     /// A `Bash` call waiting for approval: it is not running yet, so its command window
     /// (`command_windows.rs`) is shut until the user allows it.
     command_call: Option<String>,
+    /// An open question card (`AskUserQuestion`): the call it belongs to. It is answered by
+    /// [`Session::answer_question`], never by a permission decision, and is as busy as a card.
+    question: Option<QuestionPending>,
+}
+
+struct QuestionPending {
+    tool_call_id: Option<String>,
 }
 
 struct Inner {
@@ -932,6 +939,12 @@ impl Session {
                 {
                     *by = g.subs.author_of(tool_call_id.as_deref()).map(|a| a.label);
                 }
+                if let AgentEvent::QuestionRequest {
+                    tool_call_id, by, ..
+                } = &mut ev
+                {
+                    *by = g.subs.author_of(tool_call_id.as_deref()).map(|a| a.label);
+                }
                 self.apply(&mut g, ev, &mut started);
                 for ev in extra {
                     self.apply(&mut g, ev, &mut started);
@@ -1047,13 +1060,36 @@ impl Session {
                         input: input.clone(),
                         suggestions: suggestions.clone(),
                         command_call: tool_call_id.clone().filter(|_| is_shell_tool(tool)),
+                        question: None,
                     },
                 );
                 if g.state != AgentSessionState::Cancelling {
                     g.state = AgentSessionState::AwaitingPermission;
                 }
             }
-            AgentEvent::PermissionResolved { request_id, .. } => {
+            AgentEvent::QuestionRequest {
+                request_id,
+                tool_call_id,
+                ..
+            } => {
+                g.pending.insert(
+                    request_id.clone(),
+                    PendingPerm {
+                        // the mapper keeps the CLI's own input, the answer is built from it
+                        input: Value::Null,
+                        suggestions: vec![],
+                        command_call: None,
+                        question: Some(QuestionPending {
+                            tool_call_id: tool_call_id.clone(),
+                        }),
+                    },
+                );
+                if g.state != AgentSessionState::Cancelling {
+                    g.state = AgentSessionState::AwaitingPermission;
+                }
+            }
+            AgentEvent::PermissionResolved { request_id, .. }
+            | AgentEvent::QuestionResolved { request_id, .. } => {
                 g.pending.remove(request_id);
                 if g.pending.is_empty() && g.state == AgentSessionState::AwaitingPermission {
                     g.state = AgentSessionState::Running;
@@ -1425,12 +1461,20 @@ impl Session {
     }
 
     fn drop_pending(&self, g: &mut Inner) {
-        let ids: Vec<String> = g.pending.drain().map(|(k, _)| k).collect();
-        for id in ids {
+        let all: Vec<(String, PendingPerm)> = g.pending.drain().collect();
+        for (id, p) in all {
             g.mapper.permission_answered(&id);
-            self.log.push(AgentEvent::PermissionResolved {
-                request_id: id,
-                resolution: PermissionResolution::Cancelled,
+            self.log.push(match p.question {
+                Some(q) => AgentEvent::QuestionResolved {
+                    request_id: id,
+                    tool_call_id: q.tool_call_id,
+                    resolution: QuestionResolution::Cancelled,
+                    answers: vec![],
+                },
+                None => AgentEvent::PermissionResolved {
+                    request_id: id,
+                    resolution: PermissionResolution::Cancelled,
+                },
             });
         }
     }
@@ -1957,6 +2001,12 @@ impl Session {
         if g.live_gen.is_none() {
             return Err("this chat has no running process".into());
         }
+        if g.pending
+            .get(request_id)
+            .is_some_and(|p| p.question.is_some())
+        {
+            return Err("this request is a question; answer it with the question command".into());
+        }
         let Some(p) = g.pending.remove(request_id) else {
             return Err("unknown or already resolved permission request".into());
         };
@@ -1993,6 +2043,51 @@ impl Session {
         self.log.push(AgentEvent::PermissionResolved {
             request_id: request_id.to_string(),
             resolution,
+        });
+        if g.pending.is_empty() && g.state == AgentSessionState::AwaitingPermission {
+            g.state = AgentSessionState::Running;
+        }
+        Ok(())
+    }
+
+    /// Answers an open question card: `answers` `None` declines it. The control response is the
+    /// mapper's (the CLI's shape), the card's end is the `question-resolved` event.
+    pub(crate) fn answer_question(
+        &self,
+        request_id: &str,
+        answers: Option<Vec<QuestionAnswer>>,
+    ) -> Result<(), String> {
+        let mut g = self.inner.lock();
+        if g.live_gen.is_none() {
+            return Err("this chat has no running process".into());
+        }
+        let Some(q) = g
+            .pending
+            .get(request_id)
+            .and_then(|p| p.question.as_ref())
+            .map(|q| q.tool_call_id.clone())
+        else {
+            return Err("unknown or already resolved question".into());
+        };
+        let Some(line) = g
+            .mapper
+            .encode_question_answer(request_id, answers.as_deref())
+        else {
+            return Err("unknown or already resolved question".into());
+        };
+        g.pending.remove(request_id);
+        g.last_activity = Instant::now();
+        self.write(line);
+        let skipped = answers.is_none();
+        self.log.push(AgentEvent::QuestionResolved {
+            request_id: request_id.to_string(),
+            tool_call_id: q,
+            resolution: if skipped {
+                QuestionResolution::Skipped
+            } else {
+                QuestionResolution::Answered
+            },
+            answers: answers.unwrap_or_default(),
         });
         if g.pending.is_empty() && g.state == AgentSessionState::AwaitingPermission {
             g.state = AgentSessionState::Running;

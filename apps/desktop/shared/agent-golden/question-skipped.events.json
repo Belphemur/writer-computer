@@ -1,0 +1,443 @@
+[
+  {
+    "type": "session-started",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "model": "claude-sonnet-5-5",
+    "cwd": "/vault/Projects/Demo",
+    "permissionMode": "default",
+    "tools": [
+      "Bash",
+      "Edit",
+      "Read",
+      "Write"
+    ],
+    "slashCommands": [
+      "compact",
+      "init"
+    ],
+    "skills": [],
+    "mcpServers": [],
+    "cliVersion": "2.1.325"
+  },
+  {
+    "type": "tool-call-started",
+    "toolCallId": "toolu_q1",
+    "messageId": "msg_q2",
+    "tool": "AskUserQuestion",
+    "parentToolCallId": null
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "{\"questions\": [{\"question\": \"What"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " color do"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": " you prefer?\", \"header"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\": \"Color\", \"multi"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Select\": false, \"options"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\": [{\"label\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Red\", \"description\": \"Cho"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "ose red"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\"}, {\"label\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Blue\", \"description\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Choose blue\"}]"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "}, {\"question\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Which fruits do you like?"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\", \"header\": \"F"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "ruit\", \"multiSel"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "ect\": true, \"options\": ["
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "{\"label\": \"Apple"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\", \"description\": \"Cho"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "ose apple\"}, {\""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "label\": \"Pear\", \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "description\": \"Choose pear"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "\"}, {\"label\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Fig\", \"description\": \""
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "Choose fig\"}]"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "}]"
+  },
+  {
+    "type": "tool-call-input-delta",
+    "toolCallId": "toolu_q1",
+    "partialJson": "}"
+  },
+  {
+    "type": "tool-call-input",
+    "toolCallId": "toolu_q1",
+    "input": {
+      "questions": [
+        {
+          "question": "What color do you prefer?",
+          "header": "Color",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Red",
+              "description": "Choose red"
+            },
+            {
+              "label": "Blue",
+              "description": "Choose blue"
+            }
+          ]
+        },
+        {
+          "question": "Which fruits do you like?",
+          "header": "Fruit",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "Apple",
+              "description": "Choose apple"
+            },
+            {
+              "label": "Pear",
+              "description": "Choose pear"
+            },
+            {
+              "label": "Fig",
+              "description": "Choose fig"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "question-request",
+    "requestId": "00000000-0000-4000-8000-000000000022",
+    "toolCallId": "toolu_q1",
+    "questions": [
+      {
+        "question": "What color do you prefer?",
+        "header": "Color",
+        "multiSelect": false,
+        "options": [
+          {
+            "label": "Red",
+            "description": "Choose red"
+          },
+          {
+            "label": "Blue",
+            "description": "Choose blue"
+          }
+        ]
+      },
+      {
+        "question": "Which fruits do you like?",
+        "header": "Fruit",
+        "multiSelect": true,
+        "options": [
+          {
+            "label": "Apple",
+            "description": "Choose apple"
+          },
+          {
+            "label": "Pear",
+            "description": "Choose pear"
+          },
+          {
+            "label": "Fig",
+            "description": "Choose fig"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 231,
+    "cacheReadTokens": 27842,
+    "cacheCreationTokens": 0,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "rate-limit",
+    "status": "allowed",
+    "resetsAt": 1796083200
+  },
+  {
+    "type": "tool-call-finished",
+    "toolCallId": "toolu_q1",
+    "output": "The user skipped the questions.",
+    "isError": true,
+    "outcome": "rejected",
+    "truncated": false
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "phase": "start",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 50
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "phase": "delta",
+    "text": "",
+    "estimatedTokens": 251
+  },
+  {
+    "type": "thinking",
+    "messageId": "msg_q3",
+    "blockIndex": 0,
+    "phase": "end",
+    "text": "",
+    "estimatedTokens": null
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "The quest"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "ions were skipped, so I"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " have no answers to"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " report."
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " The color question"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " ("
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "Red/Blue) and the"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " fruit question (Apple"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "/Pear/Fig"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": ") both"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " went"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " unanswered."
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " Tell me your"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " pic"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "ks and"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " I'll re"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "ply with"
+  },
+  {
+    "type": "text-delta",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": " them."
+  },
+  {
+    "type": "text",
+    "messageId": "msg_q3",
+    "blockIndex": 1,
+    "text": "The questions were skipped, so I have no answers to report. The color question (Red/Blue) and the fruit question (Apple/Pear/Fig) both went unanswered. Tell me your picks and I'll reply with them."
+  },
+  {
+    "type": "usage",
+    "scope": "message",
+    "inputTokens": 2,
+    "outputTokens": 190,
+    "cacheReadTokens": 27842,
+    "cacheCreationTokens": 20120,
+    "costUsd": null,
+    "contextWindow": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 4,
+    "outputTokens": 421,
+    "cacheReadTokens": 55684,
+    "cacheCreationTokens": 20120,
+    "costUsd": 0.004791739999999999,
+    "contextWindow": 1000000,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 4142,
+    "apiDurationMs": 2681,
+    "numTurns": 2,
+    "isError": false,
+    "result": "The questions were skipped, so I have no answers to report. The color question (Red/Blue) and the fruit question (Apple/Pear/Fig) both went unanswered. Tell me your picks and I'll reply with them.",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
+  }
+]

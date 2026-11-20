@@ -107,6 +107,9 @@ pub struct ClaudeStreamMapper {
     started_tools: HashSet<String>,
     finished_tools: HashSet<String>,
     pending_permissions: HashSet<String>,
+    /// Open question cards by request id (their tool call id): a withdrawal resolves them as
+    /// `cancelled` question events, not permission ones.
+    pending_questions: HashMap<String, (Option<String>, Value)>,
     /// The launch call (`tool_use_id`) of each sub-agent task id: `task_updated` carries only
     /// the task id.
     task_calls: HashMap<String, String>,
@@ -232,7 +235,14 @@ impl ClaudeStreamMapper {
             Some("control_request") => self.control_request(v, &mut out),
             Some("control_cancel_request") => {
                 if let Some(id) = str_of(v, "request_id") {
-                    if self.pending_permissions.remove(id) {
+                    if let Some((tool_call_id, _)) = self.pending_questions.remove(id) {
+                        out.events.push(AgentEvent::QuestionResolved {
+                            request_id: id.to_string(),
+                            tool_call_id,
+                            resolution: QuestionResolution::Cancelled,
+                            answers: vec![],
+                        });
+                    } else if self.pending_permissions.remove(id) {
                         out.events.push(AgentEvent::PermissionResolved {
                             request_id: id.to_string(),
                             resolution: PermissionResolution::Cancelled,
@@ -643,6 +653,32 @@ impl ClaudeStreamMapper {
             out.unsupported_control_request = Some(request_id.to_string());
             return;
         }
+        // The CLI asks the user through this tool whatever the permission mode (verified, appendix
+        // A.9): it is a question card, never a permission card. A shape that does not parse
+        // falls through to the generic card, so nothing hangs.
+        // The card hangs on its tool call, so a request without `tool_use_id` is generic too.
+        if str_of(req, "tool_name") == Some(ASK_USER_QUESTION_TOOL) {
+            if let (Some(questions), Some(call)) = (
+                req.get("input").and_then(parse_questions),
+                str_of(req, "tool_use_id"),
+            ) {
+                let tool_call_id = Some(call.to_string());
+                self.pending_questions.insert(
+                    request_id.to_string(),
+                    (
+                        tool_call_id.clone(),
+                        req.get("input").cloned().unwrap_or_default(),
+                    ),
+                );
+                out.events.push(AgentEvent::QuestionRequest {
+                    request_id: request_id.to_string(),
+                    tool_call_id,
+                    questions,
+                    by: None,
+                });
+                return;
+            }
+        }
         self.pending_permissions.insert(request_id.to_string());
         out.events.push(AgentEvent::PermissionRequest {
             request_id: request_id.to_string(),
@@ -661,10 +697,22 @@ impl ClaudeStreamMapper {
         });
     }
 
+    /// The control response for an open question (`answers` `None` declines), built from the
+    /// CLI's own input; `None` when no such question is open. Forgets the question.
+    pub fn encode_question_answer(
+        &mut self,
+        request_id: &str,
+        answers: Option<&[QuestionAnswer]>,
+    ) -> Option<String> {
+        let (_, input) = self.pending_questions.remove(request_id)?;
+        Some(encode_question_answer(request_id, &input, answers))
+    }
+
     /// The runner calls this when it writes the user's answer, so a late
     /// `control_cancel_request` for the same id is not reported twice.
     pub fn permission_answered(&mut self, request_id: &str) -> bool {
-        self.pending_permissions.remove(request_id)
+        self.pending_questions.remove(request_id).is_some()
+            | self.pending_permissions.remove(request_id)
     }
 
     fn result(&mut self, v: &Value, out: &mut MapOutput) {
@@ -881,6 +929,67 @@ pub fn encode_permission_allow(
     json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,
            "response":Value::Object(resp)}})
     .to_string()
+}
+
+/// The Claude tool that asks the user questions (`can_use_tool` with `requires_user_interaction`).
+pub const ASK_USER_QUESTION_TOOL: &str = "AskUserQuestion";
+
+/// The questions of an `AskUserQuestion` input, or `None` when it is not the verified shape (a
+/// non-empty `questions` array, each with a `question` and at least one option with a `label`).
+fn parse_questions(input: &Value) -> Option<Vec<Question>> {
+    let list = input.get("questions")?.as_array()?;
+    let questions: Vec<Question> = list
+        .iter()
+        .map(|q| {
+            let options: Vec<QuestionOption> = q
+                .get("options")?
+                .as_array()?
+                .iter()
+                .map(|o| {
+                    Some(QuestionOption {
+                        label: str_of(o, "label")?.to_string(),
+                        description: str_of(o, "description").unwrap_or_default().to_string(),
+                        preview: str_of(o, "preview").map(String::from),
+                    })
+                })
+                .collect::<Option<_>>()?;
+            if options.is_empty() {
+                return None;
+            }
+            let question = str_of(q, "question")?.to_string();
+            Some(Question {
+                header: str_of(q, "header").unwrap_or_default().to_string(),
+                question,
+                multi_select: q
+                    .get("multiSelect")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                options,
+            })
+        })
+        .collect::<Option<_>>()?;
+    (!questions.is_empty()).then_some(questions)
+}
+
+/// The control response that answers an `AskUserQuestion`: allow with the original input plus
+/// `answers`, an object from each question's text to the answer (verified, appendix A.9: one
+/// label, several labels joined with ", ", or the typed text). A decline is a deny the model
+/// reads as "The user skipped the questions." (the CLI marks that tool result an error).
+pub fn encode_question_answer(
+    request_id: &str,
+    input: &Value,
+    answers: Option<&[QuestionAnswer]>,
+) -> String {
+    let Some(answers) = answers else {
+        return encode_permission_deny(request_id, "The user skipped the questions.");
+    };
+    let mut updated = input.clone();
+    let map: Map<String, Value> = answers
+        .iter()
+        .map(|a| (a.question.clone(), json!(a.answers.join(", "))))
+        .collect();
+    updated["answers"] = Value::Object(map);
+    encode_permission_allow(request_id, &updated, &[])
 }
 
 pub fn encode_permission_deny(request_id: &str, message: &str) -> String {
@@ -1246,6 +1355,8 @@ mod tests {
             "subagent-auto-background" => {
                 include_str!("fixtures/subagent-auto-background.jsonl")
             }
+            "question-answered" => include_str!("fixtures/question-answered.jsonl"),
+            "question-skipped" => include_str!("fixtures/question-skipped.jsonl"),
             other => panic!("unknown fixture {other}"),
         }
     }
@@ -1320,6 +1431,8 @@ mod tests {
             "subagent-parallel",
             "subagent-background",
             "subagent-auto-background",
+            "question-answered",
+            "question-skipped",
         ] {
             let (events, _) = run(name);
             let actual = serde_json::to_string_pretty(&events).unwrap() + "\n";
@@ -2010,6 +2123,126 @@ mod tests {
         assert!(m.permission_answered("r1"));
         let out = m.map_line(r#"{"type":"control_cancel_request","request_id":"r1"}"#);
         assert!(out.events.is_empty());
+    }
+
+    fn ask_request(id: &str, input: &str) -> String {
+        format!(
+            r#"{{"type":"control_request","request_id":"{id}","request":{{"subtype":"can_use_tool","tool_name":"AskUserQuestion","display_name":"AskUserQuestion","input":{input},"tool_use_id":"t1","requires_user_interaction":true}}}}"#
+        )
+    }
+
+    const TWO_QUESTIONS: &str = r##"{"questions":[{"question":"Color?","header":"Color","options":[{"label":"Red","description":"warm"},{"label":"Blue","description":"cool","preview":"#00f"}],"multiSelect":false},{"question":"Fruit?","header":"Fruit","options":[{"label":"Apple","description":"crisp"},{"label":"Fig","description":"soft"}],"multiSelect":true}]}"##;
+
+    #[test]
+    fn ask_user_question_is_a_question_request_never_a_permission_card() {
+        let mut m = ClaudeStreamMapper::new();
+        let out = m.map_line(&ask_request("r1", TWO_QUESTIONS));
+        assert_eq!(out.events.len(), 1);
+        let AgentEvent::QuestionRequest {
+            request_id,
+            tool_call_id,
+            questions,
+            ..
+        } = &out.events[0]
+        else {
+            panic!("{:?}", out.events)
+        };
+        assert_eq!(
+            (request_id.as_str(), tool_call_id.as_deref()),
+            ("r1", Some("t1"))
+        );
+        assert_eq!(questions.len(), 2);
+        assert!(!questions[0].multi_select && questions[1].multi_select);
+        assert_eq!(questions[0].header, "Color");
+        assert_eq!(questions[0].options[1].preview.as_deref(), Some("#00f"));
+        assert_eq!(questions[0].options[0].preview, None);
+    }
+
+    #[test]
+    fn a_question_answer_is_allow_with_the_input_and_answers_by_question_text() {
+        let mut m = ClaudeStreamMapper::new();
+        m.map_line(&ask_request("r1", TWO_QUESTIONS));
+        let answers = [
+            QuestionAnswer {
+                question: "Color?".into(),
+                answers: vec!["Blue".into()],
+            },
+            QuestionAnswer {
+                question: "Fruit?".into(),
+                answers: vec!["Apple".into(), "my own".into()],
+            },
+        ];
+        let line = m.encode_question_answer("r1", Some(&answers)).unwrap();
+        let v: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["response"]["request_id"], "r1");
+        let r = &v["response"]["response"];
+        assert_eq!(r["behavior"], "allow");
+        assert_eq!(r["updatedInput"]["answers"]["Color?"], "Blue");
+        assert_eq!(r["updatedInput"]["answers"]["Fruit?"], "Apple, my own");
+        assert_eq!(r["updatedInput"]["questions"].as_array().unwrap().len(), 2);
+        // answered once
+        assert!(m.encode_question_answer("r1", None).is_none());
+    }
+
+    #[test]
+    fn declining_a_question_is_a_deny_the_model_reads_as_skipped() {
+        let mut m = ClaudeStreamMapper::new();
+        m.map_line(&ask_request("r1", TWO_QUESTIONS));
+        let v: Value =
+            serde_json::from_str(&m.encode_question_answer("r1", None).unwrap()).unwrap();
+        assert_eq!(v["response"]["response"]["behavior"], "deny");
+        assert_eq!(
+            v["response"]["response"]["message"],
+            "The user skipped the questions."
+        );
+    }
+
+    #[test]
+    fn a_withdrawn_question_resolves_as_a_cancelled_question() {
+        let mut m = ClaudeStreamMapper::new();
+        m.map_line(&ask_request("r1", TWO_QUESTIONS));
+        let out = m.map_line(r#"{"type":"control_cancel_request","request_id":"r1"}"#);
+        assert_eq!(
+            out.events,
+            vec![AgentEvent::QuestionResolved {
+                request_id: "r1".into(),
+                tool_call_id: Some("t1".into()),
+                resolution: QuestionResolution::Cancelled,
+                answers: vec![],
+            }]
+        );
+        assert!(m
+            .map_line(r#"{"type":"control_cancel_request","request_id":"r1"}"#)
+            .events
+            .is_empty());
+    }
+
+    #[test]
+    fn a_question_without_a_tool_call_id_is_the_generic_card_too() {
+        let mut m = ClaudeStreamMapper::new();
+        let line = ask_request("r1", TWO_QUESTIONS).replace(r#","tool_use_id":"t1""#, "");
+        assert!(matches!(
+            m.map_line(&line).events[0],
+            AgentEvent::PermissionRequest { .. }
+        ));
+    }
+
+    #[test]
+    fn an_unparsable_question_falls_back_to_the_generic_permission_card() {
+        for input in [
+            r#"{}"#,
+            r#"{"questions":[]}"#,
+            r#"{"questions":[{"question":"Q?","options":[]}]}"#,
+            r#"{"questions":[{"header":"h","options":[{"label":"a"}]}]}"#,
+            r#"{"questions":"nope"}"#,
+        ] {
+            let mut m = ClaudeStreamMapper::new();
+            let out = m.map_line(&ask_request("r1", input));
+            assert!(
+                matches!(out.events[0], AgentEvent::PermissionRequest { .. }),
+                "{input}"
+            );
+        }
     }
 
     #[test]

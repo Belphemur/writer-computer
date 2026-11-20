@@ -1024,6 +1024,141 @@ fn permission_round_trip_allow_with_persist_choices() {
     );
 }
 
+fn question_request(h: &mut Harness) -> (String, Vec<Question>) {
+    match h.next(CHAT, "question", |e| {
+        matches!(e, AgentEvent::QuestionRequest { .. })
+    }) {
+        AgentEvent::QuestionRequest {
+            request_id,
+            questions,
+            ..
+        } => (request_id, questions),
+        _ => unreachable!(),
+    }
+}
+
+/// A question is as busy as a permission card, never a permission card, and its answer reaches the
+/// CLI as an allow with the original input plus `answers` (verified shape, appendix A.9).
+#[test]
+fn an_open_question_is_busy_and_its_answer_reaches_the_cli() {
+    let mut h = Harness::new(&["question-answered"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "ask me");
+    let (id, questions) = question_request(&mut h);
+    assert_eq!(questions.len(), 2);
+    assert_eq!(
+        h.sessions.get("w", CHAT).unwrap().state(),
+        AgentSessionState::AwaitingPermission
+    );
+    assert_eq!(h.sessions.reload("w", CHAT).unwrap(), ReloadOutcome::Busy);
+    // a question is not answered as a permission
+    assert!(h
+        .sessions
+        .permission("w", CHAT, &id, PermissionDecision::Allow, None, None)
+        .is_err());
+    let answers = vec![
+        QuestionAnswer {
+            question: questions[0].question.clone(),
+            answers: vec![questions[0].options[1].label.clone()],
+        },
+        QuestionAnswer {
+            question: questions[1].question.clone(),
+            answers: vec!["Apple".into(), "Fig".into()],
+        },
+    ];
+    h.sessions
+        .answer_question("w", CHAT, &id, Some(answers.clone()))
+        .unwrap();
+    match h.next(CHAT, "resolved", |e| {
+        matches!(e, AgentEvent::QuestionResolved { .. })
+    }) {
+        AgentEvent::QuestionResolved {
+            resolution,
+            answers: got,
+            tool_call_id,
+            ..
+        } => {
+            assert_eq!(resolution, QuestionResolution::Answered);
+            assert_eq!(got, answers);
+            assert!(tool_call_id.is_some());
+        }
+        _ => unreachable!(),
+    }
+    assert!(
+        h.sessions.answer_question("w", CHAT, &id, None).is_err(),
+        "answering twice is an error"
+    );
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("the answer reached the CLI", || {
+        h.log("stdin.log").contains("\"updatedInput\"")
+    });
+    let stdin = h.log("stdin.log");
+    let line = stdin
+        .lines()
+        .find(|l| l.contains("control_response"))
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(line).unwrap();
+    let r = &v["response"]["response"];
+    assert_eq!(r["behavior"], "allow");
+    assert_eq!(
+        r["updatedInput"]["answers"][&questions[1].question],
+        "Apple, Fig"
+    );
+    assert_eq!(r["updatedInput"]["answers"][&questions[0].question], "Blue");
+}
+
+#[test]
+fn a_declined_question_is_a_deny_and_resolves_as_skipped() {
+    let mut h = Harness::new(&["question-skipped"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "ask me");
+    let (id, _) = question_request(&mut h);
+    h.sessions.answer_question("w", CHAT, &id, None).unwrap();
+    match h.next(CHAT, "resolved", |e| {
+        matches!(e, AgentEvent::QuestionResolved { .. })
+    }) {
+        AgentEvent::QuestionResolved {
+            resolution,
+            answers,
+            ..
+        } => {
+            assert_eq!(resolution, QuestionResolution::Skipped);
+            assert!(answers.is_empty());
+        }
+        _ => unreachable!(),
+    }
+    h.turn_finished(CHAT);
+    h.wait_until("the deny reached the CLI", || {
+        h.log("stdin.log")
+            .contains("The user skipped the questions.")
+    });
+    assert!(h.log("stdin.log").contains("\"behavior\":\"deny\""));
+}
+
+#[test]
+fn stop_clears_an_open_question_as_cancelled() {
+    let mut h = Harness::new(&["question-interrupt"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "ask me");
+    let (id, _) = question_request(&mut h);
+    h.sessions.cancel("w", CHAT).unwrap();
+    match h.next(CHAT, "cancelled card", |e| {
+        matches!(e, AgentEvent::QuestionResolved { .. })
+    }) {
+        AgentEvent::QuestionResolved {
+            request_id,
+            resolution,
+            ..
+        } => {
+            assert_eq!(request_id, id);
+            assert_eq!(resolution, QuestionResolution::Cancelled);
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Interrupted);
+    assert!(h.sessions.answer_question("w", CHAT, &id, None).is_err());
+}
+
 #[test]
 fn deny_without_reason_tells_the_model_why() {
     let mut h = Harness::new(&["permission-deny"], "normal");
