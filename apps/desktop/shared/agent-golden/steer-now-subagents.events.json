@@ -393,10 +393,10 @@
   {
     "type": "usage",
     "scope": "message",
-    "inputTokens": 2,
+    "inputTokens": 0,
     "outputTokens": 16,
-    "cacheReadTokens": 8925,
-    "cacheCreationTokens": 26351,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
     "costUsd": null,
     "contextWindow": null
   },
@@ -423,10 +423,10 @@
   {
     "type": "usage",
     "scope": "message",
-    "inputTokens": 2,
+    "inputTokens": 0,
     "outputTokens": 16,
-    "cacheReadTokens": 8925,
-    "cacheCreationTokens": 26351,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
     "costUsd": null,
     "contextWindow": null
   },
@@ -453,9 +453,9 @@
   {
     "type": "usage",
     "scope": "message",
-    "inputTokens": 2,
+    "inputTokens": 0,
     "outputTokens": 16,
-    "cacheReadTokens": 35276,
+    "cacheReadTokens": 0,
     "cacheCreationTokens": 0,
     "costUsd": null,
     "contextWindow": null

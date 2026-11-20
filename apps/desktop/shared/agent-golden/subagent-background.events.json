@@ -103,7 +103,7 @@
   {
     "type": "usage",
     "scope": "message",
-    "inputTokens": 2,
+    "inputTokens": 0,
     "outputTokens": 5,
     "cacheReadTokens": 0,
     "cacheCreationTokens": 0,

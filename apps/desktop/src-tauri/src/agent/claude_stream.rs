@@ -407,6 +407,32 @@ impl ClaudeStreamMapper {
         str_of(v, "parent_tool_use_id").map(String::from)
     }
 
+    /// The per-request usage of a message. A sub-agent's request is not the main conversation's
+    /// context, so its input and cache counts are dropped (the output still counts for the live
+    /// total): the reducer never lets a zero-input usage move the context ring.
+    fn message_usage(v: &Value, usage: &Value) -> AgentEvent {
+        match usage_event(UsageScope::Message, usage, None, None, None) {
+            AgentEvent::Usage {
+                scope,
+                output_tokens,
+                cost_usd,
+                context_window,
+                model,
+                ..
+            } if Self::parent_tool(v).is_some() => AgentEvent::Usage {
+                scope,
+                input_tokens: 0,
+                output_tokens,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                cost_usd,
+                context_window,
+                model,
+            },
+            event => event,
+        }
+    }
+
     /// A message made by a sub-agent says whose it is, once, before its first block.
     fn note_message_parent(v: &Value, message_id: &str, out: &mut MapOutput) {
         if let Some(parent) = Self::parent_tool(v) {
@@ -511,8 +537,7 @@ impl ClaudeStreamMapper {
             }
             Some("message_delta") => {
                 if let Some(usage) = ev.get("usage") {
-                    out.events
-                        .push(usage_event(UsageScope::Message, usage, None, None, None));
+                    out.events.push(Self::message_usage(v, usage));
                 }
             }
             _ => {}
@@ -529,8 +554,7 @@ impl ClaudeStreamMapper {
             self.start_message(&id, false);
             Self::note_message_parent(v, &id, out);
             if let Some(usage) = msg.get("usage") {
-                out.events
-                    .push(usage_event(UsageScope::Message, usage, None, None, None));
+                out.events.push(Self::message_usage(v, usage));
             }
         }
         let Some(blocks) = msg.get("content").and_then(Value::as_array) else {
@@ -1324,6 +1348,42 @@ mod tests {
         assert_eq!(
             model_of(&mut m, result(530, 90)).as_deref(),
             Some("claude-sonnet-5-5")
+        );
+    }
+
+    /// A sub-agent's request is not the main conversation's context: its message usage keeps the
+    /// output but carries no input or cache tokens, so it cannot move the context ring.
+    #[test]
+    fn a_sub_agents_message_usage_carries_no_context_tokens() {
+        let mut m = ClaudeStreamMapper::default();
+        let usage = |parent: Value| {
+            json!({"type":"assistant","message":{"id":"m","model":"claude-opus-5-5",
+                "usage":{"input_tokens":5,"output_tokens":7,"cache_read_input_tokens":900,"cache_creation_input_tokens":3},
+                "content":[]},"parent_tool_use_id":parent})
+            .to_string()
+        };
+        let take = |out: MapOutput| {
+            out.events.into_iter().find_map(|e| match e {
+                AgentEvent::Usage {
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
+                    ..
+                } => Some((
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
+                )),
+                _ => None,
+            })
+        };
+        assert_eq!(take(m.map_line(&usage(Value::Null))), Some((5, 7, 900, 3)));
+        let mut m = ClaudeStreamMapper::default();
+        assert_eq!(
+            take(m.map_line(&usage(json!("toolu_a")))),
+            Some((0, 7, 0, 0))
         );
     }
 

@@ -25,6 +25,8 @@ export interface TooltipContent {
   detail?: string;
   /** Extra line in the warning colour (a save error). */
   alert?: string;
+  /** Structured body under the title (a breakdown table). */
+  body?: ReactNode;
 }
 
 // One tooltip is open at a time, so the "warm" state is shared by every user of the hook.
@@ -167,6 +169,7 @@ function TooltipLines({ content }: { content: TooltipContent }): ReactNode {
       {content.detail ? (
         <div className="whitespace-pre-line text-[var(--text-muted)]">{content.detail}</div>
       ) : null}
+      {content.body}
       {content.alert ? <div className="text-[var(--text-error)]">{content.alert}</div> : null}
     </>
   );

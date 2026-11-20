@@ -5,6 +5,7 @@ import { useChatContext } from "@features/agent/web/hooks/use-agent";
 import type { ChatId } from "@features/agent/web/lib/events";
 import type { ContextLevel, ContextStatus } from "@features/agent/web/lib/context-usage";
 import { formatTokens } from "@features/agent/web/lib/timeline";
+import { TokenBreakdown } from "./token-breakdown";
 
 const SIZE = 16;
 const STROKE = 2;
@@ -109,18 +110,7 @@ export function ContextRing({ chatId }: { chatId: ChatId }) {
           className="absolute bottom-full left-0 z-30 mb-1 rounded-lg border border-[var(--line-subtle)] bg-[var(--surface-primary)] p-3 text-[12px] shadow-lg"
         >
           <p className="font-medium text-text-primary">{summary}</p>
-          {b && (
-            <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-text-secondary">
-              <dt>Input</dt>
-              <dd className="text-right tabular-nums">{formatTokens(b.inputTokens)}</dd>
-              <dt>Cache read</dt>
-              <dd className="text-right tabular-nums">{formatTokens(b.cacheReadTokens)}</dd>
-              <dt>Cache creation</dt>
-              <dd className="text-right tabular-nums">{formatTokens(b.cacheCreationTokens)}</dd>
-              <dt>Output</dt>
-              <dd className="text-right tabular-nums">{formatTokens(b.outputTokens)}</dd>
-            </dl>
-          )}
+          {b && <TokenBreakdown usage={b} className="mt-2" />}
           <p className="mt-2 text-[10.5px] text-text-muted">
             {b ? "Last request to the model. " : ""}
             {status.window === null && b

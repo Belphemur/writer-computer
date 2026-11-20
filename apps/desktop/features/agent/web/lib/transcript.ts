@@ -155,6 +155,8 @@ export type Turn = {
   usage: TurnUsage | null;
   /** Output tokens summed from `usage{scope:"message"}` while the turn runs. */
   liveOutputTokens: number;
+  /** API requests of the turn (`turn-finished.numTurns`); absent while running or unknown. */
+  numTurns?: number | null;
   errors: string[];
   /** What the agent changed in the vault this turn (`turn-changes`, or the chat note). */
   changes?: TurnChangesSummary;

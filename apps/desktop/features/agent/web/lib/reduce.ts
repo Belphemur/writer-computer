@@ -620,6 +620,7 @@ export function reduceEvent(
     case "turn-finished": {
       const finished = finishTurns(chat, now, event.reason, {
         durationMs: event.durationMs,
+        numTurns: event.numTurns,
         errors: event.errors,
       });
       // a normal end can leave a background run going; a stopped or failed turn ends its runs
