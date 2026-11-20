@@ -712,6 +712,9 @@ pub enum AgentCommand {
         decision: PermissionDecision,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         persist: Option<PermissionPersist>,
+        /// The `ruleContent`s of the offered rules the user kept ticked; absent keeps them all.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rules: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
@@ -1173,6 +1176,7 @@ mod tests {
             request_id: "r".into(),
             decision: PermissionDecision::Allow,
             persist: Some(PermissionPersist::AcceptEdits),
+            rules: None,
             message: None,
         };
         assert_eq!(
@@ -1189,6 +1193,7 @@ mod tests {
                 request_id: "r".into(),
                 decision: PermissionDecision::Deny,
                 persist: None,
+                rules: None,
                 message: None
             }
         );

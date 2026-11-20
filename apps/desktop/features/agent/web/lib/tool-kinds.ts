@@ -250,6 +250,8 @@ export type PermissionChoice = {
   label: string;
   /** The rule text, when the choice adds one ("Bash(python3 -c 'print(1)')"). */
   rule: string | null;
+  /** The `ruleContent`s the answer keeps; absent keeps every rule offered. */
+  rules?: string[];
 };
 
 function ruleText(s: PermissionSuggestion): string[] {
@@ -258,23 +260,71 @@ function ruleText(s: PermissionSuggestion): string[] {
   );
 }
 
+const ruleContents = (s: PermissionSuggestion | undefined): string[] =>
+  (s?.rules ?? []).flatMap((r) => (r.ruleContent ? [r.ruleContent] : []));
+
+const isAllowRules = (s: PermissionSuggestion) => s.type === "addRules" && s.behavior !== "deny";
+
+/** The rules "Always allow" saves: the CLI's suggestion or Writer's prefix proposal. */
+const primaryRules = (suggestions: readonly PermissionSuggestion[]) =>
+  suggestions.find((s) => isAllowRules(s) && s.proposal !== "exact");
+
+/** Writer's "This exact command" proposal (Bash with no CLI rule). */
+const exactRule = (suggestions: readonly PermissionSuggestion[]) =>
+  suggestions.find((s) => isAllowRules(s) && s.proposal === "exact");
+
 /**
- * "Always allow" choices, a pure function of the suggestions the CLI sent (spec 6.2): none is
- * invented. `addRules` offers project and chat scope; `setMode acceptEdits` offers auto-edit.
+ * The rules the user can untick before saving (spec 6.2): Writer's prefix proposal, or a CLI
+ * suggestion carrying several rules. Empty when there is nothing to choose.
+ */
+export function ruleChips(suggestions: readonly PermissionSuggestion[]): string[] {
+  const primary = primaryRules(suggestions);
+  const rules = ruleContents(primary);
+  return primary?.proposal === "prefix" || rules.length > 1 ? rules : [];
+}
+
+/**
+ * "Always allow" choices, a pure function of the suggestions of the request (spec 6.2): the
+ * CLI's, or Writer's Bash proposal when the CLI sent no rule (`bash_rules.rs`). `addRules`
+ * offers project and chat scope for the ticked rules (all by default); a Writer proposal adds
+ * "This exact command"; `setMode acceptEdits` offers auto-edit.
  */
 export function permissionChoices(
   suggestions: readonly PermissionSuggestion[],
+  ticked?: readonly string[],
 ): PermissionChoice[] {
   const out: PermissionChoice[] = [];
-  const add = suggestions.find((s) => s.type === "addRules" && s.behavior !== "deny");
-  if (add) {
-    const rule = ruleText(add).join(", ") || null;
-    out.push({ persist: "project", label: "In this project", rule });
-    out.push({ persist: "session", label: "For this chat", rule });
+  const primary = primaryRules(suggestions);
+  if (primary) {
+    const chips = ruleChips(suggestions);
+    const rules = chips.length > 0 ? [...(ticked ?? chips)] : undefined;
+    const rule = rules
+      ? rules.map((r) => `${primary.rules?.[0]?.toolName ?? "Bash"}(${r})`).join(", ")
+      : ruleText(primary).join(", ") || null;
+    out.push({ persist: "project", label: "In this project", rule, rules });
+    out.push({ persist: "session", label: "For this chat", rule, rules });
+  }
+  const exact = exactRule(suggestions);
+  if (exact) {
+    out.push({
+      persist: "project",
+      label: "This exact command",
+      rule: ruleText(exact).join(", "),
+      rules: ruleContents(exact),
+    });
   }
   if (suggestions.some((s) => s.type === "setMode" && s.mode === "acceptEdits"))
     out.push({ persist: "accept-edits", label: "Auto-edit files this chat", rule: null });
   return out;
+}
+
+/** What Cmd+Shift+Enter answers: the first choice saved in the project. Undefined when the
+ *  request offers no rule (an auto-edit-only request stays an "Allow once"). */
+export function alwaysChoice(
+  suggestions: readonly PermissionSuggestion[],
+  ticked?: readonly string[],
+): PermissionChoice | undefined {
+  return permissionChoices(suggestions, ticked).find((c) => c.persist === "project");
 }
 
 /** "The agent wants to run Bash: ls" for the card body (spec 6.2). */

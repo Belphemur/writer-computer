@@ -23,6 +23,7 @@ import {
   type Draft,
 } from "@features/agent/web/hooks/use-agent";
 import type { ContextRef } from "@features/agent/web/lib/events";
+import { alwaysChoice } from "@features/agent/web/lib/tool-kinds";
 import {
   searchMentions,
   specialMentions,
@@ -338,7 +339,14 @@ export function Composer({
       const req = chat.pendingPermissions[0];
       if (req && e.key === "Enter") {
         e.preventDefault();
-        void decideAgentPermission(req.requestId, "allow", e.shiftKey ? "project" : undefined);
+        const always = e.shiftKey ? alwaysChoice(req.suggestions) : undefined;
+        void decideAgentPermission(
+          req.requestId,
+          "allow",
+          always?.persist,
+          undefined,
+          always?.rules,
+        );
         return true;
       }
       if (req && e.key === "Backspace") {

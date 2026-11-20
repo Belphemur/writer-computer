@@ -1995,6 +1995,7 @@ impl Session {
         request_id: &str,
         decision: PermissionDecision,
         persist: Option<PermissionPersist>,
+        rules: Option<Vec<String>>,
         message: Option<String>,
     ) -> Result<(), String> {
         let mut g = self.inner.lock();
@@ -2007,16 +2008,18 @@ impl Session {
         {
             return Err("this request is a question; answer it with the question command".into());
         }
-        let Some(p) = g.pending.remove(request_id) else {
+        let Some(pending) = g.pending.get(request_id) else {
             return Err("unknown or already resolved permission request".into());
         };
+        let perms = updated_permissions(&pending.suggestions, persist, rules.as_deref());
+        if decision == PermissionDecision::Allow && rules.is_some() && perms.is_empty() {
+            // the request stays open: the card can answer again
+            return Err("none of the chosen rules was offered for this request".into());
+        }
+        let p = g.pending.remove(request_id).expect("checked above");
         let (line, resolution) = match decision {
             PermissionDecision::Allow => (
-                encode_permission_allow(
-                    request_id,
-                    &p.input,
-                    &updated_permissions(&p.suggestions, persist),
-                ),
+                encode_permission_allow(request_id, &p.input, &perms),
                 PermissionResolution::Allowed,
             ),
             PermissionDecision::Deny => (

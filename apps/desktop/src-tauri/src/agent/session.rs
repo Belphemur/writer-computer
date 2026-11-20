@@ -711,6 +711,7 @@ impl AgentSessions {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)] // the IPC command's flat arguments, one line each
     pub fn permission(
         &self,
         label: &str,
@@ -718,10 +719,11 @@ impl AgentSessions {
         request_id: &str,
         decision: PermissionDecision,
         persist: Option<PermissionPersist>,
+        rules: Option<Vec<String>>,
         message: Option<String>,
     ) -> Result<(), Rejected> {
         self.get(label, chat_id)?
-            .permission(request_id, decision, persist, message)
+            .permission(request_id, decision, persist, rules, message)
             .map_err(Rejected)
     }
 

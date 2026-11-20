@@ -263,7 +263,7 @@ fn permission_allow_waits_for_the_answer_and_persists_the_rule() {
         unreachable!()
     };
     assert_eq!(tool, "Bash");
-    let updated = updated_permissions(&suggestions, Some(PermissionPersist::Project));
+    let updated = updated_permissions(&suggestions, Some(PermissionPersist::Project), None);
     assert_eq!(updated.len(), 1);
     f.send(&encode_permission_allow(&request_id, &input, &updated));
     assert_eq!(f.finished(), TurnFinishReason::Completed);

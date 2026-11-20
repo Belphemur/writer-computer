@@ -3,11 +3,14 @@ import { ShieldKeyIcon } from "@hugeicons/core-free-icons";
 import { decideAgentPermission } from "@features/agent/web/hooks/agent-api";
 import type { PermissionView } from "@features/agent/web/lib/transcript";
 import {
+  alwaysChoice,
   editPreview,
   inputJson,
   KIND_LABEL,
+  type PermissionChoice,
   permissionChoices,
   permissionSummary,
+  ruleChips,
   toolKind,
 } from "@features/agent/web/lib/tool-kinds";
 import { Ico } from "./agent-icon";
@@ -26,12 +29,25 @@ export function PermissionCard({ request, more }: { request: PermissionView; mor
   const [menu, setMenu] = useState(false);
   const detailsId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
-  const choices = permissionChoices(request.suggestions);
-  const projectChoice = choices.find((c) => c.persist === "project") ?? choices[0];
+  const chips = ruleChips(request.suggestions);
+  // the rules still ticked; at least one stays (a chip is only unticked while another is ticked)
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
+  const ticked = chips.filter((r) => !unticked.has(r));
+  const choices = permissionChoices(request.suggestions, chips.length > 0 ? ticked : undefined);
+  const projectChoice =
+    alwaysChoice(request.suggestions, chips.length > 0 ? ticked : undefined) ?? choices[0];
   const kind = toolKind(request.tool);
   const preview = kind === "edit" ? editPreview(request.tool, request.input) : null;
 
   const allow = () => void decideAgentPermission(request.requestId, "allow");
+  const always = (c: PermissionChoice) =>
+    void decideAgentPermission(request.requestId, "allow", c.persist, undefined, c.rules);
+  const toggle = (rule: string) =>
+    setUnticked((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(rule)) next.add(rule);
+      return next;
+    });
   const deny = () => void decideAgentPermission(request.requestId, "deny");
 
   function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
@@ -77,6 +93,31 @@ export function PermissionCard({ request, more }: { request: PermissionView; mor
       </p>
       <p className="mt-0.5 text-[11.5px] text-text-muted">Type: {KIND_LABEL[kind]}</p>
 
+      {chips.length > 0 && (
+        <div role="group" aria-label="Rules to allow" className="mt-2 flex flex-wrap gap-1.5">
+          {chips.map((rule) => {
+            const on = !unticked.has(rule);
+            return (
+              <label
+                key={rule}
+                data-agent-permission-rule
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-[var(--surface-subtle)] px-1.5 py-0.5 text-[11.5px]"
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={on && ticked.length === 1}
+                  onChange={() => toggle(rule)}
+                />
+                <code className="truncate" title={rule}>
+                  {rule}
+                </code>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <button
           type="button"
@@ -89,10 +130,7 @@ export function PermissionCard({ request, more }: { request: PermissionView; mor
           <div className="relative inline-flex">
             <button
               type="button"
-              onClick={() =>
-                projectChoice &&
-                decideAgentPermission(request.requestId, "allow", projectChoice.persist)
-              }
+              onClick={() => projectChoice && always(projectChoice)}
               className="rounded-l-md border border-[var(--line-subtle)] px-2.5 py-1 text-[12.5px] hover:bg-[var(--item-hover-bg)]"
             >
               Always allow
@@ -115,12 +153,12 @@ export function PermissionCard({ request, more }: { request: PermissionView; mor
               >
                 {choices.map((c) => (
                   <button
-                    key={c.persist}
+                    key={c.label}
                     role="menuitem"
                     type="button"
                     onClick={() => {
                       setMenu(false);
-                      void decideAgentPermission(request.requestId, "allow", c.persist);
+                      always(c);
                     }}
                     className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-[var(--item-hover-bg)]"
                   >

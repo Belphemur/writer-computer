@@ -203,6 +203,7 @@ interface AgentState {
     decision: "allow" | "deny",
     persist?: PermissionPersist,
     message?: string,
+    rules?: string[],
   ) => Promise<void>;
   /** Answers the open question card; `answers` null skips it. */
   answerQuestion: (requestId: string, answers: QuestionAnswer[] | null) => Promise<void>;
@@ -1266,9 +1267,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         );
       }
     },
-    decidePermission: async (requestId, decision, persist, message) => {
+    decidePermission: async (requestId, decision, persist, message, rules) => {
       await answerOpenRequest((client, chatId) =>
-        client.permission({ chatId, requestId, decision, persist, message }),
+        client.permission({ chatId, requestId, decision, persist, message, rules }),
       );
     },
     answerQuestion: async (requestId, answers) => {

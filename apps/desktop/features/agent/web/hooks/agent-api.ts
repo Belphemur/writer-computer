@@ -69,7 +69,8 @@ export const decideAgentPermission = (
   decision: "allow" | "deny",
   persist?: PermissionPersist,
   message?: string,
-) => useAgentStore.getState().decidePermission(requestId, decision, persist, message);
+  rules?: string[],
+) => useAgentStore.getState().decidePermission(requestId, decision, persist, message, rules);
 export const answerAgentQuestion = (requestId: string, answers: QuestionAnswer[] | null) =>
   useAgentStore.getState().answerQuestion(requestId, answers);
 export const setAgentPermissionMode = (m: AgentPermissionMode) =>

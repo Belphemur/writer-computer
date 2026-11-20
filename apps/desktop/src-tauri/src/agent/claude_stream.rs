@@ -17,6 +17,7 @@
 //!
 //! The mapper never keeps or logs content; it only keeps ids.
 
+use super::bash_rules;
 use super::events::*;
 use super::files::{FileKind, FilePart};
 use super::mcp_wiring::{Launch, McpWiring};
@@ -680,19 +681,22 @@ impl ClaudeStreamMapper {
             }
         }
         self.pending_permissions.insert(request_id.to_string());
+        let tool = str_of(req, "tool_name").unwrap_or("unknown").to_string();
+        let input = req.get("input").cloned().unwrap_or_else(|| json!({}));
+        let suggestions = req
+            .get("permission_suggestions")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         out.events.push(AgentEvent::PermissionRequest {
             request_id: request_id.to_string(),
             tool_call_id: str_of(req, "tool_use_id").map(String::from),
-            tool: str_of(req, "tool_name").unwrap_or("unknown").to_string(),
+            suggestions: bash_rules::with_proposals(&tool, &input, suggestions),
+            tool,
             display_name: str_of(req, "display_name").map(String::from),
-            input: req.get("input").cloned().unwrap_or_else(|| json!({})),
+            input,
             description: str_of(req, "description").map(String::from),
             decision_reason: str_of(req, "decision_reason").map(String::from),
-            suggestions: req
-                .get("permission_suggestions")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
             by: None,
         });
     }
@@ -1004,11 +1008,14 @@ pub fn encode_control_error(request_id: &str, error: &str) -> String {
         .to_string()
 }
 
-/// What the CLI is told to persist for an "Always allow" choice, rebuilt from the suggestions it
-/// sent (never from UI input). `project` writes `<cwd>/.claude/settings.local.json` (verified).
+/// What the CLI is told to persist for an "Always allow" choice, rebuilt from the suggestions of
+/// the request (the CLI's, or Writer's proposal, `bash_rules`), never from UI input: `rules`, the
+/// `ruleContent`s the user kept ticked, only selects among the rules those suggestions already
+/// carry (`None` keeps all). `project` writes `<cwd>/.claude/settings.local.json` (verified).
 pub fn updated_permissions(
     suggestions: &[Value],
     persist: Option<PermissionPersist>,
+    rules: Option<&[String]>,
 ) -> Vec<Value> {
     let Some(persist) = persist else {
         return Vec::new();
@@ -1018,8 +1025,12 @@ pub fn updated_permissions(
         .filter_map(|s| {
             let kind = s.get("type").and_then(Value::as_str)?;
             match (persist, kind) {
-                (PermissionPersist::Project, "addRules") => with_destination(s, "localSettings"),
-                (PermissionPersist::Session, "addRules") => with_destination(s, "session"),
+                (PermissionPersist::Project, "addRules") => {
+                    chosen_rules(s, rules).and_then(|s| with_destination(&s, "localSettings"))
+                }
+                (PermissionPersist::Session, "addRules") => {
+                    chosen_rules(s, rules).and_then(|s| with_destination(&s, "session"))
+                }
                 (PermissionPersist::AcceptEdits, "setMode")
                     if s.get("mode").and_then(Value::as_str) == Some("acceptEdits") =>
                 {
@@ -1029,6 +1040,32 @@ pub fn updated_permissions(
             }
         })
         .collect()
+}
+
+/// The suggestion narrowed to the ticked rules (`None` when none of them is in it), without
+/// Writer's own `proposal` marker, which the CLI does not know.
+fn chosen_rules(s: &Value, rules: Option<&[String]>) -> Option<Value> {
+    let mut v = s.clone();
+    let obj = v.as_object_mut()?;
+    obj.remove("proposal");
+    if let Some(keep) = rules {
+        let kept: Vec<Value> = obj
+            .get("rules")
+            .and_then(Value::as_array)?
+            .iter()
+            .filter(|r| {
+                r.get("ruleContent")
+                    .and_then(Value::as_str)
+                    .is_some_and(|c| keep.iter().any(|k| k == c))
+            })
+            .cloned()
+            .collect();
+        if kept.is_empty() {
+            return None;
+        }
+        obj.insert("rules".into(), Value::Array(kept));
+    }
+    Some(v)
 }
 
 fn with_destination(s: &Value, dest: &str) -> Option<Value> {
@@ -2469,7 +2506,7 @@ mod tests {
         let sug = vec![
             json!({"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"ls"}],"behavior":"allow","destination":"localSettings"}),
         ];
-        let perms = updated_permissions(&sug, Some(PermissionPersist::Project));
+        let perms = updated_permissions(&sug, Some(PermissionPersist::Project), None);
         let v: Value = serde_json::from_str(&encode_permission_allow(
             "r",
             &json!({"command":"ls"}),
@@ -2555,15 +2592,87 @@ mod tests {
             json!({"type":"setMode","mode":"acceptEdits","destination":"session"}),
             json!({"type":"setMode","mode":"bypassPermissions","destination":"session"}),
         ];
-        assert!(updated_permissions(&sug, None).is_empty());
-        let project = updated_permissions(&sug, Some(PermissionPersist::Project));
+        assert!(updated_permissions(&sug, None, None).is_empty());
+        let project = updated_permissions(&sug, Some(PermissionPersist::Project), None);
         assert_eq!(project.len(), 1);
         assert_eq!(project[0]["destination"], "localSettings"); // forced, never userSettings
-        let session = updated_permissions(&sug, Some(PermissionPersist::Session));
+        let session = updated_permissions(&sug, Some(PermissionPersist::Session), None);
         assert_eq!(session[0]["destination"], "session");
-        let edits = updated_permissions(&sug, Some(PermissionPersist::AcceptEdits));
+        let edits = updated_permissions(&sug, Some(PermissionPersist::AcceptEdits), None);
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0]["mode"], "acceptEdits"); // bypassPermissions is never forwarded
+    }
+
+    #[test]
+    fn ticked_rules_narrow_the_proposal_and_each_destination_is_forced() {
+        let input = json!({"command":"git status && git diff"});
+        let sug = bash_rules::with_proposals("Bash", &input, vec![]);
+        let ticked = vec!["git diff:*".to_string()];
+        for (persist, dest) in [
+            (PermissionPersist::Project, "localSettings"),
+            (PermissionPersist::Session, "session"),
+        ] {
+            let perms = updated_permissions(&sug, Some(persist), Some(&ticked));
+            assert_eq!(perms.len(), 1, "the exact rule was not ticked");
+            assert_eq!(
+                perms[0],
+                json!({"type":"addRules","behavior":"allow","destination":dest,
+                       "rules":[{"toolName":"Bash","ruleContent":"git diff:*"}]})
+            );
+            let v: Value =
+                serde_json::from_str(&encode_permission_allow("r", &input, &perms)).unwrap();
+            assert_eq!(
+                v["response"]["response"]["updatedPermissions"],
+                Value::Array(perms)
+            );
+        }
+        // all ticked: the whole prefix suggestion, the marker never reaches the CLI
+        let all = vec!["git status:*".to_string(), "git diff:*".to_string()];
+        let perms = updated_permissions(&sug, Some(PermissionPersist::Project), Some(&all));
+        assert_eq!(perms[0]["rules"].as_array().unwrap().len(), 2);
+        assert!(perms[0].get("proposal").is_none());
+        // the exact command
+        let exact = vec!["git status && git diff".to_string()];
+        let perms = updated_permissions(&sug, Some(PermissionPersist::Project), Some(&exact));
+        assert_eq!(perms.len(), 1);
+        assert_eq!(
+            perms[0]["rules"][0]["ruleContent"],
+            "git status && git diff"
+        );
+        // a rule the request never offered is never forwarded
+        let forged = vec!["rm:*".to_string()];
+        assert!(
+            updated_permissions(&sug, Some(PermissionPersist::Project), Some(&forged)).is_empty()
+        );
+        // None keeps every rule of every addRules suggestion, markers stripped
+        let none = updated_permissions(&sug, Some(PermissionPersist::Session), None);
+        assert_eq!(none.len(), 2);
+        assert!(none.iter().all(|p| p.get("proposal").is_none()));
+    }
+
+    #[test]
+    fn bash_request_without_a_rule_suggestion_gets_writers_proposal() {
+        let req = |suggestions: Value| {
+            json!({"type":"control_request","request_id":"q1","request":{"subtype":"can_use_tool",
+              "tool_name":"Bash","input":{"command":"P=x; aws s3 ls --profile $P | head"},
+              "permission_suggestions":suggestions,"tool_use_id":"t1"}})
+            .to_string()
+        };
+        let first = |line: String| {
+            let mut m = ClaudeStreamMapper::new();
+            let out = m.map_line(&line);
+            match out.events.into_iter().next() {
+                Some(AgentEvent::PermissionRequest { suggestions, .. }) => suggestions,
+                other => panic!("{other:?}"),
+            }
+        };
+        let proposed = first(req(json!([])));
+        assert_eq!(proposed.len(), 2);
+        assert_eq!(proposed[0]["proposal"], "prefix");
+        assert_eq!(proposed[0]["rules"][0]["ruleContent"], "aws s3 ls:*");
+        assert_eq!(proposed[1]["proposal"], "exact");
+        let cli = json!([{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"aws s3 ls"}],"behavior":"allow","destination":"localSettings"}]);
+        assert_eq!(first(req(cli.clone())), cli.as_array().unwrap().clone());
     }
 
     fn settings() -> AgentSettings {

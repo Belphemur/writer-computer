@@ -81,6 +81,8 @@ export interface AgentCommands {
       requestId: string;
       decision: PermissionDecision;
       persist?: Opt<PermissionPersist>;
+      /** The offered rules (their `ruleContent`) the user kept ticked; absent keeps them all. */
+      rules?: Opt<string[]>;
       /** Shown to the model on deny. */
       message?: Opt<string>;
     }

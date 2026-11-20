@@ -34,7 +34,7 @@ export const commands = {
 	 */
 	agentUnqueue: (chatId: string, messageId: string, options?: InvokeOptions) => __TAURI_INVOKE<boolean>("plugin:agent|agent_unqueue", { chatId, messageId }, options),
 	agentCancel: (chatId: string, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_cancel", { chatId }, options),
-	agentPermission: (chatId: string, requestId: string, decision: PermissionDecision, persist: PermissionPersist | null, message: string | null, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_permission", { chatId, requestId, decision, persist, message }, options),
+	agentPermission: (chatId: string, requestId: string, decision: PermissionDecision, persist: PermissionPersist | null, rules: string[] | null, message: string | null, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_permission", { chatId, requestId, decision, persist, rules, message }, options),
 	/**  Answers an open question card; `answers` `None` declines it. */
 	agentAnswerQuestion: (chatId: string, requestId: string, answers: QuestionAnswer[] | null, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_answer_question", { chatId, requestId, answers }, options),
 	agentSetPermissionMode: (chatId: string, mode: AgentPermissionMode, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_set_permission_mode", { chatId, mode }, options),

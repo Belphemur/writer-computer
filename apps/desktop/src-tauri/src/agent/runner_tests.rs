@@ -964,6 +964,7 @@ fn permission_round_trip_allow_with_persist_choices() {
             PermissionDecision::Allow,
             Some(PermissionPersist::AcceptEdits),
             None,
+            None,
         )
         .unwrap();
     match h.next(CHAT, "resolved", |e| {
@@ -980,13 +981,21 @@ fn permission_round_trip_allow_with_persist_choices() {
     }
     assert!(
         h.sessions
-            .permission("w", CHAT, &id1, PermissionDecision::Allow, None, None)
+            .permission("w", CHAT, &id1, PermissionDecision::Allow, None, None, None)
             .is_err(),
         "answering twice is an error"
     );
     assert!(h
         .sessions
-        .permission("w", CHAT, "unknown", PermissionDecision::Deny, None, None)
+        .permission(
+            "w",
+            CHAT,
+            "unknown",
+            PermissionDecision::Deny,
+            None,
+            None,
+            None
+        )
         .is_err());
 
     let (id2, _) = req(&mut h);
@@ -997,6 +1006,7 @@ fn permission_round_trip_allow_with_persist_choices() {
             &id2,
             PermissionDecision::Allow,
             Some(PermissionPersist::Project),
+            None,
             None,
         )
         .unwrap();
@@ -1054,7 +1064,7 @@ fn an_open_question_is_busy_and_its_answer_reaches_the_cli() {
     // a question is not answered as a permission
     assert!(h
         .sessions
-        .permission("w", CHAT, &id, PermissionDecision::Allow, None, None)
+        .permission("w", CHAT, &id, PermissionDecision::Allow, None, None, None)
         .is_err());
     let answers = vec![
         QuestionAnswer {
@@ -1160,6 +1170,44 @@ fn stop_clears_an_open_question_as_cancelled() {
 }
 
 #[test]
+fn a_ticked_subset_is_forwarded_and_a_rule_never_offered_is_refused() {
+    let mut h = Harness::new(&["permission-deny"], "normal");
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    let id = match h.next(CHAT, "request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    }) {
+        AgentEvent::PermissionRequest { request_id, .. } => request_id,
+        _ => unreachable!(),
+    };
+    let ask = |rules: &str, persist| {
+        h.sessions.permission(
+            "w",
+            CHAT,
+            &id,
+            PermissionDecision::Allow,
+            Some(persist),
+            Some(vec![rules.to_string()]),
+            None,
+        )
+    };
+    assert!(ask("rm:*", PermissionPersist::Project).is_err());
+    assert_eq!(
+        h.sessions.get("w", CHAT).unwrap().state(),
+        AgentSessionState::AwaitingPermission,
+        "a refused answer leaves the card open"
+    );
+    ask("python3 -c 'print(2)'", PermissionPersist::Session).unwrap();
+    h.wait_until("the answer reached the CLI", || {
+        h.log("stdin.log").contains("control_response")
+    });
+    let answer = h.log("stdin.log");
+    assert!(answer.contains("\"destination\":\"session\""), "{answer}");
+    assert!(answer.contains("python3 -c 'print(2)'"), "{answer}");
+    assert!(!answer.contains("proposal"), "{answer}");
+}
+
+#[test]
 fn deny_without_reason_tells_the_model_why() {
     let mut h = Harness::new(&["permission-deny"], "normal");
     h.start(CHAT);
@@ -1171,7 +1219,7 @@ fn deny_without_reason_tells_the_model_why() {
         _ => unreachable!(),
     };
     h.sessions
-        .permission("w", CHAT, &id, PermissionDecision::Deny, None, None)
+        .permission("w", CHAT, &id, PermissionDecision::Deny, None, None, None)
         .unwrap();
     h.turn_finished(CHAT);
     h.wait_until("deny reached the CLI", || {
@@ -1840,7 +1888,7 @@ fn a_turn_that_edits_a_vault_file_ends_with_a_turn_changes_event_and_undo_works(
     std::fs::write(&notes, "new\nline\nadded\n").unwrap();
     let allow = |h: &Harness, id: &str| {
         h.sessions
-            .permission("w", CHAT, id, PermissionDecision::Allow, None, None)
+            .permission("w", CHAT, id, PermissionDecision::Allow, None, None, None)
             .unwrap()
     };
     allow(&h, &id);
@@ -2388,6 +2436,7 @@ fn a_real_background_sub_agent_write_after_the_result_updates_the_row_and_the_ca
             PermissionDecision::Allow,
             None,
             None,
+            None,
         )
         .unwrap();
     h.go();
@@ -2439,6 +2488,7 @@ fn a_manual_mode_sub_agent_permission_card_is_attributed_and_answerable() {
             PermissionDecision::Allow,
             None,
             None,
+            None,
         )
         .unwrap();
     wait_for_answer(&h);
@@ -2488,7 +2538,7 @@ fn a_main_agent_edit_carries_no_role() {
         std::thread::sleep(Duration::from_millis(200));
         std::fs::write(h.root.join("notes.txt"), "new\n").unwrap();
         h.sessions
-            .permission("w", CHAT, &id, PermissionDecision::Allow, None, None)
+            .permission("w", CHAT, &id, PermissionDecision::Allow, None, None, None)
             .unwrap();
     }
     assert_eq!(turn_changes(&mut h).files[0].by, None);

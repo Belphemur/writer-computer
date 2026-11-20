@@ -90,6 +90,9 @@ export type PermissionSuggestion = {
   behavior?: "allow" | "deny" | "ask";
   mode?: string;
   destination?: string;
+  /** Set on Writer's own Bash proposal (the CLI sent no rule): the prefix rules, or the whole
+   *  command. Absent on the CLI's suggestions. */
+  proposal?: "prefix" | "exact";
   [key: string]: unknown;
 };
 

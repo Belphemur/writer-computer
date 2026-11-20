@@ -228,11 +228,13 @@ pub async fn agent_cancel<R: Runtime>(
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)] // the IPC command's flat arguments
 pub async fn agent_permission<R: Runtime>(
     chat_id: ChatId,
     request_id: PermissionRequestId,
     decision: PermissionDecision,
     persist: Option<PermissionPersist>,
+    rules: Option<Vec<String>>,
     message: Option<String>,
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
@@ -240,7 +242,15 @@ pub async fn agent_permission<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         sessions(&app)
-            .permission(&label, &chat_id, &request_id, decision, persist, message)
+            .permission(
+                &label,
+                &chat_id,
+                &request_id,
+                decision,
+                persist,
+                rules,
+                message,
+            )
             .map_err(rejected)
     })
     .await

@@ -479,7 +479,12 @@ describe("PermissionCard", () => {
     decided = [];
     configureAgentRuntimeForTests({
       ...mock,
-      permission: async (a) => void decided.push([a.decision, a.persist, a.requestId]),
+      permission: async (a) =>
+        void decided.push(
+          a.rules
+            ? [a.decision, a.persist, a.requestId, a.rules]
+            : [a.decision, a.persist, a.requestId],
+        ),
     } as typeof mock);
     useAgentStore.setState({ activeChatId: "c" });
   });
@@ -521,6 +526,96 @@ describe("PermissionCard", () => {
     ]);
     await act(async () => items[1]!.click());
     expect(decided).toEqual([["allow", "session", "r1"]]);
+  });
+
+  describe("Writer's Bash proposal", () => {
+    const proposed: PermissionView = {
+      ...REQ,
+      input: { command: "git status && git diff" },
+      suggestions: [
+        {
+          type: "addRules",
+          behavior: "allow",
+          proposal: "prefix",
+          rules: [
+            { toolName: "Bash", ruleContent: "git status:*" },
+            { toolName: "Bash", ruleContent: "git diff:*" },
+          ],
+        },
+        {
+          type: "addRules",
+          behavior: "allow",
+          proposal: "exact",
+          rules: [{ toolName: "Bash", ruleContent: "git status && git diff" }],
+        },
+      ],
+    };
+    const chips = () => $$("[data-agent-permission-rule]");
+    const box = (i: number) => chips()[i]!.querySelector<HTMLInputElement>("input")!;
+
+    it("shows the proposed rules as ticked chips", async () => {
+      await mount(proposed);
+      expect(chips().map((c) => c.textContent)).toEqual(["git status:*", "git diff:*"]);
+      expect(chips().every((c) => c.querySelector("input")!.checked)).toBe(true);
+    });
+
+    it("Always allow saves every ticked rule in the project", async () => {
+      await mount(proposed);
+      await act(async () => button("Always allow").click());
+      expect(decided).toEqual([["allow", "project", "r1", ["git status:*", "git diff:*"]]]);
+    });
+
+    it("an unticked rule is left out, for the project and for the chat", async () => {
+      await mount(proposed);
+      await act(async () => box(0).click());
+      expect(box(0).checked).toBe(false);
+      await act(async () => button("Always allow").click());
+      act(() => button("More always-allow choices").click());
+      await act(async () => $$("[role=menuitem]")[1]!.click());
+      expect(decided).toEqual([
+        ["allow", "project", "r1", ["git diff:*"]],
+        ["allow", "session", "r1", ["git diff:*"]],
+      ]);
+    });
+
+    it("at least one rule stays ticked", async () => {
+      await mount(proposed);
+      await act(async () => box(0).click());
+      expect(box(1).disabled).toBe(true);
+      await act(async () => box(0).click()); // ticked again
+      expect(box(1).disabled).toBe(false);
+    });
+
+    it("This exact command saves the whole command alone", async () => {
+      await mount(proposed);
+      act(() => button("More always-allow choices").click());
+      const items = $$("[role=menuitem]");
+      expect(items.map((i) => i.textContent)).toEqual([
+        "In this projectBash(git status:*), Bash(git diff:*)",
+        "For this chatBash(git status:*), Bash(git diff:*)",
+        "This exact commandBash(git status && git diff)",
+      ]);
+      await act(async () => items[2]!.click());
+      expect(decided).toEqual([["allow", "project", "r1", ["git status && git diff"]]]);
+    });
+
+    it("when no prefix rule is safe only the exact command is offered", async () => {
+      await mount({ ...proposed, suggestions: [proposed.suggestions[1]!] });
+      expect(chips()).toHaveLength(0);
+      act(() => button("More always-allow choices").click());
+      expect($$("[role=menuitem]").map((i) => i.textContent)).toEqual([
+        "This exact commandBash(git status && git diff)",
+      ]);
+      await act(async () => button("Always allow").click());
+      expect(decided).toEqual([["allow", "project", "r1", ["git status && git diff"]]]);
+    });
+
+    it("Enter still allows once, with a rule focused", async () => {
+      await mount(proposed);
+      key(box(0), "Enter");
+      await flush();
+      expect(decided).toEqual([["allow", undefined, "r1"]]);
+    });
   });
 
   it("no Always allow when the CLI sent no suggestion", async () => {

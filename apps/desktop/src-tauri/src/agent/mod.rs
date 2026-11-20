@@ -9,6 +9,7 @@
 //! The process runner, session registry, chat store and project library are separate lanes (spec,
 //! "Implementation plan") and add their own sibling modules here.
 
+pub mod bash_rules;
 pub mod binary;
 pub mod changes;
 pub mod chat_store;
