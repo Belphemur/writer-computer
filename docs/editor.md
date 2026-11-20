@@ -246,6 +246,7 @@ Anything that inserts after an await (saving a pasted image) must not trust the 
 ## File map
 
 - `callout-decorations.ts` + `lib/callouts/` — callouts: line decorations on real quote lines, icon/chevron widgets, session fold state; the renderer for plugin markdown shares `lib/callouts/`.
+- `codeFenceExtension.ts` + `lib/code-copy-button.ts` — code blocks are line decorations; the copy button is an inline widget on each block's first line (`CodeCopyWidget`, absolutely placed so nothing shifts, shown by caret-in-block or hover, `ignoreEvent`, the `mousedown` rule above). It finds its block again from `posAtDOM` + the syntax tree at click time and reads it through `prosemark-core/codeBlockText.ts`. The button itself is the one shared with the agent chat; Mermaid's toolbar mounts the same one (`copySource`).
 - `mermaid-decorations.ts` — canonical replace-only block widget with in-widget editing. Reference for live position lookup (`findEnclosingFencedCode`) and writing the fence back from a nested editor.
 - `mermaid-renderer.ts` — `renderMermaid`, the one call into Pele: render options, DOMPurify, LRU cache, error messages. `mermaid-canvas.css` holds the `--pele-*` theme mapping.
 - `properties-panel.tsx`, `property-value.tsx` — the collapsible properties panel (React, not a widget); the model is `lib/frontmatter-properties.ts`.

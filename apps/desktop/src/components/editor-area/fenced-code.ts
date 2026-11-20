@@ -1,4 +1,5 @@
 import type { SyntaxNodeRef } from "@lezer/common";
+import { codeBlockText } from "@/lib/prosemark-core/codeBlockText";
 
 /**
  * Extract info string and code content for a FencedCode node. Lezer's tree:
@@ -11,15 +12,12 @@ export function parseFencedCode(
   node: SyntaxNodeRef,
 ): { info: string; source: string; closed: boolean } | undefined {
   let info = "";
-  let source = "";
   let marks = 0;
 
   let child = node.node.firstChild;
   while (child) {
     if (child.name === "CodeInfo") {
       info = state.doc.sliceString(child.from, child.to);
-    } else if (child.name === "CodeText") {
-      source += state.doc.sliceString(child.from, child.to);
     } else if (child.name === "CodeMark") {
       marks++;
     }
@@ -27,6 +25,7 @@ export function parseFencedCode(
   }
 
   if (!info) return undefined;
+  const source = codeBlockText(state, node);
   // Opening and closing fence are both CodeMarks; an unclosed fence (still
   // being typed) runs to the end of the document with only the opening one.
   return { info, source, closed: marks >= 2 };

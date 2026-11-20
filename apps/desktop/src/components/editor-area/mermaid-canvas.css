@@ -278,6 +278,20 @@
   color: var(--text-primary);
 }
 
+/* The shared copy button (lib/code-copy-button.ts) in the canvas look. */
+.cm-mermaid-canvas .code-copy.cm-mermaid-canvas-icon-btn {
+  padding: 0;
+  justify-content: center;
+  border-radius: 8px;
+  background-color: var(--surface-card);
+  color: var(--text-secondary);
+}
+.cm-mermaid-canvas .code-copy.cm-mermaid-canvas-icon-btn:hover,
+.cm-mermaid-canvas .code-copy.cm-mermaid-canvas-icon-btn.is-copied {
+  background-color: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
 .cm-mermaid-canvas-top {
   position: absolute;
   top: 8px;

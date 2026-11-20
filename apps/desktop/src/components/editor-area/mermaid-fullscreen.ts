@@ -20,6 +20,6 @@ export function openMermaidFullscreen(source: string, ariaLabel: string): void {
   const host = body;
   host.classList.add("cm-mermaid-canvas", "cm-mermaid-fullscreen-canvas");
   host.tabIndex = 0;
-  mountMermaidCanvas(host, { diagram, ariaLabel, onClose: close });
+  mountMermaidCanvas(host, { diagram, ariaLabel, copySource: () => source, onClose: close });
   host.focus();
 }

@@ -195,8 +195,15 @@ describe("copy from the agent transcript", () => {
     await act(async () => buttons[0]!.click());
     expect(writeText).toHaveBeenCalledExactlyOnceWith(inner);
     expect(useEditorNoticeStore.getState().message).toBe("Copied to clipboard");
+    expect(buttons[0]!.classList.contains("is-copied")).toBe(true); // the shared check state
     await act(async () => buttons[1]!.click());
     expect(writeText).toHaveBeenLastCalledWith("ls");
+  });
+
+  it("copies code as written: a wiki link inside a code block is not rewritten", async () => {
+    render(["```md\nsee [[Note|Alias]]\n```"]);
+    await act(async () => container.querySelector<HTMLButtonElement>("pre button")!.click());
+    expect(writeText).toHaveBeenLastCalledWith("see [[Note|Alias]]");
   });
 
   it("does not put the button's label into a copied selection", async () => {

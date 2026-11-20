@@ -2,6 +2,7 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { foldableSyntaxFacet } from "@/lib/prosemark-core/main";
 import { parseFencedCode } from "./fenced-code";
+import { codeBlockText } from "@/lib/prosemark-core/codeBlockText";
 import { renderMermaid } from "./mermaid-renderer";
 import { MERMAID_CANVAS_HEIGHT, MermaidCanvasHandle, mountMermaidCanvas } from "./mermaid-canvas";
 import { openMermaidFullscreen } from "./mermaid-fullscreen";
@@ -63,6 +64,11 @@ class MermaidWidget extends WidgetType {
       ariaLabel,
       source: this.fenceText,
       onSourceChange,
+      // The live document, not the text this widget was built from.
+      copySource: () => {
+        const fence = findEnclosingFencedCode(view, host);
+        return fence ? codeBlockText(view.state, fence) : this.body;
+      },
       onExpand,
     });
     widgetHandles.set(wrapper, handle);

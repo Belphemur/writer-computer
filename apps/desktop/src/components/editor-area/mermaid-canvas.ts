@@ -19,6 +19,7 @@ import { StreamLanguage } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { baseSyntaxHighlights, generalSyntaxHighlights } from "@/lib/prosemark-core/main";
+import { createCodeCopyButton } from "@/lib/code-copy-button";
 import type { RenderError, RenderResult } from "./mermaid-renderer";
 
 export const MERMAID_CANVAS_HEIGHT = 480;
@@ -49,6 +50,9 @@ export type MermaidCanvasOptions = {
   // and the inline source editor. Omit both in fullscreen mode (read-only).
   source?: string;
   onSourceChange?: (next: string) => void;
+  // The diagram's source as it is now (the code between the fences): mounts the copy button in
+  // the top-right cluster.
+  copySource?: () => string;
   // Mount the expand button (opens fullscreen dialog) in the bottom-right cluster.
   onExpand?: () => void;
   // Mount the close button (✕) in the top-right cluster — used inside the fullscreen dialog.
@@ -137,6 +141,10 @@ export function mountMermaidCanvas(
     if (editing && innerView) innerView.focus();
     else host.focus();
   };
+
+  if (opts.copySource) {
+    topCluster.append(createCodeCopyButton(opts.copySource, "cm-mermaid-canvas-icon-btn"));
+  }
 
   if (editingEnabled) {
     editButton = makeButton("", "Edit code");

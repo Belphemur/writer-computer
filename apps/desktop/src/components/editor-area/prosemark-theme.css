@@ -208,15 +208,6 @@
   display: none;
 }
 
-/* Code block header overrides */
-.cm-editor .cm-code-block-lang-container {
-  display: none;
-}
-
-.cm-editor .cm-code-block-copy-button {
-  display: none;
-}
-
 /* Task checkboxes — CSS-drawn on the measurable source prefix mark. There is
    no native input or widget DOM in the drag-selection hit-test path. */
 .cm-editor .cm-list-prefix-task {

@@ -4,12 +4,15 @@ import { type EditorState, RangeSetBuilder } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { WidgetType } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
-import { FRONTMATTER_LANGUAGE_LABEL, isFrontmatterNode } from "./markdown/frontmatter";
+import { createCodeCopyButton } from "@/lib/code-copy-button";
+import { isFrontmatterNode } from "./markdown/frontmatter";
+import { codeBlockText } from "./codeBlockText";
 import {
   CODE_LINE_CLASS,
   CODE_LINE_FIRST_CLASS,
   CODE_LINE_LAST_CLASS,
   codeBlockScrollExtension,
+  codeBlockAt,
   codeBlockScrollField,
   isCodeBlockNode,
 } from "./codeFenceScroll";
@@ -22,13 +25,23 @@ const editorFontSize = "var(--writer-editor-font-size, 16px)";
 
 type Range = { from: number; to: number };
 
+export const CODE_COPY_SLOT_CLASS = "cm-code-copy-slot";
+const CODE_COPY_VISIBLE_CLASS = "is-visible";
+
+/** Start of the code block holding the caret (-1 when it is in none): its copy button shows. */
+const activeBlockFrom = (state: EditorState): number =>
+  codeBlockAt(state, state.selection.main.head)?.from ?? -1;
+
 /** Line decorations for every fenced code / frontmatter block touching
  *  `ranges`, with each block's horizontal scroll `offsets` (by block start)
- *  rendered as a negative `text-indent` on all of its lines. */
+ *  rendered as a negative `text-indent` on all of its lines, and a copy button
+ *  on the first line of each fenced or indented block (not frontmatter), shown
+ *  while the caret is in the block (`activeFrom`) or the block is hovered. */
 const buildCodeBlockDecorations = (
   state: EditorState,
   ranges: readonly Range[],
   offsets: ReadonlyMap<number, number>,
+  activeFrom = -1,
 ): DecorationSet => {
   const builder = new RangeSetBuilder<Decoration>();
 
@@ -41,36 +54,11 @@ const buildCodeBlockDecorations = (
       from,
       to,
       enter: (node) => {
-        const isFrontmatter = isFrontmatterNode(node);
-
         if (isCodeBlockNode(node)) {
+          const isFrontmatter = isFrontmatterNode(node);
           const key = JSON.stringify([node.from, node.to]);
           if (visited.has(key)) return;
           visited.add(key);
-
-          let lang = "";
-          let code = "";
-          if (isFrontmatter) {
-            lang = FRONTMATTER_LANGUAGE_LABEL;
-            const contentNode = node.node.getChild("FrontmatterContent");
-            code = contentNode ? state.doc.sliceString(contentNode.from, contentNode.to) : "";
-          } else if (node.name === "CodeBlock") {
-            // Indented code: every line carries the four-space indent.
-            code = state.doc
-              .sliceString(node.from, node.to)
-              .split("\n")
-              .map((line) => line.replace(/^(?: {1,4}|\t)/, ""))
-              .join("\n");
-          } else {
-            const codeInfoNode = node.node.getChild("CodeInfo");
-            if (codeInfoNode) {
-              lang = state.doc.sliceString(codeInfoNode.from, codeInfoNode.to).toUpperCase();
-            }
-            const firstLine = state.doc.lineAt(node.from);
-            const codeStart = firstLine.to + 1;
-            const codeEnd = Math.max(codeStart, node.to - 4);
-            code = state.doc.sliceString(codeStart, codeEnd);
-          }
 
           const offset = offsets.get(node.from) ?? 0;
           const attributes = offset > 0 ? { style: `text-indent:-${offset}px` } : undefined;
@@ -91,12 +79,12 @@ const buildCodeBlockDecorations = (
               }),
             );
 
-            if (isFirstLine) {
+            if (isFirstLine && !isFrontmatter) {
               builder.add(
                 line.from,
                 line.from,
                 Decoration.widget({
-                  widget: new CodeBlockInfoWidget(lang, code),
+                  widget: new CodeCopyWidget(node.from === activeFrom),
                 }),
               );
             }
@@ -116,64 +104,79 @@ const codeBlockDecorations = (view: EditorView) =>
     view.state,
     renderedRanges(view),
     view.state.field(codeBlockScrollField),
+    activeBlockFrom(view.state),
   );
 
-class CodeBlockInfoWidget extends WidgetType {
-  constructor(
-    readonly lang: string,
-    readonly code: string,
-  ) {
+/** The copy button of a code block, at the top right of its first line. It copies the block's
+ *  code from the document as it is when clicked: the block is found again from the widget's
+ *  place, so an edited block, or one that moved, copies what it holds now. The button is part of
+ *  no selection or copied text (it holds none, and a press never takes focus from the editor). */
+class CodeCopyWidget extends WidgetType {
+  constructor(readonly active: boolean) {
     super();
   }
 
-  eq(other: CodeBlockInfoWidget) {
-    return other.lang === this.lang && other.code === this.code;
+  eq(other: CodeCopyWidget) {
+    return other.active === this.active;
   }
 
-  toDOM() {
-    const container = document.createElement("span");
-    container.className = "cm-code-block-info";
-    container.setAttribute("contenteditable", "false");
-
-    const langContainer = document.createElement("span");
-    langContainer.className = "cm-code-block-lang-container";
-    langContainer.innerText = this.lang;
-    container.appendChild(langContainer);
-
-    const copyButton = document.createElement("button");
-    copyButton.className = "cm-code-block-copy-button";
-    // Copy icon from Lucide
-    copyButton.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg"
-        width="16" height="16" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-        class="lucide lucide-copy-icon lucide-copy">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-      </svg>`;
-    copyButton.onclick = () => {
-      void navigator.clipboard.writeText(this.code);
-    };
-    container.appendChild(copyButton);
-
-    return container;
+  toDOM(view: EditorView) {
+    const slot = document.createElement("span");
+    slot.className = CODE_COPY_SLOT_CLASS;
+    slot.setAttribute("contenteditable", "false");
+    if (this.active) slot.classList.add(CODE_COPY_VISIBLE_CLASS);
+    slot.append(
+      createCodeCopyButton(() => {
+        const line = view.state.doc.lineAt(view.posAtDOM(slot));
+        const block = codeBlockAt(view.state, line.to);
+        return block && block.from <= line.to ? codeBlockText(view.state, block) : "";
+      }),
+    );
+    return slot;
   }
 
-  ignoreEvent(_event: Event): boolean {
+  ignoreEvent(): boolean {
     return true;
   }
 }
 
+/** The first line of the code block a hovered element belongs to. */
+const blockFirstLine = (target: EventTarget | null): Element | null => {
+  let line = target instanceof Element ? target.closest(`.${CODE_LINE_CLASS}`) : null;
+  while (line && !line.classList.contains(CODE_LINE_FIRST_CLASS)) {
+    const previous: Element | null = line.previousElementSibling;
+    line = previous?.classList.contains(CODE_LINE_CLASS) ? previous : null;
+  }
+  return line;
+};
+
 const codeBlockDecorationsPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    activeFrom: number;
+    hovered: Element | null = null;
 
     constructor(view: EditorView) {
       this.decorations = codeBlockDecorations(view);
+      this.activeFrom = activeBlockFrom(view.state);
+    }
+
+    /** Show the copy button of the hovered block (every line of it counts, not only the first). */
+    hover(target: EventTarget | null) {
+      const slot = blockFirstLine(target)?.querySelector(`.${CODE_COPY_SLOT_CLASS}`) ?? null;
+      if (slot === this.hovered) return;
+      this.hovered?.classList.remove(CODE_COPY_VISIBLE_CLASS);
+      slot?.classList.add(CODE_COPY_VISIBLE_CLASS);
+      this.hovered = slot;
     }
 
     update(update: ViewUpdate) {
+      const activeFrom =
+        update.selectionSet || update.docChanged ? activeBlockFrom(update.state) : this.activeFrom;
+      const activeChanged = activeFrom !== this.activeFrom;
+      this.activeFrom = activeFrom;
       if (
+        activeChanged ||
         update.docChanged ||
         renderedRangesChanged(update) ||
         treeChanged(update) ||
@@ -185,6 +188,14 @@ const codeBlockDecorationsPlugin = ViewPlugin.fromClass(
   },
   {
     decorations: (v) => v.decorations,
+    eventHandlers: {
+      mouseover(event) {
+        this.hover(event.target);
+      },
+      mouseleave() {
+        this.hover(null);
+      },
+    },
   },
 );
 
@@ -214,6 +225,8 @@ const codeFenceThemeSpec = {
     backgroundColor: "var(--pm-code-background-color)",
   },
   ".cm-fenced-code-line-first": {
+    // Anchors the copy button (`CodeCopyWidget`), laid over the line out of the text flow.
+    position: "relative",
     borderTopLeftRadius: "0.4rem",
     borderTopRightRadius: "0.4rem",
   },
@@ -232,34 +245,19 @@ const codeFenceThemeSpec = {
   ".cm-code-scrollbar-thumb:hover, .cm-code-scrollbar-thumb.cm-code-scrollbar-dragging": {
     opacity: "1",
   },
-  ".cm-code-block-info": {
-    float: "right",
-    padding: "0.2rem",
-    display: "flex",
-    gap: "0.3rem",
-    alignItems: "center",
+  // No layout shift, and un-indented by the block's horizontal scroll (`text-indent` inherits).
+  [`.${CODE_COPY_SLOT_CLASS}`]: {
+    position: "absolute",
+    top: "0.3em",
+    right: "0.3em",
+    textIndent: "0",
+    whiteSpace: "normal",
+    lineHeight: "0",
+    opacity: "0",
+    transition: "opacity 120ms",
   },
-  ".cm-code-block-lang-container": {
-    fontSize: "0.8rem",
-    color: "var(--pm-muted-color)",
-  },
-  ".cm-code-block-copy-button": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    border: "none",
-    padding: "0.2rem",
-    borderRadius: "0.2rem",
-    cursor: "pointer",
-    backgroundColor: "var(--pm-code-btn-background-color)",
-    color: "var(--pm-muted-color)",
-  },
-  ".cm-code-block-copy-button:hover": {
-    backgroundColor: "var(--pm-code-btn-hover-background-color)",
-  },
-  ".cm-code-block-copy-button svg": {
-    width: "16px",
-    height: "16px",
+  [`.${CODE_COPY_SLOT_CLASS}.${CODE_COPY_VISIBLE_CLASS}, .${CODE_COPY_SLOT_CLASS}:focus-within`]: {
+    opacity: "1",
   },
 };
 
