@@ -97,6 +97,17 @@ Secrets: declare in `contributes.secrets`; read and write only through `ctx.secr
 
 `features.<id>.enabled` (global scope, default `enabledByDefault`). Off: the web half unregisters at once (every contribution removed); the Rust half is never set up or added as a plugin until restart. A new TS state must reset on deactivate.
 
+### Off must degrade, never break
+
+A feature can be off (kill switch), crashed (contained and switched off), or on but not set up (for example `git` in a vault with no repo). In all three states the rest of the app, and every other feature that cooperates with it, works exactly as it did before the feature existed.
+
+- **Depend on a point, never on a feature.** When feature A adds to feature B or to core (git committing an agent turn, lint fixing a note), A subscribes to a hook or contribution point that B or core owns. B never imports A, never checks whether A is on, never waits for A. With A off the point has no subscriber and B runs its own path.
+- **The old path stays the default.** If A enhances something that already works (git history next to the agent's in-memory Changes card and Undo), the existing behaviour is the path taken with no subscriber, not a fallback written later. Don't move existing behaviour into A.
+- **Nothing waits on a missing subscriber.** A hook that may have no subscriber returns at once; a subscriber's slowness or failure is contained (timeout, `guard`) and never blocks or fails the caller.
+- **Every surface goes away together:** settings page, status items, panels, menus and commands, CLI commands, the MCP tools derived from them, managed skills, timers, watchers and hook subscriptions. Switching off at runtime stops timers and drops subscriptions at once.
+- **"On but not set up" is a quiet state:** no error, no badge, no background work, no prompt beyond the feature's own settings page.
+- **Tests prove it:** for each feature that cooperates with yours, a test with yours off (the other works as before, no subscriber registered), one with yours on but not set up (no work, no error), and the registry test that every surface is gone.
+
 Update in the same change: the spec (`SPECs/builtin-plugins-spec.md` section 15/6.5, or the feature's own spec in `SPECs/`), `CHANGELOG.md` (one user-visible line, name the feature), `TODOS.md` (item names the feature id), the `features/` line of `CLAUDE.md` when a new kind of thing lands, and `docs/keyboard-shortcuts.md` for a keybinding (a test ties it to the registry). A decision that is hard to reverse needs an ADR (`adr-skill`).
 
 ## 9. Validation
@@ -112,6 +123,7 @@ From `apps/desktop`: `pnpm exec vp check` and `pnpm exec vp test`. With Rust, fr
 - [ ] Kill switch in the shared schema verbatim; settings in a fragment; secrets declared.
 - [ ] Rust: Feature impl, one `#[path]` mount plus one registry entry, commands `async` + `blocking`, bindings regenerated, `ipc.ts` only, capability file.
 - [ ] Containment: `guard` / `spawn` / `native`, no raw threads, `FeatureBoundary` for UI.
+- [ ] Off degrades: cooperation only through points the other side owns; the old path is the no-subscriber default; off and not-set-up tested for every feature you cooperate with.
 - [ ] Tests: register/unregister, kill switch, failing contribution, contract tests, Rust hooks and ACL.
 - [ ] Spec, `CHANGELOG.md`, `TODOS.md`, `CLAUDE.md`, shortcuts doc updated.
 - [ ] `vp check`, `vp test`, `cargo test`, `cargo fmt --check`, `cargo clippy` green.
