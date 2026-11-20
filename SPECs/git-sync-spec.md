@@ -18,7 +18,7 @@ Version history and multi-device sync for a vault through Git, with merges that 
 
 - `git` installed. The setup page detects it (with a `PATH` that adds Homebrew and the standard install dirs, which a GUI app lacks) and on macOS offers "Install Command Line Tools".
 - `git-lfs` only when LFS is turned on.
-- `gix` (MIT/Apache-2.0), exact version pinned when work starts, minimal features, no network features.
+- `gix` (MIT/Apache-2.0, approved by the user 2026-11-20), exact version pinned when work starts, minimal features, no network features.
 
 ## Setup (Settings > Git)
 
@@ -58,16 +58,70 @@ Shared Writer config (`.writer/property-types.json`, `.writer/graph.json`, `.wri
 
 ## Cadence
 
-| Setting                | Default                  | Meaning                                                                               |
-| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------- |
-| `git.commit-after`     | 60 s                     | commit changed files after this much quiet                                            |
-| `git.sync-interval`    | 5 min                    | fetch, replay, push (not used without a remote)                                       |
-| `git.sync-on-open`     | on                       | sync when the vault opens                                                             |
-| `git.commit-message`   | `vault backup: {{date}}` | placeholders `{{date}}`, `{{hostname}}`, `{{numFiles}}`, `{{files}}` (Obsidian Git's) |
-| `git.lfs`              | off                      | see LFS                                                                               |
-| `git.lfs-threshold-mb` | 100                      | see LFS                                                                               |
+Designed with the user on 2026-11-20, after the lint lesson (fixes on every autosave rewrote the line being typed): Git never acts while the user types, and one idle constant is shared with lint.
 
-Also on window close: commit, then (with a remote) push if the network allows within a short timeout. Writes by the app are seen through the watcher's self-write detection. A file with an open merge view is never committed until it is saved.
+**Commits (the user's edits)**
+
+- A commit runs after `git.commit-after` of quiet: no file in the vault written for that long, by anyone (the editor's autosave, a lint fix, an external app). Lint's safe fixes land 5 s after typing stops, so they are always in the same commit as the edit, never their own.
+- Also: on window close, before an agent turn starts (so the turn's commit holds only the agent's files), and on "Commit now".
+- No user commit runs while an agent turn is running in the vault. When the turn ends, the agent's commit goes first, then the quiet timer resumes for the rest.
+- A file with an open merge view is never committed until it is saved. Writes by the app are seen through the watcher's self-write detection.
+
+**Commit messages** (designed with the user 2026-11-20): the format of conventional commits, not their spec. The type says who, the scope says what happened, so `git log` alone shows the difference between the user's and an agent's commits.
+
+```
+user(edit): Meeting notes, Plan (+2)
+user(add): Ideas
+user(delete): Old draft
+user(move): Plan → Archive/Plan
+user(restore): Plan to 2026-11-19 14:03
+user(merge): Plan
+agent(edit): Rewrite the interview guide
+chore(setup): start version history
+```
+
+- Types: `user` (the user's edits, restores and merge-view resolutions), `agent` (one agent turn), `chore` (Writer's own housekeeping: `setup` for the first commit, `ignore` when the managed `.gitignore` block changes).
+- Scopes: `edit`, `add`, `delete`, `move` (a rename is a move), `restore`, `merge`, `setup`, `ignore`. A commit whose files all share one kind takes it; a commit mixing kinds is `edit`.
+- Subject for `user`: the changed notes by title (file name without `.md`, other files with their extension), at most two named, then `(+n)`; a move names `from → to`. For `agent`: the chat title.
+- Trailers: `Writer-Device: <device name>` on every commit; `Writer-Chat: <chat id>`, `Writer-Agent: <backend>` (`claude`, `opencode`) and `Writer-Model: <model id>` on agent commits. The model is the one the turn's main agent reported (its last `message.model`, e.g. `claude-opus-5-5`); a sub-agent that ran on another model adds one more `Writer-Model:` line per distinct model. History shows it by its display name (Opus 5.5, Haiku 5.5). Backend and model are trailers, never the scope. When the backend reports no model, the trailer is left out (never guessed).
+- Lint fixes never get their own commit: they fall in the quiet window of the edit they follow.
+- A replayed commit (sync) keeps its message and trailers.
+- The template `git.commit-message` (Advanced) only shapes the subject, default `{{notes}}`; placeholders `{{notes}}`, `{{date}}`, `{{hostname}}`, `{{numFiles}}`, `{{files}}`. Writer always adds the `type(scope): ` prefix and the trailers. History labels and badges rows from the type, scope and trailers.
+
+**Sync (with a remote)**
+
+- Fetch, replay and push about 10 s after each commit, every `git.sync-interval`, on vault open and on window close (short timeout), and on "Sync now".
+- A fetched change to a note that is open in an editor is applied only after the same idle time as lint's fixes (5 s without typing): merged into the editor as one transaction (one undo step, `userEvent: "git.sync"`, caret and selection mapped), never a reload under the user's hands. Closed files are written at once. A true overlap opens the merge view instead.
+
+| Setting                | Default     | Choices / meaning                                                  |
+| ---------------------- | ----------- | ------------------------------------------------------------------ |
+| `git.commit-after`     | 1 min       | 30 s, 1 min, 5 min, Manual (only "Commit now", close, agent turns) |
+| `git.sync-interval`    | 5 min       | 1, 5, 15 min, Manual (not shown without a remote)                  |
+| `git.agent-commits`    | on          | each agent turn its own commit; off: agent edits join yours        |
+| `git.commit-message`   | `{{notes}}` | Advanced; subject template, see Commit messages                    |
+| `git.lfs`              | off         | Advanced; see LFS                                                  |
+| `git.lfs-threshold-mb` | 100         | Advanced; see LFS                                                  |
+
+Obsidian Git settings, when present, prefill `git.commit-after` and `git.sync-interval` once (read-only); its commit message is not imported (Writer's prefixes would be lost).
+
+### Settings page
+
+Short, the rest folded:
+
+```
+Git                          ● Synced 2 min ago
+Remote     github.com/me/vault   [Change]
+           [Sync now]  [Pause]
+Save versions   [After 1 min quiet ▾]
+Sync            [Every 5 min ▾]
+Agent turns     [✓] Own version per turn
+▸ Advanced
+   Commit message     {{notes}}
+   Large files (LFS)  [ ] over [100] MB
+   Ignored            [Edit .gitignore block]
+```
+
+Without a remote the Remote row reads "None" with "Add a remote", and "Sync" is hidden. Before setup the page shows the four setup choices (below) instead.
 
 ## Sync
 
@@ -145,7 +199,7 @@ Designed with the user on 2026-11-20.
 
 ### With the agent
 
-- Each agent turn that changed files is its own commit, with the chat title as message and an agent trailer (`Writer-Chat: <chat id>`), so history shows it with an agent badge.
+- Each agent turn that changed files is its own commit, `agent(<kind>): <chat title>` with the trailers `Writer-Chat:` and `Writer-Agent:` (see Cadence), so history shows it with an agent badge. The user's pending edits are committed just before the turn starts. A file the user also edited during the turn goes into the agent's commit when the agent touched it; otherwise into the user's next commit.
 - The Changes card gets "View in history" (opens the History tab on that commit). The history entry gets "Open chat".
 - The card's Undo stays as today (in-memory, this session).
 - The agent reads history through `writer git:log path=…`, `writer git:diff path=… [rev=…] [against=parent|current]` and `writer git:show path=… rev=…`. They are MCP read tools, and the managed skill says when to use them ("what changed in X last week", "the version before the agent's edit"). Restoring goes through `writer git:restore path=… rev=…`, a write tool.
@@ -168,7 +222,7 @@ Read through gix.
 - `writer git:sync` (commits only when there is no remote): through the running app over the socket when it runs (so the app's scheduler and merge view own it), else headless with the same Rust engine. A conflict headless is reported and left for the app.
 - `writer git:log path=…`, `writer git:diff path=… [rev=…] [against=parent|current]`, `writer git:show path=… rev=…` (reads) and `writer git:restore path=… rev=…` (writes); see History.
 - The managed `writer-cli` skill documents them.
-- An agent chat's changes are committed as their own commit when the turn ends, with the chat title as the message (the Changes card already knows the files).
+- An agent chat's changes are committed as their own commit when the turn ends, `agent(<kind>): <chat title>` (the Changes card already knows the files).
 
 ## Privacy and logging
 
