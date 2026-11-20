@@ -112,11 +112,43 @@ Off by default (hosting can cost money). When on and `git-lfs` is installed, fil
 
 ## History
 
-A "History" tab for the current file:
+Designed with the user on 2026-11-20.
 
-- Its commits: date, device, message.
-- Select one to see its diff against the current file.
-- "Restore this version" writes it back as a new change. History is never rewritten.
+### Where
+
+- One **History tab** per file: page kind `git-history`, a normal tab (back/forward, split, middle-click).
+- Opened by "Show history" from the tab menu, the file tree menu (files and deleted entries) and the palette, and from an agent Changes card (below).
+- Left: the version list. Right: the selected version.
+- Header of the selected version: date, time, device or agent badge, message, then actions: **Restore**, **Copy**, **Open** (the version read-only in a tab), **Open chat** (agent versions).
+
+### List
+
+- Grouped by day ("Today", "Yesterday", then dates).
+- A burst folds into one entry: consecutive versions from the same author (device or chat) less than 15 min apart, "14:02–14:32 · 6 saves", expandable. Nothing is hidden, only folded.
+- Each entry is labelled with who changed it: the device name for automatic commits, an agent badge and the chat title for agent turns, the message for manual commits. Each also shows its +/- line counts.
+- History follows renames and moves (Writer records them through `relocate`; for others, git's rename detection on the commit). Older entries show the old name.
+- **Deleted notes**: the panel has a "Deleted" section listing files removed from the vault. Each opens its History tab, and the last version can be restored.
+
+### Diff
+
+- Selecting a version shows **what changed in that version**: that version against the file's previous version. "Compare with current" switches to that version against the file now (what Restore would change). Shift-click a second entry to compare any two.
+- **Notes** are shown rendered, like the editor (headings, lists, links, embeds as their labels), with insertions underlined in the success colour and deletions struck in the danger colour. Word-level within a paragraph, unchanged blocks folded.
+- **Front matter** changes show as property rows above the body (name, old → new, added, removed).
+- A **Source** toggle switches to the raw line diff. A version whose only change is formatting (whitespace, line breaks) says "Formatting only" and offers the toggle.
+- Other text files (`.base`, `.canvas`, `.excalidraw`, JSON, code) always show the line diff. Images show before and after side by side; other binaries show their sizes.
+- **One diff component** serves the History tab and the agent's Changes card: a rendered-with-marks view over the shared line-diff core (`agent/line_diff.rs`, extracted, not copied), with the Source toggle. The card's current line view becomes its Source mode.
+
+### Restore
+
+- "Restore" writes that version back as a new change through the one write path, committed as "Restore <file> to <date time>". History is never rewritten.
+- For a deleted file, the file is recreated at its last path (or a free name beside it).
+
+### With the agent
+
+- Each agent turn that changed files is its own commit, with the chat title as message and an agent trailer (`Writer-Chat: <chat id>`), so history shows it with an agent badge.
+- The Changes card gets "View in history" (opens the History tab on that commit). The history entry gets "Open chat".
+- The card's Undo stays as today (in-memory, this session).
+- The agent reads history through `writer git:log path=…`, `writer git:diff path=… [rev=…] [against=parent|current]` and `writer git:show path=… rev=…`. They are MCP read tools, and the managed skill says when to use them ("what changed in X last week", "the version before the agent's edit"). Restoring goes through `writer git:restore path=… rev=…`, a write tool.
 
 Read through gix.
 
@@ -134,7 +166,7 @@ Read through gix.
 
 - `writer git:status` (changed, conflicted, ahead/behind; `remote: none` without one).
 - `writer git:sync` (commits only when there is no remote): through the running app over the socket when it runs (so the app's scheduler and merge view own it), else headless with the same Rust engine. A conflict headless is reported and left for the app.
-- `writer git:log path=…` and `writer git:diff path=… [rev=…]`.
+- `writer git:log path=…`, `writer git:diff path=… [rev=…] [against=parent|current]`, `writer git:show path=… rev=…` (reads) and `writer git:restore path=… rev=…` (writes); see History.
 - The managed `writer-cli` skill documents them.
 - An agent chat's changes are committed as their own commit when the turn ends, with the chat title as the message (the Changes card already knows the files).
 
@@ -150,7 +182,7 @@ Log operation names, durations and outcomes only. Never tokens, remote URLs with
 - **Credential helper**: answers from the secret, the `gh` path, never logs.
 - **Ignore block**: keeps user lines and is idempotent.
 - **LFS**: threshold, and `git-lfs` missing.
-- **History**: list, diff and restore.
+- **History**: list grouping (days, bursts of 15 min per author), labels (device, agent badge and chat title), renames followed, deleted files listed and restored; diff of a version against its parent, against current and between two; rendered diff with properties rows and Source toggle, "Formatting only"; restore as a new commit; the agent Changes card and History tab render through the one diff component; `git:log`/`git:diff`/`git:show` read and `git:restore` write over MCP.
 - **Scheduler**: debounce, interval, on close, paused while a merge view is open.
 - **No remote**: local-only setup from a plain folder, commits on the cadence, no fetch or push attempted, status Local (not Offline or Error), history and restore work, adding a remote later pushes the existing history, removing it returns to Local.
 - **CLI**: headless and through the socket.
