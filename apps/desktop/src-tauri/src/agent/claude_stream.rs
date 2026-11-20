@@ -2201,7 +2201,7 @@ mod tests {
         let first = encode_user_message(cases[0]["prompt"].as_str().unwrap(), &[]);
         assert_eq!(
             first,
-            r#"{"message":{"content":"compare @Projects/Plan.md with @Notes/Today.md and /summarize\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @Notes/Today.md (active note: the note open in Writer)\n- @Projects/Plan.md (note)\n- /summarize (skill, not expanded mid-message: invoke it with the Skill tool)\n</references>","role":"user"},"type":"user"}"#
+            r#"{"type":"user","message":{"role":"user","content":"compare @Projects/Plan.md with @Notes/Today.md and /summarize\n\n<references>\nAttached by the user, paths relative to the working directory (read them with the Read tool when relevant):\n- @Notes/Today.md (active note: the note open in Writer)\n- @Projects/Plan.md (note)\n- /summarize (skill, not expanded mid-message: invoke it with the Skill tool)\n</references>"}}"#
         );
     }
 

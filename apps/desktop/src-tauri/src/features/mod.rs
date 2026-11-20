@@ -98,6 +98,8 @@ mod excalidraw;
 mod graph;
 #[path = "../../../features/icons/rust/mod.rs"]
 pub(crate) mod icons;
+#[path = "../../../features/lint/rust/mod.rs"]
+mod lint;
 #[path = "../../../features/pdf/rust/mod.rs"]
 pub(crate) mod pdf;
 #[path = "../../../features/tasks/rust/mod.rs"]
@@ -304,6 +306,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &excalidraw::Excalidraw,
         &graph::Graph,
         &icons::Icons,
+        &lint::Lint,
         &pdf::Pdf,
         &spellcheck::Spellcheck,
         &tasks::Tasks,
@@ -1173,6 +1176,7 @@ mod tests {
                 "excalidraw",
                 "graph",
                 "icons",
+                "lint",
                 "pdf",
                 "spellcheck",
                 "tasks"
@@ -1227,8 +1231,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            10,
-            "the agent, bases, code-files, dataview, excalidraw, graph, icons, pdf, spellcheck and tasks still start"
+            11,
+            "the agent, bases, code-files, dataview, excalidraw, graph, icons, lint, pdf, spellcheck and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1426,6 +1430,8 @@ mod tests {
                 "icon:set",
                 "icon:get",
                 "icon:remove",
+                "lint",
+                "lint:fix",
                 "check",
                 "task:add",
                 "task:done",
@@ -1443,6 +1449,8 @@ mod tests {
                 "tasks"
             } else if c.name == "dql" {
                 "dataview"
+            } else if c.name == "lint" || c.name == "lint:fix" {
+                "lint"
             } else if c.name == "check" {
                 "spellcheck"
             } else {
@@ -1451,7 +1459,12 @@ mod tests {
         let skills: Vec<_> = skills().iter().map(|s| s.name).collect();
         assert_eq!(
             skills,
-            ["writer-bases", "writer-excalidraw", "writer-diagram"]
+            [
+                "writer-bases",
+                "writer-excalidraw",
+                "writer-diagram",
+                "writer-lint"
+            ]
         );
         assert!(index_ddl().is_empty());
         assert_eq!(index_schema_suffix(), "");
@@ -1460,11 +1473,11 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 21
+            crate::cli::registry::COMMANDS.len() + 23
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),
-            crate::managed_skills::SKILLS.len() + 3
+            crate::managed_skills::SKILLS.len() + 4
         );
     }
 

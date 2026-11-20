@@ -78,15 +78,15 @@
     "decisionReason": "This command requires approval",
     "suggestions": [
       {
-        "behavior": "allow",
-        "destination": "localSettings",
+        "type": "addRules",
         "rules": [
           {
-            "ruleContent": "python3 -c 'print(2)'",
-            "toolName": "Bash"
+            "toolName": "Bash",
+            "ruleContent": "python3 -c 'print(2)'"
           }
         ],
-        "type": "addRules"
+        "behavior": "allow",
+        "destination": "localSettings"
       }
     ]
   },

@@ -44,10 +44,10 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_ex",
     "input": {
+      "subagent_type": "writer-explorer",
       "description": "Find notes about pricing",
       "prompt": "List the notes that mention pricing.",
-      "run_in_background": false,
-      "subagent_type": "writer-explorer"
+      "run_in_background": false
     }
   },
   {
@@ -61,10 +61,10 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_wk",
     "input": {
+      "subagent_type": "writer-worker",
       "description": "Fix the typo in Plan",
       "prompt": "In Plan.md change teh to the.",
-      "run_in_background": false,
-      "subagent_type": "writer-worker"
+      "run_in_background": false
     }
   },
   {
@@ -215,8 +215,8 @@
     "toolCallId": "toolu_w_edit",
     "input": {
       "file_path": "/vault/Plan.md",
-      "new_string": "the",
-      "old_string": "teh"
+      "old_string": "teh",
+      "new_string": "the"
     }
   },
   {

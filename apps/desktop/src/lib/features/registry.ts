@@ -28,6 +28,7 @@ import { settingsSectionContributions } from "./settings-sections";
 import { sidebarActionContributions, sidebarPanelContributions } from "./sidebar";
 import { serviceContributions } from "./services";
 import { statusItemContributions } from "./status-items";
+import { beforeSaveContributions } from "./before-save";
 import type {
   Dispose,
   DisposableStore,
@@ -54,6 +55,7 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.sidebarPanels ?? []),
     ...(c.sidebarActions ?? []),
     ...(c.statusItems ?? []),
+    ...(c.beforeSave ?? []),
     ...(c.overlays ?? []),
     ...(c.fileTreeDecorations ?? []),
     ...(c.slots ?? []),
@@ -157,6 +159,7 @@ export function createFeatureHost({
     sidebarPanelContributions.removeOwner(ownerOf(id));
     sidebarActionContributions.removeOwner(ownerOf(id));
     statusItemContributions.removeOwner(ownerOf(id));
+    beforeSaveContributions.removeOwner(ownerOf(id));
     overlayContributions.removeOwner(ownerOf(id));
     fileTreeDecorationContributions.removeOwner(ownerOf(id));
     slotContributions.removeOwner(ownerOf(id));
@@ -232,6 +235,9 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.statusItems ?? []) {
           statusItemContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.beforeSave ?? []) {
+          beforeSaveContributions.add(x.id, { ...x, owner: o });
         }
         for (const x of def.contributes?.overlays ?? []) {
           overlayContributions.add(x.id, { ...x, owner: o });

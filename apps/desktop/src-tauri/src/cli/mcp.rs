@@ -661,6 +661,7 @@ mod tests {
             "excalidraw:preview",
             "icon:set",
             "icon:remove",
+            "lint:fix",
             "project:archive",
             "project:unarchive",
             "open",
@@ -688,6 +689,7 @@ mod tests {
             "tags",
             "base:query",
             "dql",
+            "lint",
             "status",
             "active",
         ] {

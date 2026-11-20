@@ -1,4 +1,4 @@
-//! The one Markdown prose mask: which characters of a note are prose a checker may look at, and
+//! The one Markdown scanner: which characters of a note are prose a checker may look at, and
 //! how the note splits into blocks (ADR 2026-11-18, point 4). Both providers consume it: Harper
 //! through a `Masker` over a block's allowed ranges, the Hunspell provider by tokenizing only
 //! inside them.
@@ -8,6 +8,11 @@
 //! `[[wiki links]]` and `![[embeds]]`, the destination part of a Markdown link (its text is
 //! prose), footnote and reference definitions, `#tags`, block ids, list, quote and heading
 //! markers, callout headers, table rules, emphasis delimiters and character entities.
+//!
+//! The same scan also reports where the Obsidian-only syntax sits ([`obsidian_syntax`]): front
+//! matter, wiki links and embeds, callout header lines, block ids and `%%` comments. The spellcheck
+//! reads the prose, the Markdown linter (`crate::lint`) keeps its findings and fixes off that syntax;
+//! there is no second scanner.
 //!
 //! Everything is in `char` offsets, so a masked range maps back to the note exactly. The scan is
 //! line based and forgiving: an unclosed construct masks nothing past its line or block, so a
@@ -43,6 +48,33 @@ impl Block {
 
 /// The note's blocks, in order.
 pub fn blocks(chars: &[char]) -> Vec<Block> {
+    scan(chars).blocks
+}
+
+/// The `char` ranges of the Obsidian-only syntax, sorted and merged: front matter, `[[wiki
+/// links]]` and `![[embeds]]`, callout header lines (`> [!note]+ Title`), block ids (`^abc`) and
+/// `%%` comments. Inside code (a fence, a span) such text is code, not syntax, and is not listed.
+pub fn obsidian_syntax(chars: &[char]) -> Vec<Range<usize>> {
+    let mut ranges = scan(chars).syntax;
+    ranges.sort_by_key(|r| (r.start, r.end));
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for r in ranges {
+        match merged.last_mut() {
+            Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+            _ => merged.push(r),
+        }
+    }
+    merged
+}
+
+/// What one pass over the note finds.
+struct Scan {
+    blocks: Vec<Block>,
+    syntax: Vec<Range<usize>>,
+}
+
+fn scan(chars: &[char]) -> Scan {
+    let mut syntax: Vec<Range<usize>> = Vec::new();
     let lines = split_lines(chars);
     let mut masked = vec![false; chars.len()];
     let mut out: Vec<Block> = Vec::new();
@@ -56,25 +88,28 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
             (1..lines.len()).find(|&k| matches!(trimmed(chars, &lines[k]).as_str(), "---" | "..."))
         {
             mask_range(&mut masked, lines[0].start..lines[close].end);
+            syntax.push(lines[0].start..lines[close].end);
             i = close + 1;
         }
     }
 
     let mut list_context = false;
     let mut prev_blank = true;
-    let flush =
-        |open: &mut Option<(usize, usize)>, out: &mut Vec<Block>, masked: &mut Vec<bool>| {
-            if let Some((a, b)) = open.take() {
-                finish_block(chars, masked, lines[a].start, lines[b].end, out);
-            }
-        };
+    let flush = |open: &mut Option<(usize, usize)>,
+                 out: &mut Vec<Block>,
+                 masked: &mut Vec<bool>,
+                 syntax: &mut Vec<Range<usize>>| {
+        if let Some((a, b)) = open.take() {
+            finish_block(chars, masked, lines[a].start, lines[b].end, out, syntax);
+        }
+    };
 
     while i < lines.len() {
         let line = &lines[i];
         let text = line_text(chars, line);
         let trim = text.trim();
         if trim.is_empty() {
-            flush(&mut open, &mut out, &mut masked);
+            flush(&mut open, &mut out, &mut masked, &mut syntax);
             prev_blank = true;
             i += 1;
             continue;
@@ -83,7 +118,7 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
 
         // Fenced code.
         if let Some((fence_char, n)) = fence_open(&text) {
-            flush(&mut open, &mut out, &mut masked);
+            flush(&mut open, &mut out, &mut masked, &mut syntax);
             let close = (i + 1..lines.len())
                 .find(|&k| fence_closes(&line_text(chars, &lines[k]), fence_char, n));
             let last = close.unwrap_or(lines.len() - 1);
@@ -94,7 +129,7 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
         }
         // Math block `$$ ... $$`.
         if trim.starts_with("$$") {
-            flush(&mut open, &mut out, &mut masked);
+            flush(&mut open, &mut out, &mut masked, &mut syntax);
             let single = trim.len() > 2 && trim.ends_with("$$");
             let last = if single {
                 i
@@ -110,15 +145,18 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
         }
         // Multi-line comments: `<!-- ... -->` and `%% ... %%`.
         if let Some(last) = comment_end(chars, &lines, i, trim) {
-            flush(&mut open, &mut out, &mut masked);
+            flush(&mut open, &mut out, &mut masked, &mut syntax);
             mask_range(&mut masked, line.start..lines[last].end);
+            if trim.starts_with("%%") {
+                syntax.push(line.start..lines[last].end);
+            }
             i = last + 1;
             prev_blank = false;
             continue;
         }
         // HTML block (a block-level tag line) ends at the next blank line.
         if indent < 4 && is_html_block_start(trim) {
-            flush(&mut open, &mut out, &mut masked);
+            flush(&mut open, &mut out, &mut masked, &mut syntax);
             let mut last = i;
             while last + 1 < lines.len() && !line_text(chars, &lines[last + 1]).trim().is_empty() {
                 last += 1;
@@ -158,16 +196,16 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
         match kind {
             LineKind::Rule | LineKind::SetextUnderline => {
                 // a thematic break or the underline of a heading; the text above stays a block
-                flush(&mut open, &mut out, &mut masked);
+                flush(&mut open, &mut out, &mut masked, &mut syntax);
                 mask_range(&mut masked, line.start..line.end);
                 list_context = false;
             }
             LineKind::LinkDefinition => {
-                flush(&mut open, &mut out, &mut masked);
+                flush(&mut open, &mut out, &mut masked, &mut syntax);
                 mask_range(&mut masked, line.start..line.end);
             }
             LineKind::Heading(prefix) => {
-                flush(&mut open, &mut out, &mut masked);
+                flush(&mut open, &mut out, &mut masked, &mut syntax);
                 mask_range(&mut masked, line.start..line.start + prefix);
                 // a closing run of `#` is part of the marker
                 let mut e = line.end;
@@ -182,14 +220,14 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
                     mask_range(&mut masked, e - hashes..e);
                 }
                 open = Some((i, i));
-                flush(&mut open, &mut out, &mut masked);
+                flush(&mut open, &mut out, &mut masked, &mut syntax);
                 list_context = false;
             }
             LineKind::ListItem(prefix) | LineKind::Quote(prefix) | LineKind::QuoteStart(prefix) => {
                 let continues_quote =
                     matches!(kind, LineKind::Quote(_)) && open.is_some() && open_is_quote;
                 if !continues_quote {
-                    flush(&mut open, &mut out, &mut masked);
+                    flush(&mut open, &mut out, &mut masked, &mut syntax);
                     open_is_quote = !matches!(kind, LineKind::ListItem(_));
                 }
                 mask_range(&mut masked, line.start..line.start + prefix);
@@ -198,6 +236,9 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
                     let at = line.start + prefix;
                     let skip = (at..line.end).take_while(|&k| chars[k] == ' ').count();
                     if chars.get(at + skip) == Some(&'[') {
+                        if chars.get(at + skip + 1) == Some(&'!') {
+                            syntax.push(line.start..line.end);
+                        }
                         if let Some(close) = (at + skip..line.end).find(|&k| chars[k] == ']') {
                             let end = close
                                 + 1
@@ -216,14 +257,14 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
             }
             LineKind::TableRow => {
                 // every cell is its own run of prose; the pipes and the rule row are markup
-                flush(&mut open, &mut out, &mut masked);
+                flush(&mut open, &mut out, &mut masked, &mut syntax);
                 for k in line.start..line.end {
                     if chars[k] == '|' {
                         masked[k] = true;
                     }
                 }
                 open = Some((i, i));
-                flush(&mut open, &mut out, &mut masked);
+                flush(&mut open, &mut out, &mut masked, &mut syntax);
             }
             LineKind::Text => {
                 // the indentation of a continuation line is not prose
@@ -243,8 +284,11 @@ pub fn blocks(chars: &[char]) -> Vec<Block> {
         prev_blank = false;
         i += 1;
     }
-    flush(&mut open, &mut out, &mut masked);
-    out
+    flush(&mut open, &mut out, &mut masked, &mut syntax);
+    Scan {
+        blocks: out,
+        syntax,
+    }
 }
 
 struct Line {
@@ -545,8 +589,9 @@ fn finish_block(
     start: usize,
     end: usize,
     out: &mut Vec<Block>,
+    syntax: &mut Vec<Range<usize>>,
 ) {
-    inline_pass(chars, masked, start, end);
+    inline_pass(chars, masked, start, end, syntax);
     let mut allowed: Vec<Range<usize>> = Vec::new();
     let mut i = start;
     while i < end {
@@ -580,7 +625,13 @@ fn is_word_char(c: char) -> bool {
 }
 
 /// Masks the inline constructs of one block. `masked` already holds the block's line prefixes.
-fn inline_pass(chars: &[char], masked: &mut [bool], start: usize, end: usize) {
+fn inline_pass(
+    chars: &[char],
+    masked: &mut [bool],
+    start: usize,
+    end: usize,
+    syntax: &mut Vec<Range<usize>>,
+) {
     let line_end =
         |from: usize| -> usize { (from..end).find(|&k| chars[k] == '\n').unwrap_or(end) };
     let find_seq = |from: usize, limit: usize, seq: &[char]| -> Option<usize> {
@@ -649,6 +700,7 @@ fn inline_pass(chars: &[char], masked: &mut [bool], start: usize, end: usize) {
             '%' if next == Some('%') => {
                 if let Some(p) = find_seq(i + 2, end, &['%', '%']) {
                     mask_range(masked, i..p + 2);
+                    syntax.push(i..p + 2);
                     i = p + 2;
                     continue;
                 }
@@ -693,6 +745,7 @@ fn inline_pass(chars: &[char], masked: &mut [bool], start: usize, end: usize) {
                     if let Some(p) = find_seq(i + 2, le, &[']', ']']) {
                         let from = if prev == Some('!') { i - 1 } else { i };
                         mask_range(masked, from..p + 2);
+                        syntax.push(from..p + 2);
                         i = p + 2;
                         continue;
                     }
@@ -777,6 +830,7 @@ fn inline_pass(chars: &[char], masked: &mut [bool], start: usize, end: usize) {
                     let id = &chars[i + 1..le];
                     if !id.is_empty() && id.iter().all(|c| c.is_ascii_alphanumeric() || *c == '-') {
                         mask_range(masked, i..le);
+                        syntax.push(i..le);
                         i = le;
                         continue;
                     }
@@ -1003,5 +1057,39 @@ mod tests {
             prose("It costs $5 and `tick\n\nNext one"),
             "It costs $5 and `tick|Next one"
         );
+    }
+
+    /// The text of every Obsidian-syntax range, joined by `|`.
+    fn syntax(s: &str) -> String {
+        let c = chars(s);
+        obsidian_syntax(&c)
+            .iter()
+            .map(|r| c[r.clone()].iter().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("|")
+    }
+
+    #[test]
+    fn obsidian_syntax_lists_each_construct() {
+        assert_eq!(
+            syntax("See [[A|b]] and ![[x.png]] now"),
+            "[[A|b]]|![[x.png]]"
+        );
+        assert_eq!(syntax("para text ^abc-1\n"), "^abc-1");
+        assert_eq!(syntax("a %%hidden%% b"), "%%hidden%%");
+        assert_eq!(syntax("%%\nmulti\nline\n%%\nafter"), "%%\nmulti\nline\n%%");
+        assert_eq!(
+            syntax("> [!note]- Title here\n> body"),
+            "> [!note]- Title here"
+        );
+        assert_eq!(syntax("---\ntitle: x\n---\nbody"), "---\ntitle: x\n---");
+        // a plain quote is not a callout
+        assert_eq!(syntax("> just a quote"), "");
+    }
+
+    #[test]
+    fn obsidian_syntax_skips_code_and_merges_neighbours() {
+        assert_eq!(syntax("`[[x]]` and\n\n```\n[[y]]\n```\n"), "");
+        assert_eq!(syntax("[[a]][[b]]"), "[[a]][[b]]");
     }
 }

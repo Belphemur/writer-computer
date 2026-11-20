@@ -50,3 +50,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - spellbook, MPL-2.0, the Helix project. Reads Hunspell dictionaries.
 - lingua (`lingua-rs`), Apache-2.0. Language detection (English and French models).
 - Hunspell dictionaries from `wooorm/dictionaries` are not bundled. A dictionary the user chooses to install keeps its own licence, recorded in `<app data>/spellcheck/dictionaries/<id>/meta.json` and shown in Settings > Spelling before the download.
+
+## Markdown lint
+
+- Crate: `rumdl` 0.3.5 (pinned exactly in `apps/desktop/src-tauri/Cargo.toml`, default features off: no language server, no file watching), compiled into the app and the `writer` CLI; only `apps/desktop/src-tauri/src/lint/` names it.
+- Project: <https://github.com/rvben/rumdl>.
+- License: MIT, copyright the rumdl authors.
+- Use: the Markdown rules and their fixes behind the built-in `lint` feature. It runs on text Writer hands it and never reads or writes files itself.

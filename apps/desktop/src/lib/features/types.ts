@@ -24,7 +24,8 @@ export type ContributionIdPoint =
   | "sidebarActions"
   | "statusItems"
   | "overlays"
-  | "fileTreeDecorations";
+  | "fileTreeDecorations"
+  | "beforeSave";
 
 /** The static facts in `src-tauri/src/features/<id>/feature.json` that the web side may read. */
 export interface FeatureManifest {
@@ -228,6 +229,16 @@ export interface FileTreeDecorationContribution {
   useBadge: (entry: DirEntry) => FileTreeBadge | null;
 }
 
+/** Work done to a note just before the save engine reads it (`lib/features/before-save.ts`). */
+export interface BeforeSaveContribution {
+  /** `<feature id>.<name>`. */
+  id: string;
+  /** `path` is the note's absolute path. Dispatch to the editor showing it (the write that
+   *  follows carries the edit); never write the file. May be async; a throw is reported to the
+   *  feature's health and the save goes on. */
+  run: (path: string) => void | Promise<void>;
+}
+
 /** Palette commands computed each time the palette opens (a source of dynamic commands). */
 export interface CommandSourceContribution {
   /** `<feature id>.<name>`. */
@@ -260,6 +271,8 @@ export interface Contributions {
   overlays?: readonly OverlayContribution[];
   /** Badges on sidebar tree rows (`lib/features/file-tree.ts`). */
   fileTreeDecorations?: readonly FileTreeDecorationContribution[];
+  /** Work done to a note before it is saved (`lib/features/before-save.ts`). */
+  beforeSave?: readonly BeforeSaveContribution[];
   /** Components mounted in named places of core UI (`lib/features/slots.ts`). */
   slots?: readonly SlotContribution[];
   commandSources?: readonly CommandSourceContribution[];

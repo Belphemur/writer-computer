@@ -19,10 +19,12 @@ pub mod icons;
 mod ignore;
 pub mod index;
 pub mod ipc;
+pub mod lint;
 pub mod logging;
 #[cfg(target_os = "macos")]
 mod macos;
 pub mod managed_skills;
+pub mod markdown_mask;
 pub mod open_target;
 mod plugin_consent;
 mod plugin_env;

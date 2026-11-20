@@ -1,6 +1,7 @@
 import { useSettingsStore } from "@/stores/settings-store";
 import type { OpenFile } from "@/hooks/editor-api";
 import { serializeDocument } from "@/lib/frontmatter";
+import { runBeforeSave } from "@/lib/features/before-save";
 import * as tauri from "@/lib/tauri";
 
 const THROTTLE_MS = 1000;
@@ -141,10 +142,21 @@ async function performSave(path: string, controller = getSaveController(path)) {
   controller.pending = false;
   controller.lastSaveTime = Date.now();
 
-  const full = serializeForSave(file);
   let shouldReschedule = false;
 
   try {
+    // Features may edit the note first (lint's fix on save): the editor sync puts the edit in the
+    // store, and what is serialized below is read after it. The edit asks for a save of its own
+    // (`pending`); this write carries it, so that request is spent.
+    const before = runBeforeSave(path);
+    if (before) {
+      await before;
+      controller.pending = false;
+    }
+    const current = store.getOpenFile(path);
+    if (!current) return;
+    const full = serializeForSave(current);
+
     await tauri.writeFile(path, full);
 
     const latestFile = store.getOpenFile(path);

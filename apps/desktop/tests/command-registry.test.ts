@@ -83,6 +83,8 @@ describe("palette built-in commands", () => {
       "graph.open",
       "hotkeys.open",
       "icons.change",
+      "lint.fix-all",
+      "lint.settings",
       "spellcheck.settings",
       "tasks.open",
       "tasks.add",

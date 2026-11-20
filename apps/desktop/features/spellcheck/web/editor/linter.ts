@@ -11,6 +11,7 @@
 //   apply. Not `forceLinting`, which only hurries a check an edit already scheduled and does
 //   nothing otherwise.
 import { linter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
+import { replaceOwnDiagnostics } from "@/lib/editor-diagnostics";
 import { ViewPlugin, type EditorView } from "@codemirror/view";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import { editorNotePath, liveEditorViews } from "@/lib/editor-views";
@@ -21,7 +22,7 @@ import { getFileName } from "@/lib/paths";
 import { useSettingsStore } from "@/stores/settings-store";
 import { addWord, check, ignoreWord } from "../ipc";
 import { anyKindEnabled, checkSignature, ignoredRules, KEYS } from "../lib/settings";
-import { groupFindings, issueKey } from "../lib/issue-groups";
+import { groupFindings, isSpellDiagnostic, issueKey } from "../lib/issue-groups";
 import { useSpellStore } from "../lib/spell-store";
 import { toDiagnostics, withoutWord, type ActionHandlers } from "./diagnostics";
 import { spellTooltipTheme } from "./tooltip-theme";
@@ -107,7 +108,8 @@ const followChanges = ViewPlugin.define((view) => {
   const nudge = () => {
     const doc = view.state.doc;
     void runCheck(view).then((diagnostics) => {
-      if (live && view.state.doc === doc) view.dispatch(setDiagnostics(view.state, diagnostics));
+      if (live && view.state.doc === doc)
+        replaceOwnDiagnostics(view, isSpellDiagnostic, diagnostics);
     });
   };
   let signature = checkSignature();

@@ -1,0 +1,340 @@
+{
+  "rules": [
+    {
+      "id": "MD001",
+      "name": "Heading levels",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD003",
+      "name": "Heading style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD004",
+      "name": "List marker style",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD005",
+      "name": "List indent consistency",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD007",
+      "name": "List indentation",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD009",
+      "name": "Trailing spaces",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD010",
+      "name": "Hard tabs",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD011",
+      "name": "Reversed links",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD012",
+      "name": "Multiple blank lines",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD013",
+      "name": "Line length",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD014",
+      "name": "Dollar signs in commands",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD018",
+      "name": "Space after heading hashes",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD019",
+      "name": "Extra spaces after heading hashes",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD020",
+      "name": "Space inside closed heading hashes",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD021",
+      "name": "Extra spaces inside closed heading hashes",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD022",
+      "name": "Blank lines around headings",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD023",
+      "name": "Indented headings",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD024",
+      "name": "Duplicate headings",
+      "safe": false,
+      "default": false,
+      "fixable": false
+    },
+    {
+      "id": "MD025",
+      "name": "Multiple top-level headings",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD026",
+      "name": "Heading punctuation",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD027",
+      "name": "Extra spaces after quote marker",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD028",
+      "name": "Blank line inside quote",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD029",
+      "name": "Ordered list numbering",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD030",
+      "name": "Spaces after list markers",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD031",
+      "name": "Blank lines around code fences",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD032",
+      "name": "Blank lines around lists",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD033",
+      "name": "Inline HTML",
+      "safe": false,
+      "default": false,
+      "fixable": false
+    },
+    {
+      "id": "MD034",
+      "name": "Bare URLs",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD035",
+      "name": "Horizontal rule style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD036",
+      "name": "Emphasis as heading",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD037",
+      "name": "Spaces inside emphasis",
+      "safe": false,
+      "default": false,
+      "fixable": false
+    },
+    {
+      "id": "MD038",
+      "name": "Spaces inside code spans",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD039",
+      "name": "Spaces inside link text",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD040",
+      "name": "Code fence language",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD041",
+      "name": "First line heading",
+      "safe": false,
+      "default": false,
+      "fixable": false
+    },
+    {
+      "id": "MD042",
+      "name": "Empty links",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD045",
+      "name": "Image alt text",
+      "safe": false,
+      "default": false,
+      "fixable": false
+    },
+    {
+      "id": "MD046",
+      "name": "Code block style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD047",
+      "name": "Final newline",
+      "safe": true,
+      "default": true,
+      "fixable": true
+    },
+    {
+      "id": "MD048",
+      "name": "Code fence style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD049",
+      "name": "Emphasis style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD050",
+      "name": "Strong style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD055",
+      "name": "Table pipe style",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD056",
+      "name": "Table column count",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD058",
+      "name": "Blank lines around tables",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD060",
+      "name": "Table alignment",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD064",
+      "name": "Multiple spaces",
+      "safe": false,
+      "default": false,
+      "fixable": true
+    },
+    {
+      "id": "MD065",
+      "name": "Blank lines around rules",
+      "safe": true,
+      "default": false,
+      "fixable": true
+    }
+  ]
+}

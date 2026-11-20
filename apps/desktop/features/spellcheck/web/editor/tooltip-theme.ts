@@ -1,26 +1,9 @@
-// The look of the spelling and grammar tooltip: a compact opaque card (design.md section 5), the
-// editor's UI size, no wider than 320px, with theme tokens only. It is still CodeMirror's lint
-// tooltip (no new overlay layer, design.md section 4). `!important` on the surface because
-// `@codemirror/view`'s base theme paints `.cm-tooltip` after the app stylesheet.
+// The look of the spelling and grammar card; the tooltip surface is core's shared
+// `lintTooltipTheme`.
 import { EditorView } from "@codemirror/view";
+import { lintTooltipTheme } from "@/components/editor-area/lint-tooltip-theme";
 
-export const spellTooltipTheme = EditorView.baseTheme({
-  ".cm-tooltip.cm-tooltip-lint": {
-    background: "var(--bg-base) !important",
-    border: "1px solid var(--border-color) !important",
-    borderRadius: "10px !important",
-    boxShadow: "0 8px 24px color-mix(in srgb, var(--fg-base) 16%, transparent)",
-    maxWidth: "320px",
-    overflow: "hidden",
-  },
-  ".cm-tooltip-lint .cm-diagnostic": {
-    padding: "8px 10px",
-    margin: "0",
-    borderLeft: "none",
-    fontSize: "13px",
-    lineHeight: "1.4",
-    color: "var(--text-primary)",
-  },
+const spellCardTheme = EditorView.baseTheme({
   ".cm-spell-card": { display: "flex", flexDirection: "column", gap: "6px" },
   // `source` carries the kind and rule for grouping (`encodeSource`); the card title already
   // names the kind, so CodeMirror's printed source line is hidden on our cards.
@@ -72,3 +55,5 @@ export const spellTooltipTheme = EditorView.baseTheme({
     background: "color-mix(in srgb, var(--accent) 12%, transparent)",
   },
 });
+
+export const spellTooltipTheme = [lintTooltipTheme, spellCardTheme];

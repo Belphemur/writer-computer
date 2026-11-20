@@ -36,9 +36,9 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_agent1",
     "input": {
+      "subagent_type": "general-purpose",
       "description": "Sweep the notes",
-      "prompt": "Read them",
-      "subagent_type": "general-purpose"
+      "prompt": "Read them"
     }
   },
   {

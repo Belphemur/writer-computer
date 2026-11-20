@@ -543,7 +543,8 @@ fn active_returns_the_path_kind_and_line_and_never_text() {
         let answer = ask(&s, "active", Some(&f.root), json!({})).await;
         assert_eq!(answer["ok"], true, "{answer}");
         let result = answer["result"].as_object().unwrap();
-        let keys: Vec<_> = result.keys().cloned().collect();
+        let mut keys: Vec<_> = result.keys().cloned().collect();
+        keys.sort(); // order is the insertion order (a dependency enables serde_json's preserve_order)
         assert_eq!(keys, ["kind", "line", "path"], "exactly these fields");
         assert_eq!(result["path"], "Projects/Alpha.md");
         assert_eq!(result["kind"], "markdown");

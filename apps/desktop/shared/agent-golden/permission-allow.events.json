@@ -115,8 +115,8 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_c2",
     "input": {
-      "content": "hello",
-      "file_path": "/vault/Projects/Demo/notes.txt"
+      "file_path": "/vault/Projects/Demo/notes.txt",
+      "content": "hello"
     }
   },
   {
@@ -133,16 +133,16 @@
     "tool": "Write",
     "displayName": "Write",
     "input": {
-      "content": "hello",
-      "file_path": "/vault/Projects/Demo/notes.txt"
+      "file_path": "/vault/Projects/Demo/notes.txt",
+      "content": "hello"
     },
     "description": "notes.txt",
     "decisionReason": null,
     "suggestions": [
       {
-        "destination": "session",
+        "type": "setMode",
         "mode": "acceptEdits",
-        "type": "setMode"
+        "destination": "session"
       }
     ]
   },
@@ -216,15 +216,15 @@
     "decisionReason": "This command requires approval",
     "suggestions": [
       {
-        "behavior": "allow",
-        "destination": "localSettings",
+        "type": "addRules",
         "rules": [
           {
-            "ruleContent": "python3 -c 'print(1)'",
-            "toolName": "Bash"
+            "toolName": "Bash",
+            "ruleContent": "python3 -c 'print(1)'"
           }
         ],
-        "type": "addRules"
+        "behavior": "allow",
+        "destination": "localSettings"
       }
     ]
   },

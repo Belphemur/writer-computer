@@ -59,6 +59,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Dataview   | `dql`                                                                                                                                                                               |
 | Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:lint`, `excalidraw:export`, `excalidraw:preview`                                         |
 | Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                                                               |
+| Lint       | `lint`, `lint:fix`                                                                                                                                                                  |
 | Spelling   | `check`                                                                                                                                                                             |
 
 <!-- END GENERATED: groups -->

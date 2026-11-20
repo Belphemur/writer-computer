@@ -1,0 +1,31 @@
+{
+  "settings": [
+    {
+      "key": "lint.rules-on",
+      "label": "Extra rules",
+      "description": "Markdown rules switched on beyond the defaults.",
+      "category": "Lint",
+      "type": "list",
+      "default": [],
+      "scope": "global"
+    },
+    {
+      "key": "lint.rules-off",
+      "label": "Disabled rules",
+      "description": "Default Markdown rules switched off.",
+      "category": "Lint",
+      "type": "list",
+      "default": [],
+      "scope": "global"
+    },
+    {
+      "key": "lint.fix-on-save",
+      "label": "Fix on save",
+      "description": "Fix the safe rules when you save a note.",
+      "category": "Lint",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    }
+  ]
+}

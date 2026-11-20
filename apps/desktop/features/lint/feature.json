@@ -1,0 +1,35 @@
+{
+  "id": "lint",
+  "name": "Markdown lint",
+  "version": "1.0.0",
+  "description": "Finds and fixes Markdown formatting problems in notes, never touching Obsidian syntax: inline warnings with a Fix action, safe fixes when you save, and `writer lint` for agents.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "low",
+    "note": "Nothing is loaded until a note is open; a check runs in a short Rust call a moment after you stop typing. The Rust part needs a restart to start or stop."
+  },
+  "rust": {
+    "commands": ["lint_check", "lint_fix"],
+    "cliCommands": ["lint", "lint:fix"],
+    "skills": ["writer-lint"]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "lint.fix-all",
+        "label": "Fix Markdown formatting",
+        "description": "Fix every lint warning in the note",
+        "when": "workspace-window"
+      },
+      {
+        "id": "lint.settings",
+        "label": "Lint settings",
+        "description": "Choose the rules",
+        "when": "workspace-window"
+      }
+    ],
+    "editorExtensions": ["lint.linter"],
+    "beforeSave": ["lint.fix-on-save"]
+  }
+}

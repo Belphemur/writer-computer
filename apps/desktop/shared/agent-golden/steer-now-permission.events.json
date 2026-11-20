@@ -25,8 +25,8 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_s1",
     "input": {
-      "content": "hello\n",
-      "file_path": "/vault/Projects/Demo/a.txt"
+      "file_path": "/vault/Projects/Demo/a.txt",
+      "content": "hello\n"
     }
   },
   {
@@ -46,16 +46,16 @@
     "tool": "Write",
     "displayName": "Write",
     "input": {
-      "content": "hello\n",
-      "file_path": "/vault/Projects/Demo/a.txt"
+      "file_path": "/vault/Projects/Demo/a.txt",
+      "content": "hello\n"
     },
     "description": "a.txt",
     "decisionReason": null,
     "suggestions": [
       {
-        "destination": "session",
+        "type": "setMode",
         "mode": "acceptEdits",
-        "type": "setMode"
+        "destination": "session"
       }
     ]
   },
@@ -136,8 +136,8 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_s2",
     "input": {
-      "content": "hello\n",
-      "file_path": "/vault/Projects/Demo/a.txt"
+      "file_path": "/vault/Projects/Demo/a.txt",
+      "content": "hello\n"
     }
   },
   {
@@ -147,16 +147,16 @@
     "tool": "Write",
     "displayName": "Write",
     "input": {
-      "content": "hello\n",
-      "file_path": "/vault/Projects/Demo/a.txt"
+      "file_path": "/vault/Projects/Demo/a.txt",
+      "content": "hello\n"
     },
     "description": "a.txt",
     "decisionReason": null,
     "suggestions": [
       {
-        "destination": "session",
+        "type": "setMode",
         "mode": "acceptEdits",
-        "type": "setMode"
+        "destination": "session"
       }
     ]
   },

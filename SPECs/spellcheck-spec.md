@@ -10,7 +10,7 @@ Underline misspellings and (in English) grammar and style problems in the editor
 
 | Module            | Job                                                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `mask.rs`         | The one Markdown prose mask: splits a note into blocks and says which char ranges are prose.                                  |
+| `mask.rs`         | `crate::markdown_mask`, re-exported: the one Markdown scanner (prose blocks; also Obsidian syntax ranges for `lint`).         |
 | `lang.rs`         | Language precedence, `Lang` tags, lingua detection.                                                                           |
 | `harper.rs`       | English provider (Harper, `harper-core =3.2.0`, Apache-2.0) on its own worker thread.                                         |
 | `hunspell.rs`     | Every other language: an installed Hunspell dictionary read by `spellbook =0.4.2` (MPL-2.0).                                  |

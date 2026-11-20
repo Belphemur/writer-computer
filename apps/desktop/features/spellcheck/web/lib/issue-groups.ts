@@ -36,6 +36,11 @@ export function encodeSource(kind: IssueKind, ruleId: string): string {
   return `${kind}\u0000${ruleId}`;
 }
 
+/** Is this diagnostic the spell checker's? Its `source` carries `kind\0rule` (`encodeSource`). */
+export function isSpellDiagnostic(d: { source?: string }): boolean {
+  return (d.source ?? "").includes("\u0000");
+}
+
 export function keyFromSource(source: string | undefined, flagged: string): string | null {
   const [kind, ruleId] = (source ?? "").split("\u0000");
   if (!ruleId || !(kind! in KIND_ORDER)) return null;

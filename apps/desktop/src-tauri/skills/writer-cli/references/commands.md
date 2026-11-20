@@ -119,6 +119,11 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `icon:get` — Print the icon of a file or folder (exit 1 when it has none). Params: `file=`, `path=`, `format=` (text | json).
 - `icon:remove` — Remove the icon of a file or folder. Params: `file=`, `path=`.
 
+## Lint
+
+- `lint` — List a note's Markdown formatting problems (read-only). Params: `file=`, `path=`, `rules=` (rule ids to run, e.g. MD009,MD012; default the rules on in Settings), `format=` (text | json).
+- `lint:fix` — Fix a note's Markdown formatting problems in place; Obsidian syntax is never touched. Params: `file=`, `path=`, `scope=` (safe (default, formatting-only rules) | all (also rules that can change meaning)), `rules=` (rule ids to run, e.g. MD009,MD012; default the rules on in Settings).
+
 ## Spelling
 
 `check` runs the same local checker as the app (Harper for English, an installed Hunspell dictionary for other languages; no network). It skips code, links, front matter and math, reads the note's `lang:` property (or `lang=`) and the vault's `.writer/dictionary.txt`. `format=json` prints `{path, findings, missingLanguages}`; each finding has `line`, `column`, `start`, `end` (UTF-16), `text`, `kind` (spelling, grammar or style), `rule`, `message` and `replacements`. Findings are advice: change the note with an ordinary edit.

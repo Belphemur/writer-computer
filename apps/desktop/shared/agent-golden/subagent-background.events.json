@@ -37,10 +37,10 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_agent1",
     "input": {
+      "subagent_type": "writer-worker",
       "description": "Edit the note",
       "prompt": "Edit __FILE__",
-      "run_in_background": true,
-      "subagent_type": "writer-worker"
+      "run_in_background": true
     }
   },
   {
@@ -120,8 +120,8 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_write1",
     "input": {
-      "content": "new\nline\nadded\n",
-      "file_path": "__FILE__"
+      "file_path": "__FILE__",
+      "content": "new\nline\nadded\n"
     }
   },
   {

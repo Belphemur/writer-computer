@@ -20,7 +20,8 @@ pub mod harper;
 pub mod hunspell;
 pub mod ignored;
 pub mod lang;
-pub mod mask;
+// the one Markdown scanner moved out so the linter shares it (`crate::markdown_mask`)
+pub use crate::markdown_mask as mask;
 pub mod options;
 pub mod personal;
 

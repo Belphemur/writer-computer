@@ -27,6 +27,7 @@ function definedIds(def: FeatureDefinition): Ids {
     statusItems: ids(c.statusItems),
     overlays: ids(c.overlays),
     fileTreeDecorations: ids(c.fileTreeDecorations),
+    beforeSave: ids(c.beforeSave),
     ...Object.fromEntries(Object.entries(c.menus ?? {}).map(([s, m]) => [`menus.${s}`, ids(m)])),
   };
 }
@@ -41,6 +42,7 @@ function declaredIds(manifest: FeatureManifest): Ids {
     statusItems: list(c.statusItems),
     overlays: list(c.overlays),
     fileTreeDecorations: list(c.fileTreeDecorations),
+    beforeSave: list(c.beforeSave),
     ...Object.fromEntries(Object.entries(c.menus ?? {}).map(([s, m]) => [`menus.${s}`, list(m)])),
   };
 }

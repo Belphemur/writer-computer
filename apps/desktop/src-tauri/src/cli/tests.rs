@@ -514,7 +514,7 @@ fn search_uses_the_full_text_index_with_its_query_language() {
     );
     assert_eq!(
         t.ok(&["search:context", "query=needle", "format=json"]),
-        "[\n  {\n    \"line\": 6,\n    \"path\": \"Projects/Beta.md\",\n    \"text\": \"beta body with the word Needle\"\n  }\n]\n"
+        "[\n  {\n    \"path\": \"Projects/Beta.md\",\n    \"line\": 6,\n    \"text\": \"beta body with the word Needle\"\n  }\n]\n"
     );
     assert_eq!(t.ok(&["search:context", "query=needle", "case"]), "");
     assert_eq!(

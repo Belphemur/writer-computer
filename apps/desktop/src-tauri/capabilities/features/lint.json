@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-lint",
+  "description": "Grants the lint feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["lint:default"]
+}
