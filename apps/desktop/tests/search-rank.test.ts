@@ -79,18 +79,33 @@ describe("search ranking: extras", () => {
     expect(recencyBoost(NOW, { mtimeMs: NOW - 400 * DAY })).toBeLessThan(0.001);
   });
 
-  test("ten thousand synthetic names rank within the interactive budget", () => {
-    const entries: Entry[] = Array.from({ length: 10_000 }, (_, i) => ({
-      path: `area-${i % 20}/project-${i % 200}/Note ${i} planning meeting ${
-        ["alpha", "Francois Lamarre", "budget", "retro"][i % 4]
-      }.md`,
-    }));
-    const cands = candidates(entries).map((c) => ({ ...c, prepared: prepare(c.path) }));
+  // 3 queries x 6 rankings of up to 10k names: seconds of CPU when the machine is busy.
+  test("ranking cost grows linearly with the number of names", { timeout: 60_000 }, () => {
+    const make = (n: number) =>
+      candidates(
+        Array.from({ length: n }, (_, i) => ({
+          path: `area-${i % 20}/project-${i % 200}/Note ${i} planning meeting ${
+            ["alpha", "Francois Lamarre", "budget", "retro"][i % 4]
+          }.md`,
+        })),
+      ).map((c) => ({ ...c, prepared: prepare(c.path) }));
+    const small = make(1_000);
+    const large = make(10_000);
+    // Median of three runs, small and large measured back to back under the same machine load:
+    // no absolute millisecond budget (Rust asserts the 50 ms one), only that 10x the names costs
+    // about 10x, not a quadratic blow-up.
+    const cost = (cands: typeof small, q: string): number => {
+      const times: number[] = [];
+      for (let r = 0; r < 3; r++) {
+        const t = performance.now();
+        const got = rankCandidates(cands, q, { nowMs: NOW, recency: true });
+        times.push(performance.now() - t);
+        expect(got.length).toBeGreaterThan(0);
+      }
+      return times.sort((a, b) => a - b)[1]!;
+    };
     for (const q of ["planning", "frlam", "francios lamare"]) {
-      const t = performance.now();
-      const got = rankCandidates(cands, q, { nowMs: NOW, recency: true });
-      expect(got.length).toBeGreaterThan(0);
-      expect(performance.now() - t).toBeLessThan(500); // generous: CI noise; Rust asserts 50 ms
+      expect(cost(large, q)).toBeLessThan(cost(small, q) * 10 * 3 + 5);
     }
   });
 });

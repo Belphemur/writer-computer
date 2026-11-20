@@ -145,18 +145,27 @@ describe("the editor extension", () => {
     expect(lines[0]!.contains(tile)).toBe(true);
   });
 
-  it("draws a Hugeicons glyph as an SVG of the same size, in the text colour", async () => {
-    setFileIcons([{ path: "a.md", icon: "icon:Home01Icon" }]);
-    const view = editor("# Title");
-    const svg = await vi.waitFor(() => {
-      const el = view.dom.querySelector(".cm-note-icon svg");
-      expect(el).not.toBeNull();
-      return el!;
-    });
-    expect(svg.getAttribute("width")).toBe("1.3em");
-    expect(svg.getAttribute("height")).toBe("1.3em");
-    expect((view.dom.querySelector(".cm-note-icon-glyph") as HTMLElement).style.color).toBe("");
-  });
+  // The glyph comes from a lazily imported Hugeicons shard: a cold import on a busy machine
+  // outlasts vi.waitFor's 1 s default, so wait on the condition with a long ceiling.
+  it(
+    "draws a Hugeicons glyph as an SVG of the same size, in the text colour",
+    { timeout: 30_000 },
+    async () => {
+      setFileIcons([{ path: "a.md", icon: "icon:Home01Icon" }]);
+      const view = editor("# Title");
+      const svg = await vi.waitFor(
+        () => {
+          const el = view.dom.querySelector(".cm-note-icon svg");
+          expect(el).not.toBeNull();
+          return el!;
+        },
+        { timeout: 25_000 },
+      );
+      expect(svg.getAttribute("width")).toBe("1.3em");
+      expect(svg.getAttribute("height")).toBe("1.3em");
+      expect((view.dom.querySelector(".cm-note-icon-glyph") as HTMLElement).style.color).toBe("");
+    },
+  );
 
   it("a click opens the picker for that note and leaves the document and caret alone", () => {
     setFileIcons([{ path: "a.md", icon: "emoji:🚀" }]);

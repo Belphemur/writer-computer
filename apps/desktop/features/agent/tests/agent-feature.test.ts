@@ -90,29 +90,30 @@ describe("commands", () => {
     for (const c of cmds) expect(available(c, compact), c.id).toBe(false);
   });
 
-  it("toggle the pane (the dock follows) and the key does it from anywhere in a workspace", async () => {
-    const toggle = featurePaletteCommands.get("agent.toggle-pane")!;
-    expect(openDock()).toBeNull();
-    toggle.run(ctx);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(openDock()?.id).toBe("agent.pane");
-    expect(openDock()?.width()).toBe(420);
-    const key = new KeyboardEvent("keydown", { key: "a", metaKey: true, shiftKey: true });
-    keybindings.find(key, "bubble")!.run(key);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(openDock()).toBeNull();
-  });
+  it(
+    "toggle the pane (the dock follows) and the key does it from anywhere in a workspace",
+    { timeout: 20_000 },
+    async () => {
+      const toggle = featurePaletteCommands.get("agent.toggle-pane")!;
+      expect(openDock()).toBeNull();
+      toggle.run(ctx);
+      // Opening dynamically imports the chat api (cold the first time): wait for the dock itself.
+      await vi.waitFor(() => expect(openDock()?.id).toBe("agent.pane"), { timeout: 15_000 });
+      expect(openDock()?.width()).toBe(420);
+      const key = new KeyboardEvent("keydown", { key: "a", metaKey: true, shiftKey: true });
+      keybindings.find(key, "bubble")!.run(key);
+      await vi.waitFor(() => expect(openDock()).toBeNull());
+    },
+  );
 
-  it("the sidebar toolbar button toggles the pane like the key", async () => {
+  it("the sidebar toolbar button toggles the pane like the key", { timeout: 20_000 }, async () => {
     const action = sidebarActionContributions.list().find((a) => a.id === "agent.toggle-action")!;
     expect(manifest.contributes.sidebarActions).toEqual(["agent.toggle-action"]);
     expect(action.label).toBe("Toggle agent");
     await action.run();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(openDock()?.id).toBe("agent.pane");
+    await vi.waitFor(() => expect(openDock()?.id).toBe("agent.pane"), { timeout: 15_000 });
     await action.run();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(openDock()).toBeNull();
+    await vi.waitFor(() => expect(openDock()).toBeNull());
   });
 
   it("the key does nothing without a workspace", async () => {

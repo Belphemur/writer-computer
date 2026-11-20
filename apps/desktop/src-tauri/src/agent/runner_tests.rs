@@ -1618,7 +1618,9 @@ fn project_chats_use_the_project_cwd_prompt_and_mode_through_the_port() {
     let mut p = h.params(CHAT, "w", Some("Projects/Demo"));
     p.inject_agents_md = InjectAgentsMd::Always;
     h.sessions.start(p).unwrap();
-    h.wait_until("process", || !h.lines("argv.log").is_empty());
+    // The fake appends argv.log first and cwd.log a few commands later: wait for the last
+    // startup log, or cwd.log is still empty when read.
+    h.wait_until("process", || !h.lines("cwd.log").is_empty());
 
     let seen = proj.seen.lock().clone();
     assert_eq!(seen.len(), 1);

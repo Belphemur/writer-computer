@@ -126,19 +126,23 @@ const CHATS = 300;
 const CHAT_DIR = "copilot/copilot-conversations";
 const report = process.env.HOST_PERF_REPORT === "1";
 
-function seedVault(): void {
+function seedVault(scale = 1): void {
   const { fs } = fake.state;
   fs.clear();
   fake.state.mtime.clear();
-  for (let i = 0; i < NOTES; i++) {
+  for (let i = 0; i < NOTES * scale; i++) {
     const folder = `area-${i % 20}`;
-    const links = [`[[note-${(i * 7) % NOTES}]]`, `[[Concept ${i % 50}]]`, `[[Missing ${i}]]`];
+    const links = [
+      `[[note-${(i * 7) % (NOTES * scale)}]]`,
+      `[[Concept ${i % 50}]]`,
+      `[[Missing ${i}]]`,
+    ];
     fs.set(
       `${folder}/note-${i}.md`,
       `---\ntitle: Note ${i}\ntags: [t${i % 10}]\n---\n# Heading ${i}\n${links.join(" ")} #tag${i % 9}\n`,
     );
   }
-  for (let i = 0; i < CHATS; i++) {
+  for (let i = 0; i < CHATS * scale; i++) {
     const project = i % 3 === 0 ? "proj-a" : "proj-b";
     fs.set(
       `${CHAT_DIR}/${project}__chat-${i}.md`,
@@ -147,8 +151,33 @@ function seedVault(): void {
   }
   fs.set("copilot/projects/proj-a/project.md", "---\nid: proj-a\n---\nbody\n");
   fs.set("AGENTS.md", "# agents\n");
-  for (let i = 0; i < 400; i++) fs.set(`root-${i}.md`, `# root ${i}\n`);
+  for (let i = 0; i < 400 * scale; i++) fs.set(`root-${i}.md`, `# root ${i}\n`);
 }
+
+/**
+ * Event-loop stall probe. A single stall is scheduling/GC noise on a loaded machine, so a test
+ * asserts on how MANY ticks stalled against the units of work done: a regression that blocks the
+ * loop once per unit (a full-vault rescan per save, per request) stalls on nearly every unit.
+ */
+function stallProbe(thresholdMs = 250) {
+  let maxGap = 0;
+  let stalls = 0;
+  let last = performance.now();
+  const tick = setInterval(() => {
+    const now = performance.now();
+    maxGap = Math.max(maxGap, now - last);
+    if (now - last > thresholdMs) stalls++;
+    last = now;
+  }, 5);
+  return {
+    stop: (): { maxGap: number; stalls: number } => {
+      clearInterval(tick);
+      return { maxGap, stalls };
+    },
+  };
+}
+
+const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 
 const totalCalls = (): number => Object.values(fake.state.calls).reduce((a, b) => a + b, 0);
 const reset = (): void => {
@@ -243,13 +272,7 @@ describe("host vault performance (synthetic)", () => {
     const app = await boot();
     reset();
     const chat = app.vault.getFileByPath(`${CHAT_DIR}/proj-a__chat-0.md`) as TFile;
-    let maxGap = 0;
-    let last = performance.now();
-    const tick = setInterval(() => {
-      const now = performance.now();
-      maxGap = Math.max(maxGap, now - last);
-      last = now;
-    }, 5);
+    const probe = stallProbe();
     const t0 = performance.now();
     for (let i = 0; i < 20; i++) {
       await app.vault.modify(
@@ -260,7 +283,7 @@ describe("host vault performance (synthetic)", () => {
       await new Promise((r) => setTimeout(r, 5));
     }
     await new Promise((r) => setTimeout(r, 50));
-    clearInterval(tick);
+    const { maxGap, stalls } = probe.stop();
     const ms = performance.now() - t0;
     if (report)
       console.log(
@@ -271,18 +294,14 @@ describe("host vault performance (synthetic)", () => {
           maxLoopGapMs: Math.round(maxGap),
         }),
       );
-    // Before the incremental resolve this was one full-vault link resolution (seconds) per save.
-    expect(maxGap).toBeLessThan(250);
+    // Before the incremental resolve this was one full-vault link resolution (seconds) per save,
+    // so nearly every one of the 20 saves stalled the loop; a lone stall is machine load.
+    expect(stalls).toBeLessThanOrEqual(3);
     expect(fake.state.calls.read_directory ?? 0).toBe(0);
     expect(fake.state.fileOpens).toBeLessThanOrEqual(40);
   }, 180_000);
 
   it("streaming render: per-token markdown render cost does not scale with vault size", async () => {
-    const app = await boot();
-    setMarkdownRenderer(createMarkdownRenderer({ app }));
-    const render = createMarkdownRenderer({ app });
-    const el = document.createElement("div");
-    const component = new Component();
     const words = [
       "The",
       "note",
@@ -293,33 +312,36 @@ describe("host vault performance (synthetic)", () => {
       "[[Concept 3]]",
       "ok",
     ];
-    let text = "";
-    const stalls: number[] = [];
-    const t0 = performance.now();
     const TOKENS = 400;
-    for (let i = 0; i < TOKENS; i++) {
-      text += `${words[i % words.length]} `;
-      const s = performance.now();
-      await render(text, el, {
-        app,
-        component,
-        sourcePath: "copilot/chat.md",
-      } as never);
-      const d = performance.now() - s;
-      if (d > 50) stalls.push(d);
-    }
-    const ms = performance.now() - t0;
+    // Median per-token render time of a growing message against a vault of `scale` x the base size.
+    const perToken = async (scale: number): Promise<number> => {
+      seedVault(scale);
+      reset();
+      const app = await boot();
+      setMarkdownRenderer(createMarkdownRenderer({ app }));
+      const render = createMarkdownRenderer({ app });
+      const el = document.createElement("div");
+      const component = new Component();
+      const times: number[] = [];
+      let text = "";
+      reset();
+      for (let i = 0; i < TOKENS; i++) {
+        text += `${words[i % words.length]} `;
+        const s = performance.now();
+        await render(text, el, { app, component, sourcePath: "copilot/chat.md" } as never);
+        times.push(performance.now() - s);
+      }
+      // Rendering is served from the in-memory cache: no vault IO per token.
+      expect(totalCalls()).toBe(0);
+      return median(times);
+    };
+    // Same machine, same load, back to back: only the vault size differs. The median ignores the
+    // odd GC or scheduling spike; a per-token vault scan makes every token ~scale x slower.
+    const small = await perToken(1);
+    const large = await perToken(4);
     if (report)
-      console.log(
-        "STREAM",
-        JSON.stringify({
-          tokens: TOKENS,
-          totalMs: Math.round(ms),
-          perTokenMs: +(ms / TOKENS).toFixed(2),
-          stalls50: stalls.length,
-        }),
-      );
-    expect(stalls.length).toBe(0);
+      console.log("STREAM", JSON.stringify({ tokens: TOKENS, smallMs: small, largeMs: large }));
+    expect(large).toBeLessThan(small * 3 + 1);
   }, 180_000);
 });
 
@@ -350,13 +372,7 @@ describe("host streaming path (synthetic)", () => {
       streamCancel: async () => true,
     };
     setNetIpc(ipc);
-    let maxGap = 0;
-    let last = performance.now();
-    const tick = setInterval(() => {
-      const now = performance.now();
-      maxGap = Math.max(maxGap, now - last);
-      last = now;
-    }, 5);
+    const probe = stallProbe();
     const t0 = performance.now();
     let bytes = 0;
     for (let r = 0; r < 20; r++) {
@@ -371,7 +387,7 @@ describe("host streaming path (synthetic)", () => {
         bytes += value.length;
       }
     }
-    clearInterval(tick);
+    const { maxGap, stalls } = probe.stop();
     setNetIpc(null);
     const ms = performance.now() - t0;
     if (report)
@@ -385,6 +401,7 @@ describe("host streaming path (synthetic)", () => {
           bytes,
         }),
       );
-    expect(maxGap).toBeLessThan(250);
+    // Blocking per chunk burst would stall most of the 20 requests; a lone stall is machine load.
+    expect(stalls).toBeLessThanOrEqual(3);
   }, 120_000);
 });

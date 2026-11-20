@@ -210,7 +210,12 @@ describe("the picker", () => {
     act(async () => {
       cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     });
-  const iconCalls = () => invoke.mock.calls.filter(([c]) => c !== "plugin:icons|icons_resolved");
+  // Only this feature's writes: the app's own host boots in the background and its other
+  // features (agent projects, the logger) invoke too, at a time that depends on machine load.
+  const iconCalls = () =>
+    invoke.mock.calls.filter(
+      ([c]) => String(c).startsWith("plugin:icons|") && c !== "plugin:icons|icons_resolved",
+    );
 
   beforeEach(async () => {
     container = document.createElement("div");

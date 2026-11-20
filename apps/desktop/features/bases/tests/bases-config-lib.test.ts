@@ -326,15 +326,20 @@ describe("view registry", () => {
     unregisterBaseViewsOwnedBy("other");
     off();
   });
-  it("the table, cards and list entries exist after the view module loads", async () => {
-    await import("../web/view/builtin-views");
-    for (const t of ["table", "cards", "list"]) expect(getBaseView(t)!.owner).toBe("core");
-    expect(
-      extraPropertiesOf(
-        getBaseView("cards")!,
-        baseView({ type: "cards", extra: { image: "cover" } }),
-      ),
-    ).toEqual(["cover"]);
-    expect(extraPropertiesOf(getBaseView("list")!, baseView({ type: "list" }))).toEqual([]);
-  });
+  // Cold dynamic import of the whole built-in view graph, slow when the machine is busy.
+  it(
+    "the table, cards and list entries exist after the view module loads",
+    { timeout: 30_000 },
+    async () => {
+      await import("../web/view/builtin-views");
+      for (const t of ["table", "cards", "list"]) expect(getBaseView(t)!.owner).toBe("core");
+      expect(
+        extraPropertiesOf(
+          getBaseView("cards")!,
+          baseView({ type: "cards", extra: { image: "cover" } }),
+        ),
+      ).toEqual(["cover"]);
+      expect(extraPropertiesOf(getBaseView("list")!, baseView({ type: "list" }))).toEqual([]);
+    },
+  );
 });

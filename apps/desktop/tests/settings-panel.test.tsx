@@ -40,15 +40,29 @@ function fakeTab(id: string, name: string) {
 // The Obsidian host's pages are contributed by its feature while it is active.
 let stopHostPages: () => void;
 
-async function mount() {
+async function mount(ready?: () => void) {
   await act(async () => {
     root.render(<SettingsPanel isActive />);
   });
-  // A contributed page's chunk is a dynamic import.
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 20));
-  });
+  // A contributed page's chunk is a dynamic import: wait for the condition the test needs, not
+  // for a fixed delay (a cold import under load outlasts any fixed one).
+  if (ready) {
+    // React only flushes inside act, so each poll flushes first (waiting inside one act would
+    // hold the lazy page's render back).
+    await vi.waitFor(
+      async () => {
+        await act(async () => {});
+        ready();
+      },
+      { timeout: 10_000 },
+    );
+  } else {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+  }
 }
+const showsPlugin = (id: string) => () => expect(calls).toContain(`display:${id}`);
 
 const tabs = () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')];
 const labels = () => tabs().map((t) => t.textContent);
@@ -166,7 +180,7 @@ describe("plugin sections", () => {
     const tab = fakeTab("copilot", "Copilot");
     usePluginsStore.setState({ settingTabs: [{ owner: "copilot", tab }] });
     useUIStore.setState({ settingsSection: pluginSectionId("copilot", "copilot") });
-    await mount();
+    await mount(showsPlugin("copilot"));
     expect(labels()).toContain("Copilot");
     expect(selected()?.textContent).toBe("Copilot");
     expect(container.querySelector("h1")?.textContent).toBe("Copilot");
@@ -186,7 +200,7 @@ describe("plugin sections", () => {
     const tab = fakeTab("p", "Plug");
     usePluginsStore.setState({ settingTabs: [{ owner: "p", tab }] });
     useUIStore.setState({ settingsSection: pluginSectionId("p", "p") });
-    await mount();
+    await mount(showsPlugin("p"));
     await act(async () => root.unmount());
     expect(calls).toEqual(["display:p", "hide:p"]);
     root = createRoot(container);
@@ -196,7 +210,7 @@ describe("plugin sections", () => {
     const tab = fakeTab("p", "Plug");
     usePluginsStore.setState({ settingTabs: [{ owner: "p", tab }] });
     useUIStore.setState({ settingsSection: pluginSectionId("p", "p") });
-    await mount();
+    await mount(showsPlugin("p"));
     await act(async () => usePluginsStore.setState({ settingTabs: [] }));
     expect(selected()?.textContent).toBe("Editor");
     expect(calls).toEqual(["display:p", "hide:p"]);

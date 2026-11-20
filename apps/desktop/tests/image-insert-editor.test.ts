@@ -187,15 +187,25 @@ describe("paste", () => {
   });
 
   test("a slow save shows Saving image… after 200 ms and clears it when done", async () => {
-    saveAttachment.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ relative_path: "a/s.png" }), 350)),
-    );
+    // Fake timers: the 200 ms threshold and the 350 ms save are virtual, so machine load cannot
+    // reorder them.
     const view = makeView("");
-    const done = insertImages(view, [{ kind: "file", file: png() }]);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(useEditorNoticeStore.getState().message).toBeNull();
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(useEditorNoticeStore.getState().message).toBe("Saving image…");
+    vi.useFakeTimers();
+    let done!: Promise<unknown>;
+    try {
+      saveAttachment.mockImplementation(
+        () =>
+          new Promise((resolve) => setTimeout(() => resolve({ relative_path: "a/s.png" }), 350)),
+      );
+      done = insertImages(view, [{ kind: "file", file: png() }]);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(useEditorNoticeStore.getState().message).toBeNull();
+      await vi.advanceTimersByTimeAsync(150);
+      expect(useEditorNoticeStore.getState().message).toBe("Saving image…");
+      await vi.advanceTimersByTimeAsync(200);
+    } finally {
+      vi.useRealTimers();
+    }
     await done;
     expect(useEditorNoticeStore.getState().message).toBeNull();
     expect(view.state.doc.toString()).toBe("![[a/s.png]]");

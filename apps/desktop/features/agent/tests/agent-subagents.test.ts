@@ -485,7 +485,8 @@ describe("restored chats", () => {
 });
 
 describe("the roles registry names what a card shows", () => {
-  it("has a label and a known icon key for every role", async () => {
+  // Cold dynamic import of the icon module (it pulls the icon set), slow when the machine is busy.
+  it("has a label and a known icon key for every role", { timeout: 30_000 }, async () => {
     const { ROLE_ICONS } = await import("@features/agent/web/components/role-icons");
     for (const role of AGENT_ROLES) {
       expect(role.label, role.id).toMatch(/^[A-Z][a-z]+$/);

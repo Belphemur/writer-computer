@@ -154,7 +154,8 @@ describe("agent.* settings contract", () => {
   });
 });
 
-describe("Settings > Agent", () => {
+// Each test mounts the lazily loaded Agent page; the first import can be slow on a busy machine.
+describe("Settings > Agent", { timeout: 30_000 }, () => {
   let container: HTMLElement;
   let root: Root;
   const setCalls: [string, unknown][] = [];
@@ -165,8 +166,15 @@ describe("Settings > Agent", () => {
     await act(async () => {
       root.render(<SettingsPanel isActive />);
     });
-    // the Agent page is the agent feature's contribution: a lazy chunk, loaded when it opens
-    await vi.waitFor(() => expect(q("[data-agent-status]")).not.toBeNull());
+    // the Agent page is the agent feature's contribution: a lazy chunk, loaded when it opens (a cold
+    // import under load outlasts waitFor's 1 s default), then the binary detection settles
+    await vi.waitFor(
+      () => {
+        expect(q("[data-agent-status]")).not.toBeNull();
+        expect(q("[data-agent-status]")?.dataset.agentStatus).not.toBe("checking");
+      },
+      { timeout: 20_000 },
+    );
     await flush();
   }
   const q = (sel: string) => container.querySelector<HTMLElement>(sel);

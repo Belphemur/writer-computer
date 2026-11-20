@@ -80,24 +80,29 @@ describe("the editor extension", () => {
     expect(widgets(view)).toEqual([]);
   });
 
-  it("completes after a colon and two letters with emoji and icons, and never mid-word or in code", async () => {
-    const ext = await shortcodesExtension();
-    const ask = (doc: string) => {
-      const s = EditorState.create({
-        doc,
-        selection: { anchor: doc.length },
-        extensions: [markdown(), ext],
-      });
-      return contributedCompletions(new CompletionContext(s, doc.length, false));
-    };
-    const rocket = await ask("hello :rock");
-    expect(rocket?.from).toBe(6);
-    const labels = rocket!.options.map((o) => o.label);
-    expect(labels).toContain(":rocket:");
-    expect(labels.some((l) => /^:Rocket\w*Icon:$/.test(l))).toBe(true);
-    expect(await ask("hello :r")).toBeNull();
-    expect(await ask("a:rock")).toBeNull();
-    expect(await ask("hello rock")).toBeNull();
-    expect(await ask("```\n:rock")).toBeNull();
-  });
+  // Cold dynamic import of the Hugeicons name list (a large chunk), slow when the machine is busy.
+  it(
+    "completes after a colon and two letters with emoji and icons, and never mid-word or in code",
+    { timeout: 30_000 },
+    async () => {
+      const ext = await shortcodesExtension();
+      const ask = (doc: string) => {
+        const s = EditorState.create({
+          doc,
+          selection: { anchor: doc.length },
+          extensions: [markdown(), ext],
+        });
+        return contributedCompletions(new CompletionContext(s, doc.length, false));
+      };
+      const rocket = await ask("hello :rock");
+      expect(rocket?.from).toBe(6);
+      const labels = rocket!.options.map((o) => o.label);
+      expect(labels).toContain(":rocket:");
+      expect(labels.some((l) => /^:Rocket\w*Icon:$/.test(l))).toBe(true);
+      expect(await ask("hello :r")).toBeNull();
+      expect(await ask("a:rock")).toBeNull();
+      expect(await ask("hello rock")).toBeNull();
+      expect(await ask("```\n:rock")).toBeNull();
+    },
+  );
 });
