@@ -99,6 +99,8 @@ Secrets: declare in `contributes.secrets`; read and write only through `ctx.secr
 
 ### Off must degrade, never break
 
+The protocol (points owned by core or a feature, optional services, rare `requires`; same in Rust and TS, declared in `feature.json` as `points`, `extends`, `provides`, `uses`, `requires`) is ADR `docs/decisions/2026-11-20-let-features-cooperate-through-owned-points-optional-services-and-rare-requires.md`.
+
 A feature can be off (kill switch), crashed (contained and switched off), or on but not set up (for example `git` in a vault with no repo). In all three states the rest of the app, and every other feature that cooperates with it, works exactly as it did before the feature existed.
 
 - **Depend on a point, never on a feature.** When feature A adds to feature B or to core (git committing an agent turn, lint fixing a note), A subscribes to a hook or contribution point that B or core owns. B never imports A, never checks whether A is on, never waits for A. With A off the point has no subscriber and B runs its own path.
