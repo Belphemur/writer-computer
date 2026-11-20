@@ -182,6 +182,23 @@ pub fn check(text: &str, options: &Options) -> Result<Vec<Finding>, Error> {
 
 /// Fixes `text` with the enabled rules of `scope`.
 pub fn fix(text: &str, options: &Options, scope: FixScope) -> Result<Fixed, Error> {
+    fix_keeping(text, options, scope, &[])
+}
+
+/// [`fix`] that leaves `keep` alone: UTF-16 ranges of `text` (the lines a caret is in, when
+/// saving while typing). A fix with an edit in or touching a kept range is dropped whole, never
+/// half applied; the ranges follow the text through the passes, so a later pass keeps them too.
+pub fn fix_keeping(
+    text: &str,
+    options: &Options,
+    scope: FixScope,
+    keep: &[Range<u32>],
+) -> Result<Fixed, Error> {
+    let first = Index::new(text);
+    let mut keep: Vec<Range<usize>> = keep
+        .iter()
+        .map(|r| first.byte_of_utf16(r.start)..first.byte_of_utf16(r.end))
+        .collect();
     let ids: BTreeSet<String> = options
         .rules
         .iter()
@@ -198,13 +215,14 @@ pub fn fix(text: &str, options: &Options, scope: FixScope) -> Result<Fixed, Erro
         let index = Index::new(&current);
         let mut plan: Vec<Guarded> = guarded(&current, &index, &ids)?
             .into_iter()
-            .filter(|g| !g.edits.is_empty())
+            .filter(|g| !g.edits.is_empty() && !g.touches(&keep))
             .collect();
         // from the end backwards, so an applied edit never moves one still to apply
         plan.sort_by_key(|g| std::cmp::Reverse(g.span()));
         let mut next = current.clone();
         let mut floor = usize::MAX; // the start of the lowest edit applied so far
         let mut pass_edits: Vec<Edit> = Vec::new();
+        let mut applied_bytes: Vec<&ByteEdit> = Vec::new();
         for g in &plan {
             let (start, end) = g.span();
             if end > floor {
@@ -215,12 +233,22 @@ pub fn fix(text: &str, options: &Options, scope: FixScope) -> Result<Fixed, Erro
             for e in edits {
                 next.replace_range(e.start..e.end, &e.insert);
                 pass_edits.push(e.to_edit(&index));
+                applied_bytes.push(e);
             }
             floor = start;
             applied.insert(g.rule.clone());
         }
         if pass_edits.is_empty() || next == current {
             break;
+        }
+        for r in &mut keep {
+            // no applied edit touches a kept range: each lies wholly before it or after it
+            let shift: isize = applied_bytes
+                .iter()
+                .filter(|e| e.end < r.start)
+                .map(|e| e.insert.len() as isize - (e.end - e.start) as isize)
+                .sum();
+            *r = r.start.saturating_add_signed(shift)..r.end.saturating_add_signed(shift);
         }
         passes += 1;
         if passes == 1 {
@@ -275,6 +303,13 @@ impl Guarded {
         let start = self.edits.iter().map(|e| e.start).min().unwrap_or(0);
         let end = self.edits.iter().map(|e| e.end).max().unwrap_or(0);
         (start, end)
+    }
+
+    /// Whether an edit of the fix is in, or touches, one of `keep` (byte ranges).
+    fn touches(&self, keep: &[Range<usize>]) -> bool {
+        self.edits
+            .iter()
+            .any(|e| keep.iter().any(|k| e.start <= k.end && e.end >= k.start))
     }
 
     fn into_finding(self, index: &Index) -> Finding {

@@ -55,6 +55,11 @@ export type FixRequest = {
 	text: string,
 	/**  `safe` is what saving runs, `all` is "Fix all". */
 	scope: FixScope,
+	/**
+	 *  UTF-16 ranges of `text` the fix leaves alone (the lines being typed in when it runs for an
+	 *  autosave); a fix touching one is dropped whole.
+	 */
+	keep?: KeepRange[],
 };
 
 /**  Which of the enabled rules a fix runs. */
@@ -75,6 +80,11 @@ export type Fixed = {
 	 *  editor applies, so the caret and the selection map through them).
 	 */
 	edits: Edit[],
+};
+
+export type KeepRange = {
+	from: number,
+	to: number,
 };
 
 export type Severity = "error" | "warning" | "info";

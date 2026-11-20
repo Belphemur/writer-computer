@@ -358,3 +358,41 @@ fn only_the_lint_module_names_the_dependency() {
     scan(&manifest.join("../features"), &lint_dir, &mut hits);
     assert!(hits.is_empty(), "rumdl is named outside src/lint: {hits:?}");
 }
+
+// ---- keeping the lines being typed in --------------------------------------------------------
+
+fn keep_fix(text: &str, keep: &[Range<u32>]) -> Fixed {
+    fix_keeping(text, &Options::default(), FixScope::Safe, keep).unwrap()
+}
+
+#[test]
+fn a_kept_line_is_not_fixed_and_the_others_are() {
+    // the line being typed in ends in a space, the first has trailing spaces and `##Heading` follows
+    let text = "one   \n# \n##Heading\n";
+    let f = keep_fix(text, &[7..9]);
+    // MD022 puts a blank line after the kept heading line, outside it
+    assert_eq!(f.text, "one\n# \n\n## Heading\n");
+    assert!(f.edits.iter().all(|e| !(7..=9).contains(&e.from)));
+}
+
+#[test]
+fn a_kept_line_holding_a_heading_without_its_space_stays() {
+    let f = keep_fix("##Heading\n", &[0..9]);
+    assert_eq!(f.text, "##Heading\n");
+    assert!(f.edits.is_empty() && f.applied.is_empty());
+}
+
+#[test]
+fn a_fix_touching_a_kept_line_is_dropped_whole_and_ranges_follow_the_text() {
+    // fixing the first line shifts the kept one: a later pass must still keep it
+    let text = "a   \n\n\n\nb   ";
+    let f = keep_fix(text, &[11..12]);
+    assert_eq!(f.text, "a\n\nb   \n".replace("b   \n", "b   "));
+}
+
+#[test]
+fn kept_ranges_are_utf16() {
+    // "é😀" is 3 UTF-16 units; the kept line is the second, so the first still trims
+    let f = keep_fix("é😀   \nx   \n", &[7..11]);
+    assert_eq!(f.text, "é😀\nx   \n");
+}

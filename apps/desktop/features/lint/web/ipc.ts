@@ -9,6 +9,7 @@ import type * as wire from "./bindings";
 export type Finding = wire.Finding;
 export type Edit = wire.Edit;
 export type Fixed = wire.Fixed;
+export type KeepRange = wire.KeepRange;
 export type FixScope = wire.FixRequest["scope"];
 
 export interface LintCommands {
@@ -23,7 +24,12 @@ export async function check(text: string): Promise<Finding[]> {
   return (await call("lint_check", { request: { text } })).findings;
 }
 
-/** Fixes a note's text; `edits` turn `text` into `fixed.text` (UTF-16 offsets of `text`). */
-export function fix(text: string, scope: FixScope): Promise<Fixed> {
-  return call("lint_fix", { request: { text, scope } });
+/** Fixes a note's text; `edits` turn `text` into `fixed.text` (UTF-16 offsets of `text`). A fix
+ *  that would touch a `keep` range (UTF-16 offsets of `text`) is dropped whole. */
+export function fix(
+  text: string,
+  scope: FixScope,
+  keep: readonly KeepRange[] = [],
+): Promise<Fixed> {
+  return call("lint_fix", { request: { text, scope, keep: [...keep] } });
 }

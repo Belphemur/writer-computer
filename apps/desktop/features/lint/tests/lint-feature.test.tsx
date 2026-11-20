@@ -8,7 +8,6 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: st
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn() }));
 
 import { DESKTOP, importsOf, sourceFiles, staticGraph } from "@tests/helpers/import-graph";
-import { beforeSaveContributions } from "@/lib/features/before-save";
 import { editorExtensionContributions } from "@/lib/features/editor-extensions";
 import { featurePaletteCommands } from "@/lib/features/palette";
 import { createFeatureHost } from "@/lib/features/registry";
@@ -34,16 +33,15 @@ afterEach(async () => {
 const mine = () => ({
   commands: featurePaletteCommands.list().filter((x) => x.owner === OWNER).length,
   extensions: editorExtensionContributions.list().filter((x) => x.owner === OWNER).length,
-  beforeSave: beforeSaveContributions.list().filter((x) => x.owner === OWNER).length,
   sections: settingsSectionContributions.list().filter((x) => x.owner === OWNER).length,
 });
 
 describe("registration", () => {
   it("registers its contributions and removes exactly them on unregister", async () => {
     host.register(lint);
-    expect(mine()).toEqual({ commands: 2, extensions: 1, beforeSave: 1, sections: 1 });
+    expect(mine()).toEqual({ commands: 2, extensions: 1, sections: 1 });
     await host.unregister("lint");
-    expect(mine()).toEqual({ commands: 0, extensions: 0, beforeSave: 0, sections: 0 });
+    expect(mine()).toEqual({ commands: 0, extensions: 0, sections: 0 });
   });
 
   it("the fix command is for a Markdown note in a vault window only", () => {
@@ -63,9 +61,8 @@ describe("manifest contract", () => {
     const c = lint.contributes!;
     expect(lint.id).toBe(manifest.id);
     expect(manifest.contributes.editorExtensions).toEqual(c.editorExtensions!.map((x) => x.id));
-    expect(manifest.contributes.beforeSave).toEqual(c.beforeSave!.map((x) => x.id));
     expect(manifest.contributes.commands.map((x) => x.id)).toEqual(c.commands!.map((x) => x.id));
-    const ids = [...c.editorExtensions!, ...c.beforeSave!, ...c.commands!].map((x) => x.id);
+    const ids = [...c.editorExtensions!, ...c.commands!].map((x) => x.id);
     expect(ids.every((id) => id.startsWith("lint."))).toBe(true);
   });
 

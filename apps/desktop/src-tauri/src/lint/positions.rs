@@ -59,6 +59,15 @@ impl Index {
         self.utf16_at_char[char_offset.min(self.chars())]
     }
 
+    /// The byte offset of a UTF-16 offset (one inside a surrogate pair rounds down), clamped.
+    pub fn byte_of_utf16(&self, utf16: u32) -> usize {
+        let char = self
+            .utf16_at_char
+            .partition_point(|u| *u <= utf16)
+            .saturating_sub(1);
+        self.byte_at_char[char.min(self.chars())]
+    }
+
     pub fn utf16_of_byte(&self, byte: usize) -> u32 {
         self.utf16_of_char(self.char_of_byte(byte))
     }

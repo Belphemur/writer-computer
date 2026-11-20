@@ -1,10 +1,12 @@
-// Fix on save, end to end over the real save engine and a real CodeMirror editor, with the Rust
+// Fix on idle, end to end over the real save engine and a real CodeMirror editor, with the Rust
 // call mocked by a small stand-in (it trims trailing spaces and answers the edits like the
-// engine does): the fix is one undo step, is skipped when the note changed while Rust worked, is
-// off by the setting or the kill switch, and is never run for what an agent or the disk changed.
+// engine does): the fix runs after FIX_IDLE_MS without an edit (the timer restarts on typing),
+// leaves the lines being typed in alone, is one undo step, is skipped when the note changed while
+// Rust worked, is off by the setting, and is never run for what an agent or the disk changed. The
+// edit it makes goes out through the normal autosave.
 // @vitest-environment jsdom
 import { history, isolateHistory, undo } from "@codemirror/commands";
-import { EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -13,12 +15,14 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), e
 vi.mock("@/lib/theme", () => ({ applyTheme: vi.fn() }));
 
 /** What the Rust engine does for these tests: remove trailing spaces, as UTF-16 edits. */
-function trimEdits(text: string) {
+function trimEdits(text: string, keep: readonly { from: number; to: number }[] = []) {
   const edits: { from: number; to: number; insert: string }[] = [];
   let at = 0;
   for (const line of text.split("\n")) {
     const trailing = /( +)$/.exec(line);
-    if (trailing)
+    // like the engine: a fix with an edit in or touching a kept range is dropped
+    const kept = keep.some((k) => at <= k.to && at + line.length >= k.from);
+    if (trailing && !kept)
       edits.push({
         from: at + line.length - trailing[1]!.length,
         to: at + line.length,
@@ -31,25 +35,23 @@ function trimEdits(text: string) {
 const gate: { hold: Promise<void> | null } = { hold: null };
 vi.mock("../web/ipc", async (original) => ({
   ...(await original<typeof import("../web/ipc")>()),
-  fix: vi.fn(async (text: string, scope: string) => {
+  fix: vi.fn(async (text: string, scope: string, keep: { from: number; to: number }[] = []) => {
     await gate.hold;
-    const edits = trimEdits(text);
-    const fixed = text
-      .split("\n")
-      .map((l) => l.replace(/ +$/, ""))
-      .join("\n");
+    const edits = trimEdits(text, keep);
+    let fixed = text;
+    for (const e of [...edits].reverse()) fixed = fixed.slice(0, e.from) + fixed.slice(e.to);
     return { text: fixed, applied: edits.length ? ["MD009"] : [], edits, scope };
   }),
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { registerEditorView } from "@/lib/editor-views";
+import { editorNotePath, registerEditorView } from "@/lib/editor-views";
 import { createFeatureHost } from "@/lib/features/registry";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFeatureHealth } from "@/stores/feature-health-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { fix } from "../web/ipc";
-import { fixOnSave, fixView } from "../web/lib/fix";
+import { FIX_IDLE_MS, fixView, idleFix } from "../web/lib/fix";
 import lint from "../web";
 
 const PATH = "/v/note.md";
@@ -68,6 +70,9 @@ function mount(doc: string, path = PATH) {
       doc,
       extensions: [
         history(),
+        idleFix,
+        editorNotePath.of(() => path),
+        EditorState.allowMultipleSelections.of(true),
         EditorView.updateListener.of((u) => {
           transactions.push(...u.transactions);
           if (u.docChanged) useEditorStore.getState().updateContent(path, u.state.doc.toString());
@@ -122,21 +127,20 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-const settle = () => vi.advanceTimersByTimeAsync(10);
+const settle = () => vi.advanceTimersByTimeAsync(FIX_IDLE_MS + 10);
 
 describe("a save the editor asked for", () => {
   it("writes the fixed note, and the editor shows it", async () => {
     const v = mount("a   \nb");
+    v.dispatch({ selection: { anchor: 6 } }); // on the second line, the first is not being typed in
     type(v, "!");
     await settle();
     expect(v.state.doc.toString()).toBe("a\nb!");
-    expect(writes).toEqual(["a\nb!"]);
+    // the typing was saved at once, the fix went out through the normal autosave
+    expect(writes).toEqual(["a   \nb!", "a\nb!"]);
     expect(fix).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fix).mock.calls[0]![1]).toBe("safe");
-    // the save carried the fix: nothing is left dirty, no second write is queued
     expect(useEditorStore.getState().openFiles.get(PATH)?.isDirty).toBe(false);
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(writes).toHaveLength(1);
   });
 
   it("is one undo step: undo restores the note as it was typed, a second undo the typing", async () => {
@@ -144,7 +148,7 @@ describe("a save the editor asked for", () => {
     // typing right where the fix will remove text: without its own undo step the two would join
     v.dispatch({
       changes: { from: 4, insert: " " },
-      selection: { anchor: 5 },
+      selection: { anchor: 6 },
       userEvent: "input.type",
     });
     await settle();
@@ -176,8 +180,7 @@ describe("a save the editor asked for", () => {
   it("puts a caret that was inside the removed spaces at the start of the gap", async () => {
     const v = mount("a   \nb");
     v.dispatch({ selection: { anchor: 3 } });
-    type(v, "!");
-    await settle();
+    await fixView(v, "all"); // an autosave would keep this line; Fix all does not
     expect(v.state.selection.main.head).toBe(1);
   });
 
@@ -186,13 +189,126 @@ describe("a save the editor asked for", () => {
     let release!: () => void;
     gate.hold = new Promise<void>((r) => (release = r));
     type(v, "!");
-    await settle();
+    await vi.advanceTimersByTimeAsync(FIX_IDLE_MS + 10);
     expect(fix).toHaveBeenCalledTimes(1);
     type(v, "?"); // typed while Rust is still working
     release();
-    await settle();
+    await vi.advanceTimersByTimeAsync(10);
     expect(v.state.doc.toString()).toBe("a   \nb!?");
-    expect(writes[0]).toBe("a   \nb!?");
+    expect(fix).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the lines being typed in", () => {
+  it("typing `# ` then an autosave keeps the space", async () => {
+    const v = mount("");
+    v.dispatch({
+      changes: { from: 0, insert: "# " },
+      selection: { anchor: 2 },
+      userEvent: "input.type",
+    });
+    await settle();
+    expect(v.state.doc.toString()).toBe("# ");
+    expect(writes).toEqual(["# "]);
+  });
+
+  it("trailing spaces of the line being typed survive, those of other lines are fixed", async () => {
+    const v = mount("a   \nword ");
+    v.dispatch({ selection: { anchor: 10 } });
+    type(v, " ");
+    await settle();
+    expect(v.state.doc.toString()).toBe("a\nword  ");
+    expect(writes.at(-1)).toBe("a\nword  ");
+  });
+
+  it("every selection range keeps its lines", async () => {
+    const v = mount("a  x\nb   \nc   \nd   ", PATH);
+    v.dispatch({
+      selection: EditorSelection.create([EditorSelection.cursor(1), EditorSelection.cursor(11)]),
+    });
+    await fixView(v, "safe", { keepEditedLines: true });
+    expect(v.state.doc.toString()).toBe("a  x\nb\nc   \nd");
+  });
+
+  it("is skipped when the caret moved while the engine worked", async () => {
+    const v = mount("a   \nb");
+    let release!: () => void;
+    gate.hold = new Promise<void>((r) => (release = r));
+    const done = fixView(v, "safe", { keepEditedLines: true });
+    v.dispatch({ selection: { anchor: 2 } });
+    release();
+    await expect(done).resolves.toBe(false);
+    expect(v.state.doc.toString()).toBe("a   \nb");
+  });
+
+  it("never runs mid-composition", async () => {
+    const v = mount("a   \nb");
+    Object.defineProperty(v, "composing", { value: true });
+    v.dispatch({ selection: { anchor: 6 } });
+    type(v, "!");
+    await settle();
+    expect(fix).not.toHaveBeenCalled();
+  });
+
+  it("Fix all fixes the line with the caret too", async () => {
+    const v = mount("a   \nb ");
+    v.dispatch({ selection: { anchor: 7 } });
+    await expect(fixView(v, "all")).resolves.toBe(true);
+    expect(v.state.doc.toString()).toBe("a\nb");
+  });
+});
+
+describe("the idle timer", () => {
+  const typeOnSecondLine = (v: EditorView) => {
+    v.dispatch({ selection: { anchor: 6 } });
+    type(v, "!");
+  };
+
+  it("fixes at 5 s without an edit, not before", async () => {
+    const v = mount("a   \nb");
+    typeOnSecondLine(v);
+    await vi.advanceTimersByTimeAsync(FIX_IDLE_MS - 100);
+    expect(fix).not.toHaveBeenCalled();
+    expect(v.state.doc.toString()).toBe("a   \nb!");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fix).toHaveBeenCalledTimes(1);
+    expect(v.state.doc.toString()).toBe("a\nb!");
+  });
+
+  it("restarts at every edit", async () => {
+    const v = mount("a   \nb");
+    typeOnSecondLine(v);
+    await vi.advanceTimersByTimeAsync(FIX_IDLE_MS - 100);
+    type(v, "?");
+    await vi.advanceTimersByTimeAsync(FIX_IDLE_MS - 100);
+    expect(fix).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fix).toHaveBeenCalledTimes(1);
+    expect(v.state.doc.toString()).toBe("a\nb!?");
+  });
+
+  it("keeps the line with the caret at 5 s", async () => {
+    const v = mount("a   \nb  ");
+    v.dispatch({ selection: { anchor: 6 } }); // the second line
+    type(v, " ");
+    await settle();
+    expect(v.state.doc.toString()).toBe("a\nb   ");
+  });
+
+  it("dies with the view", async () => {
+    const v = mount("a   \nb");
+    typeOnSecondLine(v);
+    v.destroy();
+    await settle();
+    expect(fix).not.toHaveBeenCalled();
+  });
+
+  it("the fix's own edit does not start another run", async () => {
+    const v = mount("a   \nb");
+    typeOnSecondLine(v);
+    await settle();
+    await settle();
+    expect(fix).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -215,28 +331,18 @@ describe("what switches it off", () => {
       },
     });
     const v = mount("a   \nb");
-    await fixOnSave(PATH);
-    expect(fix).not.toHaveBeenCalled();
-    expect(v.state.doc.toString()).toBe("a   \nb");
-  });
-
-  it("the kill switch: unregistering the feature removes the hook", async () => {
-    await host.unregister("lint");
-    const v = mount("a   \nb");
+    v.dispatch({ selection: { anchor: 6 } });
     type(v, "!");
     await settle();
     expect(fix).not.toHaveBeenCalled();
-    expect(writes).toEqual(["a   \nb!"]);
+    expect(v.state.doc.toString()).toBe("a   \nb!");
   });
 
   it("a note that is not Markdown", async () => {
-    mount("a   \nb", "/v/code.ts");
-    await fixOnSave("/v/code.ts");
-    expect(fix).not.toHaveBeenCalled();
-  });
-
-  it("a note with no editor open for it", async () => {
-    await fixOnSave("/v/background.md");
+    const v = mount("a   \nb", "/v/code.ts");
+    v.dispatch({ selection: { anchor: 6 } });
+    type(v, "!");
+    await settle();
     expect(fix).not.toHaveBeenCalled();
   });
 });

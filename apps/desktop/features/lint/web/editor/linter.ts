@@ -15,12 +15,9 @@ import { editorNotePath } from "@/lib/editor-views";
 import { logger } from "@/lib/logger";
 import { useSettingsStore } from "@/stores/settings-store";
 import { check, type Finding } from "../ipc";
-import { fixFinding, isMarkdownPath, MAX_LINT_CHARS } from "../lib/fix";
+import { fixFinding, isMarkdownPath, idleFix, LINT_DEBOUNCE_MS, MAX_LINT_CHARS } from "../lib/fix";
 import { enabledRules, lintSignature, RULES, setRule } from "../lib/settings";
 import { lintTheme } from "./lint-theme";
-
-/** Pause after the last edit before a check, in milliseconds. */
-export const CHECK_DELAY_MS = 750;
 
 /** Sent when the rules in force changed: the library lints again, with every source. */
 export const refresh = StateEffect.define<null>();
@@ -123,12 +120,13 @@ const followSettings = ViewPlugin.define((view) => {
 export function lintExtension() {
   return [
     linter((view) => runCheck(view), {
-      delay: CHECK_DELAY_MS,
+      delay: LINT_DEBOUNCE_MS,
       needsRefresh: (update) =>
         update.transactions.some((tr) => tr.effects.some((e) => e.is(refresh))),
     }),
     lintTheme,
     followSettings,
+    idleFix,
   ];
 }
 

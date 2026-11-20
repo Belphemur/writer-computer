@@ -29,7 +29,6 @@
         "when": "workspace-window"
       }
     ],
-    "editorExtensions": ["lint.linter"],
-    "beforeSave": ["lint.fix-on-save"]
+    "editorExtensions": ["lint.linter"]
   }
 }

@@ -48,7 +48,8 @@ vi.mock("../features/lint/web/ipc", async (original) => ({
 
 import { editorNotePath } from "@/lib/editor-views";
 import { useSettingsStore } from "@/stores/settings-store";
-import { lintExtension, CHECK_DELAY_MS } from "../features/lint/web/editor/linter";
+import { lintExtension } from "../features/lint/web/editor/linter";
+import { LINT_DEBOUNCE_MS } from "../features/lint/web/lib/fix";
 import { spellcheckExtension } from "../features/spellcheck/web/editor/linter";
 import { useSpellStore } from "../features/spellcheck/web/lib/spell-store";
 
@@ -74,7 +75,7 @@ async function mount() {
       extensions: [spellcheckExtension(), lintExtension(), editorNotePath.of(() => "/v/a.md")],
     }),
   });
-  await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+  await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
   return view;
 }
 
@@ -93,7 +94,7 @@ describe("both features drawing in one editor", () => {
   it("a lint re-check without an edit keeps the spelling marks", async () => {
     const v = await mount();
     useSettingsStore.setState({ settings: { "lint.rules-on": ["MD013"] } });
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(sources(v)).toEqual(["MD009", "SpellCheck"]);
   });
 });

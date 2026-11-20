@@ -6,7 +6,10 @@
 // thunks: the linter, the fix code and the page are lazy chunks.
 import { openSettings } from "@/hooks/editor-api";
 import { defineFeature } from "@/lib/features/registry";
+import type { CommandContribution } from "@/lib/features/types";
 import manifest from "../feature.json";
+
+type Ctx = Parameters<NonNullable<CommandContribution["when"]>>[0];
 
 export const LINT_SECTION_ID = "lint";
 
@@ -22,9 +25,9 @@ export default defineFeature({
         id: "lint.fix-all",
         label: "Fix Markdown formatting",
         description: "Fix every lint warning in the note",
-        when: (ctx) =>
-          hasNote(ctx) &&
+        when: (ctx: Ctx) =>
           ctx.activeFilePath !== null &&
+          hasNote(ctx) &&
           /\.(md|markdown)$/i.test(ctx.activeFilePath),
         run: async () => {
           const [{ findEditorView }, { getActiveFilePath }, { fixView }] = await Promise.all([
@@ -46,9 +49,6 @@ export default defineFeature({
     ],
     editorExtensions: [
       { id: "lint.linter", load: () => import("./editor/linter").then((m) => m.default()) },
-    ],
-    beforeSave: [
-      { id: "lint.fix-on-save", run: (path) => fixModule().then((m) => m.fixOnSave(path)) },
     ],
     settingsSection: {
       id: LINT_SECTION_ID,

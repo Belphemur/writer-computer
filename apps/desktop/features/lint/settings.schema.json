@@ -20,8 +20,8 @@
     },
     {
       "key": "lint.fix-on-save",
-      "label": "Fix on save",
-      "description": "Fix the safe rules when you save a note.",
+      "label": "Fix automatically",
+      "description": "Fix the safe rules after 5 s without typing, never on the line you are editing.",
       "category": "Lint",
       "type": "boolean",
       "default": true,

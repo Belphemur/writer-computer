@@ -30,6 +30,16 @@ pub struct FixRequest {
     pub text: String,
     /// `safe` is what saving runs, `all` is "Fix all".
     pub scope: FixScope,
+    /// UTF-16 ranges of `text` the fix leaves alone (the lines being typed in when it runs for an
+    /// autosave); a fix touching one is dropped whole.
+    #[serde(default)]
+    pub keep: Vec<KeepRange>,
+}
+
+#[derive(Debug, Deserialize, Type)]
+pub struct KeepRange {
+    pub from: u32,
+    pub to: u32,
 }
 
 fn refused(e: lint::Error) -> AppError {
@@ -76,7 +86,8 @@ pub async fn lint_fix<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         let options = options_of(&app, &label);
-        lint::fix(&request.text, &options, request.scope).map_err(refused)
+        let keep: Vec<_> = request.keep.iter().map(|k| k.from..k.to).collect();
+        lint::fix_keeping(&request.text, &options, request.scope, &keep).map_err(refused)
     })
     .await
 }

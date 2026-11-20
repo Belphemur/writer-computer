@@ -20,8 +20,8 @@ vi.mock("../web/ipc", async (original) => ({
 
 import { editorNotePath } from "@/lib/editor-views";
 import { useSettingsStore } from "@/stores/settings-store";
-import { CHECK_DELAY_MS, lintExtension, toDiagnostics } from "../web/editor/linter";
-import { fixFinding } from "../web/lib/fix";
+import { lintExtension, toDiagnostics } from "../web/editor/linter";
+import { fixFinding, LINT_DEBOUNCE_MS } from "../web/lib/fix";
 import { check } from "../web/ipc";
 
 const finding = (patch: Partial<Finding>): Finding => ({
@@ -88,15 +88,29 @@ describe("the lint source", () => {
     vi.useFakeTimers();
     answers.push([finding({})]);
     const v = mount("a   \nb");
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(check).toHaveBeenCalledWith("a   \nb");
     expect(marks(v)).toEqual(['MD009:"   "']);
+  });
+
+  it("checks only after a full second without an edit, each edit restarting the wait", async () => {
+    vi.useFakeTimers();
+    const v = mount("a   \nb");
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
+    vi.mocked(check).mockClear();
+    v.dispatch({ changes: { from: 0, insert: "x" } });
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS - 100);
+    v.dispatch({ changes: { from: 0, insert: "y" } });
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS - 100);
+    expect(check).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(check).toHaveBeenCalledTimes(1);
   });
 
   it("asks nothing for a note that is not Markdown, nor when no rule is on", async () => {
     vi.useFakeTimers();
     mount("a   \nb", "/v/code.ts");
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     view!.destroy();
     useSettingsStore.setState({
       settings: {
@@ -104,7 +118,7 @@ describe("the lint source", () => {
       },
     });
     mount("a   \nb");
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(check).not.toHaveBeenCalled();
   });
 
@@ -112,17 +126,17 @@ describe("the lint source", () => {
     vi.useFakeTimers();
     answers.push([finding({})], []);
     const v = mount("a   \nb");
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(marks(v)).toHaveLength(1);
     useSettingsStore.setState({ settings: { "lint.rules-off": ["MD009"] } });
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(check).toHaveBeenCalledTimes(2);
     expect(marks(v)).toEqual([]);
     // a setting that does not change the rules does not lint
     useSettingsStore.setState({
       settings: { "lint.rules-off": ["MD009"], "editor.font-size": 18 },
     });
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(check).toHaveBeenCalledTimes(2);
   });
 
@@ -130,7 +144,7 @@ describe("the lint source", () => {
     vi.useFakeTimers();
     vi.mocked(check).mockRejectedValueOnce(new Error("engine down"));
     const v = mount("a   \nb");
-    await vi.advanceTimersByTimeAsync(CHECK_DELAY_MS + 50);
+    await vi.advanceTimersByTimeAsync(LINT_DEBOUNCE_MS + 50);
     expect(marks(v)).toEqual([]);
   });
 });
