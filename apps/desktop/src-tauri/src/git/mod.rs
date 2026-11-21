@@ -16,22 +16,30 @@
 //!
 //! [`setup`] and [`commit_user`] are the two operations the app and the CLI share.
 
+pub mod conflicts;
+pub mod credential;
 pub mod device;
+pub mod gh;
 pub mod history;
 pub mod ignore;
+pub mod merge;
 pub mod message;
+pub mod plugin_scan;
 pub mod repo;
 pub mod scheduler;
 pub mod state;
+pub mod sync;
 pub(crate) mod system;
 #[cfg(test)]
 mod tests;
+pub mod transport;
 
 pub use message::Change;
 pub use repo::{Error, Identities, Identity, LogEntry, Repo, Result};
 
 use message::{Message, Scope, TemplateCtx};
 use std::path::Path;
+use sync::RemoteInfo;
 
 /// How the vault gets its history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +202,43 @@ pub fn setup(root: &Path, mode: SetupMode, device: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether a remote is linked (`remote.origin.url`).
+pub fn has_remote(repo: &Repo) -> bool {
+    repo.config_string(&format!("remote.{}.url", transport::REMOTE))
+        .is_some()
+}
+
+/// Splits `changes` into what a version may hold and the plugin settings the token scan holds back.
+/// Never in a version: a file the last sync could not settle (`conflicts.json`) and, while a remote
+/// is linked, a plugin's `data.json` that looks like it holds a token (spec "Plugin settings and
+/// secrets"). Both stay on disk as pending changes the status does not count.
+fn committable(
+    root: &Path,
+    repo: &Repo,
+    changes: Vec<Change>,
+) -> (Vec<Change>, Vec<plugin_scan::Held>) {
+    let blocked = conflicts::paths(root);
+    let scan = has_remote(repo);
+    let held = if scan {
+        plugin_scan::held_among(
+            root,
+            changes
+                .iter()
+                .filter(|c| !matches!(c, Change::Delete(_)))
+                .map(|c| c.path()),
+        )
+    } else {
+        Vec::new()
+    };
+    let keep = changes
+        .into_iter()
+        .filter(|c| {
+            !blocked.iter().any(|b| b == c.path()) && !held.iter().any(|h| h.path == c.path())
+        })
+        .collect();
+    (keep, held)
+}
+
 /// Commits the user's pending changes. `None` when there is nothing to commit.
 pub fn commit_user(
     root: &Path,
@@ -204,7 +249,7 @@ pub fn commit_user(
     let Some(repo) = Repo::open(root)? else {
         return Ok(None);
     };
-    let changes = repo.changes()?;
+    let (changes, _) = committable(root, &repo, repo.changes()?);
     if changes.is_empty() {
         return Ok(None);
     }
@@ -230,8 +275,8 @@ pub fn commit_agent(
         return Ok(None);
     };
     let touched: std::collections::BTreeSet<&str> = turn.files.iter().map(String::as_str).collect();
-    let changes: Vec<Change> = repo
-        .changes()?
+    let changes: Vec<Change> = committable(root, &repo, repo.changes()?)
+        .0
         .into_iter()
         .filter(|c| match c {
             Change::Move { from, to } => {
@@ -272,6 +317,17 @@ pub struct Status {
     pub too_large: Vec<String>,
     /// The identity problem that would stop a commit, if any.
     pub identity_error: bool,
+    /// The remote, ahead and behind; `url: None` without one.
+    pub remote: RemoteInfo,
+    pub sync_paused: bool,
+    /// Files the last sync could not settle: their version stays on disk, never committed.
+    pub conflicts: Vec<conflicts::Record>,
+    /// Binaries kept beside the remote's version, `(file, copy)`.
+    pub copies: Vec<(String, String)>,
+    /// Files restored because one side deleted what the other edited.
+    pub restored: Vec<String>,
+    /// Plugin settings the token scan holds back from versions and from the push.
+    pub held: Vec<plugin_scan::Held>,
 }
 
 /// Whether git has an identity for a vault, remembered per vault so the status poll does not run
@@ -315,9 +371,28 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool) -> Result<St
             last_commit: None,
             too_large: Vec::new(),
             identity_error: false,
+            remote: RemoteInfo::default(),
+            sync_paused: false,
+            conflicts: Vec::new(),
+            copies: Vec::new(),
+            restored: Vec::new(),
+            held: Vec::new(),
         });
     };
-    let (changes, too_large) = repo.changes_and_skipped()?;
+    let (raw, too_large) = repo.changes_and_skipped()?;
+    // a conflict the user settled (the file is back at HEAD's version, or gone) is forgotten
+    let mut book = conflicts::read(root);
+    let open: Vec<conflicts::Record> = book
+        .files
+        .iter()
+        .filter(|r| raw.iter().any(|c| c.path() == r.path))
+        .cloned()
+        .collect();
+    if open.len() != book.files.len() {
+        book.files = open.clone();
+        let _ = conflicts::write(root, &book);
+    }
+    let (changes, held) = committable(root, &repo, raw);
     Ok(Status {
         has_repo: true,
         set_up: is_set_up(root),
@@ -329,6 +404,12 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool) -> Result<St
         last_commit: repo.last_commit_time(),
         too_large,
         identity_error: identity.is_missing(&repo, refresh),
+        remote: sync::remote_info(root),
+        sync_paused: state::sync_paused(root),
+        conflicts: open,
+        copies: book.copies,
+        restored: book.restored,
+        held,
     })
 }
 

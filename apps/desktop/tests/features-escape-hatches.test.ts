@@ -49,8 +49,6 @@ const ALLOWED: [string, string, string][] = [
     "setTimeout",
     "the debounced open-chats save: `resetAgentStore` flushes and clears it",
   ],
-  ["git/web/lib/status-store.ts", "setInterval", MIGRATE],
-  ["git/web/lib/status-store.ts", "listen", MIGRATE],
   ["bases/web/ipc.ts", "listen", MIGRATE],
   ["bases/web/view/use-base-query.ts", "setTimeout", DEBOUNCE],
   ["excalidraw/web/disk-sync.ts", "setTimeout", DEBOUNCE],

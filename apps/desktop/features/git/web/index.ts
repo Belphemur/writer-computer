@@ -8,7 +8,23 @@ import { openGitHistoryTab, openSettings } from "@/hooks/editor-api";
 import { defineFeature } from "@/lib/features/registry";
 import manifest from "../feature.json";
 import { GIT_HISTORY, type GitHistoryService } from "./api";
-import { commitNow, GIT_CHANGED, turnCommit } from "./ipc";
+import { cancelSave } from "@/lib/save";
+import { registerExternalChangeClaim } from "@/lib/external-changes";
+import { findEditorView } from "@/lib/editor-views";
+import { getWorkspaceRoot } from "@/hooks/workspace-api";
+import { readFile } from "@/lib/tauri";
+import { logger } from "@/lib/logger";
+import * as editorApi from "@/hooks/editor-api";
+import {
+  type ApplyingPayload,
+  commitNow,
+  GIT_APPLYING,
+  GIT_CHANGED,
+  mergeText,
+  syncNow,
+  turnCommit,
+} from "./ipc";
+import { createApplier } from "./lib/remote-apply";
 import { showHistoryItems } from "./menus";
 import { startStatusSync, useGitStatus } from "./lib/status-store";
 
@@ -41,7 +57,28 @@ export default defineFeature({
         for (const l of [...commitListeners]) l();
       }
     });
-    return startStatusSync((onChange) => ctx.listen(GIT_CHANGED, onChange));
+    // a sync's writes reach open notes politely: after the typing idle, as one undo step
+    const applier = createApplier({
+      root: getWorkspaceRoot,
+      every: (fn, ms) => ctx.setInterval(fn, ms),
+      onError: () => logger.warn("git", "could not apply a synced change to an open note"),
+      deps: {
+        getOpenFile: editorApi.getOpenFile,
+        readFile: async (path) => (await readFile(path)).content,
+        mergeText,
+        findView: findEditorView,
+        updateFrontmatter: editorApi.updateFrontmatter,
+        updateContent: editorApi.updateContent,
+        markSaved: editorApi.markSaved,
+        cancelSave,
+      },
+    });
+    ctx.onDispose(registerExternalChangeClaim((path) => applier.claim(path, "")));
+    ctx.listen<ApplyingPayload>(GIT_APPLYING, (p) => applier.announce(p.paths));
+    return startStatusSync(
+      (onChange) => ctx.listen(GIT_CHANGED, onChange),
+      (fn, ms) => ctx.setInterval(fn, ms),
+    );
   },
   contributes: {
     commands: [
@@ -88,6 +125,25 @@ export default defineFeature({
       },
     ],
     services: [{ id: GIT_HISTORY, service: historyService }],
+    ipcRequests: [
+      {
+        id: "git.sync",
+        topic: "git:sync",
+        // `writer git:sync` while the app runs: the app's sync, the answer the CLI prints
+        handle: async () => {
+          const s = await syncNow();
+          useGitStatus.getState().apply(s);
+          return {
+            pushed: s.lastPushed,
+            pulled: s.lastPulled,
+            conflicted: s.conflicts.map((c) => c.path),
+            ahead: s.ahead,
+            behind: s.behind,
+            error: s.syncError?.line ?? null,
+          };
+        },
+      },
+    ],
     statusItems: [
       {
         id: "git.status",

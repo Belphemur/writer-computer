@@ -2,21 +2,19 @@
 // "Commit now" and "Pause". Local mode only (no remote yet). Terse: no prose.
 import { useEffect, useState } from "react";
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
-import { openGitHistoryTab } from "@/hooks/editor-api";
+import { openGitHistoryTab, openSettings } from "@/hooks/editor-api";
 import { linkHandlers } from "@/lib/link-activation";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
-import { commitNow, deleted, setPaused, type DeletedRow } from "../ipc";
+import { commitNow, deleted, setPaused, setSyncPaused, syncNow, type DeletedRow } from "../ipc";
+import { Conflicts, HeldPlugins, lastSyncLabel, Notices, BUTTON, SyncError } from "./sync-parts";
 import { showHistoryItems } from "../menus";
 import { fileLabel, IDENTITY_COMMANDS, KIND_LABEL, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
 
 /** The most Deleted rows shown at first; "Show more" lifts it. */
 export const DELETED_CAP = 200;
-
-const BUTTON =
-  "rounded-md border border-[var(--border-color)] px-2.5 py-1 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none disabled:opacity-50";
 
 /** The files removed from the vault, newest first: each opens its History tab, where the last
  *  version can be restored. A click with Cmd/Ctrl or the middle button opens it in the background. */
@@ -141,14 +139,29 @@ export default function GitPanel() {
       </div>
     );
   }
-  const last = status.lastCommit ? formatRelativeTime(status.lastCommit) : null;
+  const linked = status.remote !== null;
+  const last = linked
+    ? lastSyncLabel(status.lastSync)
+    : status.lastCommit
+      ? `Saved ${formatRelativeTime(status.lastCommit)}`
+      : null;
   return (
     <div data-git-panel className="flex min-h-0 flex-col gap-3 p-3 text-[13px]">
       <div className="flex items-baseline justify-between">
         <span className="font-medium text-[var(--text-primary)]">{summary.label}</span>
-        {last && <span className="text-xs text-[var(--text-muted)]">Saved {last}</span>}
+        {last && <span className="text-xs text-[var(--text-muted)]">{last}</span>}
       </div>
-      {summary.tone === "error" && (
+      {linked && (
+        <p
+          data-git-remote
+          className="truncate text-xs text-[var(--text-muted)]"
+          title={status.remote ?? ""}
+        >
+          {status.remote}
+        </p>
+      )}
+      <SyncError />
+      {summary.tone === "error" && !status.syncError && status.conflicts.length === 0 && (
         <div role="alert" className="text-xs text-[var(--text-primary)]">
           <p>{summary.detail}</p>
           {status.identityError && (
@@ -168,7 +181,17 @@ export default function GitPanel() {
           {failure}
         </p>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {linked && (
+          <button
+            type="button"
+            className={BUTTON}
+            disabled={busy || status.syncing || status.identityError}
+            onClick={() => void run(syncNow)}
+          >
+            Sync now
+          </button>
+        )}
         <button
           type="button"
           className={BUTTON}
@@ -177,15 +200,34 @@ export default function GitPanel() {
         >
           Commit now
         </button>
-        <button
-          type="button"
-          className={BUTTON}
-          disabled={busy}
-          onClick={() => void run(() => setPaused(!status.paused))}
-        >
-          {status.paused ? "Resume" : "Pause"}
-        </button>
+        {linked ? (
+          <button
+            type="button"
+            className={BUTTON}
+            disabled={busy}
+            onClick={() => void run(() => setSyncPaused(!status.syncPaused))}
+          >
+            {status.syncPaused ? "Resume sync" : "Pause sync"}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className={BUTTON}
+              disabled={busy}
+              onClick={() => void run(() => setPaused(!status.paused))}
+            >
+              {status.paused ? "Resume" : "Pause"}
+            </button>
+            <button type="button" className={BUTTON} onClick={() => openSettings("git")}>
+              Add a remote
+            </button>
+          </>
+        )}
       </div>
+      <Conflicts />
+      <HeldPlugins />
+      <Notices />
       {status.changes.length > 0 && (
         <ul className="min-h-0 overflow-auto" aria-label="Changed files">
           {status.changes.map((c) => (

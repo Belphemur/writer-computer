@@ -22,8 +22,19 @@ const ipc = vi.hoisted(() => ({
   versionDiff: vi.fn(),
   versionText: vi.fn(),
   restore: vi.fn(),
+  syncNow: vi.fn(),
+  mergeText: vi.fn(),
+  setSyncPaused: vi.fn(),
+  setRemote: vi.fn(),
+  removeRemote: vi.fn(),
+  tools: vi.fn(),
+  installGit: vi.fn(),
+  signInGithub: vi.fn(),
+  setCredentials: vi.fn(),
+  pluginDecision: vi.fn(),
+  dismissNotices: vi.fn(),
 }));
-vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed" }));
+vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed", GIT_APPLYING: "applying" }));
 
 import { DESKTOP, importsOf, sourceFiles } from "@tests/helpers/import-graph";
 import { featurePaletteCommands } from "@/lib/features/palette";
@@ -44,29 +55,14 @@ import { GitSection } from "../web/components/git-section";
 import GitStatusItem from "../web/components/status-item";
 import { fileLabel, summarize } from "../web/lib/state";
 import { useGitStatus } from "../web/lib/status-store";
-import type { GitStatus } from "../web/ipc";
+import { baseStatus } from "./fixtures";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const host = createFeatureHost({ onError: () => {} });
 const OWNER = "builtin:git";
 
-const status = (patch: Partial<GitStatus> = {}): GitStatus => ({
-  hasRepo: true,
-  setUp: true,
-  parentRepo: false,
-  stopped: false,
-  paused: false,
-  changes: [],
-  lastCommit: null,
-  identityError: false,
-  turnRunning: false,
-  committing: false,
-  error: null,
-  operation: null,
-  tooLarge: [],
-  ...patch,
-});
+const status = baseStatus;
 
 let container: HTMLDivElement;
 let root: Root;
@@ -78,6 +74,7 @@ beforeEach(() => {
   useWorkspaceStore.setState({ root: "/vault" } as never);
   Object.values(ipc).forEach((f) => f.mockReset());
   ipc.deleted.mockResolvedValue([]);
+  ipc.tools.mockResolvedValue({ git: true, gh: "missing", canInstallGit: false });
   // a refresh (the settings page asks on open) answers with what the store already holds
   ipc.status.mockImplementation(async () => useGitStatus.getState().status);
   container = document.createElement("div");
@@ -345,6 +342,45 @@ describe("panel", () => {
   });
 });
 
+describe("panel sync controls", () => {
+  const linked = (patch = {}) => status({ remote: "origin", branch: "main", ...patch });
+
+  it("without a remote offers Add a remote, no Sync now", () => {
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitPanel />);
+    expect(button("Add a remote")).toBeTruthy();
+    expect(button("Sync now")).toBeFalsy();
+  });
+
+  it("Sync now runs a sync, Pause sync flips and shows Resume sync", async () => {
+    act(() => useGitStatus.getState().apply(linked()));
+    ipc.syncNow.mockResolvedValue(linked({ lastSync: Math.floor(Date.now() / 1000) }));
+    ipc.setSyncPaused.mockResolvedValue(linked({ syncPaused: true }));
+    render(<GitPanel />);
+    await act(async () => button("Sync now")!.click());
+    expect(ipc.syncNow).toHaveBeenCalledTimes(1);
+    await act(async () => button("Pause sync")!.click());
+    expect(ipc.setSyncPaused).toHaveBeenCalledWith(true);
+    expect(button("Resume sync")).toBeTruthy();
+  });
+
+  it("shows a one-line error whose Details copies the sanitized output", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    act(() =>
+      useGitStatus.getState().apply(
+        linked({
+          syncError: { line: "Could not reach the remote", details: "fatal: x", offline: true },
+        }),
+      ),
+    );
+    render(<GitPanel />);
+    expect(container.textContent).toContain("Could not reach the remote");
+    await act(async () => button("Details")!.click());
+    expect(writeText).toHaveBeenCalledWith("fatal: x");
+  });
+});
+
 describe("Settings > Git", () => {
   it("before setup offers the two choices; Use existing needs a repository", async () => {
     act(() => useGitStatus.getState().apply(status({ setUp: false, hasRepo: false })));
@@ -383,8 +419,7 @@ describe("Settings > Git", () => {
     expect(text).toContain("None");
     expect(text).toContain("Save versions");
     expect(text).toContain("Agent turns");
-    expect(text).not.toContain("Add a remote");
-    expect(text).not.toContain("Sync");
+    expect(text).not.toContain("Sync now");
     const advanced = container.querySelector("[data-git-advanced]") as HTMLDetailsElement;
     expect(advanced.open).toBe(false);
     expect(advanced.textContent).toContain("Commit message");

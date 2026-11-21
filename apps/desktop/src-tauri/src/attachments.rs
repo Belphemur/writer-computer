@@ -381,6 +381,30 @@ fn extension_for_content_type(content_type: &str) -> Option<String> {
     SHARED.mime_extensions.get(&mime).cloned()
 }
 
+/// The Content-Type an image extension is shown with, from the same shared table
+/// (`mimeExtensions`, read the other way): the standard name wins over a vendor (`x-`, `vnd`) or
+/// non-standard (`image/jpg`) alias. `jpeg` and `tiff` are `jpg` and `tif`.
+pub fn mime_for_extension(ext: &str) -> Option<&'static str> {
+    let ext = ext.to_ascii_lowercase();
+    let ext = match ext.as_str() {
+        "jpeg" => "jpg",
+        "tiff" => "tif",
+        other => other,
+    };
+    SHARED
+        .mime_extensions
+        .iter()
+        .filter(|(_, e)| e.as_str() == ext)
+        .min_by_key(|(m, _)| {
+            (
+                m.contains("x-") || m.contains("vnd"),
+                m.as_str() == "image/jpg",
+                m.len(),
+            )
+        })
+        .map(|(m, _)| m.as_str())
+}
+
 /// The image extension the leading bytes say, for responses whose Content-Type is missing or
 /// generic (`application/octet-stream`).
 pub fn sniff_extension(bytes: &[u8]) -> Option<&'static str> {

@@ -23,8 +23,19 @@ const ipc = vi.hoisted(() => ({
   versionDiff: vi.fn(),
   versionText: vi.fn(),
   restore: vi.fn(),
+  syncNow: vi.fn(),
+  mergeText: vi.fn(),
+  setSyncPaused: vi.fn(),
+  setRemote: vi.fn(),
+  removeRemote: vi.fn(),
+  tools: vi.fn(),
+  installGit: vi.fn(),
+  signInGithub: vi.fn(),
+  setCredentials: vi.fn(),
+  pluginDecision: vi.fn(),
+  dismissNotices: vi.fn(),
 }));
-vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed" }));
+vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed", GIT_APPLYING: "applying" }));
 const sync = vi.hoisted(() => ({ order: [] as string[] }));
 vi.mock("@/lib/save", async (orig) => ({
   ...(await orig<object>()),
@@ -61,6 +72,7 @@ import {
 } from "../web/lib/history";
 import { useGitStatus } from "../web/lib/status-store";
 import type { GitStatus, VersionRow } from "../web/ipc";
+import { baseStatus } from "./fixtures";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -95,21 +107,7 @@ const agent = (rev: string, time: number, patch: Partial<VersionRow> = {}) =>
     ...patch,
   });
 
-const status = (): GitStatus => ({
-  hasRepo: true,
-  setUp: true,
-  parentRepo: false,
-  stopped: false,
-  paused: false,
-  changes: [],
-  lastCommit: 1,
-  identityError: false,
-  turnRunning: false,
-  committing: false,
-  error: null,
-  operation: null,
-  tooLarge: [],
-});
+const status = (): GitStatus => baseStatus({ lastCommit: 1 });
 
 describe("grouping", () => {
   it("groups by day with Today, Yesterday and dates", () => {

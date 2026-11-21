@@ -21,6 +21,17 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::git_version_text::<Wry>,
             commands::git_restore::<Wry>,
             commands::git_turn_commit::<Wry>,
+            commands::git_sync_now::<Wry>,
+            commands::git_set_sync_paused::<Wry>,
+            commands::git_remote_set::<Wry>,
+            commands::git_remote_remove::<Wry>,
+            commands::git_tools::<Wry>,
+            commands::git_install_git::<Wry>,
+            commands::git_sign_in_github::<Wry>,
+            commands::git_set_credentials::<Wry>,
+            commands::git_plugin_decision::<Wry>,
+            commands::git_dismiss_notices::<Wry>,
+            commands::git_merge_text::<Wry>,
         ])
 }
 

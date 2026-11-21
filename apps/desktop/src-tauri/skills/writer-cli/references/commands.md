@@ -120,6 +120,7 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `git:diff` — Show what a version of a file changed: against its previous version (default), the file now or another version (read-only). Params: `path=`, `rev=` (the version (an id from git:log), default the latest), `against=` (parent | current | another version's id), `format=` (text | json).
 - `git:show` — Print a file as it was in a version (read-only). Params: `path=`, `rev=` (the version (an id from git:log)).
 - `git:restore` — Restore a file to a version as a new change (user(restore) commit); history is kept. Params: `path=`, `rev=` (the version (an id from git:log)).
+- `git:sync` — Sync with the remote: save a version, fetch, replay local versions on top, push. Without a remote it only saves a version. Through the running app when it is open, else here.
 - `git:commit` — Save a version now: commit the pending changes as a user(...) commit.
 
 ## Icons

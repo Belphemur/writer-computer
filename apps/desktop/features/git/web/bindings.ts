@@ -40,6 +40,40 @@ export const commands = {
 	 *  trailers). `finished_at` (seconds) lets the answer settle. The agent's Changes card asks.
 	 */
 	gitTurnCommit: (chatId: string, turnId: string, finishedAt: number | null, options?: InvokeOptions) => __TAURI_INVOKE<TurnCommitRow>("plugin:git|git_turn_commit", { chatId, turnId, finishedAt }, options),
+	/**  "Sync now": commits the pending changes, fetches, replays, pushes (the pause does not apply). */
+	gitSyncNow: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_sync_now", undefined, options),
+	/**  Pauses or resumes the sync (device-local); versions go on. */
+	gitSetSyncPaused: (paused: boolean, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_set_sync_paused", { paused }, options),
+	/**
+	 *  Links `url` as the vault's remote (SSH or HTTPS), then syncs once so the existing history is
+	 *  pushed. A password in the URL is refused: the token goes in Sign in.
+	 */
+	gitRemoteSet: (url: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_remote_set", { url }, options),
+	/**  Unlinks the remote: back to local history (nothing is deleted anywhere). */
+	gitRemoteRemove: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_remote_remove", undefined, options),
+	gitTools: (options?: InvokeOptions) => __TAURI_INVOKE<Tools>("plugin:git|git_tools", undefined, options),
+	/**  macOS: starts Apple's installer for the Command Line Tools (which include git). */
+	gitInstallGit: (options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:git|git_install_git", undefined, options),
+	/**
+	 *  "Sign in with GitHub": `gh repo create <vault name> --private`, the repository linked over
+	 *  HTTPS with the credentials read from `gh` at use, then a first sync.
+	 */
+	gitSignInGithub: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_sign_in_github", undefined, options),
+	/**  Chooses where HTTPS passwords come from for this vault: `token` (the secret) or `gh`. */
+	gitSetCredentials: (source: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_set_credentials", { source }, options),
+	/**
+	 *  The user's choice for a plugin whose settings look like they hold a token: `allow` ("Sync
+	 *  anyway": this file, until its token values change) or `never` (the file joins the managed
+	 *  `.gitignore` block).
+	 */
+	gitPluginDecision: (plugin: string, choice: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_plugin_decision", { plugin, choice }, options),
+	/**  Forgets the notices about copies and restored files ("Dismiss"). */
+	gitDismissNotices: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_dismiss_notices", undefined, options),
+	/**
+	 *  Merges `mine` and `theirs` against `base` with the engine's merge (front matter per property,
+	 *  body by lines): how an open note takes a fetched change without losing what the user typed.
+	 */
+	gitMergeText: (path: string, base: string, mine: string, theirs: string, options?: InvokeOptions) => __TAURI_INVOKE<MergedText>("plugin:git|git_merge_text", { path, base, mine, theirs }, options),
 };
 
 /* Types */
@@ -49,6 +83,17 @@ export type ChangeRow = {
 	/**  `add`, `edit`, `delete` or `move`. */
 	kind: string,
 	from: string | null,
+};
+
+export type ConflictRow = {
+	path: string,
+	hunks: number,
+	properties: string[],
+};
+
+export type CopyRow = {
+	path: string,
+	copy: string,
 };
 
 export type DeletedRow = {
@@ -132,6 +177,43 @@ export type GitStatus = {
 	committing: boolean,
 	/**  The last failure, one line. */
 	error: string | null,
+	/**  The remote as `host/owner/repo` (no scheme, no credentials); `None` without one. */
+	remote: string | null,
+	branch: string | null,
+	/**  Commits not pushed, and commits of the remote not taken in. */
+	ahead: number,
+	behind: number,
+	/**  "Pause sync": versions go on, nothing is fetched or pushed. */
+	syncPaused: boolean,
+	syncing: boolean,
+	/**  Seconds since the epoch of the last successful sync. */
+	lastSync: number | null,
+	/**  What the last successful sync pushed and took in (commits). */
+	lastPushed: number,
+	lastPulled: number,
+	syncError: SyncErrorRow | null,
+	/**  Files the last sync could not settle: their version stays on disk until resolved. */
+	conflicts: ConflictRow[],
+	/**  Binaries that changed on both sides: the remote's stays, mine is the copy. */
+	copies: CopyRow[],
+	/**  Files restored because one side deleted what the other edited. */
+	restored: string[],
+	/**  Plugin settings held back from versions and the push: they look like they hold a token. */
+	held: HeldRow[],
+	/**  Where HTTPS passwords come from: `token` or `gh`. */
+	credentials: string,
+};
+
+export type HeldRow = {
+	id: string,
+	name: string,
+	path: string,
+};
+
+/**  The result of merging a note's text three ways. */
+export type MergedText = {
+	/**  The merged text; `None` when the two sides overlap (the caller keeps what the user has). */
+	text: string | null,
 };
 
 export type NoteDiff = {
@@ -159,6 +241,15 @@ export type Setup =
 /**  "Use existing repository". */
 "existing";
 
+export type SyncErrorRow = {
+	/**  One line: "Push rejected: authentication failed". */
+	line: string,
+	/**  The sanitized git output (no credentials in URLs, no tokens), for "Details". */
+	details: string,
+	/**  The network is unreachable: the status reads Offline. */
+	offline: boolean,
+};
+
 /**  Both views of the difference between two texts. */
 export type TextDiff = {
 	/**  The line diff, the "Source" view. Empty when the texts are equal. */
@@ -171,6 +262,16 @@ export type TextDiff = {
 	formattingOnly?: boolean,
 	/**  The rendered view of a note, when it was asked for. */
 	rendered?: NoteDiff | null,
+};
+
+/**  What the machine has for git, for the setup page. */
+export type Tools = {
+	/**  `git` is installed. */
+	git: boolean,
+	/**  `missing`, `signed-out` or `signed-in`. */
+	gh: string,
+	/**  macOS: "Install Command Line Tools" is offered when git is missing. */
+	canInstallGit: boolean,
 };
 
 /**  Where git is with an agent turn's commit (found by chat id and turn id). */

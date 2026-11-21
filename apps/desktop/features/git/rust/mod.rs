@@ -34,7 +34,9 @@
 mod bindings;
 mod cli;
 mod commands;
+mod ipc;
 pub(crate) mod runtime;
+pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
 
@@ -43,6 +45,7 @@ use crate::cli::registry::CommandSpec;
 use crate::features::points;
 use crate::features::scope::FeatureScope;
 use crate::features::{Feature, InvokeHandler, WindowCtx};
+use crate::ipc::IpcCommand;
 use crate::managed_skills::{BundledFile, BundledSkill};
 use std::sync::Arc;
 use std::time::Instant;
@@ -79,6 +82,10 @@ impl<R: Runtime> Feature<R> for Git {
         SKILLS
     }
 
+    fn ipc_commands(&self) -> &'static [IpcCommand] {
+        ipc::COMMANDS
+    }
+
     fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
         let vaults = scope.manage(runtime::Vaults::default());
         let weak = Arc::downgrade(&vaults);
@@ -94,16 +101,16 @@ impl<R: Runtime> Feature<R> for Git {
             let w = weak.clone();
             move || {
                 w.upgrade()
-                    .filter(|v| v.busy())
-                    .map(|_| "a commit in progress".to_string())
+                    .and_then(|v| v.busy_reason())
+                    .map(str::to_string)
             }
         });
         let handle = app.clone();
-        points::extend(app, &TURN_STARTED, "git", move |args| {
+        points::extend(app, &TURN_STARTED, runtime::ID, move |args| {
             runtime::turn_started(&handle, args)
         });
         let handle = app.clone();
-        points::extend(app, &TURN_FINISHED, "git", move |args| {
+        points::extend(app, &TURN_FINISHED, runtime::ID, move |args| {
             runtime::turn_finished(&handle, args)
         });
         // every write in the vault, Writer's own included, resets the quiet timer

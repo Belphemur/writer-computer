@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { emitFileChanged, type FileChangeKind } from "@/lib/features/workspace-events";
 import * as editorApi from "./editor-api";
 import * as tauri from "@/lib/tauri";
+import { claimsExternalChange } from "@/lib/external-changes";
 import { cancelSave, isSaveInFlight } from "@/lib/save";
 import { isWorkspaceEventCurrent, type WorkspaceIdentity } from "@/lib/workspace-events";
 import { getWorkspaceEventIdentity } from "./workspace-api";
@@ -45,6 +46,8 @@ export function useFileWatcher() {
       if (!file) return;
       if (kind === "deleted") return;
       if (isSaveInFlight(path)) return;
+      // a feature that wrote the file itself (git's sync) hands the change to the editor its own way
+      if (claimsExternalChange(path, kind)) return;
 
       cancelSave(path);
       void tauri.readFile(path).then((content) => {

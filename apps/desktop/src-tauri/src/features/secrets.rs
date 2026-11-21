@@ -140,6 +140,16 @@ fn store<R: Runtime>(app: &AppHandle<R>) -> Result<tauri::State<'_, PluginSecret
         .ok_or_else(|| io("EIO: the secret store is not available".into()))
 }
 
+/// The value of feature `id`'s secret `key` from an explicit store: for code that runs without an
+/// app (a feature's credential-helper process, `writer git-credential`).
+pub fn secret_with(
+    store: &PluginSecrets,
+    id: &str,
+    key: &str,
+) -> Result<Option<SecretValue>, AppError> {
+    get_in(store, all_manifests(), id, key)
+}
+
 /// The value of feature `id`'s secret `key`, `None` when it is not set.
 pub fn secret<R: Runtime>(
     app: &AppHandle<R>,

@@ -1,5 +1,5 @@
-// Settings > Git, the short layout of the spec: a status line, the Remote row ("None": nothing is
-// synced yet), Save versions, Agent turns, and the rest folded under Advanced. Before setup it
+// Settings > Git, the short layout of the spec: a status line, the Remote rows (`remote-rows.tsx`),
+// Save versions, Sync (with a remote), Agent turns, and the rest folded under Advanced. Before setup it
 // offers the setup choices instead. Text stays terse.
 import { useEffect, useState } from "react";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
@@ -10,6 +10,8 @@ import { formatRelativeTime } from "@/lib/relative-time";
 import { FEATURE_SETTINGS, type SettingDef } from "@/lib/settings-schema";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { commitNow, setPaused, setup, stop, type SetupMode } from "../ipc";
+import { RemoteRows } from "./remote-rows";
+import { BUTTON } from "./sync-parts";
 import { IDENTITY_COMMANDS, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
 
@@ -17,13 +19,11 @@ const CARD =
   "overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]";
 const ROW = "flex items-center justify-between gap-4 px-4 py-3 text-[13px]";
 const MUTED = "text-[var(--text-muted)]";
-const BUTTON =
-  "rounded-md border border-[var(--border-color)] px-2.5 py-1 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none disabled:opacity-50";
-
 export const KEYS = {
   commitAfter: "git.commit-after",
   agentCommits: "git.agent-commits",
   commitMessage: "git.commit-message",
+  syncInterval: "git.sync-interval",
 } as const;
 
 function defsFor(...keys: string[]): SettingDef[] {
@@ -141,12 +141,9 @@ export function GitSection() {
           {failure}
         </p>
       )}
+      <RemoteRows status={status} syncDefs={defsFor(KEYS.syncInterval)} />
       <div className={CARD}>
         <div className={ROW}>
-          <span>Remote</span>
-          <span className={MUTED}>None</span>
-        </div>
-        <div className={`${ROW} border-t border-[var(--line-subtler)]`}>
           <span />
           <span className="flex gap-2">
             <button

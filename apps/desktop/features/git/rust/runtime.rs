@@ -7,7 +7,7 @@
 //! thread) or a command through `commands::blocking`.
 
 use crate::agent::api::{FileChange, FileChangeKind, TurnFinished, TurnStarted};
-use crate::git::scheduler::{Action, AgentTurn, Cadence};
+use crate::git::scheduler::{Action, AgentTurn, Cadence, SyncTimer};
 use crate::git::{self, device, ignore, state as pause_state};
 use crate::state::AppState;
 use parking_lot::Mutex;
@@ -18,10 +18,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+/// The feature id (the manifest's `id`, the key of its scope, state and points).
+pub const ID: &str = "git";
 pub const CHANGED_EVENT: &str = "git:changed";
 pub const COMMIT_AFTER: &str = "git.commit-after";
 pub const AGENT_COMMITS: &str = "git.agent-commits";
 pub const COMMIT_MESSAGE: &str = "git.commit-message";
+pub const SYNC_INTERVAL: &str = "git.sync-interval";
+/// The web half hears which files a sync is about to write (vault-relative), before it writes.
+pub const APPLYING_EVENT: &str = "git:applying";
 
 /// The settings the cadence reads, per window, every time they are needed (a change applies at once).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +35,8 @@ pub struct Config {
     pub quiet: Option<Duration>,
     pub agent_commits: bool,
     pub template: String,
+    /// `git.sync-interval`; `None`: Manual.
+    pub sync_every: Option<Duration>,
 }
 
 impl Config {
@@ -53,17 +60,52 @@ impl Config {
         let template = get(COMMIT_MESSAGE)
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_else(|| git::message::DEFAULT_TEMPLATE.to_string());
+        let sync_every = match get(SYNC_INTERVAL)
+            .as_ref()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .as_deref()
+        {
+            Some("1min") => Some(Duration::from_secs(60)),
+            Some("15min") => Some(Duration::from_secs(900)),
+            Some("manual") => None,
+            _ => Some(Duration::from_secs(300)),
+        };
         Config {
             quiet,
             agent_commits,
             template,
+            sync_every,
         }
     }
+}
+
+/// Where the last sync of a vault stands, for the status.
+#[derive(Debug, Clone, Default)]
+pub struct SyncRecord {
+    /// A sync is running.
+    pub syncing: bool,
+    /// Seconds since the epoch of the last successful sync.
+    pub last_at: Option<i64>,
+    pub pushed: usize,
+    pub pulled: usize,
+    /// The last failure, `None` when the last sync went through.
+    pub failure: Option<SyncFailure>,
+}
+
+/// A failed sync: one line for the status and the sanitized git output for "Details".
+#[derive(Debug, Clone)]
+pub struct SyncFailure {
+    pub line: String,
+    pub details: String,
+    /// The network is unreachable (the status reads Offline, not Error).
+    pub offline: bool,
 }
 
 struct Vault {
     root: PathBuf,
     cadence: Cadence,
+    sync: SyncTimer,
+    record: SyncRecord,
     /// The automatic setup of this open vault has been tried (once per open).
     auto_done: bool,
     /// The last failure, one short line (never a path or text of the vault).
@@ -86,6 +128,12 @@ pub struct Vaults {
     pub history: git::history::Cache,
     /// Commits in progress.
     committing: AtomicUsize,
+    /// Syncs in progress (a sync is a git child and a replay: turning git off asks).
+    syncing: AtomicUsize,
+    /// One write lock per repository: every path that moves the branch or writes the index (the
+    /// cadence's commits, an agent turn's, restore, setup, the sync) holds it, so two of them never
+    /// interleave.
+    locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
 }
 
 /// Counts a commit in progress for [`Vaults::busy`].
@@ -116,14 +164,42 @@ pub fn error_line(e: &git::Error) -> String {
 }
 
 impl Vaults {
-    /// A commit is running.
+    /// A commit or a sync is running.
     pub fn busy(&self) -> bool {
+        self.committing.load(Ordering::SeqCst) > 0 || self.syncing.load(Ordering::SeqCst) > 0
+    }
+
+    /// Why git is busy, for the question "turn it off anyway?".
+    pub fn busy_reason(&self) -> Option<&'static str> {
+        if self.syncing.load(Ordering::SeqCst) > 0 {
+            Some("a sync in progress")
+        } else if self.committing.load(Ordering::SeqCst) > 0 {
+            Some("a commit in progress")
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn syncing_counter(&self) -> &AtomicUsize {
+        &self.syncing
+    }
+
+    pub(super) fn committing_now(&self) -> bool {
         self.committing.load(Ordering::SeqCst) > 0
     }
 
     /// Counts a write to the repository (a restore) as busy until dropped.
     pub fn busy_guard(&self) -> impl Drop + '_ {
         Busy::new(&self.committing)
+    }
+
+    /// The write lock of the repository at `root` (take it with `.lock()`).
+    pub fn write_lock(&self, root: &Path) -> Arc<Mutex<()>> {
+        self.locks
+            .lock()
+            .entry(root.to_path_buf())
+            .or_default()
+            .clone()
     }
 
     pub fn stopped(&self) -> bool {
@@ -134,7 +210,6 @@ impl Vaults {
     /// answer nothing, the extensions are retracted and the vaults are forgotten.
     pub fn shutdown(&self) {
         self.stopped.store(true, Ordering::SeqCst);
-        crate::features::points::retract("git");
         self.inner.lock().clear();
     }
 
@@ -145,6 +220,12 @@ impl Vaults {
             Vault {
                 root,
                 cadence: Cadence::new(),
+                sync: {
+                    let mut t = SyncTimer::new();
+                    t.on_open();
+                    t
+                },
+                record: SyncRecord::default(),
                 auto_done: false,
                 error: None,
             },
@@ -171,6 +252,44 @@ impl Vaults {
         if let Some(v) = self.inner.lock().get_mut(label) {
             v.error = error;
         }
+    }
+
+    pub fn record_of(&self, label: &str) -> SyncRecord {
+        self.inner
+            .lock()
+            .get(label)
+            .map(|v| v.record.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn is_syncing(&self, label: &str) -> bool {
+        self.inner
+            .lock()
+            .get(label)
+            .is_some_and(|v| v.record.syncing)
+    }
+
+    /// Marks the start of a sync; `false` when one already runs for this window.
+    pub(super) fn begin_sync(&self, label: &str) -> bool {
+        self.with(label, |v| !std::mem::replace(&mut v.record.syncing, true))
+            .unwrap_or(false)
+    }
+
+    /// Forgets the last sync's failure (a new remote or other credentials start clean).
+    pub(super) fn end_sync_record_reset(&self, label: &str) {
+        self.with(label, |v| v.record.failure = None);
+    }
+
+    pub(super) fn end_sync(&self, label: &str, update: impl FnOnce(&mut SyncRecord)) {
+        self.with(label, |v| {
+            v.record.syncing = false;
+            update(&mut v.record);
+        });
+    }
+
+    /// "Sync now", or a trigger the cadence should honour at its next pass.
+    pub fn request_sync(&self, label: &str) {
+        self.with(label, |v| v.sync.request());
     }
 
     pub fn turn_running(&self, label: &str) -> bool {
@@ -233,22 +352,44 @@ pub fn config_of<R: Runtime>(app: &AppHandle<R>, label: &str) -> Config {
 
 /// The runtime of the started feature (kept in its scope), `None` while it is off.
 pub(crate) fn vaults<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<Vaults>> {
-    crate::features::state_of::<R, Vaults>(app, "git")
+    crate::features::state_of::<R, Vaults>(app, ID)
 }
 
 fn announce<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    announce_changed(app, label);
+}
+
+/// Tells the window its status changed (`git:changed`).
+pub(super) fn announce_changed<R: Runtime>(app: &AppHandle<R>, label: &str) {
     let _ = app.emit_to(label, CHANGED_EVENT, ());
 }
 
 /// Commits the user's pending changes of `label`'s vault now. `Ok(true)` when a commit was made.
+/// While a sync runs nothing is committed (the sync commits first and owns the repository until it
+/// is done): the cadence tries again at its next pass.
 pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bool, git::Error> {
     let Some(v) = vaults(app) else {
         return Ok(false);
     };
+    if v.is_syncing(label) {
+        v.with(label, |vault| vault.cadence.on_write(Instant::now()));
+        return Ok(false);
+    }
+    commit_user_unchecked(app, &v, label)
+}
+
+/// [`commit_user_now`] without the sync check: the sync's own first step.
+pub(super) fn commit_user_unchecked<R: Runtime>(
+    app: &AppHandle<R>,
+    v: &Vaults,
+    label: &str,
+) -> Result<bool, git::Error> {
     let Some(root) = v.root_of(label) else {
         return Ok(false);
     };
     let _busy = Busy::new(&v.committing);
+    let lock = v.write_lock(&root);
+    let _write = lock.lock();
     let cfg = config_of(app, label);
     let dev = device::name();
     let result = git::commit_user(&root, &cfg.template, &git::template_ctx(&dev), &dev);
@@ -256,6 +397,7 @@ pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bo
     match &result {
         Ok(Some(_)) => {
             v.set_error(label, None);
+            v.with(label, |vault| vault.sync.on_commit(Instant::now()));
             log::info!(target: "git", "git: committed the user's changes");
             announce(app, label);
         }
@@ -275,10 +417,13 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
     let Some(v) = vaults(app) else { return };
     let Some(root) = v.root_of(label) else { return };
     let _busy = Busy::new(&v.committing);
+    let lock = v.write_lock(&root);
+    let _write = lock.lock();
     let dev = device::name();
     match git::commit_agent(&root, turn, "Agent turn", &dev) {
         Ok(Some(_)) => {
             v.set_error(label, None);
+            v.with(label, |vault| vault.sync.on_commit(Instant::now()));
             log::info!(target: "git", "git: committed an agent turn");
             announce(app, label);
         }
@@ -311,6 +456,8 @@ fn auto_setup_once<R: Runtime>(app: &AppHandle<R>, v: &Vaults, label: &str) {
         return;
     };
     let _busy = Busy::new(&v.committing);
+    let lock = v.write_lock(&root);
+    let _write = lock.lock();
     match git::auto_setup(&root, &device::name()) {
         Ok(git::Auto::Done { committed }) => {
             log::info!(target: "git", "git: set up version history (first commit: {committed})");
@@ -340,8 +487,28 @@ pub fn tick<R: Runtime>(app: &AppHandle<R>, now: Instant) {
             Some(Action::CommitUser) => {
                 let _ = commit_user_now(app, &label);
             }
+            Some(Action::CommitAgent(turn)) if v.is_syncing(&label) => {
+                // the sync owns the repository: the turn's commit goes at the next pass
+                v.with(&label, |vault| vault.cadence.requeue(turn));
+            }
             Some(Action::CommitAgent(turn)) => commit_agent(app, &label, &turn),
             _ => {}
+        }
+        if let Some(n) = v
+            .with(&label, |vault| vault.cadence.take_expired())
+            .filter(|n| *n > 0)
+        {
+            log::warn!(target: "git", "git: {n} agent turn(s) never finished; saving versions again");
+        }
+        let due = v.with(&label, |vault| {
+            let root = vault.root.clone();
+            let blocked = vault.cadence.turn_running() || vault.record.syncing;
+            vault.sync.tick(now, cfg.sync_every, || {
+                !blocked && super::sync::ready(&root, false)
+            })
+        });
+        if due == Some(true) {
+            super::sync::run(app, &label, super::sync::Mode::Background);
         }
     }
 }
@@ -352,7 +519,7 @@ pub fn start_ticker<R: Runtime>(app: &AppHandle<R>) {
     if v.ticker.swap(true, Ordering::SeqCst) {
         return;
     }
-    let Some(scope) = crate::features::scope_of(app, "git") else {
+    let Some(scope) = crate::features::scope_of(app, ID) else {
         v.ticker.store(false, Ordering::SeqCst);
         return;
     };
@@ -363,7 +530,7 @@ pub fn start_ticker<R: Runtime>(app: &AppHandle<R>) {
                 Some(v) if !v.stopped() => {}
                 _ => break,
             }
-            if crate::features::is_live_id(&handle, "git") {
+            if crate::features::is_live_id(&handle, ID) {
                 tick(&handle, Instant::now());
             }
         }
@@ -383,6 +550,10 @@ pub fn flush<R: Runtime>(app: &AppHandle<R>, label: &str) {
         return;
     }
     let _ = commit_user_now(app, label);
+    // a short sync so the other devices have it (spec "Cadence"): a few seconds at most
+    if super::sync::ready(&root, false) && !v.is_syncing(label) {
+        super::sync::run(app, label, super::sync::Mode::Close);
+    }
 }
 
 // ---- the agent's points -----------------------------------------------------------------------
@@ -401,7 +572,9 @@ pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
         if active(&root) && !v.turn_running(&label) {
             let _ = commit_user_now(app, &label);
         }
-        v.with(&label, |vault| vault.cadence.turn_started());
+        v.with(&label, |vault| {
+            vault.cadence.turn_started(&args.chat_id, Instant::now())
+        });
     }
 }
 
@@ -435,6 +608,8 @@ pub fn turn_finished<R: Runtime>(app: &AppHandle<R>, args: &TurnFinished) {
             models: args.models.clone(),
             files: touched(&args.files),
         });
-        v.with(&label, |vault| vault.cadence.turn_ended(commit));
+        v.with(&label, |vault| {
+            vault.cadence.turn_ended(&args.chat_id, commit)
+        });
     }
 }

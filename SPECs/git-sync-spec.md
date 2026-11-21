@@ -2,6 +2,16 @@
 
 Status: **phase 1 implemented** (2026-11-20): local version history only, no remote and no network: setup by default when a vault opens (below; "Local history only" and "Use existing repository" stay as the choices of Settings > Git), the History tab with diffs and Restore (`git:diff`, `git:show`, `git:restore`; the shared text diff `src-tauri/src/text_diff/`), the managed ignore block, the cadence, `type(scope): subject` commit messages with trailers, agent-turn commits through the agent's points, the status item, the panel, Settings > Git (short layout, no remote controls), `writer git:status`, `git:log`, `git:commit` and the `writer-git` skill. Everything else below (remote, sync, merge, merge view, LFS) is designed and **not built**. Decision: [ADR 2026-11-18 sync vaults with a built-in Git feature](../docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md) (accepted, phase 1 in code).
 
+Phase 3 (sync with a remote) **implemented** (2026-11-20), in code and tested, not seen in a real window or against a real remote. Built as specified in Sync, Merge, Credentials, Cadence and Status and panel, with these deviations:
+
+- **Replay** (`git/sync.rs`): each unpushed commit is re-made on a virtual tree built from the remote head, per file (base: the commit's parent, mine: the commit, theirs: the accumulating tree); message, author and committer are kept, a commit that becomes empty is dropped. A file that overlaps or is held back is skipped for the rest of the replay: its version stays on disk and `.writer/git/conflicts.json` blocks commits of it. Atomic through `.writer/git/sync-state.json` `{old_head, new_head, skip}`: record, move HEAD (compare-and-set), then the working tree and index; recovery resumes at new head or discards at old head.
+- **Renames are not followed** in the merge (a rename on one side with an edit on the other is a delete plus an add).
+- **Token hold-back** happens when the commit is made and in the replay, not as a push-time filter: a held plugin's `data.json` never enters a commit that could be pushed ("Sync anyway" and "Never sync this plugin" record the decision).
+- **Overlap with unsaved typing** in an open note: the user's text stays and wins at the next save (the merge view of phase 4 settles it).
+- **No device-flow sign-in**: "Sign in with GitHub" runs `gh repo create <vault name> --private`; without `gh`, "Install GitHub CLI" opens its page. No OAuth client id is invented.
+- **Credential source** (`token` or `gh`) is device-local state, not a setting; the helper is Writer's own binary (`writer git-credential`), appended after the user's own helpers, and answers only `get` over https.
+- The one bounded runner is `git/transport.rs` `Exec` (feature scope `process`, killed on stop); `agent/binary.rs` was not touched.
+
 ## Goal
 
 Version history and multi-device sync for a vault through Git, with merges that understand notes, so a sync never loses a change and never leaves conflict markers in a note. As much as possible in Rust; the UI in React.

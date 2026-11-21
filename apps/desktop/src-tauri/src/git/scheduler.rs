@@ -50,10 +50,17 @@ pub struct Cadence {
     last_write: Option<Instant>,
     /// A write since the last user commit.
     dirty: bool,
-    /// Agent turns running in the vault (a chat each).
-    turns_running: usize,
+    /// Chats with a turn running in the vault, with when it started: a set, so a start or a finish
+    /// seen twice (or a finish never seen) cannot leave a count stuck.
+    running: std::collections::HashMap<String, Instant>,
+    /// Turns dropped for running longer than [`TURN_CAP`] (their finish never came).
+    expired: usize,
     ended: Vec<AgentTurn>,
 }
+
+/// A turn that has not finished after this long is taken as lost (the agent was turned off or
+/// died under it), so the user's commits are not blocked for ever.
+pub const TURN_CAP: Duration = Duration::from_secs(30 * 60);
 
 impl Cadence {
     pub fn new() -> Cadence {
@@ -66,18 +73,30 @@ impl Cadence {
         self.dirty = true;
     }
 
-    pub fn turn_started(&mut self) {
-        self.turns_running += 1;
+    /// A turn of `chat` started (again: one entry per chat).
+    pub fn turn_started(&mut self, chat: &str, now: Instant) {
+        self.running.insert(chat.to_string(), now);
     }
 
-    /// A turn is over. `commit` is its commit when it changed files and agent commits are on.
-    pub fn turn_ended(&mut self, commit: Option<AgentTurn>) {
-        self.turns_running = self.turns_running.saturating_sub(1);
+    /// A turn of `chat` is over (a chat not known to be running changes nothing but the queue).
+    /// `commit` is its commit when it changed files and agent commits are on.
+    pub fn turn_ended(&mut self, chat: &str, commit: Option<AgentTurn>) {
+        self.running.remove(chat);
         self.ended.extend(commit);
     }
 
+    /// How many lost turns were dropped since the last call (for the log).
+    pub fn take_expired(&mut self) -> usize {
+        std::mem::take(&mut self.expired)
+    }
+
+    /// A turn's commit that could not run yet (a sync owns the repository): first in line again.
+    pub fn requeue(&mut self, turn: AgentTurn) {
+        self.ended.insert(0, turn);
+    }
+
     pub fn turn_running(&self) -> bool {
-        self.turns_running > 0
+        !self.running.is_empty()
     }
 
     /// Whether anything was written since the last user commit.
@@ -92,6 +111,10 @@ impl Cadence {
 
     /// What is due at `now`. `quiet` is `git.commit-after`, `None` for Manual.
     pub fn tick(&mut self, now: Instant, quiet: Option<Duration>, paused: bool) -> Action {
+        let before = self.running.len();
+        self.running
+            .retain(|_, t| now.duration_since(*t) < TURN_CAP);
+        self.expired += before - self.running.len();
         if paused || self.turn_running() {
             return Action::Nothing;
         }
@@ -106,5 +129,70 @@ impl Cadence {
             return Action::CommitUser;
         }
         Action::Nothing
+    }
+}
+
+/// How long after a commit the sync runs (spec "Cadence": about 10 s).
+pub const SYNC_AFTER_COMMIT: Duration = Duration::from_secs(10);
+
+/// When a sync is due (spec "Cadence" > Sync), pure like [`Cadence`]: about 10 s after each
+/// commit, every `git.sync-interval`, when the vault opens and on "Sync now". `interval == None`
+/// (Manual) leaves only "Sync now". A trigger that finds the sync not allowed (no remote, paused,
+/// a merge under way, a turn running) is skipped until the next trigger; a sync that fails is tried
+/// again after one interval, not on the next tick.
+#[derive(Debug, Default)]
+pub struct SyncTimer {
+    after_commit: Option<Instant>,
+    opened: bool,
+    requested: bool,
+    last_attempt: Option<Instant>,
+}
+
+impl SyncTimer {
+    pub fn new() -> SyncTimer {
+        SyncTimer::default()
+    }
+
+    /// The vault was opened: sync once soon.
+    pub fn on_open(&mut self) {
+        self.opened = true;
+    }
+
+    /// A commit was made at `now`.
+    pub fn on_commit(&mut self, now: Instant) {
+        self.after_commit = Some(now + SYNC_AFTER_COMMIT);
+    }
+
+    /// "Sync now".
+    pub fn request(&mut self) {
+        self.requested = true;
+    }
+
+    /// Whether to sync at `now`. `allowed`: there is a remote, sync is not paused and nothing is
+    /// in the way, asked only when a trigger is due. A due trigger is consumed and counts as an attempt
+    /// whether or not it was allowed.
+    pub fn tick(
+        &mut self,
+        now: Instant,
+        interval: Option<Duration>,
+        allowed: impl FnOnce() -> bool,
+    ) -> bool {
+        let automatic = interval.is_some_and(|every| {
+            self.opened
+                || self.after_commit.is_some_and(|t| now >= t)
+                || self
+                    .last_attempt
+                    .is_some_and(|last| now.duration_since(last) >= every)
+        });
+        if !(self.requested || automatic) {
+            return false;
+        }
+        // due: the triggers are used up whether or not it may run (a vault with no remote or a
+        // paused sync is not asked again every second; the next trigger or interval asks)
+        self.requested = false;
+        self.opened = false;
+        self.after_commit = None;
+        self.last_attempt = Some(now);
+        allowed()
     }
 }

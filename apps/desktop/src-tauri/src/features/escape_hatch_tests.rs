@@ -39,11 +39,6 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "the `claude --version` / `auth status` probe: one bounded child on a blocking-pool thread, polled to its deadline and killed; not a running resource",
     ),
     (
-        "git/system.rs",
-        ".spawn()",
-        "git phase 1: a short `git` child per call, waited by its caller; its scope migration is the git feature's own step",
-    ),
-    (
         "spellcheck/harper.rs",
         "thread::Builder",
         "`std_spawner`, the Spawner for the CLI and tests; the app passes the scope's",

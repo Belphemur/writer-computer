@@ -7,7 +7,8 @@ use crate::commands::blocking;
 use crate::error::AppError;
 use crate::git::history::{self, Against, FileDiff};
 use crate::git::repo::{Version, VersionKind};
-use crate::git::{self, device, message::Change, Repo, SetupMode};
+use crate::git::transport::{self, Source, Transport};
+use crate::git::{self, device, gh, message::Change, plugin_scan, Repo, SetupMode};
 use crate::vault_ops;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -50,6 +51,65 @@ pub struct GitStatus {
     pub committing: bool,
     /// The last failure, one line.
     pub error: Option<String>,
+    /// The remote as `host/owner/repo` (no scheme, no credentials); `None` without one.
+    pub remote: Option<String>,
+    pub branch: Option<String>,
+    /// Commits not pushed, and commits of the remote not taken in.
+    pub ahead: u32,
+    pub behind: u32,
+    /// "Pause sync": versions go on, nothing is fetched or pushed.
+    pub sync_paused: bool,
+    pub syncing: bool,
+    /// Seconds since the epoch of the last successful sync.
+    pub last_sync: Option<f64>,
+    /// What the last successful sync pushed and took in (commits).
+    pub last_pushed: u32,
+    pub last_pulled: u32,
+    pub sync_error: Option<SyncErrorRow>,
+    /// Files the last sync could not settle: their version stays on disk until resolved.
+    pub conflicts: Vec<ConflictRow>,
+    /// Binaries that changed on both sides: the remote's stays, mine is the copy.
+    pub copies: Vec<CopyRow>,
+    /// Files restored because one side deleted what the other edited.
+    pub restored: Vec<String>,
+    /// Plugin settings held back from versions and the push: they look like they hold a token.
+    pub held: Vec<HeldRow>,
+    /// Where HTTPS passwords come from: `token` or `gh`.
+    pub credentials: String,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncErrorRow {
+    /// One line: "Push rejected: authentication failed".
+    pub line: String,
+    /// The sanitized git output (no credentials in URLs, no tokens), for "Details".
+    pub details: String,
+    /// The network is unreachable: the status reads Offline.
+    pub offline: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictRow {
+    pub path: String,
+    pub hunks: u32,
+    pub properties: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyRow {
+    pub path: String,
+    pub copy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HeldRow {
+    pub id: String,
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Type)]
@@ -111,6 +171,10 @@ fn status_of<R: Runtime>(
     let fallback = git::IdentityCache::default();
     let cache = vaults.as_ref().map_or(&fallback, |v| &v.identity);
     let s = git::status(&root, cache, refresh).map_err(refused)?;
+    let record = vaults
+        .as_ref()
+        .map(|v| v.record_of(label))
+        .unwrap_or_default();
     Ok(GitStatus {
         has_repo: s.has_repo,
         set_up: s.set_up,
@@ -125,6 +189,45 @@ fn status_of<R: Runtime>(
         turn_running: vaults.as_ref().is_some_and(|v| v.turn_running(label)),
         committing: vaults.as_ref().is_some_and(|v| v.busy()),
         error: vaults.as_ref().and_then(|v| v.error_of(label)),
+        remote: s.remote.url.as_deref().map(transport::display_url),
+        branch: s.remote.branch.clone(),
+        ahead: s.remote.ahead as u32,
+        behind: s.remote.behind as u32,
+        sync_paused: s.sync_paused,
+        syncing: record.syncing,
+        last_sync: record.last_at.map(|t| t as f64),
+        last_pushed: record.pushed as u32,
+        last_pulled: record.pulled as u32,
+        sync_error: record.failure.map(|f| SyncErrorRow {
+            line: f.line,
+            details: f.details,
+            offline: f.offline,
+        }),
+        conflicts: s
+            .conflicts
+            .into_iter()
+            .map(|c| ConflictRow {
+                path: c.path,
+                hunks: c.hunks,
+                properties: c.properties,
+            })
+            .collect(),
+        copies: s
+            .copies
+            .into_iter()
+            .map(|(path, copy)| CopyRow { path, copy })
+            .collect(),
+        restored: s.restored,
+        held: s
+            .held
+            .into_iter()
+            .map(|h| HeldRow {
+                id: h.id,
+                name: h.name,
+                path: h.path,
+            })
+            .collect(),
+        credentials: git::state::credential_source(&root).arg().to_string(),
     })
 }
 
@@ -156,6 +259,9 @@ pub async fn git_setup<R: Runtime>(
             Setup::Local => SetupMode::LocalOnly,
             Setup::Existing => SetupMode::Existing,
         };
+        let v = runtime::vaults(&app);
+        let lock = v.as_ref().map(|v| v.write_lock(&root));
+        let _write = lock.as_ref().map(|l| l.lock());
         git::setup(&root, mode, &device::name()).map_err(refused)?;
         let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
         status_of(&app, &label, true)
@@ -419,6 +525,8 @@ pub async fn git_restore<R: Runtime>(
         let (root, repo, rel) = history_target(&app, &label, &path)?;
         let v = runtime::vaults(&app);
         let _busy = v.as_ref().map(|v| v.busy_guard());
+        let lock = v.as_ref().map(|v| v.write_lock(&root));
+        let _write = lock.as_ref().map(|l| l.lock());
         let done = history::restore(&repo, &root, &rel, &rev, &device::name()).map_err(|e| {
             if let Some(v) = &v {
                 v.identity.forget(&root);
@@ -470,6 +578,341 @@ pub async fn git_turn_commit<R: Runtime>(
         Ok(TurnCommitRow {
             rev: t.rev,
             settled: t.settled,
+        })
+    })
+    .await
+}
+
+// ---- sync ------------------------------------------------------------------------------------------
+
+/// "Sync now": commits the pending changes, fetches, replays, pushes (the pause does not apply).
+#[tauri::command]
+#[specta::specta]
+pub async fn git_sync_now<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        if !super::sync::ready(&root, true) {
+            return Err(AppError::Refused("Add a remote to sync".into()));
+        }
+        super::sync::run(&app, &label, super::sync::Mode::Manual);
+        status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// Pauses or resumes the sync (device-local); versions go on.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_set_sync_paused<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    paused: bool,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        git::state::set_sync_paused(&root, paused)?;
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// The transport for the window's vault, or why there is none.
+fn transport_of<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    root: &std::path::Path,
+) -> Result<(transport::Exec, Option<transport::Helper>), AppError> {
+    let exec = super::sync::exec_of(app)
+        .ok_or_else(|| AppError::Refused("Version history is turned off".into()))?;
+    Ok((exec, super::sync::helper_for(app, root)))
+}
+
+fn transport_error(e: transport::TransportError) -> AppError {
+    AppError::Refused(e.line)
+}
+
+/// Links `url` as the vault's remote (SSH or HTTPS), then syncs once so the existing history is
+/// pushed. A password in the URL is refused: the token goes in Sign in.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_remote_set<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    url: String,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        if !git::is_set_up(&root) {
+            return Err(AppError::Refused("Version history is not set up".into()));
+        }
+        let (exec, helper) = transport_of(&app, &root)?;
+        let t = Transport {
+            exec: &exec,
+            root: &root,
+            helper: helper.as_ref(),
+            secrets: Vec::new(),
+        };
+        t.set_remote(&url).map_err(transport_error)?;
+        log::info!(target: "git", "git: remote linked");
+        link_done(&app, &label)
+    })
+    .await
+}
+
+/// After a remote was linked: forget the last sync's failure and sync once, now.
+fn link_done<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Result<GitStatus, AppError> {
+    if let Some(v) = runtime::vaults(app) {
+        v.end_sync_record_reset(label);
+    }
+    super::sync::run(app, label, super::sync::Mode::Manual);
+    status_of(app, label, false)
+}
+
+/// Unlinks the remote: back to local history (nothing is deleted anywhere).
+#[tauri::command]
+#[specta::specta]
+pub async fn git_remote_remove<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        let (exec, helper) = transport_of(&app, &root)?;
+        let t = Transport {
+            exec: &exec,
+            root: &root,
+            helper: helper.as_ref(),
+            secrets: Vec::new(),
+        };
+        t.remove_remote().map_err(transport_error)?;
+        if let Some(v) = runtime::vaults(&app) {
+            v.end_sync_record_reset(&label);
+        }
+        log::info!(target: "git", "git: remote unlinked");
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// What the machine has for git, for the setup page.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Tools {
+    /// `git` is installed.
+    pub git: bool,
+    /// `missing`, `signed-out` or `signed-in`.
+    pub gh: String,
+    /// macOS: "Install Command Line Tools" is offered when git is missing.
+    pub can_install_git: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn git_tools<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Tools, AppError> {
+    blocking(move || {
+        let exec = super::sync::exec_of(&app)
+            .ok_or_else(|| AppError::Refused("Version history is turned off".into()))?;
+        let git_ok = exec
+            .run(
+                exec.program("git", &["--version"]),
+                transport::QUICK_TIMEOUT,
+            )
+            .is_ok_and(|o| o.ok());
+        let gh = match gh::state(&exec) {
+            gh::State::Missing => "missing",
+            gh::State::SignedOut => "signed-out",
+            gh::State::SignedIn => "signed-in",
+        };
+        Ok(Tools {
+            git: git_ok,
+            gh: gh.into(),
+            can_install_git: !git_ok && cfg!(target_os = "macos"),
+        })
+    })
+    .await
+}
+
+/// macOS: starts Apple's installer for the Command Line Tools (which include git).
+#[tauri::command]
+#[specta::specta]
+pub async fn git_install_git<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), AppError> {
+    blocking(move || {
+        if !cfg!(target_os = "macos") {
+            return Err(AppError::Refused("Install git from git-scm.com".into()));
+        }
+        let exec = super::sync::exec_of(&app)
+            .ok_or_else(|| AppError::Refused("Version history is turned off".into()))?;
+        // the installer is a window of its own; the command returns at once
+        exec.run(
+            exec.program("xcode-select", &["--install"]),
+            transport::QUICK_TIMEOUT,
+        )
+        .map(drop)
+        .map_err(|_| AppError::Refused("Could not start the installer".into()))
+    })
+    .await
+}
+
+/// "Sign in with GitHub": `gh repo create <vault name> --private`, the repository linked over
+/// HTTPS with the credentials read from `gh` at use, then a first sync.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_sign_in_github<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        if !git::is_set_up(&root) {
+            return Err(AppError::Refused("Version history is not set up".into()));
+        }
+        let (exec, helper) = transport_of(&app, &root)?;
+        match gh::state(&exec) {
+            gh::State::Missing => return Err(AppError::Refused("Install GitHub CLI first".into())),
+            gh::State::SignedOut => {
+                return Err(AppError::Refused("Run gh auth login first".into()))
+            }
+            gh::State::SignedIn => {}
+        }
+        let name = gh::repo_name(
+            &root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
+        let url = gh::create_repo(&exec, &root, &name).map_err(transport_error)?;
+        git::state::set_credential_source(&root, Source::Gh)?;
+        let helper = helper.map(|h| transport::Helper {
+            source: Source::Gh,
+            ..h
+        });
+        let t = Transport {
+            exec: &exec,
+            root: &root,
+            helper: helper.as_ref(),
+            secrets: Vec::new(),
+        };
+        t.set_remote(&url).map_err(transport_error)?;
+        log::info!(target: "git", "git: repository created and linked with GitHub CLI");
+        link_done(&app, &label)
+    })
+    .await
+}
+
+/// Chooses where HTTPS passwords come from for this vault: `token` (the secret) or `gh`.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_set_credentials<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    source: String,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        let source = Source::parse(&source)
+            .ok_or_else(|| AppError::Refused("Choose token or GitHub CLI".into()))?;
+        git::state::set_credential_source(&root, source)?;
+        if let Some(v) = runtime::vaults(&app) {
+            v.end_sync_record_reset(&label);
+            v.request_sync(&label);
+        }
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// The user's choice for a plugin whose settings look like they hold a token: `allow` ("Sync
+/// anyway": this file, until its token values change) or `never` (the file joins the managed
+/// `.gitignore` block).
+#[tauri::command]
+#[specta::specta]
+pub async fn git_plugin_decision<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    plugin: String,
+    choice: String,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        if plugin.is_empty() || plugin.contains(['/', '\\']) || plugin.starts_with('.') {
+            return Err(AppError::Refused("Unknown plugin".into()));
+        }
+        match choice.as_str() {
+            "allow" => plugin_scan::allow(&root, &plugin)?,
+            "never" => plugin_scan::never(&root, &plugin)?,
+            _ => return Err(AppError::Refused("Choose Sync anyway or Never sync".into())),
+        }
+        // the settings are a version now (allow) or no longer pending (never): save and sync
+        let _ = runtime::commit_user_now(&app, &label);
+        if let Some(v) = runtime::vaults(&app) {
+            v.request_sync(&label);
+        }
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// Forgets the notices about copies and restored files ("Dismiss").
+#[tauri::command]
+#[specta::specta]
+pub async fn git_dismiss_notices<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        git::conflicts::dismiss_notices(&root)?;
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// The result of merging a note's text three ways.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MergedText {
+    /// The merged text; `None` when the two sides overlap (the caller keeps what the user has).
+    pub text: Option<String>,
+}
+
+/// Merges `mine` and `theirs` against `base` with the engine's merge (front matter per property,
+/// body by lines): how an open note takes a fetched change without losing what the user typed.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_merge_text<R: Runtime>(
+    _app: tauri::AppHandle<R>,
+    path: String,
+    base: String,
+    mine: String,
+    theirs: String,
+) -> Result<MergedText, AppError> {
+    blocking(move || {
+        let merged = git::merge::merge_file(
+            &path,
+            Some(base.as_bytes()),
+            Some(mine.as_bytes()),
+            Some(theirs.as_bytes()),
+        );
+        Ok(MergedText {
+            text: match merged {
+                git::merge::Merged::Clean { bytes: Some(b), .. } => String::from_utf8(b).ok(),
+                _ => None,
+            },
         })
     })
     .await

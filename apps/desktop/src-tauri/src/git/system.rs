@@ -1,4 +1,4 @@
-//! The one place `git` runs as a child process in phase 1: `git var GIT_AUTHOR_IDENT` /
+//! `git var GIT_AUTHOR_IDENT` /
 //! `GIT_COMMITTER_IDENT`, so the commit identity is exactly the installed git's (includes, `includeIf`
 //! and the rest of its config rules), whatever gix would resolve. Same environment rules as the
 //! ADR's transport: a `PATH` that adds Homebrew and the standard install dirs (a GUI app's lacks
@@ -9,10 +9,10 @@
 //! environment, never with a name guessed from the system user and the host name.
 
 use super::repo::Identity;
-use std::io::Read;
+use super::transport::{Exec, RunError};
+use crate::features::scope::Spawner;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -20,28 +20,13 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     Found(Identity),
-    /// git ran and has no identity for this repository.
+    /// git ran and says it has no identity for this repository (and only that).
     NoIdentity,
     /// git is not installed.
     Absent,
-    /// git did not answer (timeout, unreadable output).
+    /// git failed for another reason (a timeout, unreadable output, a broken install): the caller
+    /// asks gix instead, it is not "no identity".
     Error(String),
-}
-
-/// The `PATH` for a child git: the app's, then the usual install dirs.
-fn path_with_git_dirs() -> String {
-    let mut parts: Vec<String> = std::env::var("PATH")
-        .unwrap_or_default()
-        .split(':')
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect();
-    for dir in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
-        if !parts.iter().any(|p| p == dir) {
-            parts.push(dir.to_string());
-        }
-    }
-    parts.join(":")
 }
 
 /// `Name <email> 1700000000 +0000` to the name and the email.
@@ -54,16 +39,23 @@ fn parse(line: &str) -> Option<Identity> {
     })
 }
 
-fn var(root: &Path, which: &str) -> Outcome {
-    let mut cmd = Command::new("git");
-    cmd.args(["var", which])
-        .current_dir(root)
-        .env("PATH", path_with_git_dirs())
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+/// git's own words for "I have no name or email for you" (`user.useConfigOnly` makes it die with
+/// the first two; the advice line is the older wording).
+fn is_identity_error(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    [
+        "no name was given",
+        "no email was given",
+        "please tell me who you are",
+        "unable to auto-detect",
+        "empty ident name",
+    ]
+    .iter()
+    .any(|m| s.contains(m))
+}
+
+fn var(exec: &Exec, root: &Path, which: &str) -> Outcome {
+    let mut cmd = exec.git(root, None, &["var", which]);
     // add one config entry (user.useConfigOnly) after any the environment already carries
     let n: usize = std::env::var("GIT_CONFIG_COUNT")
         .ok()
@@ -72,50 +64,44 @@ fn var(root: &Path, which: &str) -> Outcome {
     cmd.env("GIT_CONFIG_COUNT", (n + 1).to_string())
         .env(format!("GIT_CONFIG_KEY_{n}"), "user.useConfigOnly")
         .env(format!("GIT_CONFIG_VALUE_{n}"), "true");
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Outcome::Absent,
-        Err(e) => return Outcome::Error(e.to_string()),
+    let out = match exec.run(cmd, TIMEOUT) {
+        Ok(o) => o,
+        Err(RunError::Absent) => return Outcome::Absent,
+        Err(RunError::Timeout) => return Outcome::Error("git did not answer in time".into()),
+        Err(e) => return Outcome::Error(format!("{e:?}")),
     };
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) if start.elapsed() > TIMEOUT => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Outcome::Error("git did not answer in time".into());
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(5)),
-            Err(e) => return Outcome::Error(e.to_string()),
-        }
-    };
-    if !status.success() {
-        return Outcome::NoIdentity;
+    if !out.ok() {
+        return if is_identity_error(&out.stderr) {
+            Outcome::NoIdentity
+        } else {
+            Outcome::Error(format!("git exited with {:?}", out.code))
+        };
     }
-    let mut out = String::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        let _ = stdout.read_to_string(&mut out);
-    }
-    match parse(&out) {
+    match parse(&out.stdout) {
         Some(id) => Outcome::Found(id),
         None => Outcome::Error("unreadable git output".into()),
     }
 }
 
-/// The author and committer identity git itself resolves in `root`.
+/// The author and committer identity git itself resolves in `root`: `Ok(None)` when git cannot say
+/// (not installed, a failure that is not "no identity"), so the caller asks gix; `Err("none")` only
+/// when git itself says there is no identity.
 pub fn identities(root: &Path) -> Result<Option<(Identity, Identity)>, String> {
-    let author = match var(root, "GIT_AUTHOR_IDENT") {
-        Outcome::Found(i) => i,
-        Outcome::NoIdentity => return Err("none".into()),
-        Outcome::Absent => return Ok(None),
-        Outcome::Error(e) => return Err(format!("git: {e}")),
-    };
-    let committer = match var(root, "GIT_COMMITTER_IDENT") {
-        Outcome::Found(i) => i,
-        Outcome::NoIdentity => return Err("none".into()),
-        Outcome::Absent => return Ok(None),
-        Outcome::Error(e) => return Err(format!("git: {e}")),
-    };
+    // a short child with no scope of its own (called from commits anywhere, the CLI included):
+    // bounded by `TIMEOUT` and killed with its process group
+    identities_with(&Exec::new(Spawner::detached()), root)
+}
+
+pub fn identities_with(exec: &Exec, root: &Path) -> Result<Option<(Identity, Identity)>, String> {
+    let mut both = Vec::new();
+    for which in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
+        match var(exec, root, which) {
+            Outcome::Found(i) => both.push(i),
+            Outcome::NoIdentity => return Err("none".into()),
+            Outcome::Absent | Outcome::Error(_) => return Ok(None),
+        }
+    }
+    let committer = both.pop().expect("two");
+    let author = both.pop().expect("two");
     Ok(Some((author, committer)))
 }

@@ -22,9 +22,31 @@ pub const LINES: &[&str] = &[
     "Thumbs.db",
 ];
 
-fn block() -> String {
+/// The "Never sync this plugin" lines inside the block (`.obsidian/plugins/<id>/data.json`): kept
+/// when the block is rewritten; any other line in it is Writer's and is replaced.
+fn extras(existing: &str) -> Vec<String> {
+    let mut inside = false;
+    let mut out = Vec::new();
+    for l in existing.lines() {
+        let t = l.trim_end();
+        if t == BEGIN {
+            inside = true;
+        } else if t == END {
+            break;
+        } else if inside && t.starts_with(".obsidian/plugins/") && t.ends_with("/data.json") {
+            out.push(t.to_string());
+        }
+    }
+    out
+}
+
+fn block(extra: &[String]) -> String {
     let mut out = format!("{BEGIN}\n");
     for l in LINES {
+        out.push_str(l);
+        out.push('\n');
+    }
+    for l in extra {
         out.push_str(l);
         out.push('\n');
     }
@@ -36,7 +58,7 @@ fn block() -> String {
 /// `existing` with the managed block present and current: replaced in place when there is one,
 /// appended (after a blank line) when there is not. Every other line is byte for byte as it was.
 pub fn apply(existing: &str) -> String {
-    let wanted = block();
+    let wanted = block(&extras(existing));
     let lines: Vec<&str> = existing.split_inclusive('\n').collect();
     let begin = lines.iter().position(|l| l.trim_end() == BEGIN);
     let end = begin.and_then(|b| {
@@ -64,6 +86,30 @@ pub fn apply(existing: &str) -> String {
             out
         }
     }
+}
+
+/// Adds `line` to the managed block (once). The block is written first when the file has none.
+pub fn add_line(root: &Path, line: &str) -> io::Result<()> {
+    let path = root.join(".gitignore");
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let current = apply(&existing);
+    if extras(&current).iter().any(|l| l == line) {
+        return if current == existing {
+            Ok(())
+        } else {
+            std::fs::write(&path, current)
+        };
+    }
+    let lines: Vec<&str> = current.split_inclusive('\n').collect();
+    let end = lines
+        .iter()
+        .position(|l| l.trim_end() == END)
+        .unwrap_or(lines.len());
+    let mut out: String = lines[..end].concat();
+    out.push_str(line);
+    out.push('\n');
+    out.push_str(&lines[end..].concat());
+    std::fs::write(path, out)
 }
 
 /// Does the file hold the block, whatever its lines?

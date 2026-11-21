@@ -2,12 +2,12 @@
   "id": "git",
   "name": "Version history",
   "version": "1.0.0",
-  "description": "Saves versions of your vault with Git, set up by default: automatic commits after you stop writing, one commit per agent turn, a History tab per file with diffs and Restore, and `writer git:*` for agents. Local only: nothing is fetched or pushed.",
+  "description": "Saves versions of your vault with Git, set up by default: automatic commits after you stop writing, one commit per agent turn, a History tab per file with diffs and Restore, and `writer git:*` for agents. Add a remote to sync across devices: fetch, replay and push with merges that understand notes.",
   "enabledByDefault": true,
   "activation": ["onStartup"],
   "memory": {
     "level": "low",
-    "note": "One sleeping thread that checks once a second; a status check runs in a short Rust call. The Rust part needs a restart to start or stop."
+    "note": "One sleeping thread that checks once a second; a status check runs in a short Rust call. Sync runs git as a child process while it works."
   },
   "rust": {
     "commands": [
@@ -21,12 +21,32 @@
       "git_version_diff",
       "git_version_text",
       "git_restore",
-      "git_turn_commit"
+      "git_turn_commit",
+      "git_sync_now",
+      "git_set_sync_paused",
+      "git_remote_set",
+      "git_remote_remove",
+      "git_tools",
+      "git_install_git",
+      "git_sign_in_github",
+      "git_set_credentials",
+      "git_plugin_decision",
+      "git_dismiss_notices",
+      "git_merge_text"
     ],
-    "events": ["git:changed"],
+    "events": ["git:changed", "git:applying"],
     "hooks": ["start", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
-    "cliCommands": ["git:status", "git:log", "git:commit", "git:diff", "git:show", "git:restore"],
-    "skills": ["writer-git"]
+    "cliCommands": [
+      "git:status",
+      "git:log",
+      "git:commit",
+      "git:diff",
+      "git:show",
+      "git:restore",
+      "git:sync"
+    ],
+    "skills": ["writer-git"],
+    "ipcCommands": ["git:sync"]
   },
   "extends": ["agent.turn-started", "agent.turn-finished"],
   "offNotes": {
@@ -61,7 +81,14 @@
     "menus": {
       "sidebar-file": ["git.sidebar-file"],
       "editor-tab": ["git.editor-tab"]
-    }
+    },
+    "secrets": [
+      {
+        "key": "features.git.token",
+        "label": "Git token",
+        "description": "The personal access token used for HTTPS remotes (SSH uses your own keys)."
+      }
+    ]
   },
   "provides": ["git.history"],
   "uses": ["agent.chats"]

@@ -258,6 +258,20 @@ fn scan_keys(fm: &str) -> Result<Vec<(String, usize)>, PatchError> {
     Ok(scan(fm)?.keys)
 }
 
+/// The root-mapping entries of a front matter text, in order: each key with the byte range of its
+/// own lines (the blank and comment lines between entries belong to neither). The Git merge
+/// splices whole entries through it, so a property one side did not touch stays byte for byte.
+pub(crate) fn entry_spans(fm: &str) -> Result<Vec<(String, Range<usize>)>, PatchError> {
+    let keys = scan_keys(fm)?;
+    let starts = line_starts(fm);
+    Ok((0..keys.len())
+        .map(|i| {
+            let r = entry_range(fm, &starts, &keys, i);
+            (keys[i].0.clone(), starts[r.start]..starts[r.end])
+        })
+        .collect())
+}
+
 /// Byte offset where each line of `text` starts, plus a final `text.len()`.
 fn line_starts(text: &str) -> Vec<usize> {
     let mut v = vec![0];

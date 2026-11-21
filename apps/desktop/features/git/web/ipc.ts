@@ -12,10 +12,18 @@ export type VersionRow = wire.VersionRow;
 export type DeletedRow = wire.DeletedRow;
 export type FileDiff = wire.FileDiff;
 export type Preview = wire.Preview;
+export type Tools = wire.Tools;
+export type SyncErrorRow = wire.SyncErrorRow;
 
 /** The event Rust emits to the window after a commit, a setup or a pause change (`git:changed`;
  *  `ctx.listen` adds the feature prefix). */
 export const GIT_CHANGED = "changed";
+/** The event Rust emits before a sync writes files into the vault (`git:applying`, payload
+ *  `{ paths }`, vault-relative): the editors that have them open claim the watcher's events. */
+export const GIT_APPLYING = "applying";
+export interface ApplyingPayload {
+  paths: string[];
+}
 
 export interface GitCommands {
   git_status: { args: { refresh: boolean }; result: wire.GitStatus };
@@ -35,6 +43,20 @@ export interface GitCommands {
     result: wire.TurnCommitRow;
   };
   git_restore: { args: { path: string; rev: string }; result: wire.RestoredRow };
+  git_sync_now: { args: undefined; result: wire.GitStatus };
+  git_set_sync_paused: { args: { paused: boolean }; result: wire.GitStatus };
+  git_remote_set: { args: { url: string }; result: wire.GitStatus };
+  git_remote_remove: { args: undefined; result: wire.GitStatus };
+  git_tools: { args: undefined; result: wire.Tools };
+  git_install_git: { args: undefined; result: null };
+  git_sign_in_github: { args: undefined; result: wire.GitStatus };
+  git_set_credentials: { args: { source: string }; result: wire.GitStatus };
+  git_plugin_decision: { args: { plugin: string; choice: string }; result: wire.GitStatus };
+  git_dismiss_notices: { args: undefined; result: wire.GitStatus };
+  git_merge_text: {
+    args: { path: string; base: string; mine: string; theirs: string };
+    result: wire.MergedText;
+  };
 }
 
 const call = featureInvoke<GitCommands>(manifest.id, manifest.rust.commands);
@@ -57,3 +79,20 @@ export const restore = (path: string, rev: string) => call("git_restore", { path
  *  seconds, or `null` while unknown. */
 export const turnCommit = (chatId: string, turnId: string, finishedAt: number | null) =>
   call("git_turn_commit", { chat_id: chatId, turn_id: turnId, finished_at: finishedAt });
+
+export const syncNow = () => call("git_sync_now");
+export const setSyncPaused = (paused: boolean) => call("git_set_sync_paused", { paused });
+export const setRemote = (url: string) => call("git_remote_set", { url });
+export const removeRemote = () => call("git_remote_remove");
+export const tools = () => call("git_tools");
+export const installGit = () => call("git_install_git");
+export const signInGithub = () => call("git_sign_in_github");
+/** `token` (the secret) or `gh` (GitHub CLI) as the source of HTTPS passwords. */
+export const setCredentials = (source: "token" | "gh") => call("git_set_credentials", { source });
+/** `allow`: Sync anyway. `never`: Never sync this plugin. */
+export const pluginDecision = (plugin: string, choice: "allow" | "never") =>
+  call("git_plugin_decision", { plugin, choice });
+export const dismissNotices = () => call("git_dismiss_notices");
+/** The merge of an open note's text three ways (`text` is `null` when the two sides overlap). */
+export const mergeText = async (path: string, base: string, mine: string, theirs: string) =>
+  (await call("git_merge_text", { path, base, mine, theirs })).text;

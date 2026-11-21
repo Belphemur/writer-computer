@@ -5,15 +5,19 @@
 //! "turned off" while `features.git.enabled` is false. Phase 1 has no remote: the status says so.
 
 use crate::cli::args::Args;
+use crate::cli::cmd_app;
 use crate::cli::format::json_pretty;
 use crate::cli::registry::{cmd, p, CommandSpec, NO_FLAGS, PATH};
 use crate::cli::{CliError, Ctx};
 use crate::config;
+use crate::features::scope::Spawner;
 use crate::git::history::{self, Against, FileDiff};
+use crate::git::sync as engine;
+use crate::git::transport::{Exec, Helper};
 use crate::git::{self, device, message, Change, Error};
-use serde_json::json;
+use serde_json::{json, Map};
 
-const FEATURE: Option<&str> = Some("git");
+const FEATURE: Option<&str> = Some(super::runtime::ID);
 const GROUP: &str = "Git";
 
 pub static COMMANDS: &[CommandSpec] = &[
@@ -99,6 +103,20 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         feature: FEATURE,
         ..cmd!(
+            "git:sync",
+            GROUP,
+            "Sync with the remote: save a version, fetch, replay local versions on top, push. Without a remote it only saves a version. Through the running app when it is open, else here",
+            &[],
+            NO_FLAGS,
+            &["text"],
+            Some("text"),
+            writes,
+            sync_cmd
+        )
+    },
+    CommandSpec {
+        feature: FEATURE,
+        ..cmd!(
             "git:commit",
             GROUP,
             "Save a version now: commit the pending changes as a user(...) commit",
@@ -149,7 +167,13 @@ fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
         return Ok(json_pretty(&json!({
             "setUp": s.set_up,
             "paused": s.paused,
-            "remote": "none",
+            "syncPaused": s.sync_paused,
+            "remote": s.remote.url.as_deref().map_or("none".into(), crate::git::transport::display_url),
+            "branch": s.remote.branch,
+            "ahead": s.remote.ahead,
+            "behind": s.remote.behind,
+            "conflicted": s.conflicts.iter().map(|c| c.path.clone()).collect::<Vec<_>>(),
+            "held": s.held.iter().map(|h| h.path.clone()).collect::<Vec<_>>(),
             "lastCommit": s.last_commit,
             "identityError": s.identity_error,
             "changed": changed,
@@ -163,7 +187,28 @@ fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
         out.push_str("error: set your git name and email\n");
     }
     out.push_str(if s.paused { "paused\n" } else { "active\n" });
-    out.push_str("remote: none\n");
+    match &s.remote.url {
+        None => out.push_str("remote: none\n"),
+        Some(url) => {
+            out.push_str(&format!(
+                "remote: {}\n",
+                crate::git::transport::display_url(url)
+            ));
+            if s.sync_paused {
+                out.push_str("sync: paused\n");
+            }
+            out.push_str(&format!(
+                "ahead: {}\nbehind: {}\n",
+                s.remote.ahead, s.remote.behind
+            ));
+        }
+    }
+    for c in &s.conflicts {
+        out.push_str(&format!("conflict: {}\n", c.path));
+    }
+    for h in &s.held {
+        out.push_str(&format!("held back (looks like a token): {}\n", h.path));
+    }
     if s.changes.is_empty() {
         out.push_str("changed: none\n");
     } else {
@@ -431,4 +476,98 @@ fn restore_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErr
     } else {
         format!("restored {}\n", done.path)
     })
+}
+
+fn sync_line(v: &serde_json::Value) -> String {
+    let n = |k: &str| v[k].as_u64().unwrap_or(0);
+    let mut out = format!("synced: pushed {}, pulled {}\n", n("pushed"), n("pulled"));
+    if let Some(files) = v["conflicted"].as_array() {
+        for f in files.iter().filter_map(|f| f.as_str()) {
+            out.push_str(&format!("conflict: {f} (resolve it in Writer)\n"));
+        }
+    }
+    out
+}
+
+/// `writer git:sync`: through the running app when the vault is open there (its scheduler owns the
+/// run, a conflict reaches its panel), else here with the same engine.
+fn sync_cmd(ctx: &Ctx, _args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let root = ctx.root()?.to_path_buf();
+    if !git::is_set_up(&root) {
+        return Err(not_set_up());
+    }
+    match cmd_app::call_app(ctx, "git:sync", Some(&root), Map::new()) {
+        Ok(v) if v["open"].as_bool() == Some(true) => {
+            if let Some(e) = v["error"].as_str() {
+                return Err(CliError::fail(e.to_string()));
+            }
+            return Ok(sync_line(&v));
+        }
+        Ok(_) | Err(CliError::NotRunning) => {}
+        Err(e) => return Err(e),
+    }
+    headless_sync(ctx, &root)
+}
+
+fn headless_sync(ctx: &Ctx, root: &std::path::Path) -> Result<String, CliError> {
+    let data_dir = ctx.env.data_dir()?;
+    let template = config::read_global_value(&data_dir, "git.commit-message")
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| message::DEFAULT_TEMPLATE.to_string());
+    let dev = device::name();
+    let committed =
+        git::commit_user(root, &template, &git::template_ctx(&dev), &dev).map_err(fail)?;
+    let mut out = String::new();
+    if let Some(id) = &committed {
+        out.push_str(&format!("committed {}\n", &id[..id.len().min(8)]));
+    }
+    let repo = git::Repo::open(root)
+        .map_err(fail)?
+        .ok_or_else(not_set_up)?;
+    if !git::has_remote(&repo) {
+        out.push_str("no remote: versions only\n");
+        return Ok(out);
+    }
+    let exec = Exec::new(Spawner::detached());
+    let helper = std::env::current_exe().ok().map(|exe| Helper {
+        exe,
+        source: git::state::credential_source(root),
+        service: crate::plugin_secrets::PluginSecrets::service_name(
+            crate::index::paths::RELEASE_IDENTIFIER,
+        ),
+    });
+    let outcome = engine::sync(
+        root,
+        &engine::Options {
+            exec: &exec,
+            helper: helper.as_ref(),
+            secrets: Vec::new(),
+            device: &dev,
+            announce: None,
+        },
+    );
+    if let Some(e) = outcome.error {
+        return Err(CliError::fail(match e {
+            engine::Error::Transport(t) => t.line,
+            other => other.to_string(),
+        }));
+    }
+    let r = outcome.report;
+    out.push_str(&format!(
+        "synced: pushed {}, pulled {}\n",
+        r.pushed, r.pulled
+    ));
+    for c in &r.conflicts {
+        out.push_str(&format!(
+            "conflict: {} (left as it is here; open Writer to resolve it)\n",
+            c.path
+        ));
+    }
+    for (file, copy) in &r.copies {
+        out.push_str(&format!("kept both: {file} and {copy}\n"));
+    }
+    for h in &r.held {
+        out.push_str(&format!("held back (looks like a token): {}\n", h.path));
+    }
+    Ok(out)
 }

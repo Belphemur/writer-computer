@@ -800,3 +800,100 @@ mod cli_tests {
         }
     }
 }
+
+// ---- one writer at a time ----------------------------------------------------------------------------
+
+#[test]
+fn a_ticker_commit_and_a_turn_start_on_a_dirty_vault_make_one_commit_and_no_error() {
+    let _forget = serial();
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "Studio").unwrap();
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    for round in 0..5 {
+        write(&root, "a.md", &format!("round {round}"));
+        vaults.written("main", &root, &[root.join("a.md")], Instant::now());
+        let before = subjects(&root).len();
+        let (handle, r2) = (app.handle().clone(), root.clone());
+        let ticker = std::thread::spawn(move || {
+            ISOLATED.with(|i| i.set(true));
+            runtime::tick(&handle, later(600 + round));
+        });
+        points::emit(&TURN_STARTED_POINT, &started(&r2));
+        ticker.join().unwrap();
+        assert_eq!(
+            subjects(&root).len(),
+            before + 1,
+            "round {round}: one commit"
+        );
+        assert_eq!(vaults.error_of("main"), None);
+        points::emit(&TURN_FINISHED_POINT, &finished(&root, &[]));
+    }
+}
+
+// ---- sync in the app -----------------------------------------------------------------------------------
+
+#[cfg(unix)]
+#[test]
+fn a_running_sync_makes_the_feature_busy_and_stopping_the_scope_ends_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let _forget = serial();
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    let sh = |cwd: &Path, args: &[&str]| {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "git {args:?}");
+    };
+    sh(remote.path(), &["init", "--bare", "-b", "main"]);
+    sh(&root, &["checkout", "-b", "main"]);
+    sh(
+        &root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("file://{}", remote.path().display()),
+        ],
+    );
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::Existing, "d").unwrap();
+    // the push waits, so the sync is observable
+    let hook = root.join(".git/hooks/pre-push");
+    std::fs::write(&hook, "#!/bin/sh\nsleep 5\nexit 0\n").unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    let scope = crate::features::scope_of(app.handle(), "git").unwrap();
+    assert_eq!(scope.busy_reason(), None);
+    let handle = app.handle().clone();
+    let worker = std::thread::spawn(move || {
+        ISOLATED.with(|i| i.set(true));
+        sync::run(&handle, "main", sync::Mode::Manual);
+    });
+    let start = Instant::now();
+    while scope.busy_reason().is_none() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(scope.busy_reason().as_deref(), Some("a sync in progress"));
+    assert!(vaults.is_syncing("main"));
+    // turning git off kills the git child: the sync ends long before the hook's sleep
+    scope.shutdown(Duration::from_secs(3));
+    worker.join().unwrap();
+    assert!(
+        start.elapsed() < Duration::from_secs(4),
+        "the child was killed"
+    );
+    assert!(!vaults.is_syncing("main"));
+}

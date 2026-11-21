@@ -753,13 +753,13 @@ fn no_user_commit_during_a_turn_and_the_agent_commit_goes_first() {
     let t0 = Instant::now();
     let mut c = Cadence::new();
     c.on_write(t0);
-    c.turn_started();
+    c.turn_started("chat", t0);
     assert_eq!(
         c.tick(at(t0, 600), MIN, false),
         Action::Nothing,
         "turn running"
     );
-    c.turn_ended(Some(turn(&["a.md"])));
+    c.turn_ended("chat", Some(turn(&["a.md"])));
     assert_eq!(
         c.tick(at(t0, 601), MIN, false),
         Action::CommitAgent(turn(&["a.md"]))
@@ -773,8 +773,8 @@ fn a_turn_without_changes_just_unblocks() {
     let t0 = Instant::now();
     let mut c = Cadence::new();
     c.on_write(t0);
-    c.turn_started();
-    c.turn_ended(None);
+    c.turn_started("chat", t0);
+    c.turn_ended("chat", None);
     assert_eq!(c.tick(at(t0, 60), MIN, false), Action::CommitUser);
 }
 
@@ -1507,4 +1507,136 @@ fn only_the_git_module_names_the_dependency() {
     scan(&manifest.join("src"), &own, &mut hits);
     scan(&manifest.join("../features"), &own, &mut hits);
     assert!(hits.is_empty(), "gix is named outside src/git: {hits:?}");
+}
+
+// ---- the sync timer ------------------------------------------------------------------------------
+
+#[test]
+fn the_sync_timer_follows_commits_the_interval_open_and_requests() {
+    let t0 = Instant::now();
+    let every = Some(Duration::from_secs(300));
+    let secs = Duration::from_secs;
+    let mut t = SyncTimer::new();
+    assert!(!t.tick(t0, every, || true), "nothing is due at first");
+    // a commit syncs 10 s later
+    t.on_commit(t0);
+    assert!(!t.tick(t0 + secs(9), every, || true));
+    assert!(t.tick(t0 + secs(10), every, || true));
+    assert!(!t.tick(t0 + secs(11), every, || true), "consumed");
+    // then every interval since the last attempt
+    assert!(!t.tick(t0 + secs(300), every, || true));
+    assert!(t.tick(t0 + secs(310), every, || true));
+    // opening syncs once; so does a request, also with Manual
+    t.on_open();
+    assert!(t.tick(t0 + secs(311), every, || true));
+    t.request();
+    assert!(t.tick(t0 + secs(312), None, || true));
+    t.on_commit(t0 + secs(400));
+    t.on_open();
+    assert!(
+        !t.tick(t0 + secs(500), None, || true),
+        "Manual only syncs on request"
+    );
+    // not allowed: nothing runs, and the trigger is used up (no asking again every second)
+    let mut t = SyncTimer::new();
+    t.on_open();
+    assert!(!t.tick(t0, every, || false));
+    assert!(
+        !t.tick(t0 + secs(1), every, || true),
+        "the open trigger is gone"
+    );
+    t.request();
+    assert!(
+        !t.tick(t0 + secs(2), every, || false),
+        "paused or no remote"
+    );
+    assert!(!t.tick(t0 + secs(3), every, || true));
+    assert!(
+        t.tick(t0 + secs(302), every, || true),
+        "the interval asks again"
+    );
+}
+
+#[test]
+fn turns_are_a_set_of_chats_and_a_lost_one_expires() {
+    let t0 = Instant::now();
+    let mut c = Cadence::new();
+    c.turn_started("a", t0);
+    c.turn_started("a", t0);
+    c.turn_ended("unknown", None);
+    assert!(
+        c.turn_running(),
+        "a finish for another chat changes nothing"
+    );
+    c.turn_ended("a", None);
+    assert!(!c.turn_running(), "a double start is one entry");
+    // a finish that never comes (the agent was turned off): the next finish or the cap clears it
+    c.turn_started("b", t0);
+    c.on_write(t0);
+    let quiet = Some(Duration::from_secs(60));
+    assert_eq!(
+        c.tick(t0 + Duration::from_secs(120), quiet, false),
+        Action::Nothing
+    );
+    assert_eq!(
+        c.tick(t0 + TURN_CAP + Duration::from_secs(1), quiet, false),
+        Action::CommitUser
+    );
+    assert_eq!(c.take_expired(), 1);
+}
+
+#[test]
+fn the_stat_is_taken_before_the_bytes_are_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    std::fs::write(&file, "one").unwrap();
+    let (bytes, meta) = repo::read_after_stat(&file, || {
+        std::fs::write(&file, "one and a write that lands mid-commit").unwrap();
+    })
+    .unwrap();
+    assert_eq!(bytes, b"one and a write that lands mid-commit");
+    assert_eq!(
+        meta.len(),
+        3,
+        "the stat is the older one, so the file shows as changed"
+    );
+}
+
+#[test]
+fn homebrew_comes_before_the_usr_bin_stub() {
+    let path = transport::Exec::new(crate::features::scope::Spawner::detached()).path();
+    let dirs: Vec<_> = std::env::split_paths(&path).collect();
+    let at = |d: &str| dirs.iter().position(|p| p == Path::new(d)).unwrap();
+    assert!(at("/opt/homebrew/bin") < at("/usr/bin"));
+    assert!(at("/usr/local/bin") < at("/usr/bin"));
+}
+
+#[cfg(unix)]
+fn fake_git(script: &str) -> (tempfile::TempDir, transport::Exec) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("git");
+    std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let exec = transport::Exec::new(crate::features::scope::Spawner::detached())
+        .with_path_prefix(vec![dir.path().to_path_buf()]);
+    (dir, exec)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_that_fails_for_another_reason_leaves_the_identity_to_gix_and_only_its_own_words_mean_none()
+{
+    let vault = vault();
+    let repo = Repo::open(vault.path()).unwrap().unwrap();
+    let (_d, broken) =
+        fake_git("echo 'xcode-select: note: no developer tools were found' >&2; exit 1");
+    let ids = repo.identities_using(&broken).unwrap();
+    assert_eq!(ids.author.name, "Ada Writer", "gix answered");
+    let (_d, says_none) =
+        fake_git("echo 'fatal: no name was given and auto-detection is disabled' >&2; exit 128");
+    assert!(matches!(
+        repo.identities_using(&says_none),
+        Err(Error::NoIdentity)
+    ));
 }

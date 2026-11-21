@@ -15,6 +15,12 @@ struct State {
     /// The user chose "Stop version history": no automatic setup, no automatic commit.
     #[serde(default)]
     stopped: bool,
+    /// "Pause sync": versions go on, nothing is fetched or pushed.
+    #[serde(default)]
+    sync_paused: bool,
+    /// Where HTTPS passwords come from (`token` or `gh`), the choice of Settings > Git.
+    #[serde(default)]
+    credentials: Option<String>,
 }
 
 fn path(root: &Path) -> PathBuf {
@@ -60,6 +66,39 @@ pub fn set_stopped(root: &Path, stopped: bool) -> io::Result<()> {
         root,
         &State {
             stopped,
+            ..read(root)
+        },
+    )
+}
+
+pub fn sync_paused(root: &Path) -> bool {
+    read(root).sync_paused
+}
+
+pub fn set_sync_paused(root: &Path, sync_paused: bool) -> io::Result<()> {
+    write(
+        root,
+        &State {
+            sync_paused,
+            ..read(root)
+        },
+    )
+}
+
+/// The credential source the user chose for this vault's remote (the token by default).
+pub fn credential_source(root: &Path) -> super::transport::Source {
+    read(root)
+        .credentials
+        .as_deref()
+        .and_then(super::transport::Source::parse)
+        .unwrap_or(super::transport::Source::Token)
+}
+
+pub fn set_credential_source(root: &Path, source: super::transport::Source) -> io::Result<()> {
+    write(
+        root,
+        &State {
+            credentials: Some(source.arg().to_string()),
             ..read(root)
         },
     )

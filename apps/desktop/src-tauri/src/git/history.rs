@@ -70,14 +70,18 @@ fn counts(repo: &Repo, v: &Version) -> (Option<u32>, Option<u32>) {
 
 /// The file logs already built, per repository and HEAD: a click on a version, a reload of the
 /// tab or two tabs of one file read the same list once. Owned by the caller (the feature's
-/// `Vaults`), never a static; it forgets everything when HEAD moves and holds at most
-/// [`CACHE_ENTRIES`] lists.
+/// `Vaults`), never a static; each repository forgets its lists when its HEAD moves (a second
+/// vault does not evict the first) and holds at most [`CACHE_ENTRIES`] lists.
 #[derive(Default)]
 pub struct Cache {
     inner: parking_lot::Mutex<Cached>,
 }
 
-type Cached = (Option<String>, std::collections::HashMap<String, Vec<Row>>);
+/// Per repository root: the HEAD its lists were built at, and the lists.
+type Cached = std::collections::HashMap<
+    std::path::PathBuf,
+    (Option<String>, std::collections::HashMap<String, Vec<Row>>),
+>;
 
 const CACHE_ENTRIES: usize = 32;
 
@@ -85,23 +89,26 @@ impl Cache {
     /// [`versions`], from the cache while HEAD is the same.
     pub fn versions(&self, repo: &Repo, path: &str, limit: usize) -> Result<Vec<Row>> {
         let head = repo.head_id_string();
-        let key = format!("{}\0{path}\0{limit}", repo.root().display());
+        let key = format!("{path}\0{limit}");
+        let root = repo.root().to_path_buf();
         {
             let mut g = self.inner.lock();
-            if g.0 != head {
-                *g = (head.clone(), Default::default());
+            let slot = g.entry(root.clone()).or_default();
+            if slot.0 != head {
+                *slot = (head.clone(), Default::default());
             }
-            if let Some(rows) = g.1.get(&key) {
+            if let Some(rows) = slot.1.get(&key) {
                 return Ok(rows.clone());
             }
         }
         let rows = versions(repo, path, limit)?;
         let mut g = self.inner.lock();
-        if g.0 == head {
-            if g.1.len() >= CACHE_ENTRIES {
-                g.1.clear();
+        let slot = g.entry(root).or_default();
+        if slot.0 == head {
+            if slot.1.len() >= CACHE_ENTRIES {
+                slot.1.clear();
             }
-            g.1.insert(key, rows.clone());
+            slot.1.insert(key, rows.clone());
         }
         Ok(rows)
     }
@@ -231,21 +238,11 @@ pub enum FileDiff {
 }
 
 fn preview(path: &str, bytes: &[u8]) -> Preview {
-    let mime = match Path::new(path)
+    let mime = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        Some("svg") => "image/svg+xml",
-        Some("avif") => "image/avif",
-        Some("bmp") => "image/bmp",
-        _ => "application/octet-stream",
-    };
+        .and_then(crate::attachments::mime_for_extension)
+        .unwrap_or("application/octet-stream");
     Preview {
         mime: mime.into(),
         data: (bytes.len() <= IMAGE_MAX_BYTES)

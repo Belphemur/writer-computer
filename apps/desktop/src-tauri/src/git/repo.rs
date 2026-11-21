@@ -176,11 +176,23 @@ impl Repo {
             // tests read only the repository's own config, never the user's: no system git
             return self.identities_via_gix();
         }
-        match super::system::identities(&self.root) {
+        self.identities_from(super::system::identities(&self.root))
+    }
+
+    /// [`Repo::identities`] asking through `exec` (tests put a fake `git` first on its path).
+    #[cfg(test)]
+    pub(crate) fn identities_using(&self, exec: &super::transport::Exec) -> Result<Identities> {
+        self.identities_from(super::system::identities_with(exec, &self.root))
+    }
+
+    fn identities_from(
+        &self,
+        asked: std::result::Result<Option<(Identity, Identity)>, String>,
+    ) -> Result<Identities> {
+        match asked {
             Ok(Some((author, committer))) => Ok(Identities { author, committer }),
             Ok(None) => self.identities_via_gix(),
-            Err(e) if e == "none" => Err(Error::NoIdentity),
-            Err(e) => Err(Error::Git(e)),
+            Err(_) => Err(Error::NoIdentity),
         }
     }
 
@@ -381,9 +393,8 @@ impl Repo {
         rel: &str,
     ) -> Result<()> {
         let path = self.root.join(rel);
-        let bytes = std::fs::read(&path)?;
+        let (bytes, meta) = read_after_stat(&path, || {})?;
         let id = self.repo.write_blob(&bytes).map_err(git)?.detach();
-        let meta = gix::index::fs::Metadata::from_path_no_follow(&path)?;
         let executable = is_executable(&path);
         let (kind, mode) = if executable {
             (
@@ -693,6 +704,339 @@ impl Repo {
         }
         Ok(out)
     }
+}
+
+// ---- what a sync needs ----------------------------------------------------------------------
+
+/// An author or committer with the time as git stores it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sig {
+    pub name: String,
+    pub email: String,
+    pub seconds: i64,
+    /// Seconds east of UTC.
+    pub offset: i32,
+}
+
+/// A commit as the replay copies it: message bytes and both signatures exactly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitData {
+    pub id: String,
+    pub parents: Vec<String>,
+    pub author: Sig,
+    pub committer: Sig,
+    pub message: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Blob,
+    Exec,
+    Link,
+}
+
+/// A file (or link) of a tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    pub id: String,
+    pub mode: Mode,
+}
+
+/// What differs at one path between two commits' trees.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeChange {
+    pub path: String,
+    pub before: Option<Entry>,
+    pub after: Option<Entry>,
+}
+
+pub enum TreeEdit {
+    Upsert { path: String, entry: Entry },
+    Remove { path: String },
+}
+
+fn sig_of(sig: gix::actor::SignatureRef<'_>) -> Result<Sig> {
+    let time = sig.time().map_err(git)?;
+    Ok(Sig {
+        name: sig.name.to_str_lossy().into_owned(),
+        email: sig.email.to_str_lossy().into_owned(),
+        seconds: time.seconds,
+        offset: time.offset,
+    })
+}
+
+fn entry_of(mode: gix::object::tree::EntryMode, id: gix::ObjectId) -> Option<Entry> {
+    use gix::object::tree::EntryKind;
+    let mode = match mode.kind() {
+        EntryKind::Blob => Mode::Blob,
+        EntryKind::BlobExecutable => Mode::Exec,
+        EntryKind::Link => Mode::Link,
+        EntryKind::Tree | EntryKind::Commit => return None,
+    };
+    Some(Entry {
+        id: id.to_string(),
+        mode,
+    })
+}
+
+impl Repo {
+    /// The short name of the branch HEAD is on (an unborn branch included), `None` when detached.
+    pub fn head_branch(&self) -> Option<String> {
+        let name = self.repo.head_name().ok()??;
+        Some(name.shorten().to_str_lossy().into_owned())
+    }
+
+    /// A config value of the repository (`remote.origin.url`).
+    pub fn config_string(&self, key: &str) -> Option<String> {
+        let value = self.repo.config_snapshot().string(key)?;
+        Some(value.to_str_lossy().into_owned())
+    }
+
+    /// The commit a reference points at (`refs/remotes/origin/main`).
+    pub fn ref_id(&self, name: &str) -> Option<String> {
+        let reference = self.repo.try_find_reference(name).ok()??;
+        Some(reference.id().to_string())
+    }
+
+    pub fn commit_data(&self, rev: &str) -> Result<CommitData> {
+        let commit = self.find(rev)?;
+        Ok(CommitData {
+            id: commit.id.to_string(),
+            parents: commit.parent_ids().map(|p| p.to_string()).collect(),
+            author: sig_of(commit.author().map_err(git)?)?,
+            committer: sig_of(commit.committer().map_err(git)?)?,
+            message: commit.message_raw_sloppy().to_vec(),
+        })
+    }
+
+    /// The commits reachable from `tip` and not from `hide`, newest first along the first-parent
+    /// chain from `tip`; and whether any of them is a merge commit.
+    pub fn first_parent_not_in(
+        &self,
+        tip: &str,
+        hide: Option<&str>,
+    ) -> Result<(Vec<String>, bool)> {
+        let tip_id = gix::ObjectId::from_hex(tip.as_bytes()).map_err(git)?;
+        let mut platform = self.repo.rev_walk([tip_id]);
+        if let Some(h) = hide {
+            platform = platform.with_hidden([gix::ObjectId::from_hex(h.as_bytes()).map_err(git)?]);
+        }
+        let mut set = BTreeSet::new();
+        let mut merge = false;
+        for info in platform.all().map_err(git)? {
+            let info = info.map_err(git)?;
+            merge |= info.parent_ids.len() > 1;
+            set.insert(info.id.to_string());
+        }
+        let mut chain = Vec::new();
+        let mut cur = Some(tip.to_string());
+        while let Some(id) = cur.filter(|id| set.contains(id)) {
+            cur = self.parent_of(&id)?;
+            chain.push(id);
+        }
+        Ok((chain, merge))
+    }
+
+    /// `(ahead, behind)` of `head` against `remote`.
+    pub fn ahead_behind(&self, head: &str, remote: &str) -> Result<(usize, usize)> {
+        let count = |tip: &str, hide: &str| -> Result<usize> {
+            let tip = gix::ObjectId::from_hex(tip.as_bytes()).map_err(git)?;
+            let hide = gix::ObjectId::from_hex(hide.as_bytes()).map_err(git)?;
+            let walk = self
+                .repo
+                .rev_walk([tip])
+                .with_hidden([hide])
+                .all()
+                .map_err(git)?;
+            let mut n = 0;
+            for info in walk {
+                info.map_err(git)?;
+                n += 1;
+            }
+            Ok(n)
+        };
+        Ok((count(head, remote)?, count(remote, head)?))
+    }
+
+    fn tree_of(&self, commit: Option<&str>) -> Result<gix::Tree<'_>> {
+        match commit {
+            Some(c) => self.find(c)?.tree().map_err(git),
+            None => Ok(self.repo.empty_tree()),
+        }
+    }
+
+    /// The files that differ between two commits (`None`: the empty tree), no rename detection.
+    pub fn tree_changes(&self, from: Option<&str>, to: Option<&str>) -> Result<Vec<TreeChange>> {
+        let (old, new) = (self.tree_of(from)?, self.tree_of(to)?);
+        let changes = self
+            .repo
+            .diff_tree_to_tree(&old, &new, Some(gix::diff::Options::default()))
+            .map_err(git)?;
+        let mut out = Vec::new();
+        for c in changes {
+            use gix::object::tree::diff::ChangeDetached as C;
+            let (path, before, after) = match c {
+                C::Addition {
+                    location,
+                    entry_mode,
+                    id,
+                    ..
+                } => (location, None, entry_of(entry_mode, id)),
+                C::Deletion {
+                    location,
+                    entry_mode,
+                    id,
+                    ..
+                } => (location, entry_of(entry_mode, id), None),
+                C::Modification {
+                    location,
+                    previous_entry_mode,
+                    previous_id,
+                    entry_mode,
+                    id,
+                } => (
+                    location,
+                    entry_of(previous_entry_mode, previous_id),
+                    entry_of(entry_mode, id),
+                ),
+                C::Rewrite { .. } => continue,
+            };
+            if before.is_none() && after.is_none() {
+                continue;
+            }
+            out.push(TreeChange {
+                path: rel_of(path.as_ref()),
+                before,
+                after,
+            });
+        }
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(out)
+    }
+
+    /// The file at `path` in a commit (`None`: the empty tree).
+    pub fn entry_at(&self, commit: Option<&str>, path: &str) -> Result<Option<Entry>> {
+        let tree = self.tree_of(commit)?;
+        Ok(tree
+            .lookup_entry_by_path(path)
+            .map_err(git)?
+            .and_then(|e| entry_of(e.mode(), e.object_id())))
+    }
+
+    pub fn write_blob(&self, bytes: &[u8]) -> Result<String> {
+        Ok(self.repo.write_blob(bytes).map_err(git)?.to_string())
+    }
+
+    /// A tree: the one of `base` (`None`: empty) with `edits` applied. Returns its id.
+    pub fn write_tree(&self, base: Option<&str>, edits: &[TreeEdit]) -> Result<String> {
+        use gix::object::tree::EntryKind;
+        let tree = self.tree_of(base)?;
+        let mut editor = self.repo.edit_tree(tree.id).map_err(git)?;
+        for e in edits {
+            match e {
+                TreeEdit::Remove { path } => {
+                    editor.remove(path.as_str()).map_err(git)?;
+                }
+                TreeEdit::Upsert { path, entry } => {
+                    let id = gix::ObjectId::from_hex(entry.id.as_bytes()).map_err(git)?;
+                    let kind = match entry.mode {
+                        Mode::Blob => EntryKind::Blob,
+                        Mode::Exec => EntryKind::BlobExecutable,
+                        Mode::Link => EntryKind::Link,
+                    };
+                    editor.upsert(path.as_str(), kind, id).map_err(git)?;
+                }
+            }
+        }
+        Ok(editor.write().map_err(git)?.to_string())
+    }
+
+    /// A commit object (no reference moves): the replay's copy of a local commit.
+    pub fn write_commit(
+        &self,
+        tree: &str,
+        parents: &[String],
+        message: &[u8],
+        author: &Sig,
+        committer: &Sig,
+    ) -> Result<String> {
+        let sig = |s: &Sig| gix::actor::Signature {
+            name: s.name.as_str().into(),
+            email: s.email.as_str().into(),
+            time: gix::date::Time {
+                seconds: s.seconds,
+                offset: s.offset,
+            },
+        };
+        let commit = gix::objs::Commit {
+            tree: gix::ObjectId::from_hex(tree.as_bytes()).map_err(git)?,
+            parents: parents
+                .iter()
+                .map(|p| gix::ObjectId::from_hex(p.as_bytes()).map_err(git))
+                .collect::<Result<_>>()?,
+            author: sig(author),
+            committer: sig(committer),
+            encoding: None,
+            message: message.into(),
+            extra_headers: Vec::new(),
+        };
+        Ok(self.repo.write_object(&commit).map_err(git)?.to_string())
+    }
+
+    /// Moves the branch HEAD is on to `new` when it is still at `old` (`None`: not born yet).
+    pub fn move_head(&self, new: &str, old: Option<&str>) -> Result<()> {
+        use gix::refs::transaction::PreviousValue;
+        let name = self
+            .repo
+            .head_name()
+            .map_err(git)?
+            .ok_or_else(|| Error::Operation("detached HEAD".into()))?;
+        let new = gix::ObjectId::from_hex(new.as_bytes()).map_err(git)?;
+        let constraint = match old {
+            Some(o) => PreviousValue::MustExistAndMatch(gix::refs::Target::Object(
+                gix::ObjectId::from_hex(o.as_bytes()).map_err(git)?,
+            )),
+            None => PreviousValue::MustNotExist,
+        };
+        self.repo
+            .reference(name, new, constraint, "writer: sync")
+            .map_err(git)?;
+        Ok(())
+    }
+
+    /// Re-stages `paths` from the working tree (their stat data too) or drops their entries when
+    /// the file is gone, so the next status sees them as unchanged.
+    pub fn refresh_index(&self, paths: &[String]) -> Result<()> {
+        let mut index_file: gix::index::File = (**self.repo.index_or_empty().map_err(git)?).clone();
+        let index: &mut gix::index::State = &mut index_file;
+        let tree = self.repo.empty_tree();
+        let mut editor = self.repo.edit_tree(tree.id).map_err(git)?;
+        for rel in paths {
+            if std::fs::symlink_metadata(self.root.join(rel)).is_ok_and(|m| m.is_file()) {
+                self.stage(&mut editor, index, rel)?;
+            } else {
+                index.remove_entries(|_, p, _| p == rel.as_bytes());
+            }
+        }
+        index.sort_entries();
+        index_file
+            .write(gix::index::write::Options::default())
+            .map_err(git)?;
+        Ok(())
+    }
+}
+
+/// The file's stat data first, its bytes second: a write that lands in between makes the stat older
+/// than the bytes, so the next status finds the file changed and hashes it again, instead of
+/// trusting a stat that matches content the commit never saw. `between` runs after the stat (a
+/// test writes there).
+pub(crate) fn read_after_stat(
+    path: &Path,
+    between: impl FnOnce(),
+) -> io::Result<(Vec<u8>, gix::index::fs::Metadata)> {
+    let meta = gix::index::fs::Metadata::from_path_no_follow(path)?;
+    between();
+    Ok((std::fs::read(path)?, meta))
 }
 
 fn commit_blob(commit: &gix::Commit<'_>, rel: &str) -> Option<gix::ObjectId> {

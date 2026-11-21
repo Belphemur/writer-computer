@@ -34,8 +34,8 @@ export function closeActiveTab() {
   if (activeTabId) closeTab(activeTabId);
 }
 
-export function markSaved(path: string, diskContent: string) {
-  useEditorStore.getState().markSaved(path, diskContent);
+export function markSaved(path: string, diskContent: string, hasNewerChanges?: boolean) {
+  useEditorStore.getState().markSaved(path, diskContent, hasNewerChanges);
 }
 
 export function updateContent(path: string, content: string) {

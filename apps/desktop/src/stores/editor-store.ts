@@ -3,6 +3,7 @@ import type { FileContent } from "@/types/fs";
 import * as tauri from "@/lib/tauri";
 import { getFrontmatterDisplayDate, inferTitle, type TitleSource } from "@/lib/frontmatter";
 import { parseOpenedFile } from "@/lib/open-file-parse";
+import { noteTyping } from "@/lib/typing-idle";
 import { getDocumentStats, type DocumentStats } from "@/lib/document-stats";
 import { cancelSave, scheduleSave, registerSaveStore } from "@/lib/save";
 import {
@@ -1513,6 +1514,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { openFiles: files };
     });
 
+    noteTyping(path);
     scheduleStatsRefresh(path, set as EditorStateSetter);
     scheduleSave(path);
   },
@@ -1537,6 +1539,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { openFiles: files };
     });
 
+    noteTyping(path);
     scheduleSave(path);
   },
 

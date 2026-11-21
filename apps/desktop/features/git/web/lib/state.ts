@@ -4,7 +4,7 @@ import type { GitStatus } from "../ipc";
 export type Tone = "ok" | "pending" | "error" | "quiet";
 
 export interface Summary {
-  /** `Local`, `Pending n`, `Paused` or `Error`. */
+  /** `Synced`, `Pending n`, `Syncing`, `Conflict n`, `Offline`, `Error`, `Paused` or `Local`. */
   label: string;
   tone: Tone;
   /** One line for an error: what to do about it. */
@@ -39,11 +39,28 @@ export function summarize(status: GitStatus | null): Summary | null {
   if (status.operation) {
     return { label: "Paused", tone: "quiet", detail: `Paused: ${status.operation}` };
   }
-  if (status.paused) return { label: "Paused", tone: "quiet" };
-  if (status.changes.length > 0) {
-    return { label: `Pending ${status.changes.length}`, tone: "pending" };
+  const linked = status.remote !== null;
+  if (linked) {
+    if (status.syncing) return { label: "Syncing", tone: "pending" };
+    if (status.conflicts.length > 0) {
+      return {
+        label: `Conflict ${status.conflicts.length}`,
+        tone: "error",
+        detail: "Some files could not be merged",
+      };
+    }
+    const failure = status.syncError;
+    if (failure) {
+      return failure.offline
+        ? { label: "Offline", tone: "quiet", detail: failure.line }
+        : { label: "Error", tone: "error", detail: failure.line };
+    }
   }
-  return { label: "Local", tone: "ok" };
+  if (status.paused) return { label: "Paused", tone: "quiet" };
+  if (linked && status.syncPaused) return { label: "Paused", tone: "quiet", detail: "Sync paused" };
+  const pending = status.changes.length + (linked ? status.ahead : 0);
+  if (pending > 0) return { label: `Pending ${pending}`, tone: "pending" };
+  return linked ? { label: "Synced", tone: "ok" } : { label: "Local", tone: "ok" };
 }
 
 export const IDENTITY_COMMANDS = [

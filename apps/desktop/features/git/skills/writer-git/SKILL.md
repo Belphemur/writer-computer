@@ -13,7 +13,7 @@ Writer saves versions of the vault with Git, locally. The user's edits are commi
 writer git:status
 ```
 
-lists the files changed since the last version. `remote: none` is normal: nothing is synced.
+lists the files changed since the last version. `remote: none` is normal for a vault that is not synced; with a remote it also shows `ahead:` and `behind:` (versions not pushed, versions of the remote not taken in), `conflict:` lines (files the last sync could not settle: their version stays as it is on disk, never with conflict markers) and `held back` plugin settings (they look like they hold a token and are not synced).
 
 ```sh
 writer git:log path=Notes/Plan.md
@@ -51,5 +51,13 @@ writer git:commit
 ```
 
 commits the pending changes now as a `user(...)` version. Run it only when the user asks to save a version; an agent turn is committed by Writer when it ends.
+
+## Sync
+
+```sh
+writer git:sync
+```
+
+saves a version, fetches the remote, replays the local versions on top of it and pushes. With Writer open the app runs it; otherwise the same engine runs here, and a conflict is reported and left for the app. Without a remote it only saves a version. Run it only when the user asks to sync; Writer syncs by itself after each version and every few minutes.
 
 If a command says version history is not set up, tell the user to choose it in Settings > Git.
