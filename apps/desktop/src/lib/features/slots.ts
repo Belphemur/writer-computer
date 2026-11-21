@@ -19,6 +19,10 @@ export type SlotMap = {
   "sidebar-ribbon": object;
   /** The strip pinned to the bottom right of the editor column. */
   "editor-status": object;
+  /** A one-line bar over the open note at `path` (absolute): what a feature has to say about this
+   *  file (the git feature's "Changed on another device"). Each contribution renders nothing
+   *  when it has nothing to say. */
+  "note-bar": { path: string };
 } & {
   [K in Location["kind"] as `page-view:${K}`]: PageViewProps<Extract<Location, { kind: K }>>;
 };

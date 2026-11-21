@@ -74,6 +74,19 @@ export const commands = {
 	 *  body by lines): how an open note takes a fetched change without losing what the user typed.
 	 */
 	gitMergeText: (path: string, base: string, mine: string, theirs: string, options?: InvokeOptions) => __TAURI_INVOKE<MergedText>("plugin:git|git_merge_text", { path, base, mine, theirs }, options),
+	/**
+	 *  The three-column view of a file a sync could not merge: settled text and overlaps, the
+	 *  properties to choose. `mine` is the editor's buffer when the note is open (what the user sees);
+	 *  without it the file is read. Writes nothing.
+	 */
+	gitConflictOpen: (path: string, mine: string | null, options?: InvokeOptions) => __TAURI_INVOKE<ConflictViewRow>("plugin:git|git_conflict_open", { path, mine }, options),
+	/**
+	 *  "Save" in the merge view: the result column (and the side taken for each conflicting property,
+	 *  and the name kept after a rename) is written, committed as `user(merge)` and the sync resumes.
+	 */
+	gitConflictSave: (path: string, mine: string, body: string, picks: PickRow[], finalPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_conflict_save", { path, mine, body, picks, finalPath }, options),
+	/**  Settles a whole file by taking one side (`mine`, `theirs`, or `both` for a binary). */
+	gitConflictTake: (path: string, side: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_conflict_take", { path, side }, options),
 };
 
 /* Types */
@@ -89,6 +102,20 @@ export type ConflictRow = {
 	path: string,
 	hunks: number,
 	properties: string[],
+	/**  Where the other side's version is when it is not at `path` (a rename). */
+	theirsPath: string | null,
+};
+
+export type ConflictViewRow = {
+	/**  Vault-relative: where the user's version is. */
+	path: string,
+	/**  Where the other side's version is when it differs (a rename): the choice of name. */
+	theirsPath: string | null,
+	markdown: boolean,
+	/**  The user's version as the view opened; Save sends it back. */
+	mine: string,
+	properties: PropertyRow[],
+	parts: PartRow[],
 };
 
 export type CopyRow = {
@@ -210,6 +237,13 @@ export type HeldRow = {
 	path: string,
 };
 
+/**  An overlap of the body: the lines each side made of the same base lines. */
+export type HunkRow = {
+	base: string,
+	mine: string,
+	theirs: string,
+};
+
 /**  The result of merging a note's text three ways. */
 export type MergedText = {
 	/**  The merged text; `None` when the two sides overlap (the caller keeps what the user has). */
@@ -222,12 +256,33 @@ export type NoteDiff = {
 	blocks: DiffBlock[],
 };
 
+/**  A piece of the body in order: settled text (`conflict` is `None`) or an overlap (`text` empty). */
+export type PartRow = {
+	text: string,
+	conflict: HunkRow | null,
+};
+
+/**  A property decided in the merge view. */
+export type PickRow = {
+	name: string,
+	/**  `mine` or `theirs`. */
+	side: string,
+};
+
 /**  An image side of a diff: inline when small enough to send, its size always. */
 export type Preview = {
 	mime: string,
 	/**  Base64 of the bytes, `None` over the size the view loads. */
 	data: string | null,
 	size: number,
+};
+
+/**  A front matter property both sides changed differently: its entry on each side (`None`: absent). */
+export type PropertyRow = {
+	name: string,
+	base: string | null,
+	mine: string | null,
+	theirs: string | null,
 };
 
 export type RestoredRow = {

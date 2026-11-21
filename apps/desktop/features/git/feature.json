@@ -32,7 +32,10 @@
       "git_set_credentials",
       "git_plugin_decision",
       "git_dismiss_notices",
-      "git_merge_text"
+      "git_merge_text",
+      "git_conflict_open",
+      "git_conflict_save",
+      "git_conflict_take"
     ],
     "events": ["git:changed", "git:applying"],
     "hooks": ["start", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
@@ -43,7 +46,8 @@
       "git:diff",
       "git:show",
       "git:restore",
-      "git:sync"
+      "git:sync",
+      "git:resolve"
     ],
     "skills": ["writer-git"],
     "ipcCommands": ["git:sync"]
@@ -68,6 +72,12 @@
         "when": "active-file"
       },
       {
+        "id": "git.resolve-conflicts",
+        "label": "Resolve conflicts",
+        "description": "Open the merge view of a file two devices changed",
+        "when": "workspace-window"
+      },
+      {
         "id": "git.settings",
         "label": "Version history settings",
         "description": "Choose when versions are saved",
@@ -76,7 +86,7 @@
     ],
     "statusItems": ["git.status"],
     "sidebarPanels": ["git.panel"],
-    "slots": ["git.history-tab"],
+    "slots": ["git.history-tab", "git.merge-tab", "git.note-bar"],
     "services": ["git.history"],
     "menus": {
       "sidebar-file": ["git.sidebar-file"],

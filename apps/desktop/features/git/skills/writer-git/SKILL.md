@@ -13,7 +13,7 @@ Writer saves versions of the vault with Git, locally. The user's edits are commi
 writer git:status
 ```
 
-lists the files changed since the last version. `remote: none` is normal for a vault that is not synced; with a remote it also shows `ahead:` and `behind:` (versions not pushed, versions of the remote not taken in), `conflict:` lines (files the last sync could not settle: their version stays as it is on disk, never with conflict markers) and `held back` plugin settings (they look like they hold a token and are not synced).
+lists the files changed since the last version. `remote: none` is normal for a vault that is not synced; with a remote it also shows `ahead:` and `behind:` (versions not pushed, versions of the remote not taken in), `conflict:` lines (files the last sync could not settle: their version stays as it is on disk, never with conflict markers; the line says `(renamed: <path>)` when the other device renamed the file, and `conflict (binary)` names the copy that keeps your version) and `held back` plugin settings (they look like they hold a token and are not synced).
 
 ```sh
 writer git:log path=Notes/Plan.md
@@ -59,5 +59,17 @@ writer git:sync
 ```
 
 saves a version, fetches the remote, replays the local versions on top of it and pushes. With Writer open the app runs it; otherwise the same engine runs here, and a conflict is reported and left for the app. Without a remote it only saves a version. Run it only when the user asks to sync; Writer syncs by itself after each version and every few minutes.
+
+## Conflicts
+
+A conflicted file is never committed until it is settled, and it never holds conflict markers. The person settles it in Writer's merge view (a hunk at a time). Settle it yourself only when asked, taking one whole side:
+
+```sh
+writer git:resolve path=Notes/Plan.md take=mine
+writer git:resolve path=Notes/Plan.md take=theirs
+writer git:resolve path=img/pic.png take=both
+```
+
+`mine` keeps the file as it is here (after a rename conflict, this device's name), `theirs` takes the other device's version (and its name), `both` keeps a binary's conflict copy beside the file. It is saved as a `user(merge)` version and the next sync pushes it. Read both versions first (`git:show`, `git:diff`) and say which you took.
 
 If a command says version history is not set up, tell the user to choose it in Settings > Git.

@@ -6,7 +6,9 @@ use super::runtime;
 use crate::commands::blocking;
 use crate::error::AppError;
 use crate::git::history::{self, Against, FileDiff};
+use crate::git::merge::{Part, Side};
 use crate::git::repo::{Version, VersionKind};
+use crate::git::resolve::{self, Choice, Take};
 use crate::git::transport::{self, Source, Transport};
 use crate::git::{self, device, gh, message::Change, plugin_scan, Repo, SetupMode};
 use crate::vault_ops;
@@ -95,6 +97,8 @@ pub struct ConflictRow {
     pub path: String,
     pub hunks: u32,
     pub properties: Vec<String>,
+    /// Where the other side's version is when it is not at `path` (a rename).
+    pub theirs_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -210,6 +214,7 @@ fn status_of<R: Runtime>(
                 path: c.path,
                 hunks: c.hunks,
                 properties: c.properties,
+                theirs_path: c.theirs_path,
             })
             .collect(),
         copies: s
@@ -913,6 +918,237 @@ pub async fn git_merge_text<R: Runtime>(
                 git::merge::Merged::Clean { bytes: Some(b), .. } => String::from_utf8(b).ok(),
                 _ => None,
             },
+        })
+    })
+    .await
+}
+
+// ---- the merge view ----------------------------------------------------------------------------
+
+/// A front matter property both sides changed differently: its entry on each side (`None`: absent).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyRow {
+    pub name: String,
+    pub base: Option<String>,
+    pub mine: Option<String>,
+    pub theirs: Option<String>,
+}
+
+/// An overlap of the body: the lines each side made of the same base lines.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HunkRow {
+    pub base: String,
+    pub mine: String,
+    pub theirs: String,
+}
+
+/// A piece of the body in order: settled text (`conflict` is `None`) or an overlap (`text` empty).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PartRow {
+    pub text: String,
+    pub conflict: Option<HunkRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictViewRow {
+    /// Vault-relative: where the user's version is.
+    pub path: String,
+    /// Where the other side's version is when it differs (a rename): the choice of name.
+    pub theirs_path: Option<String>,
+    pub markdown: bool,
+    /// The user's version as the view opened; Save sends it back.
+    pub mine: String,
+    pub properties: Vec<PropertyRow>,
+    pub parts: Vec<PartRow>,
+}
+
+/// A property decided in the merge view.
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PickRow {
+    pub name: String,
+    /// `mine` or `theirs`.
+    pub side: String,
+}
+
+fn resolve_refused(e: resolve::Error) -> AppError {
+    match e {
+        resolve::Error::Io(e) => AppError::from(e),
+        other => AppError::Refused(other.to_string()),
+    }
+}
+
+/// The confined, vault-relative path of a conflicted file.
+pub(super) fn conflict_target(
+    app: &tauri::AppHandle<impl Runtime>,
+    label: &str,
+    path: &str,
+) -> Result<(PathBuf, String), AppError> {
+    let root = window_root(app, label)?;
+    if !git::is_set_up(&root) {
+        return Err(AppError::Refused("Version history is not set up".into()));
+    }
+    let rel = vault_ops::confine(&root, path)
+        .map_err(|e| AppError::Refused(e.to_string()))?
+        .rel;
+    Ok((root, rel))
+}
+
+/// The three-column view of a file a sync could not merge: settled text and overlaps, the
+/// properties to choose. `mine` is the editor's buffer when the note is open (what the user sees);
+/// without it the file is read. Writes nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_conflict_open<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    path: String,
+    mine: Option<String>,
+) -> Result<ConflictViewRow, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let (root, rel) = conflict_target(&app, &label, &path)?;
+        let v = resolve::open(&root, &rel, mine.as_deref()).map_err(resolve_refused)?;
+        Ok(ConflictViewRow {
+            path: v.path,
+            theirs_path: v.theirs_path,
+            markdown: v.markdown,
+            mine: v.mine,
+            properties: v
+                .properties
+                .into_iter()
+                .map(|p| PropertyRow {
+                    name: p.name,
+                    base: p.base,
+                    mine: p.mine,
+                    theirs: p.theirs,
+                })
+                .collect(),
+            parts: v
+                .parts
+                .into_iter()
+                .map(|p| match p {
+                    Part::Text(text) => PartRow {
+                        text,
+                        conflict: None,
+                    },
+                    Part::Conflict(c) => PartRow {
+                        text: String::new(),
+                        conflict: Some(HunkRow {
+                            base: c.base,
+                            mine: c.mine,
+                            theirs: c.theirs,
+                        }),
+                    },
+                })
+                .collect(),
+        })
+    })
+    .await
+}
+
+/// Runs one resolution under the repository's write lock, counted as busy, with the editors told
+/// which files change first; afterwards the status changed and the sync is asked to resume.
+pub(super) fn resolving<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+    root: &std::path::Path,
+    run: impl FnOnce(resolve::Announce<'_>) -> Result<(), resolve::Error>,
+) -> Result<GitStatus, AppError> {
+    let v = runtime::vaults(app);
+    let _busy = v.as_ref().map(|v| v.busy_guard());
+    let lock = v.as_ref().map(|v| v.write_lock(root));
+    let _write = lock.as_ref().map(|l| l.lock());
+    let announce = |paths: &[String]| {
+        let _ = app.emit_to(
+            label,
+            runtime::APPLYING_EVENT,
+            serde_json::json!({ "paths": paths }),
+        );
+    };
+    run(&announce).map_err(|e| {
+        if let Some(v) = &v {
+            v.identity.forget(root);
+        }
+        resolve_refused(e)
+    })?;
+    log::info!(target: "git", "git: a conflict was resolved");
+    if let Some(v) = &v {
+        v.request_sync(label);
+    }
+    let _ = app.emit_to(label, runtime::CHANGED_EVENT, ());
+    status_of(app, label, false)
+}
+
+/// "Save" in the merge view: the result column (and the side taken for each conflicting property,
+/// and the name kept after a rename) is written, committed as `user(merge)` and the sync resumes.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_conflict_save<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    path: String,
+    mine: String,
+    body: String,
+    picks: Vec<PickRow>,
+    final_path: Option<String>,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let (root, rel) = conflict_target(&app, &label, &path)?;
+        let picks: Vec<(String, Side)> = picks
+            .into_iter()
+            .map(|p| match p.side.as_str() {
+                "theirs" => Ok((p.name, Side::Theirs)),
+                "mine" => Ok((p.name, Side::Mine)),
+                _ => Err(AppError::Refused("Choose mine or theirs".into())),
+            })
+            .collect::<Result<_, _>>()?;
+        let final_path = final_path
+            .map(|f| {
+                vault_ops::confine(&root, &f)
+                    .map(|c| c.rel)
+                    .map_err(|e| AppError::Refused(e.to_string()))
+            })
+            .transpose()?;
+        resolving(&app, &label, &root, |announce| {
+            resolve::save(
+                &root,
+                &rel,
+                &Choice {
+                    mine: &mine,
+                    body: &body,
+                    picks: &picks,
+                    final_path: final_path.as_deref(),
+                },
+                &device::name(),
+                Some(announce),
+            )
+        })
+    })
+    .await
+}
+
+/// Settles a whole file by taking one side (`mine`, `theirs`, or `both` for a binary).
+#[tauri::command]
+#[specta::specta]
+pub async fn git_conflict_take<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    path: String,
+    side: String,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let (root, rel) = conflict_target(&app, &label, &path)?;
+        let side = Take::parse(&side)
+            .ok_or_else(|| AppError::Refused("Choose mine, theirs or both".into()))?;
+        resolving(&app, &label, &root, |announce| {
+            resolve::take(&root, &rel, side, &device::name(), Some(announce))
         })
     })
     .await

@@ -770,6 +770,61 @@ mod cli_tests {
     }
 
     #[test]
+    fn resolve_takes_a_whole_side_and_status_lists_the_conflict_until_then() {
+        use crate::git::sync::tests::{have_git, pair, World as Remote};
+        if !have_git() {
+            return;
+        }
+        let remote = Remote::new();
+        let note = "one\ntwo\nthree\n";
+        let (a, b) = pair(&remote, &[("Note.md", note)]);
+        a.write("Note.md", "one\ntwo from A\nthree\n");
+        a.commit();
+        a.ok();
+        b.write("Note.md", "one\ntwo from B\nthree\n");
+        b.commit();
+        assert_eq!(b.ok().conflicts.len(), 1);
+        let data = TempDir::new().unwrap();
+        let run = |line: &[&str]| {
+            let env = Env {
+                app_data_dir: Some(data.path().to_path_buf()),
+                clipboard: Box::new(SystemClipboard),
+                utc_offset_minutes: 0,
+                launcher: Box::new(crate::writer_cli::SystemLauncher),
+                launch_wait: std::time::Duration::ZERO,
+                read_stdin: || Ok(String::new()),
+            };
+            let argv: Vec<String> = line.iter().map(|s| s.to_string()).collect();
+            execute(&argv, &b.root, &env)
+        };
+        let o = run(&["git:status"]);
+        assert!(o.stdout.contains("conflict: Note.md"), "{}", o.stdout);
+        let o = run(&["git:status", "format=json"]);
+        let v: Value = serde_json::from_str(&o.stdout).unwrap();
+        assert_eq!(v["conflicted"], serde_json::json!(["Note.md"]));
+        // a side is required, and a bad one is refused before anything is written
+        assert_eq!(run(&["git:resolve", "path=Note.md"]).code, EXIT_USAGE);
+        assert_eq!(
+            run(&["git:resolve", "path=Note.md", "take=ours"]).code,
+            EXIT_USAGE
+        );
+        assert_eq!(b.read("Note.md"), "one\ntwo from B\nthree\n");
+        let o = run(&["git:resolve", "path=Note.md", "take=theirs"]);
+        assert_eq!(o.code, EXIT_OK, "{}", o.stderr);
+        assert_eq!(b.read("Note.md"), "one\ntwo from A\nthree\n");
+        assert!(!run(&["git:status"]).stdout.contains("conflict:"));
+        // nothing left to resolve
+        assert_eq!(
+            run(&["git:resolve", "path=Note.md", "take=mine"]).code,
+            EXIT_FAIL
+        );
+        assert_eq!(
+            run(&["git:resolve", "path=../x.md", "take=mine"]).code,
+            EXIT_FAIL
+        );
+    }
+
+    #[test]
     fn with_the_feature_off_the_commands_say_so() {
         let w = World::new();
         std::fs::write(
@@ -783,6 +838,7 @@ mod cli_tests {
             ["git:diff"],
             ["git:show"],
             ["git:restore"],
+            ["git:resolve"],
         ] {
             let o = w.run(&line);
             assert_eq!(o.code, EXIT_FAIL);
@@ -888,4 +944,65 @@ fn a_running_sync_makes_the_feature_busy_and_stopping_the_scope_ends_it() {
         "the child was killed"
     );
     assert!(!vaults.is_syncing("main"));
+}
+
+// ---- settling a conflict ---------------------------------------------------------------------------
+
+#[test]
+fn a_resolution_is_busy_while_it_writes_tells_the_editors_and_asks_the_sync_to_resume() {
+    use tauri::Listener;
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::Existing, "d").unwrap();
+    *app.state::<AppState>()
+        .get_or_create("main")
+        .workspace_root
+        .write() = Some(root.clone());
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    let scope = crate::features::scope_of(app.handle(), "git").unwrap();
+    assert_eq!(scope.busy_reason(), None);
+    let heard = std::sync::Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+    let sink = heard.clone();
+    app.listen_any(runtime::APPLYING_EVENT, move |e| {
+        sink.lock().push(e.payload().to_string());
+    });
+    let busy = parking_lot::Mutex::new(None);
+    let status = commands::resolving(app.handle(), "main", &root, |announce| {
+        *busy.lock() = scope.busy_reason();
+        announce(&["a.md".to_string()]);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(busy.lock().as_deref(), Some("a commit in progress"));
+    assert_eq!(scope.busy_reason(), None, "released afterwards");
+    assert!(status.set_up);
+    assert_eq!(heard.lock().as_slice(), [r#"{"paths":["a.md"]}"#]);
+    // a failed resolution is refused with its own sentence, and nothing stays busy
+    let err = commands::resolving(app.handle(), "main", &root, |_| {
+        Err(crate::git::resolve::Error::NotConflicted)
+    })
+    .unwrap_err();
+    assert!(err.to_string().contains("not in conflict"), "{err}");
+    assert_eq!(scope.busy_reason(), None);
+}
+
+#[test]
+fn the_merge_commands_refuse_a_vault_that_is_not_set_up_and_a_path_outside_it() {
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    *app.state::<AppState>()
+        .get_or_create("main")
+        .workspace_root
+        .write() = Some(root.clone());
+    let err = commands::conflict_target(app.handle(), "main", "a.md").unwrap_err();
+    assert!(err.to_string().contains("not set up"), "{err}");
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::Existing, "d").unwrap();
+    let (_, rel) = commands::conflict_target(app.handle(), "main", "a.md").unwrap();
+    assert_eq!(rel, "a.md");
+    assert!(commands::conflict_target(app.handle(), "main", "../x.md").is_err());
 }

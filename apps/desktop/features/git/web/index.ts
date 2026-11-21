@@ -27,6 +27,7 @@ import {
 import { createApplier } from "./lib/remote-apply";
 import { showHistoryItems } from "./menus";
 import { startStatusSync, useGitStatus } from "./lib/status-store";
+import { resolveConflicts } from "./lib/resolve-conflicts";
 
 export const GIT_SECTION_ID = "git";
 
@@ -104,6 +105,17 @@ export default defineFeature({
         },
       },
       {
+        id: "git.resolve-conflicts",
+        label: "Resolve conflicts",
+        description: "Open the merge view of a file two devices changed",
+        when: (ctx) =>
+          hasVault(ctx) &&
+          ((s) => (s?.conflicts.length ?? 0) + (s?.copies.length ?? 0) > 0)(
+            useGitStatus.getState().status,
+          ),
+        run: (ctx) => resolveConflicts(ctx.activeFilePath),
+      },
+      {
         id: "git.settings",
         label: "Version history settings",
         description: "Choose when versions are saved",
@@ -122,6 +134,18 @@ export default defineFeature({
         id: "git.history-tab",
         slot: "page-view:git-history",
         load: () => import("./components/history-page").then((m) => m.default),
+      },
+      // The body of the merge view (the `git-merge` page kind lives in core)
+      {
+        id: "git.merge-tab",
+        slot: "page-view:git-merge",
+        load: () => import("./components/merge-page").then((m) => m.default),
+      },
+      // "Changed on another device — Resolve" over an open note in conflict
+      {
+        id: "git.note-bar",
+        slot: "note-bar",
+        load: () => import("./components/note-bar").then((m) => m.default),
       },
     ],
     services: [{ id: GIT_HISTORY, service: historyService }],

@@ -231,6 +231,20 @@ enum Pick {
     Conflict,
 }
 
+/// A side of a merge: the user's version or the other device's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Mine,
+    Theirs,
+}
+
+/// How the conflicting properties were decided (by name): none, until the user picks.
+pub type Picks<'a> = &'a dyn Fn(&str) -> Option<Side>;
+
+fn undecided(_: &str) -> Option<Side> {
+    None
+}
+
 /// Three-way choice of one entry: same on both sides or changed on one side settles it.
 fn pick<T: PartialEq>(base: Option<&T>, mine: Option<&T>, theirs: Option<&T>) -> Pick {
     if mine == theirs || theirs == base {
@@ -261,19 +275,29 @@ fn with_newline(mut s: String) -> String {
 }
 
 /// The merged front matter text (between the fences), or the properties that conflict.
-fn merge_properties(base: &str, mine: &str, theirs: &str) -> Result<String, Vec<PropertyConflict>> {
+fn merge_properties(
+    base: &str,
+    mine: &str,
+    theirs: &str,
+    picks: Picks<'_>,
+) -> Result<String, Vec<PropertyConflict>> {
     let spans = |t: &str| patch::entry_spans(t).ok();
     let (Some(sb), Some(sm), Some(st)) = (spans(base), spans(mine), spans(theirs)) else {
         // not a mapping we can split: the whole block is one line-merged text
         let merged = merge_text(base, mine, theirs);
-        return merged.clean().ok_or_else(|| {
-            vec![PropertyConflict {
+        if let Some(clean) = merged.clean() {
+            return Ok(clean);
+        }
+        return match picks("frontmatter") {
+            Some(Side::Mine) => Ok(mine.to_string()),
+            Some(Side::Theirs) => Ok(theirs.to_string()),
+            None => Err(vec![PropertyConflict {
                 name: "frontmatter".into(),
                 base: Some(base.into()),
                 mine: Some(mine.into()),
                 theirs: Some(theirs.into()),
-            }]
-        });
+            }]),
+        };
     };
     let (eb, em, et) = (entries(base, &sb), entries(mine, &sm), entries(theirs, &st));
     let mut conflicts = Vec::new();
@@ -295,15 +319,23 @@ fn merge_properties(base: &str, mine: &str, theirs: &str) -> Result<String, Vec<
                     out.push_str(&with_newline((*t).to_string()));
                 }
             }
-            Pick::Conflict => {
-                out.push_str(&mine[range.clone()]);
-                conflicts.push(PropertyConflict {
-                    name: key.clone(),
-                    base: b.map(|s| s.to_string()),
-                    mine: m.map(|s| s.to_string()),
-                    theirs: t.map(|s| s.to_string()),
-                });
-            }
+            Pick::Conflict => match picks(key) {
+                Some(Side::Theirs) => {
+                    if let Some(t) = t {
+                        out.push_str(&with_newline((*t).to_string()));
+                    }
+                }
+                Some(Side::Mine) => out.push_str(&mine[range.clone()]),
+                None => {
+                    out.push_str(&mine[range.clone()]);
+                    conflicts.push(PropertyConflict {
+                        name: key.clone(),
+                        base: b.map(|s| s.to_string()),
+                        mine: m.map(|s| s.to_string()),
+                        theirs: t.map(|s| s.to_string()),
+                    });
+                }
+            },
         }
     }
     out.push_str(&mine[cursor..]);
@@ -318,12 +350,20 @@ fn merge_properties(base: &str, mine: &str, theirs: &str) -> Result<String, Vec<
         match pick(b, None, t) {
             Pick::Mine => {}
             Pick::Theirs => added.push_str(&with_newline((*t.expect("changed")).to_string())),
-            Pick::Conflict => conflicts.push(PropertyConflict {
-                name: key.clone(),
-                base: b.map(|s| s.to_string()),
-                mine: None,
-                theirs: t.map(|s| s.to_string()),
-            }),
+            Pick::Conflict => match picks(key) {
+                Some(Side::Theirs) => {
+                    if let Some(t) = t {
+                        added.push_str(&with_newline((*t).to_string()));
+                    }
+                }
+                Some(Side::Mine) => {}
+                None => conflicts.push(PropertyConflict {
+                    name: key.clone(),
+                    base: b.map(|s| s.to_string()),
+                    mine: None,
+                    theirs: t.map(|s| s.to_string()),
+                }),
+            },
         }
     }
     if !conflicts.is_empty() {
@@ -358,47 +398,115 @@ fn split_note(text: &str) -> Option<Fm<'_>> {
     })
 }
 
+/// The front matter of a merged note (fences included, `""` when neither side has any): the
+/// properties both sides changed differently are decided by `picks`, else returned undecided.
+fn merge_front(
+    fb: &Option<Fm<'_>>,
+    fm: &Option<Fm<'_>>,
+    ft: &Option<Fm<'_>>,
+    picks: Picks<'_>,
+) -> Result<String, Vec<PropertyConflict>> {
+    // the skeleton (fences) comes from mine, else from theirs
+    let (skeleton, m_in, t_in) = match (fm, ft) {
+        (None, None) => return Ok(String::new()),
+        (Some(m), Some(t)) => (m, m.inner, t.inner),
+        (Some(m), None) => (m, m.inner, ""),
+        (None, Some(t)) => (t, "", t.inner),
+    };
+    let b_in = fb.as_ref().map_or("", |f| f.inner);
+    let inner = merge_properties(b_in, m_in, t_in, picks)?;
+    Ok(format!("{}{}{}", skeleton.open, inner, skeleton.close))
+}
+
+fn body_of(text: &str, f: &Option<Fm<'_>>) -> String {
+    f.as_ref().map_or(text.to_string(), |f| f.body.to_string())
+}
+
 /// The merge of one Markdown note.
 fn merge_markdown(base: &str, mine: &str, theirs: &str) -> Result<String, Conflict> {
     let (fb, fm, ft) = (split_note(base), split_note(mine), split_note(theirs));
-    let body_of = |text: &str, f: &Option<Fm<'_>>| {
-        f.as_ref().map_or(text.to_string(), |f| f.body.to_string())
-    };
     let body = merge_text(
         &body_of(base, &fb),
         &body_of(mine, &fm),
         &body_of(theirs, &ft),
     );
-    let mut conflict = Conflict::default();
-    let front = if fm.is_none() && ft.is_none() {
-        Some(String::new())
-    } else {
-        // the skeleton (fences) comes from mine, else from theirs
-        let (skeleton, m_in, t_in) = match (&fm, &ft) {
-            (Some(m), Some(t)) => (m, m.inner, t.inner),
-            (Some(m), None) => (m, m.inner, ""),
-            (None, Some(t)) => (t, "", t.inner),
-            (None, None) => unreachable!("handled above"),
-        };
-        let b_in = fb.as_ref().map_or("", |f| f.inner);
-        match merge_properties(b_in, m_in, t_in) {
-            Ok(inner) => Some(format!("{}{}{}", skeleton.open, inner, skeleton.close)),
-            Err(props) => {
-                conflict.properties = props;
-                None
-            }
-        }
-    };
-    let merged_body = body.clean();
-    if front.is_none() || merged_body.is_none() {
-        conflict.hunks = body.conflicts();
-        return Err(conflict);
+    let front = merge_front(&fb, &fm, &ft, &undecided);
+    match (front, body.clean()) {
+        (Ok(front), Some(merged_body)) => Ok(format!("{front}{merged_body}")),
+        (front, _) => Err(Conflict {
+            hunks: body.conflicts(),
+            properties: front.err().unwrap_or_default(),
+        }),
     }
-    Ok(format!(
-        "{}{}",
-        front.unwrap_or_default(),
-        merged_body.unwrap_or_default()
-    ))
+}
+
+// ---- the merge view -------------------------------------------------------------------------
+
+/// What the merge view lays out for one text file: the properties to choose and the body as a run
+/// of settled text and overlaps. The three versions are the ones the caller holds (mine is the
+/// buffer the user has now).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewParts {
+    pub markdown: bool,
+    pub properties: Vec<PropertyConflict>,
+    pub body: TextMerge,
+}
+
+pub fn is_markdown(path: &str) -> bool {
+    matches!(extension(path).as_str(), "md" | "markdown")
+}
+
+/// The pieces of the merge of `mine` and `theirs` over `base`, conflicts included.
+pub fn view_parts(path: &str, base: &str, mine: &str, theirs: &str) -> ViewParts {
+    if is_markdown(path) {
+        let (fb, fm, ft) = (split_note(base), split_note(mine), split_note(theirs));
+        let body = merge_text(
+            &body_of(base, &fb),
+            &body_of(mine, &fm),
+            &body_of(theirs, &ft),
+        );
+        let properties = merge_front(&fb, &fm, &ft, &undecided)
+            .err()
+            .unwrap_or_default();
+        return ViewParts {
+            markdown: true,
+            properties,
+            body,
+        };
+    }
+    let mut body = merge_text(base, mine, theirs);
+    if body.clean().is_none()
+        && matches!(extension(path).as_str(), "json" | "canvas" | "excalidraw")
+    {
+        if let Some(text) = merge_json_keys(base, mine, theirs) {
+            body = TextMerge {
+                parts: vec![Part::Text(text)],
+            };
+        }
+    }
+    ViewParts {
+        markdown: false,
+        properties: Vec::new(),
+        body,
+    }
+}
+
+/// The file the user's choices make: for a note the front matter (the conflicting properties
+/// decided by `picks`) followed by `body`; any other file is `body`. `Err` lists the properties
+/// still undecided.
+pub fn compose(
+    path: &str,
+    base: &str,
+    mine: &str,
+    theirs: &str,
+    picks: Picks<'_>,
+    body: &str,
+) -> Result<String, Vec<PropertyConflict>> {
+    if !is_markdown(path) {
+        return Ok(body.to_string());
+    }
+    let (fb, fm, ft) = (split_note(base), split_note(mine), split_note(theirs));
+    Ok(format!("{}{body}", merge_front(&fb, &fm, &ft, picks)?))
 }
 
 // ---- JSON ---------------------------------------------------------------------------------------

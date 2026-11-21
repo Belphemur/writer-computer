@@ -52,7 +52,7 @@ Required: `id`, `name`, `version`, `description`, `enabledByDefault`, `memory: {
 | `settingsSection`     | none (a page)                                           | `settingsSection: { id, label, order, load }`                                                                                  |
 | `secrets`             | `[{ key: "features.<id>.<name>", label, description }]` | `ctx.secrets.get/set/delete(key)`                                                                                              |
 | editor extensions     | none                                                    | `editorExtensions: [{ id, when?, load }]`                                                                                      |
-| `slots`               | none                                                    | `slots: [{ id, slot, load }]` (`sidebar-ribbon`, `editor-status`, `page-view:<kind>`; `lib/features/slots.ts`)                 |
+| `slots`               | none                                                    | `slots: [{ id, slot, load }]` (`sidebar-ribbon`, `editor-status`, `note-bar`, `page-view:<kind>`; `lib/features/slots.ts`)     |
 | palette sources       | none                                                    | `commandSources: [{ id, list(ctx) }]` (commands computed when the palette opens)                                               |
 | core events           | none                                                    | `workspaceListeners: [{ id, onFileChanged?, onSecretChanged?, onSecretsReady? }]`                                              |
 

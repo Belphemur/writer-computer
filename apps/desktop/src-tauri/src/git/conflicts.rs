@@ -1,8 +1,9 @@
 //! The files a sync could not settle (`.writer/git/conflicts.json`, device-local: the managed
 //! ignore block keeps `.writer/git/` out of the repository). A conflicted file keeps the user's
 //! version on disk (never conflict markers) and is never committed until the conflict is resolved
-//! (phase 4's merge view clears it on Save), so a later automatic version cannot silently overwrite
-//! the other side. A binary that changed on both sides also leaves its conflict copy listed here.
+//! (the merge view clears it on Save, `resolve.rs`), so a later automatic version cannot silently
+//! overwrite the other side. A binary that changed on both sides also leaves its conflict copy
+//! listed here.
 
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -18,6 +19,14 @@ pub struct Record {
     /// Front matter properties both sides changed differently.
     #[serde(default)]
     pub properties: Vec<String>,
+    /// The blob both sides started from (`None`: there was no common version). The merge view
+    /// merges it with the file as it is now and the other side's version.
+    #[serde(default)]
+    pub base: Option<String>,
+    /// Where the other side's version lives when it is not at `path`: a file renamed on one side
+    /// and edited (or renamed differently) on the other. `path` is always where mine is on disk.
+    #[serde(default)]
+    pub theirs_path: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,6 +80,22 @@ pub fn clear(root: &Path, path: &str) -> io::Result<()> {
     let before = book.files.len();
     book.files.retain(|r| r.path != path);
     if book.files.len() != before {
+        write(root, &book)?;
+    }
+    Ok(())
+}
+
+/// The record of one conflicted file.
+pub fn find(root: &Path, path: &str) -> Option<Record> {
+    read(root).files.into_iter().find(|r| r.path == path)
+}
+
+/// Forget one binary's copy notice (the user chose what to keep).
+pub fn clear_copy(root: &Path, path: &str) -> io::Result<()> {
+    let mut book = read(root);
+    let before = book.copies.len();
+    book.copies.retain(|(p, _)| p != path);
+    if book.copies.len() != before {
         write(root, &book)?;
     }
     Ok(())

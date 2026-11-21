@@ -32,6 +32,9 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::git_plugin_decision::<Wry>,
             commands::git_dismiss_notices::<Wry>,
             commands::git_merge_text::<Wry>,
+            commands::git_conflict_open::<Wry>,
+            commands::git_conflict_save::<Wry>,
+            commands::git_conflict_take::<Wry>,
         ])
 }
 

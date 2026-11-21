@@ -16,6 +16,7 @@ import type { CodeLocation } from "./code";
 import type { DrawingLocation } from "./drawing";
 import type { FileLocation } from "./file";
 import type { GitHistoryLocation } from "./git-history";
+import type { GitMergeLocation } from "./git-merge";
 import type { GraphLocation } from "./graph";
 import type { ImageLocation } from "./image";
 import type { LauncherLocation } from "./launcher";
@@ -46,6 +47,7 @@ const FileTabBody = ({ location, isActive }: { location: FileLocation; isActive:
   <>
     <EditorPane path={location.path} isActive={isActive} />
     {isActive ? <ManagedSkillBanner path={location.path} /> : null}
+    {isActive ? <FeatureSlot slot="note-bar" path={location.path} /> : null}
   </>
 );
 
@@ -125,6 +127,9 @@ const views = {
   "git-history": featureView("git-history", {
     feature: "git",
   }) satisfies PageKindView<GitHistoryLocation>,
+  "git-merge": featureView("git-merge", {
+    feature: "git",
+  }) satisfies PageKindView<GitMergeLocation>,
   launcher: {
     Component: NewTabPage,
   } satisfies PageKindView<LauncherLocation>,

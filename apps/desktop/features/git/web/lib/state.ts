@@ -13,6 +13,9 @@ export interface Summary {
   setup?: boolean;
 }
 
+/** The sidebar panel of the feature (`feature.json` `sidebarPanels`). */
+export const PANEL_ID = "git.panel";
+
 export const IDENTITY_HINT = "Set your git name and email";
 
 /** `null` while the vault has no history and Writer is about to set it up: the footer item is
@@ -42,9 +45,11 @@ export function summarize(status: GitStatus | null): Summary | null {
   const linked = status.remote !== null;
   if (linked) {
     if (status.syncing) return { label: "Syncing", tone: "pending" };
-    if (status.conflicts.length > 0) {
+    // a file both devices changed (text or binary) waits for the user
+    const conflicted = status.conflicts.length + status.copies.length;
+    if (conflicted > 0) {
       return {
-        label: `Conflict ${status.conflicts.length}`,
+        label: `Conflict ${conflicted}`,
         tone: "error",
         detail: "Some files could not be merged",
       };

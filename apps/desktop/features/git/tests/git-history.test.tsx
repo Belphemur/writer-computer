@@ -449,7 +449,7 @@ describe("only with git on", () => {
     expect(mine()).toEqual({ palette: 0, menus: 0, slots: 0, services: 0 });
     host.register(git);
     await host.activate("git");
-    expect(mine()).toEqual({ palette: 1, menus: 2, slots: 1, services: 1 });
+    expect(mine()).toEqual({ palette: 1, menus: 2, slots: 3, services: 1 });
     await host.unregister("git");
     expect(mine()).toEqual({ palette: 0, menus: 0, slots: 0, services: 0 });
   });

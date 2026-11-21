@@ -11,7 +11,7 @@ use crate::git::repo::ISOLATED;
 use crate::git::{self, setup, SetupMode};
 use std::process::Command;
 
-fn have_git() -> bool {
+pub(crate) fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
 }
 
@@ -24,7 +24,7 @@ macro_rules! need_git {
     };
 }
 
-fn ctx() -> TemplateCtx {
+pub(crate) fn ctx() -> TemplateCtx {
     TemplateCtx {
         date: "2026-11-20 14:03".into(),
         hostname: "Dev".into(),
@@ -32,7 +32,7 @@ fn ctx() -> TemplateCtx {
 }
 
 /// git's environment for the test: a temp HOME, no system or global config.
-fn env(home: &Path) -> Vec<(String, String)> {
+pub(crate) fn env(home: &Path) -> Vec<(String, String)> {
     let home = home.to_string_lossy().into_owned();
     vec![
         ("HOME".into(), home.clone()),
@@ -42,13 +42,13 @@ fn env(home: &Path) -> Vec<(String, String)> {
     ]
 }
 
-struct World {
-    _tmp: tempfile::TempDir,
-    home: PathBuf,
-    remote: PathBuf,
+pub(crate) struct World {
+    pub(crate) _tmp: tempfile::TempDir,
+    pub(crate) home: PathBuf,
+    pub(crate) remote: PathBuf,
 }
 
-fn run_git(world_env: &[(String, String)], dir: &Path, args: &[&str]) -> String {
+pub(crate) fn run_git(world_env: &[(String, String)], dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -64,7 +64,7 @@ fn run_git(world_env: &[(String, String)], dir: &Path, args: &[&str]) -> String 
 }
 
 impl World {
-    fn new() -> World {
+    pub(crate) fn new() -> World {
         ISOLATED.with(|i| i.set(true));
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path().join("home");
@@ -79,20 +79,20 @@ impl World {
         }
     }
 
-    fn env(&self) -> Vec<(String, String)> {
+    pub(crate) fn env(&self) -> Vec<(String, String)> {
         env(&self.home)
     }
 
-    fn url(&self) -> String {
+    pub(crate) fn url(&self) -> String {
         format!("file://{}", self.remote.display())
     }
 
-    fn exec(&self) -> Exec {
+    pub(crate) fn exec(&self) -> Exec {
         Exec::new(Spawner::detached()).with_env(self.env())
     }
 
     /// A vault: a repository on `main` with the remote linked and Writer's setup commit.
-    fn device(&self, name: &str) -> Device {
+    pub(crate) fn device(&self, name: &str) -> Device {
         let root = self._tmp.path().join(name);
         std::fs::create_dir_all(&root).unwrap();
         let e = self.env();
@@ -113,7 +113,7 @@ impl World {
     }
 
     /// A clone of the remote, set up like a Writer vault.
-    fn clone_device(&self, name: &str) -> Device {
+    pub(crate) fn clone_device(&self, name: &str) -> Device {
         let root = self._tmp.path().join(name);
         let e = self.env();
         run_git(&e, self._tmp.path(), &["clone", &self.url(), name]);
@@ -132,37 +132,37 @@ impl World {
     }
 }
 
-struct Device {
-    root: PathBuf,
-    name: String,
-    exec: Exec,
-    env: Vec<(String, String)>,
+pub(crate) struct Device {
+    pub(crate) root: PathBuf,
+    pub(crate) name: String,
+    pub(crate) exec: Exec,
+    pub(crate) env: Vec<(String, String)>,
 }
 
 impl Device {
-    fn write(&self, rel: &str, text: &str) {
+    pub(crate) fn write(&self, rel: &str, text: &str) {
         self.write_bytes(rel, text.as_bytes());
     }
 
-    fn write_bytes(&self, rel: &str, bytes: &[u8]) {
+    pub(crate) fn write_bytes(&self, rel: &str, bytes: &[u8]) {
         let p = self.root.join(rel);
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, bytes).unwrap();
     }
 
-    fn read(&self, rel: &str) -> String {
+    pub(crate) fn read(&self, rel: &str) -> String {
         std::fs::read_to_string(self.root.join(rel)).unwrap()
     }
 
-    fn setup(&self) {
+    pub(crate) fn setup(&self) {
         setup(&self.root, SetupMode::Existing, &self.name).unwrap();
     }
 
-    fn commit(&self) -> Option<String> {
+    pub(crate) fn commit(&self) -> Option<String> {
         git::commit_user(&self.root, "{{notes}}", &ctx(), &self.name).unwrap()
     }
 
-    fn sync(&self) -> Outcome {
+    pub(crate) fn sync(&self) -> Outcome {
         let opts = Options {
             exec: &self.exec,
             helper: None,
@@ -173,7 +173,7 @@ impl Device {
         sync(&self.root, &opts)
     }
 
-    fn ok(&self) -> Report {
+    pub(crate) fn ok(&self) -> Report {
         let o = self.sync();
         if let Some(e) = &o.error {
             let details = match e {
@@ -185,15 +185,15 @@ impl Device {
         o.report
     }
 
-    fn git(&self, args: &[&str]) -> String {
+    pub(crate) fn git(&self, args: &[&str]) -> String {
         run_git(&self.env, &self.root, args)
     }
 
-    fn head(&self) -> String {
+    pub(crate) fn head(&self) -> String {
         self.git(&["rev-parse", "HEAD"]).trim().to_string()
     }
 
-    fn log(&self) -> Vec<String> {
+    pub(crate) fn log(&self) -> Vec<String> {
         self.git(&["log", "--format=%an|%s", "--reverse"])
             .lines()
             .map(String::from)
@@ -201,7 +201,7 @@ impl Device {
     }
 }
 
-fn remote_log(w: &World) -> Vec<String> {
+pub(crate) fn remote_log(w: &World) -> Vec<String> {
     run_git(
         &w.env(),
         &w.remote,
@@ -212,7 +212,7 @@ fn remote_log(w: &World) -> Vec<String> {
     .collect()
 }
 
-fn remote_file(w: &World, path: &str) -> Option<String> {
+pub(crate) fn remote_file(w: &World, path: &str) -> Option<String> {
     let out = Command::new("git")
         .args(["show", &format!("main:{path}")])
         .current_dir(&w.remote)
@@ -225,7 +225,7 @@ fn remote_file(w: &World, path: &str) -> Option<String> {
 }
 
 /// Two devices that share a starting history: A pushed it, B cloned it.
-fn pair(w: &World, files: &[(&str, &str)]) -> (Device, Device) {
+pub(crate) fn pair(w: &World, files: &[(&str, &str)]) -> (Device, Device) {
     let a = w.device("A");
     for (p, t) in files {
         a.write(p, t);
@@ -921,4 +921,127 @@ fn errors_are_classified_and_scrubbed() {
         Kind::Auth
     );
     assert!(!sanitize("error in /Users/me/Vault/Notes", root, &[]).contains("/Users/me"));
+}
+
+// ---- renames in the replay ----------------------------------------------------------------------
+
+const LINES: &str = "one\ntwo\nthree\nfour\nfive\nsix\n";
+
+fn tree(w: &World) -> String {
+    run_git(
+        &w.env(),
+        &w.remote,
+        &["ls-tree", "-r", "--name-only", "main"],
+    )
+}
+
+#[test]
+fn a_rename_here_and_an_edit_there_land_as_an_edited_file_at_the_new_name() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[("Note.md", LINES)]);
+    a.write("Note.md", &LINES.replace("two", "TWO from A"));
+    a.commit();
+    a.ok();
+    std::fs::remove_file(b.root.join("Note.md")).unwrap();
+    b.write("Renamed.md", LINES);
+    b.commit();
+    let r = b.ok();
+    assert!(r.conflicts.is_empty(), "{:?}", r.conflicts);
+    assert_eq!(b.read("Renamed.md"), LINES.replace("two", "TWO from A"));
+    assert!(!b.root.join("Note.md").exists());
+    assert_eq!(
+        remote_file(&w, "Renamed.md").as_deref(),
+        Some(LINES.replace("two", "TWO from A").as_str())
+    );
+    assert!(remote_file(&w, "Note.md").is_none(), "{}", tree(&w));
+}
+
+#[test]
+fn an_edit_here_and_a_rename_there_land_as_an_edited_file_at_the_new_name() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[("Note.md", LINES)]);
+    std::fs::remove_file(a.root.join("Note.md")).unwrap();
+    a.write("Renamed.md", LINES);
+    a.commit();
+    a.ok();
+    b.write("Note.md", &LINES.replace("five", "FIVE from B"));
+    b.commit();
+    let r = b.ok();
+    assert!(r.conflicts.is_empty(), "{:?}", r.conflicts);
+    assert!(r.restored.is_empty(), "no duplicate: {:?}", r.restored);
+    assert_eq!(b.read("Renamed.md"), LINES.replace("five", "FIVE from B"));
+    assert!(!b.root.join("Note.md").exists());
+    assert_eq!(tree(&w).trim(), ".gitignore\nRenamed.md");
+    assert_eq!(
+        remote_file(&w, "Renamed.md").as_deref(),
+        Some(LINES.replace("five", "FIVE from B").as_str())
+    );
+}
+
+#[test]
+fn an_edit_that_follows_a_rename_still_merges_with_the_other_edit() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[("Note.md", LINES)]);
+    std::fs::remove_file(a.root.join("Note.md")).unwrap();
+    a.write("Renamed.md", &LINES.replace("one", "ONE from A"));
+    a.commit();
+    a.ok();
+    b.write("Note.md", &LINES.replace("six", "SIX from B"));
+    b.commit();
+    let r = b.ok();
+    assert!(r.conflicts.is_empty(), "{:?}", r.conflicts);
+    assert_eq!(
+        b.read("Renamed.md"),
+        LINES
+            .replace("one", "ONE from A")
+            .replace("six", "SIX from B")
+    );
+    assert!(!b.root.join("Note.md").exists());
+}
+
+#[test]
+fn renamed_to_different_names_is_a_conflict_that_lists_both_paths() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[("Note.md", LINES)]);
+    std::fs::remove_file(a.root.join("Note.md")).unwrap();
+    a.write("FromA.md", LINES);
+    a.commit();
+    a.ok();
+    std::fs::remove_file(b.root.join("Note.md")).unwrap();
+    b.write("FromB.md", LINES);
+    b.commit();
+    let r = b.ok();
+    assert_eq!(r.conflicts.len(), 1, "{:?}", r.conflicts);
+    assert_eq!(r.conflicts[0].path, "FromB.md");
+    assert_eq!(r.conflicts[0].theirs_path.as_deref(), Some("FromA.md"));
+    // both files are on disk, neither is lost, and mine is never pushed over theirs
+    assert_eq!(b.read("FromB.md"), LINES);
+    assert_eq!(b.read("FromA.md"), LINES);
+    assert!(remote_file(&w, "FromB.md").is_none());
+    assert_eq!(conflicts::paths(&b.root), vec!["FromB.md".to_string()]);
+    assert!(b.commit().is_none());
+}
+
+#[test]
+fn a_rename_with_an_edit_here_against_an_edit_there_of_the_same_line_conflicts_at_the_new_name() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[("Note.md", LINES)]);
+    a.write("Note.md", &LINES.replace("three", "three from A"));
+    a.commit();
+    a.ok();
+    std::fs::remove_file(b.root.join("Note.md")).unwrap();
+    let mine = LINES.replace("three", "three from B");
+    b.write("Renamed.md", &mine);
+    b.commit();
+    let r = b.ok();
+    assert_eq!(r.conflicts.len(), 1, "{:?}", r.conflicts);
+    assert_eq!(r.conflicts[0].path, "Renamed.md");
+    assert_eq!(r.conflicts[0].theirs_path.as_deref(), Some("Note.md"));
+    assert_eq!(r.conflicts[0].hunks, 1);
+    assert_eq!(b.read("Renamed.md"), mine);
 }

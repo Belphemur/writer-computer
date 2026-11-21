@@ -1472,6 +1472,7 @@ mod tests {
                 "git:show",
                 "git:restore",
                 "git:sync",
+                "git:resolve",
                 "git:commit",
                 "icon:set",
                 "icon:get",
@@ -1522,7 +1523,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 30
+            crate::cli::registry::COMMANDS.len() + 31
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

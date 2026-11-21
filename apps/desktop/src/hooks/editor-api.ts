@@ -120,6 +120,11 @@ export function openGitHistoryTab(
   openLocationTab({ kind: "git-history", ...target }, options);
 }
 
+/** Opens (or focuses) the merge view of a conflicted file (`path` absolute). One tab per file. */
+export function openGitMergeTab(target: { path: string }, options?: { activate?: boolean }) {
+  openLocationTab({ kind: "git-merge", ...target }, options);
+}
+
 /** Persist a graph tab's camera and pins in its location (restored with the session). */
 export function setGraphTabState(tabId: string, state: Partial<Omit<GraphLocation, "kind">>) {
   useEditorStore.getState().setGraphTabState(tabId, state);

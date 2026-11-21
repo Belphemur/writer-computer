@@ -121,6 +121,7 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `git:show` — Print a file as it was in a version (read-only). Params: `path=`, `rev=` (the version (an id from git:log)).
 - `git:restore` — Restore a file to a version as a new change (user(restore) commit); history is kept. Params: `path=`, `rev=` (the version (an id from git:log)).
 - `git:sync` — Sync with the remote: save a version, fetch, replay local versions on top, push. Without a remote it only saves a version. Through the running app when it is open, else here.
+- `git:resolve` — Settle a conflicted file by taking a whole side: mine keeps the file as it is here, theirs takes the other device's version; for a binary, both keeps the conflict copy beside the file. Saved as a user(merge) version. git:status lists what is in conflict. Params: `path=`, `take=` (mine | theirs | both (binaries only)).
 - `git:commit` — Save a version now: commit the pending changes as a user(...) commit.
 
 ## Icons

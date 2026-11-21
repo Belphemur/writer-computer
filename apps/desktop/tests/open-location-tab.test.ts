@@ -7,7 +7,17 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { openFileInNewTab, openGitHistoryTab, openLocationTab } from "../src/hooks/editor-api";
+import {
+  openFileInNewTab,
+  openGitHistoryTab,
+  openGitMergeTab,
+  openLocationTab,
+} from "../src/hooks/editor-api";
+import {
+  deserializeLocation,
+  pageKind,
+  serializeLocation,
+} from "../src/components/editor-area/page-kinds";
 import { useEditorStore } from "../src/stores/editor-store";
 
 const state = () => useEditorStore.getState();
@@ -89,6 +99,19 @@ describe("openLocationTab", () => {
     expect(state().tabs).toHaveLength(5);
   });
 
+  it("the merge view is one tab per file: a background open leaves the active tab, a second open focuses it", () => {
+    seed();
+    openGitMergeTab({ path: "/v/a.md" }, { activate: false });
+    expect(locations().at(-1)).toEqual({ kind: "git-merge", path: "/v/a.md" });
+    expect(state().activeTabId).toBe("t0");
+    openGitMergeTab({ path: "/v/b.md" }, { activate: false });
+    openGitMergeTab({ path: "/v/a.md" }, { activate: false });
+    expect(state().tabs).toHaveLength(4);
+    openGitMergeTab({ path: "/v/a.md" });
+    expect(state().activeTabId).toBe(state().tabs[2]!.id);
+    expect(state().tabs).toHaveLength(4);
+  });
+
   it("a kind without a tab key opens a new tab each time", () => {
     seed();
     openLocationTab({ kind: "file", path: "/v/c.md" }, { activate: false });
@@ -101,5 +124,29 @@ describe("openLocationTab", () => {
     await openFileInNewTab("/v/c.md", { activate: false });
     expect(locations().at(-1)).toEqual({ kind: "file", path: "/v/c.md" });
     expect(state().activeTabId).toBe("t0");
+  });
+});
+
+describe("the git-merge page kind", () => {
+  const location = { kind: "git-merge" as const, path: "/v/Plans/Note.md" };
+
+  it("is titled after the file, belongs to the git feature and follows the file", () => {
+    const k = pageKind(location);
+    expect(k.title(location)).toBe("Resolve: Note");
+    expect(k.feature).toBe("git");
+    expect(k.loadsDocument).toBe(false);
+    expect(k.paths(location)).toEqual(["/v/Plans/Note.md"]);
+    expect(k.forPath("/v/Plans/Note.md")).toBeNull();
+    expect(k.rewritePath(location, "/v/Plans/Note.md", "/v/Plans/New.md")).toEqual({
+      ...location,
+      path: "/v/Plans/New.md",
+    });
+    expect(k.removePath(location, "/v/Plans/Note.md")).toBeNull();
+    expect(k.removePath(location, "/v/Other.md")).toEqual(location);
+  });
+
+  it("round-trips through the session", () => {
+    expect(deserializeLocation(serializeLocation(location))).toEqual(location);
+    expect(deserializeLocation({ kind: "git-merge" })).toBeNull();
   });
 });

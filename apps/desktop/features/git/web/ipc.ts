@@ -14,6 +14,10 @@ export type FileDiff = wire.FileDiff;
 export type Preview = wire.Preview;
 export type Tools = wire.Tools;
 export type SyncErrorRow = wire.SyncErrorRow;
+export type ConflictView = wire.ConflictViewRow;
+export type ConflictPart = wire.PartRow;
+export type PropertyConflict = wire.PropertyRow;
+export type ConflictRow = wire.ConflictRow;
 
 /** The event Rust emits to the window after a commit, a setup or a pause change (`git:changed`;
  *  `ctx.listen` adds the feature prefix). */
@@ -57,6 +61,21 @@ export interface GitCommands {
     args: { path: string; base: string; mine: string; theirs: string };
     result: wire.MergedText;
   };
+  git_conflict_open: {
+    args: { path: string; mine: string | null };
+    result: wire.ConflictViewRow;
+  };
+  git_conflict_save: {
+    args: {
+      path: string;
+      mine: string;
+      body: string;
+      picks: wire.PickRow[];
+      final_path: string | null;
+    };
+    result: wire.GitStatus;
+  };
+  git_conflict_take: { args: { path: string; side: string }; result: wire.GitStatus };
 }
 
 const call = featureInvoke<GitCommands>(manifest.id, manifest.rust.commands);
@@ -96,3 +115,24 @@ export const dismissNotices = () => call("git_dismiss_notices");
 /** The merge of an open note's text three ways (`text` is `null` when the two sides overlap). */
 export const mergeText = async (path: string, base: string, mine: string, theirs: string) =>
   (await call("git_merge_text", { path, base, mine, theirs })).text;
+
+/** The merge view's pieces for a conflicted file (`path` vault-relative or absolute). `mine` is the
+ *  editor's buffer when the note is open; without it the file is read. Writes nothing. */
+export const conflictOpen = (path: string, mine: string | null = null) =>
+  call("git_conflict_open", { path, mine });
+/** "Save": the result column, the side taken for each conflicting property and the path kept after
+ *  a rename. Committed as `user(merge)`; the sync resumes. */
+export const conflictSave = (
+  path: string,
+  view: { mine: string; body: string; picks: wire.PickRow[]; finalPath: string | null },
+) =>
+  call("git_conflict_save", {
+    path,
+    mine: view.mine,
+    body: view.body,
+    picks: view.picks,
+    final_path: view.finalPath,
+  });
+/** Settles a whole file: `mine`, `theirs`, or `both` (a binary keeps its conflict copy). */
+export const conflictTake = (path: string, side: "mine" | "theirs" | "both") =>
+  call("git_conflict_take", { path, side });

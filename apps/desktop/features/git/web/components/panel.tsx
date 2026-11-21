@@ -8,7 +8,15 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { commitNow, deleted, setPaused, setSyncPaused, syncNow, type DeletedRow } from "../ipc";
-import { Conflicts, HeldPlugins, lastSyncLabel, Notices, BUTTON, SyncError } from "./sync-parts";
+import {
+  BinaryConflicts,
+  Conflicts,
+  HeldPlugins,
+  lastSyncLabel,
+  Notices,
+  BUTTON,
+  SyncError,
+} from "./sync-parts";
 import { showHistoryItems } from "../menus";
 import { fileLabel, IDENTITY_COMMANDS, KIND_LABEL, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
@@ -226,6 +234,7 @@ export default function GitPanel() {
         )}
       </div>
       <Conflicts />
+      <BinaryConflicts />
       <HeldPlugins />
       <Notices />
       {status.changes.length > 0 && (

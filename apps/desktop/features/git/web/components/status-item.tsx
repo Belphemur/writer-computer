@@ -4,10 +4,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { GitCommitIcon } from "@hugeicons/core-free-icons";
 import { openSettings } from "@/hooks/editor-api";
 import { useUIStore } from "@/stores/ui-store";
-import { summarize } from "../lib/state";
+import { PANEL_ID, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
-
-export const PANEL_ID = "git.panel";
 
 const TONE: Record<string, string> = {
   ok: "text-[var(--text-muted)]",

@@ -102,7 +102,7 @@ const mine = () => ({
 describe("registration", () => {
   it("registers its contributions and the kill switch removes exactly them", async () => {
     host.register(git);
-    expect(mine()).toEqual({ commands: 3, statusItems: 1, panels: 1, sections: 1 });
+    expect(mine()).toEqual({ commands: 4, statusItems: 1, panels: 1, sections: 1 });
     await host.unregister("git");
     expect(mine()).toEqual({ commands: 0, statusItems: 0, panels: 0, sections: 0 });
   });

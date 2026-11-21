@@ -1,11 +1,12 @@
 // The pieces of the panel and of Settings > Git that exist only with a remote: the last sync, the
 // one-line error with "Details" (the sanitized git output), the files a sync could not settle, the
-// plugin settings held back by the token scan and the notices (a binary kept beside the remote's,
-// a file restored). Terse: no prose.
+// plugin settings held back by the token scan and the notices (a file restored). Terse: no prose.
 import { useState } from "react";
+import { linkHandlers } from "@/lib/link-activation";
 import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
-import { dismissNotices, pluginDecision } from "../ipc";
+import { conflictTake, dismissNotices, pluginDecision } from "../ipc";
+import { openMerge } from "../lib/resolve-conflicts";
 import { fileLabel } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
 
@@ -43,7 +44,8 @@ export function lastSyncLabel(lastSync: number | null): string | null {
   return lastSync ? `Synced ${formatRelativeTime(lastSync)}` : null;
 }
 
-/** Files the last sync could not settle. Their version stays as it is on disk. */
+/** Files the last sync could not settle: each opens its merge view (a click with Cmd/Ctrl or the
+ *  middle button opens it in the background). Their version stays as it is on disk. */
 export function Conflicts() {
   const conflicts = useGitStatus((s) => s.status?.conflicts ?? []);
   if (conflicts.length === 0) return null;
@@ -53,20 +55,86 @@ export function Conflicts() {
         Conflicts
       </h3>
       <ul>
-        {conflicts.map((c) => (
-          <li
-            key={c.path}
-            data-git-conflict={c.path}
-            className="flex items-baseline justify-between gap-2 py-0.5"
-            title={c.path}
-          >
-            <span className="truncate text-[var(--text-primary)]">{fileLabel(c.path)}</span>
-            <span className="shrink-0 text-xs text-[var(--text-muted)]">
-              {c.properties.length > 0 ? c.properties.join(", ") : `${c.hunks} overlap`}
-            </span>
-          </li>
-        ))}
+        {conflicts.map((c) => {
+          const handlers = linkHandlers({
+            kind: "custom",
+            open: (intent) => openMerge(c.path, { activate: intent !== "new-tab-background" }),
+          });
+          return (
+            <li key={c.path}>
+              <button
+                type="button"
+                data-git-conflict={c.path}
+                title={c.path}
+                {...handlers}
+                className="flex w-full items-baseline justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none"
+              >
+                <span className="truncate text-[var(--text-primary)]">{fileLabel(c.path)}</span>
+                <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                  {c.theirsPath
+                    ? "Renamed"
+                    : c.properties.length > 0
+                      ? c.properties.join(", ")
+                      : `${c.hunks} overlap`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
+    </section>
+  );
+}
+
+/** Binaries that changed on both sides: the other device's version is at the path, yours is the
+ *  copy beside it. One choice settles it. */
+export function BinaryConflicts() {
+  const copies = useGitStatus((s) => s.status?.copies ?? []);
+  const apply = useGitStatus((s) => s.apply);
+  const [failure, setFailure] = useState<string | null>(null);
+  if (copies.length === 0) return null;
+  const keep = async (path: string, side: "mine" | "theirs" | "both") => {
+    setFailure(null);
+    try {
+      apply(await conflictTake(path, side));
+    } catch (e) {
+      logger.warn("git", "could not settle a binary");
+      setFailure(describeError(e).message);
+    }
+  };
+  return (
+    <section data-git-binaries aria-label="Binary conflicts" className="space-y-2">
+      <h3 className="text-[11px] font-medium tracking-wide text-[var(--text-muted)] uppercase">
+        Both changed
+      </h3>
+      {copies.map((c) => (
+        <div key={c.copy} data-git-binary={c.path} className="text-xs">
+          <p className="truncate text-[var(--text-primary)]" title={c.path}>
+            {fileLabel(c.path)}
+          </p>
+          <p className="truncate text-[var(--text-muted)]" title={c.copy}>
+            {c.copy.split("/").pop()}
+          </p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {(["mine", "theirs", "both"] as const).map((side) => (
+              <button
+                key={side}
+                type="button"
+                data-git-keep={side}
+                className={BUTTON}
+                onClick={() => void keep(c.path, side)}
+              >
+                Keep {side}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {failure && (
+        <p role="alert" className="text-xs text-[var(--text-primary)]">
+          {failure}
+        </p>
+      )}
     </section>
   );
 }
@@ -112,19 +180,13 @@ export function HeldPlugins() {
   );
 }
 
-/** A binary kept beside the remote's version, a file brought back: told once, then dismissed. */
+/** A file brought back because one side deleted what the other edited: told once, then dismissed. */
 export function Notices() {
-  const copies = useGitStatus((s) => s.status?.copies ?? []);
   const restored = useGitStatus((s) => s.status?.restored ?? []);
   const apply = useGitStatus((s) => s.apply);
-  if (copies.length === 0 && restored.length === 0) return null;
+  if (restored.length === 0) return null;
   return (
     <section data-git-notices className="space-y-1 text-xs text-[var(--text-muted)]">
-      {copies.map((c) => (
-        <p key={c.copy} title={c.copy}>
-          Kept both: {fileLabel(c.path)} and its copy
-        </p>
-      ))}
       {restored.map((p) => (
         <p key={p} title={p}>
           Restored {fileLabel(p)}: it was deleted on one side and edited on the other

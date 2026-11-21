@@ -14,7 +14,7 @@ use crate::features::scope::Spawner;
 use crate::git::history::{self, Against, FileDiff};
 use crate::git::sync as engine;
 use crate::git::transport::{Exec, Helper};
-use crate::git::{self, device, message, Change, Error};
+use crate::git::{self, device, message, resolve, Change, Error};
 use serde_json::{json, Map};
 
 const FEATURE: Option<&str> = Some(super::runtime::ID);
@@ -117,6 +117,20 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         feature: FEATURE,
         ..cmd!(
+            "git:resolve",
+            GROUP,
+            "Settle a conflicted file by taking a whole side: mine keeps the file as it is here, theirs takes the other device's version; for a binary, both keeps the conflict copy beside the file. Saved as a user(merge) version. git:status lists what is in conflict",
+            &[PATH, p("take", "mine | theirs | both (binaries only)")],
+            NO_FLAGS,
+            &["text"],
+            Some("text"),
+            writes,
+            resolve_cmd
+        )
+    },
+    CommandSpec {
+        feature: FEATURE,
+        ..cmd!(
             "git:commit",
             GROUP,
             "Save a version now: commit the pending changes as a user(...) commit",
@@ -173,6 +187,7 @@ fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
             "ahead": s.remote.ahead,
             "behind": s.remote.behind,
             "conflicted": s.conflicts.iter().map(|c| c.path.clone()).collect::<Vec<_>>(),
+            "conflictedBinaries": s.copies.iter().map(|(f, c)| json!({ "path": f, "copy": c })).collect::<Vec<_>>(),
             "held": s.held.iter().map(|h| h.path.clone()).collect::<Vec<_>>(),
             "lastCommit": s.last_commit,
             "identityError": s.identity_error,
@@ -204,7 +219,15 @@ fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
         }
     }
     for c in &s.conflicts {
-        out.push_str(&format!("conflict: {}\n", c.path));
+        match &c.theirs_path {
+            Some(other) => out.push_str(&format!("conflict: {} (renamed: {other})\n", c.path)),
+            None => out.push_str(&format!("conflict: {}\n", c.path)),
+        }
+    }
+    for (file, copy) in &s.copies {
+        out.push_str(&format!(
+            "conflict (binary): {file} (mine is kept as {copy})\n"
+        ));
     }
     for h in &s.held {
         out.push_str(&format!("held back (looks like a token): {}\n", h.path));
@@ -476,6 +499,18 @@ fn restore_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErr
     } else {
         format!("restored {}\n", done.path)
     })
+}
+
+fn resolve_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let (root, _repo) = repo_of(ctx)?;
+    let rel = path_arg(ctx, args)?;
+    let side = args
+        .get("take")
+        .and_then(resolve::Take::parse)
+        .ok_or_else(|| CliError::Usage("take=mine, take=theirs or take=both is required".into()))?;
+    resolve::take(&root, &rel, side, &device::name(), None)
+        .map_err(|e| CliError::fail(e.to_string()))?;
+    Ok(format!("resolved {rel}\n"))
 }
 
 fn sync_line(v: &serde_json::Value) -> String {

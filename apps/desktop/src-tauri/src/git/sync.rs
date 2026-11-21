@@ -251,8 +251,10 @@ fn follow_worktree(
     skip: &BTreeSet<String>,
     report: &mut Report,
 ) -> Result<(), Error> {
+    // a file already in conflict keeps the user's version until the merge view settles it
+    let open = conflicts::paths(root);
     for ch in changes {
-        if skip.contains(&ch.path) || !safe_rel(&ch.path) {
+        if skip.contains(&ch.path) || open.contains(&ch.path) || !safe_rel(&ch.path) {
             continue;
         }
         let link = |e: &Option<Entry>| e.as_ref().is_some_and(|e| e.mode == Mode::Link);
@@ -303,7 +305,11 @@ fn follow_worktree(
                     put(&after, report)?;
                     report.copies.push((ch.path.clone(), copy));
                 }
-                Merged::Conflict(c) => report.conflicts.push(record_of(&ch.path, &c)),
+                Merged::Conflict(c) => {
+                    report
+                        .conflicts
+                        .push(record_of(&ch.path, &c, ch.before.as_ref(), None))
+                }
             }
         }
     }
@@ -319,7 +325,7 @@ struct Replayed {
     /// Commits of the new chain (what gets pushed).
     kept: usize,
     skip: BTreeSet<String>,
-    conflicts: Vec<(String, super::merge::Conflict)>,
+    conflicts: Vec<Record>,
     copies: Vec<(String, String)>,
     restored: Vec<String>,
     held: Vec<Held>,
@@ -327,6 +333,223 @@ struct Replayed {
 
 fn is_link(e: &Option<Entry>) -> bool {
     e.as_ref().is_some_and(|e| e.mode == Mode::Link)
+}
+
+/// One replay in progress: the files the rebuilt tree holds differently from `onto`, and what the
+/// other side renamed since the first local commit's parent (so an edit follows the file).
+struct Replay<'a> {
+    repo: &'a Repo,
+    root: &'a Path,
+    onto: Option<&'a str>,
+    device: &'a str,
+    edits: BTreeMap<String, Option<Entry>>,
+    /// Files the other side renamed, `old -> new`.
+    remote_moves: BTreeMap<String, String>,
+    /// Local paths whose edits follow a rename of the other side, `old -> new`.
+    alias: BTreeMap<String, String>,
+    out: Replayed,
+}
+
+/// The three versions of one file and where each lives: what [`Replay::merge3`] settles.
+struct Settle<'a> {
+    /// Where mine is on disk, and where the conflict is recorded.
+    mine_path: &'a str,
+    /// Where the other side's version is (differs from `mine_path` after a rename).
+    theirs_path: &'a str,
+    /// Where a clean result goes.
+    out_path: &'a str,
+    before: Option<Entry>,
+    after: Option<Entry>,
+    theirs: Option<Entry>,
+    /// When mine was made (names the conflict copy of a binary).
+    seconds: i64,
+}
+
+impl Replay<'_> {
+    fn theirs_at(&self, path: &str) -> Result<Option<Entry>, Error> {
+        match self.edits.get(path) {
+            Some(e) => Ok(e.clone()),
+            None => Ok(self.repo.entry_at(self.onto, path)?),
+        }
+    }
+
+    fn blob_of(&self, e: &Option<Entry>) -> Result<Option<Vec<u8>>, Error> {
+        e.as_ref().map(|e| Ok(self.repo.blob(&e.id)?)).transpose()
+    }
+
+    /// The 3-way merge of one file: a clean result goes into the rebuilt tree, a binary keeps mine
+    /// beside theirs, an overlap is recorded and mine is left on disk.
+    fn merge3(&mut self, s: Settle<'_>) -> Result<(), Error> {
+        let (b, m, t) = (
+            self.blob_of(&s.before)?,
+            self.blob_of(&s.after)?,
+            self.blob_of(&s.theirs)?,
+        );
+        match merge_file(s.mine_path, b.as_deref(), m.as_deref(), t.as_deref()) {
+            Merged::Clean {
+                bytes: merged,
+                note,
+            } => {
+                if note == Some(Note::DeleteEdit) {
+                    self.out.restored.push(s.out_path.to_string());
+                }
+                let entry = match merged {
+                    None => None,
+                    Some(bytes) if Some(&bytes) == m.as_ref() => s.after.clone(),
+                    Some(bytes) if Some(&bytes) == t.as_ref() => s.theirs.clone(),
+                    Some(bytes) => Some(Entry {
+                        id: self.repo.write_blob(&bytes)?,
+                        mode: s
+                            .after
+                            .as_ref()
+                            .or(s.theirs.as_ref())
+                            .map_or(Mode::Blob, |e| e.mode),
+                    }),
+                };
+                if s.theirs_path != s.out_path {
+                    // the other side's file moves to the new name
+                    self.edits.insert(s.theirs_path.to_string(), None);
+                }
+                self.edits.insert(s.out_path.to_string(), entry);
+            }
+            Merged::BinaryCopy => {
+                let copy = conflict_copy_name(s.mine_path, self.device, &stamp(s.seconds));
+                self.edits.insert(copy.clone(), s.after.clone());
+                self.out.copies.push((s.mine_path.to_string(), copy));
+            }
+            Merged::Conflict(c) => {
+                self.out.skip.insert(s.mine_path.to_string());
+                self.out.conflicts.push(record_of(
+                    s.mine_path,
+                    &c,
+                    s.before.as_ref(),
+                    (s.theirs_path != s.mine_path).then(|| s.theirs_path.to_string()),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// One file's change in a local commit, merged with what the rebuilt tree has.
+    fn change(&mut self, ch: &TreeChange, seconds: i64) -> Result<(), Error> {
+        if self.out.skip.contains(&ch.path) || !safe_rel(&ch.path) {
+            return Ok(());
+        }
+        let mut target = self
+            .alias
+            .get(&ch.path)
+            .cloned()
+            .unwrap_or_else(|| ch.path.clone());
+        let mut theirs = self.theirs_at(&target)?;
+        // the other side renamed the file this commit edits: the edit follows it
+        if theirs.is_none() && ch.before.is_some() && target == ch.path {
+            if let Some(to) = self.remote_moves.get(&ch.path).cloned() {
+                theirs = self.theirs_at(&to)?;
+                self.alias.insert(ch.path.clone(), to.clone());
+                target = to;
+            }
+        }
+        // already the same on both sides
+        if theirs == ch.after {
+            return Ok(());
+        }
+        if let Some(after) = &ch.after {
+            if after.mode != Mode::Link && plugin_scan::plugin_of(&ch.path).is_some() {
+                let bytes = self.repo.blob(&after.id)?;
+                if plugin_scan::flagged(self.root, &ch.path, &bytes) {
+                    self.out.skip.insert(ch.path.clone());
+                    self.out
+                        .held
+                        .extend(plugin_scan::held_among(self.root, [ch.path.as_str()]));
+                    return Ok(());
+                }
+            }
+        }
+        // untouched on the other side: this commit's version goes in as it is
+        if theirs == ch.before || is_link(&ch.before) || is_link(&ch.after) || is_link(&theirs) {
+            if theirs == ch.before || theirs.is_none() {
+                self.edits.insert(target, ch.after.clone());
+            }
+            return Ok(());
+        }
+        self.merge3(Settle {
+            mine_path: &ch.path,
+            theirs_path: &target,
+            out_path: &target,
+            before: ch.before.clone(),
+            after: ch.after.clone(),
+            theirs,
+            seconds,
+        })
+    }
+
+    /// A file this commit renamed (`from` to `to`, `before` and `after` its two versions). When
+    /// the other side edited it meanwhile, the edit lands at the new name; when it renamed it
+    /// too, to a name of its own, the two names are a conflict for the user to choose between.
+    fn rename(
+        &mut self,
+        (gone, added): (&TreeChange, &TreeChange),
+        seconds: i64,
+    ) -> Result<(), Error> {
+        let (from, to) = (gone.path.as_str(), added.path.as_str());
+        let (before, after) = (gone.before.clone(), added.after.clone());
+        let plain = |this: &mut Self| -> Result<(), Error> {
+            this.change(gone, seconds)?;
+            this.change(added, seconds)
+        };
+        if self.out.skip.contains(from)
+            || self.out.skip.contains(to)
+            || !safe_rel(from)
+            || !safe_rel(to)
+            || is_link(&before)
+            || is_link(&after)
+        {
+            return plain(self);
+        }
+        let (theirs_from, theirs_to) = (self.theirs_at(from)?, self.theirs_at(to)?);
+        if theirs_from == before {
+            return plain(self);
+        }
+        match theirs_from {
+            // a file already sits at the new name: two files, no rename to follow
+            Some(_) if theirs_to.is_some() => plain(self),
+            // edited on the other side while renamed here: the edit comes along
+            Some(edited) => self.merge3(Settle {
+                mine_path: to,
+                theirs_path: from,
+                out_path: to,
+                before,
+                after,
+                theirs: Some(edited),
+                seconds,
+            }),
+            None => match self.remote_moves.get(from).cloned() {
+                // renamed on both sides to the same name: one file, edits merged
+                Some(c) if c == to => self.merge3(Settle {
+                    mine_path: to,
+                    theirs_path: to,
+                    out_path: to,
+                    before,
+                    after,
+                    theirs: theirs_to,
+                    seconds,
+                }),
+                // renamed to different names: the user picks the name
+                Some(c) => {
+                    self.out.skip.insert(to.to_string());
+                    self.out.conflicts.push(record_of(
+                        to,
+                        &super::merge::Conflict::default(),
+                        before.as_ref(),
+                        Some(c),
+                    ));
+                    Ok(())
+                }
+                // deleted on the other side: the rename stands
+                None => plain(self),
+            },
+        }
+    }
 }
 
 /// Re-makes `local` (oldest first) on top of `onto` (`None`: an empty tree).
@@ -337,90 +560,58 @@ fn replay(
     local: &[String],
     device: &str,
 ) -> Result<Replayed, Error> {
-    let mut edits: BTreeMap<String, Option<Entry>> = BTreeMap::new();
-    let mut out = Replayed {
-        head: onto.map(str::to_string),
-        kept: 0,
-        skip: BTreeSet::new(),
-        conflicts: Vec::new(),
-        copies: Vec::new(),
-        restored: Vec::new(),
-        held: Vec::new(),
+    let read = |e: &Entry| repo.blob(&e.id).ok();
+    // what the other side renamed since the first local commit's parent
+    let remote_moves = match (onto, local.first()) {
+        (Some(onto), Some(first)) => {
+            let base = repo.parent_of(first)?;
+            let changes = repo.tree_changes(base.as_deref(), Some(onto))?;
+            super::renames::detect(&changes, &[], &read)
+                .into_iter()
+                .collect()
+        }
+        _ => BTreeMap::new(),
+    };
+    let mut st = Replay {
+        repo,
+        root,
+        onto,
+        device,
+        edits: BTreeMap::new(),
+        remote_moves,
+        alias: BTreeMap::new(),
+        out: Replayed {
+            head: onto.map(str::to_string),
+            kept: 0,
+            skip: BTreeSet::new(),
+            conflicts: Vec::new(),
+            copies: Vec::new(),
+            restored: Vec::new(),
+            held: Vec::new(),
+        },
     };
     let mut prev_tree = repo.write_tree(onto, &[])?;
     for id in local {
         let data = repo.commit_data(id)?;
         let parent = data.parents.first().map(String::as_str);
-        for ch in repo.tree_changes(parent, Some(id))? {
-            if out.skip.contains(&ch.path) || !safe_rel(&ch.path) {
-                continue;
+        let changes = repo.tree_changes(parent, Some(id))?;
+        let hints = super::message::parse(&String::from_utf8_lossy(&data.message)).moves;
+        let moved = super::renames::detect(&changes, &hints, &read);
+        let at = |p: &str| changes.iter().find(|c| c.path == p);
+        for ch in &changes {
+            if moved.iter().any(|(_, to)| *to == ch.path) {
+                continue; // settled with the file it came from
             }
-            let theirs = match edits.get(&ch.path) {
-                Some(e) => e.clone(),
-                None => repo.entry_at(onto, &ch.path)?,
-            };
-            // already the same on both sides
-            if theirs == ch.after {
-                continue;
-            }
-            if let Some(after) = &ch.after {
-                if after.mode != Mode::Link && plugin_scan::plugin_of(&ch.path).is_some() {
-                    let bytes = repo.blob(&after.id)?;
-                    if plugin_scan::flagged(root, &ch.path, &bytes) {
-                        out.skip.insert(ch.path.clone());
-                        out.held
-                            .extend(plugin_scan::held_among(root, [ch.path.as_str()]));
-                        continue;
-                    }
-                }
-            }
-            // untouched on the other side: this commit's version goes in as it is
-            if theirs == ch.before || is_link(&ch.before) || is_link(&ch.after) || is_link(&theirs)
-            {
-                if theirs == ch.before || theirs.is_none() {
-                    edits.insert(ch.path.clone(), ch.after.clone());
-                }
-                continue;
-            }
-            let bytes = |e: &Option<Entry>| -> Result<Option<Vec<u8>>, Error> {
-                e.as_ref().map(|e| Ok(repo.blob(&e.id)?)).transpose()
-            };
-            let (b, m, t) = (bytes(&ch.before)?, bytes(&ch.after)?, bytes(&theirs)?);
-            match merge_file(&ch.path, b.as_deref(), m.as_deref(), t.as_deref()) {
-                Merged::Clean {
-                    bytes: merged,
-                    note,
-                } => {
-                    if note == Some(Note::DeleteEdit) {
-                        out.restored.push(ch.path.clone());
-                    }
-                    let entry = match merged {
-                        None => None,
-                        Some(bytes) if Some(&bytes) == m.as_ref() => ch.after.clone(),
-                        Some(bytes) if Some(&bytes) == t.as_ref() => theirs.clone(),
-                        Some(bytes) => Some(Entry {
-                            id: repo.write_blob(&bytes)?,
-                            mode: ch
-                                .after
-                                .as_ref()
-                                .or(theirs.as_ref())
-                                .map_or(Mode::Blob, |e| e.mode),
-                        }),
-                    };
-                    edits.insert(ch.path.clone(), entry);
-                }
-                Merged::BinaryCopy => {
-                    let copy = conflict_copy_name(&ch.path, device, &stamp(data.author.seconds));
-                    edits.insert(copy.clone(), ch.after.clone());
-                    out.copies.push((ch.path.clone(), copy));
-                }
-                Merged::Conflict(c) => {
-                    out.skip.insert(ch.path.clone());
-                    out.conflicts.push((ch.path.clone(), c));
-                }
+            match moved.iter().find(|(from, _)| *from == ch.path) {
+                Some((_, to)) => match at(to) {
+                    Some(added) => st.rename((ch, added), data.author.seconds)?,
+                    None => st.change(ch, data.author.seconds)?,
+                },
+                None => st.change(ch, data.author.seconds)?,
             }
         }
-        let list: Vec<TreeEdit> = edits
+        let list: Vec<TreeEdit> = st
+            .edits
             .iter()
             .map(|(path, e)| match e {
                 Some(entry) => TreeEdit::Upsert {
@@ -435,7 +626,7 @@ fn replay(
             // everything this commit did is already there (or was set aside): nothing to record
             continue;
         }
-        let parents: Vec<String> = out.head.iter().cloned().collect();
+        let parents: Vec<String> = st.out.head.iter().cloned().collect();
         let new = repo.write_commit(
             &tree,
             &parents,
@@ -443,18 +634,25 @@ fn replay(
             &data.author,
             &data.committer,
         )?;
-        out.head = Some(new);
-        out.kept += 1;
+        st.out.head = Some(new);
+        st.out.kept += 1;
         prev_tree = tree;
     }
-    Ok(out)
+    Ok(st.out)
 }
 
-fn record_of(path: &str, c: &super::merge::Conflict) -> Record {
+fn record_of(
+    path: &str,
+    c: &super::merge::Conflict,
+    base: Option<&Entry>,
+    theirs_path: Option<String>,
+) -> Record {
     Record {
         path: path.to_string(),
         hunks: c.hunks.len() as u32,
         properties: c.properties.iter().map(|p| p.name.clone()).collect(),
+        base: base.map(|e| e.id.clone()),
+        theirs_path,
     }
 }
 
@@ -623,9 +821,7 @@ fn run(root: &Path, opts: &Options<'_>, report: &mut Report) -> Result<(), Error
                     let replayed =
                         replay(&repo, root, remote.as_deref(), &oldest_first, opts.device)?;
                     report.pulled += behind;
-                    report
-                        .conflicts
-                        .extend(replayed.conflicts.iter().map(|(p, c)| record_of(p, c)));
+                    report.conflicts.extend(replayed.conflicts);
                     report.copies.extend(replayed.copies);
                     report.restored.extend(replayed.restored);
                     for h in replayed.held {
@@ -679,4 +875,4 @@ fn run(root: &Path, opts: &Options<'_>, report: &mut Report) -> Result<(), Error
 
 #[cfg(test)]
 #[path = "sync_tests.rs"]
-mod tests;
+pub(crate) mod tests;
