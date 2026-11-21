@@ -83,6 +83,10 @@ Git is an optional built-in feature (ADR 2026-11-20 "let features cooperate thro
 - Off: the Rust half is not set up until the next start (no state, no extension, no ticker), its CLI commands answer "turned off", the skill is not installed, the web half (page, status item, panel, commands) goes at once. All runtime resources belong to one struct (`runtime::Vaults`) with one `shutdown()`.
 - A vault that is not set up (no repository or no managed block) gets no commit, no timer action and no error from any hook.
 
+### Plugin settings and secrets (the user, 2026-11-20)
+
+Plugin settings (`.obsidian/plugins/<id>/data.json`) are synced, but before every push Writer scans each changed `data.json` for token-like values: keys named like `token`, `key`, `apiKey`, `secret`, `password`, `auth`, `bearer` (case-insensitive, nested) with a non-empty string value, and long high-entropy strings (40+ chars of base64/hex alphabet). A file that matches is held back from the push (kept committed locally only if it was before; otherwise left out of the commit) and the panel says "Plugin <name>'s settings look like they contain a token — not synced", with **Sync anyway** (this file, until its token values change) and **Never sync this plugin** (adds the file to the managed ignore block). The scan runs locally, logs only the plugin id, never the value.
+
 ## Cadence
 
 Designed with the user on 2026-11-20, after the lint lesson (fixes on every autosave rewrote the line being typed): Git never acts while the user types, and one idle constant is shared with lint.
