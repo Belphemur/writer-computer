@@ -99,7 +99,7 @@ Secrets: declare in `contributes.secrets`; read and write only through `ctx.secr
 
 ### Off must degrade, never break
 
-The protocol (points owned by core or a feature, optional services, rare `requires`; same in Rust and TS, declared in `feature.json` as `points`, `extends`, `provides`, `uses`, `requires`) is ADR `docs/decisions/2026-11-20-let-features-cooperate-through-owned-points-optional-services-and-rare-requires.md`.
+The protocol (points owned by core or a feature, optional services, rare `requires`; same in Rust and TS, declared in `feature.json` as `points`, `extends`, `provides`, `uses`, `requires`) is ADR `docs/decisions/2026-11-20-let-features-cooperate-through-owned-points-optional-services-and-rare-requires.md`. Live start and stop, the owning scope (every thread, process, timer, observer, listener and state through `scope` / `ctx`, never raw) and the leak guardrails are ADR `docs/decisions/2026-11-20-start-and-stop-features-live-through-an-owning-scope-with-leak-guardrails.md`.
 
 A feature can be off (kill switch), crashed (contained and switched off), or on but not set up (for example `git` in a vault with no repo). In all three states the rest of the app, and every other feature that cooperates with it, works exactly as it did before the feature existed.
 
