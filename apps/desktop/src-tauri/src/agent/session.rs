@@ -21,6 +21,7 @@ use super::roles::{Flags, RenderInput, RoleAdapter};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
 use super::subagents::ClaudeAdapter;
 use super::writer_prompt::MemoryNote;
+use crate::features::points::Points;
 use crate::features::scope::Spawner;
 use crate::plugin_proc::ProcManager;
 use parking_lot::{Condvar, Mutex};
@@ -213,6 +214,9 @@ pub(crate) struct Shared {
     /// The host's threads and processes (`features::scope`): every thread and child of the agent
     /// starts here, so stopping the feature ends them.
     pub spawn: Spawner,
+    /// The owned points of the agent (`api.rs`): the runner emits through it, so a test core and
+    /// an app each have their own registry.
+    pub points: Points,
 }
 
 impl Shared {
@@ -313,18 +317,29 @@ impl AgentSessions {
         Self::with_probe(timing, Arc::new(CliMcpProbe))
     }
 
+    /// The registry the agent emits its points through (`api.rs`).
+    pub fn points(&self) -> &Points {
+        &self.shared.points
+    }
+
     /// [`Self::with_timing`] with another MCP re-check (tests).
     pub fn with_probe(timing: Timing, probe: Arc<dyn McpProbe>) -> Self {
-        Self::build(timing, Spawner::detached(), probe).expect("spawn agent threads")
+        Self::build(timing, Spawner::detached(), probe, Points::default())
+            .expect("spawn agent threads")
     }
 
     /// The idle reaper and the config worker start on `spawn`; an `Err` (no thread) fails the
     /// construction. Every later thread and child process of a chat starts there too.
-    pub fn with_spawner(timing: Timing, spawn: Spawner) -> Result<Self, String> {
-        Self::build(timing, spawn, Arc::new(CliMcpProbe))
+    pub fn with_spawner(timing: Timing, spawn: Spawner, points: Points) -> Result<Self, String> {
+        Self::build(timing, spawn, Arc::new(CliMcpProbe), points)
     }
 
-    fn build(timing: Timing, spawn: Spawner, probe: Arc<dyn McpProbe>) -> Result<Self, String> {
+    fn build(
+        timing: Timing,
+        spawn: Spawner,
+        probe: Arc<dyn McpProbe>,
+        points: Points,
+    ) -> Result<Self, String> {
         let (config_tx, config_rx) = channel();
         let shared = Arc::new(Shared {
             procs: Arc::new(ProcManager::default()),
@@ -335,6 +350,7 @@ impl AgentSessions {
             changes: Arc::new(ChangeStore::default()),
             config_tx: Mutex::new(config_tx.clone()),
             spawn: spawn.clone(),
+            points,
         });
         let weak: Weak<Shared> = Arc::downgrade(&shared);
         let worker = Worker {

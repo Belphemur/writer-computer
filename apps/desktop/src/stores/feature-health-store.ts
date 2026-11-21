@@ -42,6 +42,9 @@ interface FeatureHealthState {
   /** Features whose Rust half Rust reports started; `null` until the first report (until then
    *  every feature counts as started: at launch Rust starts them before any window loads). */
   started: Record<string, true> | null;
+  /** `features:started` / `features:stopped` that arrived before the first status: replayed over
+   *  the snapshot, which may be older than they are. Empty once the status came. */
+  pendingLifecycle: { id: string; up: boolean }[];
   /** What each busy feature is doing, from the last status. */
   busy: Record<string, string>;
   /** Notices the user closed, by `<kind>:<id>`. */
@@ -68,6 +71,7 @@ export const useFeatureHealth = create<FeatureHealthState>()((set, get) => ({
   crashDisabled: [],
   safeMode: false,
   started: null,
+  pendingLifecycle: [],
   busy: {},
   dismissed: {},
 
@@ -96,22 +100,35 @@ export const useFeatureHealth = create<FeatureHealthState>()((set, get) => ({
         failures[f.id] = { boundary: f.boundary, at: f.at, count: FAILURE_LIMIT };
         sessionOff[f.id] = true;
       }
+      const started: Record<string, true> = Object.fromEntries(
+        (status.started ?? []).map((id) => [id, true as const]),
+      );
+      // what Rust announced while the status was in flight is newer than the snapshot
+      for (const { id, up } of s.pendingLifecycle) {
+        if (up) started[id] = true;
+        else delete started[id];
+      }
       return {
         safeMode: status.safeMode,
         crashDisabled: status.crashDisabled,
         failures,
         sessionOff,
-        started: Object.fromEntries((status.started ?? []).map((id) => [id, true as const])),
+        started,
+        pendingLifecycle: [],
         busy: Object.fromEntries((status.busy ?? []).map((b) => [b.id, b.reason])),
       };
     }),
 
   markStarted: (id) =>
-    set((s) => (s.started ? { started: { ...s.started, [id]: true as const } } : s)),
+    set((s) =>
+      s.started
+        ? { started: { ...s.started, [id]: true as const } }
+        : { pendingLifecycle: [...s.pendingLifecycle, { id, up: true }] },
+    ),
 
   markStopped: (id) =>
     set((s) => {
-      if (!s.started) return s;
+      if (!s.started) return { pendingLifecycle: [...s.pendingLifecycle, { id, up: false }] };
       const started = { ...s.started };
       delete started[id];
       return { started };

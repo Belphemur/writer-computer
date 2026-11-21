@@ -22,7 +22,7 @@
 //! the feature's scope (`scope.manage`) from `start`: the vaults' cadence state, the "stopped" and
 //! "committing" flags. The ticker is a scope thread (it sleeps on the scope's token), the watcher
 //! observer is `scope.observe`d and the point extensions are retracted when the scope stops
-//! (`FeatureScope::shutdown` retracts every point the feature id extended); the observer and the
+//! (the lifecycle retracts every point the feature id extended); the observer and the
 //! points call back into `Vaults`, which answers nothing after `shutdown()`. Busy is "a commit is
 //! in progress". No static holds feature state and no raw thread is started.
 //!

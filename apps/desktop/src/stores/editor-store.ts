@@ -96,7 +96,14 @@ interface EditorState {
   openFileAsTextInNewTab: (path: string) => Promise<void>;
   openNewTab: () => void;
   ensureLauncherTab: () => void;
-  openOrFocus: (match: (tab: Tab) => boolean, factory: () => Tab) => void;
+  /** Focuses the tab `match` finds, else adds the one `factory` makes. `activate: false` is the
+   *  background open (middle click, Cmd+click): an existing tab is left as it is and a new one is
+   *  appended behind the active tab, which keeps its place (a launcher tab is not replaced). */
+  openOrFocus: (
+    match: (tab: Tab) => boolean,
+    factory: () => Tab,
+    options?: { activate?: boolean },
+  ) => void;
   replaceTabWithFile: (tabId: string, path: string) => Promise<void>;
   /**
    * Shows `location` in tab `tabId`, keeping the old one in the back history (a file switching
@@ -212,12 +219,10 @@ export function createPluginFileTab(
   return { id, location: { kind: "plugin-file", ...target }, back: [], forward: [] };
 }
 
-/** A tab for the version history of a file (`path` absolute), on version `rev` when given. */
-export function createGitHistoryTab(
-  target: { path: string; rev?: string; version?: boolean },
-  id = createTabId(),
-): Tab {
-  return { id, location: { kind: "git-history", ...target }, back: [], forward: [] };
+/** A tab for `location`, whatever its kind: what the page-kind registry opens generically
+ *  (`openLocationTab`), so a new page kind needs no `create*Tab` of its own. */
+export function createTab(location: Location, id = createTabId()): Tab {
+  return { id, location, back: [], forward: [] };
 }
 
 /** A tab for the diff of a chat's changed notes, scrolled to `focus`. */
@@ -690,13 +695,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  openOrFocus: (match, factory) => {
+  openOrFocus: (match, factory, options) => {
     const state = get();
+    const activate = options?.activate ?? true;
     const existing = state.tabs.find(match);
     if (existing) {
-      if (existing.id !== state.activeTabId) {
+      if (activate && existing.id !== state.activeTabId) {
         state.setActiveTab(existing.id);
       }
+      return;
+    }
+    if (!activate) {
+      set((current) => ({ tabs: [...current.tabs, factory()] }));
       return;
     }
     const activeTab = getActiveTab(state);

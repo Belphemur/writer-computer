@@ -7,7 +7,7 @@
   "activation": ["onStartup"],
   "memory": {
     "level": "low",
-    "note": "Nothing is loaded until a note is open; a check runs in a short Rust call a moment after you stop typing. The Rust part needs a restart to start or stop."
+    "note": "Nothing is loaded until a note is open; a check runs in a short Rust call a moment after you stop typing."
   },
   "rust": {
     "commands": ["lint_check", "lint_fix"],

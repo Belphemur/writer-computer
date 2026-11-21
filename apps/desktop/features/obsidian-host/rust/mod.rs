@@ -70,9 +70,9 @@ pub fn manifest() -> Manifest {
     serde_json::from_str(MANIFEST).expect("obsidian-host feature.json parses")
 }
 
-/// May the plugin host run now (the switch is on, no failure, not in safe mode)?
+/// May the plugin host run now (started, no failure, not in safe mode: `features::is_live`)?
 pub fn is_live<R: Runtime>(app: &AppHandle<R>) -> bool {
-    features::is_live(app, &manifest())
+    features::is_live(app, &manifest().id)
 }
 
 /// The app's invoke handler with the host's commands gated by the feature.
@@ -160,7 +160,7 @@ mod tests {
                 true
             }))
             .setup(move |app| {
-                install_features(app.handle(), vec![], &settings);
+                install_features(app.handle(), vec![&ObsidianHost], &settings);
                 Ok(())
             })
             .build(test_context())
@@ -178,6 +178,8 @@ mod tests {
             dir,
             &[("features.obsidian-host.enabled", on)],
         ));
+        // what the Settings page does after the write: the host starts or stops to match
+        crate::features::settings_written(app.handle(), "features.obsidian-host.enabled");
     }
 
     #[test]
@@ -202,7 +204,7 @@ mod tests {
         get_ipc_response(&w, request("read_file", serde_json::json!({}))).unwrap();
         assert_eq!(CALLS.load(Ordering::SeqCst), before + 2);
 
-        // switched on: applies at once (the setting is read live)
+        // switched on: applies at once (the lifecycle starts the host)
         set_switch(&app, dir.path(), true);
         assert!(is_live(app.handle()));
         get_ipc_response(&w, request("plugins_state", serde_json::json!({}))).unwrap();

@@ -13,9 +13,8 @@
 //! - the `writer-bases` agent skill (sources in `../skills/writer-bases/`), contributed to the
 //!   managed skills.
 //!
-//! Switch off (`features.bases.enabled`): at launch the plugin is not added (its commands are
-//! "plugin not found" until the next launch, the Rust part needs a restart like the agent's);
-//! the web half goes at once. The contributions are read whatever the switch says (the CLI and
+//! Switch off (`features.bases.enabled`): its commands answer `FeatureUnavailable` while it is not
+//! started (the plugin is added at launch whatever the switch), and the web half goes at once. The contributions are read whatever the switch says (the CLI and
 //! the sync are separate readers of the table, `features::Feature`), and each honours the switch
 //! itself: a `writer base*` command answers that the feature is off
 //! (`cli::feature_off`), and the skill sync leaves `writer-bases` as it is, installing nothing

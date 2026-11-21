@@ -53,8 +53,7 @@ fn with_global_settings_mut<T>(
     let (enabled, email) = crate::telemetry::settings_snapshot(settings);
     crate::telemetry::apply_settings(enabled, email);
     crate::logging::apply_level_setting(crate::logging::level_setting(settings).as_deref());
-    crate::features::code_files::apply(settings);
-    crate::features::icons::apply(settings);
+    crate::features::apply_settings(settings);
     Ok(result)
 }
 
@@ -65,8 +64,7 @@ fn init_window_settings_at(
 ) -> Result<(), AppError> {
     let _global_guard = app_state.global_settings_file_lock.lock();
     let settings = Settings::new(config_dir).map_err(|error| AppError::Io(error.to_string()))?;
-    crate::features::code_files::apply(&settings);
-    crate::features::icons::apply(&settings);
+    crate::features::apply_settings(&settings);
     *state.settings.write() = Some(settings);
     Ok(())
 }

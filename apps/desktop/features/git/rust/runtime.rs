@@ -530,7 +530,7 @@ pub fn start_ticker<R: Runtime>(app: &AppHandle<R>) {
                 Some(v) if !v.stopped() => {}
                 _ => break,
             }
-            if crate::features::is_live_id(&handle, ID) {
+            if crate::features::is_live(&handle, ID) {
                 tick(&handle, Instant::now());
             }
         }

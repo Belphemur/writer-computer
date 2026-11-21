@@ -33,7 +33,7 @@ use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::{Author, SubTracker};
 use super::subagents::{is_launch_tool, resolve_launch};
-use crate::features::points;
+use crate::features::points::Points;
 use crate::features::scope::{CancelToken, Spawner};
 use crate::plugin_proc::{Emit, Prepared, ProcEvent, ProcManager, Sig};
 use base64::Engine as _;
@@ -278,6 +278,12 @@ struct Inner {
     turn_active: bool,
     /// The model the last usage report named for this turn (handed to `agent.turn-finished`).
     turn_model: Option<String>,
+    /// The distinct models the turn's sub-agents run on (first launch first), handed to
+    /// `agent.turn-finished` after the main model.
+    sub_models: Vec<String>,
+    /// This chat is between "an idle send decided to start a turn" and "its message is queued":
+    /// a second concurrent send sees it and does not announce the same turn again.
+    turn_starting: bool,
     queue: VecDeque<Outgoing>,
     inflight: Vec<Outgoing>,
     /// Messages written mid-turn (steers and queued lines) that the CLI has not acknowledged yet:
@@ -319,6 +325,8 @@ pub struct Session {
     procs: Arc<ProcManager>,
     ports: Arc<AgentPorts>,
     changes: Arc<ChangeStore>,
+    /// The agent's owned points (`api.rs`): `turn-started` and `turn-finished` go through it.
+    points: Points,
     timing: Timing,
     pub(crate) log: Arc<EventLog>,
     /// Counted toward the per-window cap (set under `Shared::gate`).
@@ -460,6 +468,7 @@ impl Session {
             procs,
             ports: Arc::clone(&shared.ports),
             changes: Arc::clone(&shared.changes),
+            points: shared.points.clone(),
             timing: shared.timing,
             log,
             live: AtomicBool::new(false),
@@ -502,6 +511,8 @@ impl Session {
                 pending: HashMap::new(),
                 turn_active: false,
                 turn_model: None,
+                sub_models: Vec::new(),
+                turn_starting: false,
                 queue: VecDeque::new(),
                 inflight: Vec::new(),
                 unechoed: Vec::new(),
@@ -840,7 +851,7 @@ impl Session {
         let mut captures: Vec<(String, Value, Option<Author>)> = Vec::new();
         let mut closed: Option<ClosedTurn> = None;
         // a turn ended on this line (the model of its usage report, if any): `agent.turn-finished`
-        let mut turn_over: Option<Option<String>> = None;
+        let mut turn_over: Option<Vec<String>> = None;
         // an edit call ended: the session's counts may have changed
         let mut edit_ended = false;
         {
@@ -910,6 +921,11 @@ impl Session {
                             let inherited =
                                 g.session_model.as_deref().or(g.settings.model.as_deref());
                             if let Some(launch) = resolve_launch(input, &g.agent_tiers, inherited) {
+                                if let Some(m) = launch.model.as_ref() {
+                                    if !g.sub_models.contains(m) {
+                                        g.sub_models.push(m.clone());
+                                    }
+                                }
                                 extra.push(AgentEvent::SubagentStarted {
                                     tool_call_id: tool_call_id.clone(),
                                     role: launch.role,
@@ -957,7 +973,14 @@ impl Session {
                         let keep_open = *reason == TurnFinishReason::Completed && g.subs.busy();
                         g.background_open = keep_open;
                         if !keep_open {
-                            turn_over = Some(g.turn_model.take());
+                            let main = g.turn_model.take();
+                            let mut models: Vec<String> = main.into_iter().collect();
+                            for m in std::mem::take(&mut g.sub_models) {
+                                if !models.contains(&m) {
+                                    models.push(m);
+                                }
+                            }
+                            turn_over = Some(models);
                             // a run that never got its end signal ends with the last turn
                             extra.extend(g.subs.end_running(SubagentRunStatus::Interrupted));
                             self.changes.commands_ended(&self.chat_id, Instant::now());
@@ -1006,8 +1029,8 @@ impl Session {
                 self.log.push(AgentEvent::TurnChanges(summary));
             }
         }
-        if let Some(model) = turn_over {
-            self.emit_turn_finished(finished_summary.as_ref(), model);
+        if let Some(models) = turn_over {
+            self.emit_turn_finished(finished_summary.as_ref(), models);
         }
         if edit_ended || ended_turn {
             self.push_session_changes();
@@ -1030,8 +1053,9 @@ impl Session {
 
     /// Tells the features that extend `agent.turn-finished` (`api.rs`) that a turn is over. With
     /// no contributor nothing happens (not even the title read). Call it without the lock.
-    fn emit_turn_finished(&self, summary: Option<&TurnChangesSummary>, model: Option<String>) {
-        if points::contributors(api::TURN_FINISHED.id) == 0 {
+    fn emit_turn_finished(&self, summary: Option<&TurnChangesSummary>, models: Vec<String>) {
+        let points = &self.points;
+        if points.contributors(api::TURN_FINISHED.id) == 0 {
             return;
         }
         let files = summary
@@ -1055,7 +1079,7 @@ impl Session {
         let title = chat_store::load(&self.root, &self.chat_id)
             .ok()
             .map(|(summary, _)| summary.title);
-        points::emit(
+        points.emit(
             &api::TURN_FINISHED,
             &api::TurnFinished {
                 root: self.root.clone(),
@@ -1063,7 +1087,7 @@ impl Session {
                 turn_id: summary.map(|s| s.turn_id.clone()),
                 title,
                 backend: api::BACKEND_CLAUDE.to_string(),
-                models: model.into_iter().collect(),
+                models,
                 files,
             },
         );
@@ -1490,7 +1514,7 @@ impl Session {
         }
         // the process died under a turn that is not resumed: it is over
         if had_turn && respawn.is_none() {
-            self.emit_turn_finished(summary.as_ref(), None);
+            self.emit_turn_finished(summary.as_ref(), Vec::new());
         }
         if ended_card {
             self.push_session_changes();
@@ -1643,13 +1667,17 @@ impl Session {
     /// Queue the user's message; it is written now when idle, after the running turn
     /// otherwise, and the process is started first when there is none.
     pub(crate) fn send(self: &Arc<Self>, out: Outgoing) -> Result<(), SpawnError> {
-        // an idle chat's message starts a turn: `agent.turn-started` (may block, no lock held)
+        // an idle chat's message starts a turn: `agent.turn-started` (may block, no lock held).
+        // The decision is made and recorded under the lock, so of two concurrent sends to an
+        // idle chat exactly one announces the turn.
         let starts_turn = {
-            let g = self.inner.lock();
-            !g.terminal && !self.is_busy(&g)
+            let mut g = self.inner.lock();
+            let idle = !g.terminal && !self.is_busy(&g) && !g.turn_starting;
+            g.turn_starting |= idle;
+            idle
         };
         if starts_turn {
-            points::emit(
+            self.points.emit(
                 &api::TURN_STARTED,
                 &api::TurnStarted {
                     root: self.root.clone(),
@@ -1659,10 +1687,12 @@ impl Session {
         }
         let need_process = {
             let mut g = self.inner.lock();
+            // from here the message is in the queue (or refused), so the chat reads as busy
+            g.turn_starting &= !starts_turn;
             if g.terminal {
                 if starts_turn {
                     drop(g);
-                    self.emit_turn_finished(None, None);
+                    self.emit_turn_finished(None, Vec::new());
                     return Err(SpawnError::Ended);
                 }
                 return Err(SpawnError::Ended);
@@ -1692,7 +1722,7 @@ impl Session {
                 self.log.push(e.to_event());
                 drop(g);
                 if starts_turn {
-                    self.emit_turn_finished(None, None);
+                    self.emit_turn_finished(None, Vec::new());
                 }
             }
         }

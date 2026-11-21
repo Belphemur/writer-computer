@@ -15,7 +15,7 @@
 //! - [`FeatureScope::manage`] / [`FeatureScope::state`]: the feature's state, dropped on stop (it
 //!   replaces feature-level statics and `Lazy` state: a static can never be dropped);
 //! - points a feature extends (`features::points::extend`, contributor = the feature id) are
-//!   retracted by the scope when it stops;
+//!   retracted by the lifecycle when it stops (`lifecycle::release`);
 //! - [`FeatureScope::on_stop`]: a closure for what has no kind of its own (a flush);
 //! - [`FeatureScope::adopt`]: a manager that owns its resources itself (a process table, a stream
 //!   registry) is counted in the census and stopped through `on_stop`;
@@ -603,8 +603,6 @@ impl Inner {
                 log::error!("feature {}: a stop closure panicked", self.id);
             }
         }
-        // the points the feature extended (`features::points`) go with it
-        super::points::retract(&self.id);
         // 3. process groups
         let cells: Vec<_> = self.parts.lock().processes.clone();
         for c in &cells {

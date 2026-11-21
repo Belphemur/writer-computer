@@ -58,7 +58,7 @@ impl Host for TauriHost {
     }
 
     fn feature_live(&self, id: &str) -> bool {
-        features::is_live_id(&self.app, id)
+        features::is_live(&self.app, id)
     }
 
     fn command_panicked(&self, feature: Option<&'static str>) {

@@ -30,10 +30,11 @@ use crate::agent::project_context::ProjectLibrary;
 use crate::agent::session::{AgentSessions, Timing};
 use crate::cli::registry::CommandSpec;
 use crate::error::AppError;
+use crate::features::points::Points;
 use crate::features::scope::{FeatureScope, Kind};
 use crate::features::{self, Feature, InvokeHandler};
 use std::sync::Arc;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 pub struct Agent;
 
@@ -67,9 +68,10 @@ impl<R: Runtime> Feature<R> for Agent {
         cli::COMMANDS
     }
 
-    fn start(&self, _app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
+    fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
         // Agent projects: the runner resolves cwd and the appended system prompt through this port.
-        let state = AgentSessions::with_spawner(Timing::default(), scope.spawner())?;
+        let points = app.state::<Points>().inner().clone();
+        let state = AgentSessions::with_spawner(Timing::default(), scope.spawner(), points)?;
         state.ports().set_project(Arc::new(ProjectLibrary));
         let sessions = scope.manage(state);
         // What the scope counts, stops and reports, without keeping the state alive past its stop.

@@ -61,6 +61,10 @@ export interface PageKindInput<K extends string, L extends { kind: K }> {
    *  store (`openFiles`)? Default: `true`. Kinds that render a path another way
    *  (a `.base` table) set `false`, so the store never reads it as text. */
   loadsDocument?: boolean;
+  /** What makes two opens of this kind the same tab: opening a location whose key equals an open
+   *  tab's focuses that tab and re-targets it (`openLocationTab`). Default: none, every open is a
+   *  new tab (a file's tab is found by its path elsewhere). */
+  tabKey?: (location: L) => string | undefined;
   /** The built-in feature that supplies this kind's view (`feature.json` id). While it is not
    *  running the kind claims no path (`locationForPath` leaves the file to the text kinds) and an
    *  already open tab shows the "turned off" page instead of the view. Default: core's own. */
@@ -92,6 +96,7 @@ export interface PageKind<K extends string = string, L extends { kind: K } = { k
   serialize: (location: L) => object | null;
   forPath: (path: string) => L | null;
   loadsDocument: boolean;
+  tabKey: (location: L) => string | undefined;
   feature: string | undefined;
   claimsWhenOff: boolean;
 }
@@ -130,6 +135,7 @@ export function definePageKind<K extends string, L extends { kind: K }>(
     serialize: () => ({}),
     forPath: () => null,
     loadsDocument: true,
+    tabKey: () => undefined,
     feature: undefined,
     claimsWhenOff: false,
     ...input,

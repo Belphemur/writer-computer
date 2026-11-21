@@ -2,7 +2,9 @@
 //! owning scope, with leak guardrails"; spec `SPECs/builtin-plugins-spec.md` section 4).
 //!
 //! One start path and one stop path serve launch, the toggle in Settings > Features, "Turn back
-//! on" after a failure, safe mode (nothing starts) and a failure (the feature is stopped):
+//! on" after a failure, safe mode (nothing starts) and a failure (the feature is stopped). All of
+//! them decide through [`reconcile`], which reads the switch, the failure and "started" under
+//! the toggle lock, so two writes of a switch never leave a feature running that is switched off:
 //!
 //! - [`start_feature`] gives the feature a fresh [`FeatureScope`], runs [`Feature::start`] under
 //!   [`guard`], then hands it `on_workspace_open` for every window that has a workspace, and
@@ -19,7 +21,7 @@
 //! path calls [`settings_written`] after the write is done).
 
 use super::scope::{self, Counts, FeatureScope, JOIN_WAIT};
-use super::{containment, fail, guard, id_of, is_enabled, Boundary, Feature, Manifest, WindowCtx};
+use super::{containment, fail, guard, id_of, switch_of, Boundary, Feature, Manifest, WindowCtx};
 use crate::state::AppState;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -206,8 +208,10 @@ fn hook_open<R: Runtime>(
 }
 
 /// Starts feature `f`: a fresh scope, `start` under [`guard`], `on_workspace_open` for every
-/// open window, `features:started`. Already started is `Ok`. A failure (an `Err` or a panic)
-/// stops what the partial start created and marks the feature failed for the session.
+/// open window, `features:started`. Already started is `Ok`. A failure (an `Err`, a panic, or a
+/// failure raised by one of its threads before `start` returned) stops what the partial start
+/// created and leaves the feature failed for the session.
+#[cfg_attr(not(test), allow(dead_code))] // the explicit path of tests; the app goes through `reconcile`
 pub fn start_feature<R: Runtime>(
     app: &AppHandle<R>,
     f: &'static dyn Feature<R>,
@@ -237,11 +241,20 @@ fn start_locked<R: Runtime>(
         })),
     );
     let outcome = guard(app, &id, Boundary::Setup, || f.start(app, &scope)).and_then(|r| r);
+    let outcome = outcome.and_then(|()| {
+        // a scope thread may have failed the feature while `start` was still running
+        if is_failed(app, &id) {
+            Err(format!("feature {id} failed while it was starting"))
+        } else {
+            Ok(())
+        }
+    });
     if let Err(e) = outcome {
         // what the partial start created goes with it
-        scope.shutdown(JOIN_WAIT);
+        release(app, &id, &scope);
+        let _ = guard(app, &id, Boundary::Stop, || f.off());
         // a panic was announced by the guard; a plain error is announced here
-        if !e.starts_with("panic in ") {
+        if !e.starts_with("panic in ") && !is_failed(app, &id) {
             fail(app, &id, "setup", false);
         }
         return Err(e);
@@ -258,8 +271,20 @@ fn start_locked<R: Runtime>(
     Ok(())
 }
 
+/// Everything a feature's start created goes: its scope (threads, processes, state) and what it
+/// extended through the points.
+fn release<R: Runtime>(app: &AppHandle<R>, id: &str, scope: &FeatureScope) {
+    scope.shutdown(JOIN_WAIT);
+    super::points::retract(app, id);
+}
+
+fn is_failed<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
+    containment(app).is_some_and(|c| c.is_failed(id))
+}
+
 /// Stops feature `id`. `graceful` runs `on_workspace_close` for every open window and
 /// [`Feature::stop`] first (a failed feature skips them: it is not trusted to run code).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn stop_feature<R: Runtime>(app: &AppHandle<R>, id: &str, graceful: bool) {
     let Some(r) = running(app) else { return };
     let _toggle = r.toggle.lock();
@@ -282,7 +307,8 @@ fn stop_locked<R: Runtime>(app: &AppHandle<R>, r: &Running<R>, id: &str, gracefu
         }
         let _ = guard(app, id, Boundary::Stop, || live.feature.stop(app));
     }
-    live.scope.shutdown(JOIN_WAIT);
+    release(app, id, &live.scope);
+    let _ = guard(app, id, Boundary::Stop, || live.feature.off());
     announce(app, STOPPED_EVENT, id);
     let settle = *r.settle.lock();
     let (handle, id) = (app.clone(), id.to_string());
@@ -318,15 +344,12 @@ fn leaked<R: Runtime>(
 /// A feature failed in Rust: its scope is released (no hooks, no `stop`) off the failing thread,
 /// since the failure may be raised from inside a hook or a scope thread.
 pub(super) fn stop_after_failure<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    if !is_started(app, id) {
-        return;
-    }
+    let Some(f) = feature_of(app, id) else { return };
     let (app, id) = (app.clone(), id.to_string());
     let spawned = std::thread::Builder::new()
         .name("feature-failed-stop".into())
-        .spawn({
-            let id = id.clone();
-            move || stop_feature(&app, &id, false)
+        .spawn(move || {
+            let _ = reconcile(&app, f, Trigger::Failure);
         });
     if let Err(e) = spawned {
         log::warn!("feature {id}: could not release its scope after the failure: {e}");
@@ -337,6 +360,70 @@ fn manifest_of<R: Runtime>(f: &dyn Feature<R>) -> Option<Manifest> {
     f.manifest().ok()
 }
 
+fn feature_of<R: Runtime>(app: &AppHandle<R>, id: &str) -> Option<&'static dyn Feature<R>> {
+    running(app)?
+        .all
+        .iter()
+        .copied()
+        .find(|f| manifest_of(*f).is_some_and(|m| m.id == id))
+}
+
+/// Why [`reconcile`] runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Trigger {
+    /// App launch: the caller already chose the feature by its switch (the settings read lock is
+    /// held, so the switch is not read again).
+    Launch,
+    /// The user wrote the feature's switch: turning it on also forgets a failure and the strikes
+    /// ("Turn back on").
+    Setting,
+    /// The feature failed: it is released, whatever its switch says.
+    Failure,
+}
+
+/// Brings feature `f` to the state its switch, a failure and safe mode ask for, deciding under
+/// the toggle lock: the switch, the failure and "started" are read inside it, so concurrent
+/// callers (two writes, a failure during a toggle) always end in a state that matches the last
+/// reading. The one function that starts or stops a feature other than the explicit
+/// [`start_feature`] and [`stop_feature`] calls of tests and hosts.
+pub(super) fn reconcile<R: Runtime>(
+    app: &AppHandle<R>,
+    f: &'static dyn Feature<R>,
+    trigger: Trigger,
+) -> Result<(), String> {
+    let Some(r) = running(app) else {
+        return Err("features are not installed".into());
+    };
+    let Some(manifest) = manifest_of(f) else {
+        return Ok(());
+    };
+    let id = manifest.id.clone();
+    let _toggle = r.toggle.lock();
+    let safe = containment(app).is_some_and(|c| c.is_safe_mode());
+    let on = match trigger {
+        Trigger::Launch => true,
+        _ => switch_of(app, &manifest),
+    };
+    let started = r.is_started(&id);
+    let mut failed = is_failed(app, &id);
+    let failed_before = failed;
+    if trigger == Trigger::Setting && on && !safe && (failed || !started) {
+        if let Some(c) = containment(app) {
+            c.forget(&id);
+        }
+        failed = false;
+    }
+    let want = on && !safe && !failed;
+    if started && (!want || failed_before) {
+        // a failed feature is not trusted to run code: no hooks, no `stop`
+        stop_locked(app, &r, &id, !failed_before);
+    }
+    if want && (!started || failed_before) {
+        return start_locked(app, &r, f);
+    }
+    Ok(())
+}
+
 /// Starts each feature in `features` (the caller already chose them by their switch). Returns
 /// the id and reason of those that failed, for the log and the tests.
 pub(super) fn start_planned<R: Runtime>(
@@ -345,7 +432,7 @@ pub(super) fn start_planned<R: Runtime>(
 ) -> Vec<(String, String)> {
     let mut failed = Vec::new();
     for f in features {
-        if let Err(e) = start_feature(app, f) {
+        if let Err(e) = reconcile(app, f, Trigger::Launch) {
             failed.push((id_of(f), e));
         }
     }
@@ -362,47 +449,10 @@ pub fn settings_written<R: Runtime>(app: &AppHandle<R>, key: &str) {
     else {
         return;
     };
-    let Some(r) = running(app) else { return };
-    let Some(f) = r
-        .all
-        .iter()
-        .copied()
-        .find(|f| manifest_of(*f).is_some_and(|m| m.id == id))
-    else {
-        return;
-    };
-    let Some(manifest) = manifest_of(f) else {
-        return;
-    };
-    if containment(app).is_some_and(|c| c.is_safe_mode()) {
-        return;
+    let Some(f) = feature_of(app, id) else { return };
+    if let Err(e) = reconcile(app, f, Trigger::Setting) {
+        log::error!("feature {id} could not start: {e}");
     }
-    if switched_on(app, &manifest) {
-        if !r.is_started(id) {
-            if let Some(c) = containment(app) {
-                c.forget(id);
-            }
-            if let Err(e) = start_feature(app, f) {
-                log::error!("feature {id} could not start: {e}");
-            }
-        }
-    } else {
-        stop_feature(app, id, true);
-    }
-}
-
-/// The switch, read live from the global settings.
-fn switched_on<R: Runtime>(app: &AppHandle<R>, manifest: &Manifest) -> bool {
-    let Some(state) = app
-        .try_state::<AppState>()
-        .and_then(|s| s.get(crate::MAIN_WINDOW_LABEL))
-    else {
-        return manifest.enabled_by_default;
-    };
-    let settings = state.settings.read();
-    settings
-        .as_ref()
-        .map_or(manifest.enabled_by_default, |s| is_enabled(s, manifest))
 }
 
 fn run_hooks<R: Runtime>(

@@ -129,6 +129,98 @@ struct Harness {
     cursor: usize,
 }
 
+/// The sub-agents' models join the turn's: `agent.turn-finished` names the main model first, then
+/// each distinct sub-agent model (here the worker tier runs on another model than the chat).
+#[test]
+fn a_turn_with_a_sub_agent_on_another_model_names_both_models() {
+    use crate::agent::api;
+    use std::sync::{Arc, Mutex};
+
+    let mut h = Harness::new(&["subagent-edit"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+    h.use_fixture_for("subagent-edit", &notes);
+    let models: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
+    let (log, mine) = (Arc::clone(&models), h.root.clone());
+    h.sessions
+        .points()
+        .extend_raw(&api::TURN_FINISHED, "probe-models", move |a| {
+            if a.root == mine {
+                log.lock().unwrap().push(a.models.clone());
+            }
+        });
+    let mut p = h.params(CHAT, "w", None);
+    p.request
+        .settings
+        .tier_models
+        .insert("standard".into(), Some("opus".into()));
+    h.sessions.start(p).unwrap();
+    h.send(CHAT, "edit it");
+    h.next(CHAT, "the launch announced", |e| {
+        matches!(e, AgentEvent::SubagentStarted { .. })
+    });
+    h.go();
+    h.wait_until("the turn's end reached the point", || {
+        !models.lock().unwrap().is_empty()
+    });
+    let seen = models.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![vec!["claude-sonnet-5-5".to_string(), "opus".to_string()]]
+    );
+}
+
+/// Two sends racing to an idle chat announce one turn between them (the decision is taken under
+/// the chat's lock), and every turn that was announced ends.
+#[test]
+fn concurrent_sends_to_an_idle_chat_announce_one_turn() {
+    use crate::agent::api;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    for _ in 0..5 {
+        let h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+        let (started, finished) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+        let (s, mine) = (Arc::clone(&started), h.root.clone());
+        h.sessions
+            .points()
+            .extend_raw(&api::TURN_STARTED, "probe-started", move |a| {
+                if a.root == mine {
+                    // a contributor may block: the other send must not slip a second start in
+                    std::thread::sleep(Duration::from_millis(50));
+                    s.fetch_add(1, Ordering::SeqCst);
+                }
+            });
+        let (f, mine) = (Arc::clone(&finished), h.root.clone());
+        h.sessions
+            .points()
+            .extend_raw(&api::TURN_FINISHED, "probe-finished", move |a| {
+                if a.root == mine {
+                    f.fetch_add(1, Ordering::SeqCst);
+                }
+            });
+        h.start(CHAT);
+        let barrier = Barrier::new(2);
+        std::thread::scope(|scope| {
+            for text in ["first", "second"] {
+                let (sessions, barrier) = (&h.sessions, &barrier);
+                scope.spawn(move || {
+                    barrier.wait();
+                    sessions.send("w", CHAT, text.into(), &[]).expect("send");
+                });
+            }
+        });
+        h.wait_until("a turn ended", || finished.load(Ordering::SeqCst) >= 1);
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            started.load(Ordering::SeqCst),
+            1,
+            "one announced turn (finished: {})",
+            finished.load(Ordering::SeqCst)
+        );
+    }
+}
+
 fn test_timing() -> Timing {
     Timing {
         cancel_grace: Duration::from_millis(500),
@@ -1938,7 +2030,6 @@ fn a_turn_that_edits_a_vault_file_ends_with_a_turn_changes_event_and_undo_works(
 #[test]
 fn a_turn_announces_its_start_and_end_through_the_agent_points() {
     use crate::agent::api::{self, FileChangeKind};
-    use crate::features::points;
     use std::sync::{Arc, Mutex};
 
     let mut h = Harness::new(&["permission-allow"], "normal");
@@ -1961,26 +2052,30 @@ fn a_turn_announces_its_start_and_end_through_the_agent_points() {
     let seen: Arc<Mutex<Vec<String>>> = Arc::default();
     let root = h.root.clone();
     let (log, mine) = (Arc::clone(&seen), root.clone());
-    points::extend_raw(&api::TURN_STARTED, "probe-started", move |a| {
-        if a.root == mine {
-            log.lock().unwrap().push(format!("started {}", a.chat_id));
-        }
-    });
+    h.sessions
+        .points()
+        .extend_raw(&api::TURN_STARTED, "probe-started", move |a| {
+            if a.root == mine {
+                log.lock().unwrap().push(format!("started {}", a.chat_id));
+            }
+        });
     let (log, mine) = (Arc::clone(&seen), root);
-    points::extend_raw(&api::TURN_FINISHED, "probe-finished", move |a| {
-        if a.root == mine {
-            let files: Vec<String> = a
-                .files
-                .iter()
-                .map(|f| format!("{:?}:{}", f.kind, f.path))
-                .collect();
-            log.lock().unwrap().push(format!(
-                "finished {} {} {:?} {:?}",
-                a.chat_id, a.backend, a.models, files
-            ));
-            assert!(a.files.iter().all(|f| f.kind == FileChangeKind::Edit));
-        }
-    });
+    h.sessions
+        .points()
+        .extend_raw(&api::TURN_FINISHED, "probe-finished", move |a| {
+            if a.root == mine {
+                let files: Vec<String> = a
+                    .files
+                    .iter()
+                    .map(|f| format!("{:?}:{}", f.kind, f.path))
+                    .collect();
+                log.lock().unwrap().push(format!(
+                    "finished {} {} {:?} {:?}",
+                    a.chat_id, a.backend, a.models, files
+                ));
+                assert!(a.files.iter().all(|f| f.kind == FileChangeKind::Edit));
+            }
+        });
 
     h.start(CHAT);
     h.send(CHAT, "write it");
@@ -2008,8 +2103,6 @@ fn a_turn_announces_its_start_and_end_through_the_agent_points() {
             .iter()
             .any(|l| l.starts_with("finished"))
     });
-    points::retract("probe-started");
-    points::retract("probe-finished");
 
     let seen = seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 2, "{seen:?}");

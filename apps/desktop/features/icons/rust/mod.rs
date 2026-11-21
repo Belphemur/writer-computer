@@ -9,9 +9,10 @@
 //! - `commands.rs`: `plugin:icons|<command>` (typed through `bindings.rs`): `icons_resolved`,
 //!   `icons_set`, `icons_remove`;
 //! - `cli.rs`: the `icon:set`, `icon:get` and `icon:remove` commands (handlers `cli::cmd_icons`);
-//! - [`apply`], the one place the kill switch becomes the core flag (`commands::settings` calls it
-//!   at startup and after every global write; the CLI calls [`apply_for_cli`]);
-//! - `start`: reports `icons:changed` to the window of a vault when `.writer/icons.json` or
+//! - the core flag follows the feature's life: `start` sets it, `off` (the feature is not running:
+//!   switched off, failed, stopped) clears it, so a failed feature never leaves it on; the CLI
+//!   has no lifecycle and calls [`apply_for_cli`];
+//! - `start` also reports `icons:changed` to the window of a vault when `.writer/icons.json` or
 //!   Iconize's data changes, from the app's one file watcher (`FeatureScope::observe`, removed
 //!   when the feature stops).
 //!
@@ -23,7 +24,6 @@ mod cli;
 mod commands;
 
 use crate::cli::registry::CommandSpec;
-use crate::config::Settings;
 use crate::features::scope::FeatureScope;
 use crate::features::{self, Feature, InvokeHandler, Manifest};
 use std::path::{Path, PathBuf};
@@ -50,6 +50,7 @@ impl<R: Runtime> Feature<R> for Icons {
     }
 
     fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
+        crate::icons::set_enabled(true);
         let handle = app.clone();
         scope
             .observe(Box::new(move |label, root, paths, _own| {
@@ -58,6 +59,10 @@ impl<R: Runtime> Feature<R> for Icons {
                 }
             }))
             .map_err(|e| e.to_string())
+    }
+
+    fn off(&self) {
+        crate::icons::set_enabled(false);
     }
 }
 
@@ -71,11 +76,6 @@ fn is_icons_file(root: &Path, path: &Path) -> bool {
     path == ours || path == root.join(crate::icons::ICONIZE_FILE)
 }
 
-/// Push the kill switch into the core flag (at startup and after every global write).
-pub fn apply(settings: &Settings) {
-    crate::icons::set_enabled(features::is_enabled(settings, &manifest()));
-}
-
 /// The `writer` CLI has no settings layer: it honours the kill switch read from the global
 /// `config` file.
 pub fn apply_for_cli(data_dir: &Path) {
@@ -85,7 +85,6 @@ pub fn apply_for_cli(data_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ConfigValue;
     use crate::features::ipc_tests::{app_with, request};
     use crate::state::AppState;
     use serde_json::json;
@@ -144,6 +143,7 @@ mod tests {
 
     #[test]
     fn every_command_is_allowed_from_main_and_workspace_windows_and_nowhere_else() {
+        let _on = crate::icons::TEST_SWITCH.lock();
         let app = app();
         for cmd in &manifest().rust.commands {
             for label in ["main", "w-1"] {
@@ -166,6 +166,7 @@ mod tests {
 
     #[test]
     fn a_command_without_a_vault_says_so() {
+        let _on = crate::icons::TEST_SWITCH.lock();
         let app = app();
         let err = call(&app, "main", "icons_resolved", json!({})).unwrap_err();
         assert!(err.contains("No workspace"), "{err}");
@@ -173,6 +174,7 @@ mod tests {
 
     #[test]
     fn set_resolve_and_remove_run_over_the_window_vault_and_confine_paths() {
+        let _on = crate::icons::TEST_SWITCH.lock();
         let app = app();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
@@ -242,20 +244,38 @@ mod tests {
     }
 
     #[test]
-    fn the_kill_switch_reaches_the_core_flag_from_the_settings_and_from_the_config_file() {
+    fn the_core_flag_follows_the_feature_and_the_cli_reads_the_config_file() {
         let _lock = crate::icons::TEST_SWITCH.lock();
+        let app = app();
+        let wait = |want: bool| {
+            let start = std::time::Instant::now();
+            while crate::icons::enabled() != want {
+                assert!(
+                    start.elapsed() < std::time::Duration::from_secs(10),
+                    "{want}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        };
+        assert!(crate::icons::enabled(), "started: on");
+        features::fail_for_test(app.handle(), "icons");
+        wait(false);
+        assert!(!features::is_live(app.handle(), "icons"));
+        // "Turn back on": the switch is written again
+        features::settings_written(app.handle(), "features.icons.enabled");
+        assert!(crate::icons::enabled() && features::is_live(app.handle(), "icons"));
+        features::stop_feature(app.handle(), "icons", true);
+        assert!(!crate::icons::enabled(), "stopped: off");
+
         let dir = tempfile::tempdir().unwrap();
-        let mut s = Settings::new(dir.path().to_path_buf()).unwrap();
-        apply(&s);
-        assert!(crate::icons::enabled(), "on by default");
-        s.set_global("features.icons.enabled", ConfigValue::Bool(false))
-            .unwrap();
-        apply(&s);
-        assert!(!crate::icons::enabled());
+        std::fs::write(
+            dir.path().join("config"),
+            "features.icons.enabled = false\n",
+        )
+        .unwrap();
         apply_for_cli(dir.path());
-        assert!(!crate::icons::enabled(), "the CLI reads the same file");
-        s.set_global("features.icons.enabled", ConfigValue::Bool(true))
-            .unwrap();
+        assert!(!crate::icons::enabled(), "the CLI reads the config file");
+        std::fs::write(dir.path().join("config"), "features.icons.enabled = true\n").unwrap();
         apply_for_cli(dir.path());
         assert!(crate::icons::enabled());
     }

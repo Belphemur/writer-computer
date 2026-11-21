@@ -8,6 +8,7 @@ use super::lifecycle::{self, Settle};
 use super::scope::{describe, Kind};
 use super::tests::settings_with;
 use super::*;
+use crate::config::ConfigValue;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -15,6 +16,13 @@ use tauri::test::{mock_builder, MockRuntime};
 use tauri::Listener;
 
 fn app_with(features: Vec<&'static dyn Feature<MockRuntime>>) -> tauri::App<MockRuntime> {
+    app_keeping(features).0
+}
+
+/// [`app_with`] and the settings directory, which a test that writes a switch must keep alive.
+fn app_keeping(
+    features: Vec<&'static dyn Feature<MockRuntime>>,
+) -> (tauri::App<MockRuntime>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let settings = settings_with(dir.path(), &[]);
     let state = AppState::new();
@@ -29,7 +37,22 @@ fn app_with(features: Vec<&'static dyn Feature<MockRuntime>>) -> tauri::App<Mock
         .expect("the app builds");
     app.run_iteration(|_, _| {});
     with_main_window(&app);
-    app
+    (app, dir)
+}
+
+/// Writes feature `id`'s switch the way the Settings page does, then runs the lifecycle's reaction.
+fn write_switch(app: &AppHandle<MockRuntime>, id: &str, on: bool) {
+    let key = format!("features.{id}.enabled");
+    app.state::<AppState>()
+        .get("main")
+        .unwrap()
+        .settings
+        .write()
+        .as_mut()
+        .unwrap()
+        .set_global(&key, ConfigValue::Bool(on))
+        .unwrap();
+    settings_written(app, &key);
 }
 
 fn wait_for(what: &str, cond: impl Fn() -> bool) {
@@ -45,6 +68,8 @@ fn wait_for(what: &str, cond: impl Fn() -> bool) {
 
 #[test]
 fn every_registered_feature_starts_and_stops_twice_and_leaves_nothing_alive() {
+    // the icons and code-files flags are process-wide: stopping them must not race their own tests
+    let _icons = crate::icons::TEST_SWITCH.lock();
     let mut all = registry::<MockRuntime>();
     all.extend(fixture::registry::<MockRuntime>());
     for f in all {
@@ -189,4 +214,167 @@ fn a_leak_after_a_stop_is_checked_later_and_released_builds_force_kill_and_strik
         "three strikes switch the feature off for the session"
     );
     ESCAPEE.store(0, Ordering::SeqCst);
+}
+
+// ---------- one liveness, one reconcile (review fixes 1, 3, 4, 9) ----------
+
+use super::points::{self, Point, Points};
+
+fn wait_stopped(app: &tauri::App<MockRuntime>, id: &str) {
+    wait_for(&format!("{id} released"), || !is_started(app.handle(), id));
+}
+
+/// `is_live` is `is_started` and not failed and not safe mode, for every registered feature
+/// through start, stop, failure and "Turn back on": nothing else decides.
+#[test]
+fn is_live_agrees_with_started_through_start_stop_and_failure_for_every_feature() {
+    let _icons = crate::icons::TEST_SWITCH.lock();
+    let mut all = registry::<MockRuntime>();
+    all.extend(fixture::registry::<MockRuntime>());
+    for f in all {
+        let id = id_of(f);
+        let (app, _dir) = app_keeping(vec![f]);
+        let live = |app: &tauri::App<MockRuntime>| is_live(app.handle(), &id);
+        assert!(is_started(app.handle(), &id) && live(&app), "{id}: started");
+        stop_feature(app.handle(), &id, true);
+        assert!(
+            !is_started(app.handle(), &id) && !live(&app),
+            "{id}: stopped"
+        );
+        start_feature(app.handle(), f).unwrap();
+        assert!(live(&app), "{id}: started again");
+        fail_for_test(app.handle(), &id);
+        assert!(
+            !live(&app),
+            "{id}: failed is not live, even before its scope is released"
+        );
+        wait_stopped(&app, &id);
+        assert!(!live(&app), "{id}: failed and released");
+        write_switch(app.handle(), &id, true);
+        assert!(
+            is_started(app.handle(), &id) && live(&app),
+            "{id}: turned back on"
+        );
+    }
+}
+
+static SAID: Point<&'static str> = Point::new("pt-owner.said", "pt-owner");
+static HEARD: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+struct Owner;
+impl<R: Runtime> Feature<R> for Owner {
+    fn manifest_source(&self) -> &'static str {
+        r#"{"id":"pt-owner","name":"Owner"}"#
+    }
+}
+struct Listener1;
+impl<R: Runtime> Feature<R> for Listener1 {
+    fn manifest_source(&self) -> &'static str {
+        r#"{"id":"pt-listener","name":"Listener"}"#
+    }
+    fn start(&self, app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
+        points::extend(app, &SAID, "pt-listener", |s| {
+            HEARD.lock().push((*s).to_string())
+        });
+        Ok(())
+    }
+}
+
+/// An owner that is being turned off (or has failed) still announces the end of what it was
+/// doing, and the contributor hears it: only the contributor's own liveness gates a handler.
+#[test]
+fn a_contributor_hears_its_owner_after_the_owner_is_switched_off_but_not_once_it_failed() {
+    let (app, _dir) = app_keeping(vec![&Owner, &Listener1]);
+    let points = app.state::<Points>();
+    points.emit(&SAID, &"turn-started");
+    write_switch(app.handle(), "pt-owner", false);
+    assert!(!is_started(app.handle(), "pt-owner"));
+    points.emit(&SAID, &"turn-finished");
+    assert_eq!(*HEARD.lock(), ["turn-started", "turn-finished"]);
+    // the contributor's own failure silences it at once
+    fail_for_test(app.handle(), "pt-listener");
+    points.emit(&SAID, &"late");
+    assert_eq!(HEARD.lock().len(), 2);
+    // and a stopped contributor is retracted
+    wait_stopped(&app, "pt-listener");
+    assert!(!points.extended_by(SAID.id, "pt-listener"));
+}
+
+struct Slow;
+impl<R: Runtime> Feature<R> for Slow {
+    fn manifest_source(&self) -> &'static str {
+        r#"{"id":"slow","name":"Slow"}"#
+    }
+    fn start(&self, _app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
+        std::thread::sleep(Duration::from_millis(15));
+        Ok(())
+    }
+}
+
+/// Two writes of one switch around a slow `start`: the state read under the toggle lock always
+/// ends as the last switch says (the switch was once read outside it, so a stop could land
+/// before the start it was meant to undo).
+#[test]
+fn two_writers_of_a_switch_around_a_slow_start_end_in_the_state_it_says() {
+    let (app, _dir) = app_keeping(vec![&Slow]);
+    for round in 0..20 {
+        write_switch(app.handle(), "slow", false);
+        assert!(!is_started(app.handle(), "slow"));
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            for on in [true, false] {
+                let (handle, barrier) = (app.handle().clone(), &barrier);
+                scope.spawn(move || {
+                    barrier.wait();
+                    write_switch(&handle, "slow", on);
+                });
+            }
+        });
+        let switch = app
+            .state::<AppState>()
+            .get("main")
+            .unwrap()
+            .settings
+            .read()
+            .as_ref()
+            .unwrap()
+            .get_global_or_default("features.slow.enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap();
+        assert_eq!(is_started(app.handle(), "slow"), switch, "round {round}");
+    }
+}
+
+static FLAKY_STARTS: AtomicUsize = AtomicUsize::new(0);
+struct Flaky;
+impl<R: Runtime> Feature<R> for Flaky {
+    fn manifest_source(&self) -> &'static str {
+        r#"{"id":"flaky","name":"Flaky"}"#
+    }
+    /// The first start has a thread that panics while `start` is still running.
+    fn start(&self, _app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
+        if FLAKY_STARTS.fetch_add(1, Ordering::SeqCst) == 0 {
+            scope
+                .spawn("boom", |_| panic!("a thread fails during start"))
+                .map_err(|e| e.to_string())?;
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        Ok(())
+    }
+}
+
+/// A scope thread that fails the feature before `start` returned: the feature is not left
+/// started and announced while failed, and "Turn back on" starts it.
+#[test]
+fn a_failure_while_start_runs_leaves_the_feature_stopped_and_turn_back_on_starts_it() {
+    let (app, _dir) = app_keeping(vec![&Flaky]);
+    let c = app.state::<Containment>();
+    assert!(!is_started(app.handle(), "flaky"), "not started");
+    assert!(c.is_failed("flaky"));
+    assert!(!is_live(app.handle(), "flaky"));
+    assert_eq!(scope_of(app.handle(), "flaky").map(|_| ()), None);
+    write_switch(app.handle(), "flaky", true);
+    assert!(is_started(app.handle(), "flaky") && is_live(app.handle(), "flaky"));
+    assert!(!c.is_failed("flaky"));
+    assert_eq!(FLAKY_STARTS.load(Ordering::SeqCst), 2);
 }

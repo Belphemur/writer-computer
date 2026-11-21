@@ -7,6 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: st
 
 import { BUILTIN_FEATURES, syncBuiltinFeatures } from "../src/lib/features/builtin";
 import { createFeatureHost, defineFeature, featureHost } from "../src/lib/features/registry";
+import type { FeatureContext } from "../src/lib/features/types";
 import { create } from "zustand";
 import { flushPromises } from "@tests/helpers/events";
 
@@ -96,6 +97,45 @@ describe("ctx releases everything on deactivate", () => {
     expect(seen).toEqual([1]);
     expect(ticks).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(listens[0]!.un).toHaveBeenCalledOnce());
+  });
+});
+
+describe("ctx timers", () => {
+  it("a one-shot timer drops its disposer when it fires, so the store does not grow", async () => {
+    vi.useFakeTimers();
+    const sizes: number[] = [];
+    let ctxOf!: FeatureContext;
+    const { host } = hostWithListens();
+    host.register(
+      defineFeature({
+        id: "ticker",
+        activate: (ctx) => {
+          ctxOf = ctx;
+        },
+      }),
+    );
+    await host.activate("ticker");
+    const base = ctxOf.disposables.size;
+    for (let i = 0; i < 5; i++) {
+      ctxOf.setTimeout(() => sizes.push(ctxOf.disposables.size), 10);
+      expect(ctxOf.disposables.size).toBe(base + 1);
+      vi.advanceTimersByTime(10);
+      expect(ctxOf.disposables.size).toBe(base);
+    }
+    // inside its own callback the timer is already released
+    expect(sizes).toEqual([base, base, base, base, base]);
+    // a cancelled one leaves no timer and no entry either
+    const stop = ctxOf.setTimeout(() => sizes.push(-1), 10);
+    stop();
+    expect(ctxOf.disposables.size).toBe(base);
+    expect(vi.getTimerCount()).toBe(0);
+    // an interval stays until it is disposed
+    const every = ctxOf.setInterval(() => {}, 10);
+    vi.advanceTimersByTime(50);
+    expect(ctxOf.disposables.size).toBe(base + 1);
+    every();
+    expect(ctxOf.disposables.size).toBe(base);
+    await host.deactivate("ticker");
   });
 });
 

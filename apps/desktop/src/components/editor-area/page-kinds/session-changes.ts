@@ -18,6 +18,8 @@ export const sessionChangesKind = definePageKind<"session-changes", SessionChang
   description: "The notes an agent chat changed",
   loadsDocument: false,
   feature: "agent",
+  // one tab per chat: a second "Diff" re-targets it
+  tabKey: (l) => l.chatId,
   fromPayload: () => null,
   serialize: () => null,
 });

@@ -80,9 +80,15 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
 export function createDisposableStore(onError: (e: unknown) => void = () => {}): DisposableStore {
   const items: Dispose[] = [];
   return {
+    /** The returned disposer runs `dispose` now and takes it out of the store, so a resource that
+     *  ends by itself (a one-shot timer) does not stay in it until the feature deactivates. */
     add(dispose) {
       items.push(dispose);
-      return dispose;
+      return () => {
+        const at = items.indexOf(dispose);
+        if (at >= 0) items.splice(at, 1);
+        dispose();
+      };
     },
     dispose() {
       for (const d of items.splice(0).reverse()) {
@@ -147,8 +153,12 @@ export function createFeatureHost({
         });
       },
       setTimeout(fn, ms) {
-        const t = globalThis.setTimeout(fn, ms);
-        return disposables.add(() => globalThis.clearTimeout(t));
+        const t = globalThis.setTimeout(() => {
+          release(); // fired: it is no longer anything to dispose
+          fn();
+        }, ms);
+        const release = disposables.add(() => globalThis.clearTimeout(t));
+        return release;
       },
       setInterval(fn, ms) {
         const t = globalThis.setInterval(fn, ms);

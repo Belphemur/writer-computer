@@ -33,6 +33,8 @@ export const gitHistoryKind = definePageKind<"git-history", GitHistoryLocation>(
         }
       : null,
   paths: (l) => [l.path],
+  // one tab per file, and one per version for the read-only version view
+  tabKey: (l) => (l.version ? `version\n${l.path}\n${l.rev ?? ""}` : `list\n${l.path}`),
   // a renamed file keeps its history tab; a deleted one is what the history is for
   rewritePath: (l, from, to) => (l.path === from ? { ...l, path: to } : l),
   serialize: (l) => ({ path: l.path, rev: l.rev, version: l.version }),

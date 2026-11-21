@@ -3,13 +3,12 @@ import {
   createGraphTab,
   createPluginFileTab,
   createPluginViewTab,
-  createGitHistoryTab,
-  createSessionChangesTab,
   createSettingsTab,
+  createTab,
   createTasksTab,
   useEditorStore,
 } from "@/stores/editor-store";
-import type { GraphLocation, Location } from "@/components/editor-area/page-kinds";
+import { pageKind, type GraphLocation, type Location } from "@/components/editor-area/page-kinds";
 export type { OpenFile, Tab, SessionTab } from "@/stores/editor-store";
 
 export function getOpenFile(path: string) {
@@ -86,54 +85,39 @@ export function openTasksTab() {
   useEditorStore.getState().openOrFocus((tab) => tab.location.kind === "tasks", createTasksTab);
 }
 
-/** Opens (or focuses) the Session changes tab of a chat, scrolled to `focus` (a vault-relative
- *  path). One tab per chat: a second "Diff" re-targets it. */
-export function openSessionChangesTab(target: { chatId: string; focus?: string }) {
+/** Opens (or focuses) the tab of `location`, found by the page kind's `tabKey` (one tab per key);
+ *  a tab already open is re-targeted to `location`. `activate: false` opens it in the background
+ *  (middle click, Cmd+click: `SPECs/link-activation-spec.md`). The one way a keyed page kind is
+ *  opened: a new kind declares its `tabKey` and needs no function here. */
+export function openLocationTab(location: Location, options?: { activate?: boolean }) {
+  const key = pageKind(location).tabKey(location);
   const matches = (tab: { location: Location }) =>
-    tab.location.kind === "session-changes" && tab.location.chatId === target.chatId;
+    key !== undefined &&
+    tab.location.kind === location.kind &&
+    pageKind(tab.location).tabKey(tab.location) === key;
   const store = useEditorStore.getState();
   if (store.tabs.some(matches)) {
     useEditorStore.setState((state) => ({
-      tabs: state.tabs.map((tab) =>
-        matches(tab) ? { ...tab, location: { kind: "session-changes", ...target } } : tab,
-      ),
+      tabs: state.tabs.map((tab) => (matches(tab) ? { ...tab, location } : tab)),
     }));
   }
-  store.openOrFocus(matches, () => createSessionChangesTab(target));
+  store.openOrFocus(matches, () => createTab(location), options);
+}
+
+/** Opens (or focuses) the Session changes tab of a chat, scrolled to `focus` (a vault-relative
+ *  path). One tab per chat: a second "Diff" re-targets it. */
+export function openSessionChangesTab(target: { chatId: string; focus?: string }) {
+  openLocationTab({ kind: "session-changes", ...target });
 }
 
 /** Opens (or focuses) the History tab of a file (`path` absolute), selecting version `rev`; with
- *  `version` it is the read-only view of that one version. `activate: false` opens it in the
- *  background (middle click, Cmd+click: `SPECs/link-activation-spec.md`). One tab per file, and
- *  one per version for the version view. */
+ *  `version` it is the read-only view of that one version. One tab per file, and one per version
+ *  for the version view. */
 export function openGitHistoryTab(
   target: { path: string; rev?: string; version?: boolean },
   options?: { activate?: boolean },
 ) {
-  const matches = (tab: { location: Location }) =>
-    tab.location.kind === "git-history" &&
-    tab.location.path === target.path &&
-    Boolean(tab.location.version) === Boolean(target.version) &&
-    (!target.version || tab.location.rev === target.rev);
-  const store = useEditorStore.getState();
-  const activate = options?.activate ?? true;
-  const existing = store.tabs.find(matches);
-  if (existing) {
-    useEditorStore.setState((state) => ({
-      tabs: state.tabs.map((tab) =>
-        tab.id === existing.id ? { ...tab, location: { kind: "git-history", ...target } } : tab,
-      ),
-    }));
-    if (activate) store.setActiveTab(existing.id);
-    return;
-  }
-  if (!activate) {
-    useEditorStore.setState((state) => ({
-      tabs: [...state.tabs, createGitHistoryTab(target)],
-    }));
-    return;
-  }
-  store.openOrFocus(matches, () => createGitHistoryTab(target));
+  openLocationTab({ kind: "git-history", ...target }, options);
 }
 
 /** Persist a graph tab's camera and pins in its location (restored with the session). */

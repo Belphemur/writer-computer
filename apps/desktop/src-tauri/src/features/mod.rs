@@ -77,7 +77,6 @@ use std::sync::Arc;
 use tauri::ipc::Invoke;
 use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
-pub mod lazy;
 mod lifecycle;
 pub mod points;
 pub mod recovery;
@@ -302,6 +301,16 @@ pub trait Feature<R: Runtime>: Send + Sync {
     fn on_workspace_close(&self, _app: &AppHandle<R>, _label: &str) {}
     /// `RunEvent::Exit`.
     fn on_exit(&self, _app: &AppHandle<R>) {}
+
+    /// The feature is not running: it did not start at launch (switched off, safe mode, a
+    /// failed setup) or it stopped (switched off, failed). Put back the core flag it feeds
+    /// (`icons::set_enabled`, the code-files policy) to its off state; `start` sets it on. This
+    /// is the one place a flag follows the feature, so a failed feature never leaves it on.
+    fn off(&self) {}
+    /// A global setting was written (and once at startup, before `install`), whether or not the
+    /// feature runs: feed the core state that depends on settings other than the switch. Runs
+    /// under the settings lock: read `settings`, never write it.
+    fn apply_settings(&self, _settings: &Settings) {}
 
     /// `writer` CLI commands, appended to `cli::registry::COMMANDS`.
     fn cli_commands(&self) -> &'static [CommandSpec] {
@@ -790,13 +799,11 @@ pub fn contain<R: Runtime>(
     }
 }
 
-/// Is the feature usable right now? Not in safe mode, not failed this session and its switch on.
-/// The switch is read live from the global settings (every window shares them), so turning it on
-/// or off applies at once; a feature with a plugin needs a restart instead, a gated one does not.
-pub fn is_live<R: Runtime>(app: &AppHandle<R>, manifest: &Manifest) -> bool {
-    if containment(app).is_some_and(|c| c.safe_mode || c.is_failed(&manifest.id)) {
-        return false;
-    }
+/// Is the feature's switch on? `features.<id>.enabled` read live from the global settings (every
+/// window shares them), the manifest default while the settings are not loaded. The one read of
+/// the switch: the lifecycle decides to start or stop from it, and nothing else asks it whether
+/// the feature is usable ([`is_live`] does).
+pub(crate) fn switch_of<R: Runtime>(app: &AppHandle<R>, manifest: &Manifest) -> bool {
     let Some(state) = app
         .try_state::<AppState>()
         .and_then(|s| s.get(crate::MAIN_WINDOW_LABEL))
@@ -809,14 +816,12 @@ pub fn is_live<R: Runtime>(app: &AppHandle<R>, manifest: &Manifest) -> bool {
         .map_or(manifest.enabled_by_default, |s| is_enabled(s, manifest))
 }
 
-/// [`is_live`] for the registered feature `id` (a feature without a Rust half is not in the
-/// registry, so it is never live here: only Rust code asks).
-pub fn is_live_id<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
-    registry::<R>()
-        .into_iter()
-        .filter_map(|f| f.manifest().ok())
-        .find(|m| m.id == id)
-        .is_some_and(|m| is_live(app, &m))
+/// Is the feature usable right now: started (its Rust half is up), not failed this session, not
+/// safe mode. The one liveness: the lifecycle starts and stops a feature from its switch
+/// (`lifecycle::reconcile`), so a switch just written applies here once `settings_written` ran.
+/// Every Rust-side gate asks this (a gated command, a point, the IPC allowlist, held skills).
+pub fn is_live<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
+    !containment(app).is_some_and(|c| c.safe_mode || c.is_failed(id)) && is_started(app, id)
 }
 
 /// Wraps the app's invoke handler for a feature whose commands stay registered by the app: a
@@ -840,7 +845,7 @@ pub fn gate<R: Runtime>(
             return handler(invoke);
         }
         let app = invoke.message.webview().app_handle().clone();
-        if !is_live(&app, &manifest) {
+        if !is_live(&app, &manifest.id) {
             invoke
                 .resolver
                 .reject(AppError::FeatureUnavailable(manifest.id.clone()));
@@ -916,6 +921,7 @@ fn install_booted<R: Runtime>(
     let safe_mode = boot.safe_mode;
     app.manage(Containment::new(boot));
     app.manage(Running::new(features.clone()));
+    app.manage(points::Points::default());
     for f in &features {
         let id = id_of(*f);
         let added = guard(app, &id, Boundary::Setup, || match f.invoke_handler() {
@@ -935,11 +941,25 @@ fn install_booted<R: Runtime>(
             );
         }
     }
-    if safe_mode {
-        return;
+    if !safe_mode {
+        for (id, error) in lifecycle::start_planned(app, plan(features.clone(), settings)) {
+            log::error!("feature {id} failed to start and is disabled for this session: {error}");
+        }
     }
-    for (id, error) in lifecycle::start_planned(app, plan(features, settings)) {
-        log::error!("feature {id} failed to start and is disabled for this session: {error}");
+    // a feature that is not running leaves its core flag in the off state
+    for f in features {
+        let id = id_of(f);
+        if !is_started(app, &id) {
+            let _ = guard(app, &id, Boundary::Stop, || f.off());
+        }
+    }
+}
+
+/// Feeds every feature's settings-dependent core state (`Feature::apply_settings`): at startup
+/// and after every global write, under the settings lock.
+pub fn apply_settings(settings: &Settings) {
+    for f in registry::<Wry>() {
+        f.apply_settings(settings);
     }
 }
 
@@ -1034,7 +1054,7 @@ fn held_skills_of<R: Runtime>(
 /// [`held_skills`] for the running app: a feature that is off, failed or in safe mode holds its
 /// skills ([`is_live`]).
 pub fn held_skills_live<R: Runtime>(app: &AppHandle<R>) -> Vec<&'static str> {
-    held_skills(|m| is_live(app, m))
+    held_skills(|m| is_live(app, &m.id))
 }
 
 /// Feature skills, for `managed_skills`.

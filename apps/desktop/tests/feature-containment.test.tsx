@@ -327,4 +327,32 @@ describe("the Rust bridge", () => {
     handlers["features:stopped"]!({ payload: { id: "demo" } });
     expect(health().started).toEqual({});
   });
+
+  it("an event that arrives before the first status wins over that older snapshot", async () => {
+    const handlers: Record<string, (e: { payload: Record<string, string> }) => void> = {};
+    const listen = vi.fn(async (name: string, h: never) => {
+      handlers[name] = h;
+      return () => {};
+    });
+    let answer!: (s: {
+      safeMode: boolean;
+      crashDisabled: [];
+      failures: [];
+      started: string[];
+    }) => void;
+    startFeatureHealthBridge({
+      listen: listen as never,
+      status: () => new Promise((resolve) => (answer = resolve)),
+    });
+    await flushPromises();
+    // the feature starts and another stops while the status call is still in flight
+    handlers["features:started"]!({ payload: { id: "git" } });
+    handlers["features:stopped"]!({ payload: { id: "lint" } });
+    expect(health().started).toBeNull();
+    // the snapshot was taken before both
+    answer({ safeMode: false, crashDisabled: [], failures: [], started: ["lint"] });
+    await flushPromises();
+    expect(health().started).toEqual({ git: true });
+    expect(health().pendingLifecycle).toEqual([]);
+  });
 });

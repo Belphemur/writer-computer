@@ -19,23 +19,18 @@ use std::time::{Duration, Instant};
 use tauri::test::{get_ipc_response, mock_builder, MockRuntime};
 use tauri::Manager;
 
+/// The owner's side of a point: what the agent does through its own `Points` handle.
+fn emit_point<A: 'static>(
+    app: &tauri::App<tauri::test::MockRuntime>,
+    point: &crate::features::points::Point<A>,
+    args: &A,
+) {
+    app.state::<crate::features::points::Points>()
+        .emit(point, args);
+}
+
 fn manifest() -> Manifest {
     serde_json::from_str(include_str!("../feature.json")).unwrap()
-}
-
-/// The points are process-wide: a test that installs the feature holds this lock, and drops the
-/// feature's extensions when it ends.
-static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-struct Forget(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
-impl Drop for Forget {
-    fn drop(&mut self) {
-        points::retract("git");
-    }
-}
-
-fn serial() -> Forget {
-    Forget(SERIAL.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// An app with the features installed from the given settings (`(key, on)` switches).
@@ -207,7 +202,6 @@ fn the_settings_fragment_holds_the_spec_table() {
 
 #[test]
 fn every_command_is_allowed_from_main_and_workspace_windows_and_nowhere_else() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     for cmd in &manifest().rust.commands {
         for label in ["main", "w-1"] {
@@ -242,7 +236,6 @@ fn every_command_is_allowed_from_main_and_workspace_windows_and_nowhere_else() {
 
 #[test]
 fn the_agent_commit_goes_first_and_no_user_commit_runs_during_a_turn() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -255,7 +248,7 @@ fn the_agent_commit_goes_first_and_no_user_commit_runs_during_a_turn() {
     // the user's pending edit is committed just before the turn starts
     write(&root, "mine.md", "2");
     vaults.written("main", &root, &[root.join("mine.md")], Instant::now());
-    points::emit(&TURN_STARTED_POINT, &started(&root));
+    emit_point(&app, &TURN_STARTED_POINT, &started(&root));
     assert_eq!(subjects(&root)[0], "user(edit): mine");
     assert!(vaults.turn_running("main"));
 
@@ -272,7 +265,7 @@ fn the_agent_commit_goes_first_and_no_user_commit_runs_during_a_turn() {
     assert_eq!(subjects(&root).len(), 2, "no commit while the turn runs");
 
     // the turn ends: its commit first, then the quiet timer resumes for the rest
-    points::emit(&TURN_FINISHED_POINT, &finished(&root, &["agent.md"]));
+    emit_point(&app, &TURN_FINISHED_POINT, &finished(&root, &["agent.md"]));
     assert!(!vaults.turn_running("main"));
     runtime::tick(app.handle(), later(601));
     let log = subjects(&root);
@@ -299,7 +292,6 @@ use crate::agent::api::{TURN_FINISHED as TURN_FINISHED_POINT, TURN_STARTED as TU
 
 #[test]
 fn agent_commits_off_leaves_the_agents_files_to_the_users_commit() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -316,16 +308,15 @@ fn agent_commits_off_leaves_the_agents_files_to_the_users_commit() {
             .set_global("git.agent-commits", ConfigValue::Bool(false))
             .unwrap();
     }
-    points::emit(&TURN_STARTED_POINT, &started(&root));
+    emit_point(&app, &TURN_STARTED_POINT, &started(&root));
     write(&root, "a.md", "2");
-    points::emit(&TURN_FINISHED_POINT, &finished(&root, &["a.md"]));
+    emit_point(&app, &TURN_FINISHED_POINT, &finished(&root, &["a.md"]));
     runtime::tick(app.handle(), later(10));
     assert_eq!(subjects(&root).len(), 1, "no agent commit");
 }
 
 #[test]
 fn a_vault_that_is_not_set_up_gets_no_commit_and_no_error_from_any_hook() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
@@ -335,8 +326,8 @@ fn a_vault_that_is_not_set_up_gets_no_commit_and_no_error_from_any_hook() {
     let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     vaults.written("main", &root, &[root.join("a.md")], Instant::now());
-    points::emit(&TURN_STARTED_POINT, &started(&root));
-    points::emit(&TURN_FINISHED_POINT, &finished(&root, &["a.md"]));
+    emit_point(&app, &TURN_STARTED_POINT, &started(&root));
+    emit_point(&app, &TURN_FINISHED_POINT, &finished(&root, &["a.md"]));
     runtime::tick(app.handle(), later(1000));
     runtime::flush(app.handle(), "main");
     assert!(!root.join(".git").exists(), "nothing was created");
@@ -346,7 +337,6 @@ fn a_vault_that_is_not_set_up_gets_no_commit_and_no_error_from_any_hook() {
 
 #[test]
 fn the_first_tick_after_open_sets_a_plain_vault_up_by_default_once() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
@@ -367,7 +357,6 @@ fn the_first_tick_after_open_sets_a_plain_vault_up_by_default_once() {
 
 #[test]
 fn a_vault_inside_another_repository_is_not_set_up_by_the_tick() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let outer = tempfile::tempdir().unwrap();
     let outer_root = outer.path().canonicalize().unwrap();
@@ -384,7 +373,6 @@ fn a_vault_inside_another_repository_is_not_set_up_by_the_tick() {
 
 #[test]
 fn a_paused_vault_is_never_committed() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -402,7 +390,6 @@ fn a_paused_vault_is_never_committed() {
 
 #[test]
 fn writes_to_device_local_state_never_reset_the_timer() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -425,7 +412,6 @@ fn writes_to_device_local_state_never_reset_the_timer() {
 
 #[test]
 fn a_missing_identity_is_an_explicit_error_state_and_nothing_is_committed() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     ISOLATED.with(|i| i.set(true));
     let dir = tempfile::tempdir().unwrap();
@@ -449,27 +435,29 @@ fn a_missing_identity_is_an_explicit_error_state_and_nothing_is_committed() {
 
 #[test]
 fn with_the_feature_off_nothing_is_set_up_and_no_point_has_a_subscriber() {
-    let _forget = serial();
-    points::retract("git");
     let app = app_with(vec![&Git], &["features.git.enabled"]);
     assert!(
         runtime::vaults(app.handle()).is_none(),
         "no state, no hooks"
     );
-    assert!(!points::extended_by(TURN_STARTED_POINT.id, "git"));
-    assert!(!points::extended_by(TURN_FINISHED_POINT.id, "git"));
+    assert!(!app
+        .state::<crate::features::points::Points>()
+        .extended_by(TURN_STARTED_POINT.id, "git"));
+    assert!(!app
+        .state::<crate::features::points::Points>()
+        .extended_by(TURN_FINISHED_POINT.id, "git"));
     // its CLI commands answer "turned off" and its skill is held back
     assert!(crate::features::held_skills(|m| m.id != "git").contains(&"writer-git"));
     // an emit with nobody listening returns at once
-    points::emit(
+    emit_point(
+        &app,
         &TURN_FINISHED_POINT,
         &finished(Path::new("/nowhere"), &["a.md"]),
     );
 }
 
 #[test]
-fn with_the_agent_off_its_points_are_not_delivered_but_git_still_works() {
-    let _forget = serial();
+fn with_the_agent_off_nothing_is_announced_and_git_still_works_alone() {
     let app = app_with(vec![&Git], &["features.agent.enabled"]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -477,8 +465,8 @@ fn with_the_agent_off_its_points_are_not_delivered_but_git_still_works() {
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
     let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
-    // the owner is off: the extension is ignored, the turn is never tracked
-    points::emit(&TURN_STARTED_POINT, &started(&root));
+    // the owner is off, so it announces nothing: no turn is tracked (an owner that is turned
+    // off mid-turn still announces the end of that turn, which git hears)
     assert!(!vaults.turn_running("main"));
     // the user's own history still works alone
     write(&root, "a.md", "2");
@@ -491,25 +479,32 @@ fn with_the_agent_off_its_points_are_not_delivered_but_git_still_works() {
 fn a_panicking_contribution_fails_git_only_and_the_other_contributors_still_run() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CALLS: AtomicUsize = AtomicUsize::new(0);
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     points::extend(app.handle(), &TURN_FINISHED_POINT, "git", |_| {
         panic!("boom")
     });
-    points::extend_raw(&TURN_FINISHED_POINT, "zz-probe", |a| {
-        if a.root == Path::new("/nowhere") {
-            CALLS.fetch_add(1, Ordering::SeqCst);
-        }
-    });
-    points::emit(&TURN_FINISHED_POINT, &finished(Path::new("/nowhere"), &[]));
-    points::retract("zz-probe");
+    app.state::<crate::features::points::Points>().extend_raw(
+        &TURN_FINISHED_POINT,
+        "zz-probe",
+        |a| {
+            if a.root == Path::new("/nowhere") {
+                CALLS.fetch_add(1, Ordering::SeqCst);
+            }
+        },
+    );
+    emit_point(
+        &app,
+        &TURN_FINISHED_POINT,
+        &finished(Path::new("/nowhere"), &[]),
+    );
+    app.state::<crate::features::points::Points>()
+        .retract("zz-probe");
     assert_eq!(CALLS.load(Ordering::SeqCst), 1, "the next contributor ran");
     assert!(crate::features::containment(app.handle()).is_some_and(|c| c.is_failed("git")));
 }
 
 #[test]
 fn nothing_is_committed_during_a_merge_and_it_resumes_when_the_merge_ends() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -530,7 +525,6 @@ fn nothing_is_committed_during_a_merge_and_it_resumes_when_the_merge_ends() {
 
 #[test]
 fn shutdown_releases_everything_the_feature_owns() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -805,7 +799,6 @@ mod cli_tests {
 
 #[test]
 fn a_ticker_commit_and_a_turn_start_on_a_dirty_vault_make_one_commit_and_no_error() {
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
@@ -822,7 +815,7 @@ fn a_ticker_commit_and_a_turn_start_on_a_dirty_vault_make_one_commit_and_no_erro
             ISOLATED.with(|i| i.set(true));
             runtime::tick(&handle, later(600 + round));
         });
-        points::emit(&TURN_STARTED_POINT, &started(&r2));
+        emit_point(&app, &TURN_STARTED_POINT, &started(&r2));
         ticker.join().unwrap();
         assert_eq!(
             subjects(&root).len(),
@@ -830,7 +823,7 @@ fn a_ticker_commit_and_a_turn_start_on_a_dirty_vault_make_one_commit_and_no_erro
             "round {round}: one commit"
         );
         assert_eq!(vaults.error_of("main"), None);
-        points::emit(&TURN_FINISHED_POINT, &finished(&root, &[]));
+        emit_point(&app, &TURN_FINISHED_POINT, &finished(&root, &[]));
     }
 }
 
@@ -840,7 +833,6 @@ fn a_ticker_commit_and_a_turn_start_on_a_dirty_vault_make_one_commit_and_no_erro
 #[test]
 fn a_running_sync_makes_the_feature_busy_and_stopping_the_scope_ends_it() {
     use std::os::unix::fs::PermissionsExt;
-    let _forget = serial();
     let app = app_with(vec![&Git], &[]);
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
