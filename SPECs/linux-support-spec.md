@@ -4,13 +4,13 @@ Status: designed with the user 2026-11-20, not started. ADR: [`docs/decisions/20
 
 ## Decisions (summary)
 
-- x86_64 AppImage, .deb, .rpm, built on Ubuntu 22.04 in CI. Flatpak and aarch64 later.
+- x86_64 AppImage, .deb, .rpm, built on Ubuntu 26.04 in CI (local runs in a Rancher Desktop container of the same image). Flatpak and aarch64 later.
 - Writer's own title bar: decorations off, window controls on the right, a ☰ menu button (and Alt) opening the one menu; setting `appearance.native-decorations` for tiling WMs. Opaque window, no transparency.
 - Closing the last window quits.
 - `writer` on PATH: packages install `/usr/bin/writer`; the AppImage links into `~/.local/bin`.
 - AppImage self-updates; .deb/.rpm notify with a download link.
 - Secrets: Secret Service, else none ("No keyring found"), never a file.
-- CI: GitHub Actions `ubuntu-22.04`: check, tests, clippy, fmt, bundles, e2e smoke under xvfb with `tauri-driver`.
+- CI: GitHub Actions `ubuntu-26.04`: check, tests, clippy, fmt, bundles, e2e smoke under xvfb with `tauri-driver`.
 
 ## Inventory (2026-11-20, read-only; "verify" = needs a real Linux session)
 
