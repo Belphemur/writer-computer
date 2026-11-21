@@ -89,6 +89,13 @@ fn root_of<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Option<PathBuf
         .map(|(root, _)| root)
 }
 
+/// The engine of the started feature, or `FeatureUnavailable` for a call that was already past
+/// the gate when the feature stopped.
+fn engine<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Arc<Engine>, AppError> {
+    crate::features::state_of::<R, Engine>(app, "spellcheck")
+        .ok_or_else(|| AppError::FeatureUnavailable("spellcheck".into()))
+}
+
 fn personal_of(engine: &Engine, root: Option<&PathBuf>) -> Arc<Personal> {
     match root.map(|r| engine.personal.get(r)) {
         Some(Ok(p)) => p,
@@ -134,7 +141,7 @@ pub async fn spellcheck_check<R: Runtime>(
 ) -> Result<CheckResponse, AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        let engine = app.state::<Engine>();
+        let engine = engine(&app)?;
         let options = options_of(&app, &label);
         let root = root_of(&app, &label);
         let personal = personal_of(&engine, root.as_ref());
@@ -183,7 +190,7 @@ pub async fn spellcheck_dictionaries<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<Vec<DictionaryInfo>, AppError> {
     blocking(move || {
-        let engine = app.state::<Engine>();
+        let engine = engine(&app)?;
         let installed: Vec<String> = dictionaries::installed(engine.checker.dictionaries_dir())
             .into_iter()
             .map(|d| d.id)
@@ -212,7 +219,7 @@ pub async fn spellcheck_install_dictionary<R: Runtime>(
     id: String,
 ) -> Result<Installed, AppError> {
     blocking(move || {
-        let engine = app.state::<Engine>();
+        let engine = engine(&app)?;
         let done = dictionaries::install(
             engine.checker.dictionaries_dir(),
             &id,
@@ -233,7 +240,7 @@ pub async fn spellcheck_remove_dictionary<R: Runtime>(
     id: String,
 ) -> Result<(), AppError> {
     blocking(move || {
-        let engine = app.state::<Engine>();
+        let engine = engine(&app)?;
         dictionaries::remove(engine.checker.dictionaries_dir(), &id).map_err(dict_err)?;
         engine.checker.dictionary_changed(&id);
         Ok(())
@@ -251,8 +258,7 @@ pub async fn spellcheck_personal_words<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         let root = require_root(&app, &label)?;
-        Ok(app
-            .state::<Engine>()
+        Ok(engine(&app)?
             .personal
             .get(&root)
             .map_err(personal_err)?
@@ -309,7 +315,7 @@ pub async fn spellcheck_ignore_word<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         let root = require_root(&app, &label)?;
-        let engine = app.state::<Engine>();
+        let engine = engine(&app)?;
         let dir = engine.data_dir.read().clone();
         ignored::add(&dir, &root, &path, &word).map_err(ignored_err)
     })
@@ -327,7 +333,7 @@ pub async fn spellcheck_unignore_word<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         let root = require_root(&app, &label)?;
-        let engine = app.state::<Engine>();
+        let engine = engine(&app)?;
         let dir = engine.data_dir.read().clone();
         ignored::remove(&dir, &root, &path, &word).map_err(ignored_err)
     })

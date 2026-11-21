@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -67,13 +68,11 @@ struct Vault {
     error: Option<String>,
 }
 
-/// The one owner of the feature's runtime resources, created in `setup` and managed by the app:
-/// the vaults and their cadence state, the ticker thread (started through `features::spawn`, it
-/// ends when `stopped` is set), and the flags the watcher observer and the point handlers check.
-/// The registrations in the process-wide registries (`watcher::observe_paths`, `points::extend`)
-/// have no unregister of their own: they call back into this struct, which answers nothing once
-/// it is [`shutdown`](Vaults::shutdown), and `shutdown` retracts the points. No statics hold
-/// feature state.
+/// The one owner of the feature's runtime state, created in `start` and kept in the feature's
+/// scope: the vaults and their cadence state and the flags the watcher observer and the point
+/// handlers check. The ticker thread and the observer are the scope's; the points are retracted
+/// when the scope stops. Everything answers nothing once this is [`shutdown`](Vaults::shutdown).
+/// No statics hold feature state.
 #[derive(Default)]
 pub struct Vaults {
     inner: Mutex<HashMap<String, Vault>>,
@@ -221,8 +220,9 @@ pub fn config_of<R: Runtime>(app: &AppHandle<R>, label: &str) -> Config {
     }
 }
 
-fn vaults<R: Runtime>(app: &AppHandle<R>) -> Option<tauri::State<'_, Vaults>> {
-    app.try_state::<Vaults>()
+/// The runtime of the started feature (kept in its scope), `None` while it is off.
+pub(crate) fn vaults<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<Vaults>> {
+    crate::features::state_of::<R, Vaults>(app, "git")
 }
 
 fn announce<R: Runtime>(app: &AppHandle<R>, label: &str) {
@@ -310,15 +310,20 @@ pub fn start_ticker<R: Runtime>(app: &AppHandle<R>) {
     if v.ticker.swap(true, Ordering::SeqCst) {
         return;
     }
+    let Some(scope) = crate::features::scope_of(app, "git") else {
+        v.ticker.store(false, Ordering::SeqCst);
+        return;
+    };
     let handle = app.clone();
-    let started = crate::features::spawn(app, "git", "git-cadence", move || loop {
-        std::thread::sleep(Duration::from_secs(1));
-        match handle.try_state::<Vaults>() {
-            Some(v) if !v.stopped() => {}
-            _ => break,
-        }
-        if crate::features::is_live_id(&handle, "git") {
-            tick(&handle, Instant::now());
+    let started = scope.spawn("git-cadence", move |token| {
+        while token.sleep(Duration::from_secs(1)) {
+            match vaults(&handle) {
+                Some(v) if !v.stopped() => {}
+                _ => break,
+            }
+            if crate::features::is_live_id(&handle, "git") {
+                tick(&handle, Instant::now());
+            }
         }
     });
     if let Err(e) = started {

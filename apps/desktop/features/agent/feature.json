@@ -55,7 +55,7 @@
       "agent_update_project"
     ],
     "events": ["agent:event"],
-    "hooks": ["setup", "onWorkspaceClose", "onExit"],
+    "hooks": ["start", "onWorkspaceClose", "onExit"],
     "cliCommands": ["project:archive", "project:unarchive"]
   },
   "contributes": {

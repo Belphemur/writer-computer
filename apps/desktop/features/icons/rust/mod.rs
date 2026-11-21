@@ -11,12 +11,12 @@
 //! - `cli.rs`: the `icon:set`, `icon:get` and `icon:remove` commands (handlers `cli::cmd_icons`);
 //! - [`apply`], the one place the kill switch becomes the core flag (`commands::settings` calls it
 //!   at startup and after every global write; the CLI calls [`apply_for_cli`]);
-//! - `setup`: reports `icons:changed` to the window of a vault when `.writer/icons.json` or
-//!   Iconize's data changes, from the app's one file watcher (`watcher::observe_paths`).
+//! - `start`: reports `icons:changed` to the window of a vault when `.writer/icons.json` or
+//!   Iconize's data changes, from the app's one file watcher (`FeatureScope::observe`, removed
+//!   when the feature stops).
 //!
-//! Switched off (`features.icons.enabled`): the plugin is not added at launch (its commands are
-//! "plugin not found" until the next launch), the web half goes at once, nothing is read or
-//! written, and the watcher observer is not installed.
+//! Switched off (`features.icons.enabled`): its commands answer `FeatureUnavailable`, the web
+//! half goes at once, nothing is read or written, and the watcher observer is removed.
 
 mod bindings;
 mod cli;
@@ -24,6 +24,7 @@ mod commands;
 
 use crate::cli::registry::CommandSpec;
 use crate::config::Settings;
+use crate::features::scope::FeatureScope;
 use crate::features::{self, Feature, InvokeHandler, Manifest};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Runtime};
@@ -48,14 +49,15 @@ impl<R: Runtime> Feature<R> for Icons {
         cli::COMMANDS
     }
 
-    fn setup(&self, app: &AppHandle<R>) -> Result<(), String> {
+    fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
         let handle = app.clone();
-        crate::watcher::observe_paths(Box::new(move |label, root, paths, _own| {
-            if paths.iter().any(|p| is_icons_file(root, p)) {
-                let _ = handle.emit_to(label, CHANGED_EVENT, ());
-            }
-        }));
-        Ok(())
+        scope
+            .observe(Box::new(move |label, root, paths, _own| {
+                if paths.iter().any(|p| is_icons_file(root, p)) {
+                    let _ = handle.emit_to(label, CHANGED_EVENT, ());
+                }
+            }))
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -118,7 +120,7 @@ mod tests {
     fn the_manifest_names_the_hook_the_commands_and_the_cli_commands() {
         let m = manifest();
         assert_eq!(m.id, "icons");
-        assert_eq!(m.rust.hooks, ["setup"]);
+        assert_eq!(m.rust.hooks, ["start"]);
         assert_eq!(m.rust.events, [CHANGED_EVENT]);
         let raw: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
         let cli: Vec<_> = cli::COMMANDS.iter().map(|c| c.name).collect();

@@ -166,7 +166,9 @@ pub async fn plugins_set_trust(
 pub fn stop_vault_work(app: &tauri::AppHandle, root: &Path) {
     app.state::<StreamRegistry>().cancel_root(root);
     app.state::<ProcManager>().kill_root(root);
-    if let Some(agents) = app.try_state::<crate::agent::session::AgentSessions>() {
+    if let Some(agents) =
+        crate::features::state_of::<_, crate::agent::session::AgentSessions>(app, "agent")
+    {
         agents.kill_root(root);
     }
 }

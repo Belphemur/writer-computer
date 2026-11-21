@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { FeatureContext } from "@/lib/features/types";
 import { useMemo } from "react";
 import { projectClient, type ProjectDetail } from "@features/agent/web/lib/project-client";
 import { appearanceOf, type ProjectAppearance } from "@features/agent/web/lib/project-appearance";
@@ -100,12 +101,13 @@ export function useProjectAppearance(path: string | null): ProjectAppearance {
 
 /** Keeps the list in step with the open workspace: load on open and switch, drop on close.
  *  Started by the feature's activation (`dock-sync.ts`), so a turned-off feature asks the backend
- *  for nothing. Returns the stop function. */
-export function watchProjects(): () => void {
+ *  for nothing; the subscription is the `ctx`'s and the list is dropped on deactivate. */
+export function watchProjects(ctx: FeatureContext): void {
   if (useWorkspaceStore.getState().root) void useProjectsStore.getState().refresh();
-  return useWorkspaceStore.subscribe((state, prev) => {
+  ctx.subscribe(useWorkspaceStore, (state, prev) => {
     if (state.root === prev.root) return;
     if (state.root) void useProjectsStore.getState().refresh();
     else useProjectsStore.getState().clear();
   });
+  ctx.onDispose(() => useProjectsStore.getState().clear());
 }

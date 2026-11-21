@@ -26,7 +26,7 @@ impl<R: Runtime> Feature<R> for Boom {
     fn manifest_source(&self) -> &'static str {
         self.manifest
     }
-    fn setup(&self, _app: &AppHandle<R>) -> Result<(), String> {
+    fn start(&self, _app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
         if self.at == "setup" {
             panic!("{PAYLOAD}");
         }
@@ -252,24 +252,40 @@ fn a_panicking_command_is_contained_then_answers_feature_unavailable() {
 }
 
 #[test]
-fn a_panic_in_a_spawned_thread_fails_the_feature_and_not_the_app() {
+fn a_panic_in_a_scope_thread_fails_the_feature_stops_it_and_not_the_app() {
+    struct Worker;
+    impl<R: Runtime> Feature<R> for Worker {
+        fn manifest_source(&self) -> &'static str {
+            r#"{"id":"thread-boom","name":"Thread boom"}"#
+        }
+        fn start(&self, _app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
+            scope
+                .spawn("boom-worker", |_| panic!("{PAYLOAD}"))
+                .map_err(|e| e.to_string())
+        }
+    }
     let dir = tempfile::tempdir().unwrap();
     let settings = settings_with(dir.path(), &[]);
     let app = mock_app();
-    install_features(app.handle(), vec![], &settings);
     let events = failed_events(&app);
-    spawn(app.handle(), "thread-boom", "boom-worker", || {
-        panic!("{PAYLOAD}")
-    })
-    .unwrap()
-    .join()
-    .expect("the thread ends normally: the panic was contained");
+    install_features(app.handle(), vec![leak(Worker)], &settings);
+    let start = std::time::Instant::now();
+    while !is_failed(&app, "thread-boom") && start.elapsed() < std::time::Duration::from_secs(5) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
     assert!(is_failed(&app, "thread-boom"));
     let seen = events.lock().clone();
     assert!(
         seen.len() == 1 && seen[0].contains("thread:boom-worker"),
         "{seen:?}"
     );
+    // a failed feature is released: it is no longer started and holds nothing
+    while is_started(app.handle(), "thread-boom")
+        && start.elapsed() < std::time::Duration::from_secs(5)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(!is_started(app.handle(), "thread-boom"));
 }
 
 #[test]
@@ -426,9 +442,8 @@ fn a_crash_while_native_code_was_live_turns_its_setting_off_on_the_next_launch()
         .collect();
     ids.sort();
     assert_eq!(ids, ["agent", "tables"]);
-    assert!(app
-        .try_state::<crate::agent::session::AgentSessions>()
-        .is_none());
+    assert!(!is_started(app.handle(), "agent"));
+    assert!(!is_started(app.handle(), "tables"));
 }
 
 #[test]
@@ -451,8 +466,7 @@ fn two_failed_startups_start_safe_mode_and_ready_resets_the_counter() {
     install_booted(app.handle(), registry::<MockRuntime>(), &settings, booted);
     assert!(status(app.handle()).safe_mode);
     assert!(
-        app.try_state::<crate::agent::session::AgentSessions>()
-            .is_none(),
+        started_ids(app.handle()).is_empty(),
         "no feature starts in safe mode"
     );
     assert_eq!(

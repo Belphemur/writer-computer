@@ -216,6 +216,10 @@ fn set_setting_blocking(
     } else {
         with_global_settings_mut(app.state::<AppState>().inner(), &state, persist)?
     };
+    if scope != "workspace" {
+        // a feature's switch starts or stops it now, with no settings lock held
+        crate::features::settings_written(app, key);
+    }
     Ok(config_value_to_json(&persisted))
 }
 
@@ -247,7 +251,9 @@ fn reset_setting_blocking(
     if scope == "workspace" {
         with_settings_mut(app, label, reset)?
     } else {
-        with_global_settings_mut(app.state::<AppState>().inner(), &state, reset)
+        with_global_settings_mut(app.state::<AppState>().inner(), &state, reset)?;
+        crate::features::settings_written(app, key);
+        Ok(())
     }
 }
 

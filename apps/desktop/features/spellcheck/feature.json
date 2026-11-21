@@ -21,7 +21,7 @@
       "spellcheck_ignore_word",
       "spellcheck_unignore_word"
     ],
-    "hooks": ["setup"],
+    "hooks": ["start"],
     "cliCommands": ["check"]
   },
   "contributes": {

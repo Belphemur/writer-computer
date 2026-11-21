@@ -9,6 +9,7 @@ import {
   AGENT_PANE_WIDTH_SETTING as WIDTH,
   usePaneStore,
 } from "@features/agent/web/stores/pane-store";
+import { attachAgentStore } from "@features/agent/web/lib/store-lifecycle";
 import { watchProjects } from "@features/agent/web/stores/projects-store";
 
 export function syncAgentDock(ctx: FeatureContext): void {
@@ -20,11 +21,11 @@ export function syncAgentDock(ctx: FeatureContext): void {
     pane.syncOpen(settings[OPEN]);
   };
   adopt(useSettingsStore.getState().settings);
-  ctx.disposables.add(
-    useSettingsStore.subscribe((s, prev) => {
-      if (s.settings[WIDTH] !== prev.settings[WIDTH] || s.settings[OPEN] !== prev.settings[OPEN])
-        adopt(s.settings);
-    }),
-  );
-  ctx.disposables.add(watchProjects());
+  ctx.subscribe(useSettingsStore, (s, prev) => {
+    if (s.settings[WIDTH] !== prev.settings[WIDTH] || s.settings[OPEN] !== prev.settings[OPEN])
+      adopt(s.settings);
+  });
+  watchProjects(ctx);
+  // the chat store (loaded with the pane) is wired to this activation and reset with it
+  attachAgentStore(ctx);
 }

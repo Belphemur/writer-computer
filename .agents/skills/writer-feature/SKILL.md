@@ -71,7 +71,7 @@ Icons come from `@hugeicons/core-free-icons`. `load` thunks are dynamic imports.
 
 ## 5. Steps: add a Rust half (what `agent` does)
 
-1. `rust/mod.rs`: `pub struct X; impl<R: Runtime> Feature<R> for X` with `manifest_source` (`include_str!("../feature.json")`), and only the hooks needed. `settings_source` for a fragment, `invoke_handler` for commands, `on_workspace_close` / `on_exit` to stop what it started. Pure logic goes in a Tauri-free module (`rust/core.rs` or an existing core module); command handlers stay thin.
+1. `rust/mod.rs`: `pub struct X; impl<R: Runtime> Feature<R> for X` with `manifest_source` (`include_str!("../feature.json")`), and only the hooks needed. `settings_source` for a fragment, `invoke_handler` for commands, `start(app, scope)` to build state and start what runs, `stop(app)` only to flush, `on_workspace_close` / `on_exit` to stop what a window started. Pure logic goes in a Tauri-free module (`rust/core.rs` or an existing core module); command handlers stay thin.
 2. Mount it with one `#[path = "../../../features/<id>/rust/mod.rs"] mod <id>;` and one entry in `registry()` in `src-tauri/src/features/mod.rs`. Those are the only shared Rust edits.
 3. Commands: `async`, generic over the runtime, `#[tauri::command]` + `#[specta::specta]`, disk or lock work through `commands::blocking`. List them once in `rust/bindings.rs` (`collect_commands!`, `plugin_name("<id>")`, the bindings diff test). Generate the TS: `WRITER_UPDATE_BINDINGS=1 cargo test bindings`, commit `web/bindings.ts`. The plain test fails when it is stale.
 4. `web/ipc.ts` is the only importer of `bindings.ts` (types only) and the only caller of `featureInvoke("<id>")` (route `plugin:<id>|<cmd>`, manifest guard). The rest of the web half calls ipc.ts wrappers, never `invoke` and never the generated runtime. Events: `featureEvents` / `ctx.listen` (`<id>:<name>`).
@@ -87,15 +87,16 @@ Secrets: declare in `contributes.secrets`; read and write only through `ctx.secr
 
 ## 7. Crash containment (spec section 16): non-negotiable
 
-- Everything that runs feature code at a boundary goes through `features::guard`; commands are wrapped once by the runner (`contain`; a failed feature answers `AppError::FeatureUnavailable`); threads start with `features::spawn(app, id, name, f)`; never `std::thread::spawn` raw.
+- Everything that runs feature code at a boundary goes through `features::guard`; commands are wrapped once by the runner (`contain`; a failed or not-started feature answers `AppError::FeatureUnavailable`); threads start with `scope.spawn(name, |token| ..)`; never `std::thread::spawn` raw.
 - Native code that stays live (event monitors, observers) is installed through `features::native(app, id, setting, f)` so a crash turns exactly that setting off next launch. Prefer DOM or webview APIs over native hooks.
-- `setup` registers cheap state only: no threads, watchers, processes or SQLite handles. Start them in `on_workspace_open` or on first command, only while enabled.
+- **Hold resources through the scope, never raw** (ADR 2026-11-20; a source-scan test fails on a raw one): `Feature::start` gets a `FeatureScope` and every thread (`scope.spawn`, `scope.timer`), child process (`scope.process`, own process group, killed with it), watcher observer (`scope.observe`), app event listener (`scope.listen`) and the feature's state (`scope.manage(T)`, read with `features::state_of::<R, T>(app, id)`; never a `static` or `app.manage`, which cannot be dropped) lives in it, so turning the feature off, or it failing, releases all of it. `scope.on_stop` is for the rest, `scope.adopt(kind, count)` counts a manager that owns resources itself (and stops it with `on_stop`), `scope.busy_probe` says when turning off would lose work (the Features section asks first), and points the feature extends are retracted with the scope. Closures kept in scope-registered callbacks hold the state weakly (`Arc::downgrade`), or the state outlives its stop. A Tauri-free core is handed `scope.spawner()` (threads, child processes and an interruptible `sleep`), never the scope. `start` may run at any time, not just at launch, and runs again after a stop: it must work twice. The cycle test over the registry (start, stop, start, stop; nothing alive after each stop) covers a new feature the day it is registered.
+- Web: the same through `ctx`: `ctx.listen`, `ctx.setTimeout`, `ctx.setInterval`, `ctx.subscribe(store, fn)`, `ctx.onDispose(fn)` are released on deactivate; a feature with a Rust half registers only once Rust reports it started. A store module that outlives activation (the agent's) is wired and reset through the activation's `ctx`.
 - Web: contributed UI renders through `FeaturePane` (inside `FeatureBoundary`); failures are reported through the health store (`recordFailure` / `reportOwnerFailure`), never swallowed. Three failures switch the feature off for the session.
 - Fail explicitly and log with `logger` / `log::` (never note contents, vault paths or secrets; never `console.log` / `eprintln!`).
 
 ## 8. Kill switch and docs
 
-`features.<id>.enabled` (global scope, default `enabledByDefault`). Off: the web half unregisters at once (every contribution removed); the Rust half is never set up or added as a plugin until restart. A new TS state must reset on deactivate.
+`features.<id>.enabled` (global scope, default `enabledByDefault`). Off: the web half unregisters at once (every contribution removed) and the Rust half stops through its scope (commands answer `FeatureUnavailable`, processes and threads end); switched on again it starts live, no restart. A new TS state must reset on deactivate.
 
 ### Off must degrade, never break
 

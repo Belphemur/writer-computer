@@ -58,7 +58,13 @@ fn valid_event_name(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || "-/:_".contains(c))
 }
 
-const HOOKS: [&str; 4] = ["setup", "onWorkspaceOpen", "onWorkspaceClose", "onExit"];
+const HOOKS: [&str; 5] = [
+    "start",
+    "stop",
+    "onWorkspaceOpen",
+    "onWorkspaceClose",
+    "onExit",
+];
 
 fn check_events(m: &Manifest) -> Result<(), String> {
     let id = &m.id;
@@ -127,11 +133,7 @@ fn kill_switch(m: &Manifest) -> Value {
     json!({
         "key": m.enabled_key(),
         "label": m.name,
-        "description": if m.has_rust() {
-            format!("Turns the {} feature on or off. The Rust part takes effect after a restart.", m.name)
-        } else {
-            format!("Turns the {} feature on or off.", m.name)
-        },
+        "description": format!("Turns the {} feature on or off.", m.name),
         "category": "Features",
         "type": "boolean",
         "default": m.enabled_by_default,

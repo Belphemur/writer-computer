@@ -140,15 +140,31 @@ fn event_kind_str(kind: &EventKind) -> Option<&'static str> {
 /// [`is_self_write`]).
 pub type PathObserver = Box<dyn Fn(&str, &Path, Vec<PathBuf>, Vec<PathBuf>) + Send + Sync>;
 
-static PATH_OBSERVERS: parking_lot::RwLock<Vec<PathObserver>> =
+static PATH_OBSERVERS: parking_lot::RwLock<Vec<(u64, PathObserver)>> =
     parking_lot::RwLock::new(Vec::new());
+static NEXT_OBSERVER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// A registered [`PathObserver`]: dropping it unregisters the observer (a feature holds it
+/// through its scope, `features::scope::FeatureScope::observe`).
+#[must_use = "dropping the handle unregisters the observer"]
+pub struct ObserverHandle(u64);
+
+impl Drop for ObserverHandle {
+    fn drop(&mut self) {
+        PATH_OBSERVERS.write().retain(|(id, _)| *id != self.0);
+    }
+}
 
 /// Registers a consumer of the watcher's changed paths (the one source of file changes: no second
 /// watcher). It gets each batch's paths BEFORE any ignore rule (the agent's config files are
 /// hidden dot files the sidebar never lists), created, modified or removed, Writer's own writes
 /// included (and named in `own`), and runs on the watcher thread: it must only filter and hand off, never block.
-pub fn observe_paths(observer: PathObserver) {
-    PATH_OBSERVERS.write().push(observer);
+///
+/// The observer stays registered until the returned handle is dropped.
+pub fn observe_paths(observer: PathObserver) -> ObserverHandle {
+    let id = NEXT_OBSERVER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    PATH_OBSERVERS.write().push((id, observer));
+    ObserverHandle(id)
 }
 
 fn notify_observers(state: &WorkspaceState, label: &str, root: &Path, events: &[Event]) {
@@ -169,7 +185,7 @@ fn notify_observers(state: &WorkspaceState, label: &str, root: &Path, events: &[
         .filter(|p| is_self_write(state, p))
         .cloned()
         .collect();
-    for o in observers.iter() {
+    for (_, o) in observers.iter() {
         o(label, root, paths.clone(), own.clone());
     }
 }
@@ -611,6 +627,20 @@ mod tests {
     use std::path::PathBuf;
 
     const ROOT: &str = "/workspace";
+
+    #[test]
+    fn an_observer_is_registered_until_its_handle_drops() {
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let s2 = std::sync::Arc::clone(&seen);
+        let handle = observe_paths(Box::new(move |_, _, _, _| {
+            s2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+        let id = handle.0;
+        let registered = |id: u64| PATH_OBSERVERS.read().iter().any(|(i, _)| *i == id);
+        assert!(registered(id));
+        drop(handle);
+        assert!(!registered(id), "dropping the handle unregisters it");
+    }
 
     #[test]
     fn test_ignores_git_directory() {

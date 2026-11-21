@@ -248,7 +248,7 @@ fn the_agent_commit_goes_first_and_no_user_commit_runs_during_a_turn() {
     write(&root, "mine.md", "1");
     write(&root, "agent.md", "1");
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "Studio").unwrap();
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
 
     // the user's pending edit is committed just before the turn starts
@@ -304,7 +304,7 @@ fn agent_commits_off_leaves_the_agents_files_to_the_users_commit() {
     let root = dir.path().canonicalize().unwrap();
     write(&root, "a.md", "1");
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
-    app.state::<runtime::Vaults>().open("main", &root);
+    runtime::vaults(app.handle()).unwrap().open("main", &root);
     // the window's settings turn agent commits off
     {
         let state = app.state::<AppState>().get_or_create("main");
@@ -329,7 +329,7 @@ fn a_vault_that_is_not_set_up_gets_no_commit_and_no_error_from_any_hook() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write(&root, "a.md", "1");
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     vaults.written("main", &root, &[root.join("a.md")], Instant::now());
     points::emit(&TURN_STARTED_POINT, &started(&root));
@@ -350,7 +350,7 @@ fn a_paused_vault_is_never_committed() {
     write(&root, "a.md", "1");
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
     crate::git::state::set_paused(&root, true).unwrap();
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     write(&root, "a.md", "2");
     vaults.written("main", &root, &[root.join("a.md")], Instant::now());
@@ -366,7 +366,7 @@ fn writes_to_device_local_state_never_reset_the_timer() {
     let dir = vault();
     let root = dir.path().canonicalize().unwrap();
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     write(&root, "a.md", "1");
     let t0 = Instant::now();
@@ -393,7 +393,7 @@ fn a_missing_identity_is_an_explicit_error_state_and_nothing_is_committed() {
     // an existing repository with no identity, already set up by an earlier run
     crate::git::Repo::init(&root).unwrap();
     std::fs::write(root.join(".gitignore"), crate::git::ignore::apply("")).unwrap();
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     vaults.written("main", &root, &[root.join("a.md")], Instant::now());
     runtime::tick(app.handle(), later(100));
@@ -412,7 +412,7 @@ fn with_the_feature_off_nothing_is_set_up_and_no_point_has_a_subscriber() {
     points::retract("git");
     let app = app_with(vec![&Git], &["features.git.enabled"]);
     assert!(
-        app.try_state::<runtime::Vaults>().is_none(),
+        runtime::vaults(app.handle()).is_none(),
         "no state, no hooks"
     );
     assert!(!points::extended_by(TURN_STARTED_POINT.id, "git"));
@@ -434,7 +434,7 @@ fn with_the_agent_off_its_points_are_not_delivered_but_git_still_works() {
     let root = dir.path().canonicalize().unwrap();
     write(&root, "a.md", "1");
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     // the owner is off: the extension is ignored, the turn is never tracked
     points::emit(&TURN_STARTED_POINT, &started(&root));
@@ -474,7 +474,7 @@ fn shutdown_releases_everything_the_feature_owns() {
     let root = dir.path().canonicalize().unwrap();
     write(&root, "a.md", "1");
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
-    let vaults = app.state::<runtime::Vaults>();
+    let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     assert!(points::extended_by(TURN_FINISHED_POINT.id, "git"));
     assert!(!vaults.busy());

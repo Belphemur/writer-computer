@@ -6,6 +6,8 @@ import { logger } from "@/lib/logger";
 import { useFeatureHealth, type FeaturesStatus } from "@/stores/feature-health-store";
 
 export const FAILED_EVENT = "features:failed";
+export const STARTED_EVENT = "features:started";
+export const STOPPED_EVENT = "features:stopped";
 
 export interface BridgeDeps {
   listen?: typeof tauriListen;
@@ -24,6 +26,18 @@ export function startFeatureHealthBridge({
     ).catch((e) => logger.error("app", `features:failed listener failed: ${String(e)}`));
   } catch (e) {
     logger.error("app", `features:failed listener failed: ${String(e)}`);
+  }
+  for (const [event, apply] of [
+    [STARTED_EVENT, health.markStarted],
+    [STOPPED_EVENT, health.markStopped],
+  ] as const) {
+    try {
+      void listen<{ id: string }>(event, (e) => apply(e.payload.id)).catch((e) =>
+        logger.error("app", `${event} listener failed: ${String(e)}`),
+      );
+    } catch (e) {
+      logger.error("app", `${event} listener failed: ${String(e)}`);
+    }
   }
   try {
     void status().then(health.applyStatus, (e) =>

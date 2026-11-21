@@ -405,7 +405,6 @@ pub struct StreamRegistry {
 }
 
 impl StreamRegistry {
-    #[cfg(test)]
     pub fn active(&self) -> usize {
         self.entries.lock().len()
     }
@@ -479,6 +478,11 @@ impl StreamRegistry {
     /// Trust revoked or vault switched: cancel every stream of that vault.
     pub fn cancel_root(&self, root: &std::path::Path) {
         self.cancel_where(|e| e.root == root);
+    }
+
+    /// The Obsidian plugin host stops: every stream of every window and vault.
+    pub fn cancel_all(&self) {
+        self.cancel_where(|_| true);
     }
 
     fn cancel_where(&self, pred: impl Fn(&StreamEntry) -> bool) {

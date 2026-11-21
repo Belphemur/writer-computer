@@ -5,7 +5,7 @@
 //! - The owner declares a typed key in its public `api` module (`static P: Point<Args>`) and calls
 //!   [`emit`] where the thing happens. It never learns who listens: with no contributor `emit`
 //!   returns at once, which is exactly the behaviour of the app without the contributor.
-//! - A contributor calls [`extend`] from its `Feature::setup`. The handler is wrapped once here:
+//! - A contributor calls [`extend`] from its `Feature::start` (the feature's scope retracts the extensions when it stops). The handler is wrapped once here:
 //!   it is skipped while the contributor or the point's owner is off (read live from the
 //!   settings), and it runs under `features::guard`, so a panic fails the contributor, never the
 //!   owner or the other contributors.
@@ -51,7 +51,7 @@ struct Entry {
 static REGISTRY: RwLock<Vec<Entry>> = RwLock::new(Vec::new());
 
 /// Adds `handler` to `point` for feature `contributor` (its manifest `extends` names the point).
-/// Registering twice for one point and contributor replaces the first, so a repeated `setup`
+/// Registering twice for one point and contributor replaces the first, so a repeated `start`
 /// never doubles a reaction.
 pub fn extend<R: Runtime, A: 'static>(
     app: &AppHandle<R>,

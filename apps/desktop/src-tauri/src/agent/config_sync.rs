@@ -20,6 +20,7 @@
 
 use super::events::McpServerStatus;
 use super::session::{Shared, Timing};
+use crate::features::scope::Spawner;
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::io::Read;
@@ -262,12 +263,14 @@ pub struct ProbeTarget {
     pub env: Vec<(String, String)>,
 }
 
-/// Asks the CLI which MCP servers connect. A port so tests use a fake.
+/// Asks the CLI which MCP servers connect. A port so tests use a fake. `spawner` owns the child
+/// process and its reader: a stopped host kills the check.
 pub trait McpProbe: Send + Sync {
     fn probe(
         &self,
         target: &ProbeTarget,
         timeout: Duration,
+        spawner: &Spawner,
     ) -> Result<Vec<McpServerStatus>, String>;
 }
 
@@ -275,7 +278,12 @@ pub trait McpProbe: Send + Sync {
 pub struct CliMcpProbe;
 
 impl McpProbe for CliMcpProbe {
-    fn probe(&self, t: &ProbeTarget, timeout: Duration) -> Result<Vec<McpServerStatus>, String> {
+    fn probe(
+        &self,
+        t: &ProbeTarget,
+        timeout: Duration,
+        spawner: &Spawner,
+    ) -> Result<Vec<McpServerStatus>, String> {
         let mut cmd = std::process::Command::new(&t.program);
         cmd.args(["mcp", "list"])
             .current_dir(&t.cwd)
@@ -288,42 +296,39 @@ impl McpProbe for CliMcpProbe {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
-        }
-        let mut child = cmd
-            .spawn()
+        let mut child = spawner
+            .process(&mut cmd)
             .map_err(|e| format!("could not run mcp list: {e}"))?;
-        let mut out = child.stdout.take().ok_or("no stdout")?;
-        let reader = std::thread::spawn(move || {
-            let mut text = String::new();
-            // bounded: a runaway server banner is cut
-            let _ = (&mut out).take(256 * 1024).read_to_string(&mut text);
-            text
-        });
+        let mut out = child.take_stdout().ok_or("no stdout")?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        spawner
+            .spawn("agent-mcp-read", move |_| {
+                let mut text = String::new();
+                // bounded: a runaway server banner is cut
+                let _ = (&mut out).take(256 * 1024).read_to_string(&mut text);
+                let _ = tx.send(text);
+            })
+            .map_err(|e| format!("could not read mcp list: {e}"))?;
         let deadline = Instant::now() + timeout;
         loop {
             match child.try_wait() {
                 Ok(Some(_)) => break,
                 Ok(None) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(50))
+                    if !spawner.sleep(Duration::from_millis(50)) {
+                        child.kill();
+                        return Err("mcp list stopped".into());
+                    }
                 }
                 Ok(None) => {
-                    #[cfg(unix)]
-                    // SAFETY: signals the child's own process group, created above
-                    unsafe {
-                        libc::kill(-(child.id() as i32), libc::SIGKILL);
-                    }
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    child.kill();
                     return Err("mcp list timed out".into());
                 }
                 Err(e) => return Err(format!("mcp list failed: {e}")),
             }
         }
-        let text = reader.join().map_err(|_| "reader panicked".to_string())?;
+        let text = rx
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "mcp list output was lost".to_string())?;
         Ok(parse_mcp_list(&text))
     }
 }
@@ -348,6 +353,8 @@ pub(crate) enum Msg {
         chat_id: String,
         result: Result<Vec<McpServerStatus>, String>,
     },
+    /// The agent feature stops: the worker ends.
+    Stop,
 }
 
 #[derive(Default)]
@@ -363,6 +370,8 @@ pub(crate) struct Worker {
     pub shared: Weak<Shared>,
     pub probe: Arc<dyn McpProbe>,
     pub timing: Timing,
+    /// The host's threads, processes and token: the probe runs on it and ends with it.
+    pub spawner: Spawner,
 }
 
 impl Worker {
@@ -446,6 +455,7 @@ impl Worker {
                         mcp.remove(&chat_id);
                     }
                 }
+                Ok(Msg::Stop) => return,
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
@@ -485,15 +495,14 @@ impl Worker {
                     self.timing.mcp_probe_timeout,
                     chat_id.clone(),
                 );
-                let started = std::thread::Builder::new()
-                    .name("agent-mcp-probe".into())
-                    .spawn(move || {
-                        let result = probe.probe(&target, timeout);
-                        let _ = tx.send(Msg::Probed {
-                            chat_id: id,
-                            result,
-                        });
+                let sp = self.spawner.clone();
+                let started = self.spawner.spawn("agent-mcp-probe", move |_| {
+                    let result = probe.probe(&target, timeout, &sp);
+                    let _ = tx.send(Msg::Probed {
+                        chat_id: id,
+                        result,
                     });
+                });
                 if started.is_err() {
                     t.probing = false;
                     t.due = Some(now + backoff(&self.timing.mcp_backoff, t.attempt));

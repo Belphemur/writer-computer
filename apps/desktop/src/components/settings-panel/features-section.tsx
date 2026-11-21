@@ -4,15 +4,6 @@ import { enabledKey, FEATURE_MANIFESTS, isFeatureEnabled } from "@/lib/features/
 import type { FeatureManifest } from "@/lib/features/types";
 import { BooleanControl } from "./setting-control";
 
-/** Does the feature have a Rust half whose state survives a toggle until the next launch? */
-function hasRustHalf(m: FeatureManifest): boolean {
-  return (
-    (m.rust?.commands?.length ?? 0) > 0 ||
-    (m.rust?.events?.length ?? 0) > 0 ||
-    (m.rust?.hooks?.length ?? 0) > 0
-  );
-}
-
 function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
   const settings = useAllSettings();
   const setSetting = useSetSetting();
@@ -22,7 +13,7 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
   const clear = useFeatureHealth((s) => s.clear);
   const enabled = isFeatureEnabled(manifest, settings);
   // "Turn back on": the setting a crash turned off (the narrowest one) is set again, and the
-  // session failure state is cleared, so the web half returns at once and the Rust half after a restart.
+  // session failure state is cleared, so Rust starts the feature again at once and the web half follows.
   const turnBackOn = () => {
     clear(manifest.id);
     void setSetting(crash?.setting ?? enabledKey(manifest.id), true);
@@ -60,12 +51,6 @@ function FeatureRow({ manifest }: { manifest: FeatureManifest }) {
               >
                 Turn back on
               </button>
-            </div>
-          )}
-          {hasRustHalf(manifest) && (
-            <div className="mt-1 text-[12px] text-[var(--text-muted)]">
-              Switching it off stops its background services after a restart; the interface part
-              switches at once.
             </div>
           )}
         </div>

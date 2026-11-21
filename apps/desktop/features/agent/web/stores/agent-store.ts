@@ -75,6 +75,11 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { usePaneStore } from "@features/agent/web/stores/pane-store";
+import type { FeatureContext } from "@/lib/features/types";
+import {
+  attachAgentStoreForTests,
+  registerAgentStore,
+} from "@features/agent/web/lib/store-lifecycle";
 
 /** Skills on disk per project (`""` = the vault root): what the `/` menu lists before and next to the CLI's own list. */
 export type SkillsEntry = {
@@ -274,6 +279,7 @@ export function configureAgentRuntimeForTests(
   client: AgentClient | null,
   schedule: (flush: () => void) => void = (f) => f(),
 ) {
+  attachAgentStoreForTests();
   teardownRuntime();
   testClient = client ? { client, schedule } : null;
 }
@@ -487,6 +493,7 @@ export function configureChatPersistenceForTests(opts: {
   reload?: (relativePath: string) => Promise<unknown>;
   chatsIo?: ChatsIo;
 }) {
+  attachAgentStoreForTests();
   chatRestore.reset(opts.chatsIo, opts.delayMs);
   lastProject.root = null;
   persistence.instance = null;
@@ -1626,35 +1633,57 @@ const ensureChatTab = (open: boolean) => {
   const s = useAgentStore.getState();
   if (open && s.order.length === 0) s.newChat();
 };
-ensureChatTab(usePaneStore.getState().open);
-usePaneStore.subscribe((s, prev) => {
-  if (s.open !== prev.open) ensureChatTab(s.open);
-});
 
-// Save the open chats on every change to the tab strip or its transcripts (debounced), and on
-// window close, like the editor session.
-useAgentStore.subscribe((s, prev) => {
-  if (
-    s.order !== prev.order ||
-    s.activeChatId !== prev.activeChatId ||
-    s.notes !== prev.notes ||
-    s.chats !== prev.chats
-  )
-    scheduleOpenChatsSave();
-});
-if (typeof window !== "undefined") window.addEventListener("beforeunload", flushOpenChats);
+// The store's own subscriptions live on the feature's `ctx` (`lib/store-lifecycle.ts`): wired
+// while the feature is active, released when it deactivates.
+function wireAgentStore(ctx: FeatureContext) {
+  ensureChatTab(usePaneStore.getState().open);
+  ctx.subscribe(usePaneStore, (s, prev) => {
+    if (s.open !== prev.open) ensureChatTab(s.open);
+  });
 
-// The last used project follows the active chat (a tab switch, a new chat, a changed project) and
-// is saved per vault once that vault's value was loaded.
-useAgentStore.subscribe((s, prev) => {
-  const chat = s.activeChatId ? s.chats[s.activeChatId] : undefined;
-  const before = prev.activeChatId ? prev.chats[prev.activeChatId] : undefined;
-  if (chat && (s.activeChatId !== prev.activeChatId || chat.projectPath !== before?.projectPath))
-    if (chat.projectPath !== s.currentProjectPath)
-      useAgentStore.setState({ currentProjectPath: chat.projectPath });
-  if (s.currentProjectPath !== prev.currentProjectPath) {
-    const root = useWorkspaceStore.getState().root;
-    if (root && root === lastProject.root)
-      void setPreference(lastProjectPreferenceKey(root), s.currentProjectPath);
+  // Save the open chats on every change to the tab strip or its transcripts (debounced), and on
+  // window close, like the editor session.
+  ctx.subscribe(useAgentStore, (s, prev) => {
+    if (
+      s.order !== prev.order ||
+      s.activeChatId !== prev.activeChatId ||
+      s.notes !== prev.notes ||
+      s.chats !== prev.chats
+    )
+      scheduleOpenChatsSave();
+  });
+  if (typeof window !== "undefined") {
+    window.addEventListener("beforeunload", flushOpenChats);
+    ctx.onDispose(() => window.removeEventListener("beforeunload", flushOpenChats));
   }
-});
+
+  // The last used project follows the active chat (a tab switch, a new chat, a changed project)
+  // and is saved per vault once that vault's value was loaded.
+  ctx.subscribe(useAgentStore, (s, prev) => {
+    const chat = s.activeChatId ? s.chats[s.activeChatId] : undefined;
+    const before = prev.activeChatId ? prev.chats[prev.activeChatId] : undefined;
+    if (chat && (s.activeChatId !== prev.activeChatId || chat.projectPath !== before?.projectPath))
+      if (chat.projectPath !== s.currentProjectPath)
+        useAgentStore.setState({ currentProjectPath: chat.projectPath });
+    if (s.currentProjectPath !== prev.currentProjectPath) {
+      const root = useWorkspaceStore.getState().root;
+      if (root && root === lastProject.root)
+        void setPreference(lastProjectPreferenceKey(root), s.currentProjectPath);
+    }
+  });
+}
+
+/** The agent feature turns off: what the chats hold is saved (no word is lost, they come back
+ *  when it is turned on), the `agent:event` listener and the pump go, the pending timers are
+ *  cleared and the store is empty again. Rust has already killed every chat's process. */
+function resetAgentStore() {
+  flushOpenChats();
+  for (const id of Object.keys(useAgentStore.getState().chats)) void persistence.saver().flush(id);
+  teardownRuntime();
+  runtimeStarting = null;
+  chatRestore.reset(chatRestore.io, chatRestore.delayMs);
+  useAgentStore.setState(useAgentStore.getInitialState(), true);
+}
+
+registerAgentStore({ wire: wireAgentStore, reset: resetAgentStore });

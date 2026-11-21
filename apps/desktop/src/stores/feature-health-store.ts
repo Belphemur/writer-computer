@@ -27,6 +27,10 @@ export interface FeaturesStatus {
   safeMode: boolean;
   crashDisabled: CrashDisabled[];
   failures: { id: string; boundary: string; at: number }[];
+  /** The features whose Rust half is up. */
+  started?: string[];
+  /** Started features doing work the user would lose by turning them off. */
+  busy?: { id: string; reason: string }[];
 }
 
 interface FeatureHealthState {
@@ -35,6 +39,11 @@ interface FeatureHealthState {
   sessionOff: Record<string, true>;
   crashDisabled: CrashDisabled[];
   safeMode: boolean;
+  /** Features whose Rust half Rust reports started; `null` until the first report (until then
+   *  every feature counts as started: at launch Rust starts them before any window loads). */
+  started: Record<string, true> | null;
+  /** What each busy feature is doing, from the last status. */
+  busy: Record<string, string>;
   /** Notices the user closed, by `<kind>:<id>`. */
   dismissed: Record<string, true>;
 
@@ -45,6 +54,9 @@ interface FeatureHealthState {
   /** A failure that cannot be retried (the Obsidian host failed to boot): off for the session at once. */
   failNow: (id: string, boundary: string) => void;
   applyStatus: (status: FeaturesStatus) => void;
+  /** `features:started` / `features:stopped` from Rust. */
+  markStarted: (id: string) => void;
+  markStopped: (id: string) => void;
   /** The user turned the feature back on: forget its failures (web half at once). */
   clear: (id: string) => void;
   dismiss: (key: string) => void;
@@ -55,6 +67,8 @@ export const useFeatureHealth = create<FeatureHealthState>()((set, get) => ({
   sessionOff: {},
   crashDisabled: [],
   safeMode: false,
+  started: null,
+  busy: {},
   dismissed: {},
 
   recordFailure: (id, boundary) =>
@@ -87,7 +101,20 @@ export const useFeatureHealth = create<FeatureHealthState>()((set, get) => ({
         crashDisabled: status.crashDisabled,
         failures,
         sessionOff,
+        started: Object.fromEntries((status.started ?? []).map((id) => [id, true as const])),
+        busy: Object.fromEntries((status.busy ?? []).map((b) => [b.id, b.reason])),
       };
+    }),
+
+  markStarted: (id) =>
+    set((s) => (s.started ? { started: { ...s.started, [id]: true as const } } : s)),
+
+  markStopped: (id) =>
+    set((s) => {
+      if (!s.started) return s;
+      const started = { ...s.started };
+      delete started[id];
+      return { started };
     }),
 
   clear: (id) =>
@@ -105,6 +132,11 @@ export const useFeatureHealth = create<FeatureHealthState>()((set, get) => ({
 
   dismiss: (key) => set((s) => ({ dismissed: { ...s.dismissed, [key]: true } })),
 }));
+
+/** Is the feature's Rust half up? Before the first status report everything counts as started. */
+export function isRustStarted(state: Pick<FeatureHealthState, "started">, id: string): boolean {
+  return state.started === null || state.started[id] === true;
+}
 
 /** Is the feature off for this run whatever its setting says: safe mode or a session failure? */
 export function isOffForSession(

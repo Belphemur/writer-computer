@@ -11,7 +11,6 @@ use crate::agent::chat_store::{
 use crate::agent::events::ChatSummary;
 use crate::agent::files::{self, ChatFile};
 use crate::agent::permission_rules::{self, PermissionRules};
-use crate::agent::session::AgentSessions;
 use crate::agent::title;
 use crate::commands::blocking;
 use crate::error::AppError;
@@ -162,8 +161,7 @@ pub async fn agent_auto_title<R: Runtime>(
     let root = root_of(&app, &webview)?;
     let label = webview.label().to_string();
     blocking(move || {
-        let Some((program, cwd)) = app
-            .state::<AgentSessions>()
+        let Some((program, cwd)) = super::super::sessions(&app)?
             .get(&label, &chat_id)
             .ok()
             .and_then(|s| s.helper_target())
@@ -230,7 +228,7 @@ pub async fn agent_regenerate_title<R: Runtime>(
             .and_then(|v| v.as_str().map(str::to_string))
     };
     blocking(move || {
-        let sessions = app.state::<AgentSessions>();
+        let sessions = super::super::sessions(&app)?;
         let (summary, _) = chat_store::load(&root, &chat_id).map_err(store_err)?;
         let cwd = sessions
             .ports()

@@ -44,7 +44,13 @@ export interface FeatureManifest {
   extends?: string[];
   /** Per extended point, what stops when the feature is off (shown in Settings > Features). */
   offNotes?: Record<string, string>;
-  rust?: { commands?: string[]; events?: string[]; hooks?: string[] };
+  rust?: {
+    commands?: string[];
+    events?: string[];
+    hooks?: string[];
+    gatedCommands?: string[];
+    fileKinds?: string[];
+  };
   /** Only the part the settings UI reads; the rest of `contributes` is the loader's. The id lists
    *  (`docks`, `sidebarPanels`, ...) name what the web half registers; a contract test ties them. */
   contributes?: {
@@ -73,6 +79,16 @@ export interface FeatureContext {
   readonly disposables: DisposableStore;
   /** `<id>:<name>` events; the listener is removed on deactivate. */
   listen<T = unknown>(name: string, fn: (payload: T) => void): Dispose;
+  /** A timer owned by the feature: cleared on deactivate (or by the returned dispose). */
+  setTimeout(fn: () => void, ms: number): Dispose;
+  setInterval(fn: () => void, ms: number): Dispose;
+  /** Subscribes to a store (Zustand's `subscribe`); removed on deactivate. */
+  subscribe<S>(
+    store: { subscribe(listener: (state: S, prev: S) => void): Dispose },
+    fn: (state: S, prev: S) => void,
+  ): Dispose;
+  /** Runs `fn` on deactivate (after the later registrations, in reverse order of adding). */
+  onDispose(fn: Dispose): Dispose;
   /** The feature's own declared secrets; Rust refuses a key another feature (or nobody) declares. */
   readonly secrets: FeatureSecrets;
 }

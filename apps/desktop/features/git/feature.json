@@ -12,7 +12,7 @@
   "rust": {
     "commands": ["git_status", "git_setup", "git_commit_now", "git_set_paused"],
     "events": ["git:changed"],
-    "hooks": ["setup", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
+    "hooks": ["start", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
     "cliCommands": ["git:status", "git:log", "git:commit"],
     "skills": ["writer-git"]
   },

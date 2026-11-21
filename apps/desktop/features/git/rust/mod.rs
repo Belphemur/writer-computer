@@ -13,20 +13,21 @@
 //! - the `writer-git` agent skill (`../skills/`).
 //!
 //! **How it cooperates.** The agent owns two points (`agent.turn-started`, `agent.turn-finished`,
-//! contract in `crate::agent::api`); this feature extends them from `setup` (ADR 2026-11-20 "let
+//! contract in `crate::agent::api`); this feature extends them from `start` (ADR 2026-11-20 "let
 //! features cooperate through owned points..."). The agent never learns git exists, and git works
 //! alone: with the agent off it is still the history of the user's edits. The watcher is observed
 //! through `watcher::observe_paths` (the one source of file changes, no second watcher).
 //!
-//! **Resources.** Everything the feature runs is owned by one struct, `runtime::Vaults`, created
-//! in `setup` and managed by the app: the vaults' cadence state, the ticker thread (through
-//! `features::spawn`), the "stopped" and "committing" flags. The watcher observer and the point
-//! extensions live in process-wide registries that cannot unregister; they call back into
-//! `Vaults`, which answers nothing after `shutdown()` (that also retracts the extensions). No
-//! static holds feature state and no raw thread is started.
+//! **Resources.** Everything the feature runs is owned by one struct, `runtime::Vaults`, kept in
+//! the feature's scope (`scope.manage`) from `start`: the vaults' cadence state, the "stopped" and
+//! "committing" flags. The ticker is a scope thread (it sleeps on the scope's token), the watcher
+//! observer is `scope.observe`d and the point extensions are retracted when the scope stops
+//! (`FeatureScope::shutdown` retracts every point the feature id extended); the observer and the
+//! points call back into `Vaults`, which answers nothing after `shutdown()`. Busy is "a commit is
+//! in progress". No static holds feature state and no raw thread is started.
 //!
-//! **Off, or on but the vault not set up**: nothing runs. With `features.git.enabled` off the
-//! plugin is not added and no point is extended (restart), the web half goes at once, the CLI
+//! **Off, or on but the vault not set up**: nothing runs. With `features.git.enabled` off no
+//! point is extended, its commands answer `FeatureUnavailable`, the web half goes at once, the CLI
 //! commands answer "turned off" and the skill is not installed. A vault that is not set up
 //! (Settings > Git) gets no commit, no timer action and no error from any hook.
 
@@ -40,10 +41,12 @@ mod tests;
 use crate::agent::api::{TURN_FINISHED, TURN_STARTED};
 use crate::cli::registry::CommandSpec;
 use crate::features::points;
+use crate::features::scope::FeatureScope;
 use crate::features::{Feature, InvokeHandler, WindowCtx};
 use crate::managed_skills::{BundledFile, BundledSkill};
+use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 pub struct Git;
 
@@ -76,10 +79,25 @@ impl<R: Runtime> Feature<R> for Git {
         SKILLS
     }
 
-    fn setup(&self, app: &AppHandle<R>) -> Result<(), String> {
-        if !app.manage(runtime::Vaults::default()) {
-            return Err("git state is already managed".into());
-        }
+    fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
+        let vaults = scope.manage(runtime::Vaults::default());
+        let weak = Arc::downgrade(&vaults);
+        scope.on_stop({
+            let w = weak.clone();
+            move || {
+                if let Some(v) = w.upgrade() {
+                    v.shutdown();
+                }
+            }
+        });
+        scope.busy_probe({
+            let w = weak.clone();
+            move || {
+                w.upgrade()
+                    .filter(|v| v.busy())
+                    .map(|_| "a commit in progress".to_string())
+            }
+        });
         let handle = app.clone();
         points::extend(app, &TURN_STARTED, "git", move |args| {
             runtime::turn_started(&handle, args)
@@ -89,17 +107,17 @@ impl<R: Runtime> Feature<R> for Git {
             runtime::turn_finished(&handle, args)
         });
         // every write in the vault, Writer's own included, resets the quiet timer
-        let handle = app.clone();
-        crate::watcher::observe_paths(Box::new(move |label, root, paths, _own| {
-            if let Some(v) = handle.try_state::<runtime::Vaults>() {
-                v.written(label, root, &paths, Instant::now());
-            }
-        }));
-        Ok(())
+        scope
+            .observe(Box::new(move |label, root, paths, _own| {
+                if let Some(v) = weak.upgrade() {
+                    v.written(label, root, &paths, Instant::now());
+                }
+            }))
+            .map_err(|e| e.to_string())
     }
 
     fn on_workspace_open(&self, app: &AppHandle<R>, window: &WindowCtx<'_>) {
-        let (Some(root), Some(v)) = (window.root, app.try_state::<runtime::Vaults>()) else {
+        let (Some(root), Some(v)) = (window.root, runtime::vaults(app)) else {
             return;
         };
         v.open(window.label, root);
@@ -108,13 +126,13 @@ impl<R: Runtime> Feature<R> for Git {
 
     fn on_workspace_close(&self, app: &AppHandle<R>, label: &str) {
         runtime::flush(app, label);
-        if let Some(v) = app.try_state::<runtime::Vaults>() {
+        if let Some(v) = runtime::vaults(app) {
             v.close(label);
         }
     }
 
     fn on_exit(&self, app: &AppHandle<R>) {
-        if let Some(v) = app.try_state::<runtime::Vaults>() {
+        if let Some(v) = runtime::vaults(app) {
             for label in v.labels() {
                 runtime::flush(app, &label);
             }

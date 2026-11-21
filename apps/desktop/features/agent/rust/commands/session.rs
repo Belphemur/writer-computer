@@ -7,12 +7,13 @@
 //! too many processes) are `error` events of the chat, so
 //! the pane's error cards have one source; `agent_start` / `agent_send` return `Ok` for them.
 
+use super::super::sessions;
 use super::root_of;
 use crate::agent::binary::{self, AgentBinaryInfo};
 use crate::agent::cli_launcher;
 use crate::agent::events::*;
 use crate::agent::ports::InjectAgentsMd;
-use crate::agent::session::{AgentSessions, Rejected, Sink, StartParams, StartedIds};
+use crate::agent::session::{Rejected, Sink, StartParams, StartedIds};
 use crate::commands::blocking;
 use crate::error::AppError;
 use crate::state::AppState;
@@ -67,10 +68,6 @@ fn launcher_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
     .clone()
 }
 
-fn sessions<R: Runtime>(app: &tauri::AppHandle<R>) -> tauri::State<'_, AgentSessions> {
-    app.state::<AgentSessions>()
-}
-
 /// `{ binaryOverride?: string | null }` -> where `claude` is and its version. Without an override
 /// the `agent.binary-path` setting is used.
 #[tauri::command]
@@ -123,7 +120,7 @@ pub async fn agent_start<R: Runtime>(
             cli_dir: launcher_dir(&app),
             ..params
         };
-        app.state::<AgentSessions>().start(params).map_err(rejected)
+        sessions(&app)?.start(params).map_err(rejected)
     })
     .await
 }
@@ -143,7 +140,7 @@ pub async fn agent_send<R: Runtime>(
     // `message_id` is the UI's key for the optimistic card; the CLI has no use for it
     let _ = message_id;
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .send(&label, &chat_id, text, &context)
             .map_err(rejected)
     })
@@ -166,7 +163,7 @@ pub async fn agent_steer<R: Runtime>(
     root_of(&app, &webview)?;
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .steer(&label, &chat_id, &message_id, text, &context)
             .map_err(rejected)
     })
@@ -189,7 +186,7 @@ pub async fn agent_queue<R: Runtime>(
     root_of(&app, &webview)?;
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .queue_line(&label, &chat_id, &message_id, text, &context)
             .map_err(rejected)
     })
@@ -208,7 +205,7 @@ pub async fn agent_unqueue<R: Runtime>(
 ) -> Result<bool, AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .unqueue(&label, &chat_id, &message_id)
             .map_err(rejected)
     })
@@ -223,7 +220,7 @@ pub async fn agent_cancel<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
-    blocking(move || sessions(&app).cancel(&label, &chat_id).map_err(rejected)).await
+    blocking(move || sessions(&app)?.cancel(&label, &chat_id).map_err(rejected)).await
 }
 
 #[tauri::command]
@@ -241,7 +238,7 @@ pub async fn agent_permission<R: Runtime>(
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .permission(
                 &label,
                 &chat_id,
@@ -268,7 +265,7 @@ pub async fn agent_answer_question<R: Runtime>(
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .answer_question(&label, &chat_id, &request_id, answers)
             .map_err(rejected)
     })
@@ -285,7 +282,7 @@ pub async fn agent_set_permission_mode<R: Runtime>(
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .set_permission_mode(&label, &chat_id, mode)
             .map_err(rejected)
     })
@@ -303,7 +300,7 @@ pub async fn agent_set_model<R: Runtime>(
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .set_model(&label, &chat_id, model, effort)
             .map_err(rejected)
     })
@@ -320,7 +317,7 @@ pub async fn agent_reload<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<ReloadOutcome, AppError> {
     let label = webview.label().to_string();
-    blocking(move || sessions(&app).reload(&label, &chat_id).map_err(rejected)).await
+    blocking(move || sessions(&app)?.reload(&label, &chat_id).map_err(rejected)).await
 }
 
 #[tauri::command]
@@ -331,7 +328,7 @@ pub async fn agent_close<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
-    blocking(move || sessions(&app).close(&label, &chat_id).map_err(rejected)).await
+    blocking(move || sessions(&app)?.close(&label, &chat_id).map_err(rejected)).await
 }
 
 /// Rebind an open chat to another CLI session; the next spawn `--resume`s it. (Opening a saved
@@ -346,7 +343,7 @@ pub async fn agent_resume<R: Runtime>(
 ) -> Result<(), AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        sessions(&app)
+        sessions(&app)?
             .resume(&label, &chat_id, &session_id)
             .map_err(rejected)
     })
@@ -370,7 +367,7 @@ pub async fn agent_snapshot<R: Runtime>(
 ) -> Result<SnapshotReply, AppError> {
     let label = webview.label().to_string();
     blocking(move || {
-        let (state, events) = sessions(&app).snapshot(&label, &chat_id, after_seq);
+        let (state, events) = sessions(&app)?.snapshot(&label, &chat_id, after_seq);
         Ok(SnapshotReply { state, events })
     })
     .await
@@ -387,7 +384,7 @@ pub async fn agent_turn_changes<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<Option<TurnChanges>, AppError> {
     let root = root_of(&app, &webview)?;
-    blocking(move || Ok(sessions(&app).changes().detail(&chat_id, &turn_id, &root))).await
+    blocking(move || Ok(sessions(&app)?.changes().detail(&chat_id, &turn_id, &root))).await
 }
 
 /// The chat's session diff: every note it changed against its first-touch version since Writer
@@ -400,7 +397,7 @@ pub async fn agent_session_changes<R: Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<Option<SessionChanges>, AppError> {
     let root = root_of(&app, &webview)?;
-    blocking(move || Ok(sessions(&app).changes().session_detail(&chat_id, &root))).await
+    blocking(move || Ok(sessions(&app)?.changes().session_detail(&chat_id, &root))).await
 }
 
 /// Undo: restore the pre-turn content of `paths`. One outcome per path; a file that changed since
@@ -416,7 +413,7 @@ pub async fn agent_revert_changes<R: Runtime>(
 ) -> Result<Option<Vec<RevertOutcome>>, AppError> {
     let root = root_of(&app, &webview)?;
     blocking(move || {
-        Ok(sessions(&app)
+        Ok(sessions(&app)?
             .changes()
             .revert(&chat_id, &turn_id, &root, &paths))
     })

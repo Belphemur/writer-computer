@@ -339,7 +339,7 @@ describe("manifest and settings contract", () => {
     expect(schema.settings.find((e) => e.key === "features.icons.enabled")).toEqual({
       key: "features.icons.enabled",
       label: manifest.name,
-      description: `Turns the ${manifest.name} feature on or off. The Rust part takes effect after a restart.`,
+      description: `Turns the ${manifest.name} feature on or off.`,
       category: "Features",
       type: "boolean",
       default: true,

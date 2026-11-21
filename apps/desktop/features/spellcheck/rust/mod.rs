@@ -10,24 +10,25 @@
 //!   check a note, list, install and remove dictionaries, the personal dictionary and the words
 //!   ignored in one note;
 //! - `cli.rs`: the `writer check` command, contributed to the CLI registry;
-//! - `setup`: builds the engine state. The engine itself is cheap to build; Harper's English
-//!   dictionary, a Hunspell dictionary and the language detector load on the first check that
-//!   needs them, and Harper's worker thread starts through `features::spawn` (a panic in it fails
-//!   this feature, not the app).
+//! - `start`: builds the engine state in the feature's scope. The engine itself is cheap to
+//!   build; Harper's English dictionary, a Hunspell dictionary and the language detector load on
+//!   the first check that needs them, and Harper's worker thread starts on the scope (a panic in
+//!   it fails this feature, not the app; stopping the feature drops the engine, which ends it).
 //!
 //! No command here sends note text anywhere. The one network use is `spellcheck_install_dictionary`,
 //! which the user starts, through the plugin store's egress-checked fetcher, for a file of the
 //! pinned catalog.
 //!
-//! Switch off (`features.spellcheck.enabled`): at launch the plugin is not added (its commands are
-//! "plugin not found" until the next launch) and the web half goes at once. `writer check`
-//! answers that the feature is off.
+//! Switch off (`features.spellcheck.enabled`): the engine is dropped and its commands answer
+//! `FeatureUnavailable`; switched on again it starts without a restart. `writer check` answers
+//! that the feature is off.
 
 mod bindings;
 mod cli;
 mod commands;
 
 use crate::cli::registry::CommandSpec;
+use crate::features::scope::FeatureScope;
 use crate::features::{Feature, InvokeHandler};
 use crate::spellcheck::harper::Spawner;
 use crate::spellcheck::{dictionaries, ignored, personal, Checker};
@@ -65,23 +66,19 @@ impl<R: Runtime> Feature<R> for Spellcheck {
         cli::COMMANDS
     }
 
-    fn setup(&self, app: &AppHandle<R>) -> Result<(), String> {
+    fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
         let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-        let handle = app.clone();
-        let spawner: Spawner = Arc::new(move |name, f| {
-            crate::features::spawn(&handle, "spellcheck", name, f).map(drop)
-        });
+        let threads = scope.spawner();
+        let spawner: Spawner = Arc::new(move |name, f| threads.spawn(name, move |_| f()));
         let checker = Arc::new(Checker::new(dictionaries::dir(&data_dir), spawner));
         // the move and delete hooks of `vault_events` have no app handle: they find the store here
         ignored::set_data_dir(data_dir.clone());
-        if !app.manage(Engine {
+        scope.manage(Engine {
             checker,
             personal: personal::Loader::default(),
             ignored: ignored::Loader::default(),
             data_dir: parking_lot::RwLock::new(data_dir),
-        }) {
-            return Err("the spellcheck engine is already managed".into());
-        }
+        });
         Ok(())
     }
 }

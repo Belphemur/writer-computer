@@ -302,9 +302,9 @@ describe("the error boundary", () => {
 
 describe("the Rust bridge", () => {
   it("features:failed switches the web half off and the status fills the notices", async () => {
-    let handler: ((e: { payload: { id: string; boundary: string } }) => void) | undefined;
-    const listen = vi.fn(async (_n: string, h: never) => {
-      handler = h;
+    const handlers: Record<string, (e: { payload: Record<string, string> }) => void> = {};
+    const listen = vi.fn(async (name: string, h: never) => {
+      handlers[name] = h;
       return () => {};
     });
     startFeatureHealthBridge({
@@ -318,7 +318,13 @@ describe("the Rust bridge", () => {
     await flushPromises();
     expect(listen).toHaveBeenCalledWith("features:failed", expect.any(Function));
     expect(health().crashDisabled).toHaveLength(1);
-    handler!({ payload: { id: "demo", boundary: "thread:x" } });
+    handlers["features:failed"]!({ payload: { id: "demo", boundary: "thread:x" } });
     expect(isOffForSession(health(), "demo")).toBe(true);
+    // the handshake: the status lists what is started, the events follow it
+    expect(health().started).toEqual({});
+    handlers["features:started"]!({ payload: { id: "demo" } });
+    expect(health().started).toEqual({ demo: true });
+    handlers["features:stopped"]!({ payload: { id: "demo" } });
+    expect(health().started).toEqual({});
   });
 });

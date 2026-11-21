@@ -2,19 +2,19 @@
 // each must stay import-light) and registered while `features.<id>.enabled` is on. The setting is
 // watched, so switching a feature off removes its commands, menu items and editor extensions at
 // once and switching it on adds them back. Core never imports a feature by name.
-import { isOffForSession, useFeatureHealth } from "@/stores/feature-health-store";
+import { isOffForSession, isRustStarted, useFeatureHealth } from "@/stores/feature-health-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { startFeatureHealthBridge } from "./health-bridge";
 import { createFeatureHost, featureHost } from "./registry";
-import { isFeatureEnabled, MANIFEST_BY_PATH } from "./manifests";
+import { hasRustHalf, isFeatureEnabled, MANIFEST_BY_PATH } from "./manifests";
 import type { FeatureDefinition, FeatureManifest } from "./types";
 
 type Host = ReturnType<typeof createFeatureHost>;
 
 export { isFeatureEnabled };
 
-type Manifest = Pick<FeatureManifest, "id" | "enabledByDefault"> & {
+type Manifest = Pick<FeatureManifest, "id" | "enabledByDefault" | "rust"> & {
   /** Activation events from `feature.json`; `onStartup` and `onWorkspaceOpen` are acted on here,
    *  the rest are lazy by use. */
   activation?: string[];
@@ -23,17 +23,23 @@ type Manifest = Pick<FeatureManifest, "id" | "enabledByDefault"> & {
 /** Registers the enabled features that are not registered and unregisters the disabled ones; a
  * feature that lists `onStartup` is activated as it is registered. `isOff` is the session
  * override (safe mode, or switched off after failures): such a feature is not wanted whatever its
- * setting says, and the setting itself is never touched. */
+ * setting says, and the setting itself is never touched. `isStarted` is the handshake with Rust:
+ * a feature with a Rust half registers only once Rust reports it started (so its UI never appears
+ * ahead of its backend) and unregisters when Rust reports it stopped. */
 export function syncBuiltinFeatures(
   host: Host,
   features: readonly { manifest: Manifest; definition: FeatureDefinition }[],
   settings: Record<string, unknown>,
   isOff: (id: string) => boolean = () => false,
   hasWorkspace: () => boolean = () => false,
+  isStarted: (id: string) => boolean = () => true,
 ): void {
   const registered = new Set(host.list());
   for (const { manifest, definition } of features) {
-    const want = isFeatureEnabled(manifest, settings) && !isOff(manifest.id);
+    const want =
+      isFeatureEnabled(manifest, settings) &&
+      !isOff(manifest.id) &&
+      (!hasRustHalf(manifest) || isStarted(manifest.id));
     if (want && !registered.has(manifest.id)) {
       host.register(definition);
       // A failed activation is already logged by the host.
@@ -64,6 +70,7 @@ function sync() {
     useSettingsStore.getState().settings,
     (id) => isOffForSession(health, id),
     () => useWorkspaceStore.getState().root !== null,
+    (id) => isRustStarted(health, id),
   );
 }
 
@@ -77,6 +84,11 @@ useWorkspaceStore.subscribe((state, prev) => {
 });
 // Safe mode, a third failure or a `features:failed` from Rust switches the web half off.
 useFeatureHealth.subscribe((state, prev) => {
-  if (state.sessionOff !== prev.sessionOff || state.safeMode !== prev.safeMode) sync();
+  if (
+    state.sessionOff !== prev.sessionOff ||
+    state.safeMode !== prev.safeMode ||
+    state.started !== prev.started
+  )
+    sync();
 });
 startFeatureHealthBridge();

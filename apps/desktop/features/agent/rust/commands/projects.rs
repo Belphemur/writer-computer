@@ -6,7 +6,6 @@
 use crate::agent::events::NewProjectRequest;
 use crate::agent::project::{self, MakeOptions, ProjectDetail, ProjectError, ProjectUpdate};
 use crate::agent::project_context::{self, Manifest};
-use crate::agent::session::AgentSessions;
 use crate::commands::blocking;
 use crate::commands::index::window_index;
 use crate::error::AppError;
@@ -137,7 +136,7 @@ pub async fn agent_archive_project<R: Runtime>(
     let setting = archive_folder_setting(&app, webview.label());
     blocking(move || {
         let folder = project::archive_folder(&root, setting.as_deref()).map_err(map_err)?;
-        if let Some(sessions) = app.try_state::<AgentSessions>() {
+        if let Some(sessions) = super::super::sessions_if_started(&app) {
             let cwd = project::resolve_cwd(&root, Some(&path)).map_err(map_err)?;
             sessions
                 .stop_idle_in(&cwd)

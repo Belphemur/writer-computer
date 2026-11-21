@@ -1,25 +1,70 @@
 //! The Rust half of the built-in feature `obsidian-host` (SPECs/builtin-plugins-spec.md step 5).
 //!
-//! Deliberately not a `Feature` in `registry()`: the plugin host's commands keep their plain
-//! names (`plugins_state`, `plugin_http_request`, ...) because the API shim calls them by name
-//! and a `plugin:obsidian-host|*` route would rename every caller; they stay registered by the
-//! app and the feature gates them (`manifest.rust.gatedCommands`, one list). Its state
-//! (`ProcManager`, `StreamRegistry`, `PluginEnv`) stays managed by the app and its window-close
-//! and exit cleanup stays in core (`commands::plugins::stop_window_work`, the exit arm in
-//! `lib.rs`): a user can switch the feature on mid-session, and a process the host started
-//! must then still die with its window and with the app, which a hook that only runs for a
-//! feature that was on at launch cannot promise. The switch is read live, so it applies at once.
+//! The plugin host's commands keep their plain names (`plugins_state`, `plugin_http_request`, ...)
+//! because the API shim calls them by name and a `plugin:obsidian-host|*` route would rename every
+//! caller; they stay registered by the app and the feature gates them
+//! (`manifest.rust.gatedCommands`, one list), so [`ObsidianHost`] is a registry entry with no
+//! plugin. Its state (`ProcManager`, `StreamRegistry`, `PluginEnv`) stays managed by the app
+//! (a plugin's process must die with its window and with the app whether or not the feature was
+//! on at launch), and the feature's scope adopts it: [`ObsidianHost`]'s `start` registers the
+//! census (plugin processes and streams) and a stop that kills every plugin process and cancels
+//! every stream directly, not through a command: the gated kill commands refuse once the switch
+//! is off, so the web teardown could not do it. Busy is "plugin processes are running".
 //!
 //! Off, safe mode or failed: every gated command answers `FeatureUnavailable` and the
 //! `writer-plugin://` scheme refuses (`commands::plugins::handle_scheme`), so no plugin file is
 //! served and no plugin runs. Nothing here writes to a vault: the plugin data and trust files are
 //! written by the same code as before, and only for a plugin that is running.
 
-use crate::features::{self, Manifest};
+use crate::features::scope::{FeatureScope, Kind};
+use crate::features::{self, Feature, Manifest};
+use crate::plugin_http::StreamRegistry;
+use crate::plugin_proc::ProcManager;
 use tauri::ipc::Invoke;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 const MANIFEST: &str = include_str!("../feature.json");
+
+pub struct ObsidianHost;
+
+impl<R: Runtime> Feature<R> for ObsidianHost {
+    fn manifest_source(&self) -> &'static str {
+        MANIFEST
+    }
+
+    fn start(&self, app: &AppHandle<R>, scope: &FeatureScope) -> Result<(), String> {
+        let procs = |app: &AppHandle<R>| app.try_state::<ProcManager>().map_or(0, |p| p.active());
+        let streams =
+            |app: &AppHandle<R>| app.try_state::<StreamRegistry>().map_or(0, |s| s.active());
+        scope.adopt(Kind::Process, {
+            let app = app.clone();
+            move || procs(&app)
+        });
+        scope.adopt(Kind::Thread, {
+            let app = app.clone();
+            move || streams(&app)
+        });
+        scope.busy_probe({
+            let app = app.clone();
+            move || {
+                let n = procs(&app);
+                (n > 0).then(|| format!("{n} plugin process{}", if n == 1 { "" } else { "es" }))
+            }
+        });
+        scope.on_stop({
+            let app = app.clone();
+            move || {
+                if let Some(s) = app.try_state::<StreamRegistry>() {
+                    s.cancel_all();
+                }
+                if let Some(p) = app.try_state::<ProcManager>() {
+                    p.kill_all();
+                }
+            }
+        });
+        Ok(())
+    }
+}
 
 pub fn manifest() -> Manifest {
     serde_json::from_str(MANIFEST).expect("obsidian-host feature.json parses")

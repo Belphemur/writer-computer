@@ -26,9 +26,12 @@
 //! Rules every feature follows:
 //! - Events are named `<id>:<name>`: Tauri accepts only alphanumerics, `-`, `/`, `:` and `_`
 //!   (a `.` is rejected), and `src/lib/features/events.ts` enforces the same rule.
-//! - The plugin's `setup` only manages cheap, empty state. Expensive state sits in a [`lazy::Lazy`] and
-//!   is built by the first command that needs it; threads, watchers, processes and SQLite handles
-//!   never start from `setup`.
+//! - A feature is started and stopped live ([`lifecycle`], ADR 2026-11-20): [`Feature::start`]
+//!   receives a fresh [`scope::FeatureScope`] and everything the feature holds while it runs
+//!   (threads, processes, timers, watcher observers, event listeners, its state) goes through
+//!   that scope, so stopping it releases all of it; never `std::thread::spawn`, `Command::spawn`,
+//!   `watcher::observe_paths` or `app.listen` in feature code (a source-scan test fails on it).
+//!   Expensive state still builds on first use inside the scope's state.
 //! - A command that panics inside its async body is caught by the async runtime, not by [`contain`]
 //!   (which sees the synchronous part only); disk work goes through `commands::blocking`, which
 //!   turns a panic of its closure into an error for the caller.
@@ -36,24 +39,27 @@
 //!   test scans this folder too).
 //! - Failure containment (ADR 2026-11-17 "contain feature failures with unwinding panics", spec
 //!   "Failure containment and recovery"): the release profile unwinds, and every boundary goes
-//!   through [`guard`]: `setup`, the hooks, every command (the one wrapper is [`contain`], applied
-//!   where the plugin is built, so a feature declares a plain [`Feature::invoke_handler`]) and
-//!   every thread a feature starts ([`spawn`]). A panic is logged once (feature id and boundary,
+//!   through [`guard`]: `start`, `stop`, the hooks, every command (the one wrapper is
+//!   [`contain`], applied where the plugin is built, so a feature declares a plain
+//!   [`Feature::invoke_handler`]) and every thread a feature starts (the scope's `spawn`). A panic is logged once (feature id and boundary,
 //!   never the payload: the panic hook logs that, redacted), the feature is `failed` for the
-//!   session, its commands answer `FeatureUnavailable`, its hooks are skipped and the webview gets
-//!   `features:failed`. What cannot unwind (an Objective-C exception, a segfault) is recovered on
+//!   session, its commands answer `FeatureUnavailable`, its hooks are skipped, its scope is
+//!   released and the webview gets `features:failed`. What cannot unwind (an Objective-C exception, a segfault) is recovered on
 //!   the next launch from the crash markers in [`recovery`]; native code that stays live is
 //!   declared through [`native`]. Features contain nothing themselves: no `catch_unwind` in
 //!   feature code.
-//! - Hooks ([`Feature::setup`], `on_workspace_open`, `on_workspace_close`, `on_exit`) are called
-//!   by this module's runner only for features that are enabled and whose `setup` succeeded; a
-//!   failing hook is logged, never propagated. Teardown hooks run in reverse registry order.
+//! - Hooks ([`Feature::start`], `on_workspace_open`, `on_workspace_close`, `stop`, `on_exit`) are
+//!   called by this module's runner only for started features (enabled, and `start` succeeded);
+//!   a feature started after launch gets `on_workspace_open` for every open window, a stopped one
+//!   gets nothing; a failing hook is logged, never propagated. Teardown hooks run in reverse
+//!   order.
 //! - Pure contributions ([`Feature::cli_commands`], [`Feature::ipc_commands`],
 //!   [`Feature::skills`], [`Feature::index_ddl`], [`Feature::file_kinds`])
 //!   are read from every registered feature whatever the toggle (the index and the CLI have no
 //!   settings layer; a toggle must never rebuild the index). The tables that run them stay
 //!   where they were: `cli::registry`, `managed_skills`, `index::schema`.
-//! - `setup` runs while `install` holds the settings read lock: it must not write settings.
+//! - `start` at launch runs while `install` holds the settings read lock: it must not write
+//!   settings (a start after launch holds no lock).
 
 use crate::cli::registry::CommandSpec;
 use crate::config::Settings;
@@ -72,18 +78,32 @@ use tauri::ipc::Invoke;
 use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
 pub mod lazy;
+mod lifecycle;
 pub mod points;
 pub mod recovery;
+pub mod scope;
 pub mod secrets;
+
+#[allow(unused_imports)]
+// the surface of the lifecycle for features and core; each is used somewhere
+pub use lifecycle::{
+    busy, exit, is_started, scope_of, settings_written, start_feature, started_ids, state_of,
+    stop_feature, workspace_close, workspace_open, Busy, Running, STARTED_EVENT, STOPPED_EVENT,
+};
+use scope::FeatureScope;
 
 #[cfg(test)]
 mod containment_tests;
 #[cfg(test)]
 mod contract_tests;
 #[cfg(test)]
+mod escape_hatch_tests;
+#[cfg(test)]
 pub(crate) mod fixture;
 #[cfg(test)]
 mod ipc_tests;
+#[cfg(test)]
+mod lifecycle_tests;
 
 #[path = "../../../features/agent/rust/mod.rs"]
 mod agent;
@@ -103,16 +123,14 @@ mod graph;
 pub(crate) mod icons;
 #[path = "../../../features/lint/rust/mod.rs"]
 mod lint;
-#[path = "../../../features/pdf/rust/mod.rs"]
-pub(crate) mod pdf;
-#[path = "../../../features/tasks/rust/mod.rs"]
-mod tasks;
-// Not in `registry()`: the Obsidian host is a kill switch and a gate over commands the app itself
-// registers (see the module), it has no plugin, setup or hook for the runner to run.
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
 pub(crate) mod obsidian_host;
+#[path = "../../../features/pdf/rust/mod.rs"]
+pub(crate) mod pdf;
 #[path = "../../../features/spellcheck/rust/mod.rs"]
 mod spellcheck;
+#[path = "../../../features/tasks/rust/mod.rs"]
+mod tasks;
 
 /// The parts of `feature.json` Rust reads. `build.rs` reads the same file for the ACL, so the
 /// manifest is the only place a command name is declared.
@@ -199,8 +217,8 @@ pub struct RustPart {
     pub commands: Vec<String>,
     #[serde(default)]
     pub events: Vec<String>,
-    /// The `Feature` hooks the feature implements (`setup`, `onWorkspaceOpen`, `onWorkspaceClose`,
-    /// `onExit`): documentation for the Features section, vocabulary checked by the contract test.
+    /// The `Feature` hooks the feature implements (`start`, `stop`, `onWorkspaceOpen`,
+    /// `onWorkspaceClose`, `onExit`): documentation for the Features section, vocabulary checked by the contract test.
     #[serde(default)]
     pub hooks: Vec<String>,
     /// Commands the app registers itself (they are not a plugin's, so a plugin name or ACL would
@@ -226,6 +244,7 @@ impl Manifest {
         !self.rust.commands.is_empty()
             || !self.rust.events.is_empty()
             || !self.rust.hooks.is_empty()
+            || !self.rust.gated_commands.is_empty()
     }
 
     /// The settings key of this feature's kill switch.
@@ -263,17 +282,23 @@ pub trait Feature<R: Runtime>: Send + Sync {
         None
     }
 
-    /// Once, at app setup, after the settings layer exists. Register cheap state; start nothing
-    /// heavy (threads, watchers, processes) unless the feature's own switch says so. An `Err` is
-    /// logged and the feature stays off for the session (its plugin is not added, no hook runs).
-    /// It runs while the settings read lock is held: never write settings here.
-    fn setup(&self, _app: &AppHandle<R>) -> Result<(), String> {
+    /// The feature switches on: at launch, in Settings > Features, or "Turn back on". Build the
+    /// state (`scope.manage`) and start whatever runs (`scope.spawn`, `process`, `timer`,
+    /// `observe`, `listen`): the scope releases it all when the feature stops, so the feature
+    /// keeps nothing in a static. An `Err` is logged and the feature is off for the session (no
+    /// hook runs). At launch it runs while the settings read lock is held: never write settings.
+    fn start(&self, _app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
         Ok(())
     }
-    /// A window now has a workspace root (open, switch or restore).
+    /// The feature switches off or fails over, before its scope is dropped: flush what must not
+    /// be lost (a pending save). Not called for a feature that failed, nor at app exit (`on_exit`).
+    fn stop(&self, _app: &AppHandle<R>) {}
+    /// A window now has a workspace root (open, switch or restore), and for every such window
+    /// when the feature is started after launch.
     #[allow(dead_code)] // no feature uses it yet
     fn on_workspace_open(&self, _app: &AppHandle<R>, _window: &WindowCtx<'_>) {}
-    /// A window was destroyed or left its workspace: stop what it started for `label`.
+    /// A window was destroyed or left its workspace (and, at a stop, every window): stop what it
+    /// started for `label`.
     fn on_workspace_close(&self, _app: &AppHandle<R>, _label: &str) {}
     /// `RunEvent::Exit`.
     fn on_exit(&self, _app: &AppHandle<R>) {}
@@ -326,6 +351,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &graph::Graph,
         &icons::Icons,
         &lint::Lint,
+        &obsidian_host::ObsidianHost,
         &pdf::Pdf,
         &spellcheck::Spellcheck,
         &tasks::Tasks,
@@ -359,9 +385,6 @@ pub fn plan<R: Runtime>(
         .collect()
 }
 
-/// The features whose `setup` succeeded; the hooks below run over this list. Managed state.
-pub struct Running<R: Runtime>(Vec<&'static dyn Feature<R>>);
-
 // ---------- Failure containment ----------
 
 /// Event sent to every window when a feature failed in Rust; payload [`FailedPayload`]. The web
@@ -383,19 +406,28 @@ pub struct Failure {
 }
 
 /// What the webview needs after startup: safe mode, the settings the last crash turned off
-/// (the notice) and this session's failures (Settings > Features).
+/// (the notice), this session's failures, which features are started and which are busy
+/// (Settings > Features).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub safe_mode: bool,
     pub crash_disabled: Vec<recovery::Disable>,
     pub failures: Vec<Failure>,
+    /// The features whose Rust half is up: the web half of one with a Rust half registers only
+    /// once its id is here (and on `features:started`).
+    pub started: Vec<String>,
+    /// Started features that are doing work the user would lose by turning them off.
+    pub busy: Vec<Busy>,
 }
 
 /// Where a guarded piece of code runs. The name is what the log, the event and the markers carry.
 #[derive(Debug, Clone, Copy)]
 pub enum Boundary {
+    /// `Feature::start`.
     Setup,
+    /// `Feature::stop`.
+    Stop,
     WorkspaceOpen,
     WorkspaceClose,
     Exit,
@@ -413,6 +445,7 @@ impl Boundary {
     fn name(&self) -> String {
         match self {
             Boundary::Setup => "setup".into(),
+            Boundary::Stop => "stop".into(),
             Boundary::WorkspaceOpen => "on_workspace_open".into(),
             Boundary::WorkspaceClose => "on_workspace_close".into(),
             Boundary::Exit => "on_exit".into(),
@@ -503,6 +536,8 @@ pub struct Containment {
     safe_mode: bool,
     crashed: Vec<recovery::Disable>,
     failures: Mutex<BTreeMap<String, Failure>>,
+    /// Leaks per feature after a stop (`lifecycle::STRIKE_LIMIT` fail it for the session).
+    strikes: Mutex<BTreeMap<String, u32>>,
     /// Open `inside` markers, innermost last; the file holds the innermost.
     inside: Mutex<Vec<(u64, recovery::Marker)>>,
     active: Mutex<Vec<recovery::Active>>,
@@ -518,6 +553,7 @@ impl Containment {
             safe_mode: boot.safe_mode,
             crashed: boot.crashed,
             failures: Mutex::new(BTreeMap::new()),
+            strikes: Mutex::new(BTreeMap::new()),
             inside: Mutex::new(Vec::new()),
             active: Mutex::new(Vec::new()),
             next_token: std::sync::atomic::AtomicU64::new(0),
@@ -527,6 +563,24 @@ impl Containment {
 
     pub fn is_failed(&self, id: &str) -> bool {
         self.failures.lock().contains_key(id)
+    }
+
+    pub fn is_safe_mode(&self) -> bool {
+        self.safe_mode
+    }
+
+    /// Counts a leak against the feature; returns its strikes so far.
+    fn strike(&self, id: &str) -> u32 {
+        let mut strikes = self.strikes.lock();
+        let n = strikes.entry(id.to_string()).or_insert(0);
+        *n += 1;
+        *n
+    }
+
+    /// The user turned the feature back on: its failure and its strikes are forgotten.
+    fn forget(&self, id: &str) {
+        self.failures.lock().remove(id);
+        self.strikes.lock().remove(id);
     }
 
     fn record(&self, id: &str, boundary: &str) {
@@ -598,6 +652,8 @@ impl Containment {
             safe_mode: self.safe_mode,
             crash_disabled: self.crashed.clone(),
             failures: self.failures.lock().values().cloned().collect(),
+            started: Vec::new(),
+            busy: Vec::new(),
         }
     }
 }
@@ -606,16 +662,21 @@ fn containment<R: Runtime>(app: &AppHandle<R>) -> Option<tauri::State<'_, Contai
     app.try_state::<Containment>()
 }
 
-/// The failures and recovery report, for the webview.
+/// The failures and recovery report, the started and the busy features, for the webview.
 pub fn status<R: Runtime>(app: &AppHandle<R>) -> Status {
-    containment(app).map_or_else(
+    let mut status = containment(app).map_or_else(
         || Status {
             safe_mode: false,
             crash_disabled: Vec::new(),
             failures: Vec::new(),
+            started: Vec::new(),
+            busy: Vec::new(),
         },
         |c| c.status(),
-    )
+    );
+    status.started = started_ids(app);
+    status.busy = busy(app);
+    status
 }
 
 /// The first window finished loading: this launch got far enough, the startup counter resets.
@@ -653,6 +714,8 @@ fn fail<R: Runtime>(app: &AppHandle<R>, id: &str, boundary: &str, log: bool) {
     if let Err(e) = app.emit(FAILED_EVENT, payload) {
         log::warn!("feature {id}: could not announce its failure: {e}");
     }
+    // a failed feature keeps no processes, threads or state
+    lifecycle::stop_after_failure(app, id);
 }
 
 /// The one guard every feature boundary runs through: `f` under `catch_unwind`. A panic marks the
@@ -681,22 +744,6 @@ pub fn guard<R: Runtime, T>(
             Err(format!("panic in {name}"))
         }
     }
-}
-
-/// Starts a thread of feature `id` under [`guard`]: a panic in it fails the feature, not the app.
-pub fn spawn<R: Runtime>(
-    app: &AppHandle<R>,
-    id: &str,
-    name: &'static str,
-    f: impl FnOnce() + Send + 'static,
-) -> std::io::Result<std::thread::JoinHandle<()>> {
-    let app = app.clone();
-    let id = id.to_string();
-    std::thread::Builder::new()
-        .name(name.into())
-        .spawn(move || {
-            let _ = guard(&app, &id, Boundary::Thread(name), f);
-        })
 }
 
 /// Declares native code of feature `id` that stays live until a clean exit (an event monitor, a
@@ -808,12 +855,32 @@ pub(crate) fn fail_for_test<R: Runtime>(app: &AppHandle<R>, id: &str) {
     fail(app, id, "test", false);
 }
 
-/// The Tauri plugin of a feature's commands: named after the id, handler contained.
+/// A feature's commands run only while the feature is started (its Rust half is up): otherwise
+/// the call answers `FeatureUnavailable`, so a web half that registered early, or a stale
+/// window, never calls into state that is not there.
+fn started_only<R: Runtime>(id: String, handler: InvokeHandler<R>) -> InvokeHandler<R> {
+    Box::new(move |invoke| {
+        let app = invoke.message.webview().app_handle().clone();
+        if !is_started(&app, &id) {
+            invoke
+                .resolver
+                .reject(AppError::FeatureUnavailable(id.clone()));
+            return true;
+        }
+        handler(invoke)
+    })
+}
+
+/// The Tauri plugin of a feature's commands: named after the id, handler gated by "started" and
+/// contained.
 fn plugin_of<R: Runtime>(id: &str, handler: InvokeHandler<R>) -> tauri::plugin::TauriPlugin<R> {
     // `Builder::new` wants a `'static` name; a feature id lives for the process, a few bytes.
     let name: &'static str = Box::leak(id.to_string().into_boxed_str());
     tauri::plugin::Builder::new(name)
-        .invoke_handler(contain(id.to_string(), handler))
+        .invoke_handler(contain(
+            id.to_string(),
+            started_only(id.to_string(), handler),
+        ))
         .build()
 }
 
@@ -821,12 +888,12 @@ fn id_of<R: Runtime>(f: &dyn Feature<R>) -> String {
     f.manifest().map(|m| m.id).unwrap_or_default()
 }
 
-/// Sets up every enabled feature (`setup`, then its plugin) and remembers the ones that started.
+/// Adds the plugin of every feature that has commands (started or not: a command of a feature
+/// that is off answers `FeatureUnavailable`, and one switched on later needs no restart), then
+/// starts the enabled ones through [`start_feature`], the path every later toggle takes too.
 /// Called once from `setup`, after the settings layer exists (the webview already exists too, as
-/// for the updater plugin). A disabled feature is never touched: no state, no hook, and its
-/// commands are rejected as "plugin not found". A feature whose `setup` or plugin fails is logged
-/// and skipped; the app and the other features keep starting. In safe mode (`boot`) no feature
-/// starts.
+/// for the updater plugin). A feature whose `start` or plugin fails is logged and skipped; the
+/// app and the other features keep starting. In safe mode (`boot`) no feature starts.
 pub fn install<R: Runtime>(app: &AppHandle<R>, settings: &Settings, boot: Boot) {
     install_booted(app, registry::<R>(), settings, boot);
 }
@@ -848,107 +915,31 @@ fn install_booted<R: Runtime>(
 ) {
     let safe_mode = boot.safe_mode;
     app.manage(Containment::new(boot));
-    let started = if safe_mode {
-        Started {
-            running: Vec::new(),
-            failed: Vec::new(),
-        }
-    } else {
-        start_features(app, features, settings)
-    };
-    for (id, error) in &started.failed {
-        log::error!("feature {id} failed to start and is disabled for this session: {error}");
-    }
-    app.manage(Running(started.running));
-}
-
-struct Started<R: Runtime> {
-    running: Vec<&'static dyn Feature<R>>,
-    /// Feature id and the reason, for the log (and the tests).
-    failed: Vec<(String, String)>,
-}
-
-fn start_features<R: Runtime>(
-    app: &AppHandle<R>,
-    features: Vec<&'static dyn Feature<R>>,
-    settings: &Settings,
-) -> Started<R> {
-    let mut started = Started {
-        running: Vec::new(),
-        failed: Vec::new(),
-    };
-    for f in plan(features, settings) {
-        let id = id_of(f);
-        let started_ok = guard(app, &id, Boundary::Setup, || {
-            f.setup(app)?;
-            match f.invoke_handler() {
-                Some(handler) => app
-                    .plugin(plugin_of(&id, handler))
-                    .map_err(|e| e.to_string()),
-                None => Ok(()),
-            }
+    app.manage(Running::new(features.clone()));
+    for f in &features {
+        let id = id_of(*f);
+        let added = guard(app, &id, Boundary::Setup, || match f.invoke_handler() {
+            Some(handler) => app
+                .plugin(plugin_of(&id, handler))
+                .map_err(|e| e.to_string()),
+            None => Ok(()),
         })
         .and_then(|r| r);
-        match started_ok {
-            Ok(()) => started.running.push(f),
-            Err(e) => {
-                // a panic was announced by the guard; a plain error is announced here
-                if !e.starts_with("panic in ") {
-                    fail(app, &id, "setup", false);
-                }
-                started.failed.push((id, e));
+        if let Err(e) = added {
+            // a panic was announced by the guard; a plain error is announced here
+            if !e.starts_with("panic in ") {
+                fail(app, &id, "setup", false);
             }
+            log::error!(
+                "feature {id} could not add its commands and is disabled for this session: {e}"
+            );
         }
     }
-    started
-}
-
-fn run_hooks<R: Runtime>(
-    app: &AppHandle<R>,
-    boundary: Boundary,
-    reverse: bool,
-    hook: impl Fn(&dyn Feature<R>),
-) {
-    let Some(running) = app.try_state::<Running<R>>() else {
+    if safe_mode {
         return;
-    };
-    let mut list = running.0.clone();
-    if reverse {
-        list.reverse();
     }
-    for f in list {
-        let id = id_of(f);
-        if containment(app).is_some_and(|c| c.is_failed(&id)) {
-            continue;
-        }
-        // a panic is logged and announced by the guard; the other features still get the hook
-        let _ = guard(app, &id, boundary, || hook(f));
-    }
-}
-
-/// A window now has a workspace root.
-pub fn workspace_open<R: Runtime>(app: &AppHandle<R>, label: &str, root: &Path) {
-    let window = WindowCtx {
-        label,
-        root: Some(root),
-    };
-    run_hooks(app, Boundary::WorkspaceOpen, false, |f| {
-        f.on_workspace_open(app, &window)
-    });
-}
-
-/// A window was destroyed or left its workspace (`commands::plugins::stop_window_work` calls this).
-pub fn workspace_close<R: Runtime>(app: &AppHandle<R>, label: &str) {
-    run_hooks(app, Boundary::WorkspaceClose, true, |f| {
-        f.on_workspace_close(app, label)
-    });
-}
-
-/// The app is exiting.
-pub fn exit<R: Runtime>(app: &AppHandle<R>) {
-    run_hooks(app, Boundary::Exit, true, |f| f.on_exit(app));
-    if let Some(c) = containment(app) {
-        c.clean_exit();
+    for (id, error) in lifecycle::start_planned(app, plan(features, settings)) {
+        log::error!("feature {id} failed to start and is disabled for this session: {error}");
     }
 }
 
@@ -994,11 +985,11 @@ fn ipc_commands_of<R: Runtime>(features: &[&'static dyn Feature<R>]) -> Vec<&'st
     features.iter().flat_map(|f| f.ipc_commands()).collect()
 }
 
-/// The IPC commands of the features that are running (their `setup` succeeded): what the app's
+/// The IPC commands of the features that are started: what the app's
 /// socket accepts besides the core commands. A feature that is off, or failed to start, adds none.
 pub fn running_ipc_commands<R: Runtime>(app: &AppHandle<R>) -> Vec<&'static IpcCommand> {
     app.try_state::<Running<R>>()
-        .map(|running| ipc_commands_of(&running.0))
+        .map(|running| ipc_commands_of(&running.features()))
         .unwrap_or_default()
 }
 
@@ -1156,7 +1147,7 @@ mod tests {
         fn manifest_source(&self) -> &'static str {
             self.manifest
         }
-        fn setup(&self, _app: &AppHandle<R>) -> Result<(), String> {
+        fn start(&self, _app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
             self.note("setup");
             match self.mode {
                 Mode::Ok => Ok(()),
@@ -1203,6 +1194,7 @@ mod tests {
                 "graph",
                 "icons",
                 "lint",
+                "obsidian-host",
                 "pdf",
                 "spellcheck",
                 "tasks"
@@ -1257,8 +1249,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            12,
-            "the agent, bases, code-files, dataview, excalidraw, git, graph, icons, lint, pdf, spellcheck and tasks still start"
+            13,
+            "the agent, bases, code-files, dataview, excalidraw, git, graph, icons, lint, obsidian-host, pdf, spellcheck and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1366,20 +1358,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = settings_with(dir.path(), &[]);
         let app = mock_app();
-        let started = start_features(app.handle(), vec![&BAD, &WORSE, &GOOD], &s);
-        assert_eq!(started.running.len(), 1, "only the healthy feature runs");
-        let failed: Vec<(&str, &str)> = started
-            .failed
-            .iter()
-            .map(|(id, e)| (id.as_str(), e.as_str()))
-            .collect();
-        assert_eq!(failed[0], ("probe-a", "forced setup error"));
-        assert_eq!(failed[1], ("probe-b", "panic in setup"), "{failed:?}");
-
-        // the same path through `install_features`: it logs the failures, keeps going, and the
-        // failed features get no hooks
-        LOG.lock().unwrap().clear();
         install_features(app.handle(), vec![&BAD, &WORSE, &GOOD], &s);
+        assert_eq!(
+            started_ids(app.handle()),
+            ["probe-c"],
+            "only the healthy feature runs"
+        );
+        let failed: Vec<String> = status(app.handle())
+            .failures
+            .iter()
+            .map(|f| f.id.clone())
+            .collect();
+        assert_eq!(failed, ["probe-a", "probe-b"]);
+
+        // the failed features get no hooks
+        LOG.lock().unwrap().clear();
         workspace_open(app.handle(), "main", Path::new("/vault"));
         assert!(
             entries(&LOG).contains(&"open(main):probe-c".to_string())

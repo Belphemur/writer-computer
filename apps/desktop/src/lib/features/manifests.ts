@@ -18,6 +18,18 @@ export const FEATURE_MANIFESTS: readonly FeatureManifest[] = Object.values(files
 
 export const enabledKey = (id: string) => `features.${id}.enabled`;
 
+/** Does the feature have a Rust half (commands, events, hooks, or commands the app registers and
+ *  the feature gates)? Its web half registers only once Rust reports it started. */
+export function hasRustHalf(manifest: Pick<FeatureManifest, "rust">): boolean {
+  const r = manifest.rust;
+  return (
+    (r?.commands?.length ?? 0) > 0 ||
+    (r?.events?.length ?? 0) > 0 ||
+    (r?.hooks?.length ?? 0) > 0 ||
+    (r?.gatedCommands?.length ?? 0) > 0
+  );
+}
+
 /** The kill switch: `features.<id>.enabled`, else the manifest's default. */
 export function isFeatureEnabled(
   manifest: Pick<FeatureManifest, "id" | "enabledByDefault">,

@@ -224,7 +224,10 @@ fn ignoring_a_word_hides_it_in_that_note_only_and_writes_outside_the_vault() {
     *state.workspace_root.write() = Some(vault.path().to_path_buf());
     // never the platform app data dir: that is the user's live data
     let data = tempfile::tempdir().unwrap();
-    *app.state::<Engine>().data_dir.write() = data.path().to_path_buf();
+    *crate::features::state_of::<_, Engine>(app.handle(), "spellcheck")
+        .unwrap()
+        .data_dir
+        .write() = data.path().to_path_buf();
 
     let flagged = |path: &str, version: u32| -> bool {
         let checked = call(

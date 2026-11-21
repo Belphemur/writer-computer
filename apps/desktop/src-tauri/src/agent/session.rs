@@ -21,6 +21,7 @@ use super::roles::{Flags, RenderInput, RoleAdapter};
 use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
 use super::subagents::ClaudeAdapter;
 use super::writer_prompt::MemoryNote;
+use crate::features::scope::Spawner;
 use crate::plugin_proc::ProcManager;
 use parking_lot::{Condvar, Mutex};
 use serde::Serialize;
@@ -98,7 +99,8 @@ pub struct EventLog {
 }
 
 impl EventLog {
-    pub fn new(chat_id: String, sink: Sink) -> Arc<EventLog> {
+    /// Starts the log's pump thread on `spawner`; an `Err` is a host that has stopped.
+    pub fn new(chat_id: String, sink: Sink, spawner: &Spawner) -> std::io::Result<Arc<EventLog>> {
         let log = Arc::new(EventLog {
             chat_id,
             sink,
@@ -111,11 +113,8 @@ impl EventLog {
             wake: Condvar::new(),
         });
         let pump = Arc::clone(&log);
-        std::thread::Builder::new()
-            .name("agent-events".into())
-            .spawn(move || pump.pump())
-            .expect("spawn event pump");
-        log
+        spawner.spawn("agent-events", move |_| pump.pump())?;
+        Ok(log)
     }
 
     pub fn push(&self, event: AgentEvent) {
@@ -211,6 +210,9 @@ pub(crate) struct Shared {
     pub changes: Arc<ChangeStore>,
     /// To the config worker (`config_sync::Worker`): watcher paths and MCP status reports.
     pub config_tx: Mutex<Sender<Msg>>,
+    /// The host's threads and processes (`features::scope`): every thread and child of the agent
+    /// starts here, so stopping the feature ends them.
+    pub spawn: Spawner,
 }
 
 impl Shared {
@@ -254,10 +256,6 @@ impl Default for AgentSessions {
         Self::with_timing(Timing::default())
     }
 }
-
-/// Starts a background thread by name; the app passes `features::spawn` so a panic in it fails
-/// the feature (this module stays Tauri-free).
-pub type Spawner<'a> = dyn Fn(&'static str, Box<dyn FnOnce() + Send>) -> Result<(), String> + 'a;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -310,37 +308,23 @@ fn is_uuid(s: &str) -> bool {
 }
 
 impl AgentSessions {
+    /// Over plain threads, for tests of this core (the app uses [`Self::with_spawner`]).
     pub fn with_timing(timing: Timing) -> Self {
         Self::with_probe(timing, Arc::new(CliMcpProbe))
     }
 
     /// [`Self::with_timing`] with another MCP re-check (tests).
     pub fn with_probe(timing: Timing, probe: Arc<dyn McpProbe>) -> Self {
-        Self::build(
-            timing,
-            &|name, f| {
-                std::thread::Builder::new()
-                    .name(name.into())
-                    .spawn(f)
-                    .map(drop)
-                    .map_err(|e| e.to_string())
-            },
-            probe,
-        )
-        .expect("spawn agent threads")
+        Self::build(timing, Spawner::detached(), probe).expect("spawn agent threads")
     }
 
-    /// `spawn` starts the idle reaper and the config worker; an `Err` (no thread) fails the
-    /// construction.
-    pub fn with_spawner(timing: Timing, spawn: &Spawner<'_>) -> Result<Self, String> {
+    /// The idle reaper and the config worker start on `spawn`; an `Err` (no thread) fails the
+    /// construction. Every later thread and child process of a chat starts there too.
+    pub fn with_spawner(timing: Timing, spawn: Spawner) -> Result<Self, String> {
         Self::build(timing, spawn, Arc::new(CliMcpProbe))
     }
 
-    fn build(
-        timing: Timing,
-        spawn: &Spawner<'_>,
-        probe: Arc<dyn McpProbe>,
-    ) -> Result<Self, String> {
+    fn build(timing: Timing, spawn: Spawner, probe: Arc<dyn McpProbe>) -> Result<Self, String> {
         let (config_tx, config_rx) = channel();
         let shared = Arc::new(Shared {
             procs: Arc::new(ProcManager::default()),
@@ -350,6 +334,7 @@ impl AgentSessions {
             timing,
             changes: Arc::new(ChangeStore::default()),
             config_tx: Mutex::new(config_tx.clone()),
+            spawn: spawn.clone(),
         });
         let weak: Weak<Shared> = Arc::downgrade(&shared);
         let worker = Worker {
@@ -358,22 +343,27 @@ impl AgentSessions {
             shared: Weak::clone(&weak),
             probe,
             timing,
+            spawner: spawn.clone(),
         };
-        spawn("agent-config", Box::new(move || worker.run()))?;
-        spawn(
-            "agent-reaper",
-            Box::new(move || loop {
+        spawn
+            .spawn("agent-config", move |_| worker.run())
+            .map_err(|e| e.to_string())?;
+        let sleeper = spawn.clone();
+        spawn
+            .spawn("agent-reaper", move |_| loop {
                 let every = match weak.upgrade() {
                     Some(s) => s.timing.reaper_every,
                     None => return,
                 };
-                std::thread::sleep(every);
+                if !sleeper.sleep(every) {
+                    return;
+                }
                 let Some(s) = weak.upgrade() else { return };
                 for session in s.all() {
                     session.reap_if_idle();
                 }
-            }),
-        )?;
+            })
+            .map_err(|e| e.to_string())?;
         Ok(Self { shared })
     }
 
@@ -556,7 +546,7 @@ impl AgentSessions {
             Err(e) => {
                 log::warn!(target: "agent", "agent: could not prepare the project context");
                 // surface it on the chat; no process starts without its instructions
-                let session = self.session_for(&p, &cwd, existing, None);
+                let session = self.session_for(&p, &cwd, existing, None)?;
                 session.fail(&SpawnError::Invalid(format!(
                     "Could not prepare the project context: {e}"
                 )));
@@ -566,7 +556,7 @@ impl AgentSessions {
                 });
             }
         };
-        let session = self.session_for(&p, &cwd, existing, Some(config));
+        let session = self.session_for(&p, &cwd, existing, Some(config))?;
         if let Some(err) = missing {
             session.fail(&err);
         } else if let Err(err) = session.ensure_process() {
@@ -584,12 +574,12 @@ impl AgentSessions {
         cwd: &Path,
         existing: Option<Arc<Session>>,
         config: Option<LaunchConfig>,
-    ) -> Arc<Session> {
+    ) -> Result<Arc<Session>, Rejected> {
         if let Some(s) = existing {
             if let Some(c) = config {
                 s.configure(c);
             }
-            return s;
+            return Ok(s);
         }
         let req = &p.request;
         let config = config.unwrap_or_else(|| LaunchConfig {
@@ -620,7 +610,8 @@ impl AgentSessions {
                 sink: Arc::clone(&p.sink),
             },
             config,
-        );
+        )
+        .map_err(Rejected)?;
         self.shared
             .sessions
             .lock()
@@ -631,7 +622,7 @@ impl AgentSessions {
                 .project()
                 .touch_last_used(&p.root, project);
         }
-        session
+        Ok(session)
     }
 
     pub fn send(
@@ -843,9 +834,38 @@ impl AgentSessions {
         self.kill_where(|s| s.root == root);
     }
 
-    /// App exit.
+    /// App exit, or the feature stopping.
     pub fn kill_all(&self) {
         self.kill_where(|_| true);
+    }
+
+    /// The feature stops: every chat's process dies, the config worker is told to end and the
+    /// processes the agent's manager still holds are killed. Threads end through the host's token.
+    pub fn stop(&self) {
+        self.kill_all();
+        self.shared.procs.kill_all();
+        self.shared.send_config(Msg::Stop);
+    }
+
+    /// Chats in the middle of a turn (starting, running, waiting for a permission, cancelling or
+    /// reconnecting): what turning the agent off would cut short. An idle chat is not counted.
+    pub fn working_total(&self) -> usize {
+        use AgentSessionState::{AwaitingPermission, Cancelling, Reconnecting, Running, Starting};
+        self.shared
+            .all()
+            .iter()
+            .filter(|s| {
+                matches!(
+                    s.state(),
+                    Starting | Running | AwaitingPermission | Cancelling | Reconnecting
+                )
+            })
+            .count()
+    }
+
+    /// Processes the agent's own manager holds (the census of a stopped feature must read zero).
+    pub fn process_count(&self) -> usize {
+        self.shared.procs.active()
     }
 }
 
@@ -908,7 +928,10 @@ mod tests {
         let sink: Sink = Arc::new(move |e| {
             let _ = tx.lock().send(e);
         });
-        (EventLog::new("c".into(), sink), rx)
+        (
+            EventLog::new("c".into(), sink, &Spawner::detached()).unwrap(),
+            rx,
+        )
     }
 
     /// Everything delivered until the pump has been quiet for a moment (the sink keeps the
@@ -960,7 +983,7 @@ mod tests {
             }
             let _ = out_tx.lock().send(e);
         });
-        let log = EventLog::new("c".into(), sink);
+        let log = EventLog::new("c".into(), sink, &Spawner::detached()).unwrap();
         log.push(delta("m", 0, "x")); // taken by the pump, blocked in the sink
         std::thread::sleep(Duration::from_millis(100));
         log.push(delta("m", 0, "a"));

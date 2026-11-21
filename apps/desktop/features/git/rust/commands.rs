@@ -2,7 +2,7 @@
 //! calling window's vault, keeps the work off the main thread (`commands::blocking`) and answers
 //! with the status the status item, the panel and the settings page draw.
 
-use super::runtime::{self, Vaults};
+use super::runtime;
 use crate::commands::blocking;
 use crate::error::AppError;
 use crate::git::{self, device, message::Change, SetupMode};
@@ -95,7 +95,7 @@ fn status_of<R: Runtime>(
     refresh: bool,
 ) -> Result<GitStatus, AppError> {
     let root = window_root(app, label)?;
-    let vaults = app.try_state::<Vaults>();
+    let vaults = super::runtime::vaults(app);
     let fallback = git::IdentityCache::default();
     let cache = vaults.as_ref().map_or(&fallback, |v| &v.identity);
     let s = git::status(&root, cache, refresh).map_err(refused)?;

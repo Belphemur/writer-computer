@@ -34,6 +34,7 @@ use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::{Author, SubTracker};
 use super::subagents::{is_launch_tool, resolve_launch};
 use crate::features::points;
+use crate::features::scope::{CancelToken, Spawner};
 use crate::plugin_proc::{Emit, Prepared, ProcEvent, ProcManager, Sig};
 use base64::Engine as _;
 use parking_lot::Mutex;
@@ -41,9 +42,9 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Live agent processes per window (spec 8). The plugin host's cap of 8 is separate.
 pub const MAX_LIVE_PER_WINDOW: usize = 4;
@@ -313,6 +314,8 @@ pub struct Session {
     pub(crate) project_path: Option<String>,
     me: Weak<Session>,
     shared: Weak<Shared>,
+    /// The host's threads: the helper threads below run on it and end with it.
+    spawner: Spawner,
     procs: Arc<ProcManager>,
     ports: Arc<AgentPorts>,
     changes: Arc<ChangeStore>,
@@ -337,8 +340,14 @@ fn writer_thread(
     procs: Arc<ProcManager>,
     label: String,
     cell: Arc<AtomicU64>,
+    token: CancelToken,
 ) {
-    for line in rx {
+    loop {
+        let line = match rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) if !token.is_cancelled() => continue,
+            Err(_) => return,
+        };
         let id = cell.load(Ordering::SeqCst);
         if id == 0 {
             log::warn!(target: "agent", "agent: dropped a stdin line (no process)");
@@ -422,20 +431,24 @@ pub(crate) fn redact_prompt(args: &[String]) -> Vec<String> {
 }
 
 impl Session {
-    pub(crate) fn new(init: SessionInit, config: LaunchConfig) -> Arc<Session> {
-        let shared = init.shared.upgrade().expect("registry is alive");
+    /// An `Err` is a thread the host refused (the feature is stopping): the chat is not created.
+    pub(crate) fn new(init: SessionInit, config: LaunchConfig) -> Result<Arc<Session>, String> {
+        let shared = init.shared.upgrade().ok_or("the agent has stopped")?;
+        let spawner = shared.spawn.clone();
         let (tx, rx) = channel();
         let cell = Arc::new(AtomicU64::new(0));
         let procs = Arc::clone(&shared.procs);
         {
             let (p, l, c) = (Arc::clone(&procs), init.label.clone(), Arc::clone(&cell));
-            std::thread::Builder::new()
-                .name("agent-stdin".into())
-                .spawn(move || writer_thread(rx, p, l, c))
-                .expect("spawn stdin writer");
+            spawner
+                .spawn("agent-stdin", move |token| {
+                    writer_thread(rx, p, l, c, token)
+                })
+                .map_err(|e| e.to_string())?;
         }
-        let log = EventLog::new(init.chat_id.clone(), init.sink);
-        Arc::new_cyclic(|me| Session {
+        let log =
+            EventLog::new(init.chat_id.clone(), init.sink, &spawner).map_err(|e| e.to_string())?;
+        Ok(Arc::new_cyclic(|me| Session {
             me: me.clone(),
             chat_id: init.chat_id,
             label: init.label,
@@ -443,6 +456,7 @@ impl Session {
             cwd: init.cwd,
             project_path: init.project_path,
             shared: init.shared,
+            spawner,
             procs,
             ports: Arc::clone(&shared.ports),
             changes: Arc::clone(&shared.changes),
@@ -504,7 +518,16 @@ impl Session {
                 reload_pending: None,
                 last_activity: Instant::now(),
             }),
-        })
+        }))
+    }
+
+    /// A helper thread of this chat (a watchdog, the respawn) on the host's scope: it gets the
+    /// spawner to sleep on (a stopped host wakes it) and is refused once the host has stopped.
+    fn spawn_helper(&self, name: &'static str, f: impl FnOnce(&Spawner) + Send + 'static) {
+        let sp = self.spawner.clone();
+        if let Err(e) = self.spawner.spawn(name, move |_| f(&sp)) {
+            log::warn!(target: "agent", "agent: no {name} thread: {e}");
+        }
     }
 
     // ---------------------------------------------------------------- queries
@@ -1473,17 +1496,14 @@ impl Session {
         }
         if let Some((replay, replaced_from)) = respawn {
             let me = Arc::clone(self);
-            std::thread::Builder::new()
-                .name("agent-respawn".into())
-                .spawn(move || {
-                    // before the new process: the notice comes ahead of its first events
-                    if let Some(why) = reloaded {
-                        me.log
-                            .push(AgentEvent::SessionReloaded { reason: why.text() });
-                    }
-                    me.respawn(replay, replaced_from)
-                })
-                .expect("spawn respawn thread");
+            self.spawn_helper("agent-respawn", move |_| {
+                // before the new process: the notice comes ahead of its first events
+                if let Some(why) = reloaded {
+                    me.log
+                        .push(AgentEvent::SessionReloaded { reason: why.text() });
+                }
+                me.respawn(replay, replaced_from)
+            });
         }
     }
 
@@ -1844,13 +1864,11 @@ impl Session {
         };
         let wait = self.timing.steer_ack;
         let uuid = uuid.to_string();
-        std::thread::Builder::new()
-            .name("agent-steer-ack".into())
-            .spawn(move || {
-                std::thread::sleep(wait);
+        self.spawn_helper("agent-steer-ack", move |sp| {
+            if sp.sleep(wait) {
                 me.receipt_overdue(gen, &uuid);
-            })
-            .expect("spawn receipt watchdog");
+            }
+        });
     }
 
     /// The receipt time is up: unless it arrived, report it and, when it was what kept the
@@ -2065,18 +2083,17 @@ impl Session {
         drop(g);
         let me = Arc::clone(self);
         let grace = self.timing.cancel_grace;
-        std::thread::Builder::new()
-            .name("agent-cancel".into())
-            .spawn(move || {
-                std::thread::sleep(grace);
-                let mut g = me.inner.lock();
-                if g.live_gen == gen && g.cancel_token == token && g.turn_active {
-                    log::warn!(target: "agent", "agent: no turn-finished after the interrupt, killing the process");
-                    g.closing = Some(Closing::Killed);
-                    me.signal(&g, Sig::Kill);
-                }
-            })
-            .expect("spawn cancel watchdog");
+        self.spawn_helper("agent-cancel", move |sp| {
+            if !sp.sleep(grace) {
+                return;
+            }
+            let mut g = me.inner.lock();
+            if g.live_gen == gen && g.cancel_token == token && g.turn_active {
+                log::warn!(target: "agent", "agent: no turn-finished after the interrupt, killing the process");
+                g.closing = Some(Closing::Killed);
+                me.signal(&g, Sig::Kill);
+            }
+        });
     }
 
     pub(crate) fn permission(
@@ -2276,16 +2293,15 @@ impl Session {
             drop(g);
             let me = Arc::clone(self);
             let grace = self.timing.close_grace;
-            std::thread::Builder::new()
-                .name("agent-close".into())
-                .spawn(move || {
-                    std::thread::sleep(grace);
-                    let g = me.inner.lock();
-                    if g.live_gen == Some(gen) {
-                        me.terminate(&g);
-                    }
-                })
-                .expect("spawn close watchdog");
+            self.spawn_helper("agent-close", move |sp| {
+                if !sp.sleep(grace) {
+                    return;
+                }
+                let g = me.inner.lock();
+                if g.live_gen == Some(gen) {
+                    me.terminate(&g);
+                }
+            });
         } else {
             self.finish_terminal(&mut g, SessionEndReason::Closed, None, None);
         }
@@ -2340,18 +2356,17 @@ impl Session {
         };
         let me = self.me.clone();
         let wait = self.timing.term_to_kill;
-        std::thread::Builder::new()
-            .name("agent-kill".into())
-            .spawn(move || {
-                std::thread::sleep(wait);
-                if let Some(s) = me.upgrade() {
-                    let g = s.inner.lock();
-                    if g.live_gen == Some(gen) {
-                        s.signal(&g, Sig::Kill);
-                    }
+        self.spawn_helper("agent-kill", move |sp| {
+            if !sp.sleep(wait) {
+                return;
+            }
+            if let Some(s) = me.upgrade() {
+                let g = s.inner.lock();
+                if g.live_gen == Some(gen) {
+                    s.signal(&g, Sig::Kill);
                 }
-            })
-            .expect("spawn kill escalation");
+            }
+        });
     }
 
     pub(crate) fn snapshot(&self, after_seq: u64) -> (AgentSessionState, Vec<AgentEventEnvelope>) {

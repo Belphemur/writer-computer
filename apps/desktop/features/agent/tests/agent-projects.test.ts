@@ -144,7 +144,19 @@ describe("projects store", () => {
     useWorkspaceStore.setState({ root: null });
     useProjectsStore.getState().clear();
     vi.mocked(invoke).mockClear();
-    const stop = watchProjects();
+    const disposers: (() => void)[] = [];
+    watchProjects({
+      subscribe: (store: { subscribe: (l: never) => () => void }, fn: never) => {
+        const off = store.subscribe(fn);
+        disposers.push(off);
+        return off;
+      },
+      onDispose: (fn: () => void) => {
+        disposers.push(fn);
+        return fn;
+      },
+    } as never);
+    const stop = () => disposers.splice(0).forEach((d) => d());
     expect(invoke).not.toHaveBeenCalled(); // no workspace yet, nothing to ask
     vi.mocked(invoke).mockResolvedValueOnce([{ path: "Projects/B", name: "B" }]);
     useWorkspaceStore.setState({ root: "/vault2" });

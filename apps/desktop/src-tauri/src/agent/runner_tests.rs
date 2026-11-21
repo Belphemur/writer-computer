@@ -3173,7 +3173,12 @@ impl FakeProbe {
 }
 
 impl McpProbe for FakeProbe {
-    fn probe(&self, target: &ProbeTarget, _t: Duration) -> Result<Vec<McpServerStatus>, String> {
+    fn probe(
+        &self,
+        target: &ProbeTarget,
+        _t: Duration,
+        _spawner: &crate::features::scope::Spawner,
+    ) -> Result<Vec<McpServerStatus>, String> {
         assert!(target.program.ends_with("claude"), "the chat's own CLI");
         assert!(target.cwd.is_absolute());
         let mut calls = self.calls.lock();

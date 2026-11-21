@@ -464,7 +464,7 @@
     {
       "key": "features.agent.enabled",
       "label": "Agent",
-      "description": "Turns the Agent feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Agent feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -509,7 +509,7 @@
     {
       "key": "features.bases.enabled",
       "label": "Bases",
-      "description": "Turns the Bases feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Bases feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -518,7 +518,7 @@
     {
       "key": "features.dataview.enabled",
       "label": "Dataview",
-      "description": "Turns the Dataview feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Dataview feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -527,7 +527,7 @@
     {
       "key": "features.graph.enabled",
       "label": "Graph",
-      "description": "Turns the Graph feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Graph feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -536,7 +536,7 @@
     {
       "key": "features.git.enabled",
       "label": "Version history",
-      "description": "Turns the Version history feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Version history feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -545,7 +545,7 @@
     {
       "key": "features.lint.enabled",
       "label": "Markdown lint",
-      "description": "Turns the Markdown lint feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Markdown lint feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -554,7 +554,7 @@
     {
       "key": "features.spellcheck.enabled",
       "label": "Spelling and grammar",
-      "description": "Turns the Spelling and grammar feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Spelling and grammar feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -572,7 +572,7 @@
     {
       "key": "features.icons.enabled",
       "label": "Icons",
-      "description": "Turns the Icons feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Icons feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,
@@ -599,7 +599,7 @@
     {
       "key": "features.tasks.enabled",
       "label": "Tasks",
-      "description": "Turns the Tasks feature on or off. The Rust part takes effect after a restart.",
+      "description": "Turns the Tasks feature on or off.",
       "category": "Features",
       "type": "boolean",
       "default": true,

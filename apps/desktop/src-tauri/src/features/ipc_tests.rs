@@ -3,6 +3,7 @@
 //! is the only way to run `setup` there; it is deprecated for its busy loop, fine in a test.
 #![allow(deprecated)]
 
+use super::scope::FeatureScope;
 use super::tests::settings_with;
 use super::{fixture, install_features, Feature, Running};
 use serde_json::{json, Value};
@@ -45,13 +46,13 @@ pub(super) fn with_main_window(app: &tauri::App<MockRuntime>) {
         .unwrap();
 }
 
-/// A feature whose `setup` always fails, next to a healthy one.
+/// A feature whose `start` always fails, next to a healthy one.
 struct Broken;
 impl<R: Runtime> Feature<R> for Broken {
     fn manifest_source(&self) -> &'static str {
         r#"{"id":"broken","name":"Broken"}"#
     }
-    fn setup(&self, _app: &AppHandle<R>) -> Result<(), String> {
+    fn start(&self, _app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
         Err("forced setup error".into())
     }
 }
@@ -62,7 +63,7 @@ impl<R: Runtime> Feature<R> for Healthy {
     fn manifest_source(&self) -> &'static str {
         r#"{"id":"healthy","name":"Healthy"}"#
     }
-    fn setup(&self, _app: &AppHandle<R>) -> Result<(), String> {
+    fn start(&self, _app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
         *HEALTHY_SETUPS.lock().unwrap() += 1;
         Ok(())
     }

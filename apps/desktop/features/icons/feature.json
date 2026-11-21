@@ -12,7 +12,7 @@
   "rust": {
     "commands": ["icons_resolved", "icons_set", "icons_remove"],
     "events": ["icons:changed"],
-    "hooks": ["setup"],
+    "hooks": ["start"],
     "cliCommands": ["icon:set", "icon:get", "icon:remove"]
   },
   "contributes": {

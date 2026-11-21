@@ -146,6 +146,20 @@ export function createFeatureHost({
           un?.();
         });
       },
+      setTimeout(fn, ms) {
+        const t = globalThis.setTimeout(fn, ms);
+        return disposables.add(() => globalThis.clearTimeout(t));
+      },
+      setInterval(fn, ms) {
+        const t = globalThis.setInterval(fn, ms);
+        return disposables.add(() => globalThis.clearInterval(t));
+      },
+      subscribe(store, fn) {
+        return disposables.add(store.subscribe(fn));
+      },
+      onDispose(fn) {
+        return disposables.add(fn);
+      },
     };
   }
 
