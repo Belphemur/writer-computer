@@ -33,12 +33,12 @@ Status: designed with the user 2026-11-20, not started. ADR: [`docs/decisions/20
 5. `lib.rs:384-393, 425-474`, `commands/shell_install.rs`, `commands/mod.rs:13`, `lib.rs:804-818`: CLI install macOS-only → shared core, Linux installer into `~/.local/bin`.
 6. `commands/fs.rs:1105-1115`: reveal opens the parent only → opener reveal (FileManager1), fallback to the folder.
 7. `commands/fs.rs:1030-1045`: trash may fail on mounts without a trash dir → clear error (verify).
-8. `commands/workspace.rs:116-127`: add kitty, alacritty, foot, wezterm.
+8. `commands/workspace.rs:60-140`: one terminal table for macOS and Linux (see Open in Terminal).
 9. `cli/clipboard.rs:34-40`: `writer --copy` needs wl-copy or xclip → document; error names them.
 10. `watcher.rs:188-199, 470-485`, `commands/workspace.rs:554`: inotify watch limit → clear message with the sysctl hint; verify rename/move detection.
 11. `Cargo.toml:36` keyring 4.2 → Secret Service; none → "No keyring found" (decided).
 12. Single-instance plugin on sessions without a D-Bus session bus (verify).
-13. `src/lib/keybindings/core-bindings.ts:205, 216`: `Meta+[`/`Meta+]` → per-OS keys, `Alt+ArrowLeft/Right` off macOS.
+13. `src/lib/keybindings/core-bindings.ts:205, 216`: `Meta+[`/`Meta+]` → per-OS keys (see Default hotkeys per OS).
 14. `src/lib/os-drop.ts:40-44`: HiDPI drop coordinates on Linux (verify X11, Wayland, fractional).
 15. `features/obsidian-host/web/host/api/network.ts:188-193`: fall-through host list lacks `writer-plugin://localhost` (verify).
 16. `src/hooks/use-zoom-gestures.ts:4-15`, `mermaid-canvas.ts:33`: pinch on WebKitGTK as ctrl+wheel (verify).
@@ -57,6 +57,24 @@ Status: designed with the user 2026-11-20, not started. ADR: [`docs/decisions/20
 ### Already cross-platform
 
 Log and data dirs, argv open path, multi-call `writer` dispatch, login-shell PATH, `claude` discovery and process-group kill, the unix CLI socket, fontconfig fonts, opener for the log folder, `#![cfg(unix)]` tests, platform UA detection, `Mod` = Ctrl, per-OS hotkeys and context-menu labels, drag regions, PDF.js worker, spellcheck dictionaries, e2e fixture scripts, telemetry `os`, file associations (verify the .desktop MIME entry).
+
+## Open in Terminal (macOS and Linux)
+
+"Open in Terminal" on a folder's right-click menu (`folder-context-menu.ts:47`, `sidebar-surface-context-menu.ts:99`) opens that folder in a terminal; setting `workspace.default-terminal` (free text today), launcher `commands/workspace.rs` `terminal_launch_specs`.
+
+- One terminal table, shared by both OSes: Ghostty, kitty, WezTerm, Alacritty, iTerm2 and Warp (macOS), foot, GNOME Terminal (Console), Konsole, xfce4-terminal, Terminal.app (macOS), `x-terminal-emulator` (Debian alternative), each with how to open a folder on that OS (`open -a <App> <dir>` on macOS; the program with its working-directory flag on Linux, e.g. `ghostty --working-directory=<dir>`, `kitty --directory <dir>`, `wezterm start --cwd <dir>`, `alacritty --working-directory <dir>`, `gnome-terminal --working-directory=<dir>`, `konsole --workdir <dir>`, `foot -D <dir>`).
+- The setting becomes a dropdown of the terminals found on this machine (plus "Other…" for a name or path, today's behaviour), default "System default": Terminal.app on macOS; `$TERMINAL`, then `x-terminal-emulator`, then the first installed entry of the table on Linux.
+- Detection is cheap and local (app bundle in `/Applications` and `~/Applications` on macOS, the executable on the login-shell PATH on Linux), done when the settings page opens, never at startup.
+
+## Default hotkeys per OS
+
+The keybinding registry already takes per-OS keys (`registry.ts` `PlatformKeys`, `Mod` = Cmd on macOS, Ctrl elsewhere); every default follows the platform's convention:
+
+- No core or feature binding names `Meta` or `Ctrl` literally where the platforms differ; it uses `Mod` or a per-OS `{ mac, linux, other }` list. A test over every registered binding enforces it, with a named allowlist for bindings that are the same chord on every OS on purpose (`Ctrl+Tab`).
+- Back/forward: macOS `Cmd+[` / `Cmd+]` everywhere (mouse side buttons send them) and `Alt+←/→` outside the note; Linux `Alt+←/→` everywhere, the note included (Linux word motion is Ctrl+Arrow, so Alt+Arrow is free and is the desktop convention), and the mouse back/forward buttons (`mouseup` buttons 3 and 4) through the same commands.
+- Linux defaults avoid chords the desktops reserve: anything with Super, `Ctrl+Alt+T` (terminal), `Ctrl+Alt+Arrow` (workspaces), `Alt+F2`, `Alt+Tab`, `Ctrl+Alt+Delete`, `Alt+Space`. A test checks the Linux defaults against that list.
+- User overrides stay per OS (`hotkeys.json` has a section per OS).
+- `docs/keyboard-shortcuts.md` shows each OS's keys (the site page renders the current OS first); the shortcuts list in Settings shows the current OS's chords.
 
 ## Lanes
 
