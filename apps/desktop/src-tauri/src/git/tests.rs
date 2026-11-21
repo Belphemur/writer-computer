@@ -2,7 +2,9 @@
 //! (never the user's git config or vault), the identity against the real `git`, and the source scan.
 
 use super::message::*;
+use super::repo::VersionKind;
 use super::repo::ISOLATED;
+use super::scheduler::AgentTurn;
 use super::scheduler::*;
 use super::*;
 use std::path::Path;
@@ -103,6 +105,7 @@ fn trailers_for_user_and_agent_commits() {
         "Rewrite the interview guide",
         AgentTurnInfo {
             chat_id: "c1",
+            turn_id: None,
             backend: "claude",
             models: &models,
         },
@@ -122,6 +125,7 @@ fn an_unknown_model_leaves_the_trailer_out() {
         "t",
         AgentTurnInfo {
             chat_id: "c",
+            turn_id: None,
             backend: "claude",
             models: &[],
         },
@@ -138,6 +142,7 @@ fn a_subject_stays_on_one_line_and_messages_read_back() {
         "two\nlines  here",
         AgentTurnInfo {
             chat_id: "c",
+            turn_id: None,
             backend: "claude",
             models: &["m1".to_string()],
         },
@@ -356,6 +361,7 @@ fn an_agent_commit_takes_only_the_turns_files() {
     write(root, "theirs.md", "2");
     let turn = AgentTurn {
         chat_id: "chat-1".into(),
+        turn_id: None,
         backend: "claude".into(),
         title: "Tidy theirs".into(),
         models: vec!["claude-opus-5-5".into()],
@@ -691,6 +697,7 @@ fn git_var_runs_with_config_only_so_it_never_guesses() {
 fn turn(files: &[&str]) -> AgentTurn {
     AgentTurn {
         chat_id: "c".into(),
+        turn_id: None,
         backend: "claude".into(),
         title: "T".into(),
         models: vec![],
@@ -772,6 +779,707 @@ fn a_turn_without_changes_just_unblocks() {
 }
 
 // ---- the dependency stays behind this module ------------------------------------------------------
+
+// ---- setup by default ---------------------------------------------------------------------------
+
+fn plain_dir() -> tempfile::TempDir {
+    ISOLATED.with(|i| i.set(true));
+    tempfile::tempdir().unwrap()
+}
+
+#[test]
+fn a_plain_vault_gets_a_repository_the_block_and_no_commit_without_identity() {
+    let dir = plain_dir();
+    let root = dir.path();
+    write(root, "Plan.md", "# Plan\n");
+    assert_eq!(
+        auto_setup(root, "Studio").unwrap(),
+        Auto::Done { committed: false }
+    );
+    assert!(is_set_up(root));
+    let repo = Repo::open(root).unwrap().unwrap();
+    assert!(!repo.has_commits());
+    // the identity arrives later: the first commit is the setup commit, with everything in it
+    set_identity(root, "Ada Writer", "ada@example.test");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let id = commit_user(root, DEFAULT_TEMPLATE, &ctx(), "Studio").unwrap();
+    assert!(id.is_some());
+    let log = repo.log(None, 5).unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].message.scope, Some(Scope::Setup));
+    assert_eq!(log[0].message.subject, "start version history");
+    assert!(repo.changes().unwrap().is_empty());
+}
+
+#[test]
+fn the_first_commit_of_a_fresh_repository_is_chore_setup() {
+    let dir = vault();
+    let root = dir.path();
+    write(root, "Plan.md", "# Plan\n");
+    ignore::ensure(root).unwrap();
+    let repo = Repo::open(root).unwrap().unwrap();
+    assert_eq!(
+        finish_setup(&repo, "Studio").unwrap(),
+        Auto::Done { committed: true }
+    );
+    let log = repo.log(None, 5).unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].message.ty, Some(Type::Chore));
+    assert_eq!(log[0].message.subject, "start version history");
+}
+
+#[test]
+fn a_vault_that_is_a_repository_is_used_as_it_is_with_no_extra_commit() {
+    let dir = vault();
+    let root = dir.path();
+    write(root, "Plan.md", "# Plan\n");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let first = [add("Plan.md")];
+    repo.commit(
+        &first,
+        &Message::user(&first, DEFAULT_TEMPLATE, &ctx(), "d"),
+    )
+    .unwrap();
+    assert!(!is_set_up(root));
+    assert_eq!(
+        auto_setup(root, "d").unwrap(),
+        Auto::Done { committed: false }
+    );
+    assert!(is_set_up(root));
+    assert_eq!(repo.log(None, 5).unwrap().len(), 1, "no commit of its own");
+    // the managed block is a pending change until the next commit
+    assert_eq!(repo.changes().unwrap(), vec![add(".gitignore")]);
+    assert_eq!(auto_setup(root, "d").unwrap(), Auto::Already);
+}
+
+#[test]
+fn a_vault_inside_another_repository_is_never_set_up_silently() {
+    ISOLATED.with(|i| i.set(true));
+    let outer = tempfile::tempdir().unwrap();
+    Repo::init(outer.path()).unwrap();
+    let inner = outer.path().join("docs");
+    write(&inner, "Plan.md", "# Plan\n");
+    assert!(in_parent_repo(&inner));
+    assert_eq!(auto_setup(&inner, "d").unwrap(), Auto::InParentRepo);
+    assert!(!inner.join(".git").exists());
+    assert!(!inner.join(".gitignore").exists());
+    let s = status(&inner, &IdentityCache::default(), true).unwrap();
+    assert!(!s.set_up && s.parent_repo);
+    // the user's own choice still sets up a repository of its own
+    set_identity_global_free(&inner);
+    setup(&inner, SetupMode::LocalOnly, "d").unwrap();
+    assert!(is_set_up(&inner));
+}
+
+/// A repository made by hand in `root` carries a repo-local identity, so `setup` can commit.
+fn set_identity_global_free(root: &Path) {
+    Repo::init(root).unwrap();
+    set_identity(root, "Ada Writer", "ada@example.test");
+}
+
+#[test]
+fn stopping_keeps_git_and_history_and_is_not_set_up_again_automatically() {
+    let dir = vault();
+    let root = dir.path();
+    write(root, "Plan.md", "# Plan\n");
+    setup(root, SetupMode::LocalOnly, "d").unwrap();
+    assert!(is_set_up(root));
+    stop(root).unwrap();
+    assert!(!is_set_up(root));
+    assert!(root.join(".git").exists(), "never deletes .git");
+    let repo = Repo::open(root).unwrap().unwrap();
+    assert_eq!(repo.log(None, 5).unwrap().len(), 1);
+    assert_eq!(auto_setup(root, "d").unwrap(), Auto::Stopped);
+    assert!(!is_set_up(root));
+    assert!(
+        status(root, &IdentityCache::default(), true)
+            .unwrap()
+            .stopped
+    );
+    // the user's own choice sets it up again
+    setup(root, SetupMode::Existing, "d").unwrap();
+    assert!(is_set_up(root));
+    // the pause flag survives the other flag
+    state::set_paused(root, true).unwrap();
+    stop(root).unwrap();
+    assert!(state::paused(root) && state::stopped(root));
+}
+
+// ---- history ------------------------------------------------------------------------------------
+
+fn save(root: &Path, changes: &[Change]) -> String {
+    let repo = Repo::open(root).unwrap().unwrap();
+    repo.commit(
+        changes,
+        &Message::user(changes, DEFAULT_TEMPLATE, &ctx(), "Studio"),
+    )
+    .unwrap()
+}
+
+fn history_vault() -> tempfile::TempDir {
+    let dir = vault();
+    setup(dir.path(), SetupMode::LocalOnly, "Studio").unwrap();
+    dir
+}
+
+#[test]
+fn a_files_log_follows_a_move_with_an_edit_through_the_writer_move_trailer() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Plan.md", "one\ntwo\nthree\n");
+    save(root, &[add("Plan.md")]);
+    write(root, "Plan.md", "one\ntwo\nthree\nfour\n");
+    save(root, &[edit("Plan.md")]);
+    // moved and edited at once: no similarity needed, Writer recorded the move
+    std::fs::create_dir_all(root.join("Archive")).unwrap();
+    std::fs::remove_file(root.join("Plan.md")).unwrap();
+    write(root, "Archive/Plan.md", "completely rewritten text\n");
+    let mv = [Change::Move {
+        from: "Plan.md".into(),
+        to: "Archive/Plan.md".into(),
+    }];
+    let id = save(root, &mv);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let versions = repo.file_versions("Archive/Plan.md", 10).unwrap();
+    assert_eq!(versions.len(), 3, "{versions:?}");
+    assert_eq!(versions[0].id, id);
+    assert_eq!(versions[0].kind, VersionKind::Move);
+    assert_eq!(versions[0].from.as_deref(), Some("Plan.md"));
+    assert_eq!(versions[1].kind, VersionKind::Edit);
+    assert_eq!(versions[1].path, "Plan.md");
+    assert_eq!(versions[2].kind, VersionKind::Add);
+    assert_eq!(versions[0].message.moves.len(), 1);
+}
+
+#[test]
+fn a_files_log_follows_a_rename_git_detects_by_content() {
+    let dir = history_vault();
+    let root = dir.path();
+    let body = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\n";
+    write(root, "Old.md", body);
+    save(root, &[add("Old.md")]);
+    std::fs::remove_file(root.join("Old.md")).unwrap();
+    write(root, "New.md", &format!("{body}eta\n"));
+    // two plain changes, no trailer: git's own rename detection finds the pair
+    save(root, &[del("Old.md"), add("New.md")]);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let versions = repo.file_versions("New.md", 10).unwrap();
+    assert_eq!(versions.len(), 2, "{versions:?}");
+    assert_eq!(versions[0].kind, VersionKind::Move);
+    assert_eq!(versions[0].from.as_deref(), Some("Old.md"));
+    assert_eq!(versions[1].path, "Old.md");
+}
+
+#[test]
+fn deleted_files_are_listed_but_moved_and_recreated_ones_are_not() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Gone.md", "gone body here\n");
+    write(root, "Moved.md", "moved body that is long enough\n");
+    write(root, "Again.md", "again\n");
+    save(root, &[add("Gone.md"), add("Moved.md"), add("Again.md")]);
+    std::fs::remove_file(root.join("Gone.md")).unwrap();
+    std::fs::remove_file(root.join("Again.md")).unwrap();
+    std::fs::remove_file(root.join("Moved.md")).unwrap();
+    write(root, "Elsewhere.md", "moved body that is long enough\n");
+    save(
+        root,
+        &[
+            del("Gone.md"),
+            del("Again.md"),
+            Change::Move {
+                from: "Moved.md".into(),
+                to: "Elsewhere.md".into(),
+            },
+        ],
+    );
+    write(root, "Again.md", "again, back\n");
+    save(root, &[add("Again.md")]);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let deleted: Vec<_> = repo
+        .deleted_files(100)
+        .unwrap()
+        .into_iter()
+        .map(|d| d.path)
+        .collect();
+    assert_eq!(deleted, vec!["Gone.md"]);
+}
+
+#[test]
+fn rows_carry_line_counts_and_diffs_work_against_parent_current_and_any_two() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Plan.md", "a\nb\nc\n");
+    let v1 = save(root, &[add("Plan.md")]);
+    write(root, "Plan.md", "a\nB\nc\nd\n");
+    let v2 = save(root, &[edit("Plan.md")]);
+    write(root, "Plan.md", "a\nB\nc\nd\ne\n");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let rows = history::versions(&repo, "Plan.md", 10).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!((rows[0].added, rows[0].removed), (Some(2), Some(1)));
+    assert_eq!((rows[1].added, rows[1].removed), (Some(3), Some(0)));
+    let text = |d: history::FileDiff| match d {
+        history::FileDiff::Text { diff } => diff,
+        other => panic!("{other:?}"),
+    };
+    let parent =
+        text(history::diff(&repo, root, "Plan.md", &v2, &history::Against::Parent).unwrap());
+    assert_eq!((parent.added, parent.removed), (2, 1));
+    assert!(parent.rendered.is_some(), "a note has the rendered view");
+    let first =
+        text(history::diff(&repo, root, "Plan.md", &v1[..8], &history::Against::Parent).unwrap());
+    assert_eq!((first.added, first.removed), (3, 0));
+    let current =
+        text(history::diff(&repo, root, "Plan.md", &v1, &history::Against::Current).unwrap());
+    assert_eq!((current.added, current.removed), (3, 1));
+    let two = text(
+        history::diff(
+            &repo,
+            root,
+            "Plan.md",
+            &v1,
+            &history::Against::Version(v2.clone()),
+        )
+        .unwrap(),
+    );
+    assert_eq!((two.added, two.removed), (2, 1));
+}
+
+#[test]
+fn diff_kinds_follow_the_file_kind() {
+    let png = [0x89u8, b'P', b'N', b'G', 0, 1, 2];
+    match history::diff_bytes("a/pic.png", Some(&png), None) {
+        history::FileDiff::Image { before, after } => {
+            assert_eq!(before.unwrap().mime, "image/png");
+            assert!(after.is_none());
+        }
+        other => panic!("{other:?}"),
+    }
+    match history::diff_bytes("data.bin", Some(&[0, 1, 2]), Some(&[0, 1, 2, 3])) {
+        history::FileDiff::Binary {
+            before_size,
+            after_size,
+        } => {
+            assert_eq!((before_size, after_size), (Some(3), Some(4)));
+        }
+        other => panic!("{other:?}"),
+    }
+    match history::diff_bytes("x.json", Some(b"{}\n"), Some(b"{\"a\":1}\n")) {
+        history::FileDiff::Text { diff } => assert!(diff.rendered.is_none()),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn restore_writes_a_new_version_and_never_rewrites_history() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Plan.md", "first\n");
+    let v1 = save(root, &[add("Plan.md")]);
+    write(root, "Plan.md", "second\n");
+    save(root, &[edit("Plan.md")]);
+    // an edit not in history yet must survive the restore
+    write(root, "Plan.md", "unsaved\n");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let before = repo.log(None, 20).unwrap().len();
+    let done = history::restore(&repo, root, "Plan.md", &v1, "Studio").unwrap();
+    assert_eq!(done.path, "Plan.md");
+    assert_eq!(
+        std::fs::read_to_string(root.join("Plan.md")).unwrap(),
+        "first\n"
+    );
+    let log = repo.log(None, 20).unwrap();
+    assert_eq!(log.len(), before + 2, "the unsaved edit, then the restore");
+    assert_eq!(log[0].message.ty, Some(Type::User));
+    assert_eq!(log[0].message.scope, Some(Scope::Restore));
+    assert!(
+        log[0].message.subject.starts_with("Plan to "),
+        "{}",
+        log[0].message.subject
+    );
+    assert_eq!(log[1].message.scope, Some(Scope::Edit));
+    let kept = repo.file_versions("Plan.md", 10).unwrap();
+    assert!(
+        kept.iter().any(|v| v.id == v1),
+        "old versions are still there"
+    );
+    assert!(repo.changes().unwrap().is_empty());
+}
+
+#[test]
+fn restoring_a_deleted_file_recreates_it_at_its_path_or_a_free_name() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Notes/Idea.md", "the idea\n");
+    save(root, &[add("Notes/Idea.md")]);
+    std::fs::remove_dir_all(root.join("Notes")).unwrap();
+    save(root, &[del("Notes/Idea.md")]);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let top = history::versions(&repo, "Notes/Idea.md", 5).unwrap();
+    assert_eq!(top[0].version.kind, VersionKind::Delete);
+    let done =
+        history::restore(&repo, root, "Notes/Idea.md", &top[0].version.id, "Studio").unwrap();
+    assert_eq!(done.path, "Notes/Idea.md");
+    assert_eq!(
+        std::fs::read_to_string(root.join("Notes/Idea.md")).unwrap(),
+        "the idea\n"
+    );
+    // delete again, then a different file takes the path: a free name beside it
+    std::fs::remove_file(root.join("Notes/Idea.md")).unwrap();
+    save(root, &[del("Notes/Idea.md")]);
+    write(root, "Notes/Idea.md", "something else\n");
+    let top = history::versions(&repo, "Notes/Idea.md", 5).unwrap();
+    let done =
+        history::restore(&repo, root, "Notes/Idea.md", &top[0].version.id, "Studio").unwrap();
+    assert_eq!(done.path, "Notes/Idea (restored).md");
+    assert_eq!(
+        std::fs::read_to_string(root.join("Notes/Idea.md")).unwrap(),
+        "something else\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(&done.path)).unwrap(),
+        "the idea\n"
+    );
+}
+
+fn agent_turn(repo: &Repo, chat: &str, turn: &str, title: &str) -> String {
+    let changes = repo.changes().unwrap();
+    let models = vec!["claude-opus-5-5".to_string()];
+    let m = Message::agent(
+        &changes,
+        title,
+        AgentTurnInfo {
+            chat_id: chat,
+            turn_id: Some(turn),
+            backend: "claude",
+            models: &models,
+        },
+        "d",
+    );
+    repo.commit(&changes, &m).unwrap()
+}
+
+#[test]
+fn two_turns_of_one_chat_seconds_apart_resolve_to_their_own_commits() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "a.md", "1");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let first = agent_turn(&repo, "c1", "turn-A", "one");
+    write(root, "a.md", "2");
+    let second = agent_turn(&repo, "c1", "turn-B", "two");
+    let now = repo.log(None, 1).unwrap()[0].time;
+    let found =
+        |chat: &str, turn: &str| history::turn_commit(&repo, chat, turn, Some(now)).unwrap();
+    assert_eq!(found("c1", "turn-A").rev, Some(first));
+    assert_eq!(found("c1", "turn-B").rev, Some(second));
+    assert!(found("c1", "turn-B").settled);
+    // another chat's turn id, or one that made no commit, is null
+    assert_eq!(found("c2", "turn-A").rev, None);
+    assert_eq!(found("c1", "turn-C").rev, None);
+}
+
+#[test]
+fn a_turn_without_a_commit_stays_null_and_settles_once_git_has_moved_on() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "a.md", "1");
+    let repo = Repo::open(root).unwrap().unwrap();
+    agent_turn(&repo, "c1", "turn-A", "one");
+    let head = repo.log(None, 1).unwrap()[0].time;
+    // just finished: the commit may still come
+    let t = history::turn_commit(&repo, "c1", "turn-X", Some(head)).unwrap();
+    assert_eq!((t.rev.clone(), t.settled), (None, false));
+    // git committed something else well after the turn ended: there will be none
+    let t = history::turn_commit(&repo, "c1", "turn-X", Some(head - 60)).unwrap();
+    assert_eq!((t.rev, t.settled), (None, true));
+    // no end time is known: never settled
+    assert!(
+        !history::turn_commit(&repo, "c1", "turn-X", None)
+            .unwrap()
+            .settled
+    );
+}
+
+#[test]
+fn the_turn_trailer_reads_back() {
+    let dir = history_vault();
+    write(dir.path(), "a.md", "1");
+    let repo = Repo::open(dir.path()).unwrap().unwrap();
+    agent_turn(&repo, "c1", "turn-A", "one");
+    let log = repo.log(None, 1).unwrap();
+    assert_eq!(log[0].message.turn.as_deref(), Some("turn-A"));
+    assert_eq!(log[0].message.chat.as_deref(), Some("c1"));
+}
+
+// ---- never commit in the middle of an operation -----------------------------------------------
+
+fn pending(root: &Path) -> Repo {
+    write(root, "a.md", "1");
+    setup(root, SetupMode::LocalOnly, "d").unwrap();
+    write(root, "a.md", "2");
+    Repo::open(root).unwrap().unwrap()
+}
+
+#[test]
+fn no_commit_while_a_merge_rebase_or_the_like_is_under_way_and_it_resumes_by_itself() {
+    let cases: [(&str, bool, Operation); 8] = [
+        ("MERGE_HEAD", false, Operation::Merge),
+        ("CHERRY_PICK_HEAD", false, Operation::CherryPick),
+        ("REVERT_HEAD", false, Operation::Revert),
+        ("rebase-merge", true, Operation::Rebase),
+        ("rebase-apply", true, Operation::Rebase),
+        ("BISECT_LOG", false, Operation::Bisect),
+        // a detached HEAD has no marker file: HEAD names a commit
+        ("", false, Operation::DetachedHead),
+        ("rebase-apply", false, Operation::Rebase),
+    ];
+    for (marker, is_dir, op) in cases {
+        let dir = history_vault();
+        let root = dir.path();
+        let repo = pending(root);
+        let head = repo.head_id_string().unwrap();
+        assert_eq!(operation(root), None, "{marker}");
+        let restore_head = if marker.is_empty() {
+            let original = std::fs::read_to_string(root.join(".git/HEAD")).unwrap();
+            std::fs::write(root.join(".git/HEAD"), format!("{head}\n")).unwrap();
+            Some(original)
+        } else {
+            let p = root.join(".git").join(marker);
+            if is_dir {
+                std::fs::create_dir_all(&p).unwrap();
+            } else {
+                std::fs::write(&p, "x").unwrap();
+            }
+            None
+        };
+        assert_eq!(operation(root), Some(op), "{marker}");
+        // every way to commit refuses, and nothing is written
+        let err = commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d").unwrap_err();
+        assert!(matches!(err, Error::Operation(_)), "{marker}: {err}");
+        assert!(err.to_string().contains(op.label()), "{err}");
+        let turn = AgentTurn {
+            chat_id: "c".into(),
+            turn_id: Some("t".into()),
+            backend: "claude".into(),
+            title: "x".into(),
+            models: vec![],
+            files: vec!["a.md".into()],
+        };
+        assert!(matches!(
+            commit_agent(root, &turn, "t", "d"),
+            Err(Error::Operation(_))
+        ));
+        let v = repo.log(None, 1).unwrap()[0].id.clone();
+        assert!(matches!(
+            history::restore(&repo, root, "a.md", &v, "d"),
+            Err(Error::Operation(_))
+        ));
+        assert_eq!(std::fs::read_to_string(root.join("a.md")).unwrap(), "2");
+        assert_eq!(repo.head_id_string().unwrap(), head, "{marker}");
+        let s = status(root, &IdentityCache::default(), true).unwrap();
+        assert_eq!(s.operation, Some(op));
+        // the markers go: it resumes by itself
+        match restore_head {
+            Some(original) => std::fs::write(root.join(".git/HEAD"), original).unwrap(),
+            None if is_dir => std::fs::remove_dir_all(root.join(".git").join(marker)).unwrap(),
+            None => std::fs::remove_file(root.join(".git").join(marker)).unwrap(),
+        }
+        assert_eq!(operation(root), None, "{marker}");
+        assert!(commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d")
+            .unwrap()
+            .is_some());
+    }
+}
+
+#[test]
+fn setup_writes_nothing_into_a_repository_in_the_middle_of_a_merge() {
+    let dir = vault();
+    let root = dir.path();
+    write(root, "a.md", "1");
+    std::fs::write(root.join(".git/MERGE_HEAD"), "x").unwrap();
+    assert_eq!(auto_setup(root, "d").unwrap(), Auto::Paused);
+    assert!(!root.join(".gitignore").exists());
+}
+
+// ---- what Writer does not version ----------------------------------------------------------------
+
+#[test]
+fn nested_repositories_and_node_modules_are_never_walked_into() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Notes/a.md", "1");
+    // a folder with its own repository, and node_modules at any depth
+    write(root, "code/lib/x.js", "x");
+    Repo::init(&root.join("code")).unwrap();
+    write(root, "node_modules/pkg/index.js", "x");
+    write(root, "Notes/node_modules/y.js", "y");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let paths: Vec<String> = repo
+        .changes()
+        .unwrap()
+        .iter()
+        .map(|c| c.path().to_string())
+        .collect();
+    assert_eq!(paths, vec!["Notes/a.md"], "{paths:?}");
+}
+
+#[test]
+fn a_file_over_the_limit_is_skipped_and_listed() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "small.md", "s");
+    // sparse: no disk is used
+    let big = std::fs::File::create(root.join("huge.bin")).unwrap();
+    big.set_len(super::repo::LARGE_FILE_BYTES + 1).unwrap();
+    let repo = Repo::open(root).unwrap().unwrap();
+    let (changes, skipped) = repo.changes_and_skipped().unwrap();
+    assert_eq!(changes, vec![add("small.md")]);
+    assert_eq!(skipped, vec!["huge.bin"]);
+    let s = status(root, &IdentityCache::default(), true).unwrap();
+    assert_eq!(s.too_large, vec!["huge.bin"]);
+    // committing everything leaves it out
+    commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d").unwrap();
+    if let Some(files) = git_cli(root, &["ls-files"]) {
+        assert!(
+            files.contains("small.md") && !files.contains("huge.bin"),
+            "{files}"
+        );
+    }
+}
+
+// ---- reading: safety and paths ---------------------------------------------------------------
+
+#[cfg(unix)]
+#[test]
+fn the_file_now_is_never_read_through_a_link_that_leaves_the_vault() {
+    let dir = history_vault();
+    let root = dir.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), "secret\n").unwrap();
+    write(root, "Plan.md", "plan\n");
+    let v = save(root, &[add("Plan.md")]);
+    std::fs::remove_file(root.join("Plan.md")).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("secret.md"), root.join("Plan.md")).unwrap();
+    let repo = Repo::open(root).unwrap().unwrap();
+    match history::diff(
+        &repo,
+        root.canonicalize().unwrap().as_path(),
+        "Plan.md",
+        &v,
+        &history::Against::Current,
+    )
+    .unwrap()
+    {
+        history::FileDiff::Text { diff } => {
+            let text: String = diff.rows.iter().map(|r| r.text.as_str()).collect();
+            assert!(!text.contains("secret"), "{text}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_deleted_list_leaves_out_protected_and_device_local_paths() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Gone.md", "g");
+    write(root, ".obsidian/app.json", "{}");
+    write(root, "node_modules/p/i.js", "x");
+    save(
+        root,
+        &[
+            add("Gone.md"),
+            add(".obsidian/app.json"),
+            add("node_modules/p/i.js"),
+        ],
+    );
+    for p in ["Gone.md", ".obsidian/app.json", "node_modules/p/i.js"] {
+        std::fs::remove_file(root.join(p)).unwrap();
+    }
+    save(
+        root,
+        &[
+            del("Gone.md"),
+            del(".obsidian/app.json"),
+            del("node_modules/p/i.js"),
+        ],
+    );
+    let repo = Repo::open(root).unwrap().unwrap();
+    let paths: Vec<_> = repo
+        .deleted_files(100)
+        .unwrap()
+        .into_iter()
+        .map(|d| d.path)
+        .collect();
+    assert_eq!(paths, vec!["Gone.md"]);
+}
+
+#[test]
+fn moves_survive_arrows_and_double_spaces_in_names() {
+    let dir = history_vault();
+    let root = dir.path();
+    let (from, to) = ("a -> b  c.md", "Archive/50% -> done  \u{e9}.md");
+    write(root, from, "one\ntwo\nthree\nfour\n");
+    save(root, &[add(from)]);
+    std::fs::remove_file(root.join(from)).unwrap();
+    write(root, to, "totally rewritten body\n");
+    let mv = [Change::Move {
+        from: from.into(),
+        to: to.into(),
+    }];
+    save(root, &mv);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let log = repo.log(None, 1).unwrap();
+    assert_eq!(
+        log[0].message.moves,
+        vec![(from.to_string(), to.to_string())]
+    );
+    let versions = repo.file_versions(to, 10).unwrap();
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0].from.as_deref(), Some(from));
+}
+
+#[test]
+fn a_version_is_found_in_one_commit_and_a_prefix_without_reading_messages() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "a.md", "1\n");
+    let v1 = save(root, &[add("a.md")]);
+    write(root, "a.md", "2\n");
+    let v2 = save(root, &[edit("a.md")]);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let one = repo.version_in_commit(&v2, "a.md").unwrap().unwrap();
+    assert_eq!(one.id, v2);
+    assert_eq!(one.kind, VersionKind::Edit);
+    assert!(repo.version_in_commit(&v2, "other.md").unwrap().is_none());
+    assert_eq!(
+        history::find(&repo, "a.md", &v1[..8]).unwrap().kind,
+        VersionKind::Add
+    );
+    // the cache answers the second time with the same list, and forgets it when HEAD moves
+    let cache = history::Cache::default();
+    let first = cache.versions(&repo, "a.md", 10).unwrap();
+    assert_eq!(first.len(), 2);
+    assert_eq!(cache.versions(&repo, "a.md", 10).unwrap(), first);
+    write(root, "a.md", "3\n");
+    save(root, &[edit("a.md")]);
+    assert_eq!(cache.versions(&repo, "a.md", 10).unwrap().len(), 3);
+}
+
+#[test]
+fn a_rev_is_a_full_id_or_a_unique_prefix() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "a.md", "a\n");
+    let id = save(root, &[add("a.md")]);
+    let repo = Repo::open(root).unwrap().unwrap();
+    assert_eq!(repo.resolve(&id).unwrap(), id);
+    assert_eq!(repo.resolve(&id[..7]).unwrap(), id);
+    assert!(repo.resolve("zzzz").is_err());
+    assert!(repo.resolve(&id[..2]).is_err());
+}
 
 #[test]
 fn only_the_git_module_names_the_dependency() {

@@ -3,6 +3,7 @@ import {
   createGraphTab,
   createPluginFileTab,
   createPluginViewTab,
+  createGitHistoryTab,
   createSessionChangesTab,
   createSettingsTab,
   createTasksTab,
@@ -99,6 +100,40 @@ export function openSessionChangesTab(target: { chatId: string; focus?: string }
     }));
   }
   store.openOrFocus(matches, () => createSessionChangesTab(target));
+}
+
+/** Opens (or focuses) the History tab of a file (`path` absolute), selecting version `rev`; with
+ *  `version` it is the read-only view of that one version. `activate: false` opens it in the
+ *  background (middle click, Cmd+click: `SPECs/link-activation-spec.md`). One tab per file, and
+ *  one per version for the version view. */
+export function openGitHistoryTab(
+  target: { path: string; rev?: string; version?: boolean },
+  options?: { activate?: boolean },
+) {
+  const matches = (tab: { location: Location }) =>
+    tab.location.kind === "git-history" &&
+    tab.location.path === target.path &&
+    Boolean(tab.location.version) === Boolean(target.version) &&
+    (!target.version || tab.location.rev === target.rev);
+  const store = useEditorStore.getState();
+  const activate = options?.activate ?? true;
+  const existing = store.tabs.find(matches);
+  if (existing) {
+    useEditorStore.setState((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === existing.id ? { ...tab, location: { kind: "git-history", ...target } } : tab,
+      ),
+    }));
+    if (activate) store.setActiveTab(existing.id);
+    return;
+  }
+  if (!activate) {
+    useEditorStore.setState((state) => ({
+      tabs: [...state.tabs, createGitHistoryTab(target)],
+    }));
+    return;
+  }
+  store.openOrFocus(matches, () => createGitHistoryTab(target));
 }
 
 /** Persist a graph tab's camera and pins in its location (restored with the session). */

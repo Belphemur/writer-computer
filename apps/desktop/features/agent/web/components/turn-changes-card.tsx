@@ -10,6 +10,8 @@ import {
 import type { Turn } from "@features/agent/web/lib/transcript";
 import { changesKey, useTurnChangesStore } from "@features/agent/web/stores/turn-changes-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { getWorkspaceRoot } from "@/hooks/workspace-api";
+import { useGitHistory, useTurnCommit } from "@features/agent/web/hooks/use-turn-commit";
 import { revealSubagentCard } from "./subagent-card";
 import { Ico } from "./agent-icon";
 import { Counts, FileDiffBody, FileName, OriginMarker } from "./change-parts";
@@ -38,6 +40,14 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
   const entry = useTurnChangesStore((s) => s.entries[key]);
   const load = useTurnChangesStore((s) => s.load);
   const revert = useTurnChangesStore((s) => s.revert);
+  const git = useGitHistory();
+  const finished = turn.status !== "running" && turn.finishedAt !== null;
+  const commit = useTurnCommit(
+    git,
+    finished && summary && summary.files.length > 0
+      ? { chatId, turnId: summary.turnId, finishedAt: turn.finishedAt }
+      : null,
+  );
   const wantsDetail = open && summary !== undefined && turn.status !== "running";
 
   useEffect(() => {
@@ -185,6 +195,21 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
                         </span>
                       ))}
                     {!f.noDiff && <Counts added={f.added} removed={f.removed} />}
+                    {git && commit && getWorkspaceRoot() && (
+                      <button
+                        type="button"
+                        data-agent-view-history={f.path}
+                        aria-label={`View history of ${f.path}`}
+                        className={btn}
+                        onClick={() =>
+                          git.openHistory(`${getWorkspaceRoot()!.replace(/\/$/, "")}/${f.path}`, {
+                            rev: commit,
+                          })
+                        }
+                      >
+                        View in history
+                      </button>
+                    )}
                     <span className="ml-auto flex items-center gap-2">{undoControl(f)}</span>
                   </div>
                   {outcome?.result === "failed" && (

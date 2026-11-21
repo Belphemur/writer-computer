@@ -378,6 +378,36 @@ export type ContextRef = { kind: "active-note"; path: string; inline: boolean } 
  */
 { kind: "document"; path: string };
 
+export type DiffBlock = {
+	style: DiffBlockStyle,
+	/**  Heading level (1 to 6) or list depth (0 for the first). */
+	level: number,
+	change: DiffBlockChange,
+	/**
+	 *  One `eq` part for an unchanged block, one `ins` or `del` part for an added or removed one,
+	 *  the word diff for a changed one.
+	 */
+	parts: DiffPart[],
+};
+
+export type DiffBlockChange = "same" | "added" | "removed" | "changed";
+
+export type DiffBlockStyle = "paragraph" | "heading" | "list-item" | "quote" | "code" | "rule";
+
+export type DiffOp = "eq" | "ins" | "del";
+
+export type DiffPart = {
+	op: DiffOp,
+	text: string,
+};
+
+/**  One front matter property: `before` is `None` when it was added, `after` when it was removed. */
+export type DiffProp = {
+	name: string,
+	before: string | null,
+	after: string | null,
+};
+
 export type DiffRow = {
 	kind: DiffRowKind,
 	/**  1-based; None on an added row. */
@@ -405,6 +435,8 @@ export type FileChange = {
 	rows: DiffRow[],
 	/**  `rows` stops early (very large diff). */
 	truncated?: boolean,
+	/**  The note view of a Markdown file (spec "Diff"): the shared diff component's rendered mode. */
+	rendered?: NoteDiff | null,
 	undo: UndoState,
 } & FileChangeSummary;
 
@@ -526,6 +558,12 @@ export type MemoryOverview = {
 
 /**  Which memory folder a command acts on. */
 export type MemoryScope = "vault" | "project";
+
+export type NoteDiff = {
+	/**  Only the properties that changed. */
+	front: DiffProp[],
+	blocks: DiffBlock[],
+};
 
 export type PermissionDecision = "allow" | "deny";
 
@@ -683,6 +721,7 @@ export type SessionEndReason = "exit" | "killed" | "closed" | "vault-switched";
 export type SessionFileChange = {
 	rows: DiffRow[],
 	truncated?: boolean,
+	rendered?: NoteDiff | null,
 } & FileChangeSummary;
 
 export type SnapshotReply = {

@@ -45,9 +45,9 @@
 use super::command_windows::CommandWindows;
 use super::edit_inverse::{settle, Settled};
 use super::events::*;
-use super::line_diff::{counts, diff_lines, split_lines, Edit};
 use super::memory;
 use super::sub_tracker::Author;
+use crate::text_diff::{self, TextDiff};
 use crate::vault_ops;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -59,12 +59,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 pub const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
-/// A diff longer than this is cut (`truncated`).
-pub const MAX_DIFF_ROWS: usize = 20_000;
-/// Longer lines are cut for display.
-pub const MAX_ROW_CHARS: usize = 2_000;
-/// Over this many lines on both sides together the file is listed without a diff.
-const MAX_DIFF_LINES: usize = 200_000;
 
 /// Tools that edit a file, with the input keys that hold its path. Twin of the `edit` kind in
 /// `features/agent/web/lib/tool-kinds.ts` (the TS side only renders; this side must know the paths).
@@ -371,47 +365,26 @@ fn plan(files: &[FileRec]) -> Vec<Entry> {
     entries
 }
 
-fn diff_of(pre: &Snap, end: &Snap) -> Option<(Vec<Edit>, Vec<String>, Vec<String>)> {
-    let old = match pre {
-        Snap::Text(t) => t.as_deref().unwrap_or(""),
-        Snap::Opaque(_) | Snap::Unknown(_) => return None,
-    };
-    let new = match end {
-        Snap::Text(t) => t.as_deref().unwrap_or(""),
-        Snap::Opaque(_) | Snap::Unknown(_) => return None,
-    };
-    let (la, lb) = (split_lines(old), split_lines(new));
-    if la.len() + lb.len() > MAX_DIFF_LINES {
-        return None;
+/// The diff of two snapshots (the shared `text_diff`), `None` when either has no text or the
+/// pair is too large: the file is then listed without a diff. `rendered` also builds the note view
+/// of a Markdown file, which only a diff that is about to be shown needs.
+fn diff_of(rel: &str, pre: &Snap, end: &Snap, rendered: bool) -> Option<TextDiff> {
+    fn text(s: &Snap) -> Option<&str> {
+        match s {
+            Snap::Text(t) => Some(t.as_deref().unwrap_or("")),
+            Snap::Opaque(_) | Snap::Unknown(_) => None,
+        }
     }
-    let edits = diff_lines(&la, &lb);
-    Some((
-        edits,
-        la.iter().map(|s| s.to_string()).collect(),
-        lb.iter().map(|s| s.to_string()).collect(),
-    ))
-}
-
-fn cut_row(line: &str) -> String {
-    let line = line.strip_suffix('\r').unwrap_or(line);
-    if line.chars().count() > MAX_ROW_CHARS {
-        let mut s: String = line.chars().take(MAX_ROW_CHARS).collect();
-        s.push('…');
-        s
-    } else {
-        line.to_string()
-    }
+    let note = rendered && rel.to_ascii_lowercase().ends_with(".md");
+    text_diff::compare(text(pre)?, text(end)?, note)
 }
 
 fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
     let f = &files[e.main];
     let (added, removed, no_diff) = match e.status {
         ChangeStatus::Renamed => (0, 0, false),
-        _ => match diff_of(&f.pre, &f.end) {
-            Some((edits, ..)) => {
-                let (a, d) = counts(&edits);
-                (a, d, false)
-            }
+        _ => match diff_of(&f.rel, &f.pre, &f.end, false) {
+            Some(d) => (d.added, d.removed, false),
             None => (0, 0, true),
         },
     };
@@ -428,44 +401,22 @@ fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
     }
 }
 
-fn rows_of(pre: &Snap, end: &Snap) -> (Vec<DiffRow>, bool) {
-    let Some((edits, la, lb)) = diff_of(pre, end) else {
-        return (Vec::new(), false);
-    };
-    let mut rows = Vec::with_capacity(edits.len().min(MAX_DIFF_ROWS));
-    for e in &edits {
-        if rows.len() >= MAX_DIFF_ROWS {
-            return (rows, true);
+/// The shown diff of an entry (none for a rename, whose content is equal).
+fn diff_for(files: &[FileRec], e: &Entry) -> Option<TextDiff> {
+    match e.status {
+        ChangeStatus::Renamed => None,
+        _ => {
+            let f = &files[e.main];
+            diff_of(&f.rel, &f.pre, &f.end, true)
         }
-        rows.push(match *e {
-            Edit::Equal(i, j) => DiffRow {
-                kind: DiffRowKind::Context,
-                old_line: Some(i as u32 + 1),
-                new_line: Some(j as u32 + 1),
-                text: cut_row(&lb[j]),
-            },
-            Edit::Del(i) => DiffRow {
-                kind: DiffRowKind::Del,
-                old_line: Some(i as u32 + 1),
-                new_line: None,
-                text: cut_row(&la[i]),
-            },
-            Edit::Add(j) => DiffRow {
-                kind: DiffRowKind::Add,
-                old_line: None,
-                new_line: Some(j as u32 + 1),
-                text: cut_row(&lb[j]),
-            },
-        });
     }
-    (rows, false)
 }
 
-/// The diff rows of an entry (none for a rename, whose content is equal).
-fn rows_for(files: &[FileRec], e: &Entry) -> (Vec<DiffRow>, bool) {
-    match e.status {
-        ChangeStatus::Renamed => (Vec::new(), false),
-        _ => rows_of(&files[e.main].pre, &files[e.main].end),
+/// The parts of a diff the wire types carry; nothing for a file listed without one.
+fn shown(d: Option<TextDiff>) -> (Vec<DiffRow>, bool, Option<text_diff::note::NoteDiff>) {
+    match d {
+        Some(d) => (d.rows, d.truncated, d.rendered),
+        None => (Vec::new(), false, None),
     }
 }
 
@@ -771,11 +722,12 @@ impl ChangeStore {
         let files = plan(&t.files)
             .iter()
             .map(|e| {
-                let (rows, truncated) = rows_for(&t.files, e);
+                let (rows, truncated, rendered) = shown(diff_for(&t.files, e));
                 FileChange {
                     summary: summary_of(&t.files, e),
                     rows,
                     truncated,
+                    rendered,
                     undo: undo_state(&t.files, e),
                 }
             })
@@ -829,11 +781,12 @@ impl ChangeStore {
         let files = plan(&recs)
             .iter()
             .map(|e| {
-                let (rows, truncated) = rows_for(&recs, e);
+                let (rows, truncated, rendered) = shown(diff_for(&recs, e));
                 SessionFileChange {
                     summary: summary_of(&recs, e),
                     rows,
                     truncated,
+                    rendered,
                 }
             })
             .collect();

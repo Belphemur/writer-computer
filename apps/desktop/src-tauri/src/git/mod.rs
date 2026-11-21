@@ -11,11 +11,13 @@
 //! - `ignore.rs`: the managed block of the vault's `.gitignore`;
 //! - `scheduler.rs`: the cadence state machine (pure, time is an argument);
 //! - `system.rs`: `git var`, the commit identity from the installed git (the one child process);
-//! - `state.rs`: the pause flag; `device.rs`: the device name.
+//! - `history.rs`: file versions, deleted files, diffs and Restore (shared text diff);
+//! - `state.rs`: the pause and stop flags; `device.rs`: the device name.
 //!
 //! [`setup`] and [`commit_user`] are the two operations the app and the CLI share.
 
 pub mod device;
+pub mod history;
 pub mod ignore;
 pub mod message;
 pub mod repo;
@@ -40,10 +42,133 @@ pub enum SetupMode {
     Existing,
 }
 
+/// A merge, rebase or the like that the user (or a tool) has under way in the repository: Writer
+/// commits nothing while one is, and the vault resumes by itself when the markers go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Operation {
+    Merge,
+    CherryPick,
+    Revert,
+    Rebase,
+    Bisect,
+    DetachedHead,
+}
+
+impl Operation {
+    /// `merge in progress`, `detached HEAD` ...
+    pub fn label(self) -> &'static str {
+        match self {
+            Operation::Merge => "merge in progress",
+            Operation::CherryPick => "cherry-pick in progress",
+            Operation::Revert => "revert in progress",
+            Operation::Rebase => "rebase in progress",
+            Operation::Bisect => "bisect in progress",
+            Operation::DetachedHead => "detached HEAD",
+        }
+    }
+}
+
+/// What the repository at `root` is in the middle of, read from the markers git leaves in `.git`
+/// (`MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge/`, `rebase-apply/`,
+/// `BISECT_LOG`) and from a `HEAD` that names no branch. `None` when it is idle (or not a
+/// repository with its own `.git` folder).
+pub fn operation(root: &Path) -> Option<Operation> {
+    let dir = root.join(".git");
+    if !dir.is_dir() {
+        return None;
+    }
+    const MARKERS: [(&str, Operation); 6] = [
+        ("MERGE_HEAD", Operation::Merge),
+        ("CHERRY_PICK_HEAD", Operation::CherryPick),
+        ("REVERT_HEAD", Operation::Revert),
+        ("rebase-merge", Operation::Rebase),
+        ("rebase-apply", Operation::Rebase),
+        ("BISECT_LOG", Operation::Bisect),
+    ];
+    if let Some((_, op)) = MARKERS.iter().find(|(m, _)| dir.join(m).exists()) {
+        return Some(*op);
+    }
+    let head = std::fs::read_to_string(dir.join("HEAD")).ok()?;
+    let head = head.trim();
+    (!head.is_empty() && !head.starts_with("ref:")).then_some(Operation::DetachedHead)
+}
+
 /// A vault is set up when it is a repository holding Writer's managed ignore block.
+/// and the user has not chosen "Stop version history" for it.
 pub fn is_set_up(root: &Path) -> bool {
     root.join(".git").exists()
         && std::fs::read_to_string(root.join(".gitignore")).is_ok_and(|t| ignore::has_block(&t))
+        && !state::stopped(root)
+}
+
+/// A folder above the vault is a repository (a docs folder in a code repo): Writer never sets
+/// history up there by itself, and never commits into that repository.
+pub fn in_parent_repo(root: &Path) -> bool {
+    root.ancestors()
+        .skip(1)
+        .any(|dir| dir.join(".git").exists())
+}
+
+/// What [`auto_setup`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Auto {
+    /// The vault was already set up.
+    Already,
+    /// The user chose "Stop version history" for this vault.
+    Stopped,
+    /// A folder above the vault is a repository: the user chooses (never a silent commit there).
+    InParentRepo,
+    /// A merge, rebase or the like is under way in the repository: nothing is written.
+    Paused,
+    /// The vault is now set up. `committed` is false when git has no identity (the first commit
+    /// comes with the first commit after the user sets one) or when the vault was already a
+    /// repository (no extra commit until there are changes).
+    Done { committed: bool },
+}
+
+/// Sets a vault up by default when it opens (spec "Setup", the user 2026-11-20): a vault that is
+/// itself a repository is used as it is (the managed ignore block is written, no commit); one
+/// inside another repository is left for the user to choose; any other gets `git init`, the ignore
+/// block and the first commit `chore(setup)`. No identity: the repository and the block are made
+/// but no commit, and the "Set your git name and email" state follows.
+pub fn auto_setup(root: &Path, device: &str) -> Result<Auto> {
+    if state::stopped(root) {
+        return Ok(Auto::Stopped);
+    }
+    if is_set_up(root) {
+        return Ok(Auto::Already);
+    }
+    if operation(root).is_some() {
+        return Ok(Auto::Paused);
+    }
+    if let Some(repo) = Repo::open(root)? {
+        let _ = repo;
+        ignore::ensure(root)?;
+        return Ok(Auto::Done { committed: false });
+    }
+    if in_parent_repo(root) {
+        return Ok(Auto::InParentRepo);
+    }
+    let repo = Repo::init(root)?;
+    ignore::ensure(root)?;
+    finish_setup(&repo, device)
+}
+
+/// The first commit of a freshly made repository, when git has an identity for it.
+fn finish_setup(repo: &Repo, device: &str) -> Result<Auto> {
+    if repo.identities().is_err() {
+        return Ok(Auto::Done { committed: false });
+    }
+    let changes = repo.changes()?;
+    let message = Message::chore(Scope::Setup, "start version history", device);
+    repo.commit(&changes, &message)?;
+    Ok(Auto::Done { committed: true })
+}
+
+/// "Stop version history" for one vault: Writer forgets its setup (device-local), commits nothing
+/// more by itself and does not set the vault up again. `.git` and the history stay untouched.
+pub fn stop(root: &Path) -> std::io::Result<()> {
+    state::set_stopped(root, true)
 }
 
 /// Sets the vault up: the repository, the ignore block, and the first commit (`chore(setup)`) of a
@@ -56,6 +181,7 @@ pub fn setup(root: &Path, mode: SetupMode, device: &str) -> Result<()> {
         SetupMode::Existing => Repo::open(root)?.ok_or(Error::NotARepo)?,
     };
     repo.identities()?;
+    state::set_stopped(root, false)?;
     let ignore_changed = ignore::ensure(root)?;
     if !repo.has_commits() {
         let changes = repo.changes()?;
@@ -82,7 +208,13 @@ pub fn commit_user(
     if changes.is_empty() {
         return Ok(None);
     }
-    let message = Message::user(&changes, template, ctx, device);
+    // the first commit of an empty repository is the setup commit (an automatic setup that had no
+    // git identity yet)
+    let message = if repo.has_commits() {
+        Message::user(&changes, template, ctx, device)
+    } else {
+        Message::chore(Scope::Setup, "start version history", device)
+    };
     repo.commit(&changes, &message).map(Some)
 }
 
@@ -126,10 +258,18 @@ pub struct Status {
     /// The vault is a repository (set up by Writer or not).
     pub has_repo: bool,
     pub set_up: bool,
+    /// A folder above the vault is a repository: setup is the user's choice.
+    pub parent_repo: bool,
+    /// The user chose "Stop version history" for this vault.
+    pub stopped: bool,
+    /// A merge, rebase or the like is under way: Writer commits nothing until it is over.
+    pub operation: Option<Operation>,
     pub paused: bool,
     pub changes: Vec<Change>,
     /// Committer time of HEAD, seconds.
     pub last_commit: Option<i64>,
+    /// Files over the size Writer versions (no LFS yet), vault-relative.
+    pub too_large: Vec<String>,
     /// The identity problem that would stop a commit, if any.
     pub identity_error: bool,
 }
@@ -167,18 +307,27 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool) -> Result<St
         return Ok(Status {
             has_repo: false,
             set_up: false,
+            parent_repo: in_parent_repo(root),
+            stopped: state::stopped(root),
+            operation: None,
             paused: false,
             changes: Vec::new(),
             last_commit: None,
+            too_large: Vec::new(),
             identity_error: false,
         });
     };
+    let (changes, too_large) = repo.changes_and_skipped()?;
     Ok(Status {
         has_repo: true,
         set_up: is_set_up(root),
+        parent_repo: in_parent_repo(root),
+        stopped: state::stopped(root),
+        operation: operation(root),
         paused: state::paused(root),
-        changes: repo.changes()?,
+        changes,
         last_commit: repo.last_commit_time(),
+        too_large,
         identity_error: identity.is_missing(&repo, refresh),
     })
 }

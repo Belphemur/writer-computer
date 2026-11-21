@@ -136,7 +136,8 @@
       "sidebar-folder": ["agent.make-project"]
     },
     "fileTreeDecorations": ["agent.project-badge"],
-    "services": ["agent.context"]
+    "services": ["agent.context", "agent.chats"]
   },
-  "provides": ["agent.context"]
+  "provides": ["agent.context", "agent.chats"],
+  "uses": ["git.history"]
 }

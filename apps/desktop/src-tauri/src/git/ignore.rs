@@ -17,6 +17,7 @@ pub const LINES: &[&str] = &[
     ".writer/cache/",
     ".writer/git/",
     ".trash/",
+    "node_modules/",
     ".DS_Store",
     "Thumbs.db",
 ];

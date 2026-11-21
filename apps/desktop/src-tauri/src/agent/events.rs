@@ -506,24 +506,7 @@ pub struct SessionChangesSummary {
     pub files: Vec<FileChangeSummary>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum DiffRowKind {
-    Context,
-    Add,
-    Del,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DiffRow {
-    pub kind: DiffRowKind,
-    /// 1-based; None on an added row.
-    pub old_line: Option<u32>,
-    /// 1-based; None on a removed row.
-    pub new_line: Option<u32>,
-    pub text: String,
-}
+pub use crate::text_diff::{DiffRow, DiffRowKind};
 
 /// Whether "Undo" can run now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -546,6 +529,9 @@ pub struct FileChange {
     /// `rows` stops early (very large diff).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
+    /// The note view of a Markdown file (spec "Diff"): the shared diff component's rendered mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered: Option<crate::text_diff::note::NoteDiff>,
     pub undo: UndoState,
 }
 
@@ -558,6 +544,8 @@ pub struct SessionFileChange {
     pub rows: Vec<DiffRow>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered: Option<crate::text_diff::note::NoteDiff>,
 }
 
 /// Reply of `agent_session_changes`.
@@ -1152,6 +1140,7 @@ mod tests {
                     text: "x".into(),
                 }],
                 truncated: false,
+                rendered: None,
                 undo: UndoState::ChangedSince,
             }],
             bash: true,

@@ -35,6 +35,11 @@ impl From<std::io::Error> for VaultOpError {
 /// Directories nothing may be read or written through these helpers.
 const PROTECTED: [&str; 2] = [".obsidian", ".git"];
 
+/// Is a vault-relative path inside a folder nothing reads or writes (`.obsidian`, `.git`)?
+pub fn is_protected_rel(rel: &str) -> bool {
+    rel.split('/').any(|c| PROTECTED.contains(&c))
+}
+
 /// A path accepted by [`confine`]: the resolved absolute path and the
 /// vault-relative form with forward slashes.
 #[derive(Debug, Clone, PartialEq, Eq)]

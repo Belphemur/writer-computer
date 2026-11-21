@@ -25,9 +25,9 @@ pub mod rules;
 mod tests;
 
 use self::positions::Index;
-use crate::agent::line_diff;
 use crate::config::ConfigValue;
 use crate::markdown_mask;
+use crate::text_diff::lines as line_diff;
 use rumdl_lib::config::{Config, MarkdownFlavor};
 use rumdl_lib::rule::{LintWarning, Rule as RumdlRule, Severity as RumdlSeverity};
 use serde::{Deserialize, Serialize};

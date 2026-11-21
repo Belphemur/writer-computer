@@ -14,6 +14,13 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::git_setup::<Wry>,
             commands::git_commit_now::<Wry>,
             commands::git_set_paused::<Wry>,
+            commands::git_stop::<Wry>,
+            commands::git_history::<Wry>,
+            commands::git_deleted::<Wry>,
+            commands::git_version_diff::<Wry>,
+            commands::git_version_text::<Wry>,
+            commands::git_restore::<Wry>,
+            commands::git_turn_commit::<Wry>,
         ])
 }
 

@@ -2,6 +2,7 @@ import { baseKind, type BaseLocation } from "./base";
 import { codeKind, type CodeLocation } from "./code";
 import { drawingKind, type DrawingLocation } from "./drawing";
 import { fileKind, type FileLocation } from "./file";
+import { gitHistoryKind, type GitHistoryLocation } from "./git-history";
 import { graphKind, type GraphLocation } from "./graph";
 import { imageKind, type ImageLocation } from "./image";
 import { launcherKind, type LauncherLocation } from "./launcher";
@@ -35,6 +36,7 @@ const kinds = [
   pluginFileKind,
   sessionChangesKind,
   tasksKind,
+  gitHistoryKind,
 ] as const;
 
 export type Location =
@@ -50,7 +52,8 @@ export type Location =
   | PluginViewLocation
   | PluginFileLocation
   | SessionChangesLocation
-  | TasksLocation;
+  | TasksLocation
+  | GitHistoryLocation;
 
 const byKind: Map<string, AnyPageKind> = new Map(
   kinds.map((k) => [k.kind, k as unknown as AnyPageKind]),
@@ -138,3 +141,4 @@ export type { SettingsLocation } from "./settings";
 export type { PluginViewLocation } from "./plugin-view";
 export type { PluginFileLocation } from "./plugin-file";
 export type { SessionChangesLocation } from "./session-changes";
+export type { GitHistoryLocation } from "./git-history";

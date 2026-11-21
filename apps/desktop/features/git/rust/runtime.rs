@@ -64,6 +64,8 @@ impl Config {
 struct Vault {
     root: PathBuf,
     cadence: Cadence,
+    /// The automatic setup of this open vault has been tried (once per open).
+    auto_done: bool,
     /// The last failure, one short line (never a path or text of the vault).
     error: Option<String>,
 }
@@ -80,6 +82,8 @@ pub struct Vaults {
     stopped: AtomicBool,
     /// Whether git has an identity per vault (see `git::IdentityCache`).
     pub identity: git::IdentityCache,
+    /// The file logs already built, per HEAD (`git::history::Cache`).
+    pub history: git::history::Cache,
     /// Commits in progress.
     committing: AtomicUsize,
 }
@@ -104,6 +108,7 @@ impl Drop for Busy<'_> {
 pub fn error_line(e: &git::Error) -> String {
     match e {
         git::Error::NoIdentity => e.to_string(),
+        git::Error::Operation(_) => e.to_string(),
         git::Error::NotARepo => "Not a Git repository".into(),
         git::Error::Git(_) => "Git failed".into(),
         git::Error::Io(_) => "Could not read or write the vault".into(),
@@ -114,6 +119,11 @@ impl Vaults {
     /// A commit is running.
     pub fn busy(&self) -> bool {
         self.committing.load(Ordering::SeqCst) > 0
+    }
+
+    /// Counts a write to the repository (a restore) as busy until dropped.
+    pub fn busy_guard(&self) -> impl Drop + '_ {
+        Busy::new(&self.committing)
     }
 
     pub fn stopped(&self) -> bool {
@@ -135,6 +145,7 @@ impl Vaults {
             Vault {
                 root,
                 cadence: Cadence::new(),
+                auto_done: false,
                 error: None,
             },
         );
@@ -249,6 +260,7 @@ pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bo
             announce(app, label);
         }
         Ok(None) => v.set_error(label, None),
+        Err(git::Error::Operation(_)) => announce(app, label),
         Err(e) => {
             log::warn!(target: "git", "git: commit failed: {}", error_line(e));
             v.set_error(label, Some(error_line(e)));
@@ -271,6 +283,7 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
             announce(app, label);
         }
         Ok(None) => {}
+        Err(git::Error::Operation(_)) => announce(app, label),
         Err(e) => {
             log::warn!(target: "git", "git: agent commit failed: {}", error_line(&e));
             v.set_error(label, Some(error_line(&e)));
@@ -280,15 +293,44 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
     }
 }
 
-/// Whether the cadence may act in this window's vault: set up, and not paused.
+/// Whether the cadence may act in this window's vault: set up, not paused and no merge, rebase or
+/// the like under way (it resumes by itself when the markers go).
 fn active(root: &Path) -> bool {
-    git::is_set_up(root) && !pause_state::paused(root)
+    git::is_set_up(root) && !pause_state::paused(root) && git::operation(root).is_none()
+}
+
+/// Sets the vault of `label` up by default, once per open (spec "Setup": the user, 2026-11-20).
+/// The first pass of the ticker after the vault opened does it, on the feature's own thread.
+fn auto_setup_once<R: Runtime>(app: &AppHandle<R>, v: &Vaults, label: &str) {
+    let Some(root) = v
+        .with(label, |vault| {
+            (!std::mem::replace(&mut vault.auto_done, true)).then(|| vault.root.clone())
+        })
+        .flatten()
+    else {
+        return;
+    };
+    let _busy = Busy::new(&v.committing);
+    match git::auto_setup(&root, &device::name()) {
+        Ok(git::Auto::Done { committed }) => {
+            log::info!(target: "git", "git: set up version history (first commit: {committed})");
+            v.identity.forget(&root);
+            announce(app, label);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            log::warn!(target: "git", "git: automatic setup failed: {}", error_line(&e));
+            v.set_error(label, Some(error_line(&e)));
+            announce(app, label);
+        }
+    }
 }
 
 /// One pass of the ticker over every window.
 pub fn tick<R: Runtime>(app: &AppHandle<R>, now: Instant) {
     let Some(v) = vaults(app) else { return };
     for label in v.labels() {
+        auto_setup_once(app, &v, &label);
         let cfg = config_of(app, &label);
         let action = v.with(&label, |vault| {
             let paused = !active(&vault.root);
@@ -387,6 +429,7 @@ pub fn turn_finished<R: Runtime>(app: &AppHandle<R>, args: &TurnFinished) {
         let cfg = config_of(app, &label);
         let commit = (cfg.agent_commits && !args.files.is_empty()).then(|| AgentTurn {
             chat_id: args.chat_id.clone(),
+            turn_id: args.turn_id.clone(),
             backend: args.backend.clone(),
             title: args.title.clone().unwrap_or_default(),
             models: args.models.clone(),

@@ -32,7 +32,7 @@ mod schema;
 mod search;
 mod search_query;
 pub mod snapshot;
-mod yaml;
+pub(crate) mod yaml;
 
 #[cfg(test)]
 mod graph_tests;

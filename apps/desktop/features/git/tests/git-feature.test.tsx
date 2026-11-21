@@ -16,6 +16,12 @@ const ipc = vi.hoisted(() => ({
   setup: vi.fn(),
   commitNow: vi.fn(),
   setPaused: vi.fn(),
+  stop: vi.fn(),
+  history: vi.fn(),
+  deleted: vi.fn(),
+  versionDiff: vi.fn(),
+  versionText: vi.fn(),
+  restore: vi.fn(),
 }));
 vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed" }));
 
@@ -48,6 +54,8 @@ const OWNER = "builtin:git";
 const status = (patch: Partial<GitStatus> = {}): GitStatus => ({
   hasRepo: true,
   setUp: true,
+  parentRepo: false,
+  stopped: false,
   paused: false,
   changes: [],
   lastCommit: null,
@@ -55,6 +63,8 @@ const status = (patch: Partial<GitStatus> = {}): GitStatus => ({
   turnRunning: false,
   committing: false,
   error: null,
+  operation: null,
+  tooLarge: [],
   ...patch,
 });
 
@@ -67,6 +77,7 @@ beforeEach(() => {
   useGitStatus.getState().reset();
   useWorkspaceStore.setState({ root: "/vault" } as never);
   Object.values(ipc).forEach((f) => f.mockReset());
+  ipc.deleted.mockResolvedValue([]);
   // a refresh (the settings page asks on open) answers with what the store already holds
   ipc.status.mockImplementation(async () => useGitStatus.getState().status);
   container = document.createElement("div");
@@ -94,7 +105,7 @@ const mine = () => ({
 describe("registration", () => {
   it("registers its contributions and the kill switch removes exactly them", async () => {
     host.register(git);
-    expect(mine()).toEqual({ commands: 2, statusItems: 1, panels: 1, sections: 1 });
+    expect(mine()).toEqual({ commands: 3, statusItems: 1, panels: 1, sections: 1 });
     await host.unregister("git");
     expect(mine()).toEqual({ commands: 0, statusItems: 0, panels: 0, sections: 0 });
   });
@@ -126,6 +137,9 @@ describe("manifest contract", () => {
     expect(Object.keys(manifest.offNotes).sort()).toEqual([...manifest.extends].sort());
     expect(manifest.offNotes["agent.turn-finished"]).toBe("Agent turns won't be saved in history");
     expect("requires" in manifest).toBe(false);
+    // it offers one service and uses the agent's, which may be off
+    expect(manifest.provides).toEqual(["git.history"]);
+    expect(manifest.uses).toEqual(["agent.chats"]);
   });
 
   it("has its kill switch in the shared schema and every setting prefixed in the fragment", () => {
@@ -162,11 +176,15 @@ describe("imports", () => {
     expect(bindings).toEqual(["features/git/web/ipc.ts"]);
   });
 
-  it("imports no other feature's code (it cooperates through points)", () => {
+  it("imports no other feature's code but the types of its public api (it cooperates through points and services)", () => {
     const hits: string[] = [];
     for (const f of sourceFiles(resolve(DESKTOP, "features/git/web"))) {
       for (const i of importsOf(f)) {
-        if (/features\/(?!git\b)[a-z-]+\//.test(i.spec) || /@features\/(?!git\b)/.test(i.spec)) {
+        const api = i.typeOnly && i.spec.endsWith("/web/api");
+        if (
+          !api &&
+          (/features\/(?!git\b)[a-z-]+\//.test(i.spec) || /@features\/(?!git\b)/.test(i.spec))
+        ) {
           hits.push(`${rel(f)} ${i.spec}`);
         }
       }
@@ -179,6 +197,15 @@ describe("summarize", () => {
   it("is hidden until the vault has history", () => {
     expect(summarize(null)).toBeNull();
     expect(summarize(status({ setUp: false }))).toBeNull();
+  });
+
+  it("asks for the user's choice in a vault inside another repository or one that was stopped", () => {
+    const off = { setUp: false, hasRepo: false };
+    expect(summarize(status({ ...off, parentRepo: true }))).toMatchObject({
+      label: "History off",
+      setup: true,
+    });
+    expect(summarize(status({ ...off, stopped: true }))).toMatchObject({ setup: true });
   });
 
   it("says Local, Pending n, Paused or Error, an error first", () => {
@@ -249,6 +276,49 @@ describe("panel", () => {
     expect(ipc.commitNow).toHaveBeenCalledTimes(1);
     expect(container.querySelector("[data-git-change]")).toBeNull();
     expect(container.textContent).toContain("Local");
+  });
+
+  it("a merge or rebase shows a quiet Paused with the reason, and no commit is offered by hand", () => {
+    expect(summarize(status({ operation: "merge in progress" }))).toMatchObject({
+      label: "Paused",
+      tone: "quiet",
+      detail: "Paused: merge in progress",
+    });
+    act(() => useGitStatus.getState().apply(status({ operation: "rebase in progress" })));
+    render(<GitPanel />);
+    expect(container.querySelector("[data-git-operation]")?.textContent).toBe(
+      "Paused: rebase in progress",
+    );
+  });
+
+  it("lists the files left out for their size: the count, the names on click", () => {
+    act(() => useGitStatus.getState().apply(status({ tooLarge: ["video.mov", "Data/dump.bin"] })));
+    render(<GitPanel />);
+    const toggle = button("Not versioned: too large (2)")!;
+    expect(container.querySelector("[data-git-too-large] li")).toBeNull();
+    act(() => toggle.click());
+    expect(
+      [...container.querySelectorAll("[data-git-too-large] li")].map((l) => l.textContent),
+    ).toEqual(["video.mov", "Data/dump.bin"]);
+  });
+
+  it("caps the Deleted list at 200 and Show more lists the rest", async () => {
+    const rows = Array.from({ length: 230 }, (_, i) => ({
+      path: `n${i}.md`,
+      rev: `r${i}`,
+      time: 1,
+    }));
+    ipc.deleted.mockResolvedValue(rows);
+    useWorkspaceStore.setState({ root: "/vault" } as never);
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitPanel />);
+    await act(async () => {});
+    expect(container.querySelectorAll("[data-git-deleted-file]").length).toBe(200);
+    await act(async () =>
+      (container.querySelector("[data-git-deleted-more]") as HTMLElement).click(),
+    );
+    expect(container.querySelectorAll("[data-git-deleted-file]").length).toBe(230);
+    expect(container.querySelector("[data-git-deleted-more]")).toBeNull();
   });
 
   it("pauses and resumes", async () => {

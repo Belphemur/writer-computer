@@ -1,56 +1,13 @@
 /**
  * Pure presentation helpers of the "Changes" card (spec "Turn changes"): which unchanged lines to
  * fold behind "Show N lines", the totals of the header and the labels. The diff itself is
- * computed in Rust (`changes.rs`); this only decides what to show.
+ * computed in Rust (`changes.rs`, the shared `text_diff`); this only decides what to show. The
+ * folding and the diff view are core's (`@/lib/text-diff`, `@/components/diff`).
  */
-import type { ChangeOrigin, ChangeStatus, DiffRow, FileChangeSummary } from "./events";
+import type { ChangeOrigin, ChangeStatus, FileChangeSummary } from "./events";
 
-/** Unchanged lines kept next to a change. */
-export const CONTEXT_LINES = 3;
-/** Rows rendered before "Show more". */
-export const PAGE_ROWS = 400;
-
-export type DiffSegment =
-  | { kind: "rows"; rows: DiffRow[] }
-  /** Unchanged lines folded away; shown by "Show N lines". */
-  | { kind: "gap"; rows: DiffRow[] };
-
-/** Folds runs of unchanged lines, keeping `context` of them next to every change. A run that
- *  would hide fewer than 2 lines stays visible (a "Show 1 line" button is worse than the line). */
-export function collapseContext(rows: readonly DiffRow[], context = CONTEXT_LINES): DiffSegment[] {
-  const segments: DiffSegment[] = [];
-  const push = (kind: DiffSegment["kind"], part: DiffRow[]) => {
-    if (part.length === 0) return;
-    const last = segments[segments.length - 1];
-    if (last && last.kind === kind) last.rows.push(...part);
-    else segments.push({ kind, rows: part });
-  };
-  let i = 0;
-  while (i < rows.length) {
-    if (rows[i]!.kind !== "context") {
-      let j = i;
-      while (j < rows.length && rows[j]!.kind !== "context") j++;
-      push("rows", rows.slice(i, j) as DiffRow[]);
-      i = j;
-      continue;
-    }
-    let j = i;
-    while (j < rows.length && rows[j]!.kind === "context") j++;
-    const run = rows.slice(i, j) as DiffRow[];
-    const head = i === 0 ? 0 : context; // after a change
-    const tail = j === rows.length ? 0 : context; // before a change
-    const hidden = run.length - head - tail;
-    if (hidden >= 2) {
-      push("rows", run.slice(0, head));
-      push("gap", run.slice(head, run.length - tail));
-      push("rows", run.slice(run.length - tail));
-    } else {
-      push("rows", run);
-    }
-    i = j;
-  }
-  return segments;
-}
+export { CONTEXT_LINES, PAGE_ROWS, collapseContext } from "@/lib/text-diff";
+export type { Segment as DiffSegment } from "@/lib/text-diff";
 
 export function totals(files: readonly FileChangeSummary[]): { added: number; removed: number } {
   return files.reduce((t, f) => ({ added: t.added + f.added, removed: t.removed + f.removed }), {

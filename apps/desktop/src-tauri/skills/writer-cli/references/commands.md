@@ -117,6 +117,9 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 
 - `git:status` — Show the vault's version history state: the files changed since the last version (read-only). Params: `format=` (text | json).
 - `git:log` — List the versions of a file, newest first: subject, type, scope, date, device, agent and model (read-only). Params: `path=`, `limit=` (how many versions, default 20), `format=` (text | json).
+- `git:diff` — Show what a version of a file changed: against its previous version (default), the file now or another version (read-only). Params: `path=`, `rev=` (the version (an id from git:log), default the latest), `against=` (parent | current | another version's id), `format=` (text | json).
+- `git:show` — Print a file as it was in a version (read-only). Params: `path=`, `rev=` (the version (an id from git:log)).
+- `git:restore` — Restore a file to a version as a new change (user(restore) commit); history is kept. Params: `path=`, `rev=` (the version (an id from git:log)).
 - `git:commit` — Save a version now: commit the pending changes as a user(...) commit.
 
 ## Icons

@@ -1060,6 +1060,7 @@ impl Session {
             &api::TurnFinished {
                 root: self.root.clone(),
                 chat_id: self.chat_id.clone(),
+                turn_id: summary.map(|s| s.turn_id.clone()),
                 title,
                 backend: api::BACKEND_CLAUDE.to_string(),
                 models: model.into_iter().collect(),

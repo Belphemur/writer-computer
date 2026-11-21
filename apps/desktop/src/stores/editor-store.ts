@@ -211,6 +211,14 @@ export function createPluginFileTab(
   return { id, location: { kind: "plugin-file", ...target }, back: [], forward: [] };
 }
 
+/** A tab for the version history of a file (`path` absolute), on version `rev` when given. */
+export function createGitHistoryTab(
+  target: { path: string; rev?: string; version?: boolean },
+  id = createTabId(),
+): Tab {
+  return { id, location: { kind: "git-history", ...target }, back: [], forward: [] };
+}
+
 /** A tab for the diff of a chat's changed notes, scrolled to `focus`. */
 export function createSessionChangesTab(
   target: { chatId: string; focus?: string },

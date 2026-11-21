@@ -9,6 +9,7 @@ use crate::cli::format::json_pretty;
 use crate::cli::registry::{cmd, p, CommandSpec, NO_FLAGS, PATH};
 use crate::cli::{CliError, Ctx};
 use crate::config;
+use crate::git::history::{self, Against, FileDiff};
 use crate::git::{self, device, message, Change, Error};
 use serde_json::json;
 
@@ -46,6 +47,53 @@ pub static COMMANDS: &[CommandSpec] = &[
             Some("text"),
             reads,
             log_cmd
+        )
+    },
+    CommandSpec {
+        feature: FEATURE,
+        ..cmd!(
+            "git:diff",
+            GROUP,
+            "Show what a version of a file changed: against its previous version (default), the file now or another version (read-only)",
+            &[
+                PATH,
+                p("rev", "the version (an id from git:log), default the latest"),
+                p("against", "parent | current | another version's id"),
+                p("format", "text | json")
+            ],
+            NO_FLAGS,
+            &["text", "json"],
+            Some("text"),
+            reads,
+            diff_cmd
+        )
+    },
+    CommandSpec {
+        feature: FEATURE,
+        ..cmd!(
+            "git:show",
+            GROUP,
+            "Print a file as it was in a version (read-only)",
+            &[PATH, p("rev", "the version (an id from git:log)")],
+            NO_FLAGS,
+            &["text"],
+            Some("text"),
+            reads,
+            show_cmd
+        )
+    },
+    CommandSpec {
+        feature: FEATURE,
+        ..cmd!(
+            "git:restore",
+            GROUP,
+            "Restore a file to a version as a new change (user(restore) commit); history is kept",
+            &[PATH, p("rev", "the version (an id from git:log)")],
+            NO_FLAGS,
+            &["text"],
+            Some("text"),
+            writes,
+            restore_cmd
         )
     },
     CommandSpec {
@@ -168,7 +216,20 @@ fn log_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliErro
     let repo = git::Repo::open(root)
         .map_err(fail)?
         .ok_or_else(not_set_up)?;
-    let entries = repo.log(rel.as_deref(), limit).map_err(fail)?;
+    let entries = match &rel {
+        // a file's log follows renames; the vault's log is every commit
+        Some(rel) => repo
+            .file_versions(rel, limit)
+            .map_err(fail)?
+            .into_iter()
+            .map(|v| git::LogEntry {
+                id: v.id,
+                time: v.time,
+                message: v.message,
+            })
+            .collect(),
+        None => repo.log(None, limit).map_err(fail)?,
+    };
     if format == "json" {
         let list: Vec<_> = entries
             .iter()
@@ -235,4 +296,139 @@ fn commit_cmd(ctx: &Ctx, _args: &Args, _: &CommandSpec) -> Result<String, CliErr
         Some(id) => Ok(format!("committed {}\n", &id[..id.len().min(8)])),
         None => Ok("nothing to commit\n".into()),
     }
+}
+
+fn repo_of(ctx: &Ctx) -> Result<(std::path::PathBuf, git::Repo), CliError> {
+    let root = ctx.root()?.to_path_buf();
+    if !git::is_set_up(&root) {
+        return Err(not_set_up());
+    }
+    let repo = git::Repo::open(&root)
+        .map_err(fail)?
+        .ok_or_else(not_set_up)?;
+    Ok((root, repo))
+}
+
+fn path_arg(ctx: &Ctx, args: &Args) -> Result<String, CliError> {
+    let p = args
+        .get("path")
+        .ok_or_else(|| CliError::Usage("path= is required".into()))?;
+    Ok(ctx.confine(p)?.rel)
+}
+
+fn rev_arg(repo: &git::Repo, rel: &str, args: &Args) -> Result<String, CliError> {
+    match args.get("rev") {
+        Some(r) => Ok(r.to_string()),
+        None => repo
+            .file_versions(rel, 1)
+            .map_err(fail)?
+            .into_iter()
+            .next()
+            .map(|v| v.id)
+            .ok_or_else(|| CliError::fail("this file has no versions")),
+    }
+}
+
+/// Changed rows with three lines of context, gaps as `...`.
+fn unified(rows: &[crate::text_diff::DiffRow]) -> String {
+    use crate::text_diff::DiffRowKind::*;
+    let near = |i: usize| {
+        let (lo, hi) = (i.saturating_sub(3), (i + 4).min(rows.len()));
+        rows[lo..hi].iter().any(|r| r.kind != Context)
+    };
+    let mut out = String::new();
+    let mut gap = false;
+    for (i, r) in rows.iter().enumerate() {
+        if r.kind == Context && !near(i) {
+            gap = true;
+            continue;
+        }
+        if gap {
+            out.push_str("...\n");
+            gap = false;
+        }
+        let sign = match r.kind {
+            Context => ' ',
+            Add => '+',
+            Del => '-',
+        };
+        out.push_str(&format!("{sign} {}\n", r.text));
+    }
+    out
+}
+
+fn diff_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
+    let format = args.format(spec)?;
+    let (root, repo) = repo_of(ctx)?;
+    let rel = path_arg(ctx, args)?;
+    let rev = rev_arg(&repo, &rel, args)?;
+    let against = match args.get("against") {
+        None | Some("parent") => Against::Parent,
+        Some("current") => Against::Current,
+        Some(other) => Against::Version(other.to_string()),
+    };
+    let diff = history::diff(&repo, &root, &rel, &rev, &against).map_err(fail)?;
+    if format == "json" {
+        return Ok(json_pretty(&serde_json::to_value(&diff).unwrap_or_default()) + "\n");
+    }
+    Ok(match diff {
+        FileDiff::Text { diff }
+            if diff
+                .rows
+                .iter()
+                .all(|r| r.kind == crate::text_diff::DiffRowKind::Context) =>
+        {
+            "no changes\n".to_string()
+        }
+        FileDiff::Text { diff } => {
+            let mut out = format!("+{} -{}", diff.added, diff.removed);
+            if diff.formatting_only {
+                out.push_str(" (formatting only)");
+            }
+            out.push('\n');
+            out.push_str(&unified(&diff.rows));
+            out
+        }
+        FileDiff::Image { before, after } => format!(
+            "image: before {} bytes, after {} bytes\n",
+            before.map_or(0, |p| p.size),
+            after.map_or(0, |p| p.size)
+        ),
+        FileDiff::Binary {
+            before_size,
+            after_size,
+        } => format!(
+            "binary file: before {} bytes, after {} bytes\n",
+            before_size.unwrap_or(0),
+            after_size.unwrap_or(0)
+        ),
+    })
+}
+
+fn show_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let (_, repo) = repo_of(ctx)?;
+    let rel = path_arg(ctx, args)?;
+    let rev = rev_arg(&repo, &rel, args)?;
+    let version = history::find(&repo, &rel, &rev).map_err(fail)?;
+    let bytes = history::content(&repo, &version)
+        .map_err(fail)?
+        .ok_or_else(|| CliError::fail("the file was deleted in this version"))?;
+    history::as_text(&bytes)
+        .map(str::to_string)
+        .ok_or_else(|| CliError::fail("this version is not a text file"))
+}
+
+fn restore_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
+    let (root, repo) = repo_of(ctx)?;
+    let rel = path_arg(ctx, args)?;
+    let rev = args
+        .get("rev")
+        .ok_or_else(|| CliError::Usage("rev= is required".into()))?
+        .to_string();
+    let done = history::restore(&repo, &root, &rel, &rev, &device::name()).map_err(fail)?;
+    Ok(if done.commit.is_empty() {
+        format!("{} already holds that version\n", done.path)
+    } else {
+        format!("restored {}\n", done.path)
+    })
 }

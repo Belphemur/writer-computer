@@ -52,6 +52,7 @@ import {
   configureAgentRuntimeForTests,
   useAgentStore,
 } from "@features/agent/web/stores/agent-store";
+import { serviceContributions } from "@/lib/features/services";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useTurnChangesStore } from "@features/agent/web/stores/turn-changes-store";
 import { goldens } from "@features/agent/tests/helpers/agent-goldens";
@@ -378,7 +379,7 @@ describe("TurnChangesCard", () => {
     expect(header.getAttribute("aria-expanded")).toBe("true");
     expect($$("[data-agent-change-file]")).toHaveLength(6);
     // several files: rows are listed, diffs stay folded until asked for
-    expect(container.querySelector("[data-agent-diff]")).toBeNull();
+    expect(container.querySelector("[data-diff]")).toBeNull();
   });
 
   it("every control is a labelled button with aria-expanded, so Enter and Space work", async () => {
@@ -393,6 +394,83 @@ describe("TurnChangesCard", () => {
     expect(toggle.getAttribute("aria-label")).toBe("Hide diff of Notes/a.md");
     for (const b of $$("button"))
       expect(`${b.textContent}${b.getAttribute("aria-label")}`.trim()).not.toBe("");
+  });
+
+  describe("View in history (the git.history service)", () => {
+    const openHistory = vi.fn();
+    const listeners = new Set<() => void>();
+    let rev: string | null = null;
+    let settled = false;
+    const commitForTurn = vi.fn(
+      async (_t: { chatId: string; turnId: string; finishedAt: number | null }) => ({
+        rev,
+        settled: settled || rev !== null,
+      }),
+    );
+    const provide = () =>
+      serviceContributions.add("git.history", {
+        id: "git.history",
+        owner: "builtin:git",
+        service: {
+          openHistory,
+          commitForTurn,
+          onCommit: (l: () => void) => {
+            listeners.add(l);
+            return () => listeners.delete(l);
+          },
+        },
+      });
+    const link = () => container.querySelector("[data-agent-view-history]");
+
+    beforeEach(() => {
+      rev = null;
+      settled = false;
+      listeners.clear();
+      openHistory.mockReset();
+      commitForTurn.mockClear();
+    });
+
+    it("is absent with git off", async () => {
+      await mount(turn(summaryOf([FILE_A])));
+      expect(link()).toBeNull();
+      expect(commitForTurn).not.toHaveBeenCalled();
+    });
+
+    it("appears after git made the commit and opens the History tab on it", async () => {
+      const remove = provide();
+      await mount(turn(summaryOf([FILE_A])));
+      expect(commitForTurn).toHaveBeenCalledWith({ chatId: "c1", turnId: "t1", finishedAt: 1 });
+      expect(link()).toBeNull(); // not committed yet
+      rev = "abc123";
+      await act(async () => listeners.forEach((l) => l()));
+      await flush();
+      expect(link()?.getAttribute("data-agent-view-history")).toBe(FILE_A.path);
+      await act(async () => (link() as HTMLElement).click());
+      expect(openHistory).toHaveBeenCalledWith(`/v/${FILE_A.path}`, { rev: "abc123" });
+      expect(listeners.size).toBe(0);
+      remove();
+    });
+
+    it("stops listening once git says the turn has no commit, and never asks again", async () => {
+      const remove = provide();
+      await mount(turn(summaryOf([FILE_A])));
+      expect(listeners.size).toBe(1);
+      settled = true;
+      await act(async () => listeners.forEach((l) => l()));
+      await flush();
+      expect(listeners.size).toBe(0);
+      expect(link()).toBeNull();
+      remove();
+    });
+
+    it("goes away when git is switched off", async () => {
+      const remove = provide();
+      rev = "abc123";
+      await mount(turn(summaryOf([FILE_A])));
+      expect(link()).not.toBeNull();
+      await act(async () => remove());
+      expect(link()).toBeNull();
+    });
   });
 
   it("clicking the file name opens it in the editor; a deleted file is not a link", async () => {

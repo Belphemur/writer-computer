@@ -2,7 +2,7 @@
   "id": "git",
   "name": "Version history",
   "version": "1.0.0",
-  "description": "Saves versions of your vault with Git: automatic commits after you stop writing, one commit per agent turn, and `writer git:*` for agents. Local only: nothing is fetched or pushed.",
+  "description": "Saves versions of your vault with Git, set up by default: automatic commits after you stop writing, one commit per agent turn, a History tab per file with diffs and Restore, and `writer git:*` for agents. Local only: nothing is fetched or pushed.",
   "enabledByDefault": true,
   "activation": ["onStartup"],
   "memory": {
@@ -10,10 +10,22 @@
     "note": "One sleeping thread that checks once a second; a status check runs in a short Rust call. The Rust part needs a restart to start or stop."
   },
   "rust": {
-    "commands": ["git_status", "git_setup", "git_commit_now", "git_set_paused"],
+    "commands": [
+      "git_status",
+      "git_setup",
+      "git_commit_now",
+      "git_set_paused",
+      "git_stop",
+      "git_history",
+      "git_deleted",
+      "git_version_diff",
+      "git_version_text",
+      "git_restore",
+      "git_turn_commit"
+    ],
     "events": ["git:changed"],
     "hooks": ["start", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
-    "cliCommands": ["git:status", "git:log", "git:commit"],
+    "cliCommands": ["git:status", "git:log", "git:commit", "git:diff", "git:show", "git:restore"],
     "skills": ["writer-git"]
   },
   "extends": ["agent.turn-started", "agent.turn-finished"],
@@ -30,6 +42,12 @@
         "when": "workspace-window"
       },
       {
+        "id": "git.show-history",
+        "label": "Show history",
+        "description": "Open the version history of the active file",
+        "when": "active-file"
+      },
+      {
         "id": "git.settings",
         "label": "Version history settings",
         "description": "Choose when versions are saved",
@@ -37,6 +55,14 @@
       }
     ],
     "statusItems": ["git.status"],
-    "sidebarPanels": ["git.panel"]
-  }
+    "sidebarPanels": ["git.panel"],
+    "slots": ["git.history-tab"],
+    "services": ["git.history"],
+    "menus": {
+      "sidebar-file": ["git.sidebar-file"],
+      "editor-tab": ["git.editor-tab"]
+    }
+  },
+  "provides": ["git.history"],
+  "uses": ["agent.chats"]
 }

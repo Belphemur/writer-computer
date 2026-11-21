@@ -15,6 +15,7 @@ import type { BaseLocation } from "./base";
 import type { CodeLocation } from "./code";
 import type { DrawingLocation } from "./drawing";
 import type { FileLocation } from "./file";
+import type { GitHistoryLocation } from "./git-history";
 import type { GraphLocation } from "./graph";
 import type { ImageLocation } from "./image";
 import type { LauncherLocation } from "./launcher";
@@ -121,6 +122,9 @@ const views = {
   }) satisfies PageKindView<BaseLocation>,
   graph: featureView("graph", { feature: "graph" }) satisfies PageKindView<GraphLocation>,
   tasks: featureView("tasks", { feature: "tasks" }) satisfies PageKindView<TasksLocation>,
+  "git-history": featureView("git-history", {
+    feature: "git",
+  }) satisfies PageKindView<GitHistoryLocation>,
   launcher: {
     Component: NewTabPage,
   } satisfies PageKindView<LauncherLocation>,

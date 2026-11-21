@@ -12,3 +12,12 @@ export interface AgentContextService {
    *  show the pane. A new chat is made when none is open. */
   attachNotes(paths: readonly string[]): Promise<void>;
 }
+
+/** The service id of the chats, one of the manifest's `provides`. */
+export const AGENT_CHATS = "agent.chats";
+
+export interface AgentChatsService {
+  /** Shows a chat in the pane by id (a saved chat is opened from its note); the Git history's
+   *  "Open chat" on an agent version. */
+  openChat(chatId: string): Promise<void>;
+}

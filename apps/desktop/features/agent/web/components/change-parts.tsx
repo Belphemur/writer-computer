@@ -1,7 +1,8 @@
-import type { DiffRow, FileChangeSummary } from "@features/agent/web/lib/events";
+import { TextDiffView } from "@/components/diff/text-diff-view";
+import type { TextDiffData } from "@/lib/text-diff";
+import type { FileChangeSummary } from "@features/agent/web/lib/events";
 import { middleTruncate, originNote } from "@features/agent/web/lib/diff-rows";
 import { vaultLinkHandlers } from "./agent-links";
-import { DiffView } from "./diff-view";
 
 const MINUS = "−";
 
@@ -66,7 +67,7 @@ export function FileDiffBody({
   error,
 }: {
   f: FileChangeSummary;
-  d: { rows: DiffRow[]; truncated?: boolean } | undefined;
+  d: TextDiffData | undefined;
   status: "loading" | "ready" | "unavailable" | "error" | undefined;
   error: string | null | undefined;
 }) {
@@ -89,5 +90,5 @@ export function FileDiffBody({
     );
   if (f.status === "renamed")
     return <p className="text-[11.5px] text-text-muted">Renamed from {f.oldPath}, content equal</p>;
-  return <DiffView rows={d.rows} truncated={d.truncated} label={`Diff of ${f.path}`} />;
+  return <TextDiffView diff={d} label={`Diff of ${f.path}`} />;
 }

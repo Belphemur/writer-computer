@@ -44,6 +44,10 @@ pub struct FileChange {
 pub struct TurnFinished {
     pub root: PathBuf,
     pub chat_id: String,
+    /// The agent's id of the turn (`TurnChangesSummary.turn_id`): unique per app run, `None` for a
+    /// turn that changed no file. A contributor that records its own work for the turn (the Git
+    /// history's `Writer-Turn`) uses it, so a Changes card finds it again.
+    pub turn_id: Option<String>,
     /// The chat's title when known.
     pub title: Option<String>,
     pub backend: String,

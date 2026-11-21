@@ -21,7 +21,28 @@ writer git:log path=Notes/Plan.md
 
 lists a file's versions, newest first, one per line: the short id, the date (UTC), `type(scope)` and the subject. The type says who: `user` (the person), `agent` (an agent turn, with `[agent claude <model>]`) or `chore` (Writer's own housekeeping). The scope says what: `edit`, `add`, `delete`, `move`, `restore`, `merge`. Add `format=json` for data, `limit=` for more or fewer.
 
-Use it for "what changed in X last week" or "was this edit mine or an agent's".
+Use it for "what changed in X last week" or "was this edit mine or an agent's". The log follows a file through renames and moves.
+
+```sh
+writer git:diff path=Notes/Plan.md rev=3f2a9c1
+writer git:diff path=Notes/Plan.md rev=3f2a9c1 against=current
+```
+
+shows what a version changed: against the file's previous version (default), against the file now (`against=current`, what a restore would change) or against another version (`against=<id>`). Without `rev` it takes the latest version. Lines start with `+` or `-`; a version that only changed whitespace says "formatting only". Use it for "what did the agent change in this note" and "the version before the agent's edit".
+
+```sh
+writer git:show path=Notes/Plan.md rev=3f2a9c1
+```
+
+prints the file as it was in that version.
+
+## Restore
+
+```sh
+writer git:restore path=Notes/Plan.md rev=3f2a9c1
+```
+
+writes that version back as a new change (a `user(restore)` version); history is kept and edits not saved yet are saved first. A deleted file comes back at its path, or beside it under a free name. Run it only when the user asks to go back to an earlier version.
 
 ## Save a version
 

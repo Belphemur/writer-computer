@@ -41,6 +41,7 @@ pub mod spellcheck;
 mod state;
 pub mod tasks;
 mod telemetry;
+pub mod text_diff;
 #[cfg(desktop)]
 mod updater;
 pub mod url_value;

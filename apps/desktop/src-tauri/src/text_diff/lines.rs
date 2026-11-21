@@ -1,5 +1,7 @@
-//! A small line diff (Myers, O(ND)) for the "Changes" card. No dependency: the repo ships no diff
-//! crate and the card only needs line granularity. Pure and Tauri-free; used by `changes.rs`.
+//! A small line diff (Myers, O(ND)). No dependency: the repo ships no diff crate. Pure and
+//! Tauri-free; the one core of the agent's "Changes" card (`agent/changes.rs`), the lint engine's
+//! edits (`lint/`) and the Git history (`git/`). It diffs any slice of `&str`, so lines, blocks
+//! and words all go through it.
 //!
 //! The common prefix and suffix are trimmed first (most agent edits touch a small middle), and a
 //! file pair that needs more than [`MAX_EDITS`] edits falls back to "everything in the middle

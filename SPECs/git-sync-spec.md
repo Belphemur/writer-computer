@@ -1,6 +1,6 @@
 # Git sync
 
-Status: **phase 1 implemented** (2026-11-20): local version history only, no remote and no network: setup ("Local history only", "Use existing repository"), the managed ignore block, the cadence, `type(scope): subject` commit messages with trailers, agent-turn commits through the agent's points, the status item, the panel, Settings > Git (short layout, no remote controls), `writer git:status`, `git:log`, `git:commit` and the `writer-git` skill. Everything else below (remote, sync, merge, merge view, LFS, History tab and diff, restore, `git:diff` / `git:show` / `git:restore`) is designed and **not built**. Decision: [ADR 2026-11-18 sync vaults with a built-in Git feature](../docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md) (accepted, phase 1 in code).
+Status: **phase 1 implemented** (2026-11-20): local version history only, no remote and no network: setup by default when a vault opens (below; "Local history only" and "Use existing repository" stay as the choices of Settings > Git), the History tab with diffs and Restore (`git:diff`, `git:show`, `git:restore`; the shared text diff `src-tauri/src/text_diff/`), the managed ignore block, the cadence, `type(scope): subject` commit messages with trailers, agent-turn commits through the agent's points, the status item, the panel, Settings > Git (short layout, no remote controls), `writer git:status`, `git:log`, `git:commit` and the `writer-git` skill. Everything else below (remote, sync, merge, merge view, LFS) is designed and **not built**. Decision: [ADR 2026-11-18 sync vaults with a built-in Git feature](../docs/decisions/2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md) (accepted, phase 1 in code).
 
 ## Goal
 
@@ -21,6 +21,16 @@ Version history and multi-device sync for a vault through Git, with merges that 
 - `gix` (MIT/Apache-2.0, approved by the user 2026-11-20), exact version pinned when work starts, minimal features, no network features.
 
 ## Setup (Settings > Git)
+
+**Set up by default** (the user, 2026-11-20: "By default setup the git repo"). With the feature on, a vault that opens and has no setup recorded is set up by the first pass of the cadence thread, once per open:
+
+- the vault root is already a repository: used as it is ("Use existing repository"), the managed `.gitignore` block is written, **no extra commit** until there are changes (the block is a pending change);
+- a folder above the vault is a repository (a docs folder in a code repo): **not set up automatically**, never a silent commit into a parent repository. The status item reads "History off" and a click, like Settings > Git, shows the setup choices ("Local history only" makes a repository of its own in the vault; "Use existing repository" needs the vault root itself to be one);
+- otherwise "Local history only": `git init` through gix, the ignore block, and the first commit `chore(setup): start version history`;
+- no git identity: the repository and the block are made but no commit; the existing "Set your git name and email" state follows, and the first commit after the user sets one is the `chore(setup)` commit (an empty repository's first commit is always that one);
+- **Stop version history** (Settings > Git, per vault) removes Writer's setup record (`.writer/git/state.json` `stopped`, device-local: the vault stops counting as set up, no automatic commit, no setup on the next open) and never touches `.git` or the history. The vault then shows the setup choices; choosing one clears the record.
+
+The setup record is that device-local state plus the managed block (`git::is_set_up`): a vault is set up when it is a repository holding the block and has not been stopped.
 
 A remote is optional (the user, 2026-11-19). Without one, Git is local version history: automatic commits, history, diff and restore, the merge view for conflicts the user makes locally; nothing is fetched or pushed. A remote can be added, changed or removed later from the same page.
 
@@ -49,10 +59,17 @@ Everything in the vault except device-local state. Writer keeps a managed block 
 .writer/cache/
 .writer/git/
 .trash/
+node_modules/
 .DS_Store
 Thumbs.db
 # writer:end
 ```
+
+**Never in the middle of an operation.** Writer commits nothing, sets nothing up and restores nothing while the repository has `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge/`, `rebase-apply/` or `BISECT_LOG`, or a detached HEAD (`git::operation`, checked in `auto_setup`, the runtime's `active()` and `Repo::commit` itself, so every path refuses: user, agent, restore, close flush). The status says "Paused: merge in progress" (or rebase, detached HEAD) quietly and the history resumes by itself when the markers go.
+
+**What it leaves out.** A file over 100 MB (the `git.lfs-threshold-mb` default; a constant until LFS exists) is not versioned: the panel lists "Not versioned: too large (n)" with the names on click. A folder with its own `.git` (a nested repository) and any `node_modules` are never walked into. `.obsidian/plugins/*/data.json` stays synced.
+
+**Reading cost.** A version is looked up by its id in that commit alone, falling back to a bounded walk only for an abbreviated id; per-file lists are cached per HEAD; the Deleted list hides protected and device-local paths and shows the 200 newest with "Show more". Restore writes the open tab's unsaved edits first (the normal save), restores, then reloads the tab through the watcher's reload.
 
 Shared Writer config (`.writer/property-types.json`, `.writer/graph.json`, `.writer/icons.json`) and plugins' code and settings in `.obsidian/` are synced.
 
@@ -93,7 +110,7 @@ chore(setup): start version history
 - Types: `user` (the user's edits, restores and merge-view resolutions), `agent` (one agent turn), `chore` (Writer's own housekeeping: `setup` for the first commit, `ignore` when the managed `.gitignore` block changes).
 - Scopes: `edit`, `add`, `delete`, `move` (a rename is a move), `restore`, `merge`, `setup`, `ignore`. A commit whose files all share one kind takes it; a commit mixing kinds is `edit`.
 - Subject for `user`: the changed notes by title (file name without `.md`, other files with their extension), at most two named, then `(+n)`; a move names `from → to`. For `agent`: the chat title.
-- Trailers: `Writer-Device: <device name>` on every commit; `Writer-Chat: <chat id>`, `Writer-Agent: <backend>` (`claude`, `opencode`) and `Writer-Model: <model id>` on agent commits. The model is the one the turn's main agent reported (its last `message.model`, e.g. `claude-opus-5-5`); a sub-agent that ran on another model adds one more `Writer-Model:` line per distinct model. History shows it by its display name (Opus 5.5, Haiku 5.5). Backend and model are trailers, never the scope. When the backend reports no model, the trailer is left out (never guessed).
+- Trailers: `Writer-Device: <device name>` on every commit; `Writer-Chat: <chat id>`, `Writer-Agent: <backend>` (`claude`, `opencode`) and `Writer-Model: <model id>` on agent commits. The model is the one the turn's main agent reported (its last `message.model`, e.g. `claude-opus-5-5`); a sub-agent that ran on another model adds one more `Writer-Model:` line per distinct model. `Writer-Turn: <turn id>` names the agent turn, so the Changes card finds its commit by chat id and turn id with no time window (two turns of one chat seconds apart resolve to their own commits). History shows it by its display name (Opus 5.5, Haiku 5.5). Backend and model are trailers, never the scope. When the backend reports no model, the trailer is left out (never guessed).
 - **Identity**: the author and committer are exactly what `git commit` resolves, and the installed `git` is the source of truth: Writer runs `git var GIT_AUTHOR_IDENT` and `GIT_COMMITTER_IDENT` in the vault (`git/system.rs`; the `PATH` adds Homebrew and the standard dirs, `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`, a 5 s timeout; only the name and email are read) and commits with the answer. So the environment (`GIT_AUTHOR_NAME/EMAIL`, `GIT_COMMITTER_NAME/EMAIL`, `EMAIL`), the repository's `.git/config`, `include` and `includeIf` (a work identity for some folders), the global `~/.gitconfig`, `$XDG_CONFIG_HOME/git/config` and the system config all apply as git applies them, symlinked paths included. The call is made with `user.useConfigOnly=true`, so git never answers with a name guessed from the system user and the host name. Only without a `git` binary does gix resolve the same sources, trying the resolved repository path first and the given one second (git matches `gitdir:` against the resolved path), which agrees with git through a symlink. The answer is checked at setup and at every commit, and remembered per vault for the status poll (`git::IdentityCache`, owned by the feature's state), refreshed when Settings > Git opens and when a commit fails. Nothing is invented: no "Writer" fallback, no email made from user data. When no identity resolves, Writer does not commit: the status item reads Error, the panel and Settings > Git say "Set your git name and email" with `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, and the setup stops before it writes into the vault. Tests compare the engine with `git var` in a temp repository with a temp `HOME` and XDG dir, an `includeIf "gitdir:..."`, environment overrides, and a repository reached through a symlink (both for the git path and the gix fallback); they skip without `git`.
 - Lint fixes never get their own commit: they fall in the quiet window of the edit they follow.
 - A replayed commit (sync) keeps its message and trailers.
@@ -151,7 +168,7 @@ Per file, base / mine / theirs, in `git/merge.rs`:
 
 - **Markdown**:
   - **Front matter**: merged per property. A property changed on one side takes that side. Added on both with the same value merges cleanly; changed on both to different values is a conflict on that property only. Key order follows mine, then theirs' new keys. Formatting stays byte-minimal through the frontmatter patcher (`index/patch.rs`).
-  - **Body**: diff3 line merge over the shared line-diff core (extracted from `agent/line_diff.rs`, not copied). Non-overlapping edits, including adjacent lines, merge cleanly.
+  - **Body**: diff3 line merge over the shared line-diff core (`text_diff/lines.rs`, moved from `agent/line_diff.rs`, not copied). Non-overlapping edits, including adjacent lines, merge cleanly.
 - **Other text** (`.base`, `.canvas`, `.excalidraw`, `.json`, code): line merge. JSON files whose three versions parse merge per top-level key first.
 - **Binary**: no merge. The remote version stays at the path; mine is kept beside it as `name (conflict <device> <YYYY-MM-DD HHmm>).ext` and listed in the panel.
 - **Delete vs edit**: the edit wins and the file is restored; the panel says so.
@@ -179,6 +196,12 @@ Off by default (hosting can cost money). When on and `git-lfs` is installed, fil
 
 Designed with the user on 2026-11-20.
 
+### Built (2026-11-20)
+
+The engine reads through gix in `git/repo.rs` (`file_versions` follows a file through renames: the `Writer-Move-From:` / `Writer-Move-To:` trailer pair (percent-encoded paths, so arrows and double spaces in names survive) Writer puts on commits that move files first, git's rename detection otherwise; `deleted_files`, `blob`, `resolve`), `git/history.rs` builds on them (`versions` with line counts, `diff` against parent, current or another version, `restore`), the commands are `plugin:git|git_history`, `git_deleted`, `git_version_diff`, `git_version_text`, `git_restore`, `git_stop`. The web half is the page kind `git-history` (core, `feature: "git"`, view in the slot `page-view:git-history`), `features/git/web/components/history-page.tsx` and `version-detail.tsx`, the pure grouping in `web/lib/history.ts`, and core's one diff component `src/components/diff/` (`TextDiffView`: rendered note, property rows, Source toggle, Formatting only; the agent's Changes card renders through it too, with git off). Cooperation: git `provides` `git.history` (a service: open a file's history) and `uses` `agent.chats` (a service the agent now provides: "Open chat" on an agent version, hidden while the agent is off). The Changes card's "View in history" goes through the same service (the agent `uses` `git.history`): `commitForTurn({chatId, turnId, finishedAt})` finds the turn's commit by the `Writer-Chat` and `Writer-Turn` trailers and answers `{rev, settled}` (`settled`: found, or git committed past the turn without one, so the card drops its `onCommit` listener and asks no more), `onCommit` tells the card to ask again, `openHistory(path, {rev})` opens the tab; with git off or the vault not set up the card shows no link. A deleted file's row in the Versions panel has Show history in its right-click menu.
+
+Writer's own moves: a `user(move)` commit records `Writer-Move`, so a file that was moved and edited keeps its history; `relocate` itself stays unaware of git, so a move-with-edit that Writer's relocate did not commit as one move relies on git's similarity detection.
+
 ### Where
 
 - One **History tab** per file: page kind `git-history`, a normal tab (back/forward, split, middle-click).
@@ -201,7 +224,7 @@ Designed with the user on 2026-11-20.
 - **Front matter** changes show as property rows above the body (name, old → new, added, removed).
 - A **Source** toggle switches to the raw line diff. A version whose only change is formatting (whitespace, line breaks) says "Formatting only" and offers the toggle.
 - Other text files (`.base`, `.canvas`, `.excalidraw`, JSON, code) always show the line diff. Images show before and after side by side; other binaries show their sizes.
-- **One diff component** serves the History tab and the agent's Changes card: a rendered-with-marks view over the shared line-diff core (`agent/line_diff.rs`, extracted, not copied), with the Source toggle. The card's current line view becomes its Source mode.
+- **One diff component** serves the History tab and the agent's Changes card: a rendered-with-marks view over the shared text diff (`src-tauri/src/text_diff/`: `lines.rs` the Myers core moved from `agent/line_diff.rs`, `words.rs`, `note.rs`; the lint engine uses the same core), with the Source toggle. The card's current line view becomes its Source mode.
 
 ### Restore
 
@@ -247,7 +270,7 @@ Log operation names, durations and outcomes only. Never tokens, remote URLs with
 - **Credential helper**: answers from the secret, the `gh` path, never logs.
 - **Ignore block**: keeps user lines and is idempotent.
 - **LFS**: threshold, and `git-lfs` missing.
-- **History**: list grouping (days, bursts of 15 min per author), labels (device, agent badge and chat title), renames followed, deleted files listed and restored; diff of a version against its parent, against current and between two; rendered diff with properties rows and Source toggle, "Formatting only"; restore as a new commit; the agent Changes card and History tab render through the one diff component; `git:log`/`git:diff`/`git:show` read and `git:restore` write over MCP.
+- **History** (built, `git/tests.rs`, `features/git/tests/git-history.test.tsx`, `tests/text-diff-view.test.tsx`): list grouping (days, bursts of 15 min per author), labels (device, agent badge and chat title), renames followed, deleted files listed and restored; diff of a version against its parent, against current and between two; rendered diff with properties rows and Source toggle, "Formatting only"; restore as a new commit; the agent Changes card and History tab render through the one diff component; `git:log`/`git:diff`/`git:show` read and `git:restore` write over MCP.
 - **Scheduler**: debounce, interval, on close, paused while a merge view is open.
 - **No remote**: local-only setup from a plain folder, commits on the cadence, no fetch or push attempted, status Local (not Offline or Error), history and restore work, adding a remote later pushes the existing history, removing it returns to Local.
 - **CLI**: headless and through the socket.

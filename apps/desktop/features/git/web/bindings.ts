@@ -20,6 +20,26 @@ export const commands = {
 	gitCommitNow: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_commit_now", undefined, options),
 	/**  Pauses or resumes the automatic versions of the window's vault (device-local). */
 	gitSetPaused: (paused: boolean, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_set_paused", { paused }, options),
+	/**  Stops version history for the window's vault (device-local; `.git` is never touched). */
+	gitStop: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_stop", undefined, options),
+	/**  The versions of a file, newest first, following renames. */
+	gitHistory: (path: string, limit: number | null, options?: InvokeOptions) => __TAURI_INVOKE<VersionRow[]>("plugin:git|git_history", { path, limit }, options),
+	/**  The files removed from the vault that are not there now, newest removal first. */
+	gitDeleted: (options?: InvokeOptions) => __TAURI_INVOKE<DeletedRow[]>("plugin:git|git_deleted", undefined, options),
+	/**
+	 *  What a version changed: against its parent (`against` empty or `parent`), against the file
+	 *  now (`current`), or against another version (its id).
+	 */
+	gitVersionDiff: (path: string, rev: string, against: string | null, options?: InvokeOptions) => __TAURI_INVOKE<FileDiff>("plugin:git|git_version_diff", { path, rev, against }, options),
+	/**  The text of a version (to copy or to read), `None` for a deletion or a file that is not text. */
+	gitVersionText: (path: string, rev: string, options?: InvokeOptions) => __TAURI_INVOKE<string | null>("plugin:git|git_version_text", { path, rev }, options),
+	/**  Restores a version as a new change, committed as `user(restore)`. */
+	gitRestore: (path: string, rev: string, options?: InvokeOptions) => __TAURI_INVOKE<RestoredRow>("plugin:git|git_restore", { path, rev }, options),
+	/**
+	 *  The commit of an agent turn, by its chat id and turn id (the `Writer-Chat` and `Writer-Turn`
+	 *  trailers). `finished_at` (seconds) lets the answer settle. The agent's Changes card asks.
+	 */
+	gitTurnCommit: (chatId: string, turnId: string, finishedAt: number | null, options?: InvokeOptions) => __TAURI_INVOKE<TurnCommitRow>("plugin:git|git_turn_commit", { chatId, turnId, finishedAt }, options),
 };
 
 /* Types */
@@ -31,16 +51,82 @@ export type ChangeRow = {
 	from: string | null,
 };
 
+export type DeletedRow = {
+	path: string,
+	/**  The commit that removed it. */
+	rev: string,
+	time: number | null,
+};
+
+export type DiffBlock = {
+	style: DiffBlockStyle,
+	/**  Heading level (1 to 6) or list depth (0 for the first). */
+	level: number,
+	change: DiffBlockChange,
+	/**
+	 *  One `eq` part for an unchanged block, one `ins` or `del` part for an added or removed one,
+	 *  the word diff for a changed one.
+	 */
+	parts: DiffPart[],
+};
+
+export type DiffBlockChange = "same" | "added" | "removed" | "changed";
+
+export type DiffBlockStyle = "paragraph" | "heading" | "list-item" | "quote" | "code" | "rule";
+
+export type DiffOp = "eq" | "ins" | "del";
+
+export type DiffPart = {
+	op: DiffOp,
+	text: string,
+};
+
+/**  One front matter property: `before` is `None` when it was added, `after` when it was removed. */
+export type DiffProp = {
+	name: string,
+	before: string | null,
+	after: string | null,
+};
+
+export type DiffRow = {
+	kind: DiffRowKind,
+	/**  1-based; None on an added row. */
+	oldLine: number | null,
+	/**  1-based; None on a removed row. */
+	newLine: number | null,
+	text: string,
+};
+
+export type DiffRowKind = "context" | "add" | "del";
+
+/**  What a version changed, in the form its kind of file shows. */
+export type FileDiff = 
+/**  A text file: the line diff, and for a note the rendered view. */
+{ kind: "text"; diff: TextDiff } | { kind: "image"; before: Preview | null; after: Preview | null } | 
+/**  Any other file, or one too large to diff: the sizes, `None` for a side that is absent. */
+{ kind: "binary"; beforeSize: number | null; afterSize: number | null };
+
 export type GitStatus = {
 	/**  The vault is a Git repository (set up by Writer or not). */
 	hasRepo: boolean,
 	setUp: boolean,
+	/**  A folder above the vault is a repository: setup is the user's choice, never silent. */
+	parentRepo: boolean,
+	/**  The user chose "Stop version history" for this vault. */
+	stopped: boolean,
 	paused: boolean,
 	changes: ChangeRow[],
 	/**  Committer time of the last commit, seconds since the epoch. */
 	lastCommit: number | null,
 	/**  Git has no name and email: nothing can be committed. */
 	identityError: boolean,
+	/**
+	 *  A merge, rebase, cherry-pick, revert, bisect or a detached HEAD: nothing is committed
+	 *  until it is over (`merge in progress`, `detached HEAD`, ...).
+	 */
+	operation: string | null,
+	/**  Files over the size Writer versions (no LFS yet), vault-relative: "Not versioned". */
+	tooLarge: string[],
 	turnRunning: boolean,
 	/**  A commit is being written. */
 	committing: boolean,
@@ -48,8 +134,71 @@ export type GitStatus = {
 	error: string | null,
 };
 
+export type NoteDiff = {
+	/**  Only the properties that changed. */
+	front: DiffProp[],
+	blocks: DiffBlock[],
+};
+
+/**  An image side of a diff: inline when small enough to send, its size always. */
+export type Preview = {
+	mime: string,
+	/**  Base64 of the bytes, `None` over the size the view loads. */
+	data: string | null,
+	size: number,
+};
+
+export type RestoredRow = {
+	/**  Where the content went (a free name when a new file took the old path). */
+	path: string,
+};
+
 export type Setup = 
 /**  "Local history only": `git init` when needed. */
 "local" | 
 /**  "Use existing repository". */
 "existing";
+
+/**  Both views of the difference between two texts. */
+export type TextDiff = {
+	/**  The line diff, the "Source" view. Empty when the texts are equal. */
+	rows: DiffRow[],
+	/**  `rows` stops early (very large diff). */
+	truncated?: boolean,
+	added: number,
+	removed: number,
+	/**  The texts differ, but only in whitespace and line breaks. */
+	formattingOnly?: boolean,
+	/**  The rendered view of a note, when it was asked for. */
+	rendered?: NoteDiff | null,
+};
+
+/**  Where git is with an agent turn's commit (found by chat id and turn id). */
+export type TurnCommitRow = {
+	rev: string | null,
+	/**  Nothing more to wait for: found, or git moved on without one. */
+	settled: boolean,
+};
+
+/**  One version of a file in the History tab. */
+export type VersionRow = {
+	/**  The commit id. */
+	rev: string,
+	/**  Seconds since the epoch. */
+	time: number | null,
+	/**  `add`, `edit`, `delete` or `move`. */
+	kind: string,
+	/**  The file's path in this version (a rename shows the old name on older versions). */
+	path: string,
+	from: string | null,
+	/**  Who: `user`, `agent`, `chore`; `None` for a commit Writer did not make. */
+	type: string | null,
+	scope: string | null,
+	subject: string,
+	device: string | null,
+	chat: string | null,
+	agent: string | null,
+	models: string[],
+	added: number | null,
+	removed: number | null,
+};

@@ -14,8 +14,8 @@ import { folderOfFile } from "@features/agent/web/lib/project-sources";
 import { useProjectBadge } from "@features/agent/web/project-badge";
 import { usePaneStore } from "@features/agent/web/stores/pane-store";
 import manifest from "../feature.json";
-import { AGENT_CONTEXT } from "./api";
-import { agentContextService } from "./service";
+import { AGENT_CHATS, AGENT_CONTEXT } from "./api";
+import { agentChatsService, agentContextService } from "./service";
 
 type Availability = {
   hasWorkspace: boolean;
@@ -152,7 +152,10 @@ export default defineFeature({
       },
     ],
     // What other features use to attach notes to the chat (the graph's "Attach to agent chat").
-    services: [{ id: AGENT_CONTEXT, service: agentContextService }],
+    services: [
+      { id: AGENT_CONTEXT, service: agentContextService },
+      { id: AGENT_CHATS, service: agentChatsService },
+    ],
     // The badge on a folder that holds a project.
     fileTreeDecorations: [{ id: "agent.project-badge", useBadge: useProjectBadge }],
     // The Agent page of Settings: backend tabs, Claude status, models and the generic rows.

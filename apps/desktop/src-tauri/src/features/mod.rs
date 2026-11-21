@@ -1448,6 +1448,9 @@ mod tests {
                 "excalidraw:preview",
                 "git:status",
                 "git:log",
+                "git:diff",
+                "git:show",
+                "git:restore",
                 "git:commit",
                 "icon:set",
                 "icon:get",
@@ -1498,7 +1501,7 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 26
+            crate::cli::registry::COMMANDS.len() + 29
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),

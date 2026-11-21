@@ -16,6 +16,8 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentTurn {
     pub chat_id: String,
+    /// The agent's id of the turn (`Writer-Turn`), when it has one.
+    pub turn_id: Option<String>,
     pub backend: String,
     pub title: String,
     pub models: Vec<String>,
@@ -27,6 +29,7 @@ impl AgentTurn {
     pub fn info(&self) -> AgentTurnInfo<'_> {
         AgentTurnInfo {
             chat_id: &self.chat_id,
+            turn_id: self.turn_id.as_deref(),
             backend: &self.backend,
             models: &self.models,
         }

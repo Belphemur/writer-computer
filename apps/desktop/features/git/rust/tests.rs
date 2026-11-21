@@ -112,6 +112,7 @@ fn finished(root: &Path, files: &[&str]) -> TurnFinished {
     TurnFinished {
         root: root.to_path_buf(),
         chat_id: "chat-1".into(),
+        turn_id: Some("turn-1".into()),
         title: Some("Tidy the plan".into()),
         backend: "claude".into(),
         models: vec!["claude-opus-5-5".into()],
@@ -329,6 +330,8 @@ fn a_vault_that_is_not_set_up_gets_no_commit_and_no_error_from_any_hook() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write(&root, "a.md", "1");
+    // "Stop version history": the vault is not set up, and stays so
+    crate::git::stop(&root).unwrap();
     let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
     vaults.written("main", &root, &[root.join("a.md")], Instant::now());
@@ -337,6 +340,44 @@ fn a_vault_that_is_not_set_up_gets_no_commit_and_no_error_from_any_hook() {
     runtime::tick(app.handle(), later(1000));
     runtime::flush(app.handle(), "main");
     assert!(!root.join(".git").exists(), "nothing was created");
+    assert!(!root.join(".gitignore").exists());
+    assert_eq!(vaults.error_of("main"), None);
+}
+
+#[test]
+fn the_first_tick_after_open_sets_a_plain_vault_up_by_default_once() {
+    let _forget = serial();
+    let app = app_with(vec![&Git], &[]);
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "a.md", "1");
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    runtime::tick(app.handle(), later(1));
+    assert!(root.join(".git").exists(), "git init");
+    assert!(crate::git::is_set_up(&root), "the managed block is written");
+    // the user stops it: it is not set up again on the next tick, nor on the next open
+    crate::git::stop(&root).unwrap();
+    runtime::tick(app.handle(), later(2));
+    assert!(!crate::git::is_set_up(&root));
+    vaults.open("main", &root);
+    runtime::tick(app.handle(), later(3));
+    assert!(!crate::git::is_set_up(&root));
+}
+
+#[test]
+fn a_vault_inside_another_repository_is_not_set_up_by_the_tick() {
+    let _forget = serial();
+    let app = app_with(vec![&Git], &[]);
+    let outer = tempfile::tempdir().unwrap();
+    let outer_root = outer.path().canonicalize().unwrap();
+    std::fs::create_dir_all(outer_root.join(".git")).unwrap();
+    let root = outer_root.join("docs");
+    write(&root, "a.md", "1");
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    runtime::tick(app.handle(), later(1));
+    assert!(!root.join(".git").exists());
     assert!(!root.join(".gitignore").exists());
     assert_eq!(vaults.error_of("main"), None);
 }
@@ -467,6 +508,27 @@ fn a_panicking_contribution_fails_git_only_and_the_other_contributors_still_run(
 }
 
 #[test]
+fn nothing_is_committed_during_a_merge_and_it_resumes_when_the_merge_ends() {
+    let _forget = serial();
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    let before = subjects(&root).len();
+    std::fs::write(root.join(".git/MERGE_HEAD"), "x").unwrap();
+    write(&root, "a.md", "2");
+    vaults.written("main", &root, &[root.join("a.md")], Instant::now());
+    runtime::tick(app.handle(), later(61));
+    assert_eq!(subjects(&root).len(), before, "paused");
+    std::fs::remove_file(root.join(".git/MERGE_HEAD")).unwrap();
+    runtime::tick(app.handle(), later(200));
+    assert_eq!(subjects(&root).len(), before + 1, "resumed by itself");
+}
+
+#[test]
 fn shutdown_releases_everything_the_feature_owns() {
     let _forget = serial();
     let app = app_with(vec![&Git], &[]);
@@ -476,12 +538,11 @@ fn shutdown_releases_everything_the_feature_owns() {
     crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
     let vaults = runtime::vaults(app.handle()).unwrap();
     vaults.open("main", &root);
-    assert!(points::extended_by(TURN_FINISHED_POINT.id, "git"));
     assert!(!vaults.busy());
+    // the global points registry is shared with every other test, so only this vault's own
+    // state is asserted here (the scope's release is the scope module's test)
     vaults.shutdown();
     assert!(vaults.stopped());
-    assert!(!points::extended_by(TURN_STARTED_POINT.id, "git"));
-    assert!(!points::extended_by(TURN_FINISHED_POINT.id, "git"));
     assert!(vaults.labels().is_empty());
     // nothing answers any more: no write is recorded, no turn tracked
     write(&root, "a.md", "2");
@@ -585,6 +646,118 @@ mod cli_tests {
         assert_eq!(versions[1]["type"], "chore");
     }
 
+    /// Three versions of Plan.md; the revs of the second and the third, newest last.
+    fn three_versions(w: &World) -> (String, String) {
+        w.set_up();
+        for text in ["one\ntwo\n", "one\nTWO\nthree\n"] {
+            std::fs::write(w.vault.path().join("Plan.md"), text).unwrap();
+            assert_eq!(w.run(&["git:commit"]).code, EXIT_OK);
+        }
+        let j: Value =
+            serde_json::from_str(&w.run(&["git:log", "path=Plan.md", "format=json"]).stdout)
+                .unwrap();
+        let v = j["versions"].as_array().unwrap();
+        (
+            v[1]["rev"].as_str().unwrap().to_string(),
+            v[0]["rev"].as_str().unwrap().to_string(),
+        )
+    }
+
+    #[test]
+    fn diff_shows_a_versions_change_against_its_parent_the_file_now_or_another_version() {
+        let w = World::new();
+        let (first, second) = three_versions(&w);
+        let o = w.run(&["git:diff", "path=Plan.md", &format!("rev={}", &second[..8])]);
+        assert_eq!(o.code, EXIT_OK, "{}", o.stderr);
+        assert!(o.stdout.starts_with("+2 -1\n"), "{}", o.stdout);
+        assert!(
+            o.stdout.contains("- two")
+                && o.stdout.contains("+ TWO")
+                && o.stdout.contains("+ three"),
+            "{}",
+            o.stdout
+        );
+        // no rev: the latest version
+        assert_eq!(
+            w.run(&["git:diff", "path=Plan.md"]).stdout,
+            w.run(&["git:diff", "path=Plan.md", &format!("rev={second}")])
+                .stdout
+        );
+        std::fs::write(w.vault.path().join("Plan.md"), "one\nTWO\nthree\nfour\n").unwrap();
+        let o = w.run(&[
+            "git:diff",
+            "path=Plan.md",
+            &format!("rev={first}"),
+            "against=current",
+        ]);
+        assert!(o.stdout.starts_with("+3 -1\n"), "{}", o.stdout);
+        let o = w.run(&[
+            "git:diff",
+            "path=Plan.md",
+            &format!("rev={second}"),
+            &format!("against={first}"),
+        ]);
+        assert_eq!(o.code, EXIT_OK, "{}", o.stderr);
+        let j: Value =
+            serde_json::from_str(&w.run(&["git:diff", "path=Plan.md", "format=json"]).stdout)
+                .unwrap();
+        assert_eq!(j["kind"], "text");
+        assert_eq!(j["diff"]["added"], 2);
+    }
+
+    #[test]
+    fn show_prints_a_version_and_restore_writes_it_back_as_a_new_version() {
+        let w = World::new();
+        let (first, _second) = three_versions(&w);
+        let o = w.run(&["git:show", "path=Plan.md", &format!("rev={first}")]);
+        assert_eq!(o.stdout, "one\ntwo\n", "{}", o.stderr);
+        let o = w.run(&["git:restore", "path=Plan.md", &format!("rev={first}")]);
+        assert_eq!(o.code, EXIT_OK, "{}", o.stderr);
+        assert_eq!(o.stdout, "restored Plan.md\n");
+        assert_eq!(
+            std::fs::read_to_string(w.vault.path().join("Plan.md")).unwrap(),
+            "one\ntwo\n"
+        );
+        let log = w.run(&["git:log", "path=Plan.md"]).stdout;
+        assert!(
+            log.lines()
+                .next()
+                .unwrap()
+                .contains("user(restore) Plan to "),
+            "{log}"
+        );
+        assert_eq!(
+            log.lines().count(),
+            4,
+            "history grew, nothing was rewritten"
+        );
+        // the same content again is not a new version
+        let o = w.run(&["git:restore", "path=Plan.md", &format!("rev={first}")]);
+        assert!(o.stdout.contains("already holds"), "{}", o.stdout);
+    }
+
+    #[test]
+    fn the_history_commands_refuse_an_unset_vault_a_missing_rev_and_an_unknown_one() {
+        let w = World::new();
+        for line in [
+            vec!["git:diff", "path=Plan.md"],
+            vec!["git:show", "path=Plan.md", "rev=abcd"],
+            vec!["git:restore", "path=Plan.md", "rev=abcd"],
+        ] {
+            assert_eq!(w.run(&line).code, EXIT_FAIL, "{line:?}");
+        }
+        w.set_up();
+        assert_eq!(w.run(&["git:restore", "path=Plan.md"]).code, EXIT_USAGE);
+        assert_eq!(
+            w.run(&["git:show", "path=Plan.md", "rev=zzzz"]).code,
+            EXIT_FAIL
+        );
+        assert_eq!(
+            w.run(&["git:restore", "path=../x.md", "rev=abcd"]).code,
+            EXIT_FAIL
+        );
+    }
+
     #[test]
     fn bad_input_and_an_unset_vault_are_refused() {
         let w = World::new();
@@ -610,7 +783,13 @@ mod cli_tests {
             "features.git.enabled = false\n",
         )
         .unwrap();
-        for line in [["git:status"], ["git:commit"]] {
+        for line in [
+            ["git:status"],
+            ["git:commit"],
+            ["git:diff"],
+            ["git:show"],
+            ["git:restore"],
+        ] {
             let o = w.run(&line);
             assert_eq!(o.code, EXIT_FAIL);
             assert!(

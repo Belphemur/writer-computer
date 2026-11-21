@@ -38,6 +38,8 @@ interface SaveController {
   timer: ReturnType<typeof setTimeout> | null;
   inFlight: boolean;
   pending: boolean;
+  /** The save that is in flight, for `flushSave` to wait on. */
+  running: Promise<void> | null;
 }
 
 const saveControllers = new Map<string, SaveController>();
@@ -50,6 +52,7 @@ function getSaveController(path: string): SaveController {
       timer: null,
       inFlight: false,
       pending: false,
+      running: null,
     };
     saveControllers.set(path, controller);
   }
@@ -75,6 +78,29 @@ export function scheduleSave(path: string) {
 
 export function isSaveInFlight(path: string) {
   return saveControllers.get(path)?.inFlight === true;
+}
+
+/**
+ * Writes the open note's unsaved edits now, through the normal save (throttle skipped, features'
+ * before-save work included), waiting for a save already in flight. For a caller about to change
+ * the file on disk under the editor (a restore from history): its buffer must be on disk first,
+ * so it is in the history and not lost. Throws when the save fails.
+ */
+export async function flushSave(path: string): Promise<void> {
+  const store = requireStore();
+  for (;;) {
+    const controller = saveControllers.get(path);
+    if (controller?.inFlight) {
+      await controller.running;
+    } else {
+      if (!store.getOpenFile(path)?.isDirty) return;
+      if (controller) clearSaveTimer(controller);
+      await performSave(path);
+    }
+    const file = store.getOpenFile(path);
+    if (file?.saveError) throw new Error(file.saveError);
+    if (!file?.isDirty) return;
+  }
 }
 
 export function cancelSave(path: string) {
@@ -127,9 +153,14 @@ function serializeForSave(file: OpenFile) {
   return applyFileProcessing(serializeDocument(file.frontmatter, file.content));
 }
 
-async function performSave(path: string, controller = getSaveController(path)) {
-  if (controller.inFlight) return;
+function performSave(path: string, controller = getSaveController(path)): Promise<void> {
+  if (controller.inFlight) return controller.running ?? Promise.resolve();
+  const run = doSave(path, controller);
+  controller.running = run;
+  return run;
+}
 
+async function doSave(path: string, controller: SaveController) {
   const store = requireStore();
   const file = store.getOpenFile(path);
   if (!file || !file.isDirty) {

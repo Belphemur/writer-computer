@@ -9,7 +9,7 @@ import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { FEATURE_SETTINGS, type SettingDef } from "@/lib/settings-schema";
 import { useWorkspaceStore } from "@/stores/workspace-store";
-import { commitNow, setPaused, setup, type SetupMode } from "../ipc";
+import { commitNow, setPaused, setup, stop, type SetupMode } from "../ipc";
 import { IDENTITY_COMMANDS, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
 
@@ -78,6 +78,13 @@ export function GitSection() {
     const choose = (mode: SetupMode) => void run(() => setup(mode));
     return (
       <div className="space-y-4" data-git-setup>
+        {(status.stopped || status.parentRepo) && (
+          <p className={`px-1 text-[13px] ${MUTED}`}>
+            {status.stopped
+              ? "Version history is off for this vault."
+              : "This vault is inside another repository. Nothing is saved until you choose."}
+          </p>
+        )}
         <div className={CARD}>
           <div className={ROW}>
             <span>Local history only</span>
@@ -157,6 +164,9 @@ export function GitSection() {
               onClick={() => void run(() => setPaused(!status.paused))}
             >
               {status.paused ? "Resume" : "Pause"}
+            </button>
+            <button type="button" className={BUTTON} disabled={busy} onClick={() => void run(stop)}>
+              Stop version history
             </button>
           </span>
         </div>

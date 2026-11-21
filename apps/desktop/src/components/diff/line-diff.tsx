@@ -1,6 +1,5 @@
-import { useState } from "react";
-import type { DiffRow } from "@features/agent/web/lib/events";
-import { collapseContext, PAGE_ROWS } from "@features/agent/web/lib/diff-rows";
+import { useState, type ReactNode } from "react";
+import { collapseContext, PAGE_ROWS, type DiffRow } from "@/lib/text-diff";
 
 const ROW_TONE: Record<DiffRow["kind"], string> = {
   context: "text-text-secondary",
@@ -43,16 +42,20 @@ function Row({ row }: { row: DiffRow }) {
   );
 }
 
-/** A unified diff: line numbers, added/removed rows, unchanged runs folded behind "Show N lines",
- *  and at most `PAGE_ROWS` rows at a time behind "Show more" (a long diff never floods the DOM). */
-export function DiffView({
+/** A unified line diff, the "Source" view: line numbers, added and removed rows, unchanged runs
+ *  folded behind "Show N lines", and at most `PAGE_ROWS` rows at a time behind "Show more" (a long
+ *  diff never floods the DOM). */
+export function LineDiff({
   rows,
   truncated,
   label,
+  className = "max-h-[28rem]",
 }: {
-  rows: DiffRow[];
+  rows: readonly DiffRow[];
   truncated?: boolean;
   label: string;
+  /** Sizing of the box; a page that scrolls the diff itself passes none. */
+  className?: string;
 }) {
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const [limit, setLimit] = useState(PAGE_ROWS);
@@ -63,7 +66,7 @@ export function DiffView({
   // flatten what is visible, folded runs counting as one row, then cap
   let budget = limit;
   let more = 0;
-  const out: React.ReactNode[] = [];
+  const out: ReactNode[] = [];
   segments.forEach((seg, i) => {
     if (seg.kind === "gap" && !opened.has(i)) {
       if (budget <= 0) return void (more += 1);
@@ -90,9 +93,9 @@ export function DiffView({
     <div
       role="group"
       aria-label={label}
-      data-agent-diff
+      data-diff
       tabIndex={0}
-      className="max-h-[28rem] overflow-auto rounded-md border border-border bg-[var(--surface-subtle)]/40 py-1"
+      className={`${className} overflow-auto rounded-md border border-border bg-[var(--surface-subtle)]/40 py-1`}
     >
       {out}
       {more > 0 && (

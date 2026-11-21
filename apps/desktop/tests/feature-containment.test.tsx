@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 vi.mock("@/lib/logger", () => ({
-  logger: { error: vi.fn(), log: vi.fn() },
+  logger: { error: vi.fn(), log: vi.fn(), warn: vi.fn() },
   describeError: (e: unknown) => ({ message: String(e) }),
 }));
 
