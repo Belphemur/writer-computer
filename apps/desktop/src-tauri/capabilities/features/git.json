@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-git",
+  "description": "Grants the git feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["git:default"]
+}

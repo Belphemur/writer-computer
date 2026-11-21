@@ -76,7 +76,7 @@ let root: Root;
 
 beforeEach(() => {
   // Importing the loader registers the shipped features; the graph, tasks and agent features
-  // contribute a sidebar action of their own and spellcheck a status item, which these fixture-only counts
+  // contribute a sidebar action of their own, spellcheck and git a status item (git a panel too), which these fixture-only counts
   // must not see.
   useSettingsStore.setState({
     settings: {
@@ -84,6 +84,7 @@ beforeEach(() => {
       "features.tasks.enabled": false,
       "features.agent.enabled": false,
       "features.spellcheck.enabled": false,
+      "features.git.enabled": false,
     },
   });
   container = document.createElement("div");

@@ -1,0 +1,336 @@
+// The git feature's web half: registers and unregisters cleanly (the kill switch removes the
+// settings page, the status item and the panel), the manifest matches the code and the schemas,
+// the status item says Local / Pending n / Paused / Error, the panel lists the changes, and
+// Settings > Git shows the setup choices before setup and the short layout after it.
+// @vitest-environment jsdom
+import { resolve } from "node:path";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}), emit: vi.fn() }));
+
+const ipc = vi.hoisted(() => ({
+  status: vi.fn(),
+  setup: vi.fn(),
+  commitNow: vi.fn(),
+  setPaused: vi.fn(),
+}));
+vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed" }));
+
+import { DESKTOP, importsOf, sourceFiles } from "@tests/helpers/import-graph";
+import { featurePaletteCommands } from "@/lib/features/palette";
+import { createFeatureHost } from "@/lib/features/registry";
+import { settingsSectionContributions } from "@/lib/features/settings-sections";
+import { sidebarPanelContributions } from "@/lib/features/sidebar";
+import { statusItemContributions } from "@/lib/features/status-items";
+import { useFeatureHealth } from "@/stores/feature-health-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useUIStore } from "@/stores/ui-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import schema from "@shared/settings.schema.json";
+import manifest from "../feature.json";
+import fragment from "../settings.schema.json";
+import git from "../web";
+import GitPanel from "../web/components/panel";
+import { GitSection } from "../web/components/git-section";
+import GitStatusItem from "../web/components/status-item";
+import { fileLabel, summarize } from "../web/lib/state";
+import { useGitStatus } from "../web/lib/status-store";
+import type { GitStatus } from "../web/ipc";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const host = createFeatureHost({ onError: () => {} });
+const OWNER = "builtin:git";
+
+const status = (patch: Partial<GitStatus> = {}): GitStatus => ({
+  hasRepo: true,
+  setUp: true,
+  paused: false,
+  changes: [],
+  lastCommit: null,
+  identityError: false,
+  turnRunning: false,
+  committing: false,
+  error: null,
+  ...patch,
+});
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  useSettingsStore.setState({ settings: {} });
+  useFeatureHealth.setState({ sessionOff: {}, safeMode: false });
+  useGitStatus.getState().reset();
+  useWorkspaceStore.setState({ root: "/vault" } as never);
+  Object.values(ipc).forEach((f) => f.mockReset());
+  // a refresh (the settings page asks on open) answers with what the store already holds
+  ipc.status.mockImplementation(async () => useGitStatus.getState().status);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  act(() => root.unmount());
+  container.remove();
+  for (const id of host.list()) await host.unregister(id);
+});
+
+const render = (node: React.ReactNode) => act(() => root.render(node));
+const flush = () => act(async () => {});
+const button = (label: string) =>
+  [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
+
+const mine = () => ({
+  commands: featurePaletteCommands.list().filter((x) => x.owner === OWNER).length,
+  statusItems: statusItemContributions.list().filter((x) => x.owner === OWNER).length,
+  panels: sidebarPanelContributions.list().filter((x) => x.owner === OWNER).length,
+  sections: settingsSectionContributions.list().filter((x) => x.owner === OWNER).length,
+});
+
+describe("registration", () => {
+  it("registers its contributions and the kill switch removes exactly them", async () => {
+    host.register(git);
+    expect(mine()).toEqual({ commands: 2, statusItems: 1, panels: 1, sections: 1 });
+    await host.unregister("git");
+    expect(mine()).toEqual({ commands: 0, statusItems: 0, panels: 0, sections: 0 });
+  });
+
+  it("reads the status while on and forgets it when off", async () => {
+    ipc.status.mockResolvedValue(status());
+    host.register(git);
+    await host.activate("git");
+    await flush();
+    expect(useGitStatus.getState().status?.setUp).toBe(true);
+    await host.unregister("git");
+    expect(useGitStatus.getState().status).toBeNull();
+  });
+});
+
+describe("manifest contract", () => {
+  it("lists the ids the definition registers, all prefixed", () => {
+    const c = git.contributes!;
+    expect(git.id).toBe(manifest.id);
+    expect(manifest.contributes.statusItems).toEqual(c.statusItems!.map((x) => x.id));
+    expect(manifest.contributes.sidebarPanels).toEqual(c.sidebarPanels!.map((x) => x.id));
+    expect(manifest.contributes.commands.map((x) => x.id)).toEqual(c.commands!.map((x) => x.id));
+    const ids = [...c.statusItems!, ...c.sidebarPanels!, ...c.commands!].map((x) => x.id);
+    expect(ids.every((id) => id.startsWith("git."))).toBe(true);
+  });
+
+  it("cooperates only through points: it extends the agent's, owns none, requires nothing", () => {
+    expect(manifest.extends).toEqual(["agent.turn-started", "agent.turn-finished"]);
+    expect(Object.keys(manifest.offNotes).sort()).toEqual([...manifest.extends].sort());
+    expect(manifest.offNotes["agent.turn-finished"]).toBe("Agent turns won't be saved in history");
+    expect("requires" in manifest).toBe(false);
+  });
+
+  it("has its kill switch in the shared schema and every setting prefixed in the fragment", () => {
+    expect(schema.settings.find((e) => e.key === "features.git.enabled")).toMatchObject({
+      type: "boolean",
+      scope: "global",
+    });
+    expect(fragment.settings.map((s) => s.key).sort()).toEqual([
+      "git.agent-commits",
+      "git.commit-after",
+      "git.commit-message",
+      "git.lfs",
+      "git.lfs-threshold-mb",
+      "git.sync-interval",
+    ]);
+    const after = fragment.settings.find((s) => s.key === "git.commit-after")!;
+    expect(after).toMatchObject({ default: "1min", options: ["30s", "1min", "5min", "manual"] });
+  });
+});
+
+describe("imports", () => {
+  const rel = (f: string) => f.replace(/.*\/apps\/desktop\//, "");
+
+  it("only ipc.ts imports the generated bindings, and core never imports the feature", () => {
+    const bindings: string[] = [];
+    const core: string[] = [];
+    for (const f of sourceFiles(resolve(DESKTOP, "src"))) {
+      if (importsOf(f).some((i) => i.spec.includes("features/git"))) core.push(rel(f));
+    }
+    for (const f of sourceFiles(resolve(DESKTOP, "features/git/web"))) {
+      if (importsOf(f).some((i) => i.spec.endsWith("/bindings"))) bindings.push(rel(f));
+    }
+    expect(core).toEqual([]);
+    expect(bindings).toEqual(["features/git/web/ipc.ts"]);
+  });
+
+  it("imports no other feature's code (it cooperates through points)", () => {
+    const hits: string[] = [];
+    for (const f of sourceFiles(resolve(DESKTOP, "features/git/web"))) {
+      for (const i of importsOf(f)) {
+        if (/features\/(?!git\b)[a-z-]+\//.test(i.spec) || /@features\/(?!git\b)/.test(i.spec)) {
+          hits.push(`${rel(f)} ${i.spec}`);
+        }
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+});
+
+describe("summarize", () => {
+  it("is hidden until the vault has history", () => {
+    expect(summarize(null)).toBeNull();
+    expect(summarize(status({ setUp: false }))).toBeNull();
+  });
+
+  it("says Local, Pending n, Paused or Error, an error first", () => {
+    expect(summarize(status())).toMatchObject({ label: "Local", tone: "ok" });
+    const two = [
+      { path: "a.md", kind: "edit", from: null },
+      { path: "b.md", kind: "add", from: null },
+    ];
+    expect(summarize(status({ changes: two }))).toMatchObject({ label: "Pending 2" });
+    expect(summarize(status({ paused: true, changes: two }))).toMatchObject({ label: "Paused" });
+    expect(summarize(status({ identityError: true, paused: true }))).toMatchObject({
+      label: "Error",
+      detail: "Set your git name and email",
+    });
+    expect(summarize(status({ error: "Git failed" }))).toMatchObject({
+      label: "Error",
+      detail: "Git failed",
+    });
+  });
+
+  it("names a note by its title and another file with its extension", () => {
+    expect(fileLabel("Notes/Plan.md")).toBe("Plan");
+    expect(fileLabel("board.canvas")).toBe("board.canvas");
+  });
+});
+
+describe("status item", () => {
+  it("renders nothing without history, then Local, then Pending n", () => {
+    render(<GitStatusItem />);
+    expect(container.textContent).toBe("");
+    act(() => useGitStatus.getState().apply(status()));
+    expect(container.textContent).toBe("Local");
+    act(() =>
+      useGitStatus
+        .getState()
+        .apply(status({ changes: [{ path: "a.md", kind: "edit", from: null }] })),
+    );
+    expect(container.textContent).toBe("Pending 1");
+  });
+
+  it("an error shows its tone and a click opens the panel", () => {
+    act(() => useGitStatus.getState().apply(status({ identityError: true })));
+    render(<GitStatusItem />);
+    const el = container.querySelector("[data-git-status]") as HTMLButtonElement;
+    expect(el.dataset.gitStatus).toBe("error");
+    expect(el.textContent).toBe("Error");
+    act(() => el.click());
+    expect(useUIStore.getState().sidebarPanel).toBe("git.panel");
+  });
+});
+
+describe("panel", () => {
+  it("lists the changed files, the last version time and commits now", async () => {
+    const changed = status({
+      lastCommit: Math.floor(Date.now() / 1000) - 120,
+      changes: [
+        { path: "Notes/Plan.md", kind: "edit", from: null },
+        { path: "Archive/Plan.md", kind: "move", from: "Plan.md" },
+      ],
+    });
+    act(() => useGitStatus.getState().apply(changed));
+    ipc.commitNow.mockResolvedValue(status({ lastCommit: Math.floor(Date.now() / 1000) }));
+    render(<GitPanel />);
+    const rows = [...container.querySelectorAll("[data-git-change]")];
+    expect(rows.map((r) => r.textContent)).toEqual(["PlanEdited", "PlanMoved"]);
+    expect(container.textContent).toContain("Saved 2 mins ago");
+    await act(async () => button("Commit now")!.click());
+    expect(ipc.commitNow).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-git-change]")).toBeNull();
+    expect(container.textContent).toContain("Local");
+  });
+
+  it("pauses and resumes", async () => {
+    act(() => useGitStatus.getState().apply(status()));
+    ipc.setPaused.mockResolvedValue(status({ paused: true }));
+    render(<GitPanel />);
+    await act(async () => button("Pause")!.click());
+    expect(ipc.setPaused).toHaveBeenCalledWith(true);
+    expect(button("Resume")).toBeDefined();
+  });
+
+  it("an identity error shows the hint and the commands, and Commit now is off", () => {
+    act(() =>
+      useGitStatus
+        .getState()
+        .apply(
+          status({ identityError: true, changes: [{ path: "a.md", kind: "add", from: null }] }),
+        ),
+    );
+    render(<GitPanel />);
+    expect(container.textContent).toContain("Set your git name and email");
+    expect(container.textContent).toContain("git config --global user.name");
+    expect((button("Commit now") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("Settings > Git", () => {
+  it("before setup offers the two choices; Use existing needs a repository", async () => {
+    act(() => useGitStatus.getState().apply(status({ setUp: false, hasRepo: false })));
+    ipc.setup.mockResolvedValue(status());
+    render(<GitSection />);
+    expect(container.querySelector("[data-git-setup]")).not.toBeNull();
+    expect((button("Use") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => button("Set up")!.click());
+    expect(ipc.setup).toHaveBeenCalledWith("local");
+    expect(container.querySelector("[data-git-setup]")).toBeNull();
+    expect(container.textContent).toContain("Remote");
+  });
+
+  it("uses an existing repository when there is one", async () => {
+    act(() => useGitStatus.getState().apply(status({ setUp: false, hasRepo: true })));
+    ipc.setup.mockResolvedValue(status());
+    render(<GitSection />);
+    await act(async () => button("Use")!.click());
+    expect(ipc.setup).toHaveBeenCalledWith("existing");
+  });
+
+  it("a setup refused for a missing identity says how to set it", async () => {
+    act(() => useGitStatus.getState().apply(status({ setUp: false, hasRepo: false })));
+    ipc.setup.mockRejectedValue("Set your git name and email: git config ...");
+    render(<GitSection />);
+    await act(async () => button("Set up")!.click());
+    expect(container.textContent).toContain("git config --global user.email");
+  });
+
+  it("after setup: status line, Remote None, Save versions, Agent turns, Advanced folded", () => {
+    act(() => useGitStatus.getState().apply(status({ lastCommit: Math.floor(Date.now() / 1000) })));
+    render(<GitSection />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("Local");
+    expect(text).toContain("Remote");
+    expect(text).toContain("None");
+    expect(text).toContain("Save versions");
+    expect(text).toContain("Agent turns");
+    expect(text).not.toContain("Add a remote");
+    expect(text).not.toContain("Sync");
+    const advanced = container.querySelector("[data-git-advanced]") as HTMLDetailsElement;
+    expect(advanced.open).toBe(false);
+    expect(advanced.textContent).toContain("Commit message");
+    expect(advanced.textContent).toContain("Edit .gitignore");
+  });
+
+  it("opening the page asks git for the commit identity again", async () => {
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitSection />);
+    await flush();
+    expect(ipc.status).toHaveBeenCalledWith(true);
+  });
+
+  it("without a vault it says so", () => {
+    useWorkspaceStore.setState({ root: null } as never);
+    render(<GitSection />);
+    expect(container.textContent).toContain("Open a vault");
+  });
+});

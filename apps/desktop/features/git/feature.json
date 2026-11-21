@@ -1,0 +1,42 @@
+{
+  "id": "git",
+  "name": "Version history",
+  "version": "1.0.0",
+  "description": "Saves versions of your vault with Git: automatic commits after you stop writing, one commit per agent turn, and `writer git:*` for agents. Local only: nothing is fetched or pushed.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "memory": {
+    "level": "low",
+    "note": "One sleeping thread that checks once a second; a status check runs in a short Rust call. The Rust part needs a restart to start or stop."
+  },
+  "rust": {
+    "commands": ["git_status", "git_setup", "git_commit_now", "git_set_paused"],
+    "events": ["git:changed"],
+    "hooks": ["setup", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
+    "cliCommands": ["git:status", "git:log", "git:commit"],
+    "skills": ["writer-git"]
+  },
+  "extends": ["agent.turn-started", "agent.turn-finished"],
+  "offNotes": {
+    "agent.turn-started": "Your pending edits won't be saved before an agent turn",
+    "agent.turn-finished": "Agent turns won't be saved in history"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "git.commit-now",
+        "label": "Save a version now",
+        "description": "Commit the pending changes",
+        "when": "workspace-window"
+      },
+      {
+        "id": "git.settings",
+        "label": "Version history settings",
+        "description": "Choose when versions are saved",
+        "when": "workspace-window"
+      }
+    ],
+    "statusItems": ["git.status"],
+    "sidebarPanels": ["git.panel"]
+  }
+}

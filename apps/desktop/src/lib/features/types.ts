@@ -40,6 +40,10 @@ export interface FeatureManifest {
   memory?: { level: "low" | "medium" | "high"; note: string };
   /** Service ids the feature registers (`contributes.services`). */
   provides?: string[];
+  /** Points of other features (or `core.*`) this feature adds behaviour to (ADR 2026-11-20). */
+  extends?: string[];
+  /** Per extended point, what stops when the feature is off (shown in Settings > Features). */
+  offNotes?: Record<string, string>;
   rust?: { commands?: string[]; events?: string[]; hooks?: string[] };
   /** Only the part the settings UI reads; the rest of `contributes` is the loader's. The id lists
    *  (`docks`, `sidebarPanels`, ...) name what the web half registers; a contract test ties them. */

@@ -1932,6 +1932,105 @@ fn a_turn_that_edits_a_vault_file_ends_with_a_turn_changes_event_and_undo_works(
     assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\nline\n");
 }
 
+/// The agent's two points (`api.rs`): a turn that edits a file announces its start before the
+/// message is delivered and its end with the files and the model, and the card and its Undo are
+/// the same with a subscriber as without one (the test above is the no-subscriber path).
+#[test]
+fn a_turn_announces_its_start_and_end_through_the_agent_points() {
+    use crate::agent::api::{self, FileChangeKind};
+    use crate::features::points;
+    use std::sync::{Arc, Mutex};
+
+    let mut h = Harness::new(&["permission-allow"], "normal");
+    let derived = std::fs::read_to_string(fixture("permission-allow"))
+        .unwrap()
+        .replace(
+            "/vault/Projects/Demo/notes.txt",
+            &h.root.join("notes.txt").to_string_lossy(),
+        );
+    std::fs::write(h.fdir.join("derived.jsonl"), derived).unwrap();
+    std::fs::write(
+        h.fdir.join("turns.txt"),
+        format!("{}\n", h.fdir.join("derived.jsonl").display()),
+    )
+    .unwrap();
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\nline\n").unwrap();
+
+    // a probe, not a feature: records what the points carry for this harness's vault
+    let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+    let root = h.root.clone();
+    let (log, mine) = (Arc::clone(&seen), root.clone());
+    points::extend_raw(&api::TURN_STARTED, "probe-started", move |a| {
+        if a.root == mine {
+            log.lock().unwrap().push(format!("started {}", a.chat_id));
+        }
+    });
+    let (log, mine) = (Arc::clone(&seen), root);
+    points::extend_raw(&api::TURN_FINISHED, "probe-finished", move |a| {
+        if a.root == mine {
+            let files: Vec<String> = a
+                .files
+                .iter()
+                .map(|f| format!("{:?}:{}", f.kind, f.path))
+                .collect();
+            log.lock().unwrap().push(format!(
+                "finished {} {} {:?} {:?}",
+                a.chat_id, a.backend, a.models, files
+            ));
+            assert!(a.files.iter().all(|f| f.kind == FileChangeKind::Edit));
+        }
+    });
+
+    h.start(CHAT);
+    h.send(CHAT, "write it");
+    let ask = |h: &mut Harness| match h.next(CHAT, "permission-request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    }) {
+        AgentEvent::PermissionRequest { request_id, .. } => request_id,
+        _ => unreachable!(),
+    };
+    let id = ask(&mut h);
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&notes, "new\nline\nadded\n").unwrap();
+    let allow = |h: &Harness, id: &str| {
+        h.sessions
+            .permission("w", CHAT, id, PermissionDecision::Allow, None, None, None)
+            .unwrap()
+    };
+    allow(&h, &id);
+    let id2 = ask(&mut h);
+    allow(&h, &id2);
+    let summary = turn_changes(&mut h);
+    h.wait_until("the turn's end reached the point", || {
+        seen.lock()
+            .unwrap()
+            .iter()
+            .any(|l| l.starts_with("finished"))
+    });
+    points::retract("probe-started");
+    points::retract("probe-finished");
+
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert_eq!(seen[0], format!("started {CHAT}"));
+    assert!(
+        seen[1].starts_with(&format!("finished {CHAT} claude ["))
+            && seen[1].contains("Edit:notes.txt")
+            && seen[1].contains("claude-"),
+        "{}",
+        seen[1]
+    );
+    // the card and Undo are what they are without a subscriber
+    assert_eq!(summary.files.len(), 1);
+    let out = h
+        .sessions
+        .changes()
+        .revert(CHAT, &summary.turn_id, &h.root, &["notes.txt".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Reverted);
+}
+
 #[test]
 fn a_read_only_turn_sends_no_turn_changes() {
     let mut h = Harness::new(&["ok-turn"], "normal");

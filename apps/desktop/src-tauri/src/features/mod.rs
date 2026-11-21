@@ -72,6 +72,7 @@ use tauri::ipc::Invoke;
 use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
 pub mod lazy;
+pub mod points;
 pub mod recovery;
 pub mod secrets;
 
@@ -94,6 +95,8 @@ pub(crate) mod code_files;
 mod dataview;
 #[path = "../../../features/excalidraw/rust/mod.rs"]
 mod excalidraw;
+#[path = "../../../features/git/rust/mod.rs"]
+mod git;
 #[path = "../../../features/graph/rust/mod.rs"]
 mod graph;
 #[path = "../../../features/icons/rust/mod.rs"]
@@ -128,6 +131,21 @@ pub struct Manifest {
     pub rust: RustPart,
     #[serde(default)]
     pub contributes: Contributes,
+    /// Hooks this feature owns (ADR 2026-11-20 "let features cooperate...").
+    #[serde(default)]
+    pub points: Vec<PointDecl>,
+    /// Points of other features (or `core.*`) this feature adds behaviour to.
+    #[serde(default)]
+    pub extends: Vec<String>,
+}
+
+/// A point the feature owns: `id` is `<feature id>.<point>`, `kind` is `hook` (the only kind built).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct PointDecl {
+    pub id: String,
+    pub kind: String,
+    pub side: String,
 }
 
 /// The parts of `contributes` Rust reads (the rest is the web half's). The id lists name what the
@@ -304,6 +322,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &code_files::CodeFiles,
         &dataview::Dataview,
         &excalidraw::Excalidraw,
+        &git::Git,
         &graph::Graph,
         &icons::Icons,
         &lint::Lint,
@@ -386,6 +405,8 @@ pub enum Boundary {
     Thread(&'static str),
     /// Native code declared through [`native`], blamed on this setting when the process dies in it.
     Native(&'static str),
+    /// A contribution to a point another feature owns (`points::extend`).
+    Hook(&'static str),
 }
 
 impl Boundary {
@@ -398,13 +419,17 @@ impl Boundary {
             Boundary::Command => "command".into(),
             Boundary::Thread(name) => format!("thread:{name}"),
             Boundary::Native(_) => "native".into(),
+            Boundary::Hook(point) => format!("hook:{point}"),
         }
     }
 
     /// Code that may crash natively or abort gets a marker; commands and threads run too often
     /// for file IO and are covered by `catch_unwind` alone.
     fn marks_inside(&self) -> bool {
-        !matches!(self, Boundary::Command | Boundary::Thread(_))
+        !matches!(
+            self,
+            Boundary::Command | Boundary::Thread(_) | Boundary::Hook(_)
+        )
     }
 
     fn setting(&self) -> Option<String> {
@@ -1174,6 +1199,7 @@ mod tests {
                 "code-files",
                 "dataview",
                 "excalidraw",
+                "git",
                 "graph",
                 "icons",
                 "lint",
@@ -1231,8 +1257,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            11,
-            "the agent, bases, code-files, dataview, excalidraw, graph, icons, lint, pdf, spellcheck and tasks still start"
+            12,
+            "the agent, bases, code-files, dataview, excalidraw, git, graph, icons, lint, pdf, spellcheck and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(
@@ -1427,6 +1453,9 @@ mod tests {
                 "excalidraw:lint",
                 "excalidraw:export",
                 "excalidraw:preview",
+                "git:status",
+                "git:log",
+                "git:commit",
                 "icon:set",
                 "icon:get",
                 "icon:remove",
@@ -1443,6 +1472,8 @@ mod tests {
                 "agent"
             } else if c.name.starts_with("excalidraw:") {
                 "excalidraw"
+            } else if c.name.starts_with("git:") {
+                "git"
             } else if c.name.starts_with("icon:") {
                 "icons"
             } else if c.name.starts_with("task:") {
@@ -1463,6 +1494,7 @@ mod tests {
                 "writer-bases",
                 "writer-excalidraw",
                 "writer-diagram",
+                "writer-git",
                 "writer-lint"
             ]
         );
@@ -1473,11 +1505,11 @@ mod tests {
             .all(|c| c.is_ascii_digit()));
         assert_eq!(
             crate::cli::registry::commands().count(),
-            crate::cli::registry::COMMANDS.len() + 23
+            crate::cli::registry::COMMANDS.len() + 26
         );
         assert_eq!(
             crate::managed_skills::all_skills().count(),
-            crate::managed_skills::SKILLS.len() + 4
+            crate::managed_skills::SKILLS.len() + 5
         );
     }
 

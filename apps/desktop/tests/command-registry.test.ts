@@ -80,6 +80,7 @@ describe("palette built-in commands", () => {
       "agent.archive-project",
       "agent.unarchive-project",
       "excalidraw.new-drawing",
+      "git.settings",
       "graph.open",
       "hotkeys.open",
       "icons.change",

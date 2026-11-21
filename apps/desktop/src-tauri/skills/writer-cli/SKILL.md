@@ -58,6 +58,7 @@ See [references/commands.md](references/commands.md) for every command with its 
 | Bases      | `bases`, `base:views`, `base:create`, `base:query`                                                                                                                                  |
 | Dataview   | `dql`                                                                                                                                                                               |
 | Excalidraw | `excalidraw:create`, `excalidraw:add`, `excalidraw:update`, `excalidraw:read`, `excalidraw:lint`, `excalidraw:export`, `excalidraw:preview`                                         |
+| Git        | `git:status`, `git:log`, `git:commit`                                                                                                                                               |
 | Icons      | `icon:set`, `icon:get`, `icon:remove`                                                                                                                                               |
 | Lint       | `lint`, `lint:fix`                                                                                                                                                                  |
 | Spelling   | `check`                                                                                                                                                                             |

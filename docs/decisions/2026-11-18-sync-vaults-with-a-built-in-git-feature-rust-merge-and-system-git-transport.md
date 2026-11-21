@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-18
 decision-makers: Writer maintainers
 ---
 
 # Sync vaults with a built-in Git feature: Rust logic and merge, system git for transport
 
-> **Deferred (user, 2026-11-18): future work.** The design below is agreed and specified in [`SPECs/git-sync-spec.md`](../../SPECs/git-sync-spec.md); implementation waits. Accept this ADR when the work starts, after confirming the `gix` version and the GitHub OAuth App client id.
+> **Accepted 2026-11-20, phase 1 (local version history, no remote) built.** The design below is specified in [`SPECs/git-sync-spec.md`](../../SPECs/git-sync-spec.md). `gix` 0.90.0 is pinned with `default-features = false` and the features `sha1` and `status` only (no network); `git init` goes through gix too, so phase 1 needs no `git` binary (the PATH rule below applies from the transport phase). Remote, sync, merge, LFS, History tab and restore are later phases; the GitHub OAuth App client id is still open.
 
 ## Context and Problem Statement
 
@@ -101,3 +101,4 @@ Research: the four-plugin source review of 2026-11-18 (Obsidian Git is MIT; desk
 
 - 2026-11-20, cadence and settings designed with the user (refines points 6, 12 and 13; spec "Cadence"): Git never acts while the user types. A commit runs after 1 min with no write in the vault (choices 30 s, 1 min, 5 min, Manual), on window close and just before an agent turn starts; no user commit runs during a turn. Lint's safe fixes (5 s idle) therefore land in the same commit as the edit. Messages use a conventional-commit-like prefix that says who: `user: Meeting notes, Plan (+2)` (default template `user: {{notes}}`, prefix added by Writer) and `agent: <chat title>` with `Writer-Chat:`; every commit has `Writer-Device:`. With a remote, sync runs about 10 s after each commit, every 5 min, on open and on close. A fetched change to an open note is applied only after the same 5 s idle as lint's fixes, as one editor transaction with the caret kept, never a reload; the idle constant is shared by lint and Git (one source). Settings > Git is short (status, remote, Save versions, Sync, Agent turns) with message, LFS and the ignore block under Advanced. Status: a status item plus a sidebar panel (unchanged). Obsidian Git's message is not imported, only its intervals. `gix` approved by the user (exact pin and minimal features chosen when work starts).
 - 2026-11-20, commit message types (supersedes the `user:` / `agent:` wording of the note above): `type(scope): subject`. Types say who: `user`, `agent`, `chore`. Scopes say what: `edit`, `add`, `delete`, `move`, `restore`, `merge` (and `setup`, `ignore` for `chore`); mixed kinds are `edit`. Examples: `user(edit): Meeting notes, Plan (+2)`, `agent(edit): <chat title>`, `chore(setup): start version history`. Trailers `Writer-Device:` on all, `Writer-Chat:` and `Writer-Agent: <backend>` on agent commits (the backend is never the scope). The template `git.commit-message` (default `{{notes}}`) shapes only the subject; Writer adds the prefix and trailers. Agent commits also carry `Writer-Model: <model id>`: the main agent's reported model, plus one line per distinct sub-agent model; left out when the backend reports none; History shows the display name (Opus 5.5).
+- 2026-11-20, identity (user): the commit author and committer are exactly what `git commit` resolves (the installed `git` is the source of truth, asked with `git var GIT_AUTHOR_IDENT` / `GIT_COMMITTER_IDENT` under `user.useConfigOnly`; gix's own config loading is the fallback only when `git` is absent, because git and gix disagree on `includeIf "gitdir:"` through symlinks), never a "Writer" fallback or an invented email; with none resolved Writer does not commit and says "Set your git name and email". A test compares the engine with `git var GIT_AUTHOR_IDENT` / `GIT_COMMITTER_IDENT`.

@@ -534,6 +534,15 @@
       "scope": "global"
     },
     {
+      "key": "features.git.enabled",
+      "label": "Version history",
+      "description": "Turns the Version history feature on or off. The Rust part takes effect after a restart.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
       "key": "features.lint.enabled",
       "label": "Markdown lint",
       "description": "Turns the Markdown lint feature on or off. The Rust part takes effect after a restart.",

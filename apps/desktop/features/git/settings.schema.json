@@ -1,0 +1,60 @@
+{
+  "settings": [
+    {
+      "key": "git.commit-after",
+      "label": "Save versions",
+      "description": "Save a version after this long without a change in the vault. Manual saves only on request, when the window closes and around agent turns.",
+      "category": "Git",
+      "type": "enum",
+      "options": ["30s", "1min", "5min", "manual"],
+      "default": "1min",
+      "scope": "global"
+    },
+    {
+      "key": "git.sync-interval",
+      "label": "Sync",
+      "description": "How often to fetch and push. Needs a remote (not available yet).",
+      "category": "Git",
+      "type": "enum",
+      "options": ["1min", "5min", "15min", "manual"],
+      "default": "5min",
+      "scope": "global"
+    },
+    {
+      "key": "git.agent-commits",
+      "label": "Agent turns",
+      "description": "Each agent turn gets its own version. Off: agent edits join yours.",
+      "category": "Git",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
+      "key": "git.commit-message",
+      "label": "Commit message",
+      "description": "Subject template. Placeholders: {{notes}}, {{date}}, {{hostname}}, {{numFiles}}, {{files}}.",
+      "category": "Git",
+      "type": "string",
+      "default": "{{notes}}",
+      "scope": "global"
+    },
+    {
+      "key": "git.lfs",
+      "label": "Large files (LFS)",
+      "description": "Track large files with Git LFS. Not available yet.",
+      "category": "Git",
+      "type": "boolean",
+      "default": false,
+      "scope": "global"
+    },
+    {
+      "key": "git.lfs-threshold-mb",
+      "label": "LFS threshold (MB)",
+      "description": "Files above this size are tracked with LFS.",
+      "category": "Git",
+      "type": "number",
+      "default": 100,
+      "scope": "global"
+    }
+  ]
+}

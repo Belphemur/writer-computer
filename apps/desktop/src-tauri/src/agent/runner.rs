@@ -14,8 +14,10 @@
 //! Never logged: user text, assistant text, tool input/output, note paths, the system prompt,
 //! environment values (spec section 8).
 
+use super::api;
 use super::binary::is_older_than_verified;
 use super::changes::{is_edit_tool, is_shell_tool, ChangeStore, ClosedTurn};
+use super::chat_store;
 use super::claude_stream::{
     build_args, encode_cancel_queued, encode_control_error, encode_interrupt,
     encode_permission_allow, encode_permission_deny, encode_queued_message, encode_set_model,
@@ -31,6 +33,7 @@ use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::{Author, SubTracker};
 use super::subagents::{is_launch_tool, resolve_launch};
+use crate::features::points;
 use crate::plugin_proc::{Emit, Prepared, ProcEvent, ProcManager, Sig};
 use base64::Engine as _;
 use parking_lot::Mutex;
@@ -272,6 +275,8 @@ struct Inner {
     last_session: Option<SessionChangesSummary>,
     pending: HashMap<String, PendingPerm>,
     turn_active: bool,
+    /// The model the last usage report named for this turn (handed to `agent.turn-finished`).
+    turn_model: Option<String>,
     queue: VecDeque<Outgoing>,
     inflight: Vec<Outgoing>,
     /// Messages written mid-turn (steers and queued lines) that the CLI has not acknowledged yet:
@@ -482,6 +487,7 @@ impl Session {
                 last_session: None,
                 pending: HashMap::new(),
                 turn_active: false,
+                turn_model: None,
                 queue: VecDeque::new(),
                 inflight: Vec::new(),
                 unechoed: Vec::new(),
@@ -810,6 +816,8 @@ impl Session {
         // snapshots to take and the turn to finish happen after the lock is released (file IO)
         let mut captures: Vec<(String, Value, Option<Author>)> = Vec::new();
         let mut closed: Option<ClosedTurn> = None;
+        // a turn ended on this line (the model of its usage report, if any): `agent.turn-finished`
+        let mut turn_over: Option<Option<String>> = None;
         // an edit call ended: the session's counts may have changed
         let mut edit_ended = false;
         {
@@ -915,12 +923,18 @@ impl Session {
                                 .command_finished(&self.chat_id, call, Instant::now());
                         }
                     }
+                    AgentEvent::Usage {
+                        scope: UsageScope::Turn,
+                        model,
+                        ..
+                    } => g.turn_model = model.clone(),
                     AgentEvent::TurnFinished { reason, .. } => {
                         // A sub-agent still working after a normal end (a background task, woken
                         // later) keeps the card open for its late edits; any other end closes it.
                         let keep_open = *reason == TurnFinishReason::Completed && g.subs.busy();
                         g.background_open = keep_open;
                         if !keep_open {
+                            turn_over = Some(g.turn_model.take());
                             // a run that never got its end signal ends with the last turn
                             extra.extend(g.subs.end_running(SubagentRunStatus::Interrupted));
                             self.changes.commands_ended(&self.chat_id, Instant::now());
@@ -962,10 +976,15 @@ impl Session {
             );
         }
         let ended_turn = closed.is_some();
+        let mut finished_summary = None;
         if let Some(turn) = closed {
             if let Some(summary) = self.changes.finish(turn) {
+                finished_summary = Some(summary.clone());
                 self.log.push(AgentEvent::TurnChanges(summary));
             }
+        }
+        if let Some(model) = turn_over {
+            self.emit_turn_finished(finished_summary.as_ref(), model);
         }
         if edit_ended || ended_turn {
             self.push_session_changes();
@@ -984,6 +1003,46 @@ impl Session {
         {
             self.push_session_changes();
         }
+    }
+
+    /// Tells the features that extend `agent.turn-finished` (`api.rs`) that a turn is over. With
+    /// no contributor nothing happens (not even the title read). Call it without the lock.
+    fn emit_turn_finished(&self, summary: Option<&TurnChangesSummary>, model: Option<String>) {
+        if points::contributors(api::TURN_FINISHED.id) == 0 {
+            return;
+        }
+        let files = summary
+            .map(|s| s.files.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .map(|f| {
+                let (kind, from) = match f.status {
+                    ChangeStatus::Added => (api::FileChangeKind::Add, None),
+                    ChangeStatus::Modified => (api::FileChangeKind::Edit, None),
+                    ChangeStatus::Deleted => (api::FileChangeKind::Delete, None),
+                    ChangeStatus::Renamed => (api::FileChangeKind::Move, f.old_path.clone()),
+                };
+                api::FileChange {
+                    kind,
+                    path: f.path.clone(),
+                    from,
+                }
+            })
+            .collect();
+        let title = chat_store::load(&self.root, &self.chat_id)
+            .ok()
+            .map(|(summary, _)| summary.title);
+        points::emit(
+            &api::TURN_FINISHED,
+            &api::TurnFinished {
+                root: self.root.clone(),
+                chat_id: self.chat_id.clone(),
+                title,
+                backend: api::BACKEND_CLAUDE.to_string(),
+                models: model.into_iter().collect(),
+                files,
+            },
+        );
     }
 
     /// Publishes the chat's changed notes (the row above the composer) unless nothing changed
@@ -1237,11 +1296,13 @@ impl Session {
         let mut respawn: Option<(Vec<Outgoing>, Option<String>)> = None;
         let mut closed: Option<ClosedTurn> = None;
         let reloaded: Option<ReloadWhy>;
+        let had_turn;
         {
             let mut g = self.inner.lock();
             if g.live_gen != Some(gen) {
                 return;
             }
+            had_turn = g.turn_active || g.background_open;
             // no command of this chat runs once its process is gone
             self.changes.commands_ended(&self.chat_id, Instant::now());
             // a sub-agent is a child of the process: its card ends with it (stopped, not running)
@@ -1399,8 +1460,13 @@ impl Session {
             }
         }
         let ended_card = closed.is_some();
-        if let Some(summary) = closed.and_then(|turn| self.changes.finish(turn)) {
-            self.log.push(AgentEvent::TurnChanges(summary));
+        let summary = closed.and_then(|turn| self.changes.finish(turn));
+        if let Some(summary) = &summary {
+            self.log.push(AgentEvent::TurnChanges(summary.clone()));
+        }
+        // the process died under a turn that is not resumed: it is over
+        if had_turn && respawn.is_none() {
+            self.emit_turn_finished(summary.as_ref(), None);
         }
         if ended_card {
             self.push_session_changes();
@@ -1556,9 +1622,28 @@ impl Session {
     /// Queue the user's message; it is written now when idle, after the running turn
     /// otherwise, and the process is started first when there is none.
     pub(crate) fn send(self: &Arc<Self>, out: Outgoing) -> Result<(), SpawnError> {
+        // an idle chat's message starts a turn: `agent.turn-started` (may block, no lock held)
+        let starts_turn = {
+            let g = self.inner.lock();
+            !g.terminal && !self.is_busy(&g)
+        };
+        if starts_turn {
+            points::emit(
+                &api::TURN_STARTED,
+                &api::TurnStarted {
+                    root: self.root.clone(),
+                    chat_id: self.chat_id.clone(),
+                },
+            );
+        }
         let need_process = {
             let mut g = self.inner.lock();
             if g.terminal {
+                if starts_turn {
+                    drop(g);
+                    self.emit_turn_finished(None, None);
+                    return Err(SpawnError::Ended);
+                }
                 return Err(SpawnError::Ended);
             }
             g.respawns = 0;
@@ -1584,6 +1669,10 @@ impl Session {
                 g.queue.clear();
                 g.state = AgentSessionState::Error;
                 self.log.push(e.to_event());
+                drop(g);
+                if starts_turn {
+                    self.emit_turn_finished(None, None);
+                }
             }
         }
         Ok(())

@@ -14,6 +14,7 @@ pub mod dropped;
 mod error;
 mod features;
 pub mod fs_entry;
+pub mod git;
 mod hotkeys;
 pub mod icons;
 mod ignore;

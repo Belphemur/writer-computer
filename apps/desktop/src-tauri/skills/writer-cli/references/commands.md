@@ -113,6 +113,12 @@ Every `graph:*` command takes `format=` (text, json or tsv; default text, use js
 - `excalidraw:export` — Write the drawing as an SVG or PNG next to it (needs Writer running). Params: `file=`, `path=`, `format=` (png or svg (default svg for export, png for preview)), `scale=` (PNG scale, 0.5 to 4 (default 1)).
 - `excalidraw:preview` — Render the drawing to an image outside the vault and print its path (needs Writer running). Params: `file=`, `path=`, `format=` (png or svg (default svg for export, png for preview)), `scale=` (PNG scale, 0.5 to 4 (default 1)).
 
+## Git
+
+- `git:status` — Show the vault's version history state: the files changed since the last version (read-only). Params: `format=` (text | json).
+- `git:log` — List the versions of a file, newest first: subject, type, scope, date, device, agent and model (read-only). Params: `path=`, `limit=` (how many versions, default 20), `format=` (text | json).
+- `git:commit` — Save a version now: commit the pending changes as a user(...) commit.
+
 ## Icons
 
 - `icon:set` — Give a file or folder an icon (shown in the sidebar, tabs and links); icon is emoji:<emoji> or icon:<Hugeicons name>, a bare emoji or a bare name also works. Params: `file=`, `path=`, `icon=` (required; emoji:🚀 or icon:Rocket01Icon), `color=` (#rrggbb).

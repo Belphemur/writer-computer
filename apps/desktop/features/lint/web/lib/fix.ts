@@ -9,6 +9,7 @@ import type { EditorState } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { editorNotePath } from "@/lib/editor-views";
 import { logger } from "@/lib/logger";
+import { TYPING_IDLE_MS } from "@/lib/typing-idle";
 import { check, fix, type Edit, type FixScope, type KeepRange } from "../ipc";
 import { anySafeRuleEnabled, fixOnSaveEnabled } from "./settings";
 
@@ -20,8 +21,8 @@ export const FIX_EVENT = "lint.fix";
 
 /** The pause after the last keystroke before the editor's warnings are checked. */
 export const LINT_DEBOUNCE_MS = 1000;
-/** The pause after the last keystroke before the safe fixes run. */
-export const FIX_IDLE_MS = 5000;
+/** The pause after the last keystroke before the safe fixes run (the shared typing idle). */
+export const FIX_IDLE_MS = TYPING_IDLE_MS;
 
 export const isMarkdownPath = (path: string) => /\.(md|markdown)$/i.test(path);
 
