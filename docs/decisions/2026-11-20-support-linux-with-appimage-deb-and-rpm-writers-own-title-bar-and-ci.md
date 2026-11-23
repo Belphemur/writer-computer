@@ -73,7 +73,7 @@ All chosen with the user (2026-11-20):
     - fj's login is read from `$XDG_DATA_HOME/forgejo-cli/keys.json` (default `~/.local/share`).
     - Signing goes through git, so it is unchanged.
     - The "No route to host" Local Network hint and `NSLocalNetworkUsageDescription` stay macOS-only (already `cfg`-gated).
-  - **Logs.** Settings > Git > Logs and "Open log folder" use the Linux log dir from `logging::log_dir` (`$XDG_STATE_HOME`, else `~/.local/state`).
+  - **Logs.** Settings > Git > Logs and "Open log folder" use the Linux log dir from `logging::log_dir` (`$XDG_DATA_HOME/<identifier>/logs`, else `~/.local/share/<identifier>/logs`).
   - **Labels.** New literals added since (for example "Show in Finder" in `features/agent/web/components/skills-chip.tsx`) go through the label helper with the others.
   - **CI and release.** CI and the release now cover macOS too, and the release is cut by a tag (ADR 2026-11-23 "Release from CI on a version tag ..."). The Linux lane of `distribute.sh` becomes the CI release job.
   - **Testing on a Mac.** The README documents testing in a Rancher Desktop `ubuntu:26.04` container: build, unit tests, and the e2e smoke under `xvfb`.
