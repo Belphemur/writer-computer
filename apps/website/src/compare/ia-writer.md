@@ -1,6 +1,6 @@
 # Writer Computer vs iA Writer
 
-Writer Computer and iA Writer are separate apps from separate makers; the similar names are a coincidence. Both edit plain markdown files on your disk, support `[[wikilinks]]` on the Mac, and render LaTeX math with KaTeX. iA Writer is a paid writing app for Mac, Windows, iPhone and iPad, built around focused prose: Focus Mode, Style Check, authorship tracking, preview templates and export to PDF and Word. Writer Computer is a free, open-source macOS editor for folders of notes, with Mermaid diagrams, frontmatter properties and one window per workspace.
+Writer Computer and iA Writer are separate apps from separate makers; the similar names are a coincidence. Both edit plain markdown files on your disk, support `[[wikilinks]]` on the Mac, and render LaTeX math with KaTeX. iA Writer is a paid writing app for Mac, Windows, iPhone and iPad, built around focused prose: Focus Mode, Style Check, authorship tracking, preview templates and export to PDF and Word. Writer Computer is a free, open-source macOS and Linux editor for folders of notes, with Mermaid diagrams, frontmatter properties and one window per workspace.
 
 {{comparison}}
 

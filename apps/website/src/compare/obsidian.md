@@ -13,7 +13,7 @@ Both apps keep your notes as plain markdown files in a folder on your disk, and 
 
 ## Choose Writer Computer if
 
-- You write on a Mac and want an editor for your markdown folder rather than a platform around it.
+- You write on a Mac or Linux machine and want an editor for your markdown folder rather than a platform around it.
 - You want open-source software you can read and build yourself. Obsidian is closed source.
 - A small app matters to you: the Writer Computer download is about 6 MB, Obsidian's about 235 MB.
 - Your notes use wikilinks, frontmatter, Mermaid and math, and you don't depend on plugins.

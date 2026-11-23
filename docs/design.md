@@ -38,7 +38,7 @@ What exists; do not add a layer.
 
 ## 5. Theme tokens and canvases
 
-- Colours come from the theme variables (`--surface-*`, `--text-*`, `--border-color`, ...), never literals. Surfaces and text are `color-mix(... transparent)` so macOS vibrancy shows through: they are translucent.
+- Colours come from the theme variables (`--surface-*`, `--text-*`, `--border-color`, ...), never literals. Surfaces and text are `color-mix(... transparent)` so macOS vibrancy shows through: they are translucent. On Linux the window is opaque, so they sit on the theme's base colour.
 - A canvas (graph, any `<canvas>`) cannot parse `color-mix()` and a translucent plate is see-through, so it resolves theme colours to opaque `rgb()` composited over the theme's base, with fallbacks (`features/graph/web/theme.ts`). Never hand a raw token to a canvas. Not test-enforced (jsdom has no canvas): review it.
 - Blur and plates of floating surfaces come from the tokens `--surface-blur*` and `--surface-plate-mix` / `--surface-plate-floor` (`src/App.css`), never a raw `backdrop-filter: blur(...)` or Tailwind `backdrop-blur-*`. Linux has no window vibrancy, so `:root[data-platform="linux"]` sets blur to `none` and the plate to 100%, and every surface becomes opaque in that one place; the Translucent sliders are `platform: "macos"` settings and not listed on Linux. Enforced by: `tests/surface-blur-inventory.test.ts`.
 - Every surface that draws content over another (a card on a page, a label plate) states its background: do not rely on a translucent parent.

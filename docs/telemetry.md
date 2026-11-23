@@ -63,7 +63,7 @@ Every event carries the same fixed set of properties, and nothing else:
 | ---------------- | ----------------- | ---------------------------------------------------------------------------------------- |
 | `distinct_id`    | `9f2c...`         | Random UUID generated on this install                                                    |
 | `app_version`    | `0.5.0`           |                                                                                          |
-| `os`             | `macos`           |                                                                                          |
+| `os`             | `macos`, `linux`  |                                                                                          |
 | `arch`           | `aarch64`         |                                                                                          |
 | `$geoip_disable` | `true`            | Tells PostHog not to derive a location from the request IP                               |
 | `$set.email`     | `you@example.com` | Only if you typed one; attached to your install's record, see below                      |
@@ -111,7 +111,7 @@ it, nothing is sent, whatever the setting says.
 ## Local logs are not telemetry
 
 Writer also writes error and warning logs to files on your own computer
-(`~/Library/Logs/com.writer-computer/` on macOS), three days at most, so a
+(`~/Library/Logs/com.writer-computer/` on macOS, `~/.local/share/com.writer-computer/logs/` on Linux), three days at most, so a
 problem can be diagnosed afterwards. They are **never uploaded**, are separate
 from everything above, and are written whether or not you opted in to telemetry
 (`WRITER_TELEMETRY_DISABLED` does not affect them; `WRITER_LOG=off` does). Paths

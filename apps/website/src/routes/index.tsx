@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { useAnalytics } from "../analytics";
-import { AppleGlyph } from "../components/Mark";
+import { DownloadButton, OtherDownloads, useDownloadOs } from "../components/DownloadButton";
 import { SiteHeader } from "../components/SiteHeader";
 import { DOWNLOAD_SIZE, SITE_URL } from "../site";
 import { useLatestRelease } from "../use-latest-release";
@@ -67,6 +67,12 @@ export const Route = createFileRoute("/")({
 function HomePage() {
   const capture = useAnalytics();
   const release = useLatestRelease();
+  const os = useDownloadOs();
+  const download = {
+    os,
+    assets: release.assets,
+    onDownload: () => capture("download_started", { app_version: release.version }),
+  };
 
   return (
     <div className="page">
@@ -76,17 +82,12 @@ function HomePage() {
         <h1 className="headline">Fast and lightweight app for your workspace's markdown files</h1>
 
         <div className="cta">
-          <a
-            className="download"
-            href={release.assets.mac}
-            onClick={() => capture("download_started", { app_version: release.version })}
-          >
-            <AppleGlyph size={20} />
-            <span>Download for MacOS</span>
-          </a>
+          <DownloadButton {...download} />
           <span className="beta-pill">Beta</span>
           <span className="version">v{release.version}</span>
         </div>
+
+        <OtherDownloads {...download} />
 
         <p className="caption">Free and open source. Forever</p>
 

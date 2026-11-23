@@ -15,7 +15,7 @@ import { DOCS } from "../docs/pages";
 const ROWS = [
   { key: "price", label: "Price", writer: "Free" },
   { key: "source", label: "Source code", writer: "Open source" },
-  { key: "platforms", label: "Platforms", writer: "macOS" },
+  { key: "platforms", label: "Platforms", writer: "macOS and Linux" },
   { key: "storage", label: "Your notes", writer: "Markdown files in any folder you choose" },
   { key: "sync", label: "Sync", writer: "None built in" },
   { key: "mermaid", label: "Mermaid diagrams", writer: "Built in, every Mermaid diagram type" },

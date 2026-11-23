@@ -1,12 +1,12 @@
 # Customize the look
 
-Writer Computer's look is set in Preferences: choose **Writer → Preferences…**, press ⌘, or run **Settings** from the command palette (⌘P). A setting you've changed shows a **Reset** button that puts it back.
+Writer Computer's look is set in Preferences: choose **Writer → Preferences…** on a Mac, press ⌘, (Ctrl+, on Linux) or run **Settings** from the command palette (⌘P). A setting you've changed shows a **Reset** button that puts it back.
 
 <!-- Labels, ranges and defaults are from apps/desktop/shared/settings.schema.json. -->
 
 ## Light and dark
 
-**Appearance → Schema** picks `system`, `light` or `dark`. With `system`, the default, Writer follows your Mac's appearance and switches the moment macOS does.
+**Appearance → Schema** picks `system`, `light` or `dark`. With `system`, the default, Writer follows your system appearance (Mac or Linux desktop) and switches the moment it does.
 
 To change it without opening Preferences, run **Toggle Dark Mode** from the command palette. It steps through system, light and dark.
 
@@ -22,17 +22,17 @@ The **Light Theme** and **Dark Theme** sections each have their own five setting
 | Translucent | How much of what's behind the window shows through, from 0 (solid) to 100  | 10            | 20           |
 | Contrast    | How strongly borders, cards and hover backgrounds stand out, from 0 to 100 | 20            | 16           |
 
-Pick a color with the macOS color picker or type a hex value. Changes apply as you make them, and Mermaid diagrams recolor with the theme ([Mermaid diagrams](/docs/mermaid/)).
+Pick a color with the system color picker or type a hex value. Changes apply as you make them, and Mermaid diagrams recolor with the theme ([Mermaid diagrams](/docs/mermaid/)).
 
 ## Fonts
 
 **Typography** has three fonts, shared by both themes:
 
-- **UI font**, for the app around your notes: sidebar, tabs, status bar. Default: SF Pro.
-- **Editor font**, for the text of your notes. Default: SF Pro.
-- **Code font**, for code blocks and inline code. Default: SF Mono.
+- **UI font**, for the app around your notes: sidebar, tabs, status bar. Default: SF Pro on Mac, the system font on Linux.
+- **Editor font**, for the text of your notes. Default: SF Pro on Mac, the system font on Linux.
+- **Code font**, for code blocks and inline code. Default: SF Mono on Mac, the system monospace font on Linux.
 
-Each lists the fonts installed on your Mac. A font you install while Writer is open appears in the list after you restart Writer.
+Each lists the fonts installed on your computer. A font you install while Writer is open appears in the list after you restart Writer.
 
 ## Text size, width and spacing
 

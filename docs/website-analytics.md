@@ -19,7 +19,7 @@ Four events. That is the whole list.
 | `$pageview`        | A page is viewed, including client-side navigations |
 | `updates_opened`   | The **Updates** link in the header is clicked       |
 | `github_opened`    | The **GitHub** link in the header is clicked        |
-| `download_started` | The **Download for MacOS** button is clicked        |
+| `download_started` | The **Download** button is clicked (macOS or Linux) |
 
 The header (`components/SiteHeader.tsx`) is shared by the homepage and the
 docs pages, so `updates_opened` and `github_opened` can fire from either. To

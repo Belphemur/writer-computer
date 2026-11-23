@@ -1,6 +1,6 @@
 # Writer Computer
 
-> Writer Computer is a free, open-source markdown editor for macOS. It is about a 6 MB download, starts faster than Apple Notes and Obsidian, and opens the folders you already have (Obsidian vaults, docs repos, wikis) as plain markdown.
+> Writer Computer is a free, open-source markdown editor for macOS and Linux. It is about a 6 MB download, starts faster than Apple Notes and Obsidian, and opens the folders you already have (Obsidian vaults, docs repos, wikis) as plain markdown.
 
 Writer Computer is often called "Writer" for short. It is not related to writer.com, iA Writer or LibreOffice Writer.
 
@@ -8,7 +8,7 @@ Key facts:
 
 - Price: free. No account, no subscription, no paid tier.
 - Open source: the full source code is on GitHub.
-- Platform: macOS.
+- Platform: macOS and Linux (AppImage, .deb, .rpm).
 - Size: about 6 MB to download, under 10 MB installed.
 - Speed: starts faster than Apple Notes and Obsidian.
 - Cold starts: instant even on very large workspaces. The window opens with the top level of the folder and the last open note; the file watcher and search index are built in the background.
@@ -23,10 +23,10 @@ Key facts:
 ## Links
 
 - [Homepage](https://writer.computer/): download and overview
-- [Source code](https://github.com/joelbqz/writer-computer): GitHub repository
-- [Releases](https://github.com/joelbqz/writer-computer/releases): downloads and release notes
-- [Telemetry disclosure](https://github.com/joelbqz/writer-computer/blob/master/docs/telemetry.md): every event and property the app can send, and how to keep it off
-- [Changelog](https://github.com/joelbqz/writer-computer/blob/master/CHANGELOG.md): user-visible changes
+- [Source code](https://github.com/Belphemur/writer-computer): GitHub repository
+- [Releases](https://github.com/Belphemur/writer-computer/releases): downloads and release notes
+- [Telemetry disclosure](https://github.com/Belphemur/writer-computer/blob/master/docs/telemetry.md): every event and property the app can send, and how to keep it off
+- [Changelog](https://github.com/Belphemur/writer-computer/blob/master/CHANGELOG.md): user-visible changes
 
 ## Docs
 

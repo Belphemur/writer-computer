@@ -17,9 +17,9 @@ import {
   jsonLdScript,
 } from "../site";
 
-const TITLE = `${PRODUCT_NAME} — free, open-source markdown editor for macOS`;
-const DESCRIPTION = `${PRODUCT_NAME} is a free, open-source markdown editor for macOS. About ${DOWNLOAD_SIZE}, starts faster than Apple Notes and Obsidian, and opens the folders you already have as plain markdown.`;
-const OG_DESCRIPTION = `A free, open-source markdown editor for macOS. About ${DOWNLOAD_SIZE} and faster to start than Apple Notes and Obsidian.`;
+const TITLE = `${PRODUCT_NAME} — free, open-source markdown editor for macOS and Linux`;
+const DESCRIPTION = `${PRODUCT_NAME} is a free, open-source markdown editor for macOS and Linux. About ${DOWNLOAD_SIZE}, starts faster than Apple Notes and Obsidian, and opens the folders you already have as plain markdown.`;
+const OG_DESCRIPTION = `A free, open-source markdown editor for macOS and Linux. About ${DOWNLOAD_SIZE} and faster to start than Apple Notes and Obsidian.`;
 
 // One graph so the app can point at its author by `@id`, and the docs pages at
 // both. Facts here must match the visible page; see `src/site.ts`.
@@ -35,7 +35,7 @@ const STRUCTURED_DATA = {
       url: `${SITE_URL}/`,
       applicationCategory: "UtilitiesApplication",
       applicationSubCategory: "Markdown editor",
-      operatingSystem: "macOS",
+      operatingSystem: "macOS, Linux",
       softwareVersion: __WRITER_VERSION__,
       downloadUrl: `${__WRITER_REPO_URL__}/releases/latest`,
       isAccessibleForFree: true,

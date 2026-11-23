@@ -13,9 +13,14 @@
   --stroke-hover: rgba(255, 255, 255, 0.18);
   --accent: #e17909;
 
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --font-serif: ui-serif, "New York", Georgia, "Times New Roman", serif;
+  --font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Cantarell,
+    "Noto Sans", Ubuntu, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono",
+    monospace;
+  --font-serif:
+    ui-serif, "New York", Georgia, "Noto Serif", "DejaVu Serif", "Times New Roman", serif;
 
   /* Docs typography, measured from Linear's Method pages. */
   --doc-heading: #f7f8f8;
@@ -206,6 +211,22 @@ a {
 .download svg {
   flex-shrink: 0;
   margin-bottom: 1px;
+}
+
+.download-others {
+  margin-top: 10px;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--ink-60);
+}
+
+.download-others a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.download-others a:hover {
+  color: var(--ink);
 }
 
 .beta-pill {

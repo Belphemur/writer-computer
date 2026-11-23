@@ -1,12 +1,12 @@
 # Writer Computer vs Typora
 
-Both apps edit plain markdown files where they are, render them as you type, and draw Mermaid diagrams and LaTeX math. Typora is a paid editor for macOS, Windows and Linux, with export to PDF, HTML and, through Pandoc, Word and other formats, plus focus and typewriter modes and themes. Writer Computer is free, open source and macOS-only, and adds Obsidian-style wikilinks for linking notes in a folder; it has no export.
+Both apps edit plain markdown files where they are, render them as you type, and draw Mermaid diagrams and LaTeX math. Typora is a paid editor for macOS, Windows and Linux, with export to PDF, HTML and, through Pandoc, Word and other formats, plus focus and typewriter modes and themes. Writer Computer is free, open source and for macOS and Linux only, and adds Obsidian-style wikilinks for linking notes in a folder; it has no export.
 
 {{comparison}}
 
 ## Choose Typora if
 
-- You work on Windows or Linux as well as, or instead of, a Mac.
+- You work on Windows.
 - You export documents to PDF, HTML, Word or other formats.
 - You want focus mode, typewriter mode, or themes and custom CSS.
 - You search the text of every file in a folder, or use MathJax extensions such as mhchem.

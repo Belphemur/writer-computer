@@ -17,7 +17,7 @@ To open an Obsidian vault, open the vault's folder. Writer doesn't need anything
 
 ## Open a single note
 
-Open a `.md` or `.markdown` file with Writer, from Finder's **Open With** menu, by dragging it onto Writer, or with `writer note.md`, and it opens in a compact window of its own, with no sidebar, tabs or status bar. Click the note's title at the top to switch to one of your recent notes. From a workspace, **Open File in Compact Window** in the command palette does the same for the note you're on.
+Open a `.md` or `.markdown` file with Writer, from the file manager's **Open With** menu (Finder on a Mac), by dragging it onto Writer, or with `writer note.md`, and it opens in a compact window of its own, with no sidebar, tabs or status bar. Click the note's title at the top to switch to one of your recent notes. From a workspace, **Open File in Compact Window** in the command palette does the same for the note you're on.
 
 ## What Writer does with your files
 
@@ -30,7 +30,7 @@ Large folders open quickly: the window shows the top level of the folder and you
 
 ## The writer command
 
-Choose **Writer → Install 'writer' Command Line Tool…** to add a `writer` command at `/usr/local/bin/writer`. macOS may ask for an administrator password. Then, in a terminal:
+On macOS, choose **Writer → Install 'writer' Command Line Tool…** to add a `writer` command at `/usr/local/bin/writer`; macOS may ask for an administrator password. On Linux, the .deb and .rpm put `writer` on your PATH; from the AppImage, choose **Install 'writer' command** in Settings, which links it into `~/.local/bin`. Then, in a terminal:
 
 ```sh
 writer .          # open the current folder

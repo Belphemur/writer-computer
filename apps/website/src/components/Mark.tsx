@@ -32,3 +32,19 @@ export function AppleGlyph({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+export function LinuxGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      fill="currentColor"
+    >
+      <ellipse cx="12" cy="15.5" rx="6.5" ry="7" />
+      <circle cx="12" cy="6.5" r="4" />
+    </svg>
+  );
+}

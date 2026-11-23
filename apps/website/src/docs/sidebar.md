@@ -36,23 +36,23 @@ Drag a note or folder in **Everything** onto a folder to move it inside, onto a 
 
 If something with the same name is already there, Writer tells you and leaves both where they were.
 
-Dragging a folder from Finder onto Writer opens it as a workspace; it doesn't copy it into the current one.
+Dragging a folder from Finder (or your Linux file manager) onto Writer opens it as a workspace; it doesn't copy it into the current one.
 
 ## Creating, renaming and deleting
 
 - **New File** and **New Folder** are in the right-click menu of a folder (they go inside it) and of empty sidebar space (they go at the top of the workspace). A new note is called "Untitled.md", then "Untitled 2.md", and its name is ready to edit straight away. Press Enter to keep the name, or Esc to cancel.
 - **Rename...** edits the name in place in Everything, or in a small dialog from Pinned and Recents. A note's `.md` extension stays as it is.
 - **Duplicate** makes "Note copy.md" and opens it.
-- **Delete** moves the item to the macOS Trash, so you can put it back from there. Writer asks first only when a note has unsaved changes, or when you delete several items at once.
+- **Delete** moves the item to the Trash, so you can put it back from there. Writer asks first only when a note has unsaved changes, or when you delete several items at once.
 
 ## The right-click menus
 
-| On            | Items                                                                                                                       |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| A note        | Open, Open in new tab, Pin or Unpin, Duplicate, Copy relative path, Copy absolute path, Reveal in Finder, Rename..., Delete |
-| A folder      | New File, New Folder, Copy relative path, Copy absolute path, Open in Terminal, Reveal in Finder, Rename..., Delete         |
-| Empty space   | New File, New Folder, Open in Terminal, Open in Finder, Sort by, Search, Recents                                            |
-| Several items | Copy relative paths, Copy absolute paths, Delete items                                                                      |
+| On            | Items                                                                                                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A note        | Open, Open in new tab, Pin or Unpin, Duplicate, Copy relative path, Copy absolute path, Reveal in Finder (Show in Folder on Linux), Rename..., Delete |
+| A folder      | New File, New Folder, Copy relative path, Copy absolute path, Open in Terminal, Reveal in Finder (Show in Folder on Linux), Rename..., Delete         |
+| Empty space   | New File, New Folder, Open in Terminal, Open in Finder (Open in File Manager on Linux), Sort by, Search, Recents                                      |
+| Several items | Copy relative paths, Copy absolute paths, Delete items                                                                                                |
 
 ## Open in Terminal
 

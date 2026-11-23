@@ -2,7 +2,7 @@
 
 <!-- The canonical shortcut map. It is also published as is at writer.computer/docs/keyboard-shortcuts/, so keep the prose readable for users and put implementation notes in HTML comments like this one, which the site leaves out. The first line must stay "# Keyboard shortcuts" (see apps/website/src/docs/pages.ts). -->
 
-Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃. On Linux and Windows, read Cmd as Ctrl; the tables name the few shortcuts that differ.
+Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃. On Linux, the primary modifier is Ctrl and Alt is Alt: read Cmd as Ctrl; the tables name the few shortcuts that differ.
 
 These are the defaults. You can change any shortcut, and give one to any command, in Settings > Hotkeys; your keys are stored per operating system.
 

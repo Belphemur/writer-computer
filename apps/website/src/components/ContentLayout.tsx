@@ -39,7 +39,7 @@ export function ContentLayout() {
         <main className="docs-main">
           <Outlet />
           <footer className="docs-footer">
-            <p>{PRODUCT_NAME} is a free, open-source markdown editor for macOS.</p>
+            <p>{PRODUCT_NAME} is a free, open-source markdown editor for macOS and Linux.</p>
           </footer>
         </main>
       </div>
