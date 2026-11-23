@@ -12,8 +12,10 @@
 //!   server turns into tools with no wiring of its own;
 //! - the `writer-git` agent skill (`../skills/`).
 //!
-//! **How it cooperates.** The agent owns two points (`agent.turn-started`, `agent.turn-finished`,
-//! contract in `crate::agent::api`); this feature extends them from `start` (ADR 2026-11-20 "let
+//! **How it cooperates.** The agent owns three points (the hooks `agent.turn-started` and
+//! `agent.turn-finished`, the provider `agent.turn-baseline` that answers "this file as it was when
+//! the turn started" from the commit made at turn start, only when git can vouch for it, contract in
+//! `crate::agent::api`); this feature extends them from `start` (ADR 2026-11-20 "let
 //! features cooperate through owned points..."). The agent never learns git exists, and git works
 //! alone: with the agent off it is still the history of the user's edits. The watcher is observed
 //! through `watcher::observe_paths` (the one source of file changes, no second watcher).
@@ -40,7 +42,7 @@ pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
 
-use crate::agent::api::{TURN_FINISHED, TURN_STARTED};
+use crate::agent::api::{TURN_BASELINE, TURN_FINISHED, TURN_STARTED};
 use crate::cli::registry::CommandSpec;
 use crate::features::points;
 use crate::features::scope::FeatureScope;
@@ -108,6 +110,10 @@ impl<R: Runtime> Feature<R> for Git {
         let handle = app.clone();
         points::extend(app, &TURN_STARTED, runtime::ID, move |args| {
             runtime::turn_started(&handle, args)
+        });
+        let handle = app.clone();
+        points::provide(app, &TURN_BASELINE, runtime::ID, move |query| {
+            runtime::turn_baseline(&handle, query)
         });
         let handle = app.clone();
         points::extend(app, &TURN_FINISHED, runtime::ID, move |args| {

@@ -670,11 +670,47 @@ describe("TurnChangesCard", () => {
     expect(container.textContent).toContain("Files it changed are listed without a diff");
   });
 
-  it("mentions that shell commands are not tracked only when one ran", async () => {
-    await mount(turn(summaryOf([FILE_A], true)));
+  it("says files are listed without a diff only when a command file has no before", async () => {
+    const noBefore: TurnChangesSummary["files"][number] = {
+      path: "run.md",
+      status: "modified",
+      added: 0,
+      removed: 0,
+      noDiff: true,
+      origin: "command",
+    };
+    await mount(turn(summaryOf([FILE_A, noBefore], true)));
     expect(container.textContent).toContain("A shell command ran in this turn");
+    await mount(turn(summaryOf([FILE_A], true)));
+    expect(container.textContent).not.toContain("A shell command ran");
     await mount(turn(summaryOf([FILE_A], false)));
     expect(container.textContent).not.toContain("A shell command ran");
+  });
+
+  it("a command file with a vouched before keeps the marker and shows counts, a diff and Undo", async () => {
+    const compared: TurnChangesSummary["files"][number] = {
+      path: "run.md",
+      status: "modified",
+      added: 1,
+      removed: 1,
+      origin: "command",
+    };
+    turnChanges.mockResolvedValue({
+      turnId: "t1",
+      files: [{ ...compared, rows, undo: "available" }],
+    });
+    await mount(turn(summaryOf([compared], true)));
+    const row = container.querySelector('[data-agent-change-file="run.md"]')!;
+    const mark = row.querySelector("[data-agent-change-origin]")!;
+    expect(mark.textContent).toBe("by command");
+    expect(mark.getAttribute("title")).toContain("compared with the version from before the turn");
+    expect(row.textContent).toContain("Modified");
+    expect(row.textContent).toMatch(/\+1/);
+    expect(container.textContent).not.toContain("listed without a diff");
+    const labels = Array.from(container.querySelectorAll("button")).map(
+      (b) => b.getAttribute("aria-label") ?? "",
+    );
+    expect(labels).toContain("Undo changes to run.md");
   });
 
   it("renders nothing for a read-only turn, a running turn or when the setting is off", async () => {

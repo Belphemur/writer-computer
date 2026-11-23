@@ -21,8 +21,8 @@ export function Counts({ added, removed }: { added: number; removed: number }) {
   );
 }
 
-/** "by command" / "before unknown": the marker of a file listed without a diff; nothing for an
- *  ordinary edit. */
+/** "by command" / "before unknown": the marker of a file that is not an ordinary edit; nothing
+ *  for one. */
 export function OriginMarker({ f }: { f: FileChangeSummary }) {
   const note = originNote(f);
   if (!note) return null;
@@ -81,7 +81,7 @@ export function FileDiffBody({
     );
   if (!d) return <p className="text-[11.5px] text-text-muted">Loading diff…</p>;
   const note = originNote(f);
-  if (note) return <p className="text-[11.5px] text-text-muted">{note.body}</p>;
+  if (note?.body) return <p className="text-[11.5px] text-text-muted">{note.body}</p>;
   if (f.noDiff)
     return (
       <p className="text-[11.5px] text-text-muted">

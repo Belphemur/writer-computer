@@ -4,6 +4,7 @@ import type { FileChange, FileChangeSummary } from "@features/agent/web/lib/even
 import {
   defaultExpanded,
   filesChangedLabel,
+  commandWithoutBefore,
   statusLabel,
   totals,
 } from "@features/agent/web/lib/diff-rows";
@@ -226,7 +227,7 @@ export function TurnChangesCard({ chatId, turn }: { chatId: string; turn: Turn }
               );
             })}
           </ul>
-          {summary.bash && (
+          {summary.files.some(commandWithoutBefore) && (
             <p className="border-t border-border px-2 py-1.5 text-[11px] text-text-muted">
               A shell command ran in this turn. Files it changed are listed without a diff.
             </p>

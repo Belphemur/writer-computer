@@ -16,8 +16,13 @@
 //! Tracked without a diff. (1) Shell commands: while a `Bash` call of the chat is in flight
 //! ([`command_windows`](super::command_windows): its window and the trade-offs), the vault files
 //! the file watcher reports as changed are recorded as "changed by a command"
-//! ([`ChangeStore::record_command_changes`]): listed, attributed to the role whose command ran,
-//! never with a diff or Undo (there is no pre-image). Only what Writer shows is listed
+//! ([`ChangeStore::record_command_changes`]): listed, attributed to the role whose command ran.
+//! A command has no pre-image of its own, so such a file has no diff or Undo unless the caller's
+//! asker (the `agent.turn-baseline` provider point, `api.rs`) vouches for the text it had when the
+//! turn started: that answer becomes an ordinary pre-image (a diff, counts and Undo, still marked
+//! "by command", ADR 2026-11-23 "Diff shell-command changes against the turn-start commit"). The
+//! asker is asked outside the store's lock and never about a file the turn already tracks; the
+//! core never learns who answers. Only what Writer shows is listed
 //! (`code_files::rel_is_visible` and `is_listed_path`: no hidden folders, no ignored folders, no
 //! unlisted file types; never the memory folders) and a file that an edit call already
 //! snapshotted in the turn keeps that record. (2) The timing gap: when the pre-image read lost the
@@ -42,6 +47,7 @@
 //! memory only and have their own budget of [`MAX_TOTAL_BYTES`] (a baseline that does not fit
 //! keeps a fingerprint: listed, no diff). They live until Writer exits.
 
+use super::api::Baseline;
 use super::command_windows::CommandWindows;
 use super::edit_inverse::{settle, Settled};
 use super::events::*;
@@ -165,6 +171,8 @@ fn read_snap(abs: &Path, keep_text: bool) -> Snap {
 }
 
 struct FileRec {
+    /// Seen changed while a shell command ran (whatever its pre-image): the "by command" mark.
+    command: bool,
     /// The sub-agent role that made the first edit of this file in the turn (`None`: the main agent).
     by: Option<Author>,
     rel: String,
@@ -177,12 +185,30 @@ struct FileRec {
 impl FileRec {
     fn new(by: Option<Author>, rel: &str, abs: &Path, pre: Snap) -> Self {
         Self {
+            command: false,
             by,
             rel: rel.to_string(),
             abs: abs.to_path_buf(),
             pre,
             end: Snap::Opaque(None),
             reverted: AtomicBool::new(false),
+        }
+    }
+
+    /// A file a shell command changed, with the pre-image it is known to have had, if any.
+    fn by_command(by: Option<Author>, rel: &str, abs: &Path, pre: Option<Snap>) -> Self {
+        let pre = pre.unwrap_or(Snap::Unknown(Unknown::Command));
+        Self {
+            command: true,
+            ..Self::new(by, rel, abs, pre)
+        }
+    }
+
+    fn origin(&self) -> ChangeOrigin {
+        if self.command {
+            ChangeOrigin::Command
+        } else {
+            self.pre.origin()
         }
     }
 
@@ -219,6 +245,7 @@ pub struct ClosedTurn {
 
 /// A chat's first-touch version of one path.
 struct SessionFile {
+    command: bool,
     by: Option<Author>,
     rel: String,
     abs: PathBuf,
@@ -273,6 +300,7 @@ impl Inner {
         };
         self.session_used += base.bytes();
         session.files.push(SessionFile {
+            command: f.command,
             by: f.by.clone(),
             rel: f.rel.clone(),
             abs: f.abs.clone(),
@@ -395,7 +423,7 @@ fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
         removed,
         old_path: e.from.map(|i| files[i].rel.clone()),
         no_diff,
-        origin: f.pre.origin(),
+        origin: f.origin(),
         by: f.by.as_ref().map(|a| a.label.clone()),
         by_call: f.by.as_ref().map(|a| a.call_id.clone()),
     }
@@ -604,14 +632,18 @@ impl ChangeStore {
     /// Vault files the watcher reported as changed at `at` (Writer's own writes already removed
     /// by the caller). While a command window of the chat explains `at` they are recorded as
     /// "changed by a command" in the open turn and the session, except the ones the turn already
-    /// tracks. Returns whether the chat's session may have changed (publish it). Reads metadata
-    /// only (never file text), so call it off the watcher thread.
+    /// tracks. For each path new to the turn (or the session) `baseline` is asked, outside the
+    /// lock, for the text the file had when the turn started: an answer is its pre-image, none
+    /// leaves it "listed without a diff". Returns whether the chat's session may have changed
+    /// (publish it). Reads metadata only (never file text, `baseline` aside), so call it off the
+    /// watcher thread.
     pub fn record_command_changes(
         &self,
         chat_id: &str,
         root: &Path,
         paths: &[PathBuf],
         at: Instant,
+        baseline: &dyn Fn(&str) -> Option<Baseline>,
     ) -> bool {
         let Ok(root) = root.canonicalize() else {
             return false;
@@ -626,17 +658,56 @@ impl ChangeStore {
         if found.is_empty() {
             return false;
         }
+        // which paths are new to the turn or to the session: only those are asked about
+        let fresh: Vec<&vault_ops::Confined> = {
+            let g = self.inner.lock();
+            let turn = g.open.get(chat_id);
+            let session = g.sessions.get(chat_id);
+            found
+                .iter()
+                .filter(|c| {
+                    !turn.is_some_and(|t| t.files.iter().any(|f| f.abs == c.abs))
+                        || !session.is_some_and(|s| s.files.iter().any(|f| f.abs == c.abs))
+                })
+                .collect()
+        };
+        let answers: Vec<(&Path, Snap)> = fresh
+            .into_iter()
+            .filter_map(|c| match baseline(&c.rel)? {
+                Baseline::Text(text) if text.len() as u64 <= MAX_FILE_BYTES => {
+                    Some((c.abs.as_path(), Snap::Text(Some(text))))
+                }
+                Baseline::Text(_) => None,
+                Baseline::Absent => Some((c.abs.as_path(), Snap::Text(None))),
+            })
+            .collect();
         let mut g = self.inner.lock();
         for c in &found {
-            let rec = |by: &Option<Author>| {
-                FileRec::new(by.clone(), &c.rel, &c.abs, Snap::Unknown(Unknown::Command))
-            };
-            g.track_in_session(chat_id, &root, &rec(&by), self.max_total);
-            if let Some(turn) = g.open.get_mut(chat_id) {
-                if !turn.files.iter().any(|f| f.abs == c.abs) {
-                    turn.files.push(rec(&by));
-                }
+            let mut pre = answers
+                .iter()
+                .find(|(abs, _)| *abs == c.abs)
+                .map(|(_, snap)| snap.clone());
+            // an answer that does not fit the turns' budget is no answer
+            if pre
+                .as_ref()
+                .is_some_and(|p| g.used + p.bytes() > self.max_total)
+            {
+                pre = None;
             }
+            let rec = |by: &Option<Author>, pre: Option<Snap>| {
+                FileRec::by_command(by.clone(), &c.rel, &c.abs, pre)
+            };
+            g.track_in_session(chat_id, &root, &rec(&by, pre.clone()), self.max_total);
+            let Some(turn) = g.open.get_mut(chat_id) else {
+                continue;
+            };
+            if turn.files.iter().any(|f| f.abs == c.abs) {
+                continue;
+            }
+            let bytes = pre.as_ref().map_or(0, Snap::bytes);
+            turn.files.push(rec(&by, pre));
+            turn.bytes += bytes;
+            g.used += bytes;
         }
         true
     }
@@ -744,18 +815,27 @@ impl ChangeStore {
     /// no session in this vault.
     fn session_recs(&self, chat_id: &str, root: &Path) -> Option<Vec<FileRec>> {
         let root = root.canonicalize().ok()?;
-        let items: Vec<(Option<Author>, String, PathBuf, Snap)> = {
+        let items: Vec<(bool, Option<Author>, String, PathBuf, Snap)> = {
             let g = self.inner.lock();
             let s = g.sessions.get(chat_id).filter(|s| s.root == root)?;
             s.files
                 .iter()
-                .map(|f| (f.by.clone(), f.rel.clone(), f.abs.clone(), f.base.clone()))
+                .map(|f| {
+                    (
+                        f.command,
+                        f.by.clone(),
+                        f.rel.clone(),
+                        f.abs.clone(),
+                        f.base.clone(),
+                    )
+                })
                 .collect()
         };
         Some(
             items
                 .into_iter()
-                .map(|(by, rel, abs, pre)| FileRec {
+                .map(|(command, by, rel, abs, pre)| FileRec {
+                    command,
                     by,
                     rel,
                     end: read_snap(&abs, true),

@@ -12,10 +12,13 @@
 //! - `scheduler.rs`: the cadence state machine (pure, time is an argument);
 //! - `system.rs`: `git var`, the commit identity from the installed git (the one child process);
 //! - `history.rs`: file versions, deleted files, diffs and Restore (shared text diff);
+//! - `baseline.rs`: what the history can vouch for about a file as it was when an agent turn began
+//!   (the agent's `agent.turn-baseline`, ADR 2026-11-23);
 //! - `state.rs`: the pause and stop flags; `device.rs`: the device name.
 //!
 //! [`setup`] and [`commit_user`] are the two operations the app and the CLI share.
 
+pub mod baseline;
 pub mod conflicts;
 pub mod credential;
 pub mod device;

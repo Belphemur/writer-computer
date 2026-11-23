@@ -28,16 +28,22 @@ export const STATUS_LABEL: Record<ChangeStatus, string> = {
   renamed: "Renamed",
 };
 
-/** The files that have no trusted "before": a small marker, a tooltip and the line shown where a
- *  diff would be. They have no diff and no Undo (spec "Turn changes"). */
+/** The files that are not an ordinary edit: a small marker, a tooltip and, when there is no diff
+ *  (no trusted "before"), the line shown where it would be. A command-changed file whose "before"
+ *  is vouched for (the Git history, spec "Turn changes") keeps the marker and has a diff and Undo. */
 export const ORIGIN_NOTE: Record<
-  Exclude<ChangeOrigin, "edit">,
-  { marker: string; title: string; body: string }
+  Exclude<ChangeOrigin, "edit"> | "command-compared",
+  { marker: string; title: string; body?: string }
 > = {
   command: {
     marker: "by command",
     title: "Changed while a command of this chat was running, not necessarily by it",
     body: "Changed while a shell command was running: listed without a diff",
+  },
+  "command-compared": {
+    marker: "by command",
+    title:
+      "Changed while a shell command was running; compared with the version from before the turn",
   },
   "before-unknown": {
     marker: "before unknown",
@@ -46,15 +52,21 @@ export const ORIGIN_NOTE: Record<
   },
 };
 
-/** The note of a file without a trusted before; `undefined` for an ordinary edit. */
-export function originNote(f: Pick<FileChangeSummary, "origin">) {
-  return f.origin && f.origin !== "edit" ? ORIGIN_NOTE[f.origin] : undefined;
+/** The note of a file that is not an ordinary edit; `undefined` for one. */
+export function originNote(f: Pick<FileChangeSummary, "origin" | "noDiff">) {
+  if (!f.origin || f.origin === "edit") return undefined;
+  return ORIGIN_NOTE[f.origin === "command" && !f.noDiff ? "command-compared" : f.origin];
 }
 
-/** Status word of a file row: a command-changed file is only known to differ ("Changed"), as
- *  whether it was created or modified is not known. */
-export function statusLabel(f: Pick<FileChangeSummary, "origin" | "status">): string {
-  return f.origin === "command" && f.status !== "deleted" ? "Changed" : STATUS_LABEL[f.status];
+/** A command-changed file with no "before": only known to differ, not whether it was created. */
+export function commandWithoutBefore(f: Pick<FileChangeSummary, "origin" | "noDiff">): boolean {
+  return f.origin === "command" && !!f.noDiff;
+}
+
+/** Status word of a file row: a command-changed file with no "before" is only known to differ
+ *  ("Changed"), as whether it was created or modified is not known. */
+export function statusLabel(f: Pick<FileChangeSummary, "origin" | "noDiff" | "status">): string {
+  return commandWithoutBefore(f) && f.status !== "deleted" ? "Changed" : STATUS_LABEL[f.status];
 }
 
 /** Shortens the middle of a long path, keeping the folder start and the file name; the full path

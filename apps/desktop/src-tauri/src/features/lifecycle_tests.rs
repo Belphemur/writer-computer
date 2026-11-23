@@ -218,7 +218,7 @@ fn a_leak_after_a_stop_is_checked_later_and_released_builds_force_kill_and_strik
 
 // ---------- one liveness, one reconcile (review fixes 1, 3, 4, 9) ----------
 
-use super::points::{self, Point, Points};
+use super::points::{self, Point, Points, Provider};
 
 fn wait_stopped(app: &tauri::App<MockRuntime>, id: &str) {
     wait_for(&format!("{id} released"), || !is_started(app.handle(), id));
@@ -298,6 +298,51 @@ fn a_contributor_hears_its_owner_after_the_owner_is_switched_off_but_not_once_it
     // and a stopped contributor is retracted
     wait_stopped(&app, "pt-listener");
     assert!(!points.extended_by(SAID.id, "pt-listener"));
+}
+
+static ANSWER: Provider<(), &'static str> = Provider::new("pt-owner.answer", "pt-owner");
+
+struct Answerer1;
+impl<R: Runtime> Feature<R> for Answerer1 {
+    fn manifest_source(&self) -> &'static str {
+        r#"{"id":"pt-answerer","name":"Answerer"}"#
+    }
+    fn start(&self, app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
+        points::provide(app, &ANSWER, "pt-answerer", |_| Some("answered"));
+        Ok(())
+    }
+}
+
+struct Panicker;
+impl<R: Runtime> Feature<R> for Panicker {
+    fn manifest_source(&self) -> &'static str {
+        r#"{"id":"aa-panicker","name":"Panicker"}"#
+    }
+    fn start(&self, app: &AppHandle<R>, _scope: &FeatureScope) -> Result<(), String> {
+        points::provide(app, &ANSWER, "aa-panicker", |_| panic!("no answer today"));
+        Ok(())
+    }
+}
+
+/// A provider's answer comes only from a live contributor: one that panicked fails and counts as
+/// no answer (the next is asked), a failed or stopped one is skipped and retracted.
+#[test]
+fn a_provider_skips_a_panicking_or_failed_contributor_and_retracts_a_stopped_one() {
+    let (app, _dir) = app_keeping(vec![&Owner, &Panicker, &Answerer1]);
+    let points = app.state::<Points>();
+    // `aa-panicker` is asked first (id order): it fails, the next contributor answers
+    assert_eq!(points.ask(&ANSWER, &()), Some("answered"));
+    assert!(!is_live(app.handle(), "aa-panicker"));
+    wait_stopped(&app, "aa-panicker");
+    assert!(!points.extended_by(ANSWER.id, "aa-panicker"));
+    // a failed contributor is silent at once, then retracted
+    fail_for_test(app.handle(), "pt-answerer");
+    assert_eq!(points.ask(&ANSWER, &()), None);
+    wait_stopped(&app, "pt-answerer");
+    assert_eq!(points.contributors(ANSWER.id), 0);
+    // the owner is not consulted: it may be off and still ask
+    write_switch(app.handle(), "pt-owner", false);
+    assert_eq!(points.ask(&ANSWER, &()), None);
 }
 
 struct Slow;

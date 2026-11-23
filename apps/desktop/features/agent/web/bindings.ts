@@ -320,7 +320,8 @@ export type ChangeOrigin =
 "edit" | 
 /**
  *  Changed while a `Bash` call of the chat was running (seen by the file watcher): listed
- *  only, no diff, no Undo.
+ *  only (`no_diff`), unless the Git history vouches for the file's text from before the turn
+ *  (`agent.turn-baseline`): then a diff, counts and Undo as for an edit, the mark staying.
  */
 "command" | 
 /**
@@ -452,8 +453,8 @@ export type FileChangeSummary = {
 	/**  Not shown as a diff: binary, too large, or not safely readable. Counts are 0. */
 	noDiff?: boolean,
 	/**
-	 *  Absent: a normal edit. `command` / `before-unknown` files have no diff and no Undo
-	 *  (`no_diff` is set with them).
+	 *  Absent: a normal edit. `before-unknown` files have no diff and no Undo, nor a `command`
+	 *  file with no vouched "before" (`no_diff` is set with them).
 	 */
 	origin?: ChangeOrigin,
 	/**

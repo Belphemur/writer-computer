@@ -146,11 +146,15 @@ fn the_manifest_names_exactly_what_the_feature_contributes() {
     assert!(registry::find("git:commit").is_some_and(|c| c.writes));
     let skills: BTreeSet<String> = SKILLS.iter().map(|s| s.name.to_string()).collect();
     assert_eq!(strings(&raw["rust"]["skills"]), skills);
-    // it extends the agent's two points, each with a note for when it is off; it owns none and
+    // it extends the agent's three points, each with a note for when it is off; it owns none and
     // needs nothing (it works alone)
     assert_eq!(
         strings(&raw["extends"]),
-        BTreeSet::from([TURN_STARTED.id.to_string(), TURN_FINISHED.id.to_string()])
+        BTreeSet::from([
+            TURN_STARTED.id.to_string(),
+            TURN_FINISHED.id.to_string(),
+            crate::agent::api::TURN_BASELINE.id.to_string()
+        ])
     );
     let notes: BTreeSet<String> = raw["offNotes"]
         .as_object()
@@ -464,6 +468,158 @@ fn a_missing_identity_is_an_explicit_error_state_and_nothing_is_committed() {
 }
 
 // ---- off ---------------------------------------------------------------------------------------------
+
+// ---- the turn baseline (ADR 2026-11-23) ----------------------------------------------------------------
+
+use crate::agent::api::{Baseline, TurnBaseline, TURN_BASELINE};
+
+fn ask(app: &tauri::App<MockRuntime>, root: &Path, chat: &str, path: &str) -> Option<Baseline> {
+    app.state::<crate::features::points::Points>().ask(
+        &TURN_BASELINE,
+        &TurnBaseline {
+            root: root.to_path_buf(),
+            chat_id: chat.into(),
+            path: path.into(),
+        },
+    )
+}
+
+fn start_turn(app: &tauri::App<MockRuntime>, root: &Path, chat: &str) {
+    emit_point(
+        app,
+        &TURN_STARTED_POINT,
+        &TurnStarted {
+            root: root.to_path_buf(),
+            chat_id: chat.into(),
+        },
+    );
+}
+
+/// A set-up vault open in the app, holding `a.md` = "1" and `.gitignore` naming `ignored.md`.
+fn baseline_vault(app: &tauri::App<MockRuntime>) -> (tempfile::TempDir, PathBuf) {
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "a.md", "1");
+    write(&root, ".gitignore", "ignored.md\n");
+    crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "Studio").unwrap();
+    runtime::vaults(app.handle()).unwrap().open("main", &root);
+    (dir, root)
+}
+
+use std::path::PathBuf;
+
+#[test]
+fn the_turn_start_commit_answers_text_and_absent_and_the_users_pending_edit_is_in_it() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    write(&root, "a.md", "2 pending");
+    start_turn(&app, &root, "chat-1");
+    // the agent's command rewrites a file and creates another
+    write(&root, "a.md", "3 by the command");
+    write(&root, "made.md", "new");
+    assert_eq!(
+        ask(&app, &root, "chat-1", "a.md"),
+        Some(Baseline::Text("2 pending".into()))
+    );
+    assert_eq!(
+        ask(&app, &root, "chat-1", "made.md"),
+        Some(Baseline::Absent)
+    );
+    // another chat has no record
+    assert_eq!(ask(&app, &root, "chat-2", "a.md"), None);
+}
+
+#[test]
+fn a_file_the_commit_could_not_take_or_git_does_not_version_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    // an ignored file existing before the turn, one under node_modules, one in a nested repository
+    write(&root, "ignored.md", "mine");
+    write(&root, "node_modules/p/x.md", "dep");
+    write(&root, "nested/.git/HEAD", "ref: refs/heads/main");
+    write(&root, "nested/n.md", "in another repo");
+    start_turn(&app, &root, "chat-1");
+    for rel in ["ignored.md", "node_modules/p/x.md", "nested/n.md"] {
+        assert_eq!(ask(&app, &root, "chat-1", rel), None, "{rel}");
+    }
+    // not a text file
+    std::fs::write(root.join("bin.dat"), [0u8, 1, 2]).unwrap();
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.written("main", &root, &[root.join("bin.dat")], Instant::now());
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "bin.dat"), None);
+}
+
+#[test]
+fn a_file_uncommitted_when_the_turn_began_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    write(&root, "c.md", "clean");
+    start_turn(&app, &root, "chat-2");
+    // chat-2's turn is running: no user commit now, so this edit is not in the commit chat-1 sees
+    write(&root, "a.md", "edited while chat-2 runs");
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+    assert_eq!(
+        ask(&app, &root, "chat-1", "c.md"),
+        Some(Baseline::Text("clean".into()))
+    );
+}
+
+#[test]
+fn no_identity_or_a_merge_in_progress_gets_no_answer_and_the_next_turn_drops_the_record() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    start_turn(&app, &root, "chat-1");
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some());
+    // a merge begins: the next turn records nothing, and the old record is gone
+    std::fs::write(root.join(".git/MERGE_HEAD"), "x").unwrap();
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+    std::fs::remove_file(root.join(".git/MERGE_HEAD")).unwrap();
+    // no identity
+    let cfg = root.join(".git/config");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, text.replace("[user]", "[nouser]")).unwrap();
+    write(&root, "a.md", "dirty so the commit has to run");
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+}
+
+#[test]
+fn the_record_is_dropped_when_the_vault_closes_and_when_git_shuts_down() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    start_turn(&app, &root, "chat-1");
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some());
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.close("main");
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+    vaults.open("main", &root);
+    start_turn(&app, &root, "chat-1");
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some());
+    vaults.shutdown();
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+}
+
+#[test]
+fn agent_turn_baseline_is_owned_by_the_agent_provided_by_git_and_retracted_when_git_stops() {
+    assert_eq!(TURN_BASELINE.owner, "agent");
+    assert!(manifest().extends.iter().any(|p| p == TURN_BASELINE.id));
+    let app = app_with(vec![&Git], &[]);
+    let points = app.state::<crate::features::points::Points>();
+    assert!(points.extended_by(TURN_BASELINE.id, "git"));
+    assert_eq!(points.contributors(TURN_BASELINE.id), 1);
+    crate::features::lifecycle::stop_feature(app.handle(), "git", true);
+    assert_eq!(points.contributors(TURN_BASELINE.id), 0);
+    // off from the start: never extended
+    let off = app_with(vec![&Git], &["features.git.enabled"]);
+    assert_eq!(
+        off.state::<crate::features::points::Points>()
+            .contributors(TURN_BASELINE.id),
+        0
+    );
+}
 
 #[test]
 fn with_the_feature_off_nothing_is_set_up_and_no_point_has_a_subscriber() {

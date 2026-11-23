@@ -650,7 +650,25 @@ fn bash_in(store: &ChangeStore, root: &Path) {
 
 fn seen(store: &ChangeStore, chat: &str, root: &Path, rels: &[&str], at: Instant) -> bool {
     let paths: Vec<PathBuf> = rels.iter().map(|r| root.join(r)).collect();
-    store.record_command_changes(chat, root, &paths, at)
+    store.record_command_changes(chat, root, &paths, at, &|_| None)
+}
+
+/// [`seen`] with an asker: `answers` maps a vault-relative path to what the baseline provider says.
+fn seen_asking(
+    store: &ChangeStore,
+    root: &Path,
+    rels: &[&str],
+    at: Instant,
+    answers: &[(&str, Baseline)],
+) -> bool {
+    let paths: Vec<PathBuf> = rels.iter().map(|r| root.join(r)).collect();
+    let ask = |rel: &str| {
+        answers
+            .iter()
+            .find(|(p, _)| *p == rel)
+            .map(|(_, b)| b.clone())
+    };
+    store.record_command_changes(CHAT, root, &paths, at, &ask)
 }
 
 fn author(label: &str) -> Author {
@@ -832,7 +850,8 @@ fn what_writer_does_not_show_or_the_agent_keeps_to_itself_is_never_listed() {
         CHAT,
         &root,
         &[out.path().join("o.md")],
-        t + Duration::from_millis(10)
+        t + Duration::from_millis(10),
+        &|_| None
     ));
     assert!(finish(&store).is_none(), "nothing to show");
     assert!(store.session_summary(CHAT, &root).is_none());
@@ -1176,4 +1195,214 @@ fn an_old_file_never_looks_raced() {
         json!({"file_path": path(&root, "w.md"), "content": "same\n"}),
     );
     assert!(finish(&store).is_none());
+}
+
+// ---- a baseline vouched for by the provider point (ADR 2026-11-23) ----
+
+fn one_command(store: &ChangeStore, root: &Path) -> Instant {
+    let t = Instant::now();
+    bash_in(store, root);
+    store.command_started(CHAT, "b1", None, t);
+    t
+}
+
+fn end_command(store: &ChangeStore, t: Instant) {
+    store.command_finished(CHAT, "b1", t + Duration::from_millis(500));
+}
+
+#[test]
+fn a_command_file_with_a_text_baseline_gets_a_diff_counts_and_an_undo_that_restores_it() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
+    let answers = [("n.md", Baseline::Text("before\n".into()))];
+    assert!(seen_asking(
+        &store,
+        &root,
+        &["n.md"],
+        t + Duration::from_millis(400),
+        &answers
+    ));
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    let f = file(&s, "n.md");
+    assert_eq!(f.origin, ChangeOrigin::Command, "still marked by command");
+    assert!(!f.no_diff);
+    assert_eq!((f.added, f.removed), (1, 1));
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert!(!d.files[0].rows.is_empty());
+    assert_eq!(d.files[0].undo, UndoState::Available);
+    let out = store
+        .revert(CHAT, &s.turn_id, &root, &["n.md".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Reverted);
+    assert_eq!(
+        std::fs::read_to_string(root.join("n.md")).unwrap(),
+        "before\n"
+    );
+}
+
+#[test]
+fn undo_of_a_command_change_refuses_after_a_later_edit() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
+    let answers = [("n.md", Baseline::Text("before\n".into()))];
+    seen_asking(&store, &root, &["n.md"], t, &answers);
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    std::fs::write(root.join("n.md"), "the user's later edit\n").unwrap();
+    let out = store
+        .revert(CHAT, &s.turn_id, &root, &["n.md".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::ChangedSince);
+    assert_eq!(
+        std::fs::read_to_string(root.join("n.md")).unwrap(),
+        "the user's later edit\n"
+    );
+}
+
+#[test]
+fn an_absent_baseline_shows_the_file_as_created_and_undo_deletes_it() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    let t = one_command(&store, &root);
+    std::fs::write(root.join("made.md"), "new\n").unwrap();
+    seen_asking(
+        &store,
+        &root,
+        &["made.md"],
+        t,
+        &[("made.md", Baseline::Absent)],
+    );
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    assert_eq!(file(&s, "made.md").status, ChangeStatus::Added);
+    assert_eq!(file(&s, "made.md").added, 1);
+    let out = store
+        .revert(CHAT, &s.turn_id, &root, &["made.md".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Reverted);
+    assert!(!root.join("made.md").exists());
+}
+
+#[test]
+fn no_answer_keeps_todays_row_and_the_asker_is_asked_once_per_new_path() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
+    let asked = std::cell::Cell::new(0);
+    let ask = |_: &str| {
+        asked.set(asked.get() + 1);
+        None
+    };
+    let p = [root.join("n.md")];
+    store.record_command_changes(CHAT, &root, &p, t, &ask);
+    store.record_command_changes(CHAT, &root, &p, t, &ask);
+    assert_eq!(asked.get(), 1, "known to turn and session: not asked again");
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    let f = file(&s, "n.md");
+    assert!(f.no_diff && f.origin == ChangeOrigin::Command);
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert_eq!(d.files[0].undo, UndoState::Unavailable);
+}
+
+#[test]
+fn an_edit_snapshotted_file_keeps_its_snapshot_and_is_not_asked() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "one\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "two\n").unwrap();
+    let t = one_command(&store, &root);
+    let ask = |_: &str| -> Option<Baseline> { panic!("the turn tracks it already") };
+    store.record_command_changes(CHAT, &root, &[root.join("a.md")], t, &ask);
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    assert_eq!(file(&s, "a.md").origin, ChangeOrigin::Edit);
+    assert_eq!((file(&s, "a.md").added, file(&s, "a.md").removed), (1, 1));
+}
+
+#[test]
+fn an_answer_over_the_file_cap_is_no_answer() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
+    let huge = "x".repeat(MAX_FILE_BYTES as usize + 1);
+    seen_asking(
+        &store,
+        &root,
+        &["n.md"],
+        t,
+        &[("n.md", Baseline::Text(huge))],
+    );
+    end_command(&store, t);
+    assert!(file(&finish(&store).unwrap(), "n.md").no_diff);
+}
+
+#[test]
+fn the_session_baseline_is_the_answer_of_the_first_turn_that_touched_the_path() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    // turn 1: the command rewrites v0 into v1
+    std::fs::write(root.join("n.md"), "v1\n").unwrap();
+    let t = one_command(&store, &root);
+    seen_asking(
+        &store,
+        &root,
+        &["n.md"],
+        t,
+        &[("n.md", Baseline::Text("v0\n".into()))],
+    );
+    end_command(&store, t);
+    finish(&store).unwrap();
+    // turn 2: another command, whose turn started at v1
+    std::fs::write(root.join("n.md"), "v2\n").unwrap();
+    let t = one_command(&store, &root);
+    seen_asking(
+        &store,
+        &root,
+        &["n.md"],
+        t,
+        &[("n.md", Baseline::Text("v1\n".into()))],
+    );
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    // the card of turn 2 diffs against v1, the session against v0
+    let d = store.detail(CHAT, &s.turn_id, &root).unwrap();
+    assert_eq!(file(&s, "n.md").origin, ChangeOrigin::Command);
+    assert!(!d.files[0].rows.is_empty());
+    let sd = store.session_detail(CHAT, &root).unwrap();
+    assert!(!sd.files[0].summary.no_diff);
+    let texts: String = sd.files[0]
+        .rows
+        .iter()
+        .map(|r| format!("{r:?}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(texts.contains("v0") && texts.contains("v2") && !texts.contains("v1"));
+}
+
+#[test]
+fn a_session_baseline_from_an_answer_marks_by_command_with_counts() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
+    seen_asking(
+        &store,
+        &root,
+        &["n.md"],
+        t,
+        &[("n.md", Baseline::Text("before\n".into()))],
+    );
+    let ss = sess(&store, &root);
+    let f = sess_file(&ss, "n.md");
+    assert_eq!(f.origin, ChangeOrigin::Command);
+    assert_eq!((f.added, f.removed), (1, 1));
 }

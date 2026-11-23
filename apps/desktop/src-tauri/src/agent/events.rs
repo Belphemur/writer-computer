@@ -444,7 +444,8 @@ pub enum ChangeOrigin {
     #[default]
     Edit,
     /// Changed while a `Bash` call of the chat was running (seen by the file watcher): listed
-    /// only, no diff, no Undo.
+    /// only (`no_diff`), unless the Git history vouches for the file's text from before the turn
+    /// (`agent.turn-baseline`): then a diff, counts and Undo as for an edit, the mark staying.
     Command,
     /// An edit call wrote the file, but the "before" could not be established (the tool ran
     /// before its pre-image was read and the edit cannot be undone exactly): no diff, no Undo.
@@ -472,8 +473,8 @@ pub struct FileChangeSummary {
     /// Not shown as a diff: binary, too large, or not safely readable. Counts are 0.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_diff: bool,
-    /// Absent: a normal edit. `command` / `before-unknown` files have no diff and no Undo
-    /// (`no_diff` is set with them).
+    /// Absent: a normal edit. `before-unknown` files have no diff and no Undo, nor a `command`
+    /// file with no vouched "before" (`no_diff` is set with them).
     #[serde(default, skip_serializing_if = "ChangeOrigin::is_edit")]
     pub origin: ChangeOrigin,
     /// The sub-agent role that made the edit (`worker`; another sub-agent type as it is named),

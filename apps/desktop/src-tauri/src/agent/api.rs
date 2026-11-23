@@ -1,16 +1,22 @@
 //! What the agent offers to other features (ADR 2026-11-20 "let features cooperate through owned
-//! points, optional services and rare requires"): two hook points and their contract types, plain
-//! data. The agent calls [`crate::features::points::emit`] and never learns who listens; with no
-//! contributor (the usual case) both calls return at once and the Changes card, its diffs and its
-//! Undo behave as they always did.
+//! points, optional services and rare requires"): two hook points, one provider point and their
+//! contract types, plain data. The agent calls [`crate::features::points::Points::emit`] and
+//! [`crate::features::points::Points::ask`] and never learns who listens; with no contributor (the
+//! usual case) all calls return at once and the Changes card, its diffs and its Undo behave as they
+//! always did.
 //!
 //! - [`TURN_STARTED`]: a turn is about to begin in a vault. Contributors may block briefly (the
 //!   caller is a blocking thread): it is the moment to save what the user has pending, so the
 //!   turn's own changes stay separate.
 //! - [`TURN_FINISHED`]: a turn is over (also with no change, and when the process died under it),
 //!   with the files it changed. Fires once per turn.
+//! - [`TURN_BASELINE`] (provider): "the text of this file as it was when the turn started", asked
+//!   when a shell command changed a file (ADR 2026-11-23 "diff shell-command changes against the
+//!   turn-start commit"). An answer is trusted as the file's pre-image (diff and Undo), so a
+//!   contributor answers only what it can vouch for; no answer keeps the file "listed without a
+//!   diff". Asked from a thread that may block (never the watcher's or the main thread).
 
-use crate::features::points::Point;
+use crate::features::points::{Point, Provider};
 use std::path::PathBuf;
 
 /// The one backend today; the contract names it so a second backend adds a value, not a field.
@@ -58,3 +64,29 @@ pub struct TurnFinished {
 
 pub static TURN_STARTED: Point<TurnStarted> = Point::new("agent.turn-started", "agent");
 pub static TURN_FINISHED: Point<TurnFinished> = Point::new("agent.turn-finished", "agent");
+
+/// The question of [`TURN_BASELINE`]: the file `path` (vault-relative, forward slashes) of the vault
+/// `root`, as it was when the turn of chat `chat_id` started.
+#[derive(Debug, Clone)]
+pub struct TurnBaseline {
+    /// The vault root (canonical).
+    pub root: PathBuf,
+    pub chat_id: String,
+    pub path: String,
+}
+
+/// What a contributor vouches for about a file at the start of the turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Baseline {
+    /// The file existed with this text (at most `changes::MAX_FILE_BYTES`, text only).
+    Text(String),
+    /// The file did not exist: the command created it.
+    Absent,
+}
+
+/// The largest text a [`Baseline`] may hold (the Changes card's file cap): a contributor reads no
+/// more than this.
+pub const BASELINE_MAX_BYTES: u64 = super::changes::MAX_FILE_BYTES;
+
+pub static TURN_BASELINE: Provider<TurnBaseline, Baseline> =
+    Provider::new("agent.turn-baseline", "agent");

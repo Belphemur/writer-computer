@@ -53,6 +53,15 @@ pub struct Identities {
     pub committer: Identity,
 }
 
+/// What [`Repo::text_at`] found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextAt {
+    Text(String),
+    /// The commit has no entry at that path.
+    Absent,
+    Unreadable,
+}
+
 /// One commit of the history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogEntry {
@@ -572,6 +581,82 @@ impl Repo {
         out.extend(deletes.into_iter().map(|(rel, _)| Change::Delete(rel)));
         out.sort_by(|a, b| a.path().cmp(b.path()));
         Ok((out, too_large))
+    }
+
+    /// Every path the working tree still differs from HEAD in, or that Writer does not version:
+    /// what [`Repo::changes_and_skipped`] finds, with a move's old path, as vault-relative paths.
+    /// After a commit it is what the commit could not take.
+    pub fn uncommitted(&self) -> Result<BTreeSet<String>> {
+        let (changes, skipped) = self.changes_and_skipped()?;
+        let mut out: BTreeSet<String> = skipped.into_iter().collect();
+        for c in &changes {
+            out.insert(c.path().to_string());
+            if let Change::Move { from, .. } = c {
+                out.insert(from.clone());
+            }
+        }
+        Ok(out)
+    }
+
+    /// Is `rel`, or a folder above it, ignored by the repository's rules (the vault's
+    /// `.gitignore` files, `info/exclude`, the user's global file)? An error reads as ignored:
+    /// the caller is deciding what it can vouch for.
+    pub fn is_ignored(&self, rel: &str) -> bool {
+        let Ok(index) = self.repo.index_or_empty() else {
+            return true;
+        };
+        let Ok(mut stack) = self.repo.excludes(
+            &index,
+            None,
+            gix::worktree::stack::state::ignore::Source::WorktreeThenIdMappingIfNotSkipped,
+        ) else {
+            return true;
+        };
+        let parts: Vec<&str> = rel.split('/').collect();
+        (1..=parts.len()).any(|n| {
+            let mode = if n == parts.len() {
+                gix::index::entry::Mode::FILE
+            } else {
+                gix::index::entry::Mode::DIR
+            };
+            match stack.at_entry(parts[..n].join("/").as_str(), Some(mode)) {
+                Ok(platform) => platform.is_excluded(),
+                Err(_) => true,
+            }
+        })
+    }
+
+    /// Is `rel` somewhere Writer never versions (under `node_modules`, or inside a repository of
+    /// its own)? Its absence from a commit says nothing.
+    pub fn is_foreign(&self, rel: &str) -> bool {
+        self.not_ours(rel)
+    }
+
+    /// The text of the file at `rel` in commit `rev`, for a reader with a size cap: nothing is read
+    /// above `max_bytes` (an LFS file is read from the local store only when its pointer says it
+    /// fits). [`TextAt::Unreadable`] for anything that is not a text file of that size there (a
+    /// folder, a link, binary or non-UTF-8 content, an LFS object not downloaded).
+    pub fn text_at(&self, rev: &str, rel: &str, max_bytes: u64) -> Result<TextAt> {
+        let commit = self.find(rev)?;
+        let tree = commit.tree().map_err(git)?;
+        let Some(entry) = tree.lookup_entry_by_path(rel).map_err(git)? else {
+            return Ok(TextAt::Absent);
+        };
+        if !entry.mode().is_blob() {
+            return Ok(TextAt::Unreadable);
+        }
+        let id = entry.object_id();
+        let size = self.repo.find_header(id).map_err(git)?.size();
+        let bytes = match self.pointer_in(id) {
+            Some(p) if p.size > max_bytes => return Ok(TextAt::Unreadable),
+            Some(_) => self.content(&id.to_string())?,
+            None if size > max_bytes => return Ok(TextAt::Unreadable),
+            None => self.blob(&id.to_string())?,
+        };
+        if bytes.len() as u64 > max_bytes || bytes.contains(&0) || lfs::is_pointer(&bytes) {
+            return Ok(TextAt::Unreadable);
+        }
+        Ok(String::from_utf8(bytes).map_or(TextAt::Unreadable, TextAt::Text))
     }
 
     /// Under `node_modules`, or inside a folder that is a repository of its own.

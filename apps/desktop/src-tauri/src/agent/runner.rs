@@ -1043,9 +1043,21 @@ impl Session {
     /// The watcher's changed vault paths (Writer's own writes removed), delivered at `at`: the
     /// files a running shell command of this chat changed join its changes (`changes.rs`).
     pub(crate) fn vault_paths_changed(&self, paths: &[PathBuf], at: Instant) {
+        // what the turn-baseline provider (the Git history, when it is on) vouches for; no
+        // contributor means no answer at once
+        let baseline = |rel: &str| {
+            self.points.ask(
+                &api::TURN_BASELINE,
+                &api::TurnBaseline {
+                    root: self.root.clone(),
+                    chat_id: self.chat_id.clone(),
+                    path: rel.to_string(),
+                },
+            )
+        };
         if self
             .changes
-            .record_command_changes(&self.chat_id, &self.root, paths, at)
+            .record_command_changes(&self.chat_id, &self.root, paths, at, &baseline)
         {
             self.push_session_changes();
         }

@@ -53,9 +53,10 @@
     "skills": ["writer-git"],
     "ipcCommands": ["git:sync", "git:resolve"]
   },
-  "extends": ["agent.turn-started", "agent.turn-finished"],
+  "extends": ["agent.turn-started", "agent.turn-finished", "agent.turn-baseline"],
   "offNotes": {
     "agent.turn-started": "Your pending edits won't be saved before an agent turn",
+    "agent.turn-baseline": "Files a shell command changes won't show a diff",
     "agent.turn-finished": "Agent turns won't be saved in history"
   },
   "contributes": {

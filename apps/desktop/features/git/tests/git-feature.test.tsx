@@ -130,7 +130,11 @@ describe("manifest contract", () => {
   });
 
   it("cooperates only through points: it extends the agent's, owns none, requires nothing", () => {
-    expect(manifest.extends).toEqual(["agent.turn-started", "agent.turn-finished"]);
+    expect(manifest.extends).toEqual([
+      "agent.turn-started",
+      "agent.turn-finished",
+      "agent.turn-baseline",
+    ]);
     expect(Object.keys(manifest.offNotes).sort()).toEqual([...manifest.extends].sort());
     expect(manifest.offNotes["agent.turn-finished"]).toBe("Agent turns won't be saved in history");
     expect("requires" in manifest).toBe(false);

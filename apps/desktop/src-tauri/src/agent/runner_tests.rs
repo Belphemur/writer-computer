@@ -2387,6 +2387,55 @@ fn a_sub_agents_shell_command_lists_the_files_it_changed_without_a_diff() {
         .all(|e| !matches!(&e.event, AgentEvent::SessionChanges(s) if s.files.iter().any(|f| f.path == "late.md"))));
 }
 
+/// ADR 2026-11-23: with a contributor to `agent.turn-baseline` (the Git history, here a probe)
+/// vouching for the text from before the turn, the file a command changed has a diff, counts and
+/// an Undo in the live session row, the card and its detail; the mark stays "by command".
+#[test]
+fn a_command_changed_file_with_a_vouched_baseline_has_a_diff_and_an_undo() {
+    use crate::agent::api;
+    let mut h = Harness::new(&["subagent-bash"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\n").unwrap();
+    h.use_fixture_for("subagent-bash", &notes);
+    let mine = h.root.clone();
+    h.sessions
+        .points()
+        .provide_raw(&api::TURN_BASELINE, "probe-git", move |q| {
+            (q.root == mine && q.path == "notes.txt").then(|| api::Baseline::Text("old\n".into()))
+        });
+    h.start(CHAT);
+    h.send(CHAT, "run it");
+    h.next(CHAT, "the command's complete input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_bash1")
+    });
+    std::fs::write(&notes, "new\n").unwrap();
+    h.sessions
+        .paths_changed("w", &h.root, vec![notes.clone()], vec![]);
+    let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+        matches!(e, AgentEvent::SessionChanges(_))
+    }) else {
+        unreachable!()
+    };
+    let f = &live.files[0];
+    assert_eq!(f.origin, ChangeOrigin::Command, "still marked by command");
+    assert!(!f.no_diff);
+    assert_eq!((f.added, f.removed), (1, 1));
+    h.go();
+
+    let summary = turn_changes(&mut h);
+    assert_eq!((summary.files[0].added, summary.files[0].removed), (1, 1));
+    let changes = h.sessions.changes();
+    let detail = changes.detail(CHAT, &summary.turn_id, &h.root).unwrap();
+    assert!(!detail.files[0].rows.is_empty());
+    assert_eq!(detail.files[0].undo, UndoState::Available);
+    let out = changes
+        .revert(CHAT, &summary.turn_id, &h.root, &["notes.txt".into()])
+        .unwrap();
+    assert_eq!(out[0].result, RevertResult::Reverted);
+    assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\n");
+    h.sessions.points().retract("probe-git");
+}
+
 /// ADR 2026-11-18 (changed notes row): the chat's changed notes are sent live when a sub-agent's
 /// edit call ends (not only at turn end), against the text from before the edit, and the command
 /// behind the "Session changes" tab answers with the diff.

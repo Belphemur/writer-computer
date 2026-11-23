@@ -6,7 +6,10 @@
 //! block: the ticker, a hook's caller (the agent's `turn-started` is emitted from a blocking
 //! thread) or a command through `commands::blocking`.
 
-use crate::agent::api::{FileChange, FileChangeKind, TurnFinished, TurnStarted};
+use crate::agent::api::{
+    Baseline, FileChange, FileChangeKind, TurnBaseline, TurnFinished, TurnStarted,
+    BASELINE_MAX_BYTES,
+};
 use crate::git::scheduler::{Action, AgentTurn, Cadence, SyncTimer};
 use crate::git::transport::Exec;
 use crate::git::{self, device, ignore, state as pause_state};
@@ -167,6 +170,10 @@ pub struct Vaults {
     locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
     /// Whether `git-lfs` was found, and when (the login-shell lookup is not free).
     lfs_probe: Mutex<Option<(Instant, bool)>>,
+    /// The repository at the start of each chat's running or last turn, per vault and chat: what
+    /// the agent's `turn-baseline` question is answered from (`git::baseline`). Memory only; a
+    /// chat's next turn, its vault closing and `shutdown` drop it.
+    turn_starts: Mutex<HashMap<(PathBuf, String), git::baseline::TurnStart>>,
     /// Repositories `git lfs install --local` was run for (or found done) since the feature started.
     lfs_installed_in: Mutex<std::collections::HashSet<PathBuf>>,
 }
@@ -246,6 +253,7 @@ impl Vaults {
     pub fn shutdown(&self) {
         self.stopped.store(true, Ordering::SeqCst);
         self.inner.lock().clear();
+        self.turn_starts.lock().clear();
     }
 
     pub fn open(&self, label: &str, root: &Path) {
@@ -268,7 +276,17 @@ impl Vaults {
     }
 
     pub fn close(&self, label: &str) -> Option<PathBuf> {
-        self.inner.lock().remove(label).map(|v| v.root)
+        let (root, last) = {
+            let mut g = self.inner.lock();
+            let root = g.remove(label).map(|v| v.root)?;
+            // another window may still have the vault open
+            let last = !g.values().any(|v| v.root == root);
+            (root, last)
+        };
+        if last {
+            self.turn_starts.lock().retain(|(r, _), _| *r != root);
+        }
+        Some(root)
     }
 
     pub fn labels(&self) -> Vec<String> {
@@ -678,7 +696,10 @@ pub fn flush<R: Runtime>(app: &AppHandle<R>, label: &str) {
 // ---- the agent's points -----------------------------------------------------------------------
 
 /// `agent.turn-started`: save the user's pending edits, then mark the turn running (no user commit
-/// until it ends), so the turn's commit holds only the agent's files.
+/// until it ends), so the turn's commit holds only the agent's files. Then note the repository's
+/// state for the chat (`git::baseline`), so a file a shell command changes can be compared with
+/// what it was; nothing is noted when the commit above could not run (the chat's earlier note is
+/// dropped either way).
 pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
     let Some(v) = vaults(app).filter(|v| !v.stopped()) else {
         return;
@@ -687,14 +708,48 @@ pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
         .root
         .canonicalize()
         .unwrap_or_else(|_| args.root.clone());
-    for label in v.labels_of(&root) {
+    let key = (root.clone(), args.chat_id.clone());
+    v.turn_starts.lock().remove(&key);
+    let labels = v.labels_of(&root);
+    let mut vouchable = !labels.is_empty();
+    for label in labels {
         if active(&root) && !v.turn_running(&label) {
-            let _ = commit_user_now(app, &label);
+            // an error (no identity, a merge begun, ...) or a sync that holds the repository:
+            // the history was not brought up to the start of the turn
+            vouchable &= commit_user_now(app, &label).is_ok() && !v.is_syncing(&label);
+        } else {
+            vouchable &= active(&root);
         }
         v.with(&label, |vault| {
             vault.cadence.turn_started(&args.chat_id, Instant::now())
         });
     }
+    if vouchable && !v.stopped() {
+        if let Some(start) = git::baseline::record(&root) {
+            v.turn_starts.lock().insert(key, start);
+        }
+    }
+}
+
+/// `agent.turn-baseline`: the text of a file as it was when the chat's turn started, when the
+/// history can vouch for it (`git::baseline::answer`); no answer otherwise.
+pub fn turn_baseline<R: Runtime>(app: &AppHandle<R>, query: &TurnBaseline) -> Option<Baseline> {
+    let v = vaults(app).filter(|v| !v.stopped())?;
+    let root = query
+        .root
+        .canonicalize()
+        .unwrap_or_else(|_| query.root.clone());
+    let start = v
+        .turn_starts
+        .lock()
+        .get(&(root.clone(), query.chat_id.clone()))
+        .cloned()?;
+    Some(
+        match git::baseline::answer(&root, &start, &query.path, BASELINE_MAX_BYTES)? {
+            git::baseline::Vouched::Text(text) => Baseline::Text(text),
+            git::baseline::Vouched::Absent => Baseline::Absent,
+        },
+    )
 }
 
 fn touched(files: &[FileChange]) -> Vec<String> {
