@@ -974,8 +974,13 @@ mod tests {
             std::thread::sleep(Duration::from_secs(2));
         });
         let reg = StreamRegistry::default();
+        // Keep the receivers alive: a dropped receiver makes `emit` return
+        // false, which ends the stream (and unregisters it) as soon as its
+        // head arrives. That raced the first assert (fast on Linux loopback).
+        let mut receivers = Vec::new();
         for (label, root) in [("a", "/v1"), ("b", "/v2")] {
-            let (emit, _r) = collect_events();
+            let (emit, r) = collect_events();
+            receivers.push(r);
             reg.start(
                 client(),
                 label,
@@ -990,5 +995,6 @@ mod tests {
         assert_eq!(reg.active(), 1);
         reg.cancel_root(std::path::Path::new("/v2"));
         assert_eq!(reg.active(), 0);
+        drop(receivers);
     }
 }

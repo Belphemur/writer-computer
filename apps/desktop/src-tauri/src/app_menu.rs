@@ -3,7 +3,7 @@
 //! `definition(os)` is plain data (Tauri-free, so a test compares both OSes). The renderer turns
 //! it into a Tauri menu: on macOS the native menu bar, on Linux a popup menu opened from the
 //! chrome bar's menu button (`app_menu_popup`); Linux gets no menu-bar row. macOS-only items
-//! (Services, Hide, Hide Others, Show All, the osascript command-line-tool install) are not
+//! (Services, Hide, Hide Others, Show All) are not
 //! created on Linux, and GTK supports only a few predefined items, so the rest become ordinary
 //! items with an id handled in `lib.rs`.
 
@@ -18,16 +18,16 @@ use tauri::Wry;
 
 pub const UPDATER_CHECK_ID: &str = "updater.check";
 pub const PREFERENCES_ID: &str = "preferences.open";
-/// The macOS "Install 'writer' Command Line Tool" item (install and uninstall toggle). Linux has
-/// no such item yet: it comes back with its listener when the CLI install lane lands.
+/// The "Install 'writer' Command Line Tool" item (install and uninstall toggle, label set from
+/// `cli_status` when the menu is built, opened and after each run; `lib.rs`).
 pub const CLI_ID: &str = "cli.toggle";
 pub const QUIT_ID: &str = "app.quit";
 pub const MINIMIZE_ID: &str = "window.minimize";
 pub const FULLSCREEN_ID: &str = "window.fullscreen";
 pub const CLOSE_WINDOW_ID: &str = "window.close";
 
-pub const CLI_INSTALL_LABEL_MACOS: &str = "Install 'writer' Command Line Tool…";
-pub const CLI_UNINSTALL_LABEL_MACOS: &str = "Uninstall 'writer' Command Line Tool…";
+pub const CLI_INSTALL_LABEL: &str = "Install 'writer' Command Line Tool…";
+pub const CLI_UNINSTALL_LABEL: &str = "Uninstall 'writer' Command Line Tool…";
 
 /// A toolkit-provided item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +115,7 @@ pub fn definition(os: Os) -> Vec<Section> {
                 item(UPDATER_CHECK_ID, "Check for Updates…", None),
                 S,
                 item(PREFERENCES_ID, "Preferences…", Some("CmdOrCtrl+,")),
-                item(CLI_ID, CLI_INSTALL_LABEL_MACOS, None),
+                item(CLI_ID, CLI_INSTALL_LABEL, None),
                 S,
                 N(Native::Services),
                 S,
@@ -162,8 +162,6 @@ fn for_linux(section: Section) -> Section {
                 OnLinux::Item(id, label) => Some(item(id, label, None)),
                 OnLinux::Omitted => None,
             },
-            // macOS-only for now (see `CLI_ID`).
-            Entry::Item { id: CLI_ID, .. } => None,
             // A popup menu's accelerators never fire (only a menu bar's do); Linux binds its
             // chords in the web keybinding registry instead.
             Entry::Item { id, label, .. } => Some(item(id, label, None)),
@@ -211,7 +209,7 @@ impl Action {
     }
 }
 
-/// The rendered menu and the ordinary items by id (the updater and the macOS command item
+/// The rendered menu and the ordinary items by id (the updater and the command-line-tool item
 /// rewrite their text later).
 pub struct Built {
     pub menu: Menu<Wry>,
@@ -304,6 +302,12 @@ pub async fn app_menu_popup(app: tauri::AppHandle, window: tauri::Window) -> Res
     let Some(popup) = app.try_state::<PopupMenu>() else {
         return Ok(());
     };
+    // The install state may have changed since the last open (Settings > Command line).
+    #[cfg(unix)]
+    {
+        let app = app.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || crate::refresh_cli_menu(&app)).await;
+    }
     if let Ok(mut w) = popup.window.lock() {
         *w = Some(window.label().to_string());
     }
@@ -381,9 +385,9 @@ mod tests {
             assert!(natives(Os::MacOs).contains(&n));
             assert!(!linux.contains(&n), "{n:?} on Linux");
         }
-        // The command-line-tool item comes back on Linux with its listener.
+        // The command-line-tool item is on both (the AppImage has no package to install it).
         assert!(ids(Os::MacOs).contains(&CLI_ID));
-        assert!(!ids(Os::Linux).contains(&CLI_ID));
+        assert!(ids(Os::Linux).contains(&CLI_ID));
     }
 
     #[test]
@@ -462,7 +466,7 @@ Window: Minimize | Fullscreen | CloseWindow"
     fn the_linux_menu_outline() {
         assert_eq!(
             outline(Os::Linux),
-            "Writer: About | - | updater.check=Check for Updates…[] | - | preferences.open=Preferences…[] | - | app.quit=Quit[]\n\
+            "Writer: About | - | updater.check=Check for Updates…[] | - | preferences.open=Preferences…[] | cli.toggle=Install 'writer' Command Line Tool…[] | - | app.quit=Quit[]\n\
 Edit: Cut | Copy | Paste | SelectAll\n\
 Window: window.minimize=Minimize[] | window.fullscreen=Toggle Full Screen[] | window.close=Close Window[]"
         );

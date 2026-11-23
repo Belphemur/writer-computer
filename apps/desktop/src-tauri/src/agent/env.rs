@@ -1,7 +1,7 @@
 //! The child's environment (spec 8): the app's environment minus anything secret-looking
 //! (`plugin_env::secret_looking`, shared with the plugin host), except what the claude CLI itself
 //! needs for sign-in and routing; `TERM=dumb`; PATH = the login-shell PATH first, then the app's,
-//! then `/usr/local/bin` (the user-installed `writer` shim); the launcher directory of
+//! then the user-installed `writer` shim's folder (`/usr/local/bin`; also `~/.local/bin` on Linux); the launcher directory of
 //! `cli_launcher` (the `writer` command that always works) goes before all of them.
 //! Writer's own secrets (the plugin keychain item) are never in the process environment, so
 //! there is nothing of ours to leak; `WRITER_*` variables are dropped anyway.
@@ -9,9 +9,11 @@
 //! The child is started with `env_clear()` plus exactly this list.
 
 use super::events::AgentMemory;
+use crate::platform::Os;
 use crate::plugin_env::secret_looking;
 use std::collections::HashSet;
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 /// Secret-looking names the CLI needs: API-key / token auth, and the Bedrock / Vertex settings.
 const EXACT: &[&str] = &[
@@ -35,21 +37,30 @@ fn allowed(name: &str) -> bool {
     !secret_looking(name) || cli_needs(name)
 }
 
-/// Where "Install 'writer' Command Line Tool" puts the `writer` shim (the parent of
-/// `commands::shell_install::INSTALL_TARGET`). Appended last, so a login shell that does not
-/// list it (fish without `path_helper`) still lets the agent's Bash run `writer`.
-const WRITER_SHIM_DIR: &str = "/usr/local/bin";
+/// Where "Install 'writer' Command Line Tool" puts the `writer` shim: `/usr/local/bin` on macOS
+/// (the parent of `commands::shell_install::INSTALL_TARGET`), `~/.local/bin` on Linux (the parent
+/// of `cli_install::user_target`, the one place that path is spelled). Appended last, so a login
+/// shell that does not list it (fish without `path_helper`, a GUI launch) still lets the agent's
+/// Bash run `writer`.
+fn shim_dirs(os: Os, home: Option<&OsStr>) -> Vec<PathBuf> {
+    let user = crate::cli_install::user_target(home)
+        .and_then(|t| t.parent().map(Path::to_path_buf))
+        .filter(|_| os == Os::Linux);
+    std::iter::once(PathBuf::from("/usr/local/bin"))
+        .chain(user)
+        .collect()
+}
 
 /// `launcher` first (so a stale user-installed shim never wins), then `login` entries, then `app`,
-/// then [`WRITER_SHIM_DIR`]: absolute and unique.
-fn merge_path(launcher: Option<&Path>, login: &str, app: &str) -> String {
+/// then the `shim` dirs: absolute and unique.
+fn merge_path(launcher: Option<&Path>, login: &str, app: &str, shim: Vec<PathBuf>) -> String {
     let mut seen = HashSet::new();
     let dirs: Vec<_> = launcher
         .map(Path::to_path_buf)
         .into_iter()
         .chain(std::env::split_paths(login))
         .chain(std::env::split_paths(app))
-        .chain(std::iter::once(std::path::PathBuf::from(WRITER_SHIM_DIR)))
+        .chain(shim)
         .filter(|d| d.is_absolute() && seen.insert(d.clone()))
         .collect();
     std::env::join_paths(dirs)
@@ -63,7 +74,17 @@ pub fn child_env(
     login_path: &str,
     launcher_dir: Option<&Path>,
 ) -> Vec<(String, String)> {
+    child_env_on(Os::current(), vars, login_path, launcher_dir)
+}
+
+fn child_env_on(
+    os: Os,
+    vars: impl Iterator<Item = (String, String)>,
+    login_path: &str,
+    launcher_dir: Option<&Path>,
+) -> Vec<(String, String)> {
     let mut app_path = String::new();
+    let mut home = None;
     let mut out: Vec<(String, String)> = Vec::new();
     for (k, v) in vars {
         if v.contains('\0') {
@@ -71,13 +92,19 @@ pub fn child_env(
         }
         if k == "PATH" {
             app_path = v;
-        } else if allowed(&k) {
-            out.push((k, v));
+        } else {
+            if k == "HOME" {
+                home = Some(v.clone());
+            }
+            if allowed(&k) {
+                out.push((k, v));
+            }
         }
     }
+    let shim = shim_dirs(os, home.as_deref().map(OsStr::new));
     out.push((
         "PATH".into(),
-        merge_path(launcher_dir, login_path, &app_path),
+        merge_path(launcher_dir, login_path, &app_path, shim),
     ));
     out.push(("TERM".into(), "dumb".into()));
     out.sort();
@@ -243,6 +270,47 @@ mod tests {
         assert_eq!(
             path_of("/usr/bin", "/usr/bin:/x"),
             "/usr/bin:/login/bin:/x:/usr/local/bin"
+        );
+    }
+
+    #[test]
+    fn linux_adds_the_user_shim_dir_last_and_macos_does_not() {
+        let path_on = |os: Os, home: &[(&str, &str)]| {
+            let vars = [("PATH", "/usr/bin")].iter().chain(home.iter());
+            child_env_on(
+                os,
+                vars.map(|(k, v)| (k.to_string(), v.to_string())),
+                "/login/bin",
+                None,
+            )
+            .into_iter()
+            .find(|(k, _)| k == "PATH")
+            .unwrap()
+            .1
+        };
+        assert_eq!(
+            path_on(Os::Linux, &[("HOME", "/home/me")]),
+            "/login/bin:/usr/bin:/usr/local/bin:/home/me/.local/bin"
+        );
+        // already on the login PATH: listed once, where the login shell has it
+        let on_login = child_env_on(
+            Os::Linux,
+            [("HOME", "/home/me"), ("PATH", "/usr/bin")]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string())),
+            "/home/me/.local/bin",
+            None,
+        );
+        let p = &on_login.iter().find(|(k, _)| k == "PATH").unwrap().1;
+        assert_eq!(p, "/home/me/.local/bin:/usr/bin:/usr/local/bin");
+        // no HOME: nothing to add; macOS never adds it
+        assert_eq!(
+            path_on(Os::Linux, &[]),
+            "/login/bin:/usr/bin:/usr/local/bin"
+        );
+        assert_eq!(
+            path_on(Os::MacOs, &[("HOME", "/Users/me")]),
+            "/login/bin:/usr/bin:/usr/local/bin"
         );
     }
 }

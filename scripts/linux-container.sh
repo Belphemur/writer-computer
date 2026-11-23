@@ -2,7 +2,7 @@
 # Build and test Writer on Linux from a Mac: an ubuntu:26.04 container (arm64 natively on Apple
 # silicon, the same release the x86_64 CI uses). Needs Docker (Rancher Desktop's `docker` works).
 #
-#   scripts/linux-container.sh [check|test|vitest|rust|bundle|e2e|all|shell]    (default: all)
+#   bash scripts/linux-container.sh [check|test|vitest|rust|bundle|e2e|all|shell]    (default: all)
 #
 #   check    vp check
 #   test     vitest then cargo (both always run); `vitest` and `rust` run one half
@@ -26,7 +26,7 @@ PNPM_VERSION="$(sed -n 's/.*"packageManager": "pnpm@\(.*\)".*/\1/p' "$ROOT_DIR/p
 case "$STEP" in
   check | test | vitest | rust | bundle | e2e | all | shell) ;;
   *)
-    echo "usage: $0 [check|test|vitest|rust|bundle|e2e|all|shell]" >&2
+    echo "usage: bash scripts/linux-container.sh [check|test|vitest|rust|bundle|e2e|all|shell]" >&2
     exit 2
     ;;
 esac

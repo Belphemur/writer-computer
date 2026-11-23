@@ -64,7 +64,7 @@ xargs -a scripts/linux-build-deps.txt sudo apt-get install -y --no-install-recom
 
 (WebKitGTK 4.1, GTK 3, libsoup 3, a C compiler for the bundled SQLite, `patchelf`/`rpm` for the packages, `xvfb` for the e2e smoke.) Then `vp install`, `vp dev`, and the validation above work as on macOS. `vp exec tauri build` makes the AppImage, `.deb` and `.rpm` (the signing key is only needed for the updater artifacts; add `--config '{"bundle":{"createUpdaterArtifacts":false}}'` without it). The e2e smoke needs `cargo install tauri-webdriver --locked`, then from `apps/desktop/e2e`: `pnpm run build:app` and `xvfb-run -a pnpm run test:smoke` (see its README).
 
-From a Mac, `scripts/linux-container.sh` does all of it in an `ubuntu:26.04` container (Rancher Desktop or any Docker; arm64 natively on Apple silicon): `check`, `test`, `bundle`, `e2e`, or `shell`.
+From a Mac, `bash scripts/linux-container.sh` does all of it in an `ubuntu:26.04` container (Rancher Desktop or any Docker; arm64 natively on Apple silicon): `check`, `test`, `bundle`, `e2e`, or `shell`.
 
 ## Install and first launch
 

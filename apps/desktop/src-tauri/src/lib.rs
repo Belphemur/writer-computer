@@ -63,19 +63,18 @@ use open_target::resolve_path;
 pub use open_target::PendingOpenPayload;
 use state::AppState;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use tauri::menu::MenuItem;
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
 use tauri::{DragDropEvent, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 use app_menu::{
-    CLI_INSTALL_LABEL_MACOS as CLI_MENU_INSTALL_LABEL,
-    CLI_UNINSTALL_LABEL_MACOS as CLI_MENU_UNINSTALL_LABEL,
+    CLI_INSTALL_LABEL as CLI_MENU_INSTALL_LABEL, CLI_UNINSTALL_LABEL as CLI_MENU_UNINSTALL_LABEL,
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 struct CliMenuItem(MenuItem<tauri::Wry>);
 
 pub(crate) const MAIN_WINDOW_LABEL: &str = "main";
@@ -353,7 +352,7 @@ fn install_app_menu(
         )),
     )));
 
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     if let Some(cli_item) = built.items.remove(app_menu::CLI_ID) {
         app.manage(CliMenuItem(cli_item));
         refresh_cli_menu(app);
@@ -367,10 +366,9 @@ fn install_app_menu(
         match action {
             Action::CheckForUpdates => updater::start_check(app.clone(), true),
             Action::OpenPreferences => emit_to_focused_window(app, "menu:open-preferences"),
-            #[cfg(target_os = "macos")]
+            #[cfg(unix)]
             Action::ToggleCli => run_cli_toggle(app.clone()),
-            // Linux has no such item yet (`app_menu::CLI_ID`).
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(unix))]
             Action::ToggleCli => {}
             // Ordinary items standing in for predefined ones GTK lacks (see `app_menu`). Quit
             // goes through `exit`, the same path as the macOS quit item; the window ones act on
@@ -434,8 +432,8 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn refresh_cli_menu(app: &tauri::AppHandle) {
+#[cfg(unix)]
+pub(crate) fn refresh_cli_menu(app: &tauri::AppHandle) {
     let installed = commands::shell_install::cli_status_blocking().is_ok_and(|s| s.installed);
     let label = if installed {
         CLI_MENU_UNINSTALL_LABEL
@@ -447,7 +445,7 @@ fn refresh_cli_menu(app: &tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn run_cli_toggle(app: tauri::AppHandle) {
     if commands::shell_install::cli_status_blocking().is_ok_and(|s| s.installed) {
         run_cli_uninstall(app);
@@ -456,7 +454,7 @@ fn run_cli_toggle(app: tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn run_cli_install(app: tauri::AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
     tauri::async_runtime::spawn_blocking(
@@ -483,7 +481,7 @@ fn run_cli_install(app: tauri::AppHandle) {
     );
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn run_cli_uninstall(app: tauri::AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
     tauri::async_runtime::spawn_blocking(move || {
