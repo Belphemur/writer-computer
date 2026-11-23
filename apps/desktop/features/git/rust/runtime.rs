@@ -144,8 +144,17 @@ struct Vault {
     record: SyncRecord,
     /// The automatic setup of this open vault has been tried (once per open).
     auto_done: bool,
-    /// The last failure, one short line (never a path or text of the vault).
-    error: Option<String>,
+    /// The last failure (never a path or text of the vault).
+    error: Option<VaultError>,
+}
+
+/// A failed commit: the line for the status, what failed ([`error_kind`]) and git's sanitized
+/// message for "Details".
+#[derive(Debug, Clone)]
+pub struct VaultError {
+    pub line: String,
+    pub kind: &'static str,
+    pub details: String,
 }
 
 /// The one owner of the feature's runtime state, created in `start` and kept in the feature's
@@ -202,11 +211,37 @@ impl Drop for Busy<'_> {
 /// One short, safe line for a failure: git's own message could carry the vault's path.
 pub fn error_line(e: &git::Error) -> String {
     match e {
+        git::Error::Signing { .. } => e.to_string(),
         git::Error::NoIdentity => e.to_string(),
         git::Error::Operation(_) => e.to_string(),
         git::Error::NotARepo => "Not a Git repository".into(),
         git::Error::Git(_) => "Git failed".into(),
         git::Error::Io(_) => "Could not read or write the vault".into(),
+    }
+}
+
+/// The log line of a failure: its line, then git's sanitized message when it has one (the vault's
+/// path is already gone from it).
+fn failure_log(e: &git::Error) -> String {
+    match error_details(e) {
+        d if d.is_empty() => error_line(e),
+        d => format!("{}: {d}", error_line(e)),
+    }
+}
+
+/// What failed, for a "Show logs" button to switch on: `signing` or `other`.
+pub fn error_kind(e: &git::Error) -> &'static str {
+    match e {
+        git::Error::Signing { .. } => "signing",
+        _ => "other",
+    }
+}
+
+/// git's sanitized message of a failure that has one.
+pub fn error_details(e: &git::Error) -> String {
+    match e {
+        git::Error::Signing { details } => details.clone(),
+        _ => String::new(),
     }
 }
 
@@ -302,13 +337,23 @@ impl Vaults {
         self.inner.lock().get(label).map(|v| v.root.clone())
     }
 
+    #[cfg(test)]
     pub fn error_of(&self, label: &str) -> Option<String> {
+        self.failure_of(label).map(|e| e.line)
+    }
+
+    pub fn failure_of(&self, label: &str) -> Option<VaultError> {
         self.inner.lock().get(label).and_then(|v| v.error.clone())
     }
 
-    pub fn set_error(&self, label: &str, error: Option<String>) {
+    /// Records a failure (`None` clears it) as the line, the kind and the details of `e`.
+    pub fn set_error(&self, label: &str, error: Option<&git::Error>) {
         if let Some(v) = self.inner.lock().get_mut(label) {
-            v.error = error;
+            v.error = error.map(|e| VaultError {
+                line: error_line(e),
+                kind: error_kind(e),
+                details: error_details(e),
+            });
         }
     }
 
@@ -476,6 +521,16 @@ pub(super) fn announce_changed<R: Runtime>(app: &AppHandle<R>, label: &str) {
 /// While a sync runs nothing is committed (the sync commits first and owns the repository until it
 /// is done): the cadence tries again at its next pass.
 pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bool, git::Error> {
+    commit_user_with(app, label, git::ChatNotes::Commit)
+}
+
+/// [`commit_user_now`] under a chat-note policy (`Hold`: before a turn, whose commit takes its
+/// chat's note).
+fn commit_user_with<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    chats: git::ChatNotes,
+) -> Result<bool, git::Error> {
     let Some(v) = vaults(app) else {
         return Ok(false);
     };
@@ -489,7 +544,7 @@ pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bo
         log::info!(target: "git", "git: a sync holds the repository, the commit waits");
         return Ok(false);
     }
-    commit_user_unchecked(app, &v, label)
+    commit_user_checked(app, &v, label, chats)
 }
 
 /// [`commit_user_now`] without the sync check: the sync's own first step.
@@ -497,6 +552,15 @@ pub(super) fn commit_user_unchecked<R: Runtime>(
     app: &AppHandle<R>,
     v: &Vaults,
     label: &str,
+) -> Result<bool, git::Error> {
+    commit_user_checked(app, v, label, git::ChatNotes::Commit)
+}
+
+fn commit_user_checked<R: Runtime>(
+    app: &AppHandle<R>,
+    v: &Vaults,
+    label: &str,
+    chats: git::ChatNotes,
 ) -> Result<bool, git::Error> {
     let Some(root) = v.root_of(label) else {
         return Ok(false);
@@ -509,7 +573,14 @@ pub(super) fn commit_user_unchecked<R: Runtime>(
     recover_now(app, label, &root, &dev);
     let lfs = lfs_of(app, label, false);
     ensure_lfs_installed(app, v, &root, lfs);
-    let result = git::commit_user(&root, &cfg.template, &git::template_ctx(&dev), &dev, lfs);
+    let result = git::commit_user_with(
+        &root,
+        &cfg.template,
+        &git::template_ctx(&dev),
+        &dev,
+        lfs,
+        chats,
+    );
     v.committed(label);
     match &result {
         Ok(Some(_)) => {
@@ -521,8 +592,14 @@ pub(super) fn commit_user_unchecked<R: Runtime>(
         Ok(None) => v.set_error(label, None),
         Err(git::Error::Operation(_)) => announce(app, label),
         Err(e) => {
-            log::warn!(target: "git", "git: commit failed: {}", error_line(e));
-            v.set_error(label, Some(error_line(e)));
+            log::warn!(target: "git", "git: commit failed: {}", failure_log(e));
+            v.set_error(label, Some(e));
+            if matches!(e, git::Error::Signing { .. }) {
+                // the changes stay pending; the next try is a minute away, not the next second
+                v.with(label, |vault| {
+                    vault.cadence.signing_failed(Instant::now(), None)
+                });
+            }
             v.identity.forget(&root);
             announce(app, label);
         }
@@ -550,8 +627,16 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
         Ok(None) => {}
         Err(git::Error::Operation(_)) => announce(app, label),
         Err(e) => {
-            log::warn!(target: "git", "git: agent commit failed: {}", error_line(&e));
-            v.set_error(label, Some(error_line(&e)));
+            log::warn!(target: "git", "git: agent commit failed: {}", failure_log(&e));
+            v.set_error(label, Some(&e));
+            if matches!(e, git::Error::Signing { .. }) {
+                // the turn's commit stays queued, first in line at the retry
+                v.with(label, |vault| {
+                    vault
+                        .cadence
+                        .signing_failed(Instant::now(), Some(turn.clone()))
+                });
+            }
             v.identity.forget(&root);
             announce(app, label);
         }
@@ -607,7 +692,7 @@ fn auto_setup_once<R: Runtime>(app: &AppHandle<R>, v: &Vaults, label: &str) {
         Ok(_) => {}
         Err(e) => {
             log::warn!(target: "git", "git: automatic setup failed: {}", error_line(&e));
-            v.set_error(label, Some(error_line(&e)));
+            v.set_error(label, Some(&e));
             announce(app, label);
         }
     }
@@ -722,7 +807,8 @@ pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
         if active(&root) && !v.turn_running(&label) {
             // an error (no identity, a merge begun, ...) or a sync that holds the repository:
             // the history was not brought up to the start of the turn
-            vouchable &= commit_user_now(app, &label).is_ok() && !v.is_syncing(&label);
+            vouchable &= commit_user_with(app, &label, git::ChatNotes::Hold).is_ok()
+                && !v.is_syncing(&label);
         } else {
             vouchable &= active(&root);
         }

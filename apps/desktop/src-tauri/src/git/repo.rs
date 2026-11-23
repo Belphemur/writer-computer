@@ -11,6 +11,8 @@
 
 use super::lfs::{self, Lfs, Pointer};
 use super::message::{self, Change, Message};
+use super::signing::{self, Signing};
+use super::transport::Exec;
 use gix::bstr::{BStr, BString, ByteSlice};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -29,6 +31,10 @@ pub enum Error {
     Operation(String),
     #[error("{0}")]
     Git(String),
+    /// Commits are signed (git's configuration says so) and git could not sign: no commit is made.
+    /// `details` is git's sanitized message, for the log and "Details".
+    #[error("Signing failed: unlock your key")]
+    Signing { details: String },
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -162,6 +168,9 @@ pub struct Repo {
     /// Does any `.gitattributes` name the LFS filter? Looked up once, forgotten when Writer
     /// rewrites the managed block.
     lfs_rules: std::cell::Cell<Option<bool>>,
+    /// Where git children run for signing ([`Repo::with_exec`]); a short-lived runner with no scope
+    /// of its own when unset, like the identity lookup.
+    exec: Option<Exec>,
 }
 
 /// The `filter` attribute of paths, from every `.gitattributes` git reads (gix's attribute stack:
@@ -221,11 +230,17 @@ impl Rules<'_> {
     }
 }
 
+/// How many commits of the branch are looked at for a signature (the suggestion to sign).
+const SIGNED_LOOKBACK: usize = 20;
+
 #[cfg(test)]
 thread_local! {
     /// Tests read only the repository's own config, never the user's (`HOME`, `XDG_CONFIG_HOME`,
     /// the system config, `GIT_*`): a thread-local, so the other tests are unaffected.
     pub(crate) static ISOLATED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The runner a repository without its own signs through in a test (a temporary `HOME`, a fake
+    /// signer on `PATH`): isolated repositories otherwise never ask the installed git.
+    pub(crate) static TEST_EXEC: std::cell::RefCell<Option<Exec>> = const { std::cell::RefCell::new(None) };
 }
 
 fn open_gix(root: &Path) -> Result<gix::Repository> {
@@ -265,6 +280,7 @@ impl Repo {
             repo,
             lfs: Lfs::OFF,
             lfs_rules: Default::default(),
+            exec: None,
         }))
     }
 
@@ -284,6 +300,7 @@ impl Repo {
             repo: open_gix(root)?,
             lfs: Lfs::OFF,
             lfs_rules: Default::default(),
+            exec: None,
         })
     }
 
@@ -293,6 +310,78 @@ impl Repo {
     pub fn with_lfs(mut self, lfs: Lfs) -> Repo {
         self.lfs = lfs;
         self
+    }
+
+    /// The same repository whose git children (signing) run through `exec`: the sync passes its
+    /// scope's runner, tests a temporary `HOME`.
+    pub fn with_exec(mut self, exec: Exec) -> Repo {
+        self.exec = Some(exec);
+        self
+    }
+
+    /// Where a git child runs: the runner given, else one with no scope; none in a test that
+    /// isolated the repository from the user's configuration (as for [`Repo::identities`]).
+    fn git_exec(&self) -> Option<Exec> {
+        if let Some(exec) = &self.exec {
+            return Some(exec.clone());
+        }
+        #[cfg(test)]
+        if let Some(exec) = TEST_EXEC.with(|e| e.borrow().clone()) {
+            return Some(exec);
+        }
+        #[cfg(test)]
+        if ISOLATED.with(|i| i.get()) {
+            return None;
+        }
+        Some(Exec::new(crate::features::scope::Spawner::detached()))
+    }
+
+    /// The runner commits are signed through, `None` when git's configuration does not say commits
+    /// are signed (or git is absent): the gix path is unchanged then.
+    fn signer(&self) -> Option<Exec> {
+        self.git_exec()
+            .filter(|exec| signing::enabled(exec, &self.root))
+    }
+
+    /// What git says about signing here, and whether recent commits are signed.
+    pub fn signing(&self) -> Signing {
+        let Some(exec) = self.git_exec() else {
+            return Signing::default();
+        };
+        Signing {
+            on: signing::enabled(&exec, &self.root),
+            key: signing::key_resolves(&exec, &self.root),
+            signed_history: self.signed_among_recent(SIGNED_LOOKBACK),
+        }
+    }
+
+    /// Whether any of the last `n` commits on HEAD's first-parent line carries a signature.
+    fn signed_among_recent(&self, n: usize) -> bool {
+        let Ok(head) = self.repo.head_id() else {
+            return false;
+        };
+        let mut id = head.detach();
+        for _ in 0..n {
+            let Ok(commit) = self.repo.find_commit(id) else {
+                return false;
+            };
+            let Ok(decoded) = commit.decode() else {
+                return false;
+            };
+            if decoded
+                .extra_headers
+                .iter()
+                .any(|(k, _)| *k == "gpgsig" || *k == "gpgsig-sha256")
+            {
+                return true;
+            }
+            let next = decoded.parents().next();
+            match next {
+                Some(parent) => id = parent,
+                None => return false,
+            }
+        }
+        false
     }
 
     /// The repository's common git directory (`.git`, or the main repository's for a linked
@@ -865,11 +954,20 @@ impl Repo {
             return Err(Error::Operation(super::sync::INTERRUPTED.into()));
         }
         let ids = self.identities()?;
+        // asked before anything is written: signing on and git unable to sign makes no commit
+        let signer = self.signer();
         let repo = &self.repo;
+        let now = gix::date::Time::now_local_or_utc();
+        let sig_of = |who: &Identity| Sig {
+            name: who.name.clone(),
+            email: who.email.clone(),
+            seconds: now.seconds,
+            offset: now.offset,
+        };
         let signature = |who: &Identity| gix::actor::Signature {
             name: who.name.as_str().into(),
             email: who.email.as_str().into(),
-            time: gix::date::Time::now_local_or_utc(),
+            time: now,
         };
         let (committer, author) = (signature(&ids.committer), signature(&ids.author));
         let (mut committer_time, mut author_time) = (Default::default(), Default::default());
@@ -914,20 +1012,39 @@ impl Repo {
         }
         index.sort_entries();
         let tree = editor.write().map_err(git)?;
-        let id = repo
-            .commit_as(
-                committer.to_ref(&mut committer_time),
-                author.to_ref(&mut author_time),
-                "HEAD",
-                message.render(),
-                tree.detach(),
-                parent,
-            )
-            .map_err(git)?;
+        let id = match signer {
+            // git writes the signed commit object; the branch then moves only if nobody moved it
+            Some(exec) => {
+                let parents: Vec<String> = parent.iter().map(|p| p.to_string()).collect();
+                let id = signing::commit_tree(
+                    &exec,
+                    &self.root,
+                    &tree.to_string(),
+                    &parents,
+                    message.render().as_bytes(),
+                    &sig_of(&ids.author),
+                    &sig_of(&ids.committer),
+                )
+                .map_err(|e| Error::Signing { details: e.details })?;
+                self.move_head_as(&id, parents.first().map(String::as_str), "commit")?;
+                id
+            }
+            None => repo
+                .commit_as(
+                    committer.to_ref(&mut committer_time),
+                    author.to_ref(&mut author_time),
+                    "HEAD",
+                    message.render(),
+                    tree.detach(),
+                    parent,
+                )
+                .map_err(git)?
+                .to_string(),
+        };
         index_file
             .write(gix::index::write::Options::default())
             .map_err(git)?;
-        Ok(id.to_string())
+        Ok(id)
     }
 
     /// Writes the managed `.gitattributes` block so it tracks `lines` besides what it tracked, and
@@ -1627,6 +1744,14 @@ impl Repo {
         author: &Sig,
         committer: &Sig,
     ) -> Result<String> {
+        if let Some(exec) = self.signer() {
+            // the replayed copy is signed again, as configured: its old signature does not hold
+            // for a commit with another parent and tree
+            return signing::commit_tree(
+                &exec, &self.root, tree, parents, message, author, committer,
+            )
+            .map_err(|e| Error::Signing { details: e.details });
+        }
         let sig = |s: &Sig| gix::actor::Signature {
             name: s.name.as_str().into(),
             email: s.email.as_str().into(),
@@ -1652,6 +1777,11 @@ impl Repo {
 
     /// Moves the branch HEAD is on to `new` when it is still at `old` (`None`: not born yet).
     pub fn move_head(&self, new: &str, old: Option<&str>) -> Result<()> {
+        self.move_head_as(new, old, "sync")
+    }
+
+    /// [`Repo::move_head`] with the reflog's reason (`writer: <what>`).
+    fn move_head_as(&self, new: &str, old: Option<&str>, what: &str) -> Result<()> {
         use gix::refs::transaction::PreviousValue;
         let name = self
             .repo
@@ -1666,7 +1796,7 @@ impl Repo {
             None => PreviousValue::MustNotExist,
         };
         self.repo
-            .reference(name, new, constraint, "writer: sync")
+            .reference(name, new, constraint, format!("writer: {what}"))
             .map_err(git)?;
         Ok(())
     }

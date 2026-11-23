@@ -304,6 +304,10 @@ Writer's own moves: a `user(move)` commit records `Writer-Move`, so a file that 
 
 Read through gix.
 
+## Signing and chat notes (the user, 2026-11-23)
+
+Built as ADR 2026-11-18's three 2026-11-23 notes say: git's effective `commit.gpgsign` decides, commits go through `git commit-tree -S` (`git/signing.rs`), a failed signature makes no commit ("Signing failed: unlock your key", kind `signing`, retried after a minute, a sync stops before pushing), signed history or a push refused for missing signatures only suggests it (`Kind::SignatureRequired`), and the "Sign commits" switch writes the vault's own `commit.gpgsign`. Chat notes (`agent::api::is_chat_note`) are never in a user commit: `agent(chat): <title from the note>` with one `Writer-Chat` per chat, or inside their turn's commit.
+
 ## Status and panel
 
 - Status item: Synced · Pending n · Syncing · Conflict n · Offline · Error, and **Local** (committed, no remote; never Offline or Error for a missing remote). A click opens the panel.

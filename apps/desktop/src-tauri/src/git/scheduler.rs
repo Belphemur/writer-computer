@@ -56,11 +56,16 @@ pub struct Cadence {
     /// Turns dropped for running longer than [`TURN_CAP`] (their finish never came).
     expired: usize,
     ended: Vec<AgentTurn>,
+    /// No commit is tried before this (after a failed signature).
+    hold_until: Option<Instant>,
 }
 
 /// A turn that has not finished after this long is taken as lost (the agent was turned off or
 /// died under it), so the user's commits are not blocked for ever.
 pub const TURN_CAP: Duration = Duration::from_secs(30 * 60);
+
+/// How long commits wait after a signature failed.
+pub const SIGN_RETRY: Duration = Duration::from_secs(60);
 
 impl Cadence {
     pub fn new() -> Cadence {
@@ -95,6 +100,18 @@ impl Cadence {
         self.ended.insert(0, turn);
     }
 
+    /// A commit could not be signed (a locked key, a refused prompt): nothing is lost, the changes
+    /// stay pending and the turn's commit (`turn`) goes first in line again, but nothing is tried
+    /// before [`SIGN_RETRY`] has passed, so a signer that prompts is not asked every second.
+    pub fn signing_failed(&mut self, now: Instant, turn: Option<AgentTurn>) {
+        self.dirty = true;
+        self.last_write = Some(now);
+        self.hold_until = Some(now + SIGN_RETRY);
+        if let Some(turn) = turn {
+            self.requeue(turn);
+        }
+    }
+
     pub fn turn_running(&self) -> bool {
         !self.running.is_empty()
     }
@@ -117,6 +134,10 @@ impl Cadence {
         self.expired += before - self.running.len();
         if paused || self.turn_running() {
             return Action::Nothing;
+        }
+        match self.hold_until {
+            Some(until) if now < until => return Action::Nothing,
+            _ => self.hold_until = None,
         }
         if !self.ended.is_empty() {
             return Action::CommitAgent(self.ended.remove(0));

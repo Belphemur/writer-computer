@@ -1670,3 +1670,219 @@ fn a_git_that_fails_for_another_reason_leaves_the_identity_to_gix_and_only_its_o
         Err(Error::NoIdentity)
     ));
 }
+
+// ---- chat notes ---------------------------------------------------------------------------------
+
+const CHAT_A: &str = "0b1c2d3e-0000-4000-8000-00000000000a";
+const CHAT_B: &str = "0b1c2d3e-0000-4000-8000-00000000000b";
+
+/// A chat note as the agent writes it: identity and title in the front matter, never the file name.
+fn chat_note(root: &Path, rel: &str, id: &str, title: &str, text: &str) {
+    write(
+        root,
+        rel,
+        &format!("---\nwriter-chat-id: {id}\nwriter-chat-title: {title}\n---\n\n{text}\n"),
+    );
+}
+
+fn head_message(root: &Path) -> Parsed {
+    Repo::open(root).unwrap().unwrap().log(None, 1).unwrap()[0]
+        .message
+        .clone()
+}
+
+fn user_commit(root: &Path) -> Option<String> {
+    commit_user(root, DEFAULT_TEMPLATE, &ctx(), "Studio", Lfs::OFF).unwrap()
+}
+
+#[test]
+fn a_chat_note_alone_is_an_agent_chat_commit_titled_from_the_note() {
+    let dir = history_vault();
+    let root = dir.path();
+    chat_note(
+        root,
+        ".writer/chats/2026-11-23-0900-zzz-file-name-0b1c2d3e.md",
+        CHAT_A,
+        "Plan the review",
+        "hi",
+    );
+    assert!(user_commit(root).is_some());
+    let m = head_message(root);
+    assert_eq!((m.ty, m.scope), (Some(Type::Agent), Some(Scope::Chat)));
+    // the title is the note's, not the file name's
+    assert_eq!(m.subject, "Plan the review");
+    assert_eq!(m.chat.as_deref(), Some(CHAT_A));
+    assert_eq!(m.device.as_deref(), Some("Studio"));
+    // a project's chats live in `.chats`
+    chat_note(root, "Clients/.chats/x.md", CHAT_B, "Acme call", "hi");
+    user_commit(root);
+    assert_eq!(head_message(root).subject, "Acme call");
+}
+
+#[test]
+fn a_user_commit_never_holds_chat_notes_and_several_chats_are_named_like_notes() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Plan.md", "# Plan\n");
+    chat_note(root, ".writer/chats/a.md", CHAT_A, "First", "x");
+    chat_note(root, ".writer/chats/b.md", CHAT_B, "Second", "x");
+    chat_note(
+        root,
+        ".writer/chats/c.md",
+        "0b1c2d3e-0000-4000-8000-00000000000c",
+        "Third",
+        "x",
+    );
+    assert!(user_commit(root).is_some());
+    let repo = Repo::open(root).unwrap().unwrap();
+    let log = repo.log(None, 3).unwrap();
+    assert_eq!(log.len(), 3, "setup, the user's, the chats'");
+    // newest first: the chats' own commit, then the user's with Plan alone
+    assert_eq!(log[0].message.subject, "First, Second (+1)");
+    assert_eq!(log[0].message.scope, Some(Scope::Chat));
+    assert_eq!(log[1].message.ty, Some(Type::User));
+    assert_eq!(log[1].message.subject, "Plan");
+    let in_user = repo
+        .tree_changes(Some(&log[2].id), Some(&log[1].id))
+        .unwrap();
+    assert_eq!(
+        in_user.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(),
+        ["Plan.md"]
+    );
+    let raw = git_cli(root, &["show", "--format=%B", "--no-patch", &log[0].id]);
+    if let Some(raw) = raw {
+        assert_eq!(raw.matches("Writer-Chat:").count(), 3, "{raw}");
+    }
+}
+
+#[test]
+fn holding_chat_notes_back_leaves_them_for_the_turns_commit() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Plan.md", "# Plan\n");
+    chat_note(root, ".writer/chats/a.md", CHAT_A, "First", "x");
+    commit_user_with(
+        root,
+        DEFAULT_TEMPLATE,
+        &ctx(),
+        "Studio",
+        Lfs::OFF,
+        ChatNotes::Hold,
+    )
+    .unwrap();
+    assert_eq!(head_message(root).ty, Some(Type::User));
+    let repo = Repo::open(root).unwrap().unwrap();
+    assert_eq!(
+        repo.changes().unwrap().len(),
+        1,
+        "the note is still pending"
+    );
+}
+
+fn chat_turn(chat: &str, files: &[&str]) -> AgentTurn {
+    AgentTurn {
+        chat_id: chat.into(),
+        turn_id: Some("t1".into()),
+        backend: "claude".into(),
+        title: "Rewrite the guide".into(),
+        models: Vec::new(),
+        files: files.iter().map(|f| f.to_string()).collect(),
+    }
+}
+
+#[test]
+fn a_turns_commit_takes_its_own_chats_note_and_leaves_another_chats() {
+    let dir = history_vault();
+    let root = dir.path();
+    write(root, "Guide.md", "v1\n");
+    chat_note(
+        root,
+        ".writer/chats/a.md",
+        CHAT_A,
+        "Rewrite the guide",
+        "turn",
+    );
+    chat_note(root, ".writer/chats/b.md", CHAT_B, "Other chat", "turn");
+    let id = commit_agent(
+        root,
+        &chat_turn(CHAT_A, &["Guide.md"]),
+        "Agent turn",
+        "Studio",
+        Lfs::OFF,
+    )
+    .unwrap()
+    .unwrap();
+    let repo = Repo::open(root).unwrap().unwrap();
+    let m = head_message(root);
+    assert_eq!((m.ty, m.scope), (Some(Type::Agent), Some(Scope::Add)));
+    assert_eq!(m.subject, "Rewrite the guide");
+    assert_eq!(m.chat.as_deref(), Some(CHAT_A));
+    let log = repo.log(None, 2).unwrap();
+    let parent = log[1].id.clone();
+    let paths: Vec<String> = repo
+        .tree_changes(Some(&parent), Some(&id))
+        .unwrap()
+        .into_iter()
+        .map(|c| c.path)
+        .collect();
+    assert_eq!(
+        paths,
+        [".writer/chats/a.md", "Guide.md"],
+        "one turn, one commit"
+    );
+    // the other chat's note waits for its own commit
+    assert_eq!(repo.changes().unwrap().len(), 1);
+    user_commit(root);
+    assert_eq!(head_message(root).subject, "Other chat");
+}
+
+#[test]
+fn a_turn_whose_files_are_unchanged_still_commits_its_chat_note_as_a_chat_commit() {
+    let dir = history_vault();
+    let root = dir.path();
+    chat_note(root, ".writer/chats/a.md", CHAT_A, "Only talk", "x");
+    commit_agent(
+        root,
+        &chat_turn(CHAT_A, &["Gone.md"]),
+        "Agent turn",
+        "Studio",
+        Lfs::OFF,
+    )
+    .unwrap()
+    .unwrap();
+    let m = head_message(root);
+    assert_eq!(
+        (m.scope, m.subject.as_str()),
+        (Some(Scope::Chat), "Only talk")
+    );
+    assert_eq!(m.turn.as_deref(), Some("t1"));
+}
+
+#[test]
+fn a_failed_signature_requeues_the_turn_and_holds_commits_for_a_minute() {
+    let t0 = Instant::now();
+    let mut c = Cadence::new();
+    c.on_write(t0);
+    c.turn_started("c", t0);
+    c.turn_ended("c", Some(chat_turn("c", &["a.md"])));
+    let quiet = Some(Duration::from_secs(30));
+    let Action::CommitAgent(t) = c.tick(t0, quiet, false) else {
+        panic!("the turn's commit is due first")
+    };
+    c.signing_failed(t0, Some(t.clone()));
+    // nothing for a minute, not on the next second
+    assert_eq!(
+        c.tick(t0 + Duration::from_secs(1), quiet, false),
+        Action::Nothing
+    );
+    assert_eq!(
+        c.tick(t0 + Duration::from_secs(59), quiet, false),
+        Action::Nothing
+    );
+    // then the same turn first, and the user's changes after it
+    assert_eq!(
+        c.tick(t0 + SIGN_RETRY, quiet, false),
+        Action::CommitAgent(t)
+    );
+    assert_eq!(c.tick(t0 + SIGN_RETRY, quiet, false), Action::CommitUser);
+}

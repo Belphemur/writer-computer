@@ -51,6 +51,8 @@ pub enum Scope {
     Merge,
     Setup,
     Ignore,
+    /// Writer's own chat notes (the agent's transcripts).
+    Chat,
 }
 
 impl Scope {
@@ -64,6 +66,7 @@ impl Scope {
             Scope::Merge => "merge",
             Scope::Setup => "setup",
             Scope::Ignore => "ignore",
+            Scope::Chat => "chat",
         }
     }
 
@@ -77,6 +80,7 @@ impl Scope {
             Scope::Merge,
             Scope::Setup,
             Scope::Ignore,
+            Scope::Chat,
         ]
         .into_iter()
         .find(|c| c.as_str() == s)
@@ -142,14 +146,25 @@ fn one(change: &Change) -> String {
     }
 }
 
-/// The changed notes by title, at most two named, then `(+n)`; a move names `from → to`.
-pub fn notes(changes: &[Change]) -> String {
-    let named: Vec<String> = changes.iter().take(2).map(one).collect();
-    let mut out = named.join(", ");
-    if changes.len() > 2 {
-        out.push_str(&format!(" (+{})", changes.len() - 2));
+/// At most two names, then `(+n)`: how a subject names a set of notes or chats.
+fn names(items: &[String]) -> String {
+    let mut out = items.iter().take(2).cloned().collect::<Vec<_>>().join(", ");
+    if items.len() > 2 {
+        out.push_str(&format!(" (+{})", items.len() - 2));
     }
     out
+}
+
+/// The changed notes by title, at most two named, then `(+n)`; a move names `from → to`.
+pub fn notes(changes: &[Change]) -> String {
+    names(&changes.iter().map(one).collect::<Vec<_>>())
+}
+
+/// Whether a change is to one of the agent's chat notes: filed apart from the user's own changes
+/// (`agent(chat)` commits, or the turn's commit for its own chat). The one rule, from the one
+/// place that knows where chats live.
+pub fn is_chat_change(change: &Change) -> bool {
+    crate::agent::api::is_chat_note(change.path())
 }
 
 /// Placeholder values for `git.commit-message`.
@@ -183,8 +198,8 @@ pub fn subject_from_template(template: &str, changes: &[Change], ctx: &TemplateC
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Trailers {
     pub device: String,
-    /// Agent commits: the chat id.
-    pub chat: Option<String>,
+    /// Agent commits: the chat id, one `Writer-Chat` per chat (a turn's commit has one).
+    pub chats: Vec<String>,
     /// Agent commits: the backend (`claude`, `opencode`), never the scope.
     pub agent: Option<String>,
     /// Agent commits: the main agent's model, then one per distinct sub-agent model. Empty when
@@ -302,11 +317,28 @@ impl Message {
             subject: title.to_string(),
             trailers: Trailers {
                 device: device.to_string(),
-                chat: Some(turn.chat_id.to_string()),
+                chats: vec![turn.chat_id.to_string()],
                 agent: Some(turn.backend.to_string()),
                 models,
                 turn: turn.turn_id.map(str::to_string),
                 moves: moves_of(changes),
+            },
+        }
+    }
+
+    /// Chat notes changed outside an agent turn's own commit: the subject names the chats by the
+    /// title in their notes (never the file name), one `Writer-Chat` per chat. `chats` is
+    /// `(id, title)`; a note with no id has no trailer.
+    pub fn chat(chats: &[(Option<String>, String)], device: &str) -> Message {
+        let titles: Vec<String> = chats.iter().map(|(_, t)| t.clone()).collect();
+        Message {
+            ty: Type::Agent,
+            scope: Scope::Chat,
+            subject: names(&titles),
+            trailers: Trailers {
+                device: device.to_string(),
+                chats: chats.iter().filter_map(|(id, _)| id.clone()).collect(),
+                ..Trailers::default()
             },
         }
     }
@@ -337,7 +369,7 @@ impl Message {
             "Writer-Device: {}\n",
             single_line(&self.trailers.device)
         ));
-        if let Some(chat) = &self.trailers.chat {
+        for chat in &self.trailers.chats {
             out.push_str(&format!("Writer-Chat: {}\n", single_line(chat)));
         }
         if let Some(agent) = &self.trailers.agent {
@@ -410,7 +442,9 @@ pub fn parse(text: &str) -> Parsed {
         let value = value.trim().to_string();
         match key {
             "Writer-Device" => parsed.device = Some(value),
-            "Writer-Chat" => parsed.chat = Some(value),
+            "Writer-Chat" => {
+                parsed.chat.get_or_insert(value);
+            }
             "Writer-Agent" => parsed.agent = Some(value),
             "Writer-Model" => parsed.models.push(value),
             "Writer-Turn" => parsed.turn = Some(value),

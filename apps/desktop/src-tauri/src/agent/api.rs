@@ -67,6 +67,29 @@ pub struct TurnFinished {
     pub files: Vec<FileChange>,
 }
 
+/// Whether a vault-relative path (forward slashes) is one of the agent's chat notes
+/// (`.writer/chats/**/*.md`, `<project>/.chats/*.md`). The one place that knows where chats live;
+/// the Git history files them apart from the user's own changes.
+pub fn is_chat_note(rel: &str) -> bool {
+    super::chat_store::is_chat_note_path(rel)
+}
+
+/// Who a chat note is: its id and the title it shows, read from its front matter (never from the
+/// file name). `None` for a text that is not a chat note.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatNote {
+    pub id: String,
+    pub title: String,
+}
+
+pub fn chat_note(text: &str) -> Option<ChatNote> {
+    let meta = super::chat_store::meta_from_text(text).ok()??;
+    Some(ChatNote {
+        id: meta.chat_id,
+        title: meta.title,
+    })
+}
+
 pub static TURN_STARTED: Point<TurnStarted> = Point::new("agent.turn-started", "agent");
 pub static TURN_FINISHED: Point<TurnFinished> = Point::new("agent.turn-finished", "agent");
 

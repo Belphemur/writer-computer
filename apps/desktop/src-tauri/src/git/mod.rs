@@ -40,6 +40,9 @@ pub mod repo;
 pub mod resolve;
 pub mod scheduler;
 pub mod signin;
+pub mod signing;
+#[cfg(test)]
+mod signing_tests;
 pub mod state;
 pub mod sync;
 pub(crate) mod system;
@@ -50,7 +53,9 @@ pub mod transport;
 pub use lfs::Lfs;
 pub use message::Change;
 pub use repo::{Error, Identities, Identity, LogEntry, Repo, Result};
+pub use signing::Signing;
 
+use crate::agent::api::{chat_note, ChatNote};
 use message::{Message, Scope, TemplateCtx};
 use std::path::{Path, PathBuf};
 use sync::RemoteInfo;
@@ -239,6 +244,20 @@ pub fn setup(root: &Path, mode: SetupMode, device: &str) -> Result<()> {
     Ok(())
 }
 
+/// The "Sign commits" switch: `commit.gpgsign` in the vault's own `.git/config`, never the global
+/// one. Turning it on needs a signing key git resolves (Writer reads none, and never runs a
+/// signer); turning it off writes `false` locally, which also overrides a global `true`.
+pub fn set_signing(
+    exec: &transport::Exec,
+    root: &Path,
+    on: bool,
+) -> std::result::Result<(), String> {
+    if on && !signing::key_resolves(exec, root) {
+        return Err("Set up a signing key in git first".into());
+    }
+    signing::set_local(exec, root, on).map_err(|_| "Could not change the setting".to_string())
+}
+
 /// Whether a remote is linked (`remote.origin.url`).
 pub fn has_remote(repo: &Repo) -> bool {
     repo.config_string(&format!("remote.{}.url", transport::REMOTE))
@@ -325,13 +344,34 @@ pub fn ensure_lfs(
     .lfs_install()
 }
 
-/// Commits the user's pending changes. `None` when there is nothing to commit.
+/// Whether a user commit also commits the chat notes that changed (as `agent(chat)`, a commit of
+/// their own). A turn's own commit takes its chat's note, so the commit made when a turn is about
+/// to start holds them back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatNotes {
+    Commit,
+    Hold,
+}
+
+/// Commits the user's pending changes, then the chat notes' own `agent(chat)` commit: chat notes
+/// are never part of a user commit. `None` when there is nothing to commit.
 pub fn commit_user(
     root: &Path,
     template: &str,
     ctx: &TemplateCtx,
     device: &str,
     lfs: Lfs,
+) -> Result<Option<String>> {
+    commit_user_with(root, template, ctx, device, lfs, ChatNotes::Commit)
+}
+
+pub fn commit_user_with(
+    root: &Path,
+    template: &str,
+    ctx: &TemplateCtx,
+    device: &str,
+    lfs: Lfs,
+    chats: ChatNotes,
 ) -> Result<Option<String>> {
     let Some(repo) = before_commit(root, device)?.map(|r| r.with_lfs(lfs)) else {
         return Ok(None);
@@ -341,17 +381,57 @@ pub fn commit_user(
         return Ok(None);
     }
     // the first commit of an empty repository is the setup commit (an automatic setup that had no
-    // git identity yet)
-    let message = if repo.has_commits() {
-        Message::user(&changes, template, ctx, device)
-    } else {
-        Message::chore(Scope::Setup, "start version history", device)
-    };
-    repo.commit(&changes, &message).map(Some)
+    // git identity yet): it holds everything there is
+    if !repo.has_commits() {
+        let message = Message::chore(Scope::Setup, "start version history", device);
+        return repo.commit(&changes, &message).map(Some);
+    }
+    let (notes, changes): (Vec<Change>, Vec<Change>) =
+        changes.into_iter().partition(message::is_chat_change);
+    let mut made = None;
+    if !changes.is_empty() {
+        let message = Message::user(&changes, template, ctx, device);
+        made = Some(repo.commit(&changes, &message)?);
+    }
+    if chats == ChatNotes::Commit && !notes.is_empty() {
+        // a fresh repository: the first commit moved the branch and the index
+        let repo = Repo::open_with(root, lfs)?.ok_or(Error::NotARepo)?;
+        let message = Message::chat(&chat_refs(root, &repo, &notes), device);
+        made = Some(repo.commit(&notes, &message)?);
+    }
+    Ok(made)
 }
 
-/// Commits the files a finished agent turn changed (those still different from HEAD). `None` when
-/// none of them is.
+/// The chat a changed chat note is (id and title from its note, the committed one for a delete).
+fn chat_note_of(root: &Path, repo: &Repo, change: &Change) -> Option<ChatNote> {
+    let text = match change {
+        Change::Delete(rel) => {
+            let id = repo.blob_id_at("HEAD", rel).ok()??;
+            String::from_utf8_lossy(&repo.blob(&id).ok()?).into_owned()
+        }
+        other => std::fs::read_to_string(root.join(other.path())).ok()?,
+    };
+    chat_note(&text)
+}
+
+/// `(chat id, title)` of the chats `notes` belong to, one per chat. A note that cannot be read as
+/// a chat note is named "Chat" and has no id.
+fn chat_refs(root: &Path, repo: &Repo, notes: &[Change]) -> Vec<(Option<String>, String)> {
+    let mut out: Vec<(Option<String>, String)> = Vec::new();
+    for change in notes {
+        let entry = match chat_note_of(root, repo, change) {
+            Some(n) => (Some(n.id), n.title),
+            None => (None, "Chat".to_string()),
+        };
+        if entry.0.is_none() || !out.iter().any(|(id, _)| *id == entry.0) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// Commits the files a finished agent turn changed (those still different from HEAD), with its
+/// chat's note when that changed too: one turn is one commit. `None` when none of them is.
 pub fn commit_agent(
     root: &Path,
     turn: &scheduler::AgentTurn,
@@ -363,8 +443,11 @@ pub fn commit_agent(
         return Ok(None);
     };
     let touched: std::collections::BTreeSet<&str> = turn.files.iter().map(String::as_str).collect();
-    let changes: Vec<Change> = committable(root, &repo, repo.changes()?)
+    let (notes, rest): (Vec<Change>, Vec<Change>) = committable(root, &repo, repo.changes()?)
         .0
+        .into_iter()
+        .partition(message::is_chat_change);
+    let mut changes: Vec<Change> = rest
         .into_iter()
         .filter(|c| match c {
             Change::Move { from, to } => {
@@ -373,15 +456,27 @@ pub fn commit_agent(
             other => touched.contains(other.path()),
         })
         .collect();
-    if changes.is_empty() {
+    // this chat's note only: another chat's goes in its own `agent(chat)` commit
+    let own: Vec<Change> = notes
+        .into_iter()
+        .filter(|c| chat_note_of(root, &repo, c).is_some_and(|n| n.id == turn.chat_id))
+        .collect();
+    if changes.is_empty() && own.is_empty() {
         return Ok(None);
     }
-    let title = if turn.title.trim().is_empty() {
-        fallback_title
+    let message = if changes.is_empty() {
+        let mut m = Message::chat(&chat_refs(root, &repo, &own), device);
+        m.trailers.turn = turn.turn_id.clone();
+        m
     } else {
-        &turn.title
+        let title = if turn.title.trim().is_empty() {
+            fallback_title
+        } else {
+            &turn.title
+        };
+        Message::agent(&changes, title, turn.info(), device)
     };
-    let message = Message::agent(&changes, title, turn.info(), device);
+    changes.extend(own);
     repo.commit(&changes, &message).map(Some)
 }
 
@@ -407,6 +502,8 @@ pub struct Status {
     pub lfs_files: usize,
     /// The identity problem that would stop a commit, if any.
     pub identity_error: bool,
+    /// What git says about signing commits here (the vault's own config included).
+    pub signing: Signing,
     /// The remote, ahead and behind; `url: None` without one.
     pub remote: RemoteInfo,
     pub sync_paused: bool,
@@ -422,18 +519,31 @@ pub struct Status {
     pub held: Vec<plugin_scan::Held>,
 }
 
-/// Whether git has an identity for a vault, remembered per vault so the status poll does not run
-/// `git var` every few seconds. Refreshed when the settings page opens and when a commit fails
+/// Whether git has an identity for a vault, and what it says about signing, remembered per vault so
+/// the status poll does not run `git var` and `git config` every few seconds. Refreshed when the settings page opens and when a commit fails
 /// (`status(.., refresh = true)`, [`IdentityCache::forget`]). Owned by the caller (the feature's
 /// `Vaults`, or a CLI command's own), never a static.
 #[derive(Default)]
 pub struct IdentityCache {
     missing: parking_lot::Mutex<std::collections::HashMap<std::path::PathBuf, bool>>,
+    signing: parking_lot::Mutex<std::collections::HashMap<std::path::PathBuf, Signing>>,
 }
 
 impl IdentityCache {
     pub fn forget(&self, root: &Path) {
         self.missing.lock().remove(root);
+        self.signing.lock().remove(root);
+    }
+
+    fn signing(&self, repo: &Repo, refresh: bool) -> Signing {
+        if !refresh {
+            if let Some(known) = self.signing.lock().get(repo.root()) {
+                return *known;
+            }
+        }
+        let now = repo.signing();
+        self.signing.lock().insert(repo.root().to_path_buf(), now);
+        now
     }
 
     fn is_missing(&self, repo: &Repo, refresh: bool) -> bool {
@@ -464,6 +574,7 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool, lfs: Lfs) ->
             too_large: Vec::new(),
             lfs_files: 0,
             identity_error: false,
+            signing: Signing::default(),
             remote: RemoteInfo::default(),
             sync_paused: false,
             conflicts: Vec::new(),
@@ -491,6 +602,7 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool, lfs: Lfs) ->
         too_large,
         lfs_files: repo.lfs_files().len(),
         identity_error: identity.is_missing(&repo, refresh),
+        signing: identity.signing(&repo, refresh),
         remote: sync::remote_info(root),
         sync_paused: state::sync_paused(root),
         conflicts: open,

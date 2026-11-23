@@ -1131,7 +1131,11 @@ fn run(root: &Path, opts: &Options<'_>, report: &mut Report) -> Result<(), Error
         secrets: opts.secrets.clone(),
     };
     for _ in 0..MAX_ROUNDS {
-        let repo = Repo::open(root)?.ok_or(repo::Error::NotARepo)?;
+        // the replay's commits are signed (when git's configuration says so) through the sync's
+        // own runner: its scope and its deadline apply to the signer too
+        let repo = Repo::open(root)?
+            .ok_or(repo::Error::NotARepo)?
+            .with_exec(opts.exec.clone());
         if repo
             .config_string(&format!("remote.{REMOTE}.url"))
             .is_none()

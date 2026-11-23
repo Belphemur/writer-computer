@@ -91,9 +91,9 @@ pub(super) fn failure(e: &engine::Error) -> SyncFailure {
         },
         engine::Error::Repo(r) => SyncFailure {
             line: runtime::error_line(r),
-            details: String::new(),
+            details: runtime::error_details(r),
             offline: false,
-            kind: Kind::Other.name(),
+            kind: runtime::error_kind(r),
         },
         engine::Error::Io(_) => SyncFailure {
             line: "Could not read or write the vault".into(),

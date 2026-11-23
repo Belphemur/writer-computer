@@ -15,6 +15,7 @@
       "git_setup",
       "git_commit_now",
       "git_set_paused",
+      "git_set_signing",
       "git_stop",
       "git_history",
       "git_deleted",

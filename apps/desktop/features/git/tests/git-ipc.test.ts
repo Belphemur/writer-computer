@@ -23,6 +23,7 @@ const CALLS: Record<string, () => Promise<unknown>> = {
   git_setup: () => ipc.setup("local"),
   git_commit_now: () => ipc.commitNow(),
   git_set_paused: () => ipc.setPaused(true),
+  git_set_signing: () => ipc.setSigning(true),
   git_stop: () => ipc.stop(),
   git_history: () => ipc.history("a.md", 5),
   git_deleted: () => ipc.deleted(),

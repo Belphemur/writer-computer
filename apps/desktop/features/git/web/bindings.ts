@@ -20,6 +20,8 @@ export const commands = {
 	gitCommitNow: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_commit_now", undefined, options),
 	/**  Pauses or resumes the automatic versions of the window's vault (device-local). */
 	gitSetPaused: (paused: boolean, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_set_paused", { paused }, options),
+	/**  The "Sign commits" switch of the window's vault: `commit.gpgsign` in its own git config. */
+	gitSetSigning: (on: boolean, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_set_signing", { on }, options),
 	/**  Stops version history for the window's vault (device-local; `.git` is never touched). */
 	gitStop: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_stop", undefined, options),
 	/**  The versions of a file, newest first, following renames. */
@@ -234,6 +236,12 @@ export type GitStatus = {
 	committing: boolean,
 	/**  The last failure, one line. */
 	error: string | null,
+	/**  What failed (`signing`, `other`): what a "Show logs" button switches on. */
+	errorKind: string | null,
+	/**  git's sanitized message of that failure, when it has one. */
+	errorDetails: string | null,
+	/**  Commit signing: what git says and whether the repository suggests it. */
+	signing: SigningRow,
 	/**  The remote as `host/owner/repo` (no scheme, no credentials); `None` without one. */
 	remote: string | null,
 	/**
@@ -354,6 +362,18 @@ export type SignInResult = {
 	/**  The repository name the host already has: offer "Link existing <name>" or another name. */
 	taken: string | null,
 	status: GitStatus,
+};
+
+export type SigningRow = {
+	/**  git's `commit.gpgsign`: Writer's commits are signed through git. */
+	on: boolean,
+	/**  git resolves a signing key (the switch can be turned on). */
+	key: boolean,
+	/**
+	 *  Signing is off but the repository looks like it signs: recent commits are signed, or the
+	 *  remote refused a push for missing signatures.
+	 */
+	suggested: boolean,
 };
 
 /**  One step of "Sign in with ...", as the panel lists it. */

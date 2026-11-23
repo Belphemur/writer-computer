@@ -13,6 +13,7 @@ import { LfsRow } from "./lfs-row";
 import { FailureLine, LogsSection, ShowLogs } from "./logs-section";
 import { CARD, defsFor, KEYS, MUTED, ROW } from "./section-parts";
 import { RemoteRows } from "./remote-rows";
+import { SigningRow } from "./signing-row";
 import { BUTTON } from "./sync-parts";
 import { IDENTITY_COMMANDS, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
@@ -153,12 +154,16 @@ export function GitSection() {
         </div>
       </div>
       <SettingRows defs={defsFor(KEYS.commitAfter, KEYS.agentCommits)} />
+      {(status.signing.on || status.signing.suggested) && <SigningRow signing={status.signing} />}
       <details className="group" data-git-advanced>
         <summary className="cursor-pointer px-1 pb-2 text-[13px] text-[var(--text-primary)]">
           Advanced
         </summary>
         <div className="space-y-3">
           <SettingRows defs={defsFor(KEYS.commitMessage)} />
+          {!status.signing.on && !status.signing.suggested && (
+            <SigningRow signing={status.signing} />
+          )}
           <LfsRow lfs={status.lfs} />
           <div className={CARD}>
             <div className={ROW}>

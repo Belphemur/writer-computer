@@ -70,6 +70,12 @@ pub struct GitStatus {
     pub committing: bool,
     /// The last failure, one line.
     pub error: Option<String>,
+    /// What failed (`signing`, `other`): what a "Show logs" button switches on.
+    pub error_kind: Option<String>,
+    /// git's sanitized message of that failure, when it has one.
+    pub error_details: Option<String>,
+    /// Commit signing: what git says and whether the repository suggests it.
+    pub signing: SigningRow,
     /// The remote as `host/owner/repo` (no scheme, no credentials); `None` without one.
     pub remote: Option<String>,
     /// The host of an HTTPS remote as git's credential requests name it (`host[:port]`, lower
@@ -101,6 +107,18 @@ pub struct GitStatus {
     pub refused: Vec<String>,
     /// Where HTTPS passwords come from: `token` or a forge CLI's id (`gh`, `fj`).
     pub credentials: String,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SigningRow {
+    /// git's `commit.gpgsign`: Writer's commits are signed through git.
+    pub on: bool,
+    /// git resolves a signing key (the switch can be turned on).
+    pub key: bool,
+    /// Signing is off but the repository looks like it signs: recent commits are signed, or the
+    /// remote refused a push for missing signatures.
+    pub suggested: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -215,6 +233,7 @@ fn status_of<R: Runtime>(
         .as_ref()
         .map(|v| v.record_of(label))
         .unwrap_or_default();
+    let failure = vaults.as_ref().and_then(|v| v.failure_of(label));
     Ok(GitStatus {
         has_repo: s.has_repo,
         set_up: s.set_up,
@@ -229,7 +248,22 @@ fn status_of<R: Runtime>(
         lfs: lfs_row,
         turn_running: vaults.as_ref().is_some_and(|v| v.turn_running(label)),
         committing: vaults.as_ref().is_some_and(|v| v.busy()),
-        error: vaults.as_ref().and_then(|v| v.error_of(label)),
+        error: failure.as_ref().map(|e| e.line.clone()),
+        error_kind: failure.as_ref().map(|e| e.kind.to_string()),
+        error_details: failure
+            .as_ref()
+            .map(|e| e.details.clone())
+            .filter(|d| !d.is_empty()),
+        signing: SigningRow {
+            on: s.signing.on,
+            key: s.signing.key,
+            suggested: s.signing.suggested()
+                || (!s.signing.on
+                    && record
+                        .failure
+                        .as_ref()
+                        .is_some_and(|f| f.kind == transport::Kind::SignatureRequired.name())),
+        },
         remote: s.remote.url.as_deref().map(transport::display_url),
         remote_host: s.remote.url.as_deref().and_then(transport::https_host),
         branch: s.remote.branch.clone(),
@@ -344,6 +378,30 @@ pub async fn git_set_paused<R: Runtime>(
         git::state::set_paused(&root, paused)?;
         let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
         status_of(&app, &label, false)
+    })
+    .await
+}
+
+/// The "Sign commits" switch of the window's vault: `commit.gpgsign` in its own git config.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_set_signing<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    on: bool,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let root = window_root(&app, &label)?;
+        let (exec, _) = transport_of(&app, &root)?;
+        git::set_signing(&exec, &root, on).map_err(AppError::Refused)?;
+        if let Some(v) = runtime::vaults(&app) {
+            v.identity.forget(&root);
+            // a failed signature no longer describes the setting just changed
+            v.set_error(&label, None);
+        }
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, true)
     })
     .await
 }

@@ -41,6 +41,8 @@ export const status = (refresh = false) => commands.gitStatus(refresh);
 export const setup = (mode: SetupMode) => commands.gitSetup(mode);
 export const commitNow = () => commands.gitCommitNow();
 export const setPaused = (paused: boolean) => commands.gitSetPaused(paused);
+/** The "Sign commits" switch: `commit.gpgsign` in the vault's own git config. */
+export const setSigning = (on: boolean) => commands.gitSetSigning(on);
 export const stop = () => commands.gitStop();
 export const history = (path: string, limit: number | null = null) =>
   commands.gitHistory(path, limit);

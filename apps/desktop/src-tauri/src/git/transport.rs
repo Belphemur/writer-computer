@@ -253,21 +253,26 @@ impl Exec {
     /// until the scope stops: [`crate::process_run::run`]. Every call leaves one line in the log
     /// ([`log_call`]).
     pub fn run(&self, cmd: Command, timeout: Duration) -> Result<Output, RunError> {
-        let timeout = match self.deadline {
-            Some(d) => {
-                let left = d.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Err(RunError::Timeout);
-                }
-                left.min(timeout)
-            }
-            None => timeout,
-        };
+        let timeout = self.budget(timeout)?;
         let what = describe(&cmd);
         let started = Instant::now();
         let result = run_bounded(&self.spawner, cmd, &RunOptions::new(timeout));
         log_call(&what, started.elapsed(), &result);
         result
+    }
+
+    /// `timeout`, cut to what the [`Exec::with_deadline`] has left (`Timeout` when nothing is).
+    pub fn budget(&self, timeout: Duration) -> Result<Duration, RunError> {
+        match self.deadline {
+            Some(d) => {
+                let left = d.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(RunError::Timeout);
+                }
+                Ok(left.min(timeout))
+            }
+            None => Ok(timeout),
+        }
     }
 }
 
@@ -496,6 +501,9 @@ pub enum Kind {
     LocalNetwork,
     /// The repository name to create is already used on the host.
     Taken,
+    /// The remote only takes signed commits and refused the push (a branch rule: GitHub, GitLab,
+    /// Forgejo).
+    SignatureRequired,
     Other,
 }
 
@@ -513,6 +521,7 @@ impl Kind {
             Kind::Cancelled => "cancelled",
             Kind::LocalNetwork => "local-network",
             Kind::Taken => "taken",
+            Kind::SignatureRequired => "signature-required",
             Kind::Other => "other",
         }
     }
@@ -586,6 +595,19 @@ pub fn classify(out: &Output, root: &Path, secrets: &[&str]) -> TransportError {
         "git-lfs: not found",
     ]) {
         (Kind::NoLfs, "Install git-lfs to sync large files")
+    } else if has(&[
+        "verified signature",
+        "commits must be signed",
+        "requires signed commits",
+        "signed commits",
+        "unsigned commits",
+        "commit is not signed",
+        "not all commits are signed",
+    ]) {
+        (
+            Kind::SignatureRequired,
+            "The remote only takes signed commits",
+        )
     } else if has(&[
         "authentication failed",
         "permission denied",

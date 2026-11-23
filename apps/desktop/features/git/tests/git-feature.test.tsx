@@ -16,6 +16,7 @@ const ipc = vi.hoisted(() => ({
   setup: vi.fn(),
   commitNow: vi.fn(),
   setPaused: vi.fn(),
+  setSigning: vi.fn(),
   stop: vi.fn(),
   history: vi.fn(),
   deleted: vi.fn(),
@@ -679,6 +680,41 @@ describe("Settings > Git", () => {
     expect(toggle.disabled).toBe(false);
     act(() => toggle.click());
     expect(setSetting).toHaveBeenCalledWith("git.lfs", true);
+  });
+
+  it("Sign commits: a suggestion shows the reason and the switch writes through the command", async () => {
+    const signed = status({ signing: { on: true, key: true, suggested: false } });
+    ipc.setSigning.mockResolvedValue(signed);
+    act(() =>
+      useGitStatus.getState().apply(status({ signing: { on: false, key: true, suggested: true } })),
+    );
+    render(<GitSection />);
+    const row = container.querySelector("[data-git-signing]") as HTMLElement;
+    expect(row.textContent).toContain("Sign commits");
+    expect(row.textContent).toContain("This repo uses signed commits");
+    const toggle = row.querySelector('[role="switch"]') as HTMLButtonElement;
+    expect(toggle.disabled).toBe(false);
+    await act(async () => toggle.click());
+    expect(ipc.setSigning).toHaveBeenCalledWith(true);
+    expect(useGitStatus.getState().status?.signing.on).toBe(true);
+  });
+
+  it("Sign commits is disabled with a hint while git resolves no signing key", () => {
+    act(() =>
+      useGitStatus
+        .getState()
+        .apply(status({ signing: { on: false, key: false, suggested: true } })),
+    );
+    render(<GitSection />);
+    const row = container.querySelector("[data-git-signing]") as HTMLElement;
+    expect(row.textContent).toContain("Set up a signing key in git first");
+    expect((row.querySelector('[role="switch"]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a failed signature reads as the status error", () => {
+    expect(
+      summarize(status({ error: "Signing failed: unlock your key", errorKind: "signing" })),
+    ).toMatchObject({ label: "Error", detail: "Signing failed: unlock your key" });
   });
 
   it("the LFS toggle is disabled with a hint while git-lfs is not installed", () => {
