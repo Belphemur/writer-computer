@@ -556,9 +556,14 @@ describe("Settings > Git: Sign in with a forge CLI", () => {
       forges: [gh(), forge({ hosts: ["codeberg.org"] })],
     });
     act(() =>
-      useGitStatus
-        .getState()
-        .apply(status({ remote: "codeberg.org/me/v", branch: "main", credentials: "fj" })),
+      useGitStatus.getState().apply(
+        status({
+          remote: "codeberg.org/me/v",
+          remoteHost: "codeberg.org",
+          branch: "main",
+          credentials: "fj",
+        }),
+      ),
     );
     render(<GitSection />);
     await flush();
@@ -576,6 +581,37 @@ describe("Settings > Git: Sign in with a forge CLI", () => {
     root = createRoot(container);
     render(<GitSection />);
     await flush();
+    expect((button("Forgejo CLI") as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("a remote with a port matches the CLI's host with that port", async () => {
+    ipc.tools.mockResolvedValue({
+      git: true,
+      canInstallGit: false,
+      forges: [forge({ hosts: ["git.example.test:3000"] })],
+    });
+    act(() =>
+      useGitStatus.getState().apply(
+        status({
+          remote: "git.example.test:3000/me/v",
+          remoteHost: "git.example.test:3000",
+          branch: "main",
+          credentials: "token",
+        }),
+      ),
+    );
+    render(<GitSection />);
+    await flush();
+    expect((button("Forgejo CLI") as HTMLButtonElement).disabled).toBe(false);
+    // the same host without the port is another server
+    act(() =>
+      useGitStatus.getState().apply(
+        status({
+          remote: "git.example.test/me/v",
+          remoteHost: "git.example.test",
+          branch: "main",
+        }),
+      ),
+    );
     expect((button("Forgejo CLI") as HTMLButtonElement).disabled).toBe(true);
   });
 });

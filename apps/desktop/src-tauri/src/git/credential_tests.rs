@@ -3,7 +3,9 @@
 
 use super::*;
 use crate::features::scope::Spawner;
-use crate::git::forge::{self, FORGEJO as FJ, GITHUB as GH};
+use crate::git::forge;
+use crate::git::forgejo::FORGE as FJ;
+use crate::git::github::FORGE as GH;
 use crate::git::transport::{self, Exec, Helper, REMOTE};
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -243,6 +245,65 @@ fn the_sources_are_the_tables_and_the_helper_names_them() {
         ..h.clone()
     };
     assert_eq!(gh.sign_in_again(), None, "gh's behaviour is unchanged");
+}
+
+#[test]
+fn a_password_or_username_that_could_inject_a_protocol_line_is_no_answer() {
+    let bad = [
+        "a\nprotocol=http",
+        "a\r\nhost=evil.example",
+        "tab\there",
+        "nul\0",
+        "",
+    ];
+    for password in bad {
+        // the secret token, then each forge CLI
+        assert_eq!(
+            ask(
+                &["--source", "token", "--host", "github.com", "get"],
+                GITHUB,
+                Some(password),
+                None
+            ),
+            "",
+            "{password:?}"
+        );
+        for (source, request, host) in [
+            ("gh", GITHUB, None),
+            (
+                "fj",
+                "protocol=https\nhost=codeberg.org\n\n",
+                Some("codeberg.org"),
+            ),
+        ] {
+            let mut args = vec!["--source", source];
+            if let Some(h) = host {
+                args.extend(["--host", h]);
+            }
+            args.push("get");
+            assert_eq!(ask(&args, request, None, Some(password)), "", "{source}");
+        }
+    }
+    // a username with a control character is refused the same way
+    assert_eq!(
+        ask(
+            &["--source", "token", "--host", "github.com", "get"],
+            "protocol=https\nhost=github.com\nusername=a\tb\n\n",
+            Some("ok"),
+            None
+        ),
+        ""
+    );
+    // and an ordinary answer still goes through
+    assert_eq!(
+        ask(
+            &["--source", "token", "--host", "github.com", "get"],
+            GITHUB,
+            Some("ok token"),
+            None
+        ),
+        "username=me\npassword=ok token\n\n"
+    );
 }
 
 #[test]

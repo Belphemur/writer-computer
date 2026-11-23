@@ -50,6 +50,11 @@ pub struct Lookup<'a> {
     pub cli: &'a dyn Fn(&Forge, &str) -> Option<String>,
 }
 
+/// Not empty and no control character: safe to put on one line of git's credential protocol.
+fn line_safe(value: &str) -> bool {
+    !value.is_empty() && !value.chars().any(char::is_control)
+}
+
 /// The helper's reply to `op` for `req`, or nothing (git then tries the next helper or fails).
 /// `bound` is the host the token was saved for: the token answers that host only.
 pub fn answer(
@@ -71,7 +76,10 @@ pub fn answer(
         Source::Cli(_) => None,
     }?;
     let username = req.username.as_deref().unwrap_or("git");
-    Some(format!("username={username}\npassword={password}\n\n"))
+    // a value with a newline or another control character would add lines to git's protocol
+    // (`protocol=http`, a second `host=`): whatever its source, such an answer is no answer
+    (line_safe(&password) && line_safe(username))
+        .then(|| format!("username={username}\npassword={password}\n\n"))
 }
 
 /// The helper process: reads the request from `input`, writes the reply to `out`. Exit code 0.

@@ -81,12 +81,12 @@ pub(super) fn failure_line(e: &engine::Error) -> String {
     failure(e).line
 }
 
-fn failure(e: &engine::Error) -> SyncFailure {
+pub(super) fn failure(e: &engine::Error) -> SyncFailure {
     match e {
         engine::Error::Transport(t) => SyncFailure {
             line: t.line.clone(),
             details: t.details.clone(),
-            offline: matches!(t.kind, Kind::Offline | Kind::Timeout),
+            offline: matches!(t.kind, Kind::Offline | Kind::Timeout | Kind::LocalNetwork),
             kind: t.kind.name(),
         },
         engine::Error::Repo(r) => SyncFailure {
@@ -110,16 +110,52 @@ fn failure(e: &engine::Error) -> SyncFailure {
     }
 }
 
+/// Why a requested sync did not run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Skip {
+    /// The feature is stopping or off.
+    Stopped,
+    /// The vault cannot sync now: not set up, no remote, a merge or rebase under way.
+    NotReady,
+    /// Another sync or a commit is running.
+    Busy,
+}
+
+impl Skip {
+    /// One terse line for whoever asked.
+    pub fn line(self) -> &'static str {
+        match self {
+            Skip::Stopped => "Version history is turned off",
+            Skip::NotReady => "Cannot sync now: finish the merge or rebase first",
+            Skip::Busy => "A sync is already running: try again",
+        }
+    }
+}
+
+/// What [`run`] did: a whole sync with its result, or why it did not run.
+#[derive(Debug, Clone)]
+pub enum Ran {
+    Done(Result<(), SyncFailure>),
+    Skipped(Skip),
+}
+
 /// One whole sync of `label`'s vault: commit the pending changes, fetch, replay, push. Quiet when
-/// another is running or the vault cannot sync. The result is in the vault's [`SyncRecord`]
-/// (`runtime::Vaults::record_of`) and announced with `git:changed`.
-pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
+/// another is running or the vault cannot sync (the cadence ignores that; [`Ran::Skipped`] says
+/// which, for the callers that must not take a skipped sync for a finished one). The result is
+/// also in the vault's [`SyncRecord`] (`runtime::Vaults::record_of`) and announced with
+/// `git:changed`.
+pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) -> Ran {
     let Some(v) = runtime::vaults(app).filter(|v| !v.stopped()) else {
-        return;
+        return Ran::Skipped(Skip::Stopped);
     };
-    let Some(root) = v.root_of(label) else { return };
-    if !ready(&root, mode == Mode::Manual) || v.committing_now() || !v.begin_sync(label) {
-        return;
+    let Some(root) = v.root_of(label) else {
+        return Ran::Skipped(Skip::Stopped);
+    };
+    if !ready(&root, mode == Mode::Manual) {
+        return Ran::Skipped(Skip::NotReady);
+    }
+    if v.committing_now() || !v.begin_sync(label) {
+        return Ran::Skipped(Skip::Busy);
     }
     let _busy = SyncBusy::new(&v);
     runtime::announce_changed(app, label);
@@ -128,7 +164,7 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
     let _ = runtime::commit_user_unchecked(app, &v, label);
     let Some(mut exec) = exec_of(app) else {
         v.end_sync(label, |_| {});
-        return;
+        return Ran::Skipped(Skip::Stopped);
     };
     if mode == Mode::Close {
         exec = exec.with_deadline(started + CLOSE_BUDGET);
@@ -187,6 +223,7 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
+    let result = failed.clone().map_or(Ok(()), Err);
     v.end_sync(label, |r| {
         if failed.is_none() {
             r.last_at = Some(now);
@@ -197,6 +234,31 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
     });
     v.identity.forget(&root);
     runtime::announce_changed(app, label);
+    Ran::Done(result)
+}
+
+/// The first push of "Sign in with ...": one whole sync now, as a step's result. A sync that did
+/// not run is a failed step, never a finished one. An already running sync is not waited for: it
+/// started before the remote and the credential were set, so its outcome is not this one's, and
+/// "try again" is true without any race.
+pub fn first_push<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+) -> Result<(), git::signin::StepError> {
+    if let Some(v) = runtime::vaults(app) {
+        v.end_sync_record_reset(label);
+    }
+    match run(app, label, Mode::Manual) {
+        Ran::Done(Ok(())) => Ok(()),
+        Ran::Done(Err(f)) => Err(git::signin::StepError {
+            line: f.line,
+            kind: f.kind,
+        }),
+        Ran::Skipped(skip) => Err(git::signin::StepError {
+            line: skip.line().into(),
+            kind: Kind::Other.name(),
+        }),
+    }
 }
 
 /// Counts a running sync for [`Vaults::busy`].

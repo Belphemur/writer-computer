@@ -72,6 +72,9 @@ pub struct GitStatus {
     pub error: Option<String>,
     /// The remote as `host/owner/repo` (no scheme, no credentials); `None` without one.
     pub remote: Option<String>,
+    /// The host of an HTTPS remote as git's credential requests name it (`host[:port]`, lower
+    /// case); `None` for no remote or an SSH one. What a forge CLI's login is matched against.
+    pub remote_host: Option<String>,
     pub branch: Option<String>,
     /// Commits not pushed, and commits of the remote not taken in.
     pub ahead: u32,
@@ -228,6 +231,7 @@ fn status_of<R: Runtime>(
         committing: vaults.as_ref().is_some_and(|v| v.busy()),
         error: vaults.as_ref().and_then(|v| v.error_of(label)),
         remote: s.remote.url.as_deref().map(transport::display_url),
+        remote_host: s.remote.url.as_deref().and_then(transport::https_host),
         branch: s.remote.branch.clone(),
         ahead: s.remote.ahead as u32,
         behind: s.remote.behind as u32,
@@ -910,20 +914,7 @@ pub async fn git_sign_in<R: Runtime>(
             &root,
             &request,
             &|| super::sync::helper_for(&app, &root),
-            &|| {
-                // one whole sync, now; its failure is the step's
-                if let Some(v) = runtime::vaults(&app) {
-                    v.end_sync_record_reset(&label);
-                }
-                super::sync::run(&app, &label, super::sync::Mode::Manual);
-                match runtime::vaults(&app).and_then(|v| v.record_of(&label).failure) {
-                    Some(f) => Err(git::signin::StepError {
-                        line: f.line,
-                        kind: f.kind,
-                    }),
-                    None => Ok(()),
-                }
-            },
+            &|| super::sync::first_push(&app, &label),
         );
         log::info!(
             target: "git",

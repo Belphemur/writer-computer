@@ -7,16 +7,14 @@
 //! page offers "Install <CLI>": the device flow needs an OAuth App client id that does not exist
 //! yet (spec "Setup", open item), so nothing here invents one.
 //!
-//! Adding a forge is one more entry: a `static Forge` in its own file and a line in [`FORGES`].
+//! Adding a forge is one more entry: a `static FORGE` in its own file and a line in [`FORGES`].
 
 use super::transport::{classify, Exec, Kind, Output, RunError, TransportError, QUICK_TIMEOUT};
 use std::path::Path;
 
-pub use super::forgejo::FORGE as FORGEJO;
-pub use super::github::FORGE as GITHUB;
-
-/// Every forge CLI Writer can sign in through, in the order the settings page lists them.
-pub static FORGES: [&Forge; 2] = [&GITHUB, &FORGEJO];
+/// Every forge CLI Writer can sign in through, in the order the settings page lists them. A third
+/// one is its own file with a `static FORGE` and one line here.
+pub static FORGES: &[&Forge] = &[&super::github::FORGE, &super::forgejo::FORGE];
 
 pub fn by_id(id: &str) -> Option<&'static Forge> {
     FORGES.iter().copied().find(|f| f.id == id)
@@ -212,4 +210,4 @@ pub fn create_repo(
 
 #[cfg(test)]
 #[path = "forge_tests.rs"]
-mod tests;
+pub(crate) mod tests;

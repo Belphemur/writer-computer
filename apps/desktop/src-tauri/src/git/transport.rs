@@ -517,7 +517,7 @@ pub fn classify(out: &Output, root: &Path, secrets: &[&str]) -> TransportError {
         // macOS answers a host on the local network with this until the app is allowed there
         (
             Kind::LocalNetwork,
-            "macOS blocked the connection: allow Writer under Privacy & Security > Local Network",
+            "Can't reach the server. On macOS, check Privacy & Security > Local Network.",
         )
     } else if has(&[
         "could not resolve host",
@@ -780,13 +780,18 @@ pub fn check_url(url: &str) -> Result<String, &'static str> {
 /// A short, display-safe name for a remote URL: the host and path, no scheme and no user.
 pub fn display_url(url: &str) -> String {
     let clean = sanitize(url, Path::new(""), &[]);
-    let s = clean
-        .strip_prefix("https://")
-        .or_else(|| clean.strip_prefix("ssh://"))
-        .or_else(|| clean.strip_prefix("file://"))
-        .unwrap_or(&clean);
+    let schemed = ["https://", "ssh://", "file://"]
+        .into_iter()
+        .find_map(|p| clean.strip_prefix(p));
+    let s = schemed.unwrap_or(&clean);
     let s = s.rsplit_once('@').map_or(s, |(_, r)| r);
-    s.trim_end_matches(".git").replacen(':', "/", 1)
+    let s = s.trim_end_matches(".git");
+    // `host:path` (scp style) reads `host/path`; in a URL the colon is a port and stays
+    if schemed.is_some() {
+        s.to_string()
+    } else {
+        s.replacen(':', "/", 1)
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,8 @@
 
 use super::*;
 use crate::features::scope::Spawner;
-use crate::git::forgejo::{self, Saved};
+use crate::git::forgejo::{self, Saved, FORGE as FORGEJO};
+use crate::git::github::FORGE as GITHUB;
 use std::path::{Path, PathBuf};
 
 const PLANTED: &str = "ghp_PLANTED_token_9f8e7d6c5b4a";
@@ -20,8 +21,32 @@ fn fake(dir: &Path, binary: &str, script: &str) {
     }
 }
 
+/// A runner whose whole search path is `bin`: the fake CLIs a test writes there and symlinks to the
+/// few real tools the fakes and git need (`git`, `cp`, `cat`). The machine's own `PATH` is never
+/// searched, so a real `gh` or `fj` installed on it can never answer (or be asked to refresh) a
+/// test; a CLI the test did not fake is simply missing.
+#[cfg(unix)]
+pub(crate) fn sandbox(bin: &Path, env: Vec<(String, String)>) -> Exec {
+    for tool in ["git", "cp", "cat"] {
+        let link = bin.join(tool);
+        if link.exists() {
+            continue;
+        }
+        let real = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            .map(|d| d.join(tool))
+            .chain(["/usr/bin", "/bin"].map(|d| Path::new(d).join(tool)))
+            .find(|p| p.is_file())
+            .unwrap_or_else(|| panic!("no {tool} on this machine"));
+        std::os::unix::fs::symlink(real, link).unwrap();
+    }
+    Exec::new(Spawner::detached())
+        .with_only_path(vec![bin.to_path_buf()])
+        .with_env(env)
+}
+
+#[cfg(unix)]
 fn exec_with(dir: &Path) -> Exec {
-    Exec::new(Spawner::detached()).with_path_prefix(vec![dir.to_path_buf()])
+    sandbox(dir, Vec::new())
 }
 
 // ---- the table ----------------------------------------------------------------------------------
@@ -204,6 +229,24 @@ fn an_oauth_login_is_a_token_until_it_expires() {
     assert_eq!(at("\"someday\""), Saved::Expired);
     assert_eq!(at("42"), Saved::Expired);
     assert_eq!(at("null"), Saved::Expired);
+    // extreme values read as expired, never overflow or panic
+    for extreme in [
+        "[9223372036854775807,1,0,0,0,0,0,0,0]",
+        "[-9223372036854775808,1,0,0,0,0,0,0,0]",
+        "[2026,9223372036854775807,0,0,0,0,0,0,0]",
+        "[2026,1,9223372036854775807,0,0,0,0,0,0]",
+        "[2026,1,0,0,0,0,-9223372036854775808,0,0]",
+        "[1969,365,0,0,0,0,0,0,0]",
+        "[10000,1,0,0,0,0,0,0,0]",
+        "\"9223372036854775807-01-01T00:00:00Z\"",
+        "\"2026-11-23T99999999999999999:00:00Z\"",
+        "\"2026-11-23T10:00:00+9223372036854775807:00\"",
+        "\"2026-11-23T10:00:00-9223372036854775808:00\"",
+    ] {
+        assert_eq!(at(extreme), Saved::Expired, "{extreme}");
+        let v: serde_json::Value = serde_json::from_str(extreme).unwrap();
+        assert_eq!(forgejo::unix_seconds(&v), None, "{extreme}");
+    }
     let v: serde_json::Value = serde_json::from_str("[2026,327,10,0,0,0,0,0,0]").unwrap();
     assert_eq!(forgejo::unix_seconds(&v), Some(now));
     let v: serde_json::Value = serde_json::from_str("\"2026-11-23T11:00:00+01:00\"").unwrap();
@@ -317,7 +360,7 @@ fn fj_home(login: Option<&str>, script: &dyn Fn(&Fj) -> String) -> Fj {
             xdg.to_string_lossy().into_owned(),
         ),
     ];
-    let exec = exec_with(&bin).with_env(env);
+    let exec = sandbox(&bin, env);
     let keys = forgejo::login_file(&|n| exec.var(n)).unwrap();
     std::fs::create_dir_all(keys.parent().unwrap()).unwrap();
     if let Some(text) = login {

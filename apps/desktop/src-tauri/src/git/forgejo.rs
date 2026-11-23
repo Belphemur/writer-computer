@@ -57,7 +57,10 @@ fn create(host: Option<&str>, name: &str) -> Vec<String> {
 fn owner(exec: &Exec, host: Option<&str>) -> Option<String> {
     let host = host.filter(|h| is_host(h))?;
     let out = exec
-        .run(exec.tool("fj", &["-H", host, "whoami"]), QUICK_TIMEOUT)
+        .run(
+            exec.tool(FORGE.binary, &["-H", host, "whoami"]),
+            QUICK_TIMEOUT,
+        )
         .ok()
         .filter(|o| o.ok())?;
     owner_in(&out.stdout, host)
@@ -84,7 +87,7 @@ pub fn owner_in(stdout: &str, host: &str) -> Option<String> {
 
 fn signed_in(exec: &Exec) -> Option<Vec<String>> {
     let out = exec
-        .run(exec.tool("fj", &["auth", "list"]), QUICK_TIMEOUT)
+        .run(exec.tool(FORGE.binary, &["auth", "list"]), QUICK_TIMEOUT)
         .ok()?;
     let hosts = if out.ok() {
         hosts_in(&out.stdout)
@@ -256,12 +259,26 @@ pub fn unix_seconds(v: &serde_json::Value) -> Option<i64> {
                 .iter()
                 .map(serde_json::Value::as_i64)
                 .collect::<Option<_>>()?;
-            let days = days_from_civil(n[0], 1, 1)? + n[1] - 1;
-            Some(days * 86_400 + n[2] * 3600 + n[3] * 60 + n[4] - (n[6] * 3600 + n[7] * 60 + n[8]))
+            let days = days_from_civil(n[0], 1, 1)? + within(n[1], 1, 366)? - 1;
+            seconds(days, n[2], n[3], n[4], n[6], n[7], n[8])
         }
         serde_json::Value::String(s) => parse_text(s),
         _ => None,
     }
+}
+
+/// `v` when it is in `lo..=hi`: every field is bounded before any arithmetic, so no input can
+/// overflow (a value out of range is an expiry nobody can read, hence expired).
+fn within(v: i64, lo: i64, hi: i64) -> Option<i64> {
+    (lo..=hi).contains(&v).then_some(v)
+}
+
+/// The instant of `days` since the epoch plus a clock time, less the zone's offset (the sign is the
+/// zone's: the same on its hours, minutes and seconds).
+fn seconds(days: i64, h: i64, m: i64, s: i64, oh: i64, om: i64, os: i64) -> Option<i64> {
+    let at = days * 86_400 + within(h, 0, 23)? * 3600 + within(m, 0, 59)? * 60 + within(s, 0, 60)?;
+    let offset = within(oh, -26, 26)? * 3600 + within(om, -59, 59)? * 60 + within(os, -59, 59)?;
+    Some(at - offset)
 }
 
 /// `YYYY-MM-DD`, `T` or a space, `HH:MM:SS[.frac]`, then `Z` or `±HH:MM[:SS]` (or nothing: UTC).
@@ -277,30 +294,32 @@ fn parse_text(s: &str) -> Option<i64> {
     let mm: i64 = t.next()?.parse().ok()?;
     let ss: i64 = t.next()?.split('.').next()?.parse().ok()?;
     let zone = zone.trim();
-    let offset = match zone.chars().next() {
-        None | Some('Z') => 0,
+    let (oh, om, os) = match zone.chars().next() {
+        None | Some('Z') => (0, 0, 0),
         Some(sign @ ('+' | '-')) => {
             let mut z = zone[1..].split(':').map(|p| p.parse::<i64>().ok());
             let hours = z.next()??;
             let minutes = z.next().flatten().unwrap_or(0);
             let seconds = z.next().flatten().unwrap_or(0);
-            let secs = hours * 3600 + minutes * 60 + seconds;
-            if sign == '-' {
-                -secs
-            } else {
-                secs
-            }
+            let k = if sign == '-' { -1 } else { 1 };
+            // bounded first: `k *` on an `i64::MIN`-sized value must not overflow
+            (
+                within(hours, 0, 26)? * k,
+                within(minutes, 0, 59)? * k,
+                within(seconds, 0, 59)? * k,
+            )
         }
         _ => return None,
     };
-    Some(days_from_civil(y, m, day)? * 86_400 + hh * 3600 + mm * 60 + ss - offset)
+    seconds(days_from_civil(y, m, day)?, hh, mm, ss, oh, om, os)
 }
 
-/// Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's algorithm).
+/// Days since 1970-01-01 of a proleptic Gregorian date in 1970..=9999 (Howard Hinnant's
+/// algorithm); a year out of that range is no date for a login that expires.
 fn days_from_civil(y: i64, m: i64, d: i64) -> Option<i64> {
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
-        return None;
-    }
+    within(y, 1970, 9999)?;
+    within(m, 1, 12)?;
+    within(d, 1, 31)?;
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -326,7 +345,10 @@ fn token(exec: &Exec, host: &str) -> Option<String> {
         Saved::None => None,
         Saved::Expired => {
             // any `fj` command that talks to the host refreshes an expired login and saves it
-            let _ = exec.run(exec.tool("fj", &["-H", host, "whoami"]), QUICK_TIMEOUT);
+            let _ = exec.run(
+                exec.tool(FORGE.binary, &["-H", host, "whoami"]),
+                QUICK_TIMEOUT,
+            );
             match saved(&path, host, now()) {
                 Saved::Token(t) => Some(t.0),
                 _ => None,

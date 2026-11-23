@@ -17,6 +17,7 @@ export const baseStatus = (patch: Partial<GitStatus> = {}): GitStatus => ({
   tooLarge: [],
   lfs: { on: false, active: false, available: true, files: 0 },
   remote: null,
+  remoteHost: null,
   branch: null,
   ahead: 0,
   behind: 0,

@@ -236,6 +236,11 @@ export type GitStatus = {
 	error: string | null,
 	/**  The remote as `host/owner/repo` (no scheme, no credentials); `None` without one. */
 	remote: string | null,
+	/**
+	 *  The host of an HTTPS remote as git's credential requests name it (`host[:port]`, lower
+	 *  case); `None` for no remote or an SSH one. What a forge CLI's login is matched against.
+	 */
+	remoteHost: string | null,
 	branch: string | null,
 	/**  Commits not pushed, and commits of the remote not taken in. */
 	ahead: number,

@@ -2,8 +2,8 @@
 //! path and a stub for the sync: the steps, their order, where it stops, and what it never does.
 
 use super::*;
-use crate::features::scope::Spawner;
-use crate::git::forge::{FORGEJO, GITHUB};
+use crate::git::forgejo::FORGE as FORGEJO;
+use crate::git::github::FORGE as GITHUB;
 use crate::git::transport::Source;
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -72,9 +72,7 @@ fn rig(binary: &str, script: &str, remote: Option<&str>) -> Option<Rig> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let exec = Exec::new(Spawner::detached())
-        .with_path_prefix(vec![bin])
-        .with_env(env);
+    let exec = crate::git::forge::tests::sandbox(&bin, env);
     Some(Rig {
         _tmp: tmp,
         root,
@@ -250,6 +248,33 @@ esac"#;
 
 #[cfg(unix)]
 #[test]
+fn the_remote_is_on_the_chosen_host_even_when_fj_prints_another_address() {
+    // Forgejo's ROOT_URL differs from the host fj is signed in to
+    let script = r#"case "$*" in
+  "-H codeberg.org repo create "*) echo "Created https://forgejo.internal/me/$5" ;;
+  "-H codeberg.org whoami") echo "currently signed into me@codeberg.org" ;;
+esac"#;
+    let Some(r) = rig("fj", script, None) else {
+        return;
+    };
+    let (out, pushes) = r.run(&fj_req(CODEBERG), Ok(()));
+    assert_eq!((states(&out), pushes), (ALL_DONE.to_vec(), 1));
+    // the address is built from the chosen host, the owner and the name
+    assert_eq!(
+        r.git(&["remote", "get-url", "origin"]),
+        "https://codeberg.org/me/My-Vault.git"
+    );
+    // and no remote exists for the other host; the credential is bound to the chosen one
+    assert_eq!(r.git(&["remote"]), "origin");
+    assert!(!r
+        .git(&["config", "--local", "--list"])
+        .contains("forgejo.internal"));
+    assert_eq!(state::token_host(&r.root).as_deref(), Some(CODEBERG));
+    assert_eq!(out.steps[0].line, "codeberg.org/me/My-Vault");
+}
+
+#[cfg(unix)]
+#[test]
 fn a_failed_step_stops_the_action_with_its_kind() {
     // the first push fails: remote and credential stand, the push step carries the kind
     let Some(r) = rig("fj", FJ_OK, None) else {
@@ -387,7 +412,7 @@ fn macos_local_network_refusals_get_their_own_line() {
         assert_eq!(e.kind, Kind::LocalNetwork);
         assert_eq!(
             e.line,
-            "macOS blocked the connection: allow Writer under Privacy & Security > Local Network"
+            "Can't reach the server. On macOS, check Privacy & Security > Local Network."
         );
     } else {
         assert_eq!(

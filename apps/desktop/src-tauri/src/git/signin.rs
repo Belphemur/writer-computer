@@ -203,16 +203,17 @@ fn remote_step(
             .unwrap_or_default(),
     });
     let url = if req.link_existing {
-        let host = req
-            .host
-            .or(f.default_host)
-            .ok_or_else(|| failed("Choose a host"))?;
-        let owner =
-            (f.owner)(exec, req.host).ok_or_else(|| failed("Could not read the account"))?;
-        format!("https://{host}/{owner}/{name}.git")
+        own_url(exec, f, req.host, &name)?
     } else {
         match forge::create_repo(exec, root, f, req.host, &name) {
-            Ok(url) => url,
+            // the URL the CLI prints is the forge's own idea of its address (Forgejo's ROOT_URL may
+            // differ from the host the user is signed in to): only one on the chosen host is
+            // linked, otherwise the address is built from the host, the owner and the name, so the
+            // credential stays bound to the host the CLI is signed in to
+            Ok(url) if transport::https_host(&url).is_some_and(|h| (f.accepts)(&h, req.host)) => {
+                url
+            }
+            Ok(_) => own_url(exec, f, req.host, &name)?,
             Err(e) => {
                 if e.kind == Kind::Taken {
                     *taken = Some(name);
@@ -223,6 +224,21 @@ fn remote_step(
     };
     t.set_remote(&url)?;
     Ok(url)
+}
+
+/// `https://<host>/<owner>/<name>.git`: the repository of that name under the signed-in account on
+/// the chosen host (never another owner's).
+fn own_url(
+    exec: &Exec,
+    f: &'static Forge,
+    host: Option<&str>,
+    name: &str,
+) -> Result<String, StepError> {
+    let host = host
+        .or(f.default_host)
+        .ok_or_else(|| failed("Choose a host"))?;
+    let owner = (f.owner)(exec, Some(host)).ok_or_else(|| failed("Could not read the account"))?;
+    Ok(format!("https://{host}/{owner}/{name}.git"))
 }
 
 fn credential_step(root: &Path, f: &'static Forge, url: &str) -> Result<String, StepError> {

@@ -899,6 +899,14 @@ fn remote_urls_are_checked_and_credentials_are_refused() {
         "github.com/me/vault"
     );
     assert_eq!(
+        display_url("https://git.example.test:3000/me/v.git"),
+        "git.example.test:3000/me/v"
+    );
+    assert_eq!(
+        display_url("ssh://git@git.example.test:2222/me/v.git"),
+        "git.example.test:2222/me/v"
+    );
+    assert_eq!(
         display_url("git@github.com:me/vault.git"),
         "github.com/me/vault"
     );

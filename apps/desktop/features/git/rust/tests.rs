@@ -1341,6 +1341,105 @@ fn a_running_sync_makes_the_feature_busy_and_stopping_the_scope_ends_it() {
     assert!(!vaults.is_syncing("main"));
 }
 
+/// "No route to host" on macOS may be the Local Network privacy: the line says so as a possibility
+/// and the status reads Offline, not Error.
+#[test]
+fn a_local_network_refusal_is_offline_with_a_hint_on_macos() {
+    use crate::git::sync::Error;
+    use crate::git::transport::{Kind, TransportError};
+    let refused = |kind| {
+        sync::failure(&Error::Transport(TransportError {
+            kind,
+            line: "x".into(),
+            details: String::new(),
+        }))
+    };
+    let f = refused(Kind::LocalNetwork);
+    assert!(f.offline && f.kind == "local-network");
+    assert!(!refused(Kind::Auth).offline);
+    if cfg!(target_os = "macos") {
+        use crate::git::transport::{classify, Output};
+        let out = Output {
+            code: Some(128),
+            stdout: String::new(),
+            stderr: "fatal: unable to access 'https://git.lan/v.git/': Failed to connect to git.lan port 443: No route to host".into(),
+        };
+        let e = classify(&out, Path::new("/v"), &[]);
+        let f = sync::failure(&Error::Transport(e));
+        assert!(f.offline);
+        assert_eq!(f.kind, "local-network");
+        assert_eq!(
+            f.line,
+            "Can't reach the server. On macOS, check Privacy & Security > Local Network."
+        );
+    }
+}
+
+/// The first push of "Sign in with ..." is a step: a sync that did not run is a failed step, never
+/// "Synced".
+#[test]
+fn the_first_push_fails_when_no_sync_ran_and_succeeds_when_one_did() {
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    let sh = |cwd: &Path, args: &[&str]| {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "git {args:?}");
+    };
+    sh(remote.path(), &["init", "--bare", "-b", "main"]);
+    sh(&root, &["checkout", "-b", "main"]);
+    sh(
+        &root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("file://{}", remote.path().display()),
+        ],
+    );
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::Existing, "d").unwrap();
+    ISOLATED.with(|i| i.set(true));
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+
+    // another sync is running: this one cannot run, so the step fails and says why
+    assert!(vaults.begin_sync("main"));
+    let err = sync::first_push(app.handle(), "main").unwrap_err();
+    assert_eq!(err.line, "A sync is already running: try again");
+    assert!(matches!(
+        sync::run(app.handle(), "main", sync::Mode::Manual),
+        sync::Ran::Skipped(sync::Skip::Busy)
+    ));
+    // the held sync is untouched by the refused ones
+    assert!(vaults.is_syncing("main"));
+    vaults.end_sync("main", |_| {});
+
+    // a vault that cannot sync (a merge under way) fails the step too
+    std::fs::write(root.join(".git/MERGE_HEAD"), "0".repeat(40)).unwrap();
+    let err = sync::first_push(app.handle(), "main").unwrap_err();
+    assert!(err.line.starts_with("Cannot sync now"), "{}", err.line);
+    std::fs::remove_file(root.join(".git/MERGE_HEAD")).unwrap();
+
+    // nothing in the way: the sync ran, and the remote has the history
+    sync::first_push(app.handle(), "main").unwrap();
+    assert!(!vaults.is_syncing("main"));
+    let pushed = std::process::Command::new("git")
+        .args(["rev-parse", "--verify", "refs/heads/main"])
+        .current_dir(remote.path())
+        .output()
+        .unwrap();
+    assert!(pushed.status.success(), "the first push reached the remote");
+}
+
 #[cfg(unix)]
 #[test]
 fn closing_a_window_waits_for_its_sync_within_one_budget_and_never_runs_git_itself() {

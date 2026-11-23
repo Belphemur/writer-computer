@@ -27,7 +27,7 @@ pub static FORGE: Forge = Forge {
 };
 
 fn signed_in(exec: &Exec) -> Option<Vec<String>> {
-    match exec.run(exec.tool("gh", &["auth", "status"]), QUICK_TIMEOUT) {
+    match exec.run(exec.tool(FORGE.binary, &["auth", "status"]), QUICK_TIMEOUT) {
         Ok(o) if o.ok() => Some(Vec::new()),
         _ => None,
     }
@@ -37,7 +37,7 @@ fn signed_in(exec: &Exec) -> Option<Vec<String>> {
 fn token(exec: &Exec, host: &str) -> Option<String> {
     let out = exec
         .run(
-            exec.tool("gh", &["auth", "token", "--hostname", host]),
+            exec.tool(FORGE.binary, &["auth", "token", "--hostname", host]),
             QUICK_TIMEOUT,
         )
         .ok()?;
@@ -57,7 +57,7 @@ fn owner(exec: &Exec, host: Option<&str>) -> Option<String> {
         args.extend(["--hostname", host]);
     }
     let out = exec
-        .run(exec.tool("gh", &args), QUICK_TIMEOUT)
+        .run(exec.tool(FORGE.binary, &args), QUICK_TIMEOUT)
         .ok()
         .filter(|o| o.ok())?;
     let login = out.stdout.trim();

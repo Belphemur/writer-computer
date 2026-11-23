@@ -10,14 +10,11 @@ const ROW = "flex items-center justify-between gap-4 px-4 py-3 text-[13px]";
 const DIVIDER = "border-t border-[var(--line-subtler)]";
 const MUTED = "text-[var(--text-muted)]";
 
-/** The host of the vault's remote (`status.remote` is `host/owner/repo`), lower case. */
-export const remoteHost = (status: GitStatus): string | null =>
-  status.remote?.split("/")[0]?.toLowerCase() || null;
-
-/** The CLI can answer git for this vault: signed in, and to the remote's host when it has hosts. */
+/** The CLI can answer git for this vault: signed in, and to the remote's host (`remoteHost`, from
+ *  Rust, port included) when it has hosts. */
 export const forgeUsable = (forge: ForgeRow, status: GitStatus): boolean =>
   forge.state === "signed-in" &&
-  (forge.hosts.length === 0 || forge.hosts.some((h) => h.toLowerCase() === remoteHost(status)));
+  (forge.hosts.length === 0 || forge.hosts.some((h) => h.toLowerCase() === status.remoteHost));
 
 export function ForgeSignInRows({
   forges,
