@@ -19,7 +19,7 @@ function ProgressiveBlur({ position }: { position: "top" | "bottom" }) {
   // Static styles below mirror FADE_DISTANCE (120) and SCROLLBAR_GUTTER (18px).
   return (
     <div
-      className="pointer-events-none absolute z-10 h-[120px] left-[18px] right-[18px] [backdrop-filter:blur(3px)] [-webkit-backdrop-filter:blur(3px)]"
+      className="pointer-events-none absolute z-10 h-[120px] left-[18px] right-[18px] [backdrop-filter:var(--surface-blur-fade)] [-webkit-backdrop-filter:var(--surface-blur-fade)]"
       style={{
         [isTop ? "top" : "bottom"]: 0,
         maskImage: isTop ? topFade : bottomFade,

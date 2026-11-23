@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon, Copy01Icon, MinusSignIcon, SquareIcon } from "@hugeicons/core-free-icons";
 import { useBooleanSetting } from "@/hooks/use-settings";
-import { detectPlatform, drawsWindowControls } from "@/lib/platform";
+import { detectPlatform, drawsWindowControls, WINDOW_CONTROLS } from "@/lib/platform";
 import {
   closeWindow,
   isWindowMaximized,
@@ -12,7 +12,8 @@ import {
 } from "@/lib/tauri";
 
 const BUTTON =
-  "group pointer-events-auto flex h-7 w-9 items-center justify-center rounded-md text-[var(--fg-base)] transition-colors hover:bg-[var(--surface-subtle)] hover:transition-none";
+  "group pointer-events-auto flex h-7 items-center justify-center rounded-md text-[var(--fg-base)] transition-colors hover:bg-[var(--surface-subtle)] hover:transition-none";
+const BUTTON_STYLE = { width: WINDOW_CONTROLS.buttonWidth };
 const GLYPH = "opacity-60 transition-opacity group-hover:opacity-100 group-hover:transition-none";
 
 /** Minimize, maximize and close at the right of the chrome bar, drawn by Writer on Linux (ADR
@@ -46,12 +47,13 @@ function ControlButtons() {
   const label = maximized ? "Restore" : "Maximize";
   return (
     <div
-      className="pointer-events-none absolute right-0 top-0 z-50 flex items-center gap-0 pr-2"
-      style={{ height: "var(--chrome-bar-height)" }}
+      className="pointer-events-none fixed right-0 top-0 z-50 flex items-center"
+      style={{ height: "var(--chrome-bar-height)", paddingRight: WINDOW_CONTROLS.edge }}
     >
       <button
         type="button"
         className={BUTTON}
+        style={BUTTON_STYLE}
         aria-label="Minimize"
         title="Minimize"
         onClick={() => void minimizeWindow()}
@@ -63,6 +65,7 @@ function ControlButtons() {
       <button
         type="button"
         className={BUTTON}
+        style={BUTTON_STYLE}
         aria-label={label}
         title={label}
         onClick={() => void toggleMaximizeWindow()}
@@ -79,6 +82,7 @@ function ControlButtons() {
       <button
         type="button"
         className={BUTTON}
+        style={BUTTON_STYLE}
         aria-label="Close"
         title="Close"
         onClick={() => void closeWindow()}

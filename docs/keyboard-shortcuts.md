@@ -96,11 +96,19 @@ The command palette also has "Agent: Toggle pane", "Agent: New chat" and "Agent:
 
 ## App menu
 
-<!-- Bound to the native app menu (Tauri menu accelerators) rather than the global JS handler. -->
+<!-- Cmd+, is bound to the native app menu (Tauri menu accelerator) on macOS rather than the global JS handler. On Linux the menu is a popup whose accelerators never fire, so Ctrl+, and Ctrl+Q are the registry bindings `open-preferences` and `quit` (macOS has none: `keys: { mac: [] }`), and Alt alone is `useAltOpensMenu` (`src/components/app-menu-button.tsx`). `shared/reserved-chords.json` lists what is reserved per OS. -->
 
 | Shortcut | Action                                                |
 | -------- | ----------------------------------------------------- |
 | Cmd+,    | Open Preferences (Settings tab) in the focused window |
+
+On Linux, the app menu is the menu button at the left of the title bar. These open it and run its items:
+
+| Shortcut                | Action                                                |
+| ----------------------- | ----------------------------------------------------- |
+| Alt (pressed and alone) | Open the app menu                                     |
+| Ctrl+,                  | Open Preferences (Settings tab) in the focused window |
+| Ctrl+Q                  | Quit Writer                                           |
 
 ## Formatting
 

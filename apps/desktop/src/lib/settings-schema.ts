@@ -20,6 +20,7 @@
  */
 
 import schemaFile from "@shared/settings.schema.json";
+import { detectPlatform, type Platform } from "./platform";
 
 // ---------- Typed schema (contract) ----------
 
@@ -82,6 +83,17 @@ export const SETTINGS_SCHEMA: readonly SettingDef[] = [
   ...Object.values(FEATURE_SETTINGS).flat(),
 ];
 
+/** Does a setting apply on this OS? An entry's `platform` names a family, as Rust's
+ *  `SettingPlatform`: `macos`, or `linux` for everything else (Windows counts as Linux). Every
+ *  place that lists settings as rows asks this, so a Linux-only setting never shows on a Mac. */
+export function appliesHere(
+  def: { platform?: string },
+  platform: Platform = detectPlatform(),
+): boolean {
+  if (!def.platform) return true;
+  return def.platform === (platform === "macos" ? "macos" : "linux");
+}
+
 // ---------- Theme primaries ----------
 
 export type ThemeMode = "light" | "dark";
@@ -102,10 +114,15 @@ function presetKey(mode: ThemeMode): string {
 /** Schema entries describing the editable primaries for a theme mode. UI
  *  iterates these, write paths iterate these, preset compare iterates these.
  *  The hardcoded list lives only in the JSON schema. */
-export function getPrimaryDefs(mode: ThemeMode): SettingDef[] {
+export function getPrimaryDefs(
+  mode: ThemeMode,
+  platform: Platform = detectPlatform(),
+): SettingDef[] {
   const prefix = PRIMARY_PREFIX(mode);
   const presetK = presetKey(mode);
-  return SETTINGS_SCHEMA.filter((def) => def.key.startsWith(prefix) && def.key !== presetK);
+  return SETTINGS_SCHEMA.filter(
+    (def) => def.key.startsWith(prefix) && def.key !== presetK && appliesHere(def, platform),
+  );
 }
 
 export function suffixOf(mode: ThemeMode, key: string): PrimarySuffix {

@@ -250,9 +250,9 @@ pub struct SettingDef {
     pub normalize: Option<SettingNormalization>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<SettingScope>,
-    /// `"linux"`: the setting only applies there, so Settings lists it on that OS only.
+    /// The OS family the setting applies to; Settings lists it there only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>,
+    pub platform: Option<SettingPlatform>,
     pub default: ConfigValue,
 }
 
@@ -260,6 +260,15 @@ pub struct SettingDef {
 #[serde(rename_all = "lowercase")]
 pub enum SettingNormalization {
     Trim,
+}
+
+/// Two families, as `platform::Os`: macOS, and everything else (Linux; Windows counts as Linux,
+/// which `appliesHere` in `lib/settings-schema.ts` mirrors).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SettingPlatform {
+    Macos,
+    Linux,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -1081,7 +1090,7 @@ mod tests {
             .find(|d| d.key == "appearance.native-decorations")
             .expect("the native decorations setting is in the schema");
         assert_eq!(def.value_type, "boolean");
-        assert_eq!(def.platform.as_deref(), Some("linux"));
+        assert_eq!(def.platform, Some(SettingPlatform::Linux));
         assert_eq!(def.scope, Some(SettingScope::Global));
         assert_eq!(def.default, ConfigValue::Bool(false));
         assert_eq!(

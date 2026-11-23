@@ -1,5 +1,4 @@
 pub mod agent;
-#[cfg(target_os = "macos")]
 mod app_menu;
 pub mod attachments;
 pub mod bases;
@@ -9,6 +8,7 @@ pub mod code_files;
 mod code_files_tests;
 mod commands;
 mod config;
+#[cfg(target_os = "macos")]
 mod dock_menu;
 pub mod dql;
 pub mod dropped;
@@ -335,7 +335,7 @@ fn install_app_menu(
             app.set_menu(built.menu.clone())?;
         }
         platform::Os::Linux => {
-            app.manage(app_menu::PopupMenu(built.menu.clone()));
+            app.manage(app_menu::PopupMenu::new(built.menu.clone()));
         }
     }
 
@@ -356,33 +356,39 @@ fn install_app_menu(
         refresh_cli_menu(app);
     }
 
-    app.on_menu_event(|app, event| match event.id().0.as_str() {
-        app_menu::UPDATER_CHECK_ID => updater::start_check(app.clone(), true),
-        app_menu::PREFERENCES_ID => emit_to_focused_window(app, "menu:open-preferences"),
-        #[cfg(target_os = "macos")]
-        app_menu::CLI_ID => run_cli_toggle(app.clone()),
-        // Linux: the install command belongs to the CLI install lane; the web side listens.
-        #[cfg(not(target_os = "macos"))]
-        app_menu::CLI_ID => emit_to_focused_window(app, "menu:install-cli"),
-        // Ordinary items standing in for predefined ones GTK lacks (see `app_menu`). Quit goes
-        // through `exit`, the same path as the macOS quit item.
-        app_menu::QUIT_ID => app.exit(0),
-        app_menu::MINIMIZE_ID => {
-            if let Some(w) = focused_window(app) {
-                let _ = w.minimize();
+    app.on_menu_event(|app, event| {
+        use app_menu::Action;
+        let Some(action) = Action::from_id(&event.id().0) else {
+            return;
+        };
+        match action {
+            Action::CheckForUpdates => updater::start_check(app.clone(), true),
+            Action::OpenPreferences => emit_to_focused_window(app, "menu:open-preferences"),
+            #[cfg(target_os = "macos")]
+            Action::ToggleCli => run_cli_toggle(app.clone()),
+            // Linux has no such item yet (`app_menu::CLI_ID`).
+            #[cfg(not(target_os = "macos"))]
+            Action::ToggleCli => {}
+            // Ordinary items standing in for predefined ones GTK lacks (see `app_menu`). Quit
+            // goes through `exit`, the same path as the macOS quit item; the window ones act on
+            // the window the popup was opened on.
+            Action::Quit => app.exit(0),
+            Action::Minimize => {
+                if let Some(w) = menu_window(app) {
+                    let _ = w.minimize();
+                }
+            }
+            Action::ToggleFullscreen => {
+                if let Some(w) = menu_window(app) {
+                    let _ = w.set_fullscreen(!w.is_fullscreen().unwrap_or(false));
+                }
+            }
+            Action::CloseWindow => {
+                if let Some(w) = menu_window(app) {
+                    let _ = w.close();
+                }
             }
         }
-        app_menu::FULLSCREEN_ID => {
-            if let Some(w) = focused_window(app) {
-                let _ = w.set_fullscreen(!w.is_fullscreen().unwrap_or(false));
-            }
-        }
-        app_menu::CLOSE_WINDOW_ID => {
-            if let Some(w) = focused_window(app) {
-                let _ = w.close();
-            }
-        }
-        _ => {}
     });
 
     Ok(())
@@ -408,6 +414,15 @@ fn focused_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
         })
         .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
         .cloned()
+}
+
+/// The window a menu action applies to: the one the Linux popup was opened on, else the focused
+/// one (the macOS menu bar has no popup).
+fn menu_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
+    app.try_state::<app_menu::PopupMenu>()
+        .and_then(|p| p.window_label())
+        .and_then(|label| app.get_webview_window(&label))
+        .or_else(|| focused_window(app))
 }
 
 fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
@@ -670,6 +685,7 @@ pub fn run() {
         // The plugin host's commands are gated by the `obsidian-host` feature (switch, failure).
         .invoke_handler(features::obsidian_host::gated(tauri::generate_handler![
             app_menu::app_menu_popup,
+            app_menu::quit_app,
             commands::ipc::ipc_ready,
             commands::ipc::ipc_reply,
             commands::logs::log_event,

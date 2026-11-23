@@ -109,6 +109,25 @@ describe("conflict detection", () => {
     expect(() => r.add("x", binding("c", ["Mod+Q"]))).toThrow(/reserved/);
   });
 
+  it("reserves the native menu's chords on macOS only (a Linux popup's accelerators never fire)", () => {
+    const mac = new KeybindingRegistry(always, () => "macos");
+    const linux = new KeybindingRegistry(always, () => "linux");
+    for (const chord of ["Mod+,", "Mod+Q"]) {
+      expect(mac.refusal(chord)).toBe("reserved");
+      expect(linux.refusal(chord)).toBeUndefined();
+      expect(() => mac.add("x", binding(`m${chord}`, [chord]))).toThrow(/reserved/);
+      expect(() => linux.add("x", binding(`l${chord}`, [chord]))).not.toThrow();
+    }
+  });
+
+  it("binds Preferences and Quit on Linux only, where the menu has no working accelerator", () => {
+    for (const id of ["open-preferences", "quit"]) {
+      const b = CORE_BINDINGS.find((c) => c.id === id)!;
+      expect(resolveKeys(b.keys, "mac")).toEqual([]);
+      expect(resolveKeys(b.keys, "linux")).toHaveLength(1);
+    }
+  });
+
   it("allows one chord under two different named contexts, not under none", () => {
     const r = reg();
     r.add("core", binding("a", ["Mod+K"], { when: "editor-not-focused" }));
@@ -156,8 +175,14 @@ function documentedGlobalChords(): string[] {
 
 describe("docs/keyboard-shortcuts.md Global table", () => {
   // Core bindings plus what the built-in features contribute (Cmd+Shift+A is the agent's).
+  // Linux-only bindings (no macOS keys) are documented in the "App menu" section, not "Global".
   const registryChords = () =>
-    new Set(keybindings.list().flatMap((b) => keybindings.defaultKeys(b.id)));
+    new Set(
+      keybindings
+        .list()
+        .filter((b) => resolveKeys(b.keys, "mac").length > 0)
+        .flatMap((b) => keybindings.defaultKeys(b.id)),
+    );
 
   it("has a registry entry for every documented shortcut", () => {
     const docs = documentedGlobalChords();

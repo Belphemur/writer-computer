@@ -20,6 +20,7 @@ const settings = vi.hoisted(() => ({ native: false }));
 vi.mock("@/hooks/use-settings", () => ({ useBooleanSetting: () => settings.native }));
 
 import { WindowControls } from "@/components/window-controls";
+import { chromeInset, WINDOW_CONTROLS } from "@/lib/platform";
 
 const UA = {
   linux: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15",
@@ -65,6 +66,15 @@ describe("WindowControls", () => {
     settings.native = true;
     await render("linux");
     expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("takes exactly the width chromeInset reserves at the right", async () => {
+    await render("linux");
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
+    const width = buttons.reduce((sum, b) => sum + parseFloat(b.style.width), 0);
+    const bar = buttons[0]!.parentElement as HTMLElement;
+    expect(buttons).toHaveLength(WINDOW_CONTROLS.count);
+    expect(width + parseFloat(bar.style.paddingRight)).toBe(chromeInset("linux").end);
   });
 
   it("each button calls its window API", async () => {

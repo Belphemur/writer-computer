@@ -14,10 +14,15 @@ export type ChromeInset = { start: number; end: number };
 
 /** macOS: the traffic lights sit at the left. */
 const TRAFFIC_LIGHT_INSET = 92;
-/** Linux: the menu button at the left (12px edge + 32px button + 8px gap). */
-const MENU_BUTTON_INSET = 52;
-/** Linux: Writer's minimize, maximize and close at the right (3 x 36px + 8px edge). */
-const WINDOW_CONTROLS_INSET = 116;
+
+/** Linux chrome sizes, in px. The components draw with these and `chromeInset` sums them, so the
+ *  space reserved for the menu button and the window controls is exactly what they take. */
+export const MENU_BUTTON = { edge: 12, width: 32, gap: 8 } as const;
+export const WINDOW_CONTROLS = { count: 3, buttonWidth: 36, edge: 8 } as const;
+
+const MENU_BUTTON_INSET = MENU_BUTTON.edge + MENU_BUTTON.width + MENU_BUTTON.gap;
+const WINDOW_CONTROLS_INSET =
+  WINDOW_CONTROLS.count * WINDOW_CONTROLS.buttonWidth + WINDOW_CONTROLS.edge;
 
 /** Whether Writer draws its own minimize, maximize and close: Linux without the desktop's frame. */
 export function drawsWindowControls(

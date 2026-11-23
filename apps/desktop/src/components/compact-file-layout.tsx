@@ -10,7 +10,6 @@ import {
 } from "react";
 import { EditorArea } from "./editor-area";
 import { AppMenuButton } from "./app-menu-button";
-import { WindowControls } from "./window-controls";
 import { useChromeInset } from "@/hooks/use-chrome-frame";
 import { CompactRecentsList } from "./compact-recents-list";
 import { ScrollFade } from "@/components/scroll-fade";
@@ -444,7 +443,6 @@ export function CompactFileLayout() {
       <div className="relative h-full min-w-0 bg-bg">
         <EditorArea showFooter={false} />
       </div>
-      <WindowControls />
     </div>
   );
 }

@@ -123,8 +123,8 @@ function EditorTabButton({
         pinned ? "max-w-[132px] gap-1.5 px-2.5" : "max-w-[180px] px-3.5"
       } ${
         isActive
-          ? "bg-[var(--tab-active-bg)] text-[var(--text-secondary)] backdrop-blur-2xl"
-          : "bg-transparent text-[var(--text-muted)] hover:bg-[var(--tab-active-bg)] hover:text-[var(--text-secondary)] hover:backdrop-blur-2xl"
+          ? "bg-[var(--tab-active-bg)] text-[var(--text-secondary)] [backdrop-filter:var(--surface-blur-tab)]"
+          : "bg-transparent text-[var(--text-muted)] hover:bg-[var(--tab-active-bg)] hover:text-[var(--text-secondary)] hover:[backdrop-filter:var(--surface-blur-tab)]"
       }`}
     >
       {saveError ? (

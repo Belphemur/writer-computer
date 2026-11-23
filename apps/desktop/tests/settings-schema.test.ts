@@ -93,7 +93,7 @@ describe("theme presets", () => {
   test("define every editable primary from the settings schema", () => {
     for (const [path, preset] of Object.entries(presetFiles)) {
       const mode: ThemeMode = path.endsWith("/dark.json") ? "dark" : "light";
-      const schemaKeys = getPrimaryDefs(mode)
+      const schemaKeys = getPrimaryDefs(mode, "macos")
         .map((def) => suffixOf(mode, def.key))
         .sort();
       expect(Object.keys(preset).sort(), path).toEqual(schemaKeys);

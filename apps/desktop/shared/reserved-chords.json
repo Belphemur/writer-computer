@@ -1,0 +1,5 @@
+{
+  "description": "Chords the native menu owns, in the keybinding registry's spelling, per OS family (`macos`, or `other` for Linux). The registry refuses to bind them; `app_menu.rs` has a test that every accelerator of its menu definition is listed here, and that the Linux popup menu has none (a popup's accelerators never fire).",
+  "macos": ["Mod+Q", "Mod+,", "Mod+H", "Mod+M"],
+  "other": []
+}

@@ -25,6 +25,7 @@ import {
   type ChordMatchOptions,
 } from "./chord";
 import { WHEN, type WhenName } from "./when";
+import reservedChords from "@shared/reserved-chords.json";
 
 export type KeybindingCategory =
   | "Navigation"
@@ -85,8 +86,11 @@ export interface KeybindingEntry extends Keybinding {
 // exclusive); an unconditional binding overlaps every context.
 const overlap = (a?: WhenName, b?: WhenName) => !a || !b || a === b;
 
-/** Chords the OS or the native menu owns; an app binding on them could never fire reliably. */
-const RESERVED: readonly string[] = ["Mod+Q", "Mod+,", "Mod+H", "Mod+M"];
+/** Chords the OS or the native menu owns, per OS family (`shared/reserved-chords.json`, which a
+ *  Rust test ties to the menu definition): an app binding on them could never fire reliably. The
+ *  Linux menu is a popup whose accelerators never fire, so nothing is reserved there. */
+const reservedFor = (os: OsKey): readonly string[] =>
+  os === "mac" ? reservedChords.macos : reservedChords.other;
 
 export class KeybindingConflictError extends Error {}
 
@@ -131,7 +135,7 @@ export class KeybindingRegistry {
           `${this.format(dup)} is listed twice for "${binding.id}"`,
         );
       for (const key of mine) {
-        if (RESERVED.includes(key)) {
+        if (reservedFor(this.os()).includes(key)) {
           throw new KeybindingConflictError(
             `${this.format(key)} is reserved by the system and cannot be bound ("${binding.id}")`,
           );
@@ -246,7 +250,7 @@ export class KeybindingRegistry {
 
   /** Why this chord cannot be bound, or undefined when it can. */
   refusal(chord: string): ChordRefusal | undefined {
-    if (RESERVED.includes(normalizeChord(chord))) return "reserved";
+    if (reservedFor(this.os()).includes(normalizeChord(chord))) return "reserved";
     return isBindableChord(chord) ? undefined : "needs-modifier";
   }
 

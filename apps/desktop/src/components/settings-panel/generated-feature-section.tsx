@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import type { FeatureSecretDecl } from "@/lib/features/types";
 import type { FeatureManifest } from "@/lib/features/types";
-import type { SettingDef } from "@/lib/settings-schema";
+import { appliesHere, type SettingDef } from "@/lib/settings-schema";
 import { FeatureSecretRows } from "./feature-secret-rows";
 import { SettingRows } from "./setting-rows";
 import type { FeatureNavSection } from "./settings-sections";
@@ -18,9 +18,10 @@ function GeneratedFeatureSection({
   defs: readonly SettingDef[];
   secrets: readonly FeatureSecretDecl[];
 }) {
+  const here = defs.filter((def) => appliesHere(def));
   return (
     <>
-      {defs.length > 0 && <SettingRows defs={defs} />}
+      {here.length > 0 && <SettingRows defs={here} />}
       {secrets.length > 0 && <FeatureSecretRows featureId={featureId} secrets={secrets} />}
     </>
   );

@@ -4,7 +4,6 @@ import { EditorArea } from "./editor-area";
 import { EditorTabs } from "./editor-area/editor-tabs";
 import { SidebarToggleButton } from "./sidebar/sidebar-toggle-button";
 import { AppMenuButton } from "./app-menu-button";
-import { WindowControls } from "./window-controls";
 import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
 import { DockPane } from "./dock-pane";
@@ -194,7 +193,6 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
           {dockId ? <DockPane id={dockId} /> : null}
         </div>
       </div>
-      <WindowControls />
       <FeatureHealthNotices />
     </div>
   );

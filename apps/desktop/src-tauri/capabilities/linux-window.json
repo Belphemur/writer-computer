@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "linux-window",
+  "description": "Linux only: Writer draws its own window controls (minimize, maximize) and can give the window the desktop's frame back (`appearance.native-decorations`).",
+  "windows": ["main", "w-*"],
+  "platforms": ["linux"],
+  "permissions": [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-set-decorations"
+  ]
+}

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
 import schema from "@shared/settings.schema.json";
-import { chromeInset, drawsWindowControls, installPlatformAttribute } from "../src/lib/platform";
+import {
+  chromeInset,
+  drawsWindowControls,
+  installPlatformAttribute,
+  MENU_BUTTON,
+  WINDOW_CONTROLS,
+} from "../src/lib/platform";
 
 describe("chromeInset", () => {
   test("macOS reserves the traffic-light gap at the left and nothing at the right", () => {
@@ -10,6 +16,12 @@ describe("chromeInset", () => {
 
   test("Linux reserves the menu button at the left and the window controls at the right", () => {
     expect(chromeInset("linux")).toEqual({ start: 52, end: 116 });
+  });
+
+  test("the reserved space is the sum of the sizes the components draw with", () => {
+    const { start, end } = chromeInset("linux");
+    expect(start).toBe(MENU_BUTTON.edge + MENU_BUTTON.width + MENU_BUTTON.gap);
+    expect(end).toBe(WINDOW_CONTROLS.count * WINDOW_CONTROLS.buttonWidth + WINDOW_CONTROLS.edge);
   });
 
   test("Linux with the desktop's frame keeps the menu button and drops the controls", () => {

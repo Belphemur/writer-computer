@@ -4,7 +4,8 @@
 // palette command id makes the palette show the key (`shortcutFor`), so the two cannot drift.
 import { toggleSidebar } from "@/hooks/use-sidebar";
 import { resetZoom, zoomIn, zoomOut } from "@/hooks/zoom-api";
-import { closeWindow } from "@/lib/tauri";
+import { openPreferences } from "@/hooks/use-menu-events";
+import { closeWindow, quitApp } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -196,6 +197,23 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
       const tab = tabs[parseInt(e.key) - 1];
       if (tab) setActiveTab(tab.id);
     },
+  },
+  // Linux only: macOS has these as native menu accelerators (reserved, see
+  // `shared/reserved-chords.json`); a Linux popup menu's accelerators never fire, so the same
+  // actions are bound here and run what the menu items run.
+  {
+    id: "open-preferences",
+    keys: { mac: [], other: ["Mod+,"] },
+    description: "Open Preferences (Settings tab)",
+    category: "Navigation",
+    run: () => openPreferences(),
+  },
+  {
+    id: "quit",
+    keys: { mac: [], other: ["Mod+Q"] },
+    description: "Quit Writer",
+    category: "Navigation",
+    run: () => void quitApp(),
   },
   // Cmd+[ / Cmd+] are history back / forward everywhere, the note included (what mouse drivers send
   // for the side buttons). Capture phase, so it wins over CodeMirror's indent bindings (Tab and

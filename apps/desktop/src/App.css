@@ -104,6 +104,18 @@
      still works for the dropdown-arrow background-image path. */
   --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='gray' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5l3 3 3-3'/></svg>");
 
+  /* Floating surfaces: how much the backdrop is blurred and how much of an opaque plate sits under
+     them. Every `backdrop-filter` and plate reads these (a test bans raw `blur(`), so Linux, whose
+     window has no vibrancy, makes them all opaque in one place (below). */
+  --surface-blur: blur(16px);
+  --surface-blur-modal: blur(6px);
+  --surface-blur-overlay: blur(4px);
+  --surface-blur-fade: blur(3px);
+  --surface-blur-tab: blur(40px);
+  --surface-plate-mix: 55%;
+  /* A plate under a surface that is transparent where it has none (the autocomplete tooltip). */
+  --surface-plate-floor: 0%;
+
   --chrome-control-height: 32px;
   --chrome-control-padding: 12px;
   /* The window chrome row (tab strip, sidebar header): the one height the editor body starts below. */
@@ -304,13 +316,13 @@ body.tree-dragging [data-tree-path] {
 /* Floating card surface — shared by `<SurfaceCard>` (section-rail popover,
    editor search overlay) and cmdk's library-rendered `[cmdk-dialog]`. The
    `::before` layer paints `--bg-base` at 55% so the card reads opaque enough
-   while the backdrop-blur still picks up editor content behind. Establish a
+   while the blurred backdrop still picks up editor content behind. Establish a
    stacking context (`isolation: isolate`) so the under-layer stays inside. */
 .surface-card,
 [cmdk-dialog] {
   background: var(--surface-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
   border: 1px solid var(--line-subtler);
   border-radius: 16px;
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
@@ -323,7 +335,7 @@ body.tree-dragging [data-tree-path] {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--bg-base) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-base) var(--surface-plate-mix), transparent);
   z-index: -1;
   pointer-events: none;
 }
@@ -396,8 +408,8 @@ body.tree-dragging [data-tree-path] {
    theme reads as a dimmed app rather than a layer above it. */
 .modal-backdrop {
   background: rgb(255 255 255 / 0.8);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: var(--surface-blur-modal);
+  -webkit-backdrop-filter: var(--surface-blur-modal);
 }
 
 [data-theme="dark"] .modal-backdrop {
@@ -454,12 +466,12 @@ body.tree-dragging [data-tree-path] {
   border-radius: inherit;
   background:
     linear-gradient(
-      color-mix(in srgb, var(--bg-base) 55%, transparent),
-      color-mix(in srgb, var(--bg-base) 55%, transparent)
+      color-mix(in srgb, var(--bg-base) var(--surface-plate-mix), transparent),
+      color-mix(in srgb, var(--bg-base) var(--surface-plate-mix), transparent)
     ),
     var(--surface-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
 }
 
 .compact-picker-card-surface::before {
@@ -525,9 +537,9 @@ body.tree-dragging [data-tree-path] {
    `&light .cm-tooltip { backgroundColor: #f5f5f5; border: 1px solid #bbb }`
    after our stylesheet with higher specificity. */
 .cm-tooltip.cm-tooltip-autocomplete {
-  background: transparent !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--bg-base) var(--surface-plate-floor), transparent) !important;
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
   border: 1px solid var(--line-subtler) !important;
   border-radius: 16px !important;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
@@ -946,17 +958,16 @@ button.agent-pill:hover {
   opacity: 0.6;
 }
 
-/* Linux: opaque, no translucency (see `lib/theme.ts`): the window has no vibrancy behind it, so
-   blurring what is under a floating surface only costs paint time. */
+/* Linux: one opaque rule (ADR 2026-11-20). The window has no vibrancy behind it and X11 without a
+   compositor paints transparency black, so the background is opaque, nothing is blurred and every
+   plate is solid. */
 :root[data-platform="linux"] {
   --bg-opacity: 1;
-}
-
-:root[data-platform="linux"] .surface-card,
-:root[data-platform="linux"] [cmdk-dialog],
-:root[data-platform="linux"] .modal-backdrop,
-:root[data-platform="linux"] .compact-picker-card-surface,
-:root[data-platform="linux"] .cm-tooltip.cm-tooltip-autocomplete {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  --surface-blur: none;
+  --surface-blur-modal: none;
+  --surface-blur-overlay: none;
+  --surface-blur-fade: none;
+  --surface-blur-tab: none;
+  --surface-plate-mix: 100%;
+  --surface-plate-floor: 100%;
 }

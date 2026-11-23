@@ -29,7 +29,7 @@ Status: designed with the user 2026-11-20, refreshed 2026-11-23 (git, logs, rele
 1. `tauri.conf.json:17-24`: macOS title bar keys, transparency, `hudWindow` → `tauri.linux.conf.json` overlay: decorations off, transparent off; secondary windows (`lib.rs:223-246`) use the same overlay.
 2. `App.css:55-57, 312, 399, 461, 529`: translucency assumed → opaque tokens on Linux (verify X11 without compositor).
 3. `lib.rs:57-70`: close-to-hide is macOS-only → Linux quits on last close (decided).
-4. `lib.rs:315-360`: native menu bar built on Linux with macOS-only items → menu definition + renderers; ☰ button on Linux.
+4. `lib.rs:315-360`: native menu bar built on Linux with macOS-only items → menu definition + renderers; ☰ button on Linux. Decided in the build: GTK implements only About, Cut, Copy, Paste and Select All as predefined items, so on Linux Undo and Redo are dropped from the menu (the editor has Ctrl+Z) and Quit, Minimize, Full Screen and Close are ordinary items (`app.quit`, `window.minimize`, `window.fullscreen`, `window.close`) handled in Rust through `app_menu::Action`. A popup menu's accelerators never fire, so Ctrl+, and Ctrl+Q are registry bindings on Linux and nothing is reserved there (`shared/reserved-chords.json`). The "Install 'writer' command" item is left out of the Linux menu until the CLI install lane lands.
 5. `lib.rs:384-393, 425-474`, `commands/shell_install.rs`, `commands/mod.rs:13`, `lib.rs:804-818`: CLI install macOS-only → shared core, Linux installer into `~/.local/bin`.
 6. `commands/fs.rs:1105-1115`: reveal opens the parent only → opener reveal (FileManager1), fallback to the folder.
 7. `commands/fs.rs:1030-1045`: trash may fail on mounts without a trash dir → clear error (verify).

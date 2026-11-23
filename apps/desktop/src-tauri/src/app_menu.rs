@@ -10,6 +10,7 @@
 use crate::error::AppError;
 use crate::platform::Os;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use tauri::menu::{
     IsMenuItem, Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
@@ -17,8 +18,8 @@ use tauri::Wry;
 
 pub const UPDATER_CHECK_ID: &str = "updater.check";
 pub const PREFERENCES_ID: &str = "preferences.open";
-/// The "Install 'writer' command" item. On macOS it toggles install and uninstall; on Linux it
-/// emits `menu:install-cli` (the command behind it belongs to the CLI install lane).
+/// The macOS "Install 'writer' Command Line Tool" item (install and uninstall toggle). Linux has
+/// no such item yet: it comes back with its listener when the CLI install lane lands.
 pub const CLI_ID: &str = "cli.toggle";
 pub const QUIT_ID: &str = "app.quit";
 pub const MINIMIZE_ID: &str = "window.minimize";
@@ -27,7 +28,6 @@ pub const CLOSE_WINDOW_ID: &str = "window.close";
 
 pub const CLI_INSTALL_LABEL_MACOS: &str = "Install 'writer' Command Line Tool…";
 pub const CLI_UNINSTALL_LABEL_MACOS: &str = "Uninstall 'writer' Command Line Tool…";
-const CLI_INSTALL_LABEL_LINUX: &str = "Install 'writer' command";
 
 /// A toolkit-provided item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,10 +106,6 @@ fn item(id: &'static str, label: &'static str, accelerator: Option<&'static str>
 /// The menu, for one OS.
 pub fn definition(os: Os) -> Vec<Section> {
     use Entry::{Native as N, Separator as S};
-    let cli_label = match os {
-        Os::MacOs => CLI_INSTALL_LABEL_MACOS,
-        Os::Linux => CLI_INSTALL_LABEL_LINUX,
-    };
     let all = vec![
         Section {
             title: "Writer",
@@ -119,7 +115,7 @@ pub fn definition(os: Os) -> Vec<Section> {
                 item(UPDATER_CHECK_ID, "Check for Updates…", None),
                 S,
                 item(PREFERENCES_ID, "Preferences…", Some("CmdOrCtrl+,")),
-                item(CLI_ID, cli_label, None),
+                item(CLI_ID, CLI_INSTALL_LABEL_MACOS, None),
                 S,
                 N(Native::Services),
                 S,
@@ -166,6 +162,11 @@ fn for_linux(section: Section) -> Section {
                 OnLinux::Item(id, label) => Some(item(id, label, None)),
                 OnLinux::Omitted => None,
             },
+            // macOS-only for now (see `CLI_ID`).
+            Entry::Item { id: CLI_ID, .. } => None,
+            // A popup menu's accelerators never fire (only a menu bar's do); Linux binds its
+            // chords in the web keybinding registry instead.
+            Entry::Item { id, label, .. } => Some(item(id, label, None)),
             other => Some(other),
         };
         let Some(resolved) = resolved else { continue };
@@ -180,6 +181,34 @@ fn for_linux(section: Section) -> Section {
         entries.pop();
     }
     Section { entries, ..section }
+}
+
+/// What an ordinary item does: the one place an id is tied to its handler, so a test can say that
+/// every id of every definition is handled (`lib.rs` matches on this, never on strings).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    CheckForUpdates,
+    OpenPreferences,
+    ToggleCli,
+    Quit,
+    Minimize,
+    ToggleFullscreen,
+    CloseWindow,
+}
+
+impl Action {
+    pub fn from_id(id: &str) -> Option<Action> {
+        Some(match id {
+            UPDATER_CHECK_ID => Action::CheckForUpdates,
+            PREFERENCES_ID => Action::OpenPreferences,
+            CLI_ID => Action::ToggleCli,
+            QUIT_ID => Action::Quit,
+            MINIMIZE_ID => Action::Minimize,
+            FULLSCREEN_ID => Action::ToggleFullscreen,
+            CLOSE_WINDOW_ID => Action::CloseWindow,
+            _ => return None,
+        })
+    }
 }
 
 /// The rendered menu and the ordinary items by id (the updater and the macOS command item
@@ -243,21 +272,51 @@ pub fn build(app: &tauri::AppHandle, os: Os) -> tauri::Result<Built> {
     })
 }
 
-/// The Linux popup menu, built once at startup (it holds the updater's item).
-pub struct PopupMenu(pub Menu<Wry>);
+/// The Linux popup menu, built once at startup (it holds the updater's item), and the window it
+/// was last opened on: Minimize, Close and Full Screen act on that window, not on whichever one
+/// happens to report focus once the popup has taken it.
+pub struct PopupMenu {
+    pub menu: Menu<Wry>,
+    window: Mutex<Option<String>>,
+}
+
+impl PopupMenu {
+    pub fn new(menu: Menu<Wry>) -> Self {
+        Self {
+            menu,
+            window: Mutex::new(None),
+        }
+    }
+
+    /// The label of the window the menu was last opened on.
+    pub fn window_label(&self) -> Option<String> {
+        self.window.lock().ok().and_then(|w| w.clone())
+    }
+}
 
 /// Open the app menu at the pointer: the chrome bar's menu button and the Alt key call this.
-/// A no-op on macOS, whose menu is the native menu bar.
+/// Linux only: the state is managed there alone, and on macOS (the native menu bar) this is a
+/// no-op.
 #[tauri::command]
-pub async fn app_menu_popup(
-    window: tauri::Window,
-    popup: tauri::State<'_, PopupMenu>,
-) -> Result<(), AppError> {
+pub async fn app_menu_popup(app: tauri::AppHandle, window: tauri::Window) -> Result<(), AppError> {
     use tauri::menu::ContextMenu;
+    use tauri::Manager;
+    let Some(popup) = app.try_state::<PopupMenu>() else {
+        return Ok(());
+    };
+    if let Ok(mut w) = popup.window.lock() {
+        *w = Some(window.label().to_string());
+    }
     popup
-        .0
+        .menu
         .popup(window)
         .map_err(|e| AppError::Io(e.to_string()))
+}
+
+/// Quit the app through the same exit path as the macOS quit item (Linux's Ctrl+Q).
+#[tauri::command]
+pub async fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[cfg(test)]
@@ -290,18 +349,22 @@ mod tests {
     fn both_oses_share_the_titles_and_the_app_items() {
         let titles = |os| definition(os).iter().map(|s| s.title).collect::<Vec<_>>();
         assert_eq!(titles(Os::MacOs), titles(Os::Linux));
-        for id in [UPDATER_CHECK_ID, PREFERENCES_ID, CLI_ID] {
+        for id in [UPDATER_CHECK_ID, PREFERENCES_ID] {
             assert!(ids(Os::MacOs).contains(&id), "{id} on macOS");
             assert!(ids(Os::Linux).contains(&id), "{id} on Linux");
         }
         assert_eq!(
             ids(Os::MacOs)
                 .into_iter()
-                .filter(|i| ![QUIT_ID, MINIMIZE_ID, FULLSCREEN_ID, CLOSE_WINDOW_ID].contains(i))
+                .filter(
+                    |i| ![QUIT_ID, MINIMIZE_ID, FULLSCREEN_ID, CLOSE_WINDOW_ID, CLI_ID].contains(i)
+                )
                 .collect::<Vec<_>>(),
             ids(Os::Linux)
                 .into_iter()
-                .filter(|i| ![QUIT_ID, MINIMIZE_ID, FULLSCREEN_ID, CLOSE_WINDOW_ID].contains(i))
+                .filter(
+                    |i| ![QUIT_ID, MINIMIZE_ID, FULLSCREEN_ID, CLOSE_WINDOW_ID, CLI_ID].contains(i)
+                )
                 .collect::<Vec<_>>()
         );
     }
@@ -318,20 +381,91 @@ mod tests {
             assert!(natives(Os::MacOs).contains(&n));
             assert!(!linux.contains(&n), "{n:?} on Linux");
         }
-        let label = |os| {
-            definition(os)
-                .iter()
-                .flat_map(|s| s.entries.iter())
-                .find_map(|e| match e {
-                    Entry::Item {
-                        id: CLI_ID, label, ..
-                    } => Some(*label),
-                    _ => None,
-                })
-                .unwrap()
-        };
-        assert_eq!(label(Os::MacOs), CLI_INSTALL_LABEL_MACOS);
-        assert_eq!(label(Os::Linux), "Install 'writer' command");
+        // The command-line-tool item comes back on Linux with its listener.
+        assert!(ids(Os::MacOs).contains(&CLI_ID));
+        assert!(!ids(Os::Linux).contains(&CLI_ID));
+    }
+
+    #[test]
+    fn every_item_id_of_both_menus_has_a_handled_action() {
+        for os in [Os::MacOs, Os::Linux] {
+            for id in ids(os) {
+                assert!(Action::from_id(id).is_some(), "{os:?}: {id} has no handler");
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ReservedChords {
+        macos: Vec<String>,
+        other: Vec<String>,
+    }
+
+    fn accelerators(os: Os) -> Vec<String> {
+        definition(os)
+            .iter()
+            .flat_map(|s| s.entries.iter())
+            .filter_map(|e| match e {
+                Entry::Item { accelerator, .. } => {
+                    accelerator.map(|a| a.replace("CmdOrCtrl", "Mod"))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reserved_chords_cover_the_menu_accelerators_and_linux_has_none() {
+        let reserved: ReservedChords =
+            serde_json::from_str(include_str!("../../shared/reserved-chords.json")).unwrap();
+        for a in accelerators(Os::MacOs) {
+            assert!(reserved.macos.contains(&a), "{a} is not reserved on macOS");
+        }
+        assert_eq!(accelerators(Os::Linux), Vec::<String>::new());
+        assert!(reserved.other.is_empty());
+    }
+
+    fn outline(os: Os) -> String {
+        definition(os)
+            .iter()
+            .map(|s| {
+                let entries: Vec<String> = s
+                    .entries
+                    .iter()
+                    .map(|e| match e {
+                        Entry::Separator => "-".to_string(),
+                        Entry::Native(n) => format!("{n:?}"),
+                        Entry::Item {
+                            id,
+                            label,
+                            accelerator,
+                        } => format!("{id}={label}[{}]", accelerator.unwrap_or("")),
+                    })
+                    .collect();
+                format!("{}: {}", s.title, entries.join(" | "))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn the_macos_menu_is_what_it_was_before_the_shared_definition() {
+        assert_eq!(
+            outline(Os::MacOs),
+            "Writer: About | - | updater.check=Check for Updates…[] | - | preferences.open=Preferences…[CmdOrCtrl+,] | cli.toggle=Install 'writer' Command Line Tool…[] | - | Services | - | Hide | HideOthers | ShowAll | - | Quit\n\
+Edit: Undo | Redo | - | Cut | Copy | Paste | SelectAll\n\
+Window: Minimize | Fullscreen | CloseWindow"
+        );
+    }
+
+    #[test]
+    fn the_linux_menu_outline() {
+        assert_eq!(
+            outline(Os::Linux),
+            "Writer: About | - | updater.check=Check for Updates…[] | - | preferences.open=Preferences…[] | - | app.quit=Quit[]\n\
+Edit: Cut | Copy | Paste | SelectAll\n\
+Window: window.minimize=Minimize[] | window.fullscreen=Toggle Full Screen[] | window.close=Close Window[]"
+        );
     }
 
     #[test]

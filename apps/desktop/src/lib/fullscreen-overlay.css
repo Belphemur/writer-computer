@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: center;
   background-color: color-mix(in srgb, var(--bg-base, #1e1e1e) 70%, transparent);
-  backdrop-filter: blur(3px);
+  backdrop-filter: var(--surface-blur-fade, blur(3px));
   opacity: 0;
   transition: opacity 160ms ease-out;
 }
@@ -78,7 +78,7 @@
 .writer-fullscreen[data-variant="bare"] {
   display: block;
   background-color: color-mix(in srgb, var(--bg-base) 92%, transparent);
-  backdrop-filter: blur(4px);
+  backdrop-filter: var(--surface-blur-overlay, blur(4px));
   overflow: hidden;
   transition-duration: 180ms;
 }

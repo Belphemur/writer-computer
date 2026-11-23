@@ -438,6 +438,11 @@ export function setWindowDecorations(decorated: boolean): Promise<void> {
   return getCurrentWindow().setDecorations(decorated);
 }
 
+/** Quit the app through the same exit path as the macOS quit item (Linux's Ctrl+Q). */
+export function quitApp(): Promise<void> {
+  return invoke("quit_app");
+}
+
 /** Open the app menu at the pointer (Linux; `app_menu::app_menu_popup`). */
 export function openAppMenu(): Promise<void> {
   return invoke("app_menu_popup");

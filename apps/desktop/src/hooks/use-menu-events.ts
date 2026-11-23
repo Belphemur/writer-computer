@@ -15,7 +15,8 @@ export const MENU_EVENT_HANDLERS: Record<string, () => void> = {
   "menu:open-preferences": openPreferences,
 };
 
-function openPreferences() {
+/** Opens (or focuses) the Settings tab: the macOS menu item and Linux's Ctrl+, both come here. */
+export function openPreferences() {
   const { root, chromeMode } = useWorkspaceStore.getState();
   if (getWorkspaceChromeMode(root, chromeMode) === "compact-file") return;
 
