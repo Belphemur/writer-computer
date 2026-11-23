@@ -4,9 +4,9 @@ import {
   openFolderLabelForPlatform,
   revealLabelForPlatform,
   secretStoreLabelForPlatform,
-} from "../src/components/sidebar/context-menu-utils";
+} from "../src/lib/platform-labels";
 
-// The one table of OS-specific words (`context-menu-utils.ts`): a surface never spells "Finder",
+// The one table of OS-specific words (`lib/platform-labels.ts`): a surface never spells "Finder",
 // "Keychain" or an install hint itself.
 describe("platform labels", () => {
   test("the file manager is named per OS", () => {

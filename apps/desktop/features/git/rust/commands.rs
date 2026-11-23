@@ -875,24 +875,16 @@ pub async fn git_tools<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Tools, Ap
     .await
 }
 
-/// What to tell where Writer cannot start an installer: Linux has its package manager, anywhere
-/// else git-scm.com. The setup page words the same hint from the platform (`install-git` label).
-fn install_git_refusal(os: &str) -> &'static str {
-    if os == "linux" {
-        "Install git with your package manager"
-    } else {
-        "Install git from git-scm.com"
-    }
-}
-
 /// macOS: starts Apple's installer for the Command Line Tools (which include git).
 #[tauri::command]
 #[specta::specta]
 pub async fn git_install_git<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(), AppError> {
     blocking(move || {
         if !cfg!(target_os = "macos") {
+            // The words for "how to get git here" are the web table's (`installGit` in
+            // `platform-labels`), shown where the button is hidden; this is only the refusal.
             return Err(AppError::Refused(
-                install_git_refusal(std::env::consts::OS).into(),
+                "Writer can only install git on macOS".into(),
             ));
         }
         let exec = super::sync::exec_of(&app)
@@ -1397,21 +1389,4 @@ pub async fn git_conflict_record<R: Runtime>(
         status_of(&app, &label, false)
     })
     .await
-}
-
-#[cfg(test)]
-mod install_hint_tests {
-    use super::install_git_refusal;
-
-    #[test]
-    fn linux_points_at_the_package_manager_and_the_others_at_the_site() {
-        assert_eq!(
-            install_git_refusal("linux"),
-            "Install git with your package manager"
-        );
-        assert_eq!(
-            install_git_refusal("windows"),
-            "Install git from git-scm.com"
-        );
-    }
 }

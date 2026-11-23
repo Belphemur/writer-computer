@@ -190,17 +190,71 @@ fn notify_observers(state: &WorkspaceState, label: &str, root: &Path, events: &[
     }
 }
 
-/// What the user is told when the watcher cannot start. Linux watches each folder through inotify and
-/// a big vault can pass `fs.inotify.max_user_watches`; that case names the sysctl that fixes it.
+const ENOSPC: i32 = 28;
+const EMFILE: i32 = 24;
+
+fn raw_os_error(error: &notify::Error) -> Option<i32> {
+    match &error.kind {
+        notify::ErrorKind::Io(io) => io.raw_os_error(),
+        _ => None,
+    }
+}
+
+/// The watch table is full (`fs.inotify.max_user_watches` on Linux).
+fn is_watch_limit(error: &notify::Error) -> bool {
+    matches!(error.kind, notify::ErrorKind::MaxFilesWatch) || raw_os_error(error) == Some(ENOSPC)
+}
+
+/// What the user is told when the watcher cannot start or run out of watches. Linux watches each
+/// folder through inotify: a big vault can pass `fs.inotify.max_user_watches`, and `inotify_init`
+/// fails with EMFILE past `fs.inotify.max_user_instances`; each case names the sysctl that fixes it.
 pub fn watch_failure_message(error: &notify::Error) -> String {
-    const ENOSPC: i32 = 28;
-    let limit = matches!(error.kind, notify::ErrorKind::MaxFilesWatch)
-        || matches!(&error.kind, notify::ErrorKind::Io(io) if io.raw_os_error() == Some(ENOSPC));
-    if limit {
+    if is_watch_limit(error) {
         "Too many files to watch for changes. Raise the limit with `sudo sysctl fs.inotify.max_user_watches=524288`, then reopen the vault.".into()
+    } else if raw_os_error(error) == Some(EMFILE) {
+        "Too many programs are watching files. Raise the limit with `sudo sysctl fs.inotify.max_user_instances=1024`, then reopen the vault.".into()
     } else {
         format!("Couldn't watch the vault for changes: {error}")
     }
+}
+
+/// The `fs:watch-failed` payload: the watcher could not start or ran out of watches.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WatchFailedEvent {
+    message: String,
+    workspace: WorkspaceIdentity,
+}
+
+/// Tell the window its watcher failed (the one emitter, for the start and the run).
+pub fn emit_watch_failed(
+    handle: &AppHandle,
+    label: &str,
+    root: &Path,
+    epoch: u64,
+    message: String,
+) {
+    let _ = handle.emit_to(
+        label.to_string(),
+        "fs:watch-failed",
+        WatchFailedEvent {
+            message,
+            workspace: WorkspaceIdentity {
+                root: root.to_string_lossy().into_owned(),
+                epoch,
+            },
+        },
+    );
+}
+
+/// What a runtime error from the event stream tells the user: the message for a watch-limit error
+/// the first time (`reported` is the per-epoch flag of one watcher thread), nothing otherwise.
+fn runtime_watch_failure(error: &notify::Error, reported: &mut bool) -> Option<String> {
+    if *reported || !is_watch_limit(error) {
+        return None;
+    }
+    *reported = true;
+    Some(watch_failure_message(error))
 }
 
 /// Start a file watcher targeted at a specific window. All emitted events
@@ -237,6 +291,7 @@ pub fn start_watcher(
         // Simple debounce: collect events for DEBOUNCE_MS, then process
         let mut last_emit = Instant::now();
         let mut pending: Vec<Event> = Vec::new();
+        let mut limit_reported = false;
 
         loop {
             match rx.recv_timeout(Duration::from_millis(DEBOUNCE_MS)) {
@@ -254,6 +309,11 @@ pub fn start_watcher(
                 }
                 Ok(Err(err)) => {
                     wlog!("recv err: {err:?}");
+                    // notify reports a full watch table here when it adds watches for new folders.
+                    if let Some(message) = runtime_watch_failure(&err, &mut limit_reported) {
+                        log::error!("File watcher ran out of watches: {err}");
+                        emit_watch_failed(&handle, &label, &watched_root, captured_epoch, message);
+                    }
                     continue;
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -649,6 +709,31 @@ mod tests {
             assert!(message.contains("fs.inotify.max_user_watches"), "{message}");
             assert!(message.contains("Too many files"));
         }
+    }
+
+    #[test]
+    fn too_many_inotify_instances_name_their_sysctl() {
+        let message = watch_failure_message(&notify::Error::io(std::io::Error::from_raw_os_error(
+            EMFILE,
+        )));
+        assert!(
+            message.contains("fs.inotify.max_user_instances"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_runtime_limit_error_reaches_the_message_once_per_watcher() {
+        let limit = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
+        let mut reported = false;
+        let message = runtime_watch_failure(&limit, &mut reported).unwrap();
+        assert_eq!(message, watch_failure_message(&limit));
+        assert!(runtime_watch_failure(&limit, &mut reported).is_none());
+
+        // Other runtime errors are not shown and do not use up the one report.
+        let mut reported = false;
+        assert!(runtime_watch_failure(&notify::Error::generic("boom"), &mut reported).is_none());
+        assert!(!reported);
     }
 
     #[test]

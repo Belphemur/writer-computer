@@ -42,7 +42,7 @@ Status: designed with the user 2026-11-20, refreshed 2026-11-23 (git, logs, rele
 14. `src/lib/os-drop.ts:40-44`: HiDPI drop coordinates on Linux (verify X11, Wayland, fractional).
 15. `features/obsidian-host/web/host/api/network.ts:188-193`: fall-through host list lacks `writer-plugin://localhost` (verify).
 16. `src/hooks/use-zoom-gestures.ts:4-15`, `mermaid-canvas.ts:33`: pinch on WebKitGTK as ctrl+wheel (verify).
-17. `App.css:30, 57`: CSS nesting and `color-mix` → minimum WebKitGTK 2.44 (verify), startup message if older.
+17. `App.css:30, 57`: `color-mix` and `CSS.registerProperty` → minimum WebKitGTK 2.40 (Safari 16.4; the build flattens CSS nesting, so it is not probed), startup message if older.
 18. `scripts/distribute.sh:157-160`, `tauri.conf.json:69`: `latest.json` darwin only → `linux-x86_64`.
 19. `apps/website/src/latest-release.ts:35, 57`, `docs/website-deploy.md:48-65`: DMG only → per-OS asset.
 
@@ -78,14 +78,14 @@ Log and data dirs, argv open path, multi-call `writer` dispatch, login-shell PAT
 The keybinding registry already takes per-OS keys (`registry.ts` `PlatformKeys`, `Mod` = Cmd on macOS, Ctrl elsewhere); every default follows the platform's convention:
 
 - No core or feature binding names `Meta` or `Ctrl` literally where the platforms differ; it uses `Mod` or a per-OS `{ mac, linux, other }` list. A test over every registered binding enforces it, with a named allowlist for bindings that are the same chord on every OS on purpose (`Ctrl+Tab`).
-- Back/forward: macOS `Cmd+[` / `Cmd+]` everywhere (mouse side buttons send them) and `Alt+←/→` outside the note; Linux `Alt+←/→` everywhere, the note included (Linux word motion is Ctrl+Arrow, so Alt+Arrow is free and is the desktop convention), and the mouse back/forward buttons (`mouseup` buttons 3 and 4) through the same commands.
+- Back/forward: macOS `Cmd+[` / `Cmd+]` everywhere (mouse side buttons send them) and `Alt+←/→` outside the note; Linux `Alt+←/→` everywhere, the note included (the desktop and browser convention; the capture-phase binding takes the keys from CodeMirror's default keymap, where Linux binds `Alt+←/→` to syntax-tree cursor motion, so that motion is given up on Linux and word motion stays on Ctrl+Arrow), and the mouse back/forward buttons (`mouseup` buttons 3 and 4) through the same commands.
 - Linux defaults avoid chords the desktops reserve: anything with Super, `Ctrl+Alt+T` (terminal), `Ctrl+Alt+Arrow` (workspaces), `Alt+F2`, `Alt+Tab`, `Ctrl+Alt+Delete`, `Alt+Space`. A test checks the Linux defaults against that list.
 - User overrides stay per OS (`hotkeys.json` has a section per OS).
 - `docs/keyboard-shortcuts.md` shows each OS's keys (the site page renders the current OS first); the shortcuts list in Settings shows the current OS's chords.
 
 ## Lane 3 status (2026-11-23)
 
-Built: items 6-10, 13 (reveal, trash message, terminal table and dropdown, `--copy` error, watch-limit message, per-OS history keys, mouse side buttons, HiDPI table, pinch), the label helper (`context-menu-utils.ts`: file manager, secret store, install git), the WebKitGTK check (`lib/webview-support.ts`: it asks the web view for `color-mix` and CSS nesting, minimum 2.44) and the git install hint. Item 15 needed no code (`writer-plugin://localhost` is not http, so it already falls through; a test pins it with the Windows subdomain). Item 13 found every font stack already ending in `system-ui`, `sans-serif` or `monospace`. Linux-only code is `reveal_in_file_manager_impl`'s Linux arm in `commands/fs.rs` and the `tauri_plugin_opener::reveal_item_in_dir` call; everything else compiles and is tested on macOS.
+Built: items 6-10, 13 (reveal, trash message, terminal table and dropdown, `--copy` error, watch-limit message, per-OS history keys, mouse side buttons, HiDPI table, pinch), the label helper (`lib/platform-labels.ts`: file manager, secret store, install git), the WebKitGTK check (`lib/webview-support.ts`: it asks the web view for `color-mix` and `CSS.registerProperty`, not for nesting, minimum 2.40, and logs the refusal) and the git install hint. Item 15 needed no code (`writer-plugin://localhost` is not http, so it already falls through; a test pins it with the Windows subdomain). Item 13 found every font stack already ending in `system-ui`, `sans-serif` or `monospace`. Linux-only code is `reveal_in_file_manager_impl`'s Linux arm in `commands/fs.rs` and the `tauri_plugin_opener::reveal_item_in_dir` call; everything else compiles and is tested on macOS.
 
 ## Lanes
 

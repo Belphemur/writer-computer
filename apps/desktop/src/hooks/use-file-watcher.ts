@@ -86,7 +86,7 @@ export function useFileWatcher() {
       "fs:watch-failed",
       (event) => {
         if (!isWorkspaceEventCurrent(event.payload.workspace, getWorkspaceEventIdentity())) return;
-        showEditorNotice(event.payload.message);
+        showEditorNotice(event.payload.message, { sticky: true });
       },
     );
 

@@ -1135,10 +1135,7 @@ pub fn reveal_in_file_manager_impl(path: &str) -> Result<(), AppError> {
             &target,
             |path| tauri_plugin_opener::reveal_item_in_dir(path).map_err(|e| e.to_string()),
             |dir| {
-                std::process::Command::new("xdg-open")
-                    .arg(dir)
-                    .spawn()
-                    .map(drop)
+                tauri_plugin_opener::open_path(dir, None::<&str>)
                     .map_err(|e| AppError::Io(e.to_string()))
             },
         )?;

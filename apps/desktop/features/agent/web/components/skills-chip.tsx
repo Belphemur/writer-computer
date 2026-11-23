@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { revealLabelForPlatform } from "@/components/sidebar/context-menu-utils";
+import { revealLabelForPlatform } from "@/lib/platform-labels";
 import { detectPlatform } from "@/lib/platform";
 import { useCliCatalog, useDiskSkills, type Chat } from "@features/agent/web/hooks/use-agent";
 import {

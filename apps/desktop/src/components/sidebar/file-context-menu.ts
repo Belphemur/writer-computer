@@ -1,9 +1,11 @@
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
 import { contributedMenuItems, withContributedItems } from "@/lib/features/menus";
 import type { DirEntry } from "@/types/fs";
-import { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
+import { detectPlatform, type Platform } from "@/lib/platform";
+import { revealLabelForPlatform } from "@/lib/platform-labels";
 
-export { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
+export { detectPlatform, type Platform } from "@/lib/platform";
+export { revealLabelForPlatform } from "@/lib/platform-labels";
 
 export type FileMenuActionId =
   | "open"

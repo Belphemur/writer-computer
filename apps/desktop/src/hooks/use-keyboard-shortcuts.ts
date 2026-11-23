@@ -4,9 +4,7 @@ import { startHotkeyOverrides } from "@/lib/keybindings/overrides";
 import { isKeyRecording } from "@/lib/keybindings/recording";
 import { mouseHistoryDirection } from "@/lib/keybindings/mouse-history";
 import { keybindings } from "@/lib/keybindings/registry";
-import { WHEN } from "@/lib/keybindings/when";
 import { detectPlatform } from "@/lib/platform";
-import { useEditorStore } from "@/stores/editor-store";
 
 // One dispatcher over the keybinding registry (`lib/keybindings/core-bindings.ts` lists the app's
 // shortcuts, features add theirs). A matched key is always `preventDefault`ed; a binding that must
@@ -24,15 +22,17 @@ function dispatch(phase: "bubble" | "capture") {
   };
 }
 
-/** The side buttons of a mouse, where the page receives them as buttons 3 and 4 (not macOS). The
- *  press is swallowed too, so the webview never runs its own history navigation. */
+/** The side buttons of a mouse, where the page receives them as buttons 3 and 4 (not macOS): they run
+ *  the `history-back` / `history-forward` commands of the registry, context and handler included.
+ *  The press is swallowed too, so the webview never runs its own history navigation. */
 function mouseHistory(e: MouseEvent) {
+  if (isKeyRecording()) return;
   const direction = mouseHistoryDirection(e.button, detectPlatform());
-  if (!direction || !WHEN["outside-agent-pane"](e)) return;
+  if (!direction) return;
+  const id = `history-${direction}`;
+  if (!keybindings.holds(id, e)) return;
   e.preventDefault();
-  if (e.type !== "mouseup") return;
-  const { navigateBack, navigateForward } = useEditorStore.getState();
-  void (direction === "back" ? navigateBack() : navigateForward());
+  if (e.type === "mouseup") keybindings.invoke(id, e);
 }
 
 export function useKeyboardShortcuts() {

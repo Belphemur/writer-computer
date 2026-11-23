@@ -5,7 +5,7 @@
 // A missing `git` says so with "Install Command Line Tools" on macOS. Terse: no prose.
 import { useEffect, useState } from "react";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
-import { installGitLabelForPlatform } from "@/components/sidebar/context-menu-utils";
+import { installGitLabelForPlatform } from "@/lib/platform-labels";
 import { describeError, logger } from "@/lib/logger";
 import { detectPlatform } from "@/lib/platform";
 import { useFeatureSecretsStore } from "@/stores/feature-secrets-store";

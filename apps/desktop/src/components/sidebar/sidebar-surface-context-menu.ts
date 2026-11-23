@@ -2,7 +2,8 @@ import {
   showNativeContextMenu,
   type MenuItemSpec,
 } from "@/components/editor-area/editor-context-menu";
-import { detectPlatform, openFolderLabelForPlatform, type Platform } from "./context-menu-utils";
+import { detectPlatform, type Platform } from "@/lib/platform";
+import { openFolderLabelForPlatform } from "@/lib/platform-labels";
 import { contributedCreateItems, createMenuItems } from "./create-menu-items";
 import { SIDEBAR_SORT_MODES, type SidebarSortMode } from "./sidebar-sort";
 

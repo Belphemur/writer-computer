@@ -4,6 +4,7 @@
 //! Tauri-free: detection takes the presence check as a parameter so tests need no installed terminal.
 
 use serde::Serialize;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -151,13 +152,21 @@ impl Terminal {
     }
 
     /// The Linux program and its arguments for `dir`.
-    pub fn linux_command(&self, dir: &Path) -> Option<(&'static str, Vec<String>)> {
+    /// Arguments are `OsString`, so a folder name that is not UTF-8 reaches the terminal intact.
+    pub fn linux_command(&self, dir: &Path) -> Option<(&'static str, Vec<OsString>)> {
         let launch = self.linux.as_ref()?;
-        let dir = dir.to_string_lossy();
         let args = launch
             .dir_args
             .iter()
-            .map(|arg| arg.replace(DIR, &dir))
+            .map(|arg| match arg.split_once(DIR) {
+                Some((before, after)) => {
+                    let mut value = OsString::from(before);
+                    value.push(dir);
+                    value.push(after);
+                    value
+                }
+                None => OsString::from(*arg),
+            })
             .collect();
         Some((launch.program, args))
     }
@@ -280,7 +289,14 @@ mod tests {
     #[test]
     fn linux_commands_carry_the_folder() {
         let dir = Path::new("/notes dir");
-        let command = |id: &str| by_id(id).linux_command(dir).unwrap();
+        let command = |id: &str| {
+            let (program, args) = by_id(id).linux_command(dir).unwrap();
+            let args: Vec<String> = args
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            (program, args)
+        };
         assert_eq!(
             command("ghostty"),
             (
@@ -336,6 +352,17 @@ mod tests {
             ("x-terminal-emulator", vec![])
         );
         assert!(by_id("iterm2").linux_command(dir).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_name_that_is_not_utf8_reaches_the_terminal_intact() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let dir = PathBuf::from(OsString::from_vec(b"/notes/caf\xe9".to_vec()));
+        let (_, args) = by_id("ghostty").linux_command(&dir).unwrap();
+        assert_eq!(args[0].as_bytes(), b"--working-directory=/notes/caf\xe9");
+        let (_, args) = by_id("kitty").linux_command(&dir).unwrap();
+        assert_eq!(args[1].as_bytes(), b"/notes/caf\xe9");
     }
 
     #[test]

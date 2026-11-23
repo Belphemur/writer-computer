@@ -104,7 +104,7 @@ export class KeybindingRegistry {
   private overrideListeners = new Set<() => void>();
 
   constructor(
-    private conditions: Record<WhenName, (e: KeyboardEvent) => boolean> = WHEN,
+    private conditions: Record<WhenName, (e: Event) => boolean> = WHEN,
     private platform: () => Platform = detectPlatform,
   ) {
     // First subscriber, so every other listener sees the cache already dropped.
@@ -293,6 +293,19 @@ export class KeybindingRegistry {
       const opts = this.overrides.has(b.id) ? { ...b, layoutIndependent: true } : b;
       return keys.some((k) => chordMatches(parseCached(k), e, opts)) && (b.available?.() ?? true);
     });
+  }
+
+  /** True when the command `id` exists and its context (and availability) holds for `e`: the test
+   *  `find` applies, for a trigger that is not a key (the mouse side buttons). */
+  holds(id: string, e: Event): boolean {
+    const b = this.items.get(id);
+    return !!b && (!b.when || this.conditions[b.when](e)) && (b.available?.() ?? true);
+  }
+
+  /** Runs the command `id` for a non-key trigger. Such a command's handler must not read key
+   *  fields of the event (the history ones read only `repeat`, absent on a mouse event). */
+  invoke(id: string, e: Event): void {
+    this.items.get(id)?.run(e as KeyboardEvent);
   }
 
   /** Any change: an entry added or removed, or an override set. */

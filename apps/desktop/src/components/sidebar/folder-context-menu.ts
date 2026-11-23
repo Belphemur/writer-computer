@@ -3,7 +3,8 @@ import { contributedMenuItems, withContributedItems } from "@/lib/features/menus
 import type { MenuItemSpec } from "@/components/editor-area/editor-context-menu";
 import { contributedCreateItems, createMenuItems } from "./create-menu-items";
 import type { DirEntry } from "@/types/fs";
-import { detectPlatform, revealLabelForPlatform, type Platform } from "./context-menu-utils";
+import { detectPlatform, type Platform } from "@/lib/platform";
+import { revealLabelForPlatform } from "@/lib/platform-labels";
 
 export interface FolderContextMenuHandlers {
   onNewFile: () => void;

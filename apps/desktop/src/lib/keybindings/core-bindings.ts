@@ -218,9 +218,11 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
   },
   // History back / forward everywhere, the note included. macOS: Cmd+[ / Cmd+] (what mouse drivers
   // send for the side buttons; `Meta`, not `Mod`, so Ctrl+[ stays free). Elsewhere: Alt+Arrow, the
-  // desktop convention, free in the note because word motion is Ctrl+Arrow there; the mouse side
-  // buttons arrive as buttons 3 and 4 (`mouse-history.ts`). Capture phase, so it wins over
-  // CodeMirror's own bindings (Tab and Shift-Tab still indent); the agent pane keeps them.
+  // desktop and browser convention; the mouse side buttons arrive as buttons 3 and 4
+  // (`mouse-history.ts`). Capture phase, so it wins over CodeMirror's own bindings (Tab and
+  // Shift-Tab still indent). That includes Linux's `Alt-ArrowLeft/Right` (`cursorSyntaxLeft/Right`
+  // in CodeMirror's default keymap): syntax motion is given up on Linux for back/forward. The agent
+  // pane keeps these keys.
   {
     id: "history-back",
     keys: { mac: ["Meta+["], other: ["Alt+ArrowLeft"] },

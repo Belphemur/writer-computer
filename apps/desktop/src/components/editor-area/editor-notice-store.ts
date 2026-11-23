@@ -2,9 +2,14 @@ import { create } from "zustand";
 
 const DISMISS_AFTER_MS = 4000;
 
+interface NoticeOptions {
+  /** Stays until dismissed (a click on the notice) instead of after a few seconds. */
+  sticky?: boolean;
+}
+
 interface EditorNoticeState {
   message: string | null;
-  showNotice: (message: string) => void;
+  showNotice: (message: string, options?: NoticeOptions) => void;
   dismissNotice: () => void;
 }
 
@@ -14,9 +19,11 @@ let dismissTimer: number | null = null;
  *  links, rejected pastes, and similar "that didn't happen, here's why" cases. */
 export const useEditorNoticeStore = create<EditorNoticeState>((set, get) => ({
   message: null,
-  showNotice: (message) => {
+  showNotice: (message, { sticky = false } = {}) => {
     if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+    dismissTimer = null;
     set({ message });
+    if (sticky) return;
     dismissTimer = window.setTimeout(() => {
       dismissTimer = null;
       get().dismissNotice();
@@ -31,8 +38,8 @@ export const useEditorNoticeStore = create<EditorNoticeState>((set, get) => ({
   },
 }));
 
-export function showEditorNotice(message: string) {
-  useEditorNoticeStore.getState().showNotice(message);
+export function showEditorNotice(message: string, options?: NoticeOptions) {
+  useEditorNoticeStore.getState().showNotice(message, options);
 }
 
 export function dismissEditorNotice() {

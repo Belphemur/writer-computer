@@ -5,11 +5,8 @@ import { MenuItem } from "@tauri-apps/api/menu/menuItem";
 import { CheckMenuItem } from "@tauri-apps/api/menu/checkMenuItem";
 import { Submenu } from "@tauri-apps/api/menu/submenu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
-import {
-  detectPlatform,
-  revealLabelForPlatform,
-  type Platform,
-} from "@/components/sidebar/context-menu-utils";
+import { detectPlatform, type Platform } from "@/lib/platform";
+import { revealLabelForPlatform } from "@/lib/platform-labels";
 import {
   chordToAccelerator,
   editorCommands,

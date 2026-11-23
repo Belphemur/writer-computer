@@ -8,7 +8,7 @@ vi.mock("../src/lib/tauri", () => ({ confirmAction: vi.fn(async () => true) }));
 
 import { SecretsSection } from "../src/components/settings-panel/secrets-section";
 import { confirmAction } from "../src/lib/tauri";
-import { secretStoreLabelForPlatform } from "../src/components/sidebar/context-menu-utils";
+import { secretStoreLabelForPlatform } from "../src/lib/platform-labels";
 import { detectPlatform } from "../src/lib/platform";
 import { setSecretsClient, useSecretsStore } from "../src/stores/secrets-store";
 import { workspaceListeners } from "../src/lib/features/workspace-events";

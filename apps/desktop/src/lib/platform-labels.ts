@@ -1,7 +1,5 @@
 import { type Platform } from "@/lib/platform";
 
-export { detectPlatform, type Platform } from "@/lib/platform";
-
 // The one table of OS-specific words in the UI: the file manager's name for the menus and links,
 // the secret store, and how to get git. A surface asks here; it never spells "Finder" or "Keychain".
 const PLATFORM_MENU_LABELS = {

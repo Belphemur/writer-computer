@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { detectPlatform } from "@/lib/platform";
 import { confirmAction } from "@/lib/tauri";
-import { secretStoreLabelForPlatform } from "@/components/sidebar/context-menu-utils";
+import { secretStoreLabelForPlatform } from "@/lib/platform-labels";
 import { useSecretsStore } from "@/stores/secrets-store";
 import { BUTTON, ROW, SecretForm } from "./secret-form";
 
