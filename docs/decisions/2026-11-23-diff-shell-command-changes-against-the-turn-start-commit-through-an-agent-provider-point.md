@@ -19,6 +19,15 @@ With the `git` feature on, `agent.turn-started` commits the user's pending edits
 - Never a guessed diff: a wrong pre-image shows a false diff and an Undo that would write wrong text.
 - One store: the turn card, the row and the tab keep reading `ChangeStore`.
 
+Constraints (measurable): with no contributor the point answers in O(1) with no IO; git's answer reads at most one blob of at most `changes::MAX_FILE_BYTES` (2 MiB) per recorded path, never on the main thread or the watcher thread; pre-images stay in memory under the existing `ChangeStore` budgets (64 MiB for turns, 64 MiB for session baselines); nothing is written to disk or logged.
+
+### Non-goals
+
+- Diffs for turns from an earlier run of Writer (after a restart the card keeps its persisted summary and "View in history"); a later ADR may read them from the turn's commit (the user, 2026-11-23).
+- Any other way into history from the card, a CLI change, a new setting.
+- Telling apart which process wrote a file during a command (the watcher cannot).
+- Pre-images when git is off, not set up, paused, or without an identity.
+
 ## Considered Options
 
 - A. An agent-owned **provider point** `agent.turn-baseline`: the agent asks "the text of `path` as it was when turn T started"; git answers from the turn-start commit, or not at all.
@@ -45,6 +54,9 @@ Chosen: **A**, with the user's answers (2026-11-23): diff **and Undo**; when git
 ## Implementation Plan
 
 - **Affected paths:** `src-tauri/src/features/points.rs` (provider: `ProviderPoint<A, T>`, `provide`/`ask`, liveness and guard as for hooks, retract on stop), `src-tauri/src/agent/api.rs` (`TURN_BASELINE`, `TurnBaseline`, `Baseline`), `src-tauri/src/agent/changes.rs` (`record_command_changes` takes an asker, typed as a closure so the core stays Tauri-free), the runner/config-worker call site that feeds watcher batches, `features/git/rust/{mod.rs,runtime.rs}` (record at turn start, `provide` in `start`), `src-tauri/src/git/repo.rs` (blob at a commit, bounded), `features/agent/web/lib/diff-rows.ts` and `components/{change-parts.tsx,turn-changes-card.tsx}` (tooltip and footer text), `SPECs/native-agent-spec.md` 6.5, `SPECs/git-sync-spec.md` "With the agent", `features/points.rs` module doc.
+- **Patterns to follow:** the hook machinery in `features/points.rs` (`extend` wraps liveness and `features::guard`; the scope retracts on stop): the provider reuses it, never a second registry. The agent's existing `Snap` and `FileRec` paths for diff, status, rename and `revert`: an answer becomes a `Snap`, with no new diff or Undo code. Git's per-vault state lives in `runtime::Vaults`, owned by the feature scope.
+- **Patterns to avoid:** no `features::git` or `crate::git` import from `agent/` (the escape-hatch scan must not grow); no `is_enabled("git")` in the agent; no file text in logs, events or errors; no gix outside `git/repo.rs`; no blocking read on the watcher thread; no guessed pre-image (HEAD when the turn-start commit did not run, or the working tree).
+- **Dependencies and configuration:** none added (gix `=0.90.0` is already in). No setting, env var or migration.
 - **Tests:** points: provider with no contributor, first answer wins in id order, a non-live or panicking contributor is skipped, retract on stop. Changes core with a fake asker: command file with `Text` gets a diff and an Undo that restores it; `Absent` shows as created and Undo deletes; no answer keeps today's row; an edit-snapshotted file keeps its snapshot; the session baseline uses the answer. Git (temp repo, temp HOME): turn start records HEAD; a dirty file the commit skipped (over size, ignored) gets no answer; no identity or a merge in progress gets no answer; a file created during the turn answers `Absent`; record dropped at the next turn and on stop. An end-to-end test through the fake claude: a `Bash` call that rewrites a note, card shows the diff and Undo with git on, and the old row with git off.
 
 ## Verification
@@ -52,7 +64,29 @@ Chosen: **A**, with the user's answers (2026-11-23): diff **and Undo**; when git
 - [ ] With git on, a turn whose `Bash` call rewrites a note shows that note's diff and Undo in the card, the row and the Session changes tab.
 - [ ] With git off, or no git identity, the same turn shows "listed without a diff" as before.
 - [ ] Undo of a command change restores the turn-start text and refuses after a later edit.
+- [ ] A Session changes tab opened after two turns diffs a command file against the start of the first turn that touched it.
+- [ ] `grep -rn "features::git\|crate::git" apps/desktop/src-tauri/src/agent` finds nothing; the escape-hatch allowlists are no longer than before.
+- [ ] A contract test lists `agent.turn-baseline` as owned by `agent` and provided by `git`; with git stopped, `contributors("agent.turn-baseline") == 0`.
 - [ ] `vp check`, `vp test`, `cargo test`, `cargo clippy`, `cargo fmt --check` green.
+
+## Pros and Cons of the Options
+
+### A. Agent-owned provider point `agent.turn-baseline`
+
+- Good: the agent states what it needs (a turn's pre-image) and nothing about revisions; git keeps the knowledge of which commit and which files it can vouch for.
+- Good: no contributor means today's behaviour, with nothing to check; a second history provider adds a contributor, not agent code.
+- Bad: providers have to be built in `features/points.rs` (first user), plus a contract test.
+
+### B. `git.history` service with `fileAt(rev, path)`
+
+- Good: services already exist on the web side; a small, generic read.
+- Bad: the agent would have to learn the turn-start revision and the rules for when it is valid (not committed, ignored, paused), which are git's knowledge (DRY and SOLID: the rule would live in the wrong owner).
+- Bad: Rust services are not built either, so there is no saving over A.
+
+### C. The agent snapshots the vault at turn start
+
+- Good: works without git.
+- Bad: reading every note at every turn costs IO and memory in every vault, against the 64 MiB budget, to diff the few files a command changes. Rejected on cost.
 
 ## More Information
 
