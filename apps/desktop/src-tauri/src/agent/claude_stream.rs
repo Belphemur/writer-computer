@@ -114,12 +114,11 @@ pub struct ClaudeStreamMapper {
     /// The launch call (`tool_use_id`) of each sub-agent task id: `task_updated` carries only
     /// the task id.
     task_calls: HashMap<String, String>,
-    /// Each model's cumulative `outputTokens` at the last `result`: `modelUsage` sums the whole
-    /// session, so the model of a turn is the one whose total grew.
-    model_output: HashMap<String, u64>,
-    /// The model of the last message the MAIN agent made this turn (`message.model` of a message
-    /// with no `parent_tool_use_id`): the chat's own model. `modelUsage` also counts every
-    /// sub-agent, which often runs on another model, so it only decides when this is unknown.
+    /// The model of the last message the MAIN agent made (`message.model` of a message with no
+    /// `parent_tool_use_id`): the chat's own model, kept across turns. `modelUsage` is never
+    /// consulted: it also counts every sub-agent, which often runs on another model, and a turn
+    /// where only sub-agents spoke (a background report, a resumed sub-agent) would hand the
+    /// chat their model.
     main_model: Option<String>,
 }
 
@@ -753,40 +752,10 @@ impl ClaudeStreamMapper {
                     .filter_map(|e| e.get("contextWindow").and_then(Value::as_u64))
                     .max()
             });
-        // The model that did this turn's work: `modelUsage` is cumulative over the session (after
-        // a switch it still lists the old model with the larger total), so the winner is the key
-        // whose output grew since the last result; a total that went down (new process) counts
-        // in full.
-        let totals: Vec<(String, u64)> = v
-            .get("modelUsage")
-            .and_then(Value::as_object)
-            .map(|m| {
-                m.iter()
-                    .map(|(k, e)| {
-                        (
-                            k.clone(),
-                            e.get("outputTokens").and_then(Value::as_u64).unwrap_or(0),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let by_usage = totals
-            .iter()
-            .max_by_key(|(k, total)| {
-                let before = self.model_output.get(k).copied().unwrap_or(0);
-                if *total >= before {
-                    total - before
-                } else {
-                    *total
-                }
-            })
-            .map(|(k, _)| k.clone());
-        // the main agent's own message names the chat's model; a turn with none falls back to
-        // the usage that grew (sub-agents' usage must not decide it)
-        let model = self.main_model.take().or(by_usage);
-        log::debug!(target: "agent", "agent: turn model {:?} from {} usage entries", model, totals.len());
-        self.model_output = totals.into_iter().collect();
+        // the main agent's own messages name the chat's model; unknown (no main message yet in
+        // this process) stays unknown, and the chat keeps the model it had
+        let model = self.main_model.clone();
+        log::debug!(target: "agent", "agent: turn model {:?}", model);
         out.events.push(usage_event(
             UsageScope::Turn,
             &usage,
@@ -1317,11 +1286,16 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     #[test]
-    fn turn_model_is_the_one_whose_usage_grew_not_the_cumulative_leader() {
+    fn the_turn_model_follows_the_main_agents_messages_never_the_usage_totals() {
         let result = |sonnet: u64, opus: u64| {
             json!({"type":"result","subtype":"success","is_error":false,"usage":{},
                 "modelUsage":{"claude-sonnet-5-5":{"outputTokens":sonnet},
                               "claude-opus-5-5":{"outputTokens":opus}}})
+            .to_string()
+        };
+        let main = |id: &str, model: &str| {
+            json!({"type":"assistant","message":{"id":id,"model":model,
+                "content":[{"type":"text","text":"x"}]},"parent_tool_use_id":null})
             .to_string()
         };
         let model_of = |m: &mut ClaudeStreamMapper, line: String| {
@@ -1331,22 +1305,17 @@ mod tests {
             })
         };
         let mut m = ClaudeStreamMapper::default();
+        // no main message yet in this process: unknown, whatever the totals say
+        assert_eq!(model_of(&mut m, result(500, 0)), None);
+        m.map_line(&main("m1", "claude-opus-5-5"));
         assert_eq!(
-            model_of(&mut m, result(500, 0)).as_deref(),
-            Some("claude-sonnet-5-5")
-        );
-        // switched to Opus: Sonnet still leads the session total, Opus did this turn
-        assert_eq!(
-            model_of(&mut m, result(500, 40)).as_deref(),
+            model_of(&mut m, result(900, 40)).as_deref(),
             Some("claude-opus-5-5")
         );
+        // a switch (or the CLI's fallback model) shows through the main agent's next message
+        m.map_line(&main("m2", "claude-sonnet-5-5"));
         assert_eq!(
-            model_of(&mut m, result(500, 90)).as_deref(),
-            Some("claude-opus-5-5")
-        );
-        // a real fallback to Sonnet for this turn shows
-        assert_eq!(
-            model_of(&mut m, result(530, 90)).as_deref(),
+            model_of(&mut m, result(930, 40)).as_deref(),
             Some("claude-sonnet-5-5")
         );
     }
@@ -1415,10 +1384,15 @@ mod tests {
             }
         }
         assert_eq!(model.as_deref(), Some("claude-opus-5-5"));
-        // a turn where only sub-agents spoke falls back to the usage that grew
+        // a turn where only sub-agents spoke (a background report, a resumed sub-agent) keeps
+        // the main agent's model
+        let sub = json!({"type":"assistant","message":{"id":"s2","model":"claude-haiku-5-5",
+            "content":[{"type":"text","text":"report"}]},"parent_tool_use_id":"toolu_a"});
+        m.map_value(&sub);
         let r = json!({"type":"result","subtype":"success","is_error":false,"usage":{},
-            "modelUsage":{"claude-opus-5-5":{"outputTokens":80},
-                          "claude-sonnet-5-5":{"outputTokens":9000}}});
+            "modelUsage":{"claude-opus-5-5":{"outputTokens":50},
+                          "claude-sonnet-5-5":{"outputTokens":9000},
+                          "claude-haiku-5-5":{"outputTokens":7000}}});
         let again = m.map_value(&r).events.into_iter().find_map(|e| match e {
             AgentEvent::Usage { model, .. } => model,
             _ => None,
