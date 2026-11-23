@@ -6,7 +6,8 @@
 //
 // - the commands of the manifest, of the bindings and of the wrappers are one set;
 // - each wrapper makes one call, on `plugin:<id>|<command>`, with exactly the bindings' argument
-//   names, all camelCase.
+//   names (all camelCase) and exactly the values the entry says: every argument of an entry is a
+//   distinct sentinel, so two same-typed arguments swapped in a wrapper fail here.
 //
 // `tests/feature-ipc-guard.test.ts` makes sure every feature with commands uses this, and that no
 // feature web code reaches a command by a raw `invoke`.
@@ -32,8 +33,9 @@ export interface FeatureIpc {
   id: string;
   /** `manifest.rust.commands`. */
   commands: readonly string[];
-  /** Every wrapper called once with plausible arguments (every argument given), by command. */
-  calls: Record<string, () => Promise<unknown>>;
+  /** Every wrapper called once by command: `args` is the object the call must send (every
+   *  argument given, a distinct sentinel each; `null` for an option the wrapper leaves out). */
+  calls: Record<string, { call: () => Promise<unknown>; args: Record<string, unknown> }>;
   /** Commands no wrapper of the web half calls (Rust-only callers: the CLI, the agent). */
   unwrapped?: readonly string[];
 }
@@ -55,7 +57,7 @@ export function describeFeatureIpc({ id, commands, calls, unwrapped = [] }: Feat
         seen.push([cmd, args as Record<string, unknown> | undefined]);
         return null;
       });
-      for (const [name, call] of Object.entries(calls)) {
+      for (const [name, { call, args }] of Object.entries(calls)) {
         seen.length = 0;
         // A wrapper may fail reading the empty answer; the call it made is what is checked.
         await call().catch(() => {});
@@ -63,6 +65,7 @@ export function describeFeatureIpc({ id, commands, calls, unwrapped = [] }: Feat
         expect(seen[0]![0], name).toBe(`plugin:${id}|${name}`);
         const keys = Object.keys(seen[0]![1] ?? {}).sort();
         expect(keys, name).toEqual([...bindings.get(name)!].sort());
+        expect(seen[0]![1] ?? {}, name).toEqual(args);
         for (const key of keys) expect(key, `${name}: ${key}`).toMatch(/^[a-z][A-Za-z0-9]*$/);
       }
     });

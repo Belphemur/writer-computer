@@ -26,7 +26,11 @@ const STATIC =
 const DYNAMIC = /\b(?:import|vi\.mock|vi\.importActual)\(\s*["']([^"']+)["']/g;
 
 export function importsOf(file: string): Import[] {
-  const src = readFileSync(file, "utf8");
+  return importsOfText(readFileSync(file, "utf8"));
+}
+
+/** The same for source text (a fixture needs no file). */
+export function importsOfText(src: string): Import[] {
   const out: Import[] = [];
   for (const m of src.matchAll(STATIC)) {
     out.push({ spec: (m[3] ?? m[4])!, dynamic: false, typeOnly: m[2] !== undefined });
@@ -64,14 +68,17 @@ export function staticGraph(entry: string): Set<string> {
   return seen;
 }
 
-/** Every `.ts`/`.tsx` file under `dir`, skipping fixtures and `node_modules`. */
-export function sourceFiles(dir: string): string[] {
+const TS_FILE = (name: string) => /\.tsx?$/.test(name) && !name.endsWith(".d.ts");
+
+/** Every `.ts`/`.tsx` file under `dir` (or every file `keep` accepts), skipping fixtures and
+ *  `node_modules`. */
+export function sourceFiles(dir: string, keep: (name: string) => boolean = TS_FILE): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (name === "node_modules" || name === "fixtures") continue;
-    if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
-    else if (/\.tsx?$/.test(name) && !name.endsWith(".d.ts")) out.push(p);
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p, keep));
+    else if (keep(name)) out.push(p);
   }
   return out;
 }

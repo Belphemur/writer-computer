@@ -7,7 +7,6 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { describeFeatureIpc } from "@tests/helpers/feature-ipc";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import manifest from "../feature.json";
-import { commands } from "../web/bindings";
 import {
   agentCommand,
   agentEvents,
@@ -18,7 +17,6 @@ import {
 
 afterEach(() => clearMocks());
 
-const snake = (camel: string) => camel.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const call = agentCommand as unknown as (c: string, a?: object) => Promise<unknown>;
 
 // The agent is the one client that keeps a hand-typed args object per command (`AgentCommands`:
@@ -100,16 +98,11 @@ describeFeatureIpc({
   id: manifest.id,
   commands: manifest.rust.commands,
   calls: Object.fromEntries(
-    Object.entries(FULL).map(([name, args]) => [name, () => call(name, args)]),
+    Object.entries(FULL).map(([name, args]) => [name, { call: () => call(name, args), args }]),
   ),
 });
 
-describe("the agent's commands", () => {
-  it("are the same set in the manifest and in the typed client's map", () => {
-    expect(Object.keys(commands).map(snake).sort()).toEqual([...manifest.rust.commands].sort());
-    expect(manifest.rust.commands).toHaveLength(42);
-  });
-
+describe("the agent's client", () => {
   it("a command the manifest does not declare never reaches Rust", async () => {
     let reached = false;
     mockIPC(() => void (reached = true));

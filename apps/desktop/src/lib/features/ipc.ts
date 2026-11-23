@@ -1,5 +1,7 @@
-// Typed client for one feature's Rust commands. A feature's commands live in its own Tauri plugin,
-// so the call is `invoke("plugin:<id>|<command>")`. This is the only place that spells that route.
+// The object-argument client of one feature's Rust commands, `invoke("plugin:<id>|<command>")`. A
+// feature's web half calls its generated `commands.*` from `web/ipc.ts` instead (they own the route
+// and the camelCase argument names); this is used only by the agent, whose call sites pass an
+// object (`tests/feature-ipc-guard.test.ts` allows nobody else, `describeFeatureIpc` pins its keys).
 import { invoke } from "@tauri-apps/api/core";
 import { assertFeatureId } from "./id";
 

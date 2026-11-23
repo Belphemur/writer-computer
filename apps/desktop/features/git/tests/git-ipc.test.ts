@@ -1,73 +1,70 @@
-// The git IPC: every wrapper of `ipc.ts` goes through the generated bindings (`describeFeatureIpc`
-// pins the route, the command set and the camelCase argument names: `linkExisting`, `chatId`,
-// `finalPath`), and the multi-word arguments are spelled out here as the cases that were broken.
+// The git IPC: every wrapper of `ipc.ts` goes through the generated bindings, and
+// `describeFeatureIpc` pins the route, the command set, the camelCase argument names (`linkExisting`,
+// `chatId`, `finalPath`) and the value each argument carries (a distinct sentinel each, so two
+// same-typed arguments swapped in a wrapper fail).
 // @vitest-environment jsdom
-import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { describeFeatureIpc } from "@tests/helpers/feature-ipc";
-import { afterEach, describe, expect, it } from "vite-plus/test";
 import manifest from "../feature.json";
 import * as ipc from "../web/ipc";
-
-afterEach(() => clearMocks());
 
 describeFeatureIpc({
   id: manifest.id,
   commands: manifest.rust.commands,
   calls: {
-    git_status: () => ipc.status(true),
-    git_setup: () => ipc.setup("local"),
-    git_commit_now: () => ipc.commitNow(),
-    git_set_paused: () => ipc.setPaused(true),
-    git_set_signing: () => ipc.setSigning(true),
-    git_stop: () => ipc.stop(),
-    git_history: () => ipc.history("a.md", 5),
-    git_deleted: () => ipc.deleted(),
-    git_version_diff: () => ipc.versionDiff("a.md", "abc", "current"),
-    git_version_text: () => ipc.versionText("a.md", "abc"),
-    git_restore: () => ipc.restore("a.md", "abc"),
-    git_turn_commit: () => ipc.turnCommit("chat", "turn", 12),
-    git_sync_now: () => ipc.syncNow(),
-    git_set_sync_paused: () => ipc.setSyncPaused(true),
-    git_remote_set: () => ipc.setRemote("https://x/y.git"),
-    git_remote_remove: () => ipc.removeRemote(),
-    git_tools: () => ipc.tools(),
-    git_install_git: () => ipc.installGit(),
-    git_sign_in: () => ipc.signIn("fj", "codeberg.org", "Notes", true),
-    git_set_credentials: () => ipc.setCredentials("fj"),
-    git_plugin_decision: () => ipc.pluginDecision("p", "allow"),
-    git_dismiss_notices: () => ipc.dismissNotices(),
-    git_merge_text: () => ipc.mergeText("a.md", "b", "m", "t"),
-    git_conflict_open: () => ipc.conflictOpen("a.md", "mine"),
-    git_conflict_save: () =>
-      ipc.conflictSave("a.md", { mine: "m", body: "b", picks: [], finalPath: "b.md" }),
-    git_conflict_take: () => ipc.conflictTake("a.md", "mine"),
-    git_conflict_record: () => ipc.conflictRecord("a.md", "b", "m"),
+    git_status: { call: () => ipc.status(true), args: { refresh: true } },
+    git_setup: { call: () => ipc.setup("local"), args: { mode: "local" } },
+    git_commit_now: { call: () => ipc.commitNow(), args: {} },
+    git_set_paused: { call: () => ipc.setPaused(true), args: { paused: true } },
+    git_set_signing: { call: () => ipc.setSigning(true), args: { on: true } },
+    git_stop: { call: () => ipc.stop(), args: {} },
+    git_history: { call: () => ipc.history("p1", 5), args: { path: "p1", limit: 5 } },
+    git_deleted: { call: () => ipc.deleted(), args: {} },
+    git_version_diff: {
+      call: () => ipc.versionDiff("p1", "r1", "a1"),
+      args: { path: "p1", rev: "r1", against: "a1" },
+    },
+    git_version_text: { call: () => ipc.versionText("p1", "r1"), args: { path: "p1", rev: "r1" } },
+    git_restore: { call: () => ipc.restore("p1", "r1"), args: { path: "p1", rev: "r1" } },
+    git_turn_commit: {
+      call: () => ipc.turnCommit("chat1", "turn1", 12),
+      args: { chatId: "chat1", turnId: "turn1", finishedAt: 12 },
+    },
+    git_sync_now: { call: () => ipc.syncNow(), args: {} },
+    git_set_sync_paused: { call: () => ipc.setSyncPaused(true), args: { paused: true } },
+    git_remote_set: { call: () => ipc.setRemote("u1"), args: { url: "u1" } },
+    git_remote_remove: { call: () => ipc.removeRemote(), args: {} },
+    git_tools: { call: () => ipc.tools(), args: {} },
+    git_install_git: { call: () => ipc.installGit(), args: {} },
+    git_sign_in: {
+      call: () => ipc.signIn("f1", "h1", "n1", true),
+      args: { forge: "f1", host: "h1", name: "n1", linkExisting: true },
+    },
+    git_set_credentials: { call: () => ipc.setCredentials("s1"), args: { source: "s1" } },
+    git_plugin_decision: {
+      call: () => ipc.pluginDecision("pl1", "never"),
+      args: { plugin: "pl1", choice: "never" },
+    },
+    git_dismiss_notices: { call: () => ipc.dismissNotices(), args: {} },
+    git_merge_text: {
+      call: () => ipc.mergeText("p1", "base1", "mine1", "theirs1"),
+      args: { path: "p1", base: "base1", mine: "mine1", theirs: "theirs1" },
+    },
+    git_conflict_open: {
+      call: () => ipc.conflictOpen("p1", "mine1"),
+      args: { path: "p1", mine: "mine1" },
+    },
+    git_conflict_save: {
+      call: () =>
+        ipc.conflictSave("p1", { mine: "mine1", body: "body1", picks: [], finalPath: "fp1" }),
+      args: { path: "p1", mine: "mine1", body: "body1", picks: [], finalPath: "fp1" },
+    },
+    git_conflict_take: {
+      call: () => ipc.conflictTake("p1", "theirs"),
+      args: { path: "p1", side: "theirs" },
+    },
+    git_conflict_record: {
+      call: () => ipc.conflictRecord("p1", "base1", "mine1"),
+      args: { path: "p1", base: "base1", mine: "mine1" },
+    },
   },
-});
-
-describe("the multi-word arguments", () => {
-  it("send the multi-word arguments in camelCase", async () => {
-    const seen: Record<string, Record<string, unknown>> = {};
-    mockIPC((cmd, args) => {
-      seen[cmd] = args as Record<string, unknown>;
-      return null;
-    });
-    await ipc.signIn("fj", "codeberg.org", "Notes", true).catch(() => {});
-    await ipc.turnCommit("c", "t", 3).catch(() => {});
-    await ipc
-      .conflictSave("a.md", { mine: "m", body: "b", picks: [], finalPath: "b.md" })
-      .catch(() => {});
-    expect(seen["plugin:git|git_sign_in"]).toEqual({
-      forge: "fj",
-      host: "codeberg.org",
-      name: "Notes",
-      linkExisting: true,
-    });
-    expect(seen["plugin:git|git_turn_commit"]).toEqual({
-      chatId: "c",
-      turnId: "t",
-      finishedAt: 3,
-    });
-    expect(seen["plugin:git|git_conflict_save"]).toMatchObject({ finalPath: "b.md" });
-  });
 });

@@ -8,6 +8,8 @@ informed: none yet
 
 # Build first-party features as built-in plugins with one manifest, one Rust trait and one registry line
 
+> Note 2026-11-23: the wrapper mechanism (`featureInvoke` over a hand-typed args map) is superseded by [Call the generated commands from each feature's web ipc.ts](2026-11-23-call-the-generated-commands-from-each-features-web-ipc-and-guard-it-with-tests.md); the rest of this ADR stands.
+
 Design spec: [`SPECs/builtin-plugins-spec.md`](../../SPECs/builtin-plugins-spec.md). This ADR is a proposal for discussion: it lays out the options and a recommendation, and ends with the questions the maintainers must answer before it can be accepted. Nothing in it is implemented.
 
 ## Context and Problem Statement
