@@ -165,6 +165,8 @@ mod tests {
             })
             .build(test_context())
             .unwrap();
+        // One pass of the event loop so the window exists; `run_return` would block until exit.
+        #[allow(deprecated)]
         app.run_iteration(|_, _| {});
         with_main_window(&app);
         app

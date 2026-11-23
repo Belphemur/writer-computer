@@ -20,12 +20,14 @@ function DocsIndex() {
         {PRODUCT_NAME} is a free, open-source markdown editor for macOS and Linux that opens the
         folders you already have. It's built with Tauri rather than Electron, so the download is
         about {DOWNLOAD_SIZE}, and it keeps itself up to date: it checks for a new version when it
-        starts and once a day, and installs it when you say so. These pages cover what it reads, how
-        it treats your files and how to use it.
+        starts and once a day, and installs it when you say so (the .deb and .rpm builds show an
+        "Update Available" dialog with a <strong>Download</strong> button and leave the install to
+        your package manager). These pages cover what it reads, how it treats your files and how to
+        use it.
       </p>
       <p>
-        Shortcuts are written for the Mac. On Linux, ⌘ is Ctrl and ⌥ is Alt. The .deb and .rpm
-        builds show "Update available" and leave the install to your package manager.
+        Shortcuts are written for the Mac; the <a href="/docs/keyboard-shortcuts/">shortcuts</a>{" "}
+        page says what changes on Linux.
       </p>
     </SectionIndex>
   );

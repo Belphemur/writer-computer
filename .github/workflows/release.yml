@@ -9,13 +9,14 @@ on:
 permissions:
   contents: read
 
+# bash with -e -o pipefail: a failing `release.mjs check | tee` must fail the step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
-
-env:
-  # Releases are cut from this branch only.
-  RELEASE_BRANCH: writer-computer-agents
 
 jobs:
   # Everything that can fail cheaply fails here, before an hour of builds.
@@ -37,7 +38,9 @@ jobs:
         id: check
         run: node scripts/release.mjs check --tag "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
       - name: Tagged commit is on the release branch
+        # Releases are cut from the branch named in apps/desktop/shared/release.json only.
         run: |
+          RELEASE_BRANCH=$(node -p "require('./apps/desktop/shared/release.json').branch")
           git fetch --no-tags origin "$RELEASE_BRANCH"
           if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$RELEASE_BRANCH"; then
             echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which is not on $RELEASE_BRANCH. Tag a commit of that branch."
@@ -117,6 +120,10 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         # The bundle list is per OS in tauri.macos.conf.json and tauri.linux.conf.json.
         run: pnpm --filter desktop exec tauri build
+      - name: The Linux binary's glibc floor
+        if: runner.os == 'Linux'
+        # The floor is in apps/desktop/shared/release.json (docs/releasing.md "Linux requirements").
+        run: node scripts/release.mjs glibc --binary apps/desktop/src-tauri/target/release/writer-desktop
       - name: Collect the assets
         run: node scripts/release.mjs collect --platform "${{ matrix.platform }}" --out release-assets
       - uses: actions/upload-artifact@v4.6.2

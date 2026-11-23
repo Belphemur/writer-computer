@@ -90,12 +90,12 @@ fn parse_config_with_defaults(
             let key = key.trim().to_string();
             let value_str = value.trim().to_string();
 
-            if list_keys.contains_key(&key) {
+            if let Some(list) = list_keys.get_mut(&key) {
                 // Already seen this key — it's a list
-                list_keys.get_mut(&key).unwrap().push(value_str);
-            } else if map.contains_key(&key) {
+                list.push(value_str);
+            } else if let Some(previous) = map.remove(&key) {
                 // Second occurrence — convert to list
-                let first = match map.remove(&key).unwrap() {
+                let first = match previous {
                     ConfigValue::String(s) => s,
                     ConfigValue::Number(n) => {
                         if n == (n as i64) as f64 {

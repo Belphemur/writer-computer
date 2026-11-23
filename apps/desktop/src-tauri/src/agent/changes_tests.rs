@@ -640,10 +640,6 @@ fn a_session_is_per_chat_and_per_vault() {
 use super::super::command_windows::COMMAND_TAIL;
 use std::time::{Duration, Instant};
 
-fn bash(store: &ChangeStore) {
-    store.capture(CHAT, Path::new("."), Path::new("."), "Bash", &json!({}));
-}
-
 fn bash_in(store: &ChangeStore, root: &Path) {
     store.capture(CHAT, root, root, "Bash", &json!({"command": "x"}));
 }

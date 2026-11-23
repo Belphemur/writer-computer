@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# bash with -e -o pipefail on every run step.
+defaults:
+  run:
+    shell: bash
+
+# `branches` must name the release branch of apps/desktop/shared/release.json (a workflow cannot
+# read a file there; apps/desktop/tests/release-script.test.ts pins them equal).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -41,7 +48,7 @@ jobs:
         run: cargo test
       - name: cargo clippy
         working-directory: apps/desktop/src-tauri
-        run: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
       - name: cargo fmt
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --check
@@ -63,10 +70,12 @@ jobs:
       - name: The packages link the writer command
         run: |
           bundle=apps/desktop/src-tauri/target/release/bundle
-          dpkg-deb -I "$bundle"/deb/*.deb postinst | grep -F 'ln -sf writer-desktop /usr/bin/writer'
+          dpkg-deb -I "$bundle"/deb/*.deb postinst | grep -F 'ln -s writer-desktop "$link"'
           dpkg-deb -c "$bundle"/deb/*.deb | grep -E ' \./usr/bin/writer-desktop$'
-          rpm -qp --scripts "$bundle"/rpm/*.rpm | grep -F 'ln -sf writer-desktop /usr/bin/writer'
+          rpm -qp --scripts "$bundle"/rpm/*.rpm | grep -F 'ln -s writer-desktop "$link"'
           test -f "$bundle"/appimage/*.AppImage
+      - name: The Linux binary's glibc floor
+        run: node scripts/release.mjs glibc --binary apps/desktop/src-tauri/target/release/writer-desktop
       - uses: actions/cache@v4.2.3
         id: webdriver
         with:

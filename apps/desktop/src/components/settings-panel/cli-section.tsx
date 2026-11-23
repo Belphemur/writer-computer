@@ -12,7 +12,9 @@ export function cliStateLabel(status: CliInstallStatus): string {
     case "installed":
       return "Installed";
     case "stale":
-      return "Points at another copy of Writer";
+      return "Points at another copy of Writer. Install repoints it";
+    case "broken":
+      return "The link is broken: Writer was moved or renamed. Install repairs it";
     case "foreign":
       return "Another file is in the way";
     case "missing":

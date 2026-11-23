@@ -78,6 +78,8 @@ impl<V> Cache<V> {
 
 #[cfg(test)]
 mod tests {
+    // These functions take a slice of ranges; a slice of one is what the tests mean.
+    #![allow(clippy::single_range_in_vec_init)]
     use super::*;
 
     fn key(text: &str, lang: &str) -> Key {

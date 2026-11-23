@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::menu::MenuItem;
+use tauri::utils::config::BundleType;
+use tauri::utils::platform::bundle_type;
 use tauri::{AppHandle, Manager, WebviewWindow, Wry};
 use tauri_plugin_dialog::{
     DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind,
@@ -36,7 +38,8 @@ fn with_parent<R: tauri::Runtime>(
 }
 
 /// Where the releases (and so the downloads for a package install) live; the updater endpoint in
-/// `tauri.conf.json` is under it (a test pins that).
+/// `tauri.conf.json` is under it, and both name the repository of `shared/release.json` (a test
+/// pins that).
 const RELEASES_URL: &str = "https://github.com/Belphemur/writer-computer/releases";
 
 /// How an update reaches this install.
@@ -48,10 +51,11 @@ enum InstallKind {
     Package,
 }
 
-/// An AppImage is the only Linux install the updater can replace; the runtime sets `APPIMAGE` to
-/// its file. Any other Linux run is a package (or a build from source) and must not self-update.
-fn install_kind(appimage: Option<&std::ffi::OsStr>) -> InstallKind {
-    if cfg!(target_os = "linux") && appimage.is_none_or(|p| p.is_empty()) {
+/// An AppImage is the only Linux install the updater can replace. The bundle type is the one the
+/// updater plugin reads (`tauri::utils::platform::bundle_type`, stamped into the binary by the
+/// bundler); any other Linux run is a package (or a build from source) and must not self-update.
+fn install_kind(bundle: Option<BundleType>, linux: bool) -> InstallKind {
+    if linux && bundle != Some(BundleType::AppImage) {
         InstallKind::Package
     } else {
         InstallKind::SelfUpdate
@@ -88,7 +92,7 @@ pub struct UpdaterManager {
     state: Mutex<UpdaterState>,
     menu_items: UpdaterMenuItems,
     pending_update: Mutex<Option<Update>>,
-    dismissed_version_path: PathBuf,
+    dismissed: DismissedVersion,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,14 +100,57 @@ struct DismissedVersionFile {
     dismissed: Option<String>,
 }
 
+/// The version the user said "Later" to, kept on disk so automatic checks stay quiet about it.
+struct DismissedVersion {
+    path: PathBuf,
+}
+
+impl DismissedVersion {
+    fn read(&self) -> Option<String> {
+        let data = std::fs::read_to_string(&self.path).ok()?;
+        let parsed: DismissedVersionFile = serde_json::from_str(&data).ok()?;
+        parsed.dismissed
+    }
+
+    fn write(&self, version: Option<&str>) {
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let file = DismissedVersionFile {
+            dismissed: version.map(|s| s.to_string()),
+        };
+        if let Ok(json) = serde_json::to_string(&file) {
+            let _ = std::fs::write(&self.path, json);
+        }
+    }
+}
+
+/// What both update dialogs (install and download) do with the answer: accepting runs `accept`;
+/// "Later" remembers the version and runs `clear` (drop the pending update, back to idle).
+fn settle(
+    accepted: bool,
+    version: &str,
+    dismissed: &DismissedVersion,
+    accept: impl FnOnce(),
+    clear: impl FnOnce(),
+) {
+    if accepted {
+        accept();
+    } else {
+        dismissed.write(Some(version));
+        clear();
+    }
+}
+
 impl UpdaterManager {
     pub fn new(menu_items: UpdaterMenuItems, app_data_dir: PathBuf) -> Self {
-        let dismissed_version_path = app_data_dir.join(DISMISSED_VERSION_FILE);
         let manager = Self {
             state: Mutex::new(UpdaterState::Idle),
             menu_items,
             pending_update: Mutex::new(None),
-            dismissed_version_path,
+            dismissed: DismissedVersion {
+                path: app_data_dir.join(DISMISSED_VERSION_FILE),
+            },
         };
         manager.refresh_menu(&UpdaterState::Idle);
         manager
@@ -140,22 +187,10 @@ impl UpdaterManager {
         let _ = self.menu_items.check.set_enabled(check_enabled);
     }
 
-    fn read_dismissed_version(&self) -> Option<String> {
-        let data = std::fs::read_to_string(&self.dismissed_version_path).ok()?;
-        let parsed: DismissedVersionFile = serde_json::from_str(&data).ok()?;
-        parsed.dismissed
-    }
-
-    fn write_dismissed_version(&self, version: Option<&str>) {
-        if let Some(parent) = self.dismissed_version_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let file = DismissedVersionFile {
-            dismissed: version.map(|s| s.to_string()),
-        };
-        if let Ok(json) = serde_json::to_string(&file) {
-            let _ = std::fs::write(&self.dismissed_version_path, json);
-        }
+    /// Drop the pending update and go back to idle: the user answered, or it was handled.
+    fn reset(&self) {
+        *self.pending_update.lock() = None;
+        self.set_state(UpdaterState::Idle);
     }
 }
 
@@ -182,7 +217,7 @@ pub fn start_check(app: AppHandle, manual: bool) {
                 let notes = update.body.clone();
 
                 if !manual {
-                    let dismissed = manager(&app).read_dismissed_version();
+                    let dismissed = manager(&app).dismissed.read();
                     if dismissed.as_deref() == Some(version.as_str()) {
                         manager(&app).set_state(UpdaterState::UpToDate);
                         return;
@@ -238,37 +273,57 @@ pub fn start_check(app: AppHandle, manual: bool) {
     });
 }
 
-/// A package install cannot be updated in place: say so and offer the release page.
-fn prompt_download(app: AppHandle, version: String) {
-    use tauri_plugin_opener::OpenerExt;
+/// The "Update Available" dialog of both install kinds: `accept_label` runs `accept`, "Later"
+/// remembers the version and clears the pending update (`settle`).
+fn prompt_update(
+    app: AppHandle,
+    version: String,
+    body: String,
+    accept_label: &str,
+    accept: impl FnOnce(&AppHandle) + Send + 'static,
+) {
     let parent = dialog_parent(&app);
     let app_for_cb = app.clone();
-    let url = release_page(&version);
     with_parent(
         app.dialog()
-            .message(format!(
-                "Writer {version} is available.\n\nDownload the new package and install it with your package manager."
-            ))
+            .message(body)
             .kind(MessageDialogKind::Info)
             .title("Update Available")
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Download".to_string(),
+                accept_label.to_string(),
                 "Later".to_string(),
             )),
         parent.as_ref(),
     )
     .show(move |accepted| {
-        if accepted {
-            if let Err(err) = app_for_cb.opener().open_url(&url, None::<&str>) {
-                log::warn!("could not open the release page: {err}");
-            }
+        let mgr = manager(&app_for_cb);
+        settle(
+            accepted,
+            &version,
+            &mgr.dismissed,
+            || accept(&app_for_cb),
+            || mgr.reset(),
+        );
+    });
+}
+
+/// A package install cannot be updated in place: say so and offer the release page.
+fn prompt_download(app: AppHandle, version: String) {
+    use tauri_plugin_opener::OpenerExt;
+    let url = release_page(&version);
+    let body = format!(
+        "Writer {version} is available.\n\nDownload the new package and install it with your package manager."
+    );
+    prompt_update(app, version, body, "Download", move |app| {
+        if let Err(err) = app.opener().open_url(&url, None::<&str>) {
+            log::warn!("could not open the release page: {err}");
         }
-        manager(&app_for_cb).set_state(UpdaterState::Idle);
+        manager(app).reset();
     });
 }
 
 fn prompt_install(app: AppHandle, version: String, notes: Option<String>) {
-    if install_kind(std::env::var_os("APPIMAGE").as_deref()) == InstallKind::Package {
+    if install_kind(bundle_type(), cfg!(target_os = "linux")) == InstallKind::Package {
         return prompt_download(app, version);
     }
     let body = match notes.as_deref() {
@@ -277,30 +332,8 @@ fn prompt_install(app: AppHandle, version: String, notes: Option<String>) {
         }
         _ => format!("Writer {} is available.", version),
     };
-
-    let version_for_dismiss = version.clone();
-    let app_for_cb = app.clone();
-    let parent = dialog_parent(&app);
-
-    with_parent(
-        app.dialog()
-            .message(body)
-            .kind(MessageDialogKind::Info)
-            .title("Update Available")
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Install and Restart".to_string(),
-                "Later".to_string(),
-            )),
-        parent.as_ref(),
-    )
-    .show(move |accepted| {
-        if accepted {
-            start_install(app_for_cb);
-        } else {
-            let mgr = manager(&app_for_cb);
-            mgr.write_dismissed_version(Some(&version_for_dismiss));
-            mgr.set_state(UpdaterState::Idle);
-        }
+    prompt_update(app, version, body, "Install and Restart", |app| {
+        start_install(app.clone());
     });
 }
 
@@ -326,7 +359,7 @@ pub fn start_install(app: AppHandle) {
                     version: version.clone(),
                 });
                 // Clear any previously dismissed version once an install completes.
-                manager(&app).write_dismissed_version(None);
+                manager(&app).dismissed.write(None);
                 app.restart();
             }
             Err(err) => {
@@ -366,22 +399,60 @@ pub fn spawn_daily_check(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
 
     #[test]
     fn only_an_appimage_self_updates_on_linux() {
-        let kind = install_kind(Some(OsStr::new("/home/ada/Writer.AppImage")));
-        assert_eq!(kind, InstallKind::SelfUpdate);
-        let none = install_kind(None);
-        let empty = install_kind(Some(OsStr::new("")));
-        if cfg!(target_os = "linux") {
-            assert_eq!((none, empty), (InstallKind::Package, InstallKind::Package));
-        } else {
-            assert_eq!(
-                (none, empty),
-                (InstallKind::SelfUpdate, InstallKind::SelfUpdate)
-            );
+        use InstallKind::{Package, SelfUpdate};
+        assert_eq!(install_kind(Some(BundleType::AppImage), true), SelfUpdate);
+        for pkg in [Some(BundleType::Deb), Some(BundleType::Rpm), None] {
+            assert_eq!(install_kind(pkg, true), Package);
         }
+        // macOS bundles (and anything off Linux) update in place
+        assert_eq!(install_kind(Some(BundleType::App), false), SelfUpdate);
+        assert_eq!(install_kind(None, false), SelfUpdate);
+    }
+
+    fn dismissed_in(dir: &tempfile::TempDir) -> DismissedVersion {
+        DismissedVersion {
+            path: dir.path().join("sub").join(DISMISSED_VERSION_FILE),
+        }
+    }
+
+    #[test]
+    fn later_is_remembered_and_clears_the_pending_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let dismissed = dismissed_in(&dir);
+        let (mut accepted, mut cleared) = (false, false);
+        settle(
+            false,
+            "0.9.1",
+            &dismissed,
+            || accepted = true,
+            || cleared = true,
+        );
+        assert!(!accepted && cleared);
+        assert_eq!(dismissed.read().as_deref(), Some("0.9.1"));
+    }
+
+    #[test]
+    fn accepting_runs_the_action_and_remembers_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let dismissed = dismissed_in(&dir);
+        let (mut accepted, mut cleared) = (false, false);
+        settle(
+            true,
+            "0.9.1",
+            &dismissed,
+            || accepted = true,
+            || cleared = true,
+        );
+        assert!(accepted && !cleared);
+        assert_eq!(dismissed.read(), None);
+        // a later answer replaces the version; clearing it (after an install) removes it
+        dismissed.write(Some("0.9.2"));
+        assert_eq!(dismissed.read().as_deref(), Some("0.9.2"));
+        dismissed.write(None);
+        assert_eq!(dismissed.read(), None);
     }
 
     #[test]
@@ -393,7 +464,11 @@ mod tests {
     }
 
     #[test]
-    fn updater_endpoint_is_under_the_releases_url() {
+    fn updater_endpoint_and_releases_url_name_the_shared_repository() {
+        let shared: serde_json::Value =
+            serde_json::from_str(include_str!("../../shared/release.json")).unwrap();
+        let repo = shared["repo"].as_str().unwrap();
+        assert_eq!(RELEASES_URL, format!("https://github.com/{repo}/releases"));
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let endpoint = conf["plugins"]["updater"]["endpoints"][0].as_str().unwrap();

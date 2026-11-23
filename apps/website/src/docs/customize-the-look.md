@@ -1,6 +1,6 @@
 # Customize the look
 
-Writer Computer's look is set in Preferences: choose **Writer → Preferences…** on a Mac, press ⌘, (Ctrl+, on Linux) or run **Settings** from the command palette (⌘P). A setting you've changed shows a **Reset** button that puts it back.
+Writer Computer's look is set in Preferences: choose **Writer → Preferences…** on a Mac, press ⌘, or run **Settings** from the command palette (⌘P); [shortcuts](/docs/keyboard-shortcuts/) says what changes on Linux. A setting you've changed shows a **Reset** button that puts it back.
 
 <!-- Labels, ranges and defaults are from apps/desktop/shared/settings.schema.json. -->
 

@@ -942,7 +942,7 @@ mod tests {
     }
 
     struct Harness {
-        vault: TempDir,
+        _vault: TempDir,
         _data: TempDir,
         index: Index,
         cache: Arc<NameCache>,
@@ -976,7 +976,7 @@ mod tests {
             index.db_path().to_path_buf(),
         );
         Harness {
-            vault,
+            _vault: vault,
             _data: data,
             index,
             cache,
@@ -1395,10 +1395,7 @@ mod tests {
                 k.capacity() + e.lower.capacity() + std::mem::size_of::<(String, NameEntry)>()
             })
             .sum::<usize>()
-            + g.folders
-                .iter()
-                .map(|(k, _)| k.capacity() + 32)
-                .sum::<usize>();
+            + g.folders.keys().map(|k| k.capacity() + 32).sum::<usize>();
         drop(g);
         println!(
             "PERF cold build+feed {:?}; first search after build {:?}; warm open->first result {:?}; per keystroke avg {:?} worst {:?} over {} searches; mirror ~{} KiB",

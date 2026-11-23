@@ -21,7 +21,7 @@ Rename `## Unreleased` in `CHANGELOG.md` to `## <version>` (a date after it is f
 
 ## 3. Check, push, tag
 
-`vp check`, `vp test` and the Rust checks pass (CI runs them on Linux and macOS on every push; wait for it to be green on the commit you tag). Then, from `writer-computer-agents`, with the commit pushed:
+`vp check`, `vp test` and the Rust checks pass (CI runs them on Linux and macOS on every pull request and every push to `writer-computer-agents`; wait for it to be green on the commit you tag). Then, from `writer-computer-agents`, with the commit pushed:
 
 ```sh
 git tag v<version>
@@ -32,18 +32,14 @@ The workflow rejects a tag that is not `v<version>` of the version files, or who
 
 ## 4. Review the draft
 
-The workflow's jobs: **Check the tag** (tag, version files, branch, changelog section, signing key secret), **Build** for each platform in parallel, **Draft release**. Expect roughly an hour. Open the draft URL from the run summary and confirm the assets:
-
-- `Writer_<version>_aarch64.dmg`, `Writer.app.tar.gz` and `.sig` (macOS)
-- `Writer_<version>_amd64.AppImage` and `.sig`, `Writer_<version>_amd64.deb`, `Writer-<version>-1.x86_64.rpm` (Linux)
-- `latest.json` naming `darwin-aarch64` and `linux-x86_64`
+The workflow's jobs: **Check the tag** (tag, version files, branch, changelog section, signing key secret), **Build** for each platform in parallel, **Draft release**. Expect roughly an hour. Open the draft URL from the run summary and confirm the assets: one file per entry of `assets` in [`apps/desktop/shared/release.json`](../apps/desktop/shared/release.json) (the updater ones with a `.sig`), and `latest.json` naming `darwin-aarch64` and `linux-x86_64`. Nothing else should be there.
 
 Edit the notes on GitHub if you want, then **Publish release**. Until you do, the in-app updater and the website's download button do not see it (the `latest` endpoint skips drafts and pre-releases).
 
 ## 5. Verify
 
 - `https://github.com/Belphemur/writer-computer/releases/latest/download/latest.json` resolves to the new version.
-- An installed older build (AppImage or macOS app) offers the update at next launch and verifies its signature. A `.deb`/`.rpm` install shows "Update available" with a download link instead of installing.
+- An installed older build (AppImage or macOS app) offers the update at next launch and verifies its signature. A macOS `writer` link made before 0.9.0 is broken (the binary is now `writer-desktop`): Settings > Command line says so, and Install repairs it. A `.deb`/`.rpm` install shows "Update available" with a download link instead of installing.
 
 ## Secrets and settings
 
@@ -52,13 +48,23 @@ Repository secrets (Settings > Secrets and variables > Actions); no secret ever 
 | Secret                                                                                                                     | Needed             | What                                                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | `TAURI_SIGNING_PRIVATE_KEY`                                                                                                | yes                | The updater key (`~/.tauri/` on the maintainer's machine); its public half is `plugins.updater.pubkey` in `tauri.conf.json`.     |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`                                                                                       | yes (may be empty) | Its password.                                                                                                                    |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`                                                                                       | if the key has one | Its password; leave unset for a passwordless key.                                                                                |
 | `WRITER_POSTHOG_KEY`                                                                                                       | no                 | Without it the build has telemetry off ([telemetry.md](./telemetry.md)).                                                         |
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | no                 | All six together switch macOS from ad-hoc signing to Developer ID signing and notarization. Any missing and the build is ad-hoc. |
 
 **Ad-hoc macOS.** Until the Developer ID secrets exist the DMG is not notarized: the first launch needs right-click > Open (or `xattr -d com.apple.quarantine /Applications/Writer.app`). Say so in the release notes.
 
-**Linux AppImage.** It is built on Ubuntu 26.04, so it needs glibc 2.43 or newer; older distributions use the `.deb`/`.rpm` of their own era.
+## Linux requirements
+
+Every Linux package (AppImage, `.deb`, `.rpm`) is built on Ubuntu 26.04, so the binary links that release's glibc: it runs on glibc 2.43 or newer (the Ubuntu 26.04 era) and needs WebKitGTK 2.40 or newer at run time. An older distribution cannot use any of them: the `.deb`/`.rpm` do not help, they carry the same binary. A build step prints the highest `GLIBC_` symbol the binary needs (`scripts/release.mjs glibc`, `objdump -T`) and fails when it is above `glibcFloor` in [`apps/desktop/shared/release.json`](../apps/desktop/shared/release.json), the one place the floor is kept; raising it is a decision, and this section and the README's Install list change with it. Supporting older distributions means building on an older base, which is not planned.
+
+## The shared release file
+
+[`apps/desktop/shared/release.json`](../apps/desktop/shared/release.json) holds the facts several places need: the repository, the release branch, the glibc floor and the assets of a release (id, platform, bundle folder, file suffix, which one the updater downloads). `scripts/release.mjs`, `scripts/distribute.sh`, `release.yml`, the website (`vite.config.ts`, `src/release-assets.ts`) and a test in `updater.rs` read it; `ci.yml`'s `branches:` cannot, and a test pins it to the file. Change a fact there, never in a second place.
+
+## Package scripts
+
+The `.deb`/`.rpm` post-install script (`src-tauri/linux/post-install.sh`) links `/usr/bin/writer` to `writer-desktop` only when that name is free or already our link; `apps/desktop/tests/linux-package-scripts.test.ts` runs it against a temporary folder. CI checks that the built packages carry it. Installing a real package on a real distribution (including over a foreign `writer`) is a manual check: `bash scripts/linux-container.sh bundle`, then `dpkg -i` in a container.
 
 ## When things go wrong
 
@@ -82,4 +88,4 @@ Pre-flight: it refuses unless you are on `writer-computer-agents` with a clean t
 
 ## Not covered
 
-Windows, aarch64 Linux, Flatpak, an apt/dnf repository, rolling back a published release (escalate to the maintainer).
+Windows, aarch64 Linux (the website sends such visitors to the releases page), Flatpak, an apt/dnf repository, rolling back a published release (escalate to the maintainer).

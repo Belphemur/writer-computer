@@ -161,6 +161,11 @@ fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
     Ok(())
 }
 
+/// Set (to `1`) on the app the launcher starts. An AppImage saved under the name `writer` would
+/// otherwise be the CLI again (its runtime sets `ARGV0` to that name, whatever we pass) and
+/// relaunch itself for ever; `main.rs` reads the marker, runs the app and clears it.
+pub const LAUNCH_MARKER: &str = "WRITER_LAUNCH_APP";
+
 /// File name of the app binary: `mainBinaryName` in `tauri.conf.json` (a test pins them equal).
 /// Not `writer`: that name is the CLI in `main.rs`'s multi-call dispatch.
 #[cfg(not(target_os = "macos"))]
@@ -178,10 +183,20 @@ fn default_program(appimage: Option<OsString>, exe: Option<PathBuf>) -> OsString
         .unwrap_or_else(|| APP_BINARY_NAME.into())
 }
 
+/// The command that starts the app: `program`, then the target, marked as a launch and without
+/// the `ARGV0` this CLI process was itself started with.
+#[cfg(not(target_os = "macos"))]
+fn app_command(program: &std::ffi::OsStr, target: Option<&Path>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    cmd.env(LAUNCH_MARKER, "1").env_remove("ARGV0");
+    if let Some(path) = target {
+        cmd.arg(path);
+    }
+    cmd
+}
+
 #[cfg(not(target_os = "macos"))]
 fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
-    use std::process::Command;
-
     let program = std::env::var_os("WRITER_APP_PATH").unwrap_or_else(|| {
         if cfg!(target_os = "windows") {
             "writer.exe".into()
@@ -190,12 +205,7 @@ fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
         }
     });
 
-    let mut cmd = Command::new(&program);
-    if let Some(path) = target {
-        cmd.arg(path);
-    }
-
-    match cmd.spawn() {
+    match app_command(&program, target).spawn() {
         Ok(_) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             Err(LaunchError::AppNotFound(format!(
@@ -294,6 +304,22 @@ mod tests {
         let conf: serde_json::Value =
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["mainBinaryName"], super::APP_BINARY_NAME);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_launched_app_is_marked_and_loses_argv0() {
+        let cmd = super::app_command(&OsString::from("/x/writer"), Some(Path::new("/notes")));
+        let envs: std::collections::HashMap<_, _> = cmd.get_envs().collect();
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new(super::LAUNCH_MARKER)),
+            Some(&Some(std::ffi::OsStr::new("1")))
+        );
+        assert_eq!(envs.get(std::ffi::OsStr::new("ARGV0")), Some(&None));
+        assert_eq!(
+            cmd.get_args().collect::<Vec<_>>(),
+            [std::ffi::OsStr::new("/notes")]
+        );
     }
 
     #[cfg(not(target_os = "macos"))]

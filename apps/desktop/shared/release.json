@@ -1,0 +1,24 @@
+{
+  "repo": "Belphemur/writer-computer",
+  "branch": "writer-computer-agents",
+  "glibcFloor": "2.43",
+  "assets": [
+    { "id": "mac", "platform": "darwin-aarch64", "folder": "dmg", "suffix": ".dmg" },
+    {
+      "id": "mac-updater",
+      "platform": "darwin-aarch64",
+      "folder": "macos",
+      "suffix": ".app.tar.gz",
+      "updater": true
+    },
+    {
+      "id": "appimage",
+      "platform": "linux-x86_64",
+      "folder": "appimage",
+      "suffix": ".AppImage",
+      "updater": true
+    },
+    { "id": "deb", "platform": "linux-x86_64", "folder": "deb", "suffix": ".deb" },
+    { "id": "rpm", "platform": "linux-x86_64", "folder": "rpm", "suffix": ".rpm" }
+  ]
+}

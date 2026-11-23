@@ -472,7 +472,7 @@ fn maintenance_commands_run() {
         .fts_maintenance(FtsMaintenance::IntegrityCheck)
         .unwrap();
     assert_eq!(search(&index, "harbour").total, 3);
-    assert!(index.read(|c| fts_size_bytes(c)).unwrap() > 0);
+    assert!(index.read(fts_size_bytes).unwrap() > 0);
 }
 
 /// Perf smoke: 3000 synthetic notes of about 3 KB. Prints cold-build time with
@@ -540,7 +540,7 @@ fn perf_smoke_cold_build_and_query_latency() {
             .read(|c| Ok(c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?))
             .ok();
         let size = fs::metadata(index.db_path()).unwrap().len();
-        let fts_size = index.read(|c| fts_size_bytes(c)).unwrap();
+        let fts_size = index.read(fts_size_bytes).unwrap();
         (v, index, built, size, fts_size)
     };
     let (_v0, _i0, base_t, base_size, _) = measure(false);
@@ -548,7 +548,7 @@ fn perf_smoke_cold_build_and_query_latency() {
     let t = Instant::now();
     index.fts_maintenance(FtsMaintenance::Optimize).unwrap();
     let optimize_t = t.elapsed();
-    let fts_bytes_optimized = index.read(|c| fts_size_bytes(c)).unwrap();
+    let fts_bytes_optimized = index.read(fts_size_bytes).unwrap();
     let mut lat = Vec::new();
     let (w1, w2, w5) = (w(1), w(2), w(5));
     let queries = [

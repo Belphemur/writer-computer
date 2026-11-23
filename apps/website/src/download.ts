@@ -4,10 +4,17 @@
  * fall back to the Mac build, as the page always has.
  */
 
-export type DownloadOs = "mac" | "linux";
+/** "other" is a machine no package is built for (ARM Linux): it is sent to the releases page. */
+export type DownloadOs = "mac" | "linux" | "chromeos" | "other";
 
-/** Linux for a Linux desktop (not Android, which says "Linux" too), else Mac. */
+/** Release packages are x86_64 only; an ARM machine's UA says aarch64 or arm. */
+const ARM = /aarch64|arm/i;
+
 export function detectDownloadOs(userAgent: string): DownloadOs {
+  // Android says "Linux" too, and its visitor is on a phone: show the Mac build as for any unknown.
   if (/android/i.test(userAgent)) return "mac";
-  return /linux|x11/i.test(userAgent) ? "linux" : "mac";
+  const desktopLinux = /linux|x11/i.test(userAgent);
+  if (/CrOS/.test(userAgent)) return ARM.test(userAgent) ? "other" : "chromeos";
+  if (desktopLinux) return ARM.test(userAgent) ? "other" : "linux";
+  return "mac";
 }

@@ -249,6 +249,8 @@ pub fn kind_of(kind: LintKind) -> Kind {
 
 #[cfg(test)]
 mod tests {
+    // These functions take a slice of ranges; a slice of one is what the tests mean.
+    #![allow(clippy::single_range_in_vec_init)]
     use super::*;
 
     fn check(text: &str, lang: &str) -> Vec<Hit> {

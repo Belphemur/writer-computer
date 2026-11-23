@@ -2,7 +2,9 @@
 //! commands and the CLI.
 
 use super::{edges, Index, IndexError};
-use rusqlite::{params_from_iter, types::Value as SqlValue, Connection, OptionalExtension};
+#[cfg(test)]
+use rusqlite::Connection;
+use rusqlite::{params_from_iter, types::Value as SqlValue, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::{BTreeMap, HashMap};

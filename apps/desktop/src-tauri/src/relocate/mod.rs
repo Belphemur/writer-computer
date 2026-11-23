@@ -363,10 +363,12 @@ pub fn apply(plan: &Plan) -> Result<(), ApplyError> {
             created_dir = Some(parent.to_path_buf());
         }
     }
-    if let Err(err) = moves
-        .then(|| rename_atomic(&plan.from_abs, &plan.to_abs, plan.case_only))
-        .unwrap_or(Ok(()))
-    {
+    let moved = if moves {
+        rename_atomic(&plan.from_abs, &plan.to_abs, plan.case_only)
+    } else {
+        Ok(())
+    };
+    if let Err(err) = moved {
         cleanup(&staged);
         if let Some(d) = &created_dir {
             let _ = std::fs::remove_dir(d);

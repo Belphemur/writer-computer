@@ -8,41 +8,48 @@
 //   collect  --platform P --out DIR   copy the platform's release assets out of the bundle folder and
 //                                     write DIR/P.platform.json (updater asset + signature)
 //   manifest --dir DIR --tag T --repo OWNER/NAME --notes FILE
-//                                     DIR/latest.json from every *.platform.json in DIR; fails
-//                                     when a required platform is missing
+//                                     DIR/latest.json from every *.platform.json in DIR (which it
+//                                     then deletes, so DIR holds only release assets); fails when
+//                                     a required platform is missing
+//   glibc    --binary FILE            fails when FILE needs a newer glibc than the floor
+//
+// The repository, the branch, the asset names and the glibc floor are facts of
+// apps/desktop/shared/release.json, read here and by the website, the updater test and distribute.sh.
 //
 // Every function throws an Error whose message says what to fix; the CLI prints it and exits 1.
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TAURI_DIR = join(ROOT, "apps/desktop/src-tauri");
 
+/** The release facts every consumer reads (repository, branch, assets, glibc floor). */
+export const RELEASE = JSON.parse(
+  readFileSync(join(ROOT, "apps/desktop/shared/release.json"), "utf8"),
+);
+
 /** Platforms a release must carry, by the key `latest.json` uses. */
-export const REQUIRED_PLATFORMS = ["darwin-aarch64", "linux-x86_64"];
+export const REQUIRED_PLATFORMS = [...new Set(RELEASE.assets.map((a) => a.platform))];
 
 /**
  * Per platform: the files that become release assets, as [bundle folder, suffix] and which of them
  * the updater downloads (it has a `.sig` next to it). Each pair must match exactly one file.
  */
-export const PLATFORM_ASSETS = {
-  "darwin-aarch64": {
-    files: [
-      ["dmg", ".dmg"],
-      ["macos", ".app.tar.gz"],
-    ],
-    updater: ["macos", ".app.tar.gz"],
-  },
-  "linux-x86_64": {
-    files: [
-      ["appimage", ".AppImage"],
-      ["deb", ".deb"],
-      ["rpm", ".rpm"],
-    ],
-    updater: ["appimage", ".AppImage"],
-  },
-};
+export const PLATFORM_ASSETS = Object.fromEntries(
+  REQUIRED_PLATFORMS.map((platform) => {
+    const mine = RELEASE.assets.filter((a) => a.platform === platform);
+    const updater = mine.find((a) => a.updater);
+    return [
+      platform,
+      {
+        files: mine.map((a) => [a.folder, a.suffix]),
+        updater: [updater.folder, updater.suffix],
+      },
+    ];
+  }),
+);
 
 const TAG = /^v(\d+\.\d+\.\d+)(-[0-9A-Za-z.-]+)?$/;
 
@@ -142,6 +149,34 @@ export function collect(platform, bundleDir, outDir) {
   return descriptor;
 }
 
+/** The highest `GLIBC_x.y` version `objdump -T` lists, as a string, or null when it lists none. */
+export function maxGlibc(objdump) {
+  const versions = [...objdump.matchAll(/GLIBC_(\d+(?:\.\d+)*)/g)].map((m) => m[1]);
+  if (!versions.length) return null;
+  const cmp = (a, b) => {
+    const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (x[i] ?? 0) - (y[i] ?? 0);
+      if (d) return d;
+    }
+    return 0;
+  };
+  return versions.reduce((hi, v) => (cmp(v, hi) > 0 ? v : hi));
+}
+
+/** Throws when the binary's `objdump -T` text needs a glibc newer than `floor`. */
+export function checkGlibc(objdump, floor = RELEASE.glibcFloor) {
+  const top = maxGlibc(objdump);
+  if (top === null) throw new Error("objdump -T listed no GLIBC_ symbol: is this a Linux binary?");
+  if (maxGlibc(`GLIBC_${floor} GLIBC_${top}`) !== floor) {
+    throw new Error(
+      `The binary needs glibc ${top}, above the floor ${floor} (apps/desktop/shared/release.json). ` +
+        "Raise the floor and the docs that quote it (docs/releasing.md, README) on purpose, or build on an older base.",
+    );
+  }
+  return top;
+}
+
 /** The Tauri updater manifest. Throws when a required platform is missing or twice present. */
 export function mergeLatest({
   version,
@@ -172,11 +207,23 @@ export function mergeLatest({
   return { version, notes, pub_date: pubDate, platforms: out };
 }
 
-function readPlatforms(dir) {
-  return readdirSync(dir)
+/** Write `dir/latest.json` from the `*.platform.json` descriptors in `dir`, then remove those
+ *  descriptors: they are build plumbing, not release assets. */
+export function writeManifest(dir, { tag, repo, notes, pubDate }) {
+  const names = readdirSync(dir)
     .filter((n) => n.endsWith(".platform.json"))
-    .sort()
-    .map((n) => JSON.parse(readFileSync(join(dir, n), "utf8")));
+    .sort();
+  const manifest = mergeLatest({
+    version: parseTag(tag).version,
+    notes,
+    pubDate,
+    tag,
+    repo,
+    platforms: names.map((n) => JSON.parse(readFileSync(join(dir, n), "utf8"))),
+  });
+  writeFileSync(join(dir, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  for (const n of names) rmSync(join(dir, n));
+  return manifest;
 }
 
 function args(argv) {
@@ -219,20 +266,20 @@ function main(argv) {
     console.log(`collected ${a.platform}: updater asset ${d.asset}`);
   } else if (cmd === "manifest") {
     need(a, "dir", "tag", "repo", "notes");
-    const { version } = parseTag(a.tag);
-    const manifest = mergeLatest({
-      version,
-      notes: readFileSync(a.notes, "utf8").trim(),
-      pubDate: new Date().toISOString(),
+    const manifest = writeManifest(a.dir, {
       tag: a.tag,
       repo: a.repo,
-      platforms: readPlatforms(a.dir),
+      notes: readFileSync(a.notes, "utf8").trim(),
+      pubDate: new Date().toISOString(),
     });
-    writeFileSync(join(a.dir, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     console.log(`latest.json: ${Object.keys(manifest.platforms).join(", ")}`);
+  } else if (cmd === "glibc") {
+    need(a, "binary");
+    const top = checkGlibc(execFileSync("objdump", ["-T", a.binary], { encoding: "utf8" }));
+    console.log(`glibc: the binary needs ${top}, floor ${RELEASE.glibcFloor}`);
   } else {
     throw new Error(
-      "Usage: release.mjs check|notes|collect|manifest (see the header of this file)",
+      "Usage: release.mjs check|notes|collect|manifest|glibc (see the header of this file)",
     );
   }
 }

@@ -1595,7 +1595,7 @@ fn rename_attachments_notes_with_path_and_extension_rules() {
     assert!(t.exists("img/shot.png"));
     t.ok(&["move", "path=Archive/Old.md", "name=v1.2"]);
     assert!(t.exists("Archive/v1.2.md"));
-    assert_eq!(t.read("Projects/Beta.md").len() > 0, true);
+    assert!(!t.read("Projects/Beta.md").is_empty());
 }
 
 #[test]

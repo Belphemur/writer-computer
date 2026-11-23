@@ -2,6 +2,9 @@
 //! text, the Obsidian guard keeps its syntax byte-identical under every rule, positions are
 //! UTF-16, a fix settles, and nothing outside `lint/` names the dependency.
 
+// `keep_fix` takes a slice of ranges; a slice of one is what these tests mean.
+#![allow(clippy::single_range_in_vec_init)]
+
 use super::*;
 use std::path::Path;
 

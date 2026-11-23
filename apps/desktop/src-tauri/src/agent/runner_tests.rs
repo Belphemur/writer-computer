@@ -936,7 +936,7 @@ fn a_waiting_plain_line_can_be_taken_back_and_is_never_run() {
     let session = h.sessions.get("w", CHAT).unwrap();
     let removal = std::thread::spawn(move || session.unqueue(STEER_ID));
     h.go();
-    assert_eq!(removal.join().unwrap().unwrap(), true);
+    assert!(removal.join().unwrap().unwrap());
     // nothing waits for an echo any more: the turn ends normally and the session goes idle
     assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
     h.wait_until("idle", || {
@@ -965,7 +965,7 @@ fn taking_back_a_line_the_cli_already_took_says_so_and_keeps_waiting_for_its_ech
     let session = h.sessions.get("w", CHAT).unwrap();
     let removal = std::thread::spawn(move || session.unqueue(STEER_ID));
     h.go();
-    assert_eq!(removal.join().unwrap().unwrap(), false);
+    assert!(!removal.join().unwrap().unwrap());
     assert_eq!(received(&mut h), STEER_ID, "its echo still comes");
     assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
 }
@@ -974,7 +974,7 @@ fn taking_back_a_line_the_cli_already_took_says_so_and_keeps_waiting_for_its_ech
 fn taking_back_a_line_that_is_not_waiting_is_a_no_op() {
     let h = Harness::new(&["ok-turn"], "normal");
     h.start(CHAT);
-    assert_eq!(h.sessions.unqueue("w", CHAT, STEER_ID).unwrap(), false);
+    assert!(!h.sessions.unqueue("w", CHAT, STEER_ID).unwrap());
 }
 
 #[test]

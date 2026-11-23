@@ -190,3 +190,79 @@ describe("collect", () => {
     expect(() => release.collect("windows", c.bundle, c.out)).toThrow(/Unknown platform/);
   });
 });
+
+describe("manifest", () => {
+  test("writes latest.json and leaves only release assets beside it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "writer-manifest-"));
+    try {
+      const b = join(dir, "bundle");
+      const layout: Record<string, string> = {
+        "appimage/Writer_0.9.0_amd64.AppImage": "img",
+        "appimage/Writer_0.9.0_amd64.AppImage.sig": "SIG-L",
+        "deb/Writer_0.9.0_amd64.deb": "deb",
+        "rpm/Writer-0.9.0-1.x86_64.rpm": "rpm",
+        "dmg/Writer_0.9.0_aarch64.dmg": "dmg",
+        "macos/Writer.app.tar.gz": "tar",
+        "macos/Writer.app.tar.gz.sig": "SIG-M",
+      };
+      for (const [path, body] of Object.entries(layout)) {
+        mkdirSync(join(b, path, ".."), { recursive: true });
+        writeFileSync(join(b, path), body);
+      }
+      const out = join(dir, "assets");
+      release.collect("linux-x86_64", b, out);
+      release.collect("darwin-aarch64", b, out);
+      expect(readdirSync(out).filter((n: string) => n.endsWith(".platform.json"))).toHaveLength(2);
+
+      release.writeManifest(out, {
+        tag: "v0.9.0",
+        repo: "Belphemur/writer-computer",
+        notes: "n",
+        pubDate: "2026-11-24T00:00:00Z",
+      });
+      expect(readdirSync(out).sort()).toEqual([
+        "Writer-0.9.0-1.x86_64.rpm",
+        "Writer.app.tar.gz",
+        "Writer.app.tar.gz.sig",
+        "Writer_0.9.0_aarch64.dmg",
+        "Writer_0.9.0_amd64.AppImage",
+        "Writer_0.9.0_amd64.AppImage.sig",
+        "Writer_0.9.0_amd64.deb",
+        "latest.json",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("glibc floor", () => {
+  const dump = (...v: string[]) =>
+    v.map((x) => `0000 g DF .text 0000 (GLIBC_${x}) memcpy`).join("\n");
+
+  test("names the highest version, comparing numbers and not text", () => {
+    expect(release.maxGlibc(dump("2.2.5", "2.9", "2.34"))).toBe("2.34");
+    expect(release.maxGlibc("no versions")).toBeNull();
+  });
+
+  test("passes at or under the floor, fails above it or without symbols", () => {
+    expect(release.checkGlibc(dump("2.9", "2.34"), "2.34")).toBe("2.34");
+    expect(() => release.checkGlibc(dump("2.35"), "2.34")).toThrow(
+      /needs glibc 2\.35.*floor 2\.34/,
+    );
+    expect(() => release.checkGlibc("", "2.34")).toThrow(/no GLIBC_ symbol/);
+  });
+});
+
+describe("the one source of release facts", () => {
+  const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
+
+  test("the shared file names a platform's updater asset, and the CI trigger the release branch", () => {
+    expect(release.REQUIRED_PLATFORMS).toEqual(["darwin-aarch64", "linux-x86_64"]);
+    expect(release.PLATFORM_ASSETS["linux-x86_64"].updater).toEqual(["appimage", ".AppImage"]);
+    expect(read(".github/workflows/ci.yml")).toContain(`branches: [${release.RELEASE.branch}]`);
+    expect(read(".github/workflows/release.yml")).not.toContain(release.RELEASE.branch);
+    expect(read("scripts/distribute.sh")).not.toContain(release.RELEASE.branch);
+    expect(read("scripts/distribute.sh")).not.toContain(release.RELEASE.repo);
+  });
+});

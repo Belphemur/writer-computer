@@ -77,3 +77,4 @@ All chosen with the user (2026-11-20):
   - **Labels.** New literals added since (for example "Show in Finder" in `features/agent/web/components/skills-chip.tsx`) go through the label helper with the others.
   - **CI and release.** CI and the release now cover macOS too, and the release is cut by a tag (ADR 2026-11-23 "Release from CI on a version tag ..."). The Linux lane of `distribute.sh` becomes the CI release job.
   - **Testing on a Mac.** The README documents testing in a Rancher Desktop `ubuntu:26.04` container: build, unit tests, and the e2e smoke under `xvfb`.
+  - **glibc floor (2026-11-23, release review).** Point 1's "older distros use the .deb/.rpm" does not hold: every Linux package is built on the same Ubuntu 26.04 runner, so the .deb and .rpm need glibc 2.43 too. Older distros are not served for now. `glibcFloor` in `apps/desktop/shared/release.json` is the one floor, and `scripts/release.mjs glibc` checks it in CI and in the release.

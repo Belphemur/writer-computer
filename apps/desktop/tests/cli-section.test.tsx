@@ -113,6 +113,7 @@ describe("Settings > Command line", () => {
   it("labels every state", () => {
     const base = { target: "/t", installed: false, onPath: true, package: false } as const;
     expect(cliStateLabel({ ...base, state: "stale" })).toMatch(/another copy/);
+    expect(cliStateLabel({ ...base, state: "broken" })).toMatch(/broken.*Install repairs/);
     expect(cliStateLabel({ ...base, state: "foreign" })).toMatch(/in the way/);
   });
 });

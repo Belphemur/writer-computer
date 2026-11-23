@@ -3,12 +3,11 @@
 /** `owner/name` of the GitHub repo that hosts releases. */
 declare const __WRITER_RELEASE_REPO__: string;
 /**
- * The version in `tauri.conf.json` at build time and the asset URLs derived from
- * it (`DownloadAssets`, `src/release-assets.ts`). These are the prerendered fallback only; the page asks GitHub for the
- * latest published release at load. See `src/latest-release.ts`.
+ * The version in `tauri.conf.json` at build time (the prerendered fallback only; the page asks
+ * GitHub for the latest published release at load, `src/latest-release.ts`) and the repository's
+ * releases page, which the fallback links every package to.
  */
 declare const __WRITER_VERSION__: string;
-declare const __WRITER_ASSETS__: import("./release-assets").DownloadAssets;
 declare const __WRITER_RELEASES_URL__: string;
 declare const __WRITER_REPO_URL__: string;
 

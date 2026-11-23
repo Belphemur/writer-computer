@@ -11,6 +11,7 @@
 #![cfg(unix)]
 
 use crate::cli_install::{self, CliInstallStatus, InstallError, Plan};
+use crate::error::AppError;
 use std::io;
 use std::path::Path;
 use tauri::AppHandle;
@@ -38,6 +39,13 @@ fn plan() -> Result<Plan, InstallError> {
             std::env::current_exe().ok(),
         ),
     })
+}
+
+/// The install errors already read as a sentence for the user: shown as they are over IPC.
+impl From<InstallError> for AppError {
+    fn from(err: InstallError) -> Self {
+        AppError::Refused(err.to_string())
+    }
 }
 
 /// Only the `.deb`/`.rpm` install a link of their own, and only Linux has them.
@@ -121,9 +129,9 @@ mod elevate {
 }
 
 #[tauri::command]
-pub async fn cli_status(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
+pub async fn cli_status(_app: AppHandle) -> Result<CliInstallStatus, AppError> {
     // Stats the install target and the app binary and may start the login shell: off the main thread.
-    run_blocking(cli_status_blocking).await
+    super::blocking(|| cli_status_blocking().map_err(AppError::from)).await
 }
 
 /// For callers already on a blocking thread (the app menu).
@@ -132,10 +140,10 @@ pub(crate) fn cli_status_blocking() -> Result<CliInstallStatus, InstallError> {
 }
 
 #[tauri::command]
-pub async fn install_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
+pub async fn install_cli(_app: AppHandle) -> Result<CliInstallStatus, AppError> {
     // The macOS elevation fallback shows the system admin prompt and waits for it: never on the
     // main thread, which is the event loop that has to keep painting that prompt's parent window.
-    run_blocking(install_cli_blocking).await
+    super::blocking(|| install_cli_blocking().map_err(AppError::from)).await
 }
 
 pub(crate) fn install_cli_blocking() -> Result<CliInstallStatus, InstallError> {
@@ -143,18 +151,10 @@ pub(crate) fn install_cli_blocking() -> Result<CliInstallStatus, InstallError> {
 }
 
 #[tauri::command]
-pub async fn uninstall_cli(_app: AppHandle) -> Result<CliInstallStatus, InstallError> {
-    run_blocking(uninstall_cli_blocking).await
+pub async fn uninstall_cli(_app: AppHandle) -> Result<CliInstallStatus, AppError> {
+    super::blocking(|| uninstall_cli_blocking().map_err(AppError::from)).await
 }
 
 pub(crate) fn uninstall_cli_blocking() -> Result<CliInstallStatus, InstallError> {
     cli_install::uninstall(&plan()?, package_target(), &path_var(), elevate::unlink)
-}
-
-async fn run_blocking(
-    f: fn() -> Result<CliInstallStatus, InstallError>,
-) -> Result<CliInstallStatus, InstallError> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| InstallError::Io(io::Error::other(e.to_string())))?
 }

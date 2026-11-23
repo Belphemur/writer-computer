@@ -49,23 +49,24 @@ curl -I https://writer.computer
 
 The download buttons and the version label next to them are not tied to a
 deploy. The build inlines the version from
-`apps/desktop/src-tauri/tauri.conf.json` and derives the asset URLs from it
-(`apps/website/src/release-assets.ts`: the macOS DMG and the Linux AppImage,
-.deb and .rpm), and that set is what the prerendered page shows; on load the
-page then asks GitHub's REST API for the repository's latest published release
-(`/repos/Belphemur/writer-computer/releases/latest`, which excludes drafts and
-prereleases) and switches the buttons and label to that release's assets,
-matched by file suffix. A release missing any of the four is ignored. So a
-release published after the last deploy is what visitors download, without
-redeploying.
+`apps/desktop/src-tauri/tauri.conf.json` and the repository from
+`apps/desktop/shared/release.json`; the prerendered page links every package to
+the repository's releases page, never to a file name guessed from the version.
+On load the page asks GitHub's REST API for the repository's latest published
+release (`/repos/<repo>/releases/latest`, which excludes drafts and prereleases)
+and points each package at that release's file with the matching suffix (the
+suffixes are `assets` in `release.json`). Each package resolves on its own: one
+missing from the release links to the release's page, so a missing file never
+hides the rest. So a release published after the last deploy is what visitors
+download, without redeploying.
 
 If GitHub does not answer (offline, or the unauthenticated per-IP limit of 60
-requests an hour is spent) the page keeps the build-time set and says so in
-the browser console. That is the one reason to still redeploy after a release:
-it keeps the fallback current. The logic lives in
-`apps/website/src/latest-release.ts`; the asset names come from `tauri build`
-and are uploaded unchanged by `.github/workflows/release.yml`, so a change of
-product name or bundle format means updating `release-assets.ts` too.
+requests an hour is spent) the page keeps the releases-page links and says so in
+the browser console. The button follows the visitor's OS (`src/download.ts`,
+one `PACKAGES` table in `components/DownloadButton.tsx`): macOS gets the DMG,
+Linux the AppImage, ChromeOS the .deb, and an ARM machine (no ARM package
+exists) the releases page. The logic lives in `apps/website/src/latest-release.ts`;
+a change of bundle format means updating `release.json`.
 
 ## Search engines and AI crawlers
 

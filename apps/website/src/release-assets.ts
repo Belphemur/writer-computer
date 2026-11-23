@@ -1,32 +1,24 @@
 /**
- * The release assets the download button points at, and the one place their names are known.
- * The names are what `tauri build` makes (productName "Writer"); `.github/workflows/release.yml`
- * uploads them unchanged. No build-time globals here: `vite.config.ts` imports this too.
+ * The release assets the download button points at, and which file name picks each one out of a
+ * release. The suffixes are `apps/desktop/shared/release.json`'s (the release script collects
+ * exactly those); the names in between are whatever `tauri build` made, so a release is searched
+ * by suffix and never by a name built from the version. No build-time globals here.
  */
+import release from "../../desktop/shared/release.json";
 
-/** One download URL per platform package. */
-export type DownloadAssets = {
-  mac: string;
-  linux: { appimage: string; deb: string; rpm: string };
-};
+/** The packages the page offers; also the ids of their entries in `release.json`. */
+export const PACKAGE_IDS = ["mac", "appimage", "deb", "rpm"] as const;
+export type PackageId = (typeof PACKAGE_IDS)[number];
 
-/** File-name suffixes that pick each asset out of a release's asset list. */
-export const ASSET_SUFFIXES = {
-  mac: ".dmg",
-  appimage: ".AppImage",
-  deb: ".deb",
-  rpm: ".rpm",
-} as const;
+/** One download URL per package, and the page to fall back to for a release's own files. */
+export type DownloadAssets = Record<PackageId, string> & { releases: string };
 
-/** The asset URLs of `version` on `repo` (`owner/name`), as the release workflow names them. */
-export function assetUrls(repo: string, version: string): DownloadAssets {
-  const base = `https://github.com/${repo}/releases/download/v${version}`;
-  return {
-    mac: `${base}/Writer_${version}_aarch64.dmg`,
-    linux: {
-      appimage: `${base}/Writer_${version}_amd64.AppImage`,
-      deb: `${base}/Writer_${version}_amd64.deb`,
-      rpm: `${base}/Writer-${version}-1.x86_64.rpm`,
-    },
-  };
+/** File-name suffixes that pick each package out of a release's asset list. */
+export const ASSET_SUFFIXES = Object.fromEntries(
+  PACKAGE_IDS.map((id) => [id, release.assets.find((a) => a.id === id)!.suffix]),
+) as Record<PackageId, string>;
+
+/** Every package pointing at one page: what is shown before, or without, a published release. */
+export function allAt(url: string): DownloadAssets {
+  return { mac: url, appimage: url, deb: url, rpm: url, releases: url };
 }

@@ -418,8 +418,8 @@ pub fn read_directory_with(
     // Sort dirs-first, then alphabetical by filename within each group. This is
     // a stable baseline for every consumer; the sidebar tree re-sorts by its
     // visible label (title or stem) in `flatten-tree.ts`.
-    dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    dirs.sort_by_key(|a| a.name.to_lowercase());
+    files.sort_by_key(|a| a.name.to_lowercase());
     dirs.extend(files);
     Ok(dirs)
 }
@@ -1019,10 +1019,6 @@ pub async fn retitle_note(
         })
     })
     .await
-}
-
-pub fn delete_entry_impl(path: &str) -> Result<(), AppError> {
-    delete_entry_with(path, false)
 }
 
 /// `permanent` deletes for good. Plugins that churn temp files use it: the system trash goes
@@ -1829,7 +1825,7 @@ mod tests {
         fs::write(&path, "delete me").unwrap();
         assert!(path.exists());
 
-        delete_entry_impl(&path.to_string_lossy()).unwrap();
+        delete_entry_with(&path.to_string_lossy(), false).unwrap();
         assert!(!path.exists());
     }
 

@@ -72,7 +72,7 @@ do_vitest() {
 do_rust() {
   echo "==> cargo test, clippy, fmt"
   # WRITER_CARGO_TEST_ARGS narrows the run, e.g. "--lib plugin_http" (clippy and fmt still follow).
-  (cd apps/desktop/src-tauri && cargo test ${WRITER_CARGO_TEST_ARGS:-} && cargo clippy && cargo fmt --check)
+  (cd apps/desktop/src-tauri && cargo test ${WRITER_CARGO_TEST_ARGS:-} && cargo clippy --all-targets -- -D warnings && cargo fmt --check)
 }
 # Both halves always run; the exit status says whether either failed.
 do_test() {
@@ -91,6 +91,8 @@ do_bundle() {
   export CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
   "$VP" exec tauri build --bundles "$targets" --config '{"bundle":{"createUpdaterArtifacts":false}}'
   ls -l "$CARGO_TARGET_DIR"/release/bundle/*/
+  echo "-- glibc floor (apps/desktop/shared/release.json)"
+  node /work/scripts/release.mjs glibc --binary "$CARGO_TARGET_DIR"/release/writer-desktop
   echo "-- deb contents and scripts"
   dpkg-deb -c "$CARGO_TARGET_DIR"/release/bundle/deb/*.deb | grep -E "bin/|\.desktop"
   dpkg-deb -I "$CARGO_TARGET_DIR"/release/bundle/deb/*.deb | grep -E "postinst|prerm"

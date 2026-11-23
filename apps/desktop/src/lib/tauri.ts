@@ -138,7 +138,7 @@ export interface CliInstallStatus {
   /** Where the link is (or would be): `/usr/local/bin/writer`, `~/.local/bin/writer` or the package's `/usr/bin/writer`. */
   target: string;
   installed: boolean;
-  state: "missing" | "installed" | "stale" | "foreign";
+  state: "missing" | "installed" | "stale" | "broken" | "foreign";
   /** The target's folder is on the login shell's PATH. */
   onPath: boolean;
   /** The link belongs to the .deb/.rpm: nothing to install or remove here. */

@@ -465,6 +465,9 @@ fn card_values(conn: &Connection, ids: &[i64], keys: &[String]) -> Res<HashMap<i
     Ok(best.into_iter().map(|(id, (_, t))| (id, t)).collect())
 }
 
+/// Ghost node id to its link text.
+type GhostNames = Vec<(i64, String)>;
+
 /// Edges whose source is in `ids` and whose target is also in `ids` (resolved), plus, when
 /// `ghosts` is set, those whose target is unresolved. Ghost nodes get negative ids by sorted
 /// target key; the returned map names them (`id -> link text`). Self-links are left out.
@@ -473,7 +476,7 @@ fn edges_among(
     ids: &[i64],
     filter: &EdgeFilter,
     ghosts: bool,
-) -> Res<(Vec<GraphEdge>, Vec<(i64, String)>)> {
+) -> Res<(Vec<GraphEdge>, GhostNames)> {
     let set: HashSet<i64> = ids.iter().copied().collect();
     struct Raw {
         e: GraphEdge,

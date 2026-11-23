@@ -14,12 +14,12 @@ and its own disclosure — see [telemetry.md](./telemetry.md).
 
 Four events. That is the whole list.
 
-| Event              | When                                                |
-| ------------------ | --------------------------------------------------- |
-| `$pageview`        | A page is viewed, including client-side navigations |
-| `updates_opened`   | The **Updates** link in the header is clicked       |
-| `github_opened`    | The **GitHub** link in the header is clicked        |
-| `download_started` | The **Download** button is clicked (macOS or Linux) |
+| Event              | When                                                          |
+| ------------------ | ------------------------------------------------------------- |
+| `$pageview`        | A page is viewed, including client-side navigations           |
+| `updates_opened`   | The **Updates** link in the header is clicked                 |
+| `github_opened`    | The **GitHub** link in the header is clicked                  |
+| `download_started` | The **Download** button or a package link under it is clicked |
 
 The header (`components/SiteHeader.tsx`) is shared by the homepage and the
 docs pages, so `updates_opened` and `github_opened` can fire from either. To
@@ -27,8 +27,10 @@ split them by page, filter on PostHog's own `$pathname` property, which the SDK
 attaches to every event; the site adds no page property of its own. The
 **Docs** link sends no event of its own beyond the `$pageview` it leads to.
 
-`download_started` carries one property, `app_version` — the version the
-button pointed at when it was clicked. That is GitHub's latest published release
+`download_started` fires from the button and also from each package link under
+it (AppImage, .deb, .rpm, macOS), and does not say which package was taken. It
+carries one property, `app_version` — the version the button pointed at when it
+was clicked. That is GitHub's latest published release
 once the page has looked it up (see [website-deploy.md](./website-deploy.md),
 "Download link"), or the version the site was built with, from
 `tauri.conf.json`, if that lookup did not answer. No other event carries a

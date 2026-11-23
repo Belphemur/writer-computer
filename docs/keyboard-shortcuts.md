@@ -2,7 +2,7 @@
 
 <!-- The canonical shortcut map. It is also published as is at writer.computer/docs/keyboard-shortcuts/, so keep the prose readable for users and put implementation notes in HTML comments like this one, which the site leaves out. The first line must stay "# Keyboard shortcuts" (see apps/website/src/docs/pages.ts). -->
 
-Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃. On Linux, the primary modifier is Ctrl and Alt is Alt: read Cmd as Ctrl; the tables name the few shortcuts that differ.
+Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃. On Linux, read Cmd as Ctrl and ⌥ as Alt; the tables name the few shortcuts that differ.
 
 These are the defaults. You can change any shortcut, and give one to any command, in Settings > Hotkeys; your keys are stored per operating system.
 
@@ -69,13 +69,12 @@ work.
 
 ## Agent
 
-The Agent pane is the chat on the right. It shares the right side with the plugin pane: opening one closes the other. These work while focus is inside the pane.
+The Agent pane is the chat on the right. It shares the right side with the plugin pane: opening one closes the other. These work while focus is inside the pane (Cmd+Shift+A, which shows or hides it, is under Global).
 
 <!-- Implemented in `features/agent/web/components/agent-pane.tsx` (pane-scoped chords, which stop propagation so the global hook's Cmd+W never sees them), `composer.tsx` (Enter, Esc order, ArrowUp recall, Cmd+Enter / Cmd+Shift+Enter / Cmd+Backspace for a pending permission) and `permission-card.tsx` (Enter / Esc with focus on the card). Cmd+Shift+A is the keybinding of the agent feature (`features/agent/web/index.ts`); it collides with no native menu accelerator (only Cmd+, exists) and no editor binding. Spec: SPECs/native-agent-spec.md section 3.6. Cmd+Shift+H opens the in-pane chat list until the history view lands (lane 4). Cmd+B / Cmd+I and the list-continuing Shift+Enter live in `composer-markdown.ts` (a CodeMirror keymap, so they only fire with the message box focused; they reuse `toggleBold` / `toggleItalic` of the note editor and collide with no global binding or menu accelerator). Tab is left alone. -->
 
 | Shortcut                    | Action                                                                                              |
 | --------------------------- | --------------------------------------------------------------------------------------------------- |
-| Cmd+Shift+A                 | Show or hide the Agent pane (works from anywhere in the window)                                     |
 | Enter / Shift+Enter         | Send the message / new line (while the agent works, Enter sends it at the agent's next step)        |
 | Esc                         | In order: close an open menu, take back the queued message, stop the running turn, back to the note |
 | Enter (focus on the card)   | Allow once, when a "Permission required" card has focus                                             |

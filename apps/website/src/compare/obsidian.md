@@ -1,6 +1,6 @@
 # Writer Computer vs Obsidian
 
-Both apps keep your notes as plain markdown files in a folder on your disk, and Writer Computer opens an Obsidian vault as it is. Obsidian is a full knowledge-base platform: apps for every major platform, plugins, backlinks, graph view, Canvas, and paid Sync and Publish. Writer Computer is a small, free, open-source editor for macOS that reads the same files, with wikilinks, Mermaid diagrams and math built in, and no plugins.
+Both apps keep your notes as plain markdown files in a folder on your disk, and Writer Computer opens an Obsidian vault as it is. Obsidian is a full knowledge-base platform: apps for every major platform, plugins, backlinks, graph view, Canvas, and paid Sync and Publish. Writer Computer is a small, free, open-source editor for macOS and Linux that reads the same files, with wikilinks, Mermaid diagrams and math built in, and no plugins.
 
 {{comparison}}
 

@@ -8,10 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
-# The branch releases are cut from, and the repository they are published to (also in
-# .github/workflows/release.yml, which is the normal way to release: docs/releasing.md).
-RELEASE_BRANCH="writer-computer-agents"
-RELEASE_REPO="Belphemur/writer-computer"
+# The branch releases are cut from, and the repository they are published to: one file, also read
+# by the release workflow and the website (docs/releasing.md).
+RELEASE_JSON="$ROOT_DIR/apps/desktop/shared/release.json"
+RELEASE_BRANCH=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['branch'])" "$RELEASE_JSON")
+RELEASE_REPO=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['repo'])" "$RELEASE_JSON")
 
 NOTES_FILE=""
 while [ $# -gt 0 ]; do

@@ -23,7 +23,7 @@ Gotchas:
   crates; the CLI hard-errors on a mismatch (`--ignore-version-mismatches`
   bypasses it, but a mismatch causes real bugs such as removed plugin commands).
 - The bundle lands at
-  `src-tauri/target/release/bundle/macos/Writer.app/Contents/MacOS/desktop`
+  `src-tauri/target/release/bundle/macos/Writer.app/Contents/MacOS/writer-desktop`
   (binary keeps the crate name). Incremental rebuilds are fast; the first
   build is slow.
 - Rebuild after every frontend change too — the app ships the built assets.

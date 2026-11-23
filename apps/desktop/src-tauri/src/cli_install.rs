@@ -44,6 +44,10 @@ pub enum CliInstallState {
     /// `target` is a symlink, but not to our current binary (older install
     /// or the app moved). Install will overwrite.
     Stale,
+    /// `target` is a symlink whose destination is gone: the app moved or was deleted, or the
+    /// binary was renamed (a macOS link made before 0.9.0 points at `Contents/MacOS/desktop`,
+    /// now `writer-desktop`). Install repairs it.
+    Broken,
     /// `target` exists and is NOT a symlink. We refuse to clobber it.
     Foreign,
 }
@@ -133,14 +137,25 @@ pub fn classify_target(target: &Path, source: Option<&Path>) -> CliInstallState 
             if !meta.file_type().is_symlink() {
                 return CliInstallState::Foreign;
             }
-            match (fs::read_link(target).ok(), source) {
-                (Some(link), Some(src)) if paths_equivalent(&link, src) => {
-                    CliInstallState::Installed
-                }
-                (Some(_), _) => CliInstallState::Stale,
-                (None, _) => CliInstallState::Foreign,
+            let Some(link) = fs::read_link(target).ok() else {
+                return CliInstallState::Foreign;
+            };
+            // A relative link (the package's `writer-desktop`) is relative to its own folder.
+            let link = resolve_link(target, &link);
+            match source {
+                Some(src) if paths_equivalent(&link, src) => CliInstallState::Installed,
+                _ if !link.exists() => CliInstallState::Broken,
+                _ => CliInstallState::Stale,
             }
         }
+    }
+}
+
+/// Where the symlink at `target` points, as a path that does not depend on the working folder.
+fn resolve_link(target: &Path, link: &Path) -> PathBuf {
+    match target.parent() {
+        Some(dir) if link.is_relative() => dir.join(link),
+        _ => link.to_path_buf(),
     }
 }
 
@@ -259,7 +274,7 @@ pub fn uninstall(
     match current.state {
         CliInstallState::Missing => return Ok(current),
         CliInstallState::Foreign => return Err(InstallError::TargetOccupied(plan.target.clone())),
-        CliInstallState::Installed | CliInstallState::Stale => {}
+        CliInstallState::Installed | CliInstallState::Stale | CliInstallState::Broken => {}
     }
     match fs::remove_file(&plan.target) {
         Ok(()) => {}
@@ -336,6 +351,43 @@ mod tests {
             classify_target(&target, Some(&source)),
             CliInstallState::Stale
         );
+    }
+
+    #[test]
+    fn classify_installed_for_a_relative_link_in_the_same_folder() {
+        // the package's `/usr/bin/writer -> writer-desktop`
+        let dir = tempdir().unwrap();
+        let bin = dir.path().join("usr/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let source = bin.join("writer-desktop");
+        fs::write(&source, b"").unwrap();
+        let target = bin.join("writer");
+        symlink("writer-desktop", &target).unwrap();
+        assert_eq!(
+            classify_target(&target, Some(&source)),
+            CliInstallState::Installed
+        );
+        let pkg = status(&plan(dir.path(), Some(source)), Some(&target), "");
+        assert!(pkg.package && pkg.installed);
+    }
+
+    #[test]
+    fn classify_broken_for_the_link_to_the_renamed_macos_binary() {
+        let dir = tempdir().unwrap();
+        let macos = dir.path().join("Writer.app/Contents/MacOS");
+        fs::create_dir_all(&macos).unwrap();
+        let source = macos.join("writer-desktop");
+        fs::write(&source, b"").unwrap();
+        let target = target_path(dir.path());
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        symlink(macos.join("desktop"), &target).unwrap();
+        assert_eq!(
+            classify_target(&target, Some(&source)),
+            CliInstallState::Broken
+        );
+        // Install repairs it
+        let plan = plan(dir.path(), Some(source));
+        assert!(install(&plan, None, "", no_elevation).unwrap().installed);
     }
 
     #[test]

@@ -154,17 +154,17 @@ fn edges_carry_kind_syntax_label_line_section_and_ambiguity() {
         .into_iter()
         .filter(|e| e.src == "Projects/Alpha.md")
         .collect();
-    fn describe(
-        e: &EdgeRow,
-    ) -> (
-        &str,
-        &str,
-        &str,
-        Option<&str>,
+    /// target, kind, syntax, label, line, section, dst
+    type Described<'a> = (
+        &'a str,
+        &'a str,
+        &'a str,
+        Option<&'a str>,
         Option<i64>,
-        Option<&str>,
-        Option<&str>,
-    ) {
+        Option<&'a str>,
+        Option<&'a str>,
+    );
+    fn describe(e: &EdgeRow) -> Described<'_> {
         (
             e.target.as_str(),
             e.kind.as_str(),

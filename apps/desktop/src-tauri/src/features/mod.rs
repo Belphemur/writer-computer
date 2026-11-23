@@ -208,6 +208,7 @@ pub struct Contributes {
 
 impl Contributes {
     /// Every id-list point as (point name, ids): one table for the checks that walk them all.
+    #[cfg(test)]
     pub fn id_lists(&self) -> Vec<(String, &Vec<String>)> {
         let mut lists = vec![
             ("docks".to_string(), &self.docks),

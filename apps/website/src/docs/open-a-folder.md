@@ -30,7 +30,7 @@ Large folders open quickly: the window shows the top level of the folder and you
 
 ## The writer command
 
-On macOS, choose **Writer → Install 'writer' Command Line Tool…** to add a `writer` command at `/usr/local/bin/writer`; macOS may ask for an administrator password. On Linux, the .deb and .rpm put `writer` on your PATH; from the AppImage, choose **Install 'writer' command** in Settings, which links it into `~/.local/bin`. Then, in a terminal:
+On macOS, choose **Writer → Install 'writer' Command Line Tool…** to add a `writer` command at `/usr/local/bin/writer`; macOS may ask for an administrator password. On Linux, the .deb and .rpm put `writer` on your PATH; from the AppImage, open Settings > **Command line** and choose **Install**, which links it into `~/.local/bin`. Then, in a terminal:
 
 ```sh
 writer .          # open the current folder
