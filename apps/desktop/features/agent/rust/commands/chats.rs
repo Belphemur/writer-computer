@@ -161,7 +161,8 @@ pub async fn agent_auto_title<R: Runtime>(
     let root = root_of(&app, &webview)?;
     let label = webview.label().to_string();
     blocking(move || {
-        let Some((program, cwd)) = super::super::sessions(&app)?
+        let sessions = super::super::sessions(&app)?;
+        let Some((program, cwd)) = sessions
             .get(&label, &chat_id)
             .ok()
             .and_then(|s| s.helper_target())
@@ -171,10 +172,13 @@ pub async fn agent_auto_title<R: Runtime>(
         };
         // a failed call or an apply failure (the note is gone, a lock error) is quiet
         Ok(title::title_chat(
+            &title::TitleTarget {
+                spawner: &sessions.spawner(),
+                program: &program,
+                cwd: &cwd,
+            },
             &root,
             &chat_id,
-            &program,
-            &cwd,
             title_model.as_deref(),
             chat_model.as_deref(),
             ChatAction::AutoTitle,
@@ -242,10 +246,13 @@ pub async fn agent_regenerate_title<R: Runtime>(
         };
         Ok(
             match title::title_chat(
+                &title::TitleTarget {
+                    spawner: &sessions.spawner(),
+                    program: &program,
+                    cwd: &cwd,
+                },
                 &root,
                 &chat_id,
-                &program,
-                &cwd,
                 title_model.as_deref(),
                 None,
                 ChatAction::RegenerateTitle,

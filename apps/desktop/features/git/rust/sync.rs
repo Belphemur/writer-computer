@@ -1,27 +1,30 @@
 //! Running a sync from the app (spec `SPECs/git-sync-spec.md` "Cadence" and "Sync"): the engine is
 //! `crate::git::sync`; this file is the glue that owns when and how it runs here:
 //!
-//! - **who runs it**: the cadence thread (about 10 s after a commit, every `git.sync-interval`, when
-//!   the vault opens), "Sync now" (a command on the blocking pool), the window close (a few seconds
-//!   at most). One at a time per window, and never while a commit runs; commits and agent commits
+//! - **who runs it**: a thread of the feature's scope started by the cadence (about 10 s after a
+//!   commit, every `git.sync-interval`, when the vault opens: the ticker never waits on the
+//!   network), "Sync now" (a command on the blocking pool), the window close and the exit (a scope
+//!   thread with ONE deadline for all its rounds, [`CLOSE_BUDGET`]; the closing side waits for it
+//!   that long at most and never runs network git itself). One at a time per window, and never while a commit runs; commits and agent commits
 //!   wait for it (`runtime::commit_user_now`);
 //! - **its children** (`git`, `gh`) are the feature scope's (`Exec::new(scope.spawner())`): turning
 //!   git off kills them, and the feature is busy (it asks first) for as long as a sync runs;
 //! - **credentials**: Writer's own binary registered as the credential helper, with the source the
 //!   user chose (`token` from the Keychain secret `features.git.token`, or `gh`); this file never
 //!   reads a token;
-//! - **what it tells the window**: `git:changed` (status), and `git:applying` with the files about
-//!   to be written, before they are, so the editors that have them open claim the watcher's events
-//!   and apply them after the typing idle (`web/lib/remote-apply.ts`).
+//! - **what it tells the window**: `git:changed` (status), and `git:applying` (one payload,
+//!   `runtime::Applying`) with the files about to be written, before they are, then with
+//!   `done: true` and the files it did write, so the editors that have them open hold their saves,
+//!   claim the watcher's events and apply them after the typing idle (`web/lib/remote-apply.ts`).
 
 use super::runtime::{self, SyncFailure, Vaults};
 use crate::git::sync::{self as engine, Options};
 use crate::git::transport::{Exec, Helper, Kind};
 use crate::git::{self, device, state as local_state};
-use serde::Serialize;
 use std::path::Path;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -33,8 +36,13 @@ pub enum Mode {
     Close,
 }
 
-/// How long a sync at close may wait on the network.
-const CLOSE_CAP: Duration = Duration::from_secs(6);
+/// The whole budget of a sync at close or exit, every call and round included.
+pub const CLOSE_BUDGET: Duration = Duration::from_secs(6);
+/// How long the closing side waits for that sync's thread beyond its budget (the local work after
+/// the network).
+const CLOSE_GRACE: Duration = Duration::from_secs(2);
+/// The secret the token source answers from.
+pub const TOKEN_KEY: &str = "features.git.token";
 
 /// May this vault sync: set up, a remote linked, no merge or rebase under way, and (for the
 /// cadence) not paused. `explicit` is "Sync now".
@@ -49,13 +57,18 @@ pub fn ready(root: &Path, explicit: bool) -> bool {
 }
 
 /// The credential helper for this build: Writer's own binary, the keychain service of this app
-/// identifier and the vault's chosen source. `None` when the binary's path is unknown.
+/// identifier, the vault's chosen source and the host its token was saved for. `None` when the
+/// binary's path is unknown or Writer has no credential for the vault (no token saved): git then
+/// uses the user's own helpers. Only whether the token is set is read, never its value.
 pub fn helper_for<R: Runtime>(app: &AppHandle<R>, root: &Path) -> Option<Helper> {
-    Some(Helper {
-        exe: std::env::current_exe().ok()?,
-        source: local_state::credential_source(root),
-        service: crate::plugin_secrets::PluginSecrets::service_name(&app.config().identifier),
-    })
+    let token_saved = crate::features::secrets::secret_keys_set(app, runtime::ID)
+        .is_ok_and(|keys| keys.iter().any(|k| k == TOKEN_KEY));
+    Helper::for_vault(
+        root,
+        std::env::current_exe().ok()?,
+        crate::plugin_secrets::PluginSecrets::service_name(&app.config().identifier),
+        token_saved,
+    )
 }
 
 /// The children runner of the running feature (its scope's), `None` while it is off.
@@ -63,10 +76,9 @@ pub fn exec_of<R: Runtime>(app: &AppHandle<R>) -> Option<Exec> {
     crate::features::scope_of(app, runtime::ID).map(|s| Exec::new(s.spawner()))
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct Applying<'a> {
-    paths: &'a [String],
+/// One short line for a failure (never a path or a credential).
+pub(super) fn failure_line(e: &engine::Error) -> String {
+    failure(e).line
 }
 
 fn failure(e: &engine::Error) -> SyncFailure {
@@ -115,18 +127,19 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
         return;
     };
     if mode == Mode::Close {
-        exec = exec.with_timeout_cap(CLOSE_CAP);
+        exec = exec.with_deadline(started + CLOSE_BUDGET);
     }
     let helper = helper_for(app, &root);
     let dev = device::name();
+    runtime::ensure_lfs_installed(app, &v, &root, runtime::lfs_of(app, label, false));
     // the sync owns the repository for as long as it runs
     let lock = v.write_lock(&root);
-    let _write = lock.lock();
-    let handle = app.clone();
-    let target = label.to_string();
-    let announce = move |paths: &[String]| {
-        let _ = handle.emit_to(&target, runtime::APPLYING_EVENT, Applying { paths });
+    let write = std::cell::RefCell::new(lock.lock());
+    // large-file transfers run with the lock let go (they only append to the object store)
+    let unlock = |f: &mut dyn FnMut()| {
+        parking_lot::MutexGuard::unlocked(&mut *write.borrow_mut(), f);
     };
+    let announce = |paths: &[String]| runtime::emit_applying(app, label, paths, false);
     let outcome = engine::sync(
         &root,
         &Options {
@@ -134,9 +147,11 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
             helper: helper.as_ref(),
             secrets: Vec::new(),
             device: &dev,
+            unlocked: Some(&unlock),
             announce: Some(&announce),
         },
     );
+    runtime::emit_applying(app, label, &outcome.report.written, true);
     let ms = started.elapsed().as_millis();
     let failed = outcome.error.as_ref().map(failure);
     match &outcome.error {
@@ -187,5 +202,38 @@ impl Drop for SyncBusy<'_> {
         self.0
             .syncing_counter()
             .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// [`run`] on a thread of the feature's scope; the receiver hears when it is over. `None` while
+/// the feature is off or the thread could not start.
+pub fn spawn<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    mode: Mode,
+) -> Option<mpsc::Receiver<()>> {
+    let scope = crate::features::scope_of(app, runtime::ID)?;
+    let (tx, rx) = mpsc::channel();
+    let (handle, label) = (app.clone(), label.to_string());
+    match scope.spawn("git-sync", move |_| {
+        run(&handle, &label, mode);
+        let _ = tx.send(());
+    }) {
+        Ok(()) => Some(rx),
+        Err(e) => {
+            log::warn!(target: "git", "git: could not start a sync: {e}");
+            None
+        }
+    }
+}
+
+/// The sync of a closing window or of the exit: on a scope thread with one deadline for all of
+/// it, waited for [`CLOSE_BUDGET`] plus a grace at most. Past that the caller goes on; the thread
+/// ends at its deadline (or when the scope stops and kills its child).
+pub fn run_bounded<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    if let Some(done) = spawn(app, label, Mode::Close) {
+        if done.recv_timeout(CLOSE_BUDGET + CLOSE_GRACE).is_err() {
+            log::warn!(target: "git", "git: the sync at close did not finish in time");
+        }
     }
 }

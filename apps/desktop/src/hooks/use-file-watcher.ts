@@ -45,9 +45,10 @@ export function useFileWatcher() {
 
       if (!file) return;
       if (kind === "deleted") return;
-      if (isSaveInFlight(path)) return;
-      // a feature that wrote the file itself (git's sync) hands the change to the editor its own way
+      // a feature that wrote the file itself (git's sync) hands the change to the editor its own
+      // way; asked before the in-flight check, so its change is never dropped behind a save
       if (claimsExternalChange(path, kind)) return;
+      if (isSaveInFlight(path)) return;
 
       cancelSave(path);
       void tauri.readFile(path).then((content) => {

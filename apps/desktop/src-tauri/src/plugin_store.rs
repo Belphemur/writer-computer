@@ -21,7 +21,6 @@
 
 use crate::plugins;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -416,11 +415,8 @@ pub fn check_manifest(bytes: &[u8], list_id: &str) -> Result<Value, String> {
     Ok(m)
 }
 
-pub fn sha256_hex(b: &[u8]) -> String {
-    Sha256::digest(b)
-        .iter()
-        .map(|x| format!("{x:02x}"))
-        .collect()
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    crate::hash::sha256_hex(bytes)
 }
 
 /* ------------------------------------------------- install / uninstall */

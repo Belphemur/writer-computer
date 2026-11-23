@@ -194,12 +194,19 @@ fn binaries_keep_theirs_at_the_path_and_mine_beside_it() {
         }
     );
     assert_eq!(
-        conflict_copy_name("img/pic.png", "Studio/Mac (2)", "2026-11-20 1403"),
+        conflict_copy_name("img/pic.png", "Studio/Mac (2)", "2026-11-20 1403", &|_| {
+            false
+        }),
         "img/pic (conflict StudioMac 2 2026-11-20 1403).png"
     );
     assert_eq!(
-        conflict_copy_name("README", "A", "s"),
+        conflict_copy_name("README", "A", "s", &|_| false),
         "README (conflict A s)"
+    );
+    // a name already taken gets a counter
+    assert_eq!(
+        conflict_copy_name("a.png", "A", "s", &|n| n == "a (conflict A s).png"),
+        "a (conflict A s 2).png"
     );
 }
 

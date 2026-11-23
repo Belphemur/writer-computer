@@ -34,11 +34,6 @@ const PATTERNS: &[&str] = &[
 /// `(file suffix, pattern, reason)`: what still escapes the scope today.
 const ALLOWED: &[(&str, &str, &str)] = &[
     (
-        "agent/binary.rs",
-        ".spawn()",
-        "the `claude --version` / `auth status` probe: one bounded child on a blocking-pool thread, polled to its deadline and killed; not a running resource",
-    ),
-    (
         "spellcheck/harper.rs",
         "thread::Builder",
         "`std_spawner`, the Spawner for the CLI and tests; the app passes the scope's",

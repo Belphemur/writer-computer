@@ -41,7 +41,7 @@
     {
       "key": "git.lfs",
       "label": "Large files (LFS)",
-      "description": "Track large files with Git LFS. Not available yet.",
+      "description": "Track files above the threshold with Git LFS instead of leaving them out. Needs git-lfs.",
       "category": "Git",
       "type": "boolean",
       "default": false,
@@ -50,7 +50,7 @@
     {
       "key": "git.lfs-threshold-mb",
       "label": "LFS threshold (MB)",
-      "description": "Files above this size are tracked with LFS.",
+      "description": "Files above this size go to LFS (or stay unversioned while LFS is off).",
       "category": "Git",
       "type": "number",
       "default": 100,

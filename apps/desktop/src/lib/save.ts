@@ -70,6 +70,54 @@ function cleanupSaveController(path: string, controller: SaveController) {
   saveControllers.delete(path);
 }
 
+interface SaveHold {
+  count: number;
+  released: Promise<void>;
+  release: () => void;
+}
+
+/** Paths whose saves wait: a feature is about to change the file on disk under the editor. */
+const holds = new Map<string, SaveHold>();
+
+/**
+ * Holds every save of `path` (scheduled, throttled or flushed) until the returned function is
+ * called; the edits stay pending and are saved then. For a writer outside the editor that hands
+ * its change to the editor itself (git's sync): the file it wrote must not be overwritten by an
+ * autosave before the editor took it in. Holds nest; the release is idempotent.
+ */
+export function holdSaves(path: string): () => void {
+  let hold = holds.get(path);
+  if (!hold) {
+    let release = () => {};
+    const released = new Promise<void>((resolve) => (release = resolve));
+    hold = { count: 0, released, release };
+    holds.set(path, hold);
+  }
+  hold.count++;
+  const held = hold;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    held.count--;
+    if (held.count > 0) return;
+    holds.delete(path);
+    held.release();
+    const controller = saveControllers.get(path);
+    if (controller?.pending) queueSave(path, controller);
+  };
+}
+
+/** Waits for a save of `path` already in flight (none: at once). Starts nothing. */
+export async function waitForSave(path: string): Promise<void> {
+  const controller = saveControllers.get(path);
+  if (controller?.inFlight) await controller.running;
+}
+
+export function isSaveHeld(path: string): boolean {
+  return holds.has(path);
+}
+
 export function scheduleSave(path: string) {
   const controller = getSaveController(path);
   controller.pending = true;
@@ -89,6 +137,11 @@ export function isSaveInFlight(path: string) {
 export async function flushSave(path: string): Promise<void> {
   const store = requireStore();
   for (;;) {
+    const hold = holds.get(path);
+    if (hold) {
+      await hold.released;
+      continue;
+    }
     const controller = saveControllers.get(path);
     if (controller?.inFlight) {
       await controller.running;
@@ -114,6 +167,12 @@ export function cancelSave(path: string) {
 
 function queueSave(path: string, controller: SaveController) {
   if (controller.inFlight) return;
+  if (holds.has(path)) {
+    // saved when the hold is released
+    controller.pending = true;
+    clearSaveTimer(controller);
+    return;
+  }
 
   clearSaveTimer(controller);
 
@@ -166,6 +225,10 @@ async function doSave(path: string, controller: SaveController) {
   if (!file || !file.isDirty) {
     controller.pending = false;
     cleanupSaveController(path, controller);
+    return;
+  }
+  if (holds.has(path)) {
+    controller.pending = true;
     return;
   }
 

@@ -4,11 +4,11 @@
 // the Settings > Git page and two commands. Loaded at startup, so it imports only `defineFeature`,
 // the manifest, the tiny status store and `import()` thunks.
 import { GitCommitIcon } from "@hugeicons/core-free-icons";
-import { openGitHistoryTab, openSettings } from "@/hooks/editor-api";
+import { openLocationTab, openSettings } from "@/hooks/editor-api";
 import { defineFeature } from "@/lib/features/registry";
 import manifest from "../feature.json";
 import { GIT_HISTORY, type GitHistoryService } from "./api";
-import { cancelSave } from "@/lib/save";
+import { cancelSave, holdSaves, waitForSave } from "@/lib/save";
 import { registerExternalChangeClaim } from "@/lib/external-changes";
 import { findEditorView } from "@/lib/editor-views";
 import { getWorkspaceRoot } from "@/hooks/workspace-api";
@@ -18,6 +18,8 @@ import * as editorApi from "@/hooks/editor-api";
 import {
   type ApplyingPayload,
   commitNow,
+  conflictRecord,
+  conflictTake,
   GIT_APPLYING,
   GIT_CHANGED,
   mergeText,
@@ -37,7 +39,10 @@ const commitListeners = new Set<() => void>();
 /** What other features use to open a file's history (`api.ts`). */
 const historyService: GitHistoryService = {
   openHistory: (path, options) =>
-    openGitHistoryTab({ path, rev: options?.rev }, { activate: options?.activate }),
+    openLocationTab(
+      { kind: "git-history", path, rev: options?.rev },
+      { activate: options?.activate },
+    ),
   commitForTurn: (t) =>
     turnCommit(t.chatId, t.turnId, t.finishedAt === null ? null : Math.floor(t.finishedAt / 1000)),
   onCommit: (listener) => {
@@ -72,10 +77,17 @@ export default defineFeature({
         updateContent: editorApi.updateContent,
         markSaved: editorApi.markSaved,
         cancelSave,
+        holdSaves,
+        waitForSave,
+        recordConflict: async (path, base, mine) => {
+          useGitStatus.getState().apply(await conflictRecord(path, base, mine));
+        },
       },
     });
     ctx.onDispose(registerExternalChangeClaim((path) => applier.claim(path, "")));
-    ctx.listen<ApplyingPayload>(GIT_APPLYING, (p) => applier.announce(p.paths));
+    ctx.listen<ApplyingPayload>(GIT_APPLYING, (p) =>
+      p.done ? applier.done(p.paths) : applier.announce(p.paths),
+    );
     return startStatusSync(
       (onChange) => ctx.listen(GIT_CHANGED, onChange),
       (fn, ms) => ctx.setInterval(fn, ms),
@@ -101,7 +113,8 @@ export default defineFeature({
           ctx.activeFilePath !== null &&
           useGitStatus.getState().status?.setUp === true,
         run: (ctx) => {
-          if (ctx.activeFilePath) openGitHistoryTab({ path: ctx.activeFilePath });
+          if (ctx.activeFilePath)
+            openLocationTab({ kind: "git-history", path: ctx.activeFilePath });
         },
       },
       {
@@ -150,6 +163,20 @@ export default defineFeature({
     ],
     services: [{ id: GIT_HISTORY, service: historyService }],
     ipcRequests: [
+      {
+        id: "git.resolve",
+        topic: "git:resolve",
+        // `writer git:resolve` while the app has the vault open: the merge view's own command
+        handle: async (args: unknown) => {
+          const { path, take } = args as { path: string; take: "mine" | "theirs" | "both" };
+          try {
+            useGitStatus.getState().apply(await conflictTake(path, take));
+            return { error: null };
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : String(e) };
+          }
+        },
+      },
       {
         id: "git.sync",
         topic: "git:sync",

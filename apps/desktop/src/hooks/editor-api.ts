@@ -110,21 +110,6 @@ export function openSessionChangesTab(target: { chatId: string; focus?: string }
   openLocationTab({ kind: "session-changes", ...target });
 }
 
-/** Opens (or focuses) the History tab of a file (`path` absolute), selecting version `rev`; with
- *  `version` it is the read-only view of that one version. One tab per file, and one per version
- *  for the version view. */
-export function openGitHistoryTab(
-  target: { path: string; rev?: string; version?: boolean },
-  options?: { activate?: boolean },
-) {
-  openLocationTab({ kind: "git-history", ...target }, options);
-}
-
-/** Opens (or focuses) the merge view of a conflicted file (`path` absolute). One tab per file. */
-export function openGitMergeTab(target: { path: string }, options?: { activate?: boolean }) {
-  openLocationTab({ kind: "git-merge", ...target }, options);
-}
-
 /** Persist a graph tab's camera and pins in its location (restored with the session). */
 export function setGraphTabState(tabId: string, state: Partial<Omit<GraphLocation, "kind">>) {
   useEditorStore.getState().setGraphTabState(tabId, state);

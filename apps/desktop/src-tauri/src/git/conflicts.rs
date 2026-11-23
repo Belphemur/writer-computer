@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// One file that needs the user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,34 +39,59 @@ pub struct Book {
     /// Files restored because one side deleted what the other edited.
     #[serde(default)]
     pub restored: Vec<String>,
+    /// Paths a remote tree held that a sync refused to write (`.git` in any spelling, the
+    /// device-local `.writer/git`, a path through a symlink): never written, listed for the user.
+    #[serde(default)]
+    pub refused: Vec<String>,
 }
 
-fn path(root: &Path) -> PathBuf {
-    root.join(".writer/git/conflicts.json")
-}
+const FILE: &str = "conflicts.json";
 
 pub fn read(root: &Path) -> Book {
-    std::fs::read_to_string(path(root))
+    std::fs::read_to_string(super::local_path(root, FILE))
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
 }
 
+/// Writes the book atomically (removes the file when it holds nothing). Callers hold the
+/// repository's write lock (the app) or are the only writer (the CLI).
 pub fn write(root: &Path, book: &Book) -> io::Result<()> {
-    let file = path(root);
-    if book.files.is_empty() && book.copies.is_empty() && book.restored.is_empty() {
-        return match std::fs::remove_file(file) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
-            _ => Ok(()),
-        };
+    if book.files.is_empty()
+        && book.copies.is_empty()
+        && book.restored.is_empty()
+        && book.refused.is_empty()
+    {
+        return super::remove_local(root, FILE);
     }
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(
-        file,
-        serde_json::to_string_pretty(book).map_err(io::Error::other)?,
+    super::write_local(
+        root,
+        FILE,
+        &serde_json::to_string_pretty(book).map_err(io::Error::other)?,
     )
+}
+
+/// The records still open among `book`: a conflict the user settled (the file is back at HEAD's
+/// version, or gone, so it is no longer among `pending`) is not. Read-only; [`forget_settled`]
+/// is the write.
+pub fn open_among(book: &Book, pending: &[super::Change]) -> Vec<Record> {
+    book.files
+        .iter()
+        .filter(|r| pending.iter().any(|c| c.path() == r.path))
+        .cloned()
+        .collect()
+}
+
+/// Forgets the conflicts the user settled outside the merge view. Run under the write lock, by
+/// the commits and the sync, never by a status read.
+pub fn forget_settled(root: &Path, pending: &[super::Change]) -> io::Result<()> {
+    let mut book = read(root);
+    let open = open_among(&book, pending);
+    if open.len() != book.files.len() {
+        book.files = open;
+        write(root, &book)?;
+    }
+    Ok(())
 }
 
 /// The conflicted paths (never committed).
@@ -106,5 +131,6 @@ pub fn dismiss_notices(root: &Path) -> io::Result<()> {
     let mut book = read(root);
     book.copies.clear();
     book.restored.clear();
+    book.refused.clear();
     write(root, &book)
 }

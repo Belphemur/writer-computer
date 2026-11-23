@@ -19,11 +19,12 @@
 //! Applying the title is `chat_store::ChatAction::AutoTitle`, which refuses to touch a title the
 //! user chose, or `ChatAction::RegenerateTitle`, which the user asked for and overwrites it.
 
-use super::binary::run_capture_in;
+use super::binary::run_capture;
 use super::chat_store::{self, ChatAction, ChatStoreError, Role};
 use super::claude_stream::build_title_args;
 use super::events::ChatSummary;
 use super::subagents::tier_model;
+use crate::features::scope::Spawner;
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::Path;
@@ -92,14 +93,21 @@ pub enum TitleError {
     Store(ChatStoreError),
 }
 
+/// Where the one-shot `claude` call runs: the agent scope's starter, the program and the chat's
+/// own directory.
+pub struct TitleTarget<'a> {
+    pub spawner: &'a Spawner,
+    pub program: &'a Path,
+    pub cwd: &'a Path,
+}
+
 /// Read the chat note, ask for a title and apply it with `action` (`AutoTitle` or
 /// `RegenerateTitle`). `chat_model` is the fallback model; `None` uses the note's own. `program`
 /// and `cwd` come from a consent the caller already checked.
 pub fn title_chat(
+    target: &TitleTarget,
     root: &Path,
     chat_id: &str,
-    program: &Path,
-    cwd: &Path,
     setting: Option<&str>,
     chat_model: Option<&str>,
     action: ChatAction,
@@ -114,8 +122,8 @@ pub fn title_chat(
         .flatten()
         .and_then(|m| m.model);
     let chat_model = chat_model.map(str::to_string).or(note_model);
-    let text = suggest(program, cwd, setting, chat_model.as_deref(), &messages)
-        .ok_or(TitleError::Failed)?;
+    let text =
+        suggest(target, setting, chat_model.as_deref(), &messages).ok_or(TitleError::Failed)?;
     match chat_store::action(root, chat_id, action, Some(&text), false) {
         Ok(Some(summary)) => Ok(summary),
         Ok(None) => Err(TitleError::Failed),
@@ -231,8 +239,7 @@ pub fn parse_output(stdout: &str) -> Option<String> {
 /// Ask `program` (in `cwd`, a chat's own directory) for a title. Blocking up to the 30 s timeout:
 /// blocking thread only. `None` on any failure; nothing about the text is logged.
 pub fn suggest(
-    program: &Path,
-    cwd: &Path,
+    target: &TitleTarget,
     setting: Option<&str>,
     chat_model: Option<&str>,
     messages: &[TitleMessage],
@@ -243,10 +250,11 @@ pub fn suggest(
             continue;
         };
         let started = std::time::Instant::now();
-        let reply = run_capture_in(
-            program,
+        let reply = run_capture(
+            target.spawner,
+            target.program,
             &args,
-            cwd,
+            target.cwd,
             Some(&prompt),
             TITLE_TIMEOUT,
             MAX_OUTPUT_BYTES,
@@ -439,6 +447,15 @@ esac
     struct Fake {
         dir: tempfile::TempDir,
         program: PathBuf,
+        spawner: Spawner,
+    }
+
+    fn target<'a>(f: &'a Fake, cwd: &'a Path) -> TitleTarget<'a> {
+        TitleTarget {
+            spawner: &f.spawner,
+            program: &f.program,
+            cwd,
+        }
     }
 
     fn fake(mode: &str) -> Fake {
@@ -448,7 +465,11 @@ esac
         std::fs::write(&program, FAKE).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::write(dir.path().join("mode.txt"), mode).unwrap();
-        Fake { dir, program }
+        Fake {
+            dir,
+            program,
+            spawner: Spawner::detached(),
+        }
     }
 
     fn log(f: &Fake, name: &str) -> String {
@@ -470,7 +491,7 @@ esac
 
     fn run(f: &Fake, chat_model: Option<&str>) -> Option<String> {
         let cwd = tempfile::tempdir().unwrap();
-        suggest(&f.program, cwd.path(), None, chat_model, &convo())
+        suggest(&target(f, cwd.path()), None, chat_model, &convo())
     }
 
     #[test]
@@ -524,11 +545,20 @@ esac
         // no user text: nothing is spawned
         let f = fake("ok");
         let cwd = tempfile::tempdir().unwrap();
-        assert_eq!(suggest(&f.program, cwd.path(), None, None, &[]), None);
+        assert_eq!(suggest(&target(&f, cwd.path()), None, None, &[]), None);
         assert_eq!(log(&f, "argv.log"), "");
         // a missing program
         assert_eq!(
-            suggest(&f.dir.path().join("nope"), cwd.path(), None, None, &convo()),
+            suggest(
+                &TitleTarget {
+                    spawner: &Spawner::detached(),
+                    program: &f.dir.path().join("nope"),
+                    cwd: cwd.path()
+                },
+                None,
+                None,
+                &convo()
+            ),
             None
         );
     }
@@ -538,7 +568,7 @@ esac
         let f = fake("ok");
         let cwd = tempfile::tempdir().unwrap();
         let canon = cwd.path().canonicalize().unwrap();
-        suggest(&f.program, &canon, None, None, &convo()).unwrap();
+        suggest(&target(&f, &canon), None, None, &convo()).unwrap();
         assert_eq!(log(&f, "cwd.log").trim(), canon.to_string_lossy());
     }
 
@@ -568,10 +598,9 @@ esac
 
     fn regenerate(f: &Fake, root: &Path) -> Result<ChatSummary, TitleError> {
         title_chat(
+            &target(f, root),
             root,
             CHAT,
-            &f.program,
-            root,
             None,
             None,
             ChatAction::RegenerateTitle,
@@ -623,10 +652,9 @@ esac
         assert_eq!(title_of(&root).0, "Plan the Q4 review");
         // an unknown chat is a store error, not a call
         let r = title_chat(
+            &target(&f, &root),
             &root,
             "aaaaaaaa-0000-4000-8000-000000000009",
-            &f.program,
-            &root,
             None,
             None,
             ChatAction::RegenerateTitle,

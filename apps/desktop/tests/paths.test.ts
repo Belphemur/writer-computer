@@ -5,6 +5,7 @@ import {
   getFileName,
   getFileStem,
   getRelativePath,
+  relativeInVault,
   normalizeLocalMarkdownDestination,
   normalizeMarkdownDestination,
   normalizePath,
@@ -353,5 +354,21 @@ describe("resolveLinkTarget", () => {
         path: "/vault/docs/guide",
       });
     });
+  });
+});
+
+describe("relativeInVault", () => {
+  test("returns the path below the root, forward slashes", () => {
+    expect(relativeInVault("/v/a/b.md", "/v")).toBe("a/b.md");
+    expect(relativeInVault("C:\\v\\a\\b.md", "C:\\v")).toBe("a/b.md");
+    expect(relativeInVault("/v/a.md", "/v/")).toBe("a.md");
+  });
+  test("is null for the root itself and for paths outside it", () => {
+    expect(relativeInVault("/v", "/v")).toBeNull();
+    expect(relativeInVault("/vault2/a.md", "/v")).toBeNull();
+    expect(relativeInVault("/other/a.md", "/v")).toBeNull();
+  });
+  test("getRelativePath falls back to the normalised path", () => {
+    expect(getRelativePath("C:\\o\\a.md", "/v")).toBe("C:/o/a.md");
   });
 });

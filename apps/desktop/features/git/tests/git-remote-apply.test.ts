@@ -6,6 +6,10 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { forgetTyping, noteTyping, TYPING_IDLE_MS } from "@/lib/typing-idle";
+import { holdSaves, registerSaveStore, scheduleSave, waitForSave } from "@/lib/save";
+
+const tauri = vi.hoisted(() => ({ writeFile: vi.fn() }));
+vi.mock("@/lib/tauri", () => ({ writeFile: tauri.writeFile }));
 import {
   APPLY_EVENT,
   type ApplyDeps,
@@ -20,6 +24,7 @@ let file: { frontmatter: string | null; content: string; diskContent: string; is
 let disk: string;
 let deps: ApplyDeps;
 const merge = vi.fn();
+const record = vi.fn();
 
 const open = (body: string) => {
   view = new EditorView({
@@ -32,6 +37,11 @@ const open = (body: string) => {
 
 beforeEach(() => {
   merge.mockReset();
+  record.mockReset();
+  tauri.writeFile.mockReset();
+  tauri.writeFile.mockImplementation(async (_p: string, text: string) => {
+    disk = text;
+  });
   deps = {
     getOpenFile: () => file,
     readFile: async () => disk,
@@ -44,7 +54,20 @@ beforeEach(() => {
       file.isDirty = newer;
     },
     cancelSave: vi.fn(),
+    // the real hold in the tests that drive the save engine (a hold is module state)
+    holdSaves: () => () => {},
+    waitForSave,
+    recordConflict: record,
   };
+  // the real save engine over the same open note
+  registerSaveStore({
+    getOpenFile: () => file as never,
+    markSaved: (_p, d, newer) => {
+      file.diskContent = d;
+      file.isDirty = newer;
+    },
+    setSaveError: () => {},
+  });
 });
 afterEach(() => {
   view?.destroy();
@@ -117,7 +140,22 @@ describe("applyRemoteChange", () => {
     merge.mockResolvedValue(null);
     expect(await applyRemoteChange(PATH, deps)).toBe("kept");
     expect(view.state.doc.toString()).toBe("mine\n");
-    expect(file.diskContent).toBe("theirs\n");
+    // recorded in Rust, which wrote the buffer as the user's version
+    expect(record).toHaveBeenCalledWith(PATH, "one\n", "mine\n");
+    expect(file.diskContent).toBe("mine\n");
+    expect(file.isDirty).toBe(false);
+  });
+
+  it("goes again when the user typed while the merge ran", async () => {
+    open("one\n");
+    file.content = "one more\n";
+    file.isDirty = true;
+    disk = "one\ntwo\n";
+    merge.mockImplementation(async () => {
+      file.content = "one more and more\n";
+      return "x";
+    });
+    expect(await applyRemoteChange(PATH, deps)).toBe("retry");
   });
 });
 
@@ -160,6 +198,85 @@ describe("createApplier", () => {
     applier.tick();
     await vi.waitFor(() => expect(view.state.doc.toString()).toBe("x\ny\n"));
     expect(applier.pending()).toEqual([]);
+  });
+
+  it("holds the saves of a dirty note until the sync's change is applied, then saves both sides", async () => {
+    open("one\ntwo\n");
+    deps.holdSaves = holdSaves;
+    const clock = { t: 100_000 };
+    const { applier } = make(clock);
+    const type = (body: string) => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: body } });
+      file.content = body;
+      file.isDirty = true;
+      noteTyping(PATH, clock.t);
+      scheduleSave(PATH);
+    };
+    type("mine one\ntwo\n");
+    await vi.waitFor(() => expect(tauri.writeFile).toHaveBeenCalledTimes(1));
+    tauri.writeFile.mockClear();
+    // Rust announces, writes, and is done; the user keeps typing during the idle wait
+    applier.announce(["a.md"]);
+    disk = "one\ntwo\nthree\n";
+    applier.done(["a.md"]);
+    type("mine one\ntwo more\n");
+    clock.t += 500;
+    type("mine one\ntwo more!\n");
+    await new Promise((r) => setTimeout(r, 1_200));
+    expect(tauri.writeFile).not.toHaveBeenCalled();
+    expect(disk).toBe("one\ntwo\nthree\n");
+    merge.mockResolvedValue("mine one\ntwo more!\nthree\n");
+    // the store takes the result (in the app the editor's sync does it from the view)
+    deps.findView = () => null;
+    clock.t += TYPING_IDLE_MS;
+    applier.tick();
+    await vi.waitFor(() => expect(tauri.writeFile).toHaveBeenCalled());
+    expect(merge).toHaveBeenCalledWith(
+      PATH,
+      "mine one\ntwo\n",
+      "mine one\ntwo more!\n",
+      "one\ntwo\nthree\n",
+    );
+    expect(disk).toBe("mine one\ntwo more!\nthree\n");
+  });
+
+  it("records an overlap and lets no save overwrite the other side meanwhile", async () => {
+    open("one\n");
+    deps.holdSaves = holdSaves;
+    const clock = { t: 100_000 };
+    const { applier } = make(clock);
+    file.content = "mine\n";
+    file.isDirty = true;
+    applier.announce(["a.md"]);
+    disk = "theirs\n";
+    applier.done(["a.md"]);
+    scheduleSave(PATH);
+    let recorded = false;
+    record.mockImplementation(async (_p: string, _b: string, mine: string) => {
+      // Rust writes the buffer as the user's version, after the record
+      expect(tauri.writeFile).not.toHaveBeenCalled();
+      disk = mine;
+      recorded = true;
+    });
+    merge.mockResolvedValue(null);
+    clock.t += TYPING_IDLE_MS;
+    applier.tick();
+    await vi.waitFor(() => expect(recorded).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(record).toHaveBeenCalledWith(PATH, "one\n", "mine\n");
+    expect(tauri.writeFile).not.toHaveBeenCalled();
+    expect(disk).toBe("mine\n");
+  });
+
+  it("frees an announced note Rust did not write", () => {
+    open("x\n");
+    const { applier } = make({ t: 0 });
+    file.content = "x y\n";
+    file.isDirty = true;
+    applier.announce(["a.md"]);
+    applier.done([]);
+    expect(applier.pending()).toEqual([]);
+    expect(applier.claim(PATH, "modify")).toBe(false);
   });
 
   it("lets a claim lapse after its time to live", () => {

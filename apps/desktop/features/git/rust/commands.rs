@@ -27,6 +27,20 @@ pub struct ChangeRow {
     pub from: Option<String>,
 }
 
+/// The LFS part of the status.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LfsRow {
+    /// `git.lfs` as the user set it.
+    pub on: bool,
+    /// New large files go through LFS now: on, and `git-lfs` is installed.
+    pub active: bool,
+    /// `git-lfs` is installed (the setting is disabled with "Install git-lfs to use this" when not).
+    pub available: bool,
+    /// Files in LFS (pointers in the current version).
+    pub files: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStatus {
@@ -46,8 +60,10 @@ pub struct GitStatus {
     /// A merge, rebase, cherry-pick, revert, bisect or a detached HEAD: nothing is committed
     /// until it is over (`merge in progress`, `detached HEAD`, ...).
     pub operation: Option<String>,
-    /// Files over the size Writer versions (no LFS yet), vault-relative: "Not versioned".
+    /// Files over the size Writer versions (LFS off), vault-relative: "Not versioned".
     pub too_large: Vec<String>,
+    /// Large files (LFS): the setting, whether it applies, and how many files are in it.
+    pub lfs: LfsRow,
     pub turn_running: bool,
     /// A commit is being written.
     pub committing: bool,
@@ -76,6 +92,9 @@ pub struct GitStatus {
     pub restored: Vec<String>,
     /// Plugin settings held back from versions and the push: they look like they hold a token.
     pub held: Vec<HeldRow>,
+    /// Paths a remote tree held that the sync refused to write (`.git`, device-local state, a
+    /// path through a link): never written.
+    pub refused: Vec<String>,
     /// Where HTTPS passwords come from: `token` or `gh`.
     pub credentials: String,
 }
@@ -174,7 +193,17 @@ fn status_of<R: Runtime>(
     let vaults = super::runtime::vaults(app);
     let fallback = git::IdentityCache::default();
     let cache = vaults.as_ref().map_or(&fallback, |v| &v.identity);
-    let s = git::status(&root, cache, refresh).map_err(refused)?;
+    let lfs = runtime::lfs_of(app, label, refresh);
+    let s = git::status(&root, cache, refresh, lfs).map_err(refused)?;
+    let lfs_row = LfsRow {
+        on: runtime::config_of(app, label).lfs_on,
+        active: lfs.enabled,
+        available: match (vaults.as_ref(), super::sync::exec_of(app)) {
+            (Some(v), Some(exec)) => v.lfs_available(&exec, refresh),
+            _ => false,
+        },
+        files: s.lfs_files as u32,
+    };
     let record = vaults
         .as_ref()
         .map(|v| v.record_of(label))
@@ -190,6 +219,7 @@ fn status_of<R: Runtime>(
         identity_error: s.identity_error,
         operation: s.operation.map(|o| o.label().to_string()),
         too_large: s.too_large,
+        lfs: lfs_row,
         turn_running: vaults.as_ref().is_some_and(|v| v.turn_running(label)),
         committing: vaults.as_ref().is_some_and(|v| v.busy()),
         error: vaults.as_ref().and_then(|v| v.error_of(label)),
@@ -223,6 +253,7 @@ fn status_of<R: Runtime>(
             .map(|(path, copy)| CopyRow { path, copy })
             .collect(),
         restored: s.restored,
+        refused: s.refused,
         held: s
             .held
             .into_iter()
@@ -414,7 +445,7 @@ fn history_target(
     let rel = vault_ops::confine(&root, path)
         .map_err(|e| AppError::Refused(e.to_string()))?
         .rel;
-    let repo = Repo::open(&root)
+    let repo = Repo::open_with(&root, runtime::lfs_of(app, label, false))
         .map_err(refused)?
         .ok_or_else(|| AppError::Refused("Not a Git repository".into()))?;
     Ok((root, repo, rel))
@@ -796,10 +827,8 @@ pub async fn git_sign_in_github<R: Runtime>(
         );
         let url = gh::create_repo(&exec, &root, &name).map_err(transport_error)?;
         git::state::set_credential_source(&root, Source::Gh)?;
-        let helper = helper.map(|h| transport::Helper {
-            source: Source::Gh,
-            ..h
-        });
+        let _ = helper;
+        let helper = super::sync::helper_for(&app, &root);
         let t = Transport {
             exec: &exec,
             root: &root,
@@ -827,6 +856,15 @@ pub async fn git_set_credentials<R: Runtime>(
         let source = Source::parse(&source)
             .ok_or_else(|| AppError::Refused("Choose token or GitHub CLI".into()))?;
         git::state::set_credential_source(&root, source)?;
+        if source == Source::Token {
+            // the token answers the host of the remote it was saved for, and no other
+            let host = Repo::open(&root)
+                .ok()
+                .flatten()
+                .and_then(|r| r.config_string(&format!("remote.{}.url", transport::REMOTE)))
+                .and_then(|u| transport::https_host(&u));
+            git::state::set_token_host(&root, host)?;
+        }
         if let Some(v) = runtime::vaults(&app) {
             v.end_sync_record_reset(&label);
             v.request_sync(&label);
@@ -880,6 +918,9 @@ pub async fn git_dismiss_notices<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         let root = window_root(&app, &label)?;
+        let v = runtime::vaults(&app);
+        let lock = v.as_ref().map(|v| v.write_lock(&root));
+        let _write = lock.as_ref().map(|l| l.lock());
         git::conflicts::dismiss_notices(&root)?;
         let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
         status_of(&app, &label, false)
@@ -1063,14 +1104,15 @@ pub(super) fn resolving<R: Runtime>(
     let _busy = v.as_ref().map(|v| v.busy_guard());
     let lock = v.as_ref().map(|v| v.write_lock(root));
     let _write = lock.as_ref().map(|l| l.lock());
+    let told = parking_lot::Mutex::new(Vec::<String>::new());
     let announce = |paths: &[String]| {
-        let _ = app.emit_to(
-            label,
-            runtime::APPLYING_EVENT,
-            serde_json::json!({ "paths": paths }),
-        );
+        told.lock().extend(paths.iter().cloned());
+        runtime::emit_applying(app, label, paths, false);
     };
-    run(&announce).map_err(|e| {
+    let result = run(&announce);
+    // the editors release what they held, written or not
+    runtime::emit_applying(app, label, &told.lock(), true);
+    result.map_err(|e| {
         if let Some(v) = &v {
             v.identity.forget(root);
         }
@@ -1150,6 +1192,35 @@ pub async fn git_conflict_take<R: Runtime>(
         resolving(&app, &label, &root, |announce| {
             resolve::take(&root, &rel, side, &device::name(), Some(announce))
         })
+    })
+    .await
+}
+
+/// An open note whose unsaved text overlaps what a sync just wrote (the editor's apply found it,
+/// `web/lib/remote-apply.ts`): the conflict is recorded (base: the text the editor last saved) and
+/// the buffer `mine` written to disk, under the write lock, so the note bar shows and no automatic
+/// commit takes the user's text over the other device's.
+#[tauri::command]
+#[specta::specta]
+pub async fn git_conflict_record<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+    path: String,
+    base: String,
+    mine: String,
+) -> Result<GitStatus, AppError> {
+    let label = webview.label().to_string();
+    blocking(move || {
+        let (root, rel) = conflict_target(&app, &label, &path)?;
+        let v = runtime::vaults(&app);
+        let _busy = v.as_ref().map(|v| v.busy_guard());
+        let lock = v.as_ref().map(|v| v.write_lock(&root));
+        let _write = lock.as_ref().map(|l| l.lock());
+        git::sync::record_editor_conflict(&root, &rel, &base, &mine)
+            .map_err(|e| AppError::Refused(super::sync::failure_line(&e)))?;
+        log::info!(target: "git", "git: an open note kept its text over a synced change (conflict)");
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        status_of(&app, &label, false)
     })
     .await
 }

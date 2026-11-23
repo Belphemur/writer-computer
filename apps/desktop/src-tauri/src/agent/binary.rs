@@ -8,7 +8,9 @@
 //! process cap. The sign-in probe is the CLI's own `claude auth status --json` (local, prints
 //! JSON, exit 1 when signed out, never starts a login or opens a browser), same env and timeout.
 
+use crate::features::scope::Spawner;
 use crate::plugin_env;
+use crate::process_run::{self, RunOptions};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -157,7 +159,7 @@ type ProbeKey = (PathBuf, u64, std::time::SystemTime);
 static PROBES: Mutex<Option<HashMap<ProbeKey, Option<String>>>> = Mutex::new(None);
 
 /// `claude --version`, cached per (path, size, mtime). Blocks up to 5 s: blocking thread only.
-pub fn probe_version(program: &Path) -> Option<String> {
+pub fn probe_version(spawner: &Spawner, program: &Path) -> Option<String> {
     let key = std::fs::metadata(program)
         .ok()
         .and_then(|m| Some((program.to_path_buf(), m.len(), m.modified().ok()?)));
@@ -166,7 +168,7 @@ pub fn probe_version(program: &Path) -> Option<String> {
             return v.clone();
         }
     }
-    let version = run_version(program);
+    let version = run_version(spawner, program);
     log::info!(
         target: "agent",
         "agent: version probe finished (version known: {})",
@@ -181,25 +183,14 @@ pub fn probe_version(program: &Path) -> Option<String> {
     version
 }
 
-/// Run `program args...` with the filtered environment and no stdin in the temp dir, return its
-/// stdout (first 16 KiB) whatever the exit status, or `None` when it could not start or outlived
-/// `timeout` (the whole group is killed then).
-fn run_capture(program: &Path, args: &[&str], timeout: Duration) -> Option<(bool, String)> {
-    let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-    run_capture_in(
-        program,
-        &args,
-        &std::env::temp_dir(),
-        None,
-        timeout,
-        16 * 1024,
-    )
-}
-
-/// [`run_capture`] with a working directory, optional stdin text (written, then closed) and an
-/// output cap. The one place Writer runs a fixed, short-lived `claude` command outside a chat
-/// session (version, sign-in, chat title).
-pub fn run_capture_in(
+/// Run `program args...` with the filtered environment (`env::current`) in `cwd`, optional
+/// stdin text (written, then closed), at most `max_out` bytes of stdout, through the one bounded
+/// runner on the agent's scope (`process_run`): the whole group is killed at `timeout` or when the
+/// scope stops. Returns whether it exited 0 and its stdout, whatever the exit status, or `None`
+/// when it could not start, timed out or was stopped. The one place Writer runs a fixed,
+/// short-lived `claude` command outside a chat session (version, sign-in, chat title).
+pub fn run_capture(
+    spawner: &Spawner,
     program: &Path,
     args: &[String],
     cwd: &Path,
@@ -212,53 +203,38 @@ pub fn run_capture_in(
         .env_clear()
         .envs(super::env::current(None))
         .current_dir(cwd)
-        .stdin(if stdin_text.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
-    let mut child = cmd.spawn().ok()?;
+    let mut opts = RunOptions::new(timeout).max_out(max_out);
     if let Some(text) = stdin_text {
-        use std::io::Write;
-        if let Some(mut si) = child.stdin.take() {
-            // a child that exits early closes the pipe: its exit status tells the story
-            let _ = si.write_all(text.as_bytes());
-        }
+        opts = opts.stdin(text);
     }
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let mut out = String::new();
-                if let Some(mut so) = child.stdout.take() {
-                    use std::io::Read;
-                    let _ = so.by_ref().take(max_out).read_to_string(&mut out);
-                }
-                return Some((status.success(), out));
-            }
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            _ => {
-                #[cfg(unix)]
-                unsafe {
-                    libc::kill(-(child.id() as i32), libc::SIGKILL);
-                }
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
+    let out = process_run::run(spawner, cmd, &opts).ok()?;
+    Some((out.ok(), out.stdout))
 }
 
-fn run_version(program: &Path) -> Option<String> {
-    let (ok, out) = run_capture(program, &["--version"], PROBE_TIMEOUT)?;
+/// [`run_capture`] for a probe: no stdin, in the temp dir, the first 16 KiB.
+fn probe_capture(
+    spawner: &Spawner,
+    program: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<(bool, String)> {
+    let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    run_capture(
+        spawner,
+        program,
+        &args,
+        &std::env::temp_dir(),
+        None,
+        timeout,
+        16 * 1024,
+    )
+}
+
+fn run_version(spawner: &Spawner, program: &Path) -> Option<String> {
+    let (ok, out) = probe_capture(spawner, program, &["--version"], PROBE_TIMEOUT)?;
     ok.then(|| parse_version(&out)).flatten()
 }
 
@@ -268,18 +244,18 @@ static AUTH_PROBES: Mutex<Option<HashMap<AuthKey, (Instant, AuthStatus)>>> = Mut
 
 /// `claude auth status --json`, cached for a few seconds per program so "Re-detect" after
 /// signing in is fresh but a burst of calls is one process. Blocking (up to 5 s).
-pub fn probe_auth(program: &Path) -> AuthStatus {
-    probe_auth_with(program, PROBE_TIMEOUT)
+pub fn probe_auth(spawner: &Spawner, program: &Path) -> AuthStatus {
+    probe_auth_with(spawner, program, PROBE_TIMEOUT)
 }
 
-fn probe_auth_with(program: &Path, timeout: Duration) -> AuthStatus {
+fn probe_auth_with(spawner: &Spawner, program: &Path, timeout: Duration) -> AuthStatus {
     if let Some((at, st)) = AUTH_PROBES.lock().as_ref().and_then(|m| m.get(program)) {
         if at.elapsed() < AUTH_TTL {
             return st.clone();
         }
     }
     // exit status is 1 when signed out, so only the printed JSON counts
-    let status = run_capture(program, &["auth", "status", "--json"], timeout)
+    let status = probe_capture(spawner, program, &["auth", "status", "--json"], timeout)
         .map(|(_, out)| parse_auth_status(&out))
         .unwrap_or_default();
     // never the account label, never the output
@@ -320,14 +296,14 @@ pub fn find(override_path: Option<&str>) -> Option<PathBuf> {
 }
 
 /// The `agent_detect_binary` result. Blocking (login shell, version probe).
-pub fn detect(override_path: Option<&str>) -> AgentBinaryInfo {
+pub fn detect(spawner: &Spawner, override_path: Option<&str>) -> AgentBinaryInfo {
     let (found, searched) = locate_here(override_path);
     match found {
         Some((path, source)) => {
-            let auth = probe_auth(&path);
+            let auth = probe_auth(spawner, &path);
             AgentBinaryInfo {
                 found: true,
-                version: probe_version(&path),
+                version: probe_version(spawner, &path),
                 authenticated: auth.authenticated,
                 account: auth.account,
                 path: Some(path.to_string_lossy().into_owned()),
@@ -468,7 +444,8 @@ mod tests {
             "#!/bin/sh\n[ \"$1 $2 $3\" = \"auth status --json\" ] && echo '{\"loggedIn\":false}' && exit 1\nexit 2\n",
         );
         assert_eq!(
-            probe_auth_with(&signed_out, Duration::from_secs(5)).authenticated,
+            probe_auth_with(&Spawner::detached(), &signed_out, Duration::from_secs(5))
+                .authenticated,
             Some(false)
         );
         let signed_in = d.path().join("in/claude");
@@ -476,7 +453,7 @@ mod tests {
             &signed_in,
             "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"apiKey\"}'\n",
         );
-        let st = probe_auth_with(&signed_in, Duration::from_secs(5));
+        let st = probe_auth_with(&Spawner::detached(), &signed_in, Duration::from_secs(5));
         assert_eq!(
             (st.authenticated, st.account.as_deref()),
             (Some(true), Some("apiKey"))
@@ -484,7 +461,7 @@ mod tests {
         let garbage = d.path().join("garbage/claude");
         exe(&garbage, "#!/bin/sh\necho 'what'\n");
         assert_eq!(
-            probe_auth_with(&garbage, Duration::from_secs(5)),
+            probe_auth_with(&Spawner::detached(), &garbage, Duration::from_secs(5)),
             AuthStatus::default()
         );
         // a hang is killed at the timeout and is unknown
@@ -492,13 +469,17 @@ mod tests {
         exe(&hang, "#!/bin/sh\nsleep 30\n");
         let t = Instant::now();
         assert_eq!(
-            probe_auth_with(&hang, Duration::from_millis(300)),
+            probe_auth_with(&Spawner::detached(), &hang, Duration::from_millis(300)),
             AuthStatus::default()
         );
         assert!(t.elapsed() < Duration::from_secs(5));
         // cannot start at all
         assert_eq!(
-            probe_auth_with(&d.path().join("missing"), Duration::from_secs(1)),
+            probe_auth_with(
+                &Spawner::detached(),
+                &d.path().join("missing"),
+                Duration::from_secs(1)
+            ),
             AuthStatus::default()
         );
     }
@@ -527,9 +508,12 @@ mod tests {
             &fake,
             "#!/bin/sh\n[ \"$1\" = \"--version\" ] && echo '2.1.325 (Claude Code)'\n",
         );
-        assert_eq!(probe_version(&fake).as_deref(), Some("2.1.325"));
+        assert_eq!(
+            probe_version(&Spawner::detached(), &fake).as_deref(),
+            Some("2.1.325")
+        );
         let broken = d.path().join("broken");
         exe(&broken, "#!/bin/sh\nexit 1\n");
-        assert_eq!(probe_version(&broken), None);
+        assert_eq!(probe_version(&Spawner::detached(), &broken), None);
     }
 }

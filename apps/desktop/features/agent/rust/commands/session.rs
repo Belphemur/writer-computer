@@ -85,7 +85,8 @@ pub async fn agent_detect_binary<R: Runtime>(
             .and_then(|s| s.get("agent.binary-path"))
             .and_then(|v| v.as_str().map(str::to_string))
     });
-    blocking(move || Ok(binary::detect(override_path.as_deref()))).await
+    let spawner = super::super::sessions(&app)?.spawner();
+    blocking(move || Ok(binary::detect(&spawner, override_path.as_deref()))).await
 }
 
 #[tauri::command]

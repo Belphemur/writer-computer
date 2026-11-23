@@ -15,10 +15,12 @@ export function BooleanControl({
   value,
   onChange,
   label = "Toggle setting",
+  disabled = false,
 }: {
   value: boolean;
   onChange: (v: boolean) => void;
   label?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -27,7 +29,8 @@ export function BooleanControl({
       role="switch"
       aria-checked={value}
       aria-label={label}
-      className="relative h-5 w-9 rounded-full transition-colors duration-200"
+      disabled={disabled}
+      className="relative h-5 w-9 rounded-full transition-colors duration-200 disabled:opacity-50"
       style={{
         backgroundColor: value ? "var(--link-color)" : "var(--border-color)",
       }}
@@ -40,7 +43,13 @@ export function BooleanControl({
   );
 }
 
-function NumberControl({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+export function NumberControl({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
   return (
     <input
       type="number"

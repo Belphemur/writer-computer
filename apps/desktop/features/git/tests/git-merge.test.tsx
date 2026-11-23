@@ -29,11 +29,10 @@ const ipc = vi.hoisted(() => ({
 }));
 vi.mock("../web/ipc", () => ({ ...ipc, GIT_CHANGED: "changed", GIT_APPLYING: "applying" }));
 const editor = vi.hoisted(() => ({
-  openGitMergeTab: vi.fn(),
+  openLocationTab: vi.fn(),
   closeTab: vi.fn(),
   getOpenFile: vi.fn(),
   openSettings: vi.fn(),
-  openGitHistoryTab: vi.fn(),
 }));
 vi.mock("@/hooks/editor-api", async (orig) => ({ ...(await orig<object>()), ...editor }));
 
@@ -311,8 +310,8 @@ describe("the ways in", () => {
     const row = $("[data-git-conflict='Note.md']")!;
     expect(row.textContent).toContain("1 overlap");
     await act(async () => row.click());
-    expect(editor.openGitMergeTab).toHaveBeenCalledWith(
-      { path: "/vault/Note.md" },
+    expect(editor.openLocationTab).toHaveBeenCalledWith(
+      { kind: "git-merge", path: "/vault/Note.md" },
       { activate: true },
     );
   });
@@ -324,16 +323,16 @@ describe("the ways in", () => {
       row.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 1 }));
       row.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
     });
-    expect(editor.openGitMergeTab).toHaveBeenCalledWith(
-      { path: "/vault/Note.md" },
+    expect(editor.openLocationTab).toHaveBeenCalledWith(
+      { kind: "git-merge", path: "/vault/Note.md" },
       { activate: false },
     );
-    editor.openGitMergeTab.mockClear();
+    editor.openLocationTab.mockClear();
     act(() => {
       row.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true, ctrlKey: true }));
     });
-    expect(editor.openGitMergeTab).toHaveBeenCalledWith(
-      { path: "/vault/Note.md" },
+    expect(editor.openLocationTab).toHaveBeenCalledWith(
+      { kind: "git-merge", path: "/vault/Note.md" },
       { activate: false },
     );
   });
@@ -370,7 +369,10 @@ describe("the ways in", () => {
     const bar = $("[data-git-note-bar]")!;
     expect(bar.textContent).toBe("Changed on another device —Resolve");
     await act(async () => $("[data-git-note-bar-resolve]")!.click());
-    expect(editor.openGitMergeTab).toHaveBeenCalledWith({ path: "/vault/Note.md" }, undefined);
+    expect(editor.openLocationTab).toHaveBeenCalledWith(
+      { kind: "git-merge", path: "/vault/Note.md" },
+      undefined,
+    );
     // nothing is opened by itself, and the bar changes nothing in the editor or on disk
     expect(ipc.conflictOpen).not.toHaveBeenCalled();
     expect(ipc.conflictSave).not.toHaveBeenCalled();
@@ -427,9 +429,15 @@ describe("only with git on", () => {
     expect(entry.when?.(ctx())).toBe(true);
     expect(entry.when?.(ctx({ hasWorkspace: false }))).toBe(false);
     await act(async () => entry.run(ctx({ activeFilePath: "/vault/B.md" })));
-    expect(editor.openGitMergeTab).toHaveBeenLastCalledWith({ path: "/vault/B.md" }, undefined);
+    expect(editor.openLocationTab).toHaveBeenLastCalledWith(
+      { kind: "git-merge", path: "/vault/B.md" },
+      undefined,
+    );
     await act(async () => entry.run(ctx({ activeFilePath: "/vault/Elsewhere.md" })));
-    expect(editor.openGitMergeTab).toHaveBeenLastCalledWith({ path: "/vault/A.md" }, undefined);
+    expect(editor.openLocationTab).toHaveBeenLastCalledWith(
+      { kind: "git-merge", path: "/vault/A.md" },
+      undefined,
+    );
     // only binaries: the panel, where they are settled
     useGitStatus
       .getState()

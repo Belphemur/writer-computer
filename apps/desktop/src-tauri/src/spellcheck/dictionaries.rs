@@ -15,7 +15,6 @@
 use super::lang::Lang;
 use crate::plugin_store::Fetch;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use specta::Type;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -105,10 +104,7 @@ pub fn dir(data_dir: &Path) -> PathBuf {
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    crate::hash::sha256_hex(bytes)
 }
 
 /// Installed dictionaries, sorted by id. A folder without both files and a readable record is not

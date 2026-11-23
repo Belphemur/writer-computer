@@ -22,11 +22,15 @@ export type ConflictRow = wire.ConflictRow;
 /** The event Rust emits to the window after a commit, a setup or a pause change (`git:changed`;
  *  `ctx.listen` adds the feature prefix). */
 export const GIT_CHANGED = "changed";
-/** The event Rust emits before a sync writes files into the vault (`git:applying`, payload
- *  `{ paths }`, vault-relative): the editors that have them open claim the watcher's events. */
+/** The event Rust emits before a sync (or a resolution) writes files into the vault, and again
+ *  when it is done (`git:applying`, vault-relative paths): the editors that have them open hold
+ *  their saves, then apply what was written. */
 export const GIT_APPLYING = "applying";
+/** Twin of `runtime::Applying` (Rust): `done: false` before the writes (`paths` about to be
+ *  written), `done: true` after (`paths` written). */
 export interface ApplyingPayload {
   paths: string[];
+  done: boolean;
 }
 
 export interface GitCommands {
@@ -76,6 +80,10 @@ export interface GitCommands {
     result: wire.GitStatus;
   };
   git_conflict_take: { args: { path: string; side: string }; result: wire.GitStatus };
+  git_conflict_record: {
+    args: { path: string; base: string; mine: string };
+    result: wire.GitStatus;
+  };
 }
 
 const call = featureInvoke<GitCommands>(manifest.id, manifest.rust.commands);
@@ -136,3 +144,7 @@ export const conflictSave = (
 /** Settles a whole file: `mine`, `theirs`, or `both` (a binary keeps its conflict copy). */
 export const conflictTake = (path: string, side: "mine" | "theirs" | "both") =>
   call("git_conflict_take", { path, side });
+/** An open note's unsaved text overlaps what a sync wrote: record the conflict (`base` the text
+ *  last saved) and write `mine` as the user's version on disk. */
+export const conflictRecord = (path: string, base: string, mine: string) =>
+  call("git_conflict_record", { path, base, mine });

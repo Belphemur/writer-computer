@@ -22,6 +22,9 @@ pub mod device;
 pub mod gh;
 pub mod history;
 pub mod ignore;
+pub mod lfs;
+#[cfg(test)]
+mod lfs_tests;
 pub mod merge;
 pub mod message;
 pub mod plugin_scan;
@@ -36,12 +39,35 @@ pub(crate) mod system;
 mod tests;
 pub mod transport;
 
+pub use lfs::Lfs;
 pub use message::Change;
 pub use repo::{Error, Identities, Identity, LogEntry, Repo, Result};
 
 use message::{Message, Scope, TemplateCtx};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use sync::RemoteInfo;
+
+/// The feature's device-local folder in a vault (`state.json`, `conflicts.json`,
+/// `sync-state.json`, `plugin-scan.json`): kept out of the repository by the managed ignore block,
+/// and never written by a sync, whatever a remote tree holds.
+pub const LOCAL_DIR: &str = ".writer/git";
+
+/// `<root>/.writer/git/<name>`.
+pub fn local_path(root: &Path, name: &str) -> PathBuf {
+    root.join(LOCAL_DIR).join(name)
+}
+
+/// The one write of a device-local file: atomic (`vault_ops::write_bytes`), the folder made first.
+pub fn write_local(root: &Path, name: &str, text: &str) -> std::io::Result<()> {
+    crate::vault_ops::write_bytes_creating(&local_path(root, name), text.as_bytes())
+        .map_err(|e| std::io::Error::other(e.to_string()))
+}
+
+/// Removes a device-local file; one already gone is fine.
+pub fn remove_local(root: &Path, name: &str) -> std::io::Result<()> {
+    crate::vault_ops::remove_file(&local_path(root, name))
+        .map_err(|e| std::io::Error::other(e.to_string()))
+}
 
 /// How the vault gets its history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,8 +177,8 @@ pub fn auto_setup(root: &Path, device: &str) -> Result<Auto> {
     if operation(root).is_some() {
         return Ok(Auto::Paused);
     }
-    if let Some(repo) = Repo::open(root)? {
-        let _ = repo;
+    if Repo::open(root)?.is_some() {
+        sync::recover(root, None, device).map_err(sync_error)?;
         ignore::ensure(root)?;
         return Ok(Auto::Done { committed: false });
     }
@@ -191,6 +217,7 @@ pub fn setup(root: &Path, mode: SetupMode, device: &str) -> Result<()> {
         SetupMode::Existing => Repo::open(root)?.ok_or(Error::NotARepo)?,
     };
     repo.identities()?;
+    sync::recover(root, None, device).map_err(sync_error)?;
     state::set_stopped(root, false)?;
     let ignore_changed = ignore::ensure(root)?;
     if !repo.has_commits() {
@@ -208,6 +235,28 @@ pub fn setup(root: &Path, mode: SetupMode, device: &str) -> Result<()> {
 pub fn has_remote(repo: &Repo) -> bool {
     repo.config_string(&format!("remote.{}.url", transport::REMOTE))
         .is_some()
+}
+
+/// What every commit does first (user, agent, setup), under the caller's write lock: finish a sync
+/// that was interrupted after it moved the branch (otherwise the files it had not written yet
+/// would be committed back at their old version, reverting the other device's changes), then
+/// forget the conflicts the user settled. `None` when the vault is not a repository.
+fn before_commit(root: &Path, device: &str) -> Result<Option<Repo>> {
+    sync::recover(root, None, device).map_err(sync_error)?;
+    let Some(repo) = Repo::open(root)? else {
+        return Ok(None);
+    };
+    conflicts::forget_settled(root, &repo.changes()?)?;
+    Ok(Some(repo))
+}
+
+/// A sync failure met by a commit's recovery, as the engine's error.
+fn sync_error(e: sync::Error) -> Error {
+    match e {
+        sync::Error::Repo(r) => r,
+        sync::Error::Io(e) => Error::Io(e),
+        other => Error::Operation(other.to_string()),
+    }
 }
 
 /// Splits `changes` into what a version may hold and the plugin settings the token scan holds back.
@@ -241,14 +290,42 @@ fn committable(
     (keep, held)
 }
 
+/// With LFS enabled, `git lfs install --local` in the vault's repository, once (it is skipped
+/// when the repository's config already has the filter): the filters and hooks for the user's
+/// own git; Writer records pointers itself. Idempotent, local config only.
+pub fn ensure_lfs(
+    exec: &transport::Exec,
+    root: &Path,
+    lfs: Lfs,
+) -> std::result::Result<(), transport::TransportError> {
+    if !lfs.enabled {
+        return Ok(());
+    }
+    let configured = Repo::open(root)
+        .ok()
+        .flatten()
+        .is_some_and(|r| lfs::installed_in(r.common_dir()));
+    if configured {
+        return Ok(());
+    }
+    transport::Transport {
+        exec,
+        root,
+        helper: None,
+        secrets: Vec::new(),
+    }
+    .lfs_install()
+}
+
 /// Commits the user's pending changes. `None` when there is nothing to commit.
 pub fn commit_user(
     root: &Path,
     template: &str,
     ctx: &TemplateCtx,
     device: &str,
+    lfs: Lfs,
 ) -> Result<Option<String>> {
-    let Some(repo) = Repo::open(root)? else {
+    let Some(repo) = before_commit(root, device)?.map(|r| r.with_lfs(lfs)) else {
         return Ok(None);
     };
     let (changes, _) = committable(root, &repo, repo.changes()?);
@@ -272,8 +349,9 @@ pub fn commit_agent(
     turn: &scheduler::AgentTurn,
     fallback_title: &str,
     device: &str,
+    lfs: Lfs,
 ) -> Result<Option<String>> {
-    let Some(repo) = Repo::open(root)? else {
+    let Some(repo) = before_commit(root, device)?.map(|r| r.with_lfs(lfs)) else {
         return Ok(None);
     };
     let touched: std::collections::BTreeSet<&str> = turn.files.iter().map(String::as_str).collect();
@@ -315,8 +393,10 @@ pub struct Status {
     pub changes: Vec<Change>,
     /// Committer time of HEAD, seconds.
     pub last_commit: Option<i64>,
-    /// Files over the size Writer versions (no LFS yet), vault-relative.
+    /// Files over the size Writer versions (LFS off, or git-lfs missing), vault-relative.
     pub too_large: Vec<String>,
+    /// Files Writer's `.gitattributes` block tracks in LFS (as pointers in HEAD).
+    pub lfs_files: usize,
     /// The identity problem that would stop a commit, if any.
     pub identity_error: bool,
     /// The remote, ahead and behind; `url: None` without one.
@@ -328,6 +408,8 @@ pub struct Status {
     pub copies: Vec<(String, String)>,
     /// Files restored because one side deleted what the other edited.
     pub restored: Vec<String>,
+    /// Paths a remote tree held that the sync refused to write.
+    pub refused: Vec<String>,
     /// Plugin settings the token scan holds back from versions and from the push.
     pub held: Vec<plugin_scan::Held>,
 }
@@ -360,8 +442,8 @@ impl IdentityCache {
     }
 }
 
-pub fn status(root: &Path, identity: &IdentityCache, refresh: bool) -> Result<Status> {
-    let Some(repo) = Repo::open(root)? else {
+pub fn status(root: &Path, identity: &IdentityCache, refresh: bool, lfs: Lfs) -> Result<Status> {
+    let Some(repo) = Repo::open_with(root, lfs)? else {
         return Ok(Status {
             has_repo: false,
             set_up: false,
@@ -372,28 +454,22 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool) -> Result<St
             changes: Vec::new(),
             last_commit: None,
             too_large: Vec::new(),
+            lfs_files: 0,
             identity_error: false,
             remote: RemoteInfo::default(),
             sync_paused: false,
             conflicts: Vec::new(),
             copies: Vec::new(),
             restored: Vec::new(),
+            refused: Vec::new(),
             held: Vec::new(),
         });
     };
     let (raw, too_large) = repo.changes_and_skipped()?;
-    // a conflict the user settled (the file is back at HEAD's version, or gone) is forgotten
-    let mut book = conflicts::read(root);
-    let open: Vec<conflicts::Record> = book
-        .files
-        .iter()
-        .filter(|r| raw.iter().any(|c| c.path() == r.path))
-        .cloned()
-        .collect();
-    if open.len() != book.files.len() {
-        book.files = open.clone();
-        let _ = conflicts::write(root, &book);
-    }
+    // read-only: a conflict the user settled is left out here and forgotten by the next commit or
+    // sync, under the write lock (`conflicts::forget_settled`)
+    let book = conflicts::read(root);
+    let open = conflicts::open_among(&book, &raw);
     let (changes, held) = committable(root, &repo, raw);
     Ok(Status {
         has_repo: true,
@@ -405,12 +481,14 @@ pub fn status(root: &Path, identity: &IdentityCache, refresh: bool) -> Result<St
         changes,
         last_commit: repo.last_commit_time(),
         too_large,
+        lfs_files: repo.lfs_files().len(),
         identity_error: identity.is_missing(&repo, refresh),
         remote: sync::remote_info(root),
         sync_paused: state::sync_paused(root),
         conflicts: open,
         copies: book.copies,
         restored: book.restored,
+        refused: book.refused,
         held,
     })
 }

@@ -211,13 +211,19 @@ export function getFileName(path: string): string {
   return path.slice(lastSlash + 1);
 }
 
-export function getRelativePath(fullPath: string, root: string): string {
+/** The vault-relative form (forward slashes) of `fullPath`, `null` when it is the root itself or
+ *  lies outside `root`. The one normalisation; `getRelativePath` is its lenient form. */
+export function relativeInVault(fullPath: string, root: string): string | null {
   const normalized = fullPath.replace(/\\/g, "/");
   const normalizedRoot = root.replace(/\\/g, "/").replace(/\/$/, "");
-  if (normalized.startsWith(normalizedRoot + "/")) {
-    return normalized.slice(normalizedRoot.length + 1);
-  }
-  return normalized;
+  return normalized.startsWith(normalizedRoot + "/")
+    ? normalized.slice(normalizedRoot.length + 1)
+    : null;
+}
+
+/** `relativeInVault`, falling back to the normalised `fullPath` when it is not inside `root`. */
+export function getRelativePath(fullPath: string, root: string): string {
+  return relativeInVault(fullPath, root) ?? fullPath.replace(/\\/g, "/");
 }
 
 export function getParentDir(path: string): string {

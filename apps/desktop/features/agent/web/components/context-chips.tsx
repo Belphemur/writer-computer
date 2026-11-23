@@ -2,6 +2,7 @@ import { Cancel01Icon, File02Icon, Folder01Icon, Pdf02Icon } from "@hugeicons/co
 import { useEffect, useState } from "react";
 import { setAgentDraft } from "@features/agent/web/hooks/agent-api";
 import { useActiveFilePath } from "@/hooks/use-tabs";
+import { relativeInVault } from "@/lib/paths";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import { useAttachActiveNoteSetting, type Draft } from "@features/agent/web/hooks/use-agent";
 import { contextRefLabel } from "@features/agent/web/lib/context-text";
@@ -11,12 +12,6 @@ import type { ChatId, ContextRef } from "@features/agent/web/lib/events";
 import { Ico } from "./agent-icon";
 import { vaultLinkHandlers } from "./agent-links";
 import { ChatImageThumb } from "./chat-image-thumb";
-
-function relativeTo(path: string | null, root: string | null): string | null {
-  if (!path || !root) return null;
-  const base = root.endsWith("/") ? root : `${root}/`;
-  return path.startsWith(base) ? path.slice(base.length) : null;
-}
 
 function Chip({
   label,
@@ -117,7 +112,8 @@ const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1).replace(/\.md$/i, 
 export function ContextChips({ chatId, draft }: { chatId: ChatId; draft: Draft }) {
   const root = useWorkspaceRoot();
   const allowed = useAttachActiveNoteSetting();
-  const activeRel = relativeTo(useActiveFilePath(), root);
+  const activePath = useActiveFilePath();
+  const activeRel = activePath && root ? relativeInVault(activePath, root) : null;
   const showActive = allowed && draft.activeNote && activeRel !== null;
   if (!showActive && draft.mentions.length === 0) return null;
   const remove = (ref: ContextRef) =>

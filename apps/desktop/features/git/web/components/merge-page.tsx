@@ -12,6 +12,7 @@ import { closeTab, getOpenFile } from "@/hooks/editor-api";
 import { serializeDocument } from "@/lib/frontmatter";
 import type { PageViewProps } from "@/lib/features/slots";
 import { describeError, logger } from "@/lib/logger";
+import { flushSave } from "@/lib/save";
 import { conflictOpen, conflictSave, type ConflictView } from "../ipc";
 import { resultExtensions, sideExtensions, hunkField } from "../lib/merge-editor";
 import { allPicked, layoutOf, pickRows, valueOf, type Picks } from "../lib/merge-model";
@@ -163,6 +164,8 @@ function Merge({ view, tabId }: { view: ConflictView; tabId: string }) {
     setBusy(true);
     setFailure(null);
     try {
+      // typing since the view opened reaches the disk, where Save merges it into the result
+      await flushSave(view.path);
       apply(
         await conflictSave(view.path, {
           mine: view.mine,
@@ -233,14 +236,19 @@ export default function MergePage({ location, tabId }: PageViewProps<GitMergeLoc
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
-    conflictOpen(location.path, openBuffer(location.path)).then(
-      (v) => current && setView(v),
-      (e) => {
-        if (!current) return;
-        logger.warn("git", "could not open the merge view");
-        setError(describeError(e).message);
-      },
-    );
+    // the buffer goes to disk first (the normal save): the view's "mine" is the file, and Save
+    // merges whatever is written after it (Rust compares the disk with what the view opened on)
+    flushSave(location.path)
+      .catch(() => logger.warn("git", "could not save the note before the merge view"))
+      .then(() => conflictOpen(location.path, openBuffer(location.path)))
+      .then(
+        (v) => current && setView(v),
+        (e) => {
+          if (!current) return;
+          logger.warn("git", "could not open the merge view");
+          setError(describeError(e).message);
+        },
+      );
     return () => {
       current = false;
     };

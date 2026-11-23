@@ -4,7 +4,7 @@
 use super::*;
 use crate::features::scope::Spawner;
 use crate::git::gh;
-use crate::git::transport::{Exec, Helper, Kind, REMOTE};
+use crate::git::transport::{self, Exec, Helper, Kind, REMOTE};
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
@@ -30,11 +30,16 @@ const GITHUB: &str = "protocol=https\nhost=github.com\nusername=me\n\n";
 
 #[test]
 fn the_token_source_answers_get_over_https() {
-    let out = ask(&["--source", "token", "get"], GITHUB, Some(PLANTED), None);
+    let out = ask(
+        &["--source", "token", "--host", "github.com", "get"],
+        GITHUB,
+        Some(PLANTED),
+        None,
+    );
     assert_eq!(out, format!("username=me\npassword={PLANTED}\n\n"));
     // no username in the request: a fixed one
     let out = ask(
-        &["--source", "token", "get"],
+        &["--source", "token", "--host", "git.example.test", "get"],
         "protocol=https\nhost=git.example.test\n\n",
         Some("t0ken"),
         None,
@@ -43,29 +48,71 @@ fn the_token_source_answers_get_over_https() {
 }
 
 #[test]
-fn it_answers_nothing_for_store_erase_http_or_a_missing_token() {
+fn the_token_answers_only_the_host_it_was_saved_for() {
+    let other = "protocol=https\nhost=evil.example\n\n";
     assert_eq!(
-        ask(&["--source", "token", "store"], GITHUB, Some("x"), None),
+        ask(
+            &["--source", "token", "--host", "github.com", "get"],
+            other,
+            Some(PLANTED),
+            None
+        ),
+        ""
+    );
+    // no recorded host: no answer at all
+    assert_eq!(
+        ask(&["--source", "token", "get"], GITHUB, Some(PLANTED), None),
         ""
     );
     assert_eq!(
-        ask(&["--source", "token", "erase"], GITHUB, Some("x"), None),
+        transport::https_host("https://me@GitHub.com:443/o/r.git").as_deref(),
+        Some("github.com:443")
+    );
+    assert_eq!(transport::https_host("git@github.com:o/r.git"), None);
+}
+
+#[test]
+fn it_answers_nothing_for_store_erase_http_or_a_missing_token() {
+    assert_eq!(
+        ask(
+            &["--source", "token", "--host", "github.com", "store"],
+            GITHUB,
+            Some("x"),
+            None
+        ),
         ""
     );
     assert_eq!(
         ask(
-            &["--source", "token", "get"],
+            &["--source", "token", "--host", "github.com", "erase"],
+            GITHUB,
+            Some("x"),
+            None
+        ),
+        ""
+    );
+    assert_eq!(
+        ask(
+            &["--source", "token", "--host", "github.com", "get"],
             "protocol=http\nhost=github.com\n\n",
             Some("x"),
             None
         ),
         ""
     );
-    assert_eq!(ask(&["--source", "token", "get"], GITHUB, None, None), "");
+    assert_eq!(
+        ask(
+            &["--source", "token", "--host", "github.com", "get"],
+            GITHUB,
+            None,
+            None
+        ),
+        ""
+    );
     // ssh never reaches a helper, but a stray request is refused
     assert_eq!(
         ask(
-            &["--source", "token", "get"],
+            &["--source", "token", "--host", "github.com", "get"],
             "protocol=ssh\nhost=github.com\n\n",
             Some("x"),
             None
@@ -102,16 +149,21 @@ fn the_helper_registration_names_where_the_token_is_never_the_token() {
         exe: PathBuf::from("/Applications/Writer.app/Contents/MacOS/Writer"),
         source: Source::Token,
         service: "com.writer-computer.plugin-secrets".into(),
+        host: Some("github.com".into()),
     };
-    let cfg = h.config();
-    assert!(cfg.starts_with("credential.helper=!'/Applications/Writer.app/Contents/MacOS/Writer' git-credential --source token"));
-    assert!(!cfg.contains(PLANTED));
+    let args = h.config_args();
+    // the user's helpers are cleared first, then Writer's is the only one
+    assert_eq!(args[..3], ["-c", "credential.helper=", "-c"]);
+    assert!(args[3].starts_with("credential.helper=!'/Applications/Writer.app/Contents/MacOS/Writer' git-credential --source token"));
+    assert!(args[3].ends_with("--host 'github.com'"));
+    assert!(args.iter().all(|a| !a.contains(PLANTED)));
     let quoted = Helper {
         exe: PathBuf::from("/Users/o'neil/Writer"),
         source: Source::Gh,
         service: "s".into(),
+        host: None,
     };
-    assert!(quoted.config().contains("'/Users/o'\\''neil/Writer'"));
+    assert!(quoted.config_args()[3].contains("'/Users/o'\\''neil/Writer'"));
     assert_eq!(
         service_of(&[
             "--source".into(),
@@ -263,6 +315,7 @@ fn a_planted_token_is_absent_from_argv_details_and_logs() {
         exe: PathBuf::from("/opt/Writer"),
         source: Source::Token,
         service: "svc".into(),
+        host: Some("localhost:1".into()),
     };
     let exec = Exec::new(Spawner::detached()).with_env(env.clone());
     let cmd = exec.git(&root, Some(&helper), &["fetch", "origin"]);
@@ -284,6 +337,7 @@ fn a_planted_token_is_absent_from_argv_details_and_logs() {
             helper: Some(&helper),
             secrets: vec![PLANTED.to_string()],
             device: "T",
+            unlocked: None,
             announce: None,
         },
     );
@@ -301,4 +355,56 @@ fn a_planted_token_is_absent_from_argv_details_and_logs() {
     for line in captured() {
         assert!(!line.contains(PLANTED), "logged: {line}");
     }
+}
+
+/// git's own `store` after a success reaches every helper in the list: with Writer's registration
+/// the user's `store` helper (here git's `store`, configured globally) never sees the password.
+#[test]
+fn the_users_helpers_never_store_writers_token() {
+    if !crate::git::sync::tests::have_git() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let global = home.join("gitconfig");
+    std::fs::write(&global, "[credential]\n\thelper = store\n").unwrap();
+    let approve = |extra: &[String]| {
+        use std::io::Write;
+        let mut child = std::process::Command::new("git")
+            .args(extra)
+            .args(["credential", "approve"])
+            .env("HOME", home)
+            .env("XDG_CONFIG_HOME", home)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", &global)
+            .current_dir(home)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(
+                format!("protocol=https\nhost=example.test\nusername=git\npassword={PLANTED}\n\n")
+                    .as_bytes(),
+            )
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+    };
+    let helper = Helper {
+        exe: PathBuf::from("/bin/true"),
+        source: Source::Token,
+        service: "svc".into(),
+        host: Some("example.test".into()),
+    };
+    approve(&helper.config_args());
+    let stored = home.join(".git-credentials");
+    assert!(
+        std::fs::read_to_string(&stored).map_or(true, |t| !t.contains(PLANTED)),
+        "the user's store helper got the token"
+    );
+    // the control: without the reset, git's store does write it
+    approve(&[]);
+    assert!(std::fs::read_to_string(&stored).unwrap().contains(PLANTED));
 }

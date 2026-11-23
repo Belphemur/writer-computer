@@ -8,6 +8,7 @@
 
 use crate::agent::api::{FileChange, FileChangeKind, TurnFinished, TurnStarted};
 use crate::git::scheduler::{Action, AgentTurn, Cadence, SyncTimer};
+use crate::git::transport::Exec;
 use crate::git::{self, device, ignore, state as pause_state};
 use crate::state::AppState;
 use parking_lot::Mutex;
@@ -25,11 +26,31 @@ pub const COMMIT_AFTER: &str = "git.commit-after";
 pub const AGENT_COMMITS: &str = "git.agent-commits";
 pub const COMMIT_MESSAGE: &str = "git.commit-message";
 pub const SYNC_INTERVAL: &str = "git.sync-interval";
-/// The web half hears which files a sync is about to write (vault-relative), before it writes.
+pub const LFS: &str = "git.lfs";
+pub const LFS_THRESHOLD: &str = "git.lfs-threshold-mb";
+/// How long a "is git-lfs installed" answer is trusted (it runs the user's login shell).
+const LFS_PROBE_TTL: Duration = Duration::from_secs(60);
+/// The web half hears which files a sync is about to write (vault-relative), before it writes,
+/// and which it wrote once it is done ([`Applying`]).
 pub const APPLYING_EVENT: &str = "git:applying";
 
+/// The one payload of [`APPLYING_EVENT`] (twin: `ApplyingPayload` in `web/ipc.ts`): `done: false`
+/// before the files are written (the editors hold their saves of them), `done: true` after, with
+/// the files actually written (the others are released).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Applying<'a> {
+    pub paths: &'a [String],
+    pub done: bool,
+}
+
+/// Tells `label`'s window which files are about to be written (`done: false`) or were (`true`).
+pub fn emit_applying<R: Runtime>(app: &AppHandle<R>, label: &str, paths: &[String], done: bool) {
+    let _ = app.emit_to(label, APPLYING_EVENT, Applying { paths, done });
+}
+
 /// The settings the cadence reads, per window, every time they are needed (a change applies at once).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// `None`: Manual.
     pub quiet: Option<Duration>,
@@ -37,6 +58,10 @@ pub struct Config {
     pub template: String,
     /// `git.sync-interval`; `None`: Manual.
     pub sync_every: Option<Duration>,
+    /// `git.lfs` and `git.lfs-threshold-mb`: what the user asked for (whether `git-lfs` is
+    /// installed decides what applies, see [`lfs_of`]).
+    pub lfs_on: bool,
+    pub lfs_threshold_mb: f64,
 }
 
 impl Config {
@@ -70,11 +95,17 @@ impl Config {
             Some("manual") => None,
             _ => Some(Duration::from_secs(300)),
         };
+        let lfs_on = matches!(get(LFS), Some(crate::config::ConfigValue::Bool(true)));
+        let lfs_threshold_mb = get(LFS_THRESHOLD)
+            .and_then(|v| v.as_f64())
+            .unwrap_or(git::lfs::DEFAULT_THRESHOLD_MB);
         Config {
             quiet,
             agent_commits,
             template,
             sync_every,
+            lfs_on,
+            lfs_threshold_mb,
         }
     }
 }
@@ -134,6 +165,10 @@ pub struct Vaults {
     /// cadence's commits, an agent turn's, restore, setup, the sync) holds it, so two of them never
     /// interleave.
     locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
+    /// Whether `git-lfs` was found, and when (the login-shell lookup is not free).
+    lfs_probe: Mutex<Option<(Instant, bool)>>,
+    /// Repositories `git lfs install --local` was run for (or found done) since the feature started.
+    lfs_installed_in: Mutex<std::collections::HashSet<PathBuf>>,
 }
 
 /// Counts a commit in progress for [`Vaults::busy`].
@@ -341,6 +376,56 @@ impl Vaults {
     }
 }
 
+impl Vaults {
+    /// Is `git-lfs` installed? Asked of the user's login shell like `git` is, remembered for a
+    /// minute; `fresh` asks again (the settings page opens, a status refresh).
+    pub fn lfs_available(&self, exec: &Exec, fresh: bool) -> bool {
+        let mut probe = self.lfs_probe.lock();
+        if let (false, Some((at, found))) = (fresh, *probe) {
+            if at.elapsed() < LFS_PROBE_TTL {
+                return found;
+            }
+        }
+        let found = exec.lfs_installed();
+        *probe = Some((Instant::now(), found));
+        found
+    }
+}
+
+/// The LFS settings that apply to `label`'s vault: on only when the setting is on and `git-lfs` is
+/// installed; the feature being off gives LFS off (no probe, no work).
+pub fn lfs_of<R: Runtime>(app: &AppHandle<R>, label: &str, fresh: bool) -> git::Lfs {
+    let cfg = config_of(app, label);
+    let installed = cfg.lfs_on
+        && match (vaults(app), super::sync::exec_of(app)) {
+            (Some(v), Some(exec)) => v.lfs_available(&exec, fresh),
+            _ => false,
+        };
+    git::Lfs::from_settings(cfg.lfs_on, cfg.lfs_threshold_mb, installed)
+}
+
+/// With LFS on, the repository gets `git lfs install --local` once (filters and hooks in its own
+/// config, for the user's own git; Writer records pointers itself). A failure is logged and kept
+/// off the commit: versions still work, the status line says what happened.
+pub(super) fn ensure_lfs_installed<R: Runtime>(
+    app: &AppHandle<R>,
+    v: &Vaults,
+    root: &Path,
+    lfs: git::Lfs,
+) {
+    if !lfs.enabled || v.lfs_installed_in.lock().contains(root) {
+        return;
+    }
+    let Some(exec) = super::sync::exec_of(app) else {
+        return;
+    };
+    if let Err(e) = git::ensure_lfs(&exec, root, lfs) {
+        log::warn!(target: "git", "git: git lfs install failed: {}", e.line);
+        return;
+    }
+    v.lfs_installed_in.lock().insert(root.to_path_buf());
+}
+
 pub fn config_of<R: Runtime>(app: &AppHandle<R>, label: &str) -> Config {
     let state = app.state::<AppState>().get_or_create(label);
     let guard = state.settings.read();
@@ -371,8 +456,14 @@ pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bo
     let Some(v) = vaults(app) else {
         return Ok(false);
     };
-    if v.is_syncing(label) {
+    // a sync holds the repository lock while it replays and writes (not while a large-file
+    // transfer runs): the commit waits for the next pass instead of for the sync
+    let held = v.is_syncing(label)
+        && v.root_of(label)
+            .is_some_and(|root| v.write_lock(&root).try_lock().is_none());
+    if held {
         v.with(label, |vault| vault.cadence.on_write(Instant::now()));
+        log::info!(target: "git", "git: a sync holds the repository, the commit waits");
         return Ok(false);
     }
     commit_user_unchecked(app, &v, label)
@@ -392,7 +483,10 @@ pub(super) fn commit_user_unchecked<R: Runtime>(
     let _write = lock.lock();
     let cfg = config_of(app, label);
     let dev = device::name();
-    let result = git::commit_user(&root, &cfg.template, &git::template_ctx(&dev), &dev);
+    recover_now(app, label, &root, &dev);
+    let lfs = lfs_of(app, label, false);
+    ensure_lfs_installed(app, v, &root, lfs);
+    let result = git::commit_user(&root, &cfg.template, &git::template_ctx(&dev), &dev, lfs);
     v.committed(label);
     match &result {
         Ok(Some(_)) => {
@@ -420,7 +514,10 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
     let lock = v.write_lock(&root);
     let _write = lock.lock();
     let dev = device::name();
-    match git::commit_agent(&root, turn, "Agent turn", &dev) {
+    recover_now(app, label, &root, &dev);
+    let lfs = lfs_of(app, label, false);
+    ensure_lfs_installed(app, &v, &root, lfs);
+    match git::commit_agent(&root, turn, "Agent turn", &dev, lfs) {
         Ok(Some(_)) => {
             v.set_error(label, None);
             v.with(label, |vault| vault.sync.on_commit(Instant::now()));
@@ -434,6 +531,24 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
             v.set_error(label, Some(error_line(&e)));
             v.identity.forget(&root);
             announce(app, label);
+        }
+    }
+}
+
+/// Finishes a sync that was interrupted after it moved the branch, telling the window's editors
+/// which files it writes. The caller holds the write lock; every commit runs it first (the
+/// engine's commits run it too, without the editors, and refuse while its record exists).
+pub(super) fn recover_now<R: Runtime>(app: &AppHandle<R>, label: &str, root: &Path, device: &str) {
+    let announce = |paths: &[String]| emit_applying(app, label, paths, false);
+    match git::sync::recover(root, Some(&announce), device) {
+        Ok(Some(report)) => {
+            emit_applying(app, label, &report.written, true);
+            log::info!(target: "git", "git: finished an interrupted sync");
+            announce_changed(app, label);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            log::warn!(target: "git", "git: could not finish an interrupted sync: {}", super::sync::failure_line(&e))
         }
     }
 }
@@ -458,6 +573,8 @@ fn auto_setup_once<R: Runtime>(app: &AppHandle<R>, v: &Vaults, label: &str) {
     let _busy = Busy::new(&v.committing);
     let lock = v.write_lock(&root);
     let _write = lock.lock();
+    // a sync interrupted by a crash or a quit is finished when the vault opens
+    recover_now(app, label, &root, &device::name());
     match git::auto_setup(&root, &device::name()) {
         Ok(git::Auto::Done { committed }) => {
             log::info!(target: "git", "git: set up version history (first commit: {committed})");
@@ -508,7 +625,8 @@ pub fn tick<R: Runtime>(app: &AppHandle<R>, now: Instant) {
             })
         });
         if due == Some(true) {
-            super::sync::run(app, &label, super::sync::Mode::Background);
+            // on its own thread: the ticker never waits on the network
+            let _ = super::sync::spawn(app, &label, super::sync::Mode::Background);
         }
     }
 }
@@ -550,9 +668,10 @@ pub fn flush<R: Runtime>(app: &AppHandle<R>, label: &str) {
         return;
     }
     let _ = commit_user_now(app, label);
-    // a short sync so the other devices have it (spec "Cadence"): a few seconds at most
+    // a short sync so the other devices have it (spec "Cadence"): on a scope thread with one
+    // deadline, waited for a few seconds at most, never on the caller's (the main) thread
     if super::sync::ready(&root, false) && !v.is_syncing(label) {
-        super::sync::run(app, label, super::sync::Mode::Close);
+        super::sync::run_bounded(app, label);
     }
 }
 

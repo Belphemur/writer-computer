@@ -35,6 +35,7 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::git_conflict_open::<Wry>,
             commands::git_conflict_save::<Wry>,
             commands::git_conflict_take::<Wry>,
+            commands::git_conflict_record::<Wry>,
         ])
 }
 

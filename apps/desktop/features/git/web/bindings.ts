@@ -87,6 +87,13 @@ export const commands = {
 	gitConflictSave: (path: string, mine: string, body: string, picks: PickRow[], finalPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_conflict_save", { path, mine, body, picks, finalPath }, options),
 	/**  Settles a whole file by taking one side (`mine`, `theirs`, or `both` for a binary). */
 	gitConflictTake: (path: string, side: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_conflict_take", { path, side }, options),
+	/**
+	 *  An open note whose unsaved text overlaps what a sync just wrote (the editor's apply found it,
+	 *  `web/lib/remote-apply.ts`): the conflict is recorded (base: the text the editor last saved) and
+	 *  the buffer `mine` written to disk, under the write lock, so the note bar shows and no automatic
+	 *  commit takes the user's text over the other device's.
+	 */
+	gitConflictRecord: (path: string, base: string, mine: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_conflict_record", { path, base, mine }, options),
 };
 
 /* Types */
@@ -197,8 +204,10 @@ export type GitStatus = {
 	 *  until it is over (`merge in progress`, `detached HEAD`, ...).
 	 */
 	operation: string | null,
-	/**  Files over the size Writer versions (no LFS yet), vault-relative: "Not versioned". */
+	/**  Files over the size Writer versions (LFS off), vault-relative: "Not versioned". */
 	tooLarge: string[],
+	/**  Large files (LFS): the setting, whether it applies, and how many files are in it. */
+	lfs: LfsRow,
 	turnRunning: boolean,
 	/**  A commit is being written. */
 	committing: boolean,
@@ -227,6 +236,11 @@ export type GitStatus = {
 	restored: string[],
 	/**  Plugin settings held back from versions and the push: they look like they hold a token. */
 	held: HeldRow[],
+	/**
+	 *  Paths a remote tree held that the sync refused to write (`.git`, device-local state, a
+	 *  path through a link): never written.
+	 */
+	refused: string[],
 	/**  Where HTTPS passwords come from: `token` or `gh`. */
 	credentials: string,
 };
@@ -242,6 +256,18 @@ export type HunkRow = {
 	base: string,
 	mine: string,
 	theirs: string,
+};
+
+/**  The LFS part of the status. */
+export type LfsRow = {
+	/**  `git.lfs` as the user set it. */
+	on: boolean,
+	/**  New large files go through LFS now: on, and `git-lfs` is installed. */
+	active: boolean,
+	/**  `git-lfs` is installed (the setting is disabled with "Install git-lfs to use this" when not). */
+	available: boolean,
+	/**  Files in LFS (pointers in the current version). */
+	files: number,
 };
 
 /**  The result of merging a note's text three ways. */

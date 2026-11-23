@@ -9,7 +9,38 @@ use crate::features::scope::{FeatureScope, Spawner};
 use crate::git::message::TemplateCtx;
 use crate::git::repo::ISOLATED;
 use crate::git::{self, setup, SetupMode};
+use std::path::PathBuf;
 use std::process::Command;
+
+/// Points a test can step into in the middle of a sync (a status read, a crash).
+pub(crate) mod hooks {
+    use super::Error;
+    use std::cell::RefCell;
+    use std::path::Path;
+
+    type Hook = Box<dyn Fn(&Path) -> Result<(), Error>>;
+
+    thread_local! {
+        static AFTER_MOVE_HEAD: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Runs `hook` right after a sync moves the branch, until the guard drops.
+    pub(crate) fn set_after_move_head(hook: Hook) -> impl Drop {
+        AFTER_MOVE_HEAD.with(|h| *h.borrow_mut() = Some(hook));
+        Reset
+    }
+
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            AFTER_MOVE_HEAD.with(|h| *h.borrow_mut() = None);
+        }
+    }
+
+    pub(crate) fn after_move_head(root: &Path) -> Result<(), Error> {
+        AFTER_MOVE_HEAD.with(|h| h.borrow().as_ref().map_or(Ok(()), |f| f(root)))
+    }
+}
 
 pub(crate) fn have_git() -> bool {
     Command::new("git").arg("--version").output().is_ok()
@@ -159,7 +190,14 @@ impl Device {
     }
 
     pub(crate) fn commit(&self) -> Option<String> {
-        git::commit_user(&self.root, "{{notes}}", &ctx(), &self.name).unwrap()
+        git::commit_user(
+            &self.root,
+            "{{notes}}",
+            &ctx(),
+            &self.name,
+            crate::git::Lfs::OFF,
+        )
+        .unwrap()
     }
 
     pub(crate) fn sync(&self) -> Outcome {
@@ -168,6 +206,7 @@ impl Device {
             helper: None,
             secrets: Vec::new(),
             device: &self.name,
+            unlocked: None,
             announce: None,
         };
         sync(&self.root, &opts)
@@ -412,7 +451,13 @@ fn the_same_property_changed_differently_conflicts_on_that_property_only() {
     // recorded, and never committed over the other side until resolved
     assert_eq!(conflicts::paths(&b.root), vec!["Note.md".to_string()]);
     assert!(b.commit().is_none(), "the conflicted file is not committed");
-    let status = git::status(&b.root, &git::IdentityCache::default(), true).unwrap();
+    let status = git::status(
+        &b.root,
+        &git::IdentityCache::default(),
+        true,
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
     assert!(status.changes.is_empty());
     assert_eq!(status.conflicts.len(), 1);
 }
@@ -529,11 +574,17 @@ fn an_interrupted_sync_after_the_branch_moved_is_finished_from_its_record() {
     repo.move_head(&new, old.as_deref()).unwrap();
     assert!(!b.root.join("New.md").exists());
     drop(repo);
-    assert!(recover(&b.root, None).unwrap());
+    assert!(recover(&b.root, None, "B").unwrap().is_some());
     assert_eq!(b.read("New.md"), "from a\n");
     assert_eq!(b.read("Shared.md"), "shared, changed\n");
-    assert!(!progress_path(&b.root).exists());
-    let status = git::status(&b.root, &git::IdentityCache::default(), true).unwrap();
+    assert!(!interrupted(&b.root));
+    let status = git::status(
+        &b.root,
+        &git::IdentityCache::default(),
+        true,
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
     assert!(status.changes.is_empty(), "{:?}", status.changes);
 }
 
@@ -552,9 +603,9 @@ fn an_interrupted_sync_before_the_branch_moved_is_rolled_back() {
         },
     )
     .unwrap();
-    assert!(recover(&b.root, None).unwrap());
+    assert!(recover(&b.root, None, "B").unwrap().is_some());
     assert_eq!(b.head(), head);
-    assert!(!progress_path(&b.root).exists());
+    assert!(!interrupted(&b.root));
     // the next sync simply runs
     assert!(b.sync().error.is_none());
 }
@@ -592,7 +643,7 @@ fn a_file_the_user_edited_meanwhile_is_merged_not_overwritten_when_the_sync_resu
     .unwrap();
     repo.move_head(&new, old.as_deref()).unwrap();
     drop(repo);
-    recover(&b.root, None).unwrap();
+    recover(&b.root, None, "B").unwrap();
     let text = b.read("Note.md");
     assert!(
         text.contains("ONE typed") && text.contains("FOUR"),
@@ -647,7 +698,13 @@ fn a_plugin_settings_file_with_a_token_is_never_committed_or_pushed_until_allowe
         .commit()
         .expect("the calm plugin's settings are committed");
     assert!(!a.git(&["show", "--stat", &id]).contains("sync-thing"));
-    let status = git::status(&a.root, &git::IdentityCache::default(), true).unwrap();
+    let status = git::status(
+        &a.root,
+        &git::IdentityCache::default(),
+        true,
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
     assert_eq!(status.held.len(), 1);
     assert_eq!(status.held[0].id, "sync-thing");
     assert_eq!(status.held[0].name, "Sync Thing");
@@ -981,25 +1038,54 @@ fn an_edit_here_and_a_rename_there_land_as_an_edited_file_at_the_new_name() {
 }
 
 #[test]
-fn an_edit_that_follows_a_rename_still_merges_with_the_other_edit() {
+fn an_edit_that_follows_a_rename_edited_there_too_is_a_conflict_not_a_silent_merge() {
     need_git!();
     let w = World::new();
     let (a, b) = pair(&w, &[("Note.md", LINES)]);
+    // the other device moved the note (a recorded move), then edited it
     std::fs::remove_file(a.root.join("Note.md")).unwrap();
+    a.write("Renamed.md", LINES);
+    a.commit();
     a.write("Renamed.md", &LINES.replace("one", "ONE from A"));
     a.commit();
     a.ok();
     b.write("Note.md", &LINES.replace("six", "SIX from B"));
     b.commit();
     let r = b.ok();
+    // a 3-way merge across a rename is the user's to check: both versions stay, recorded
+    assert_eq!(r.conflicts.len(), 1, "{:?}", r.conflicts);
+    assert_eq!(r.conflicts[0].path, "Note.md");
+    assert_eq!(r.conflicts[0].theirs_path.as_deref(), Some("Renamed.md"));
+    assert_eq!(b.read("Note.md"), LINES.replace("six", "SIX from B"));
+    assert_eq!(b.read("Renamed.md"), LINES.replace("one", "ONE from A"));
+    assert!(remote_file(&w, "Note.md").is_none(), "{}", tree(&w));
+}
+
+#[test]
+fn notes_from_one_template_are_never_paired_across_devices() {
+    need_git!();
+    let w = World::new();
+    let day = |d: &str| {
+        format!("---\ndate: {d}\n---\n# Daily\n\n## Tasks\n- [ ]\n\n## Journal\n\n## Links\n")
+    };
+    let (a, b) = pair(&w, &[("2026-11-01.md", &day("2026-11-01"))]);
+    // the other device deleted yesterday's note, then made today's from the same template
+    std::fs::remove_file(a.root.join("2026-11-01.md")).unwrap();
+    a.commit();
+    a.write("2026-11-20.md", &day("2026-11-20"));
+    a.commit();
+    a.ok();
+    // here the old note was edited
+    let edited = day("2026-11-01").replace("## Journal\n", "## Journal\nwalked the dog\n");
+    b.write("2026-11-01.md", &edited);
+    b.commit();
+    let r = b.ok();
     assert!(r.conflicts.is_empty(), "{:?}", r.conflicts);
-    assert_eq!(
-        b.read("Renamed.md"),
-        LINES
-            .replace("one", "ONE from A")
-            .replace("six", "SIX from B")
-    );
-    assert!(!b.root.join("Note.md").exists());
+    assert_eq!(r.restored, vec!["2026-11-01.md".to_string()]);
+    assert_eq!(b.read("2026-11-01.md"), edited);
+    assert_eq!(b.read("2026-11-20.md"), day("2026-11-20"));
+    assert_eq!(remote_file(&w, "2026-11-20.md"), Some(day("2026-11-20")));
+    assert_eq!(remote_file(&w, "2026-11-01.md"), Some(edited));
 }
 
 #[test]
@@ -1044,4 +1130,354 @@ fn a_rename_with_an_edit_here_against_an_edit_there_of_the_same_line_conflicts_a
     assert_eq!(r.conflicts[0].theirs_path.as_deref(), Some("Note.md"));
     assert_eq!(r.conflicts[0].hunks, 1);
     assert_eq!(b.read("Renamed.md"), mine);
+}
+
+// ---- review fixes: confinement, recovery, records, the last push guard -----------------------------
+
+/// `git <args>` in `dir` with `input` on stdin.
+fn git_in(w: &World, dir: &Path, args: &[&str], input: &[u8]) -> String {
+    use std::io::Write;
+    let mut child = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .envs(w.env().iter().map(|(k, v)| (k, v)))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "git {args:?}");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// `(path components, blob id, mode)` of a file put into a raw tree.
+type RawFile<'a> = (Vec<&'a str>, String, &'a str);
+
+/// A tree that is `base` (a tree id) with `files` (`(components, blob, mode)`) put in, built with
+/// git's plumbing, which checks no names (a hostile remote need not either).
+fn raw_tree(
+    w: &World,
+    dir: &Path,
+    base: Option<&str>,
+    files: &[(Vec<&str>, String, &str)],
+) -> String {
+    let mut entries: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(b) = base {
+        for line in run_git(&w.env(), dir, &["ls-tree", b]).lines() {
+            let (meta, name) = line.split_once('\t').unwrap();
+            entries.insert(name.to_string(), meta.to_string());
+        }
+    }
+    let mut groups: BTreeMap<&str, Vec<RawFile<'_>>> = BTreeMap::new();
+    for (parts, id, mode) in files {
+        if parts.len() == 1 {
+            entries.insert(parts[0].to_string(), format!("{mode} blob {id}"));
+        } else {
+            groups
+                .entry(parts[0])
+                .or_default()
+                .push((parts[1..].to_vec(), id.clone(), mode));
+        }
+    }
+    for (dir_name, inner) in groups {
+        let sub_base = entries
+            .get(dir_name)
+            .and_then(|m| m.strip_prefix("040000 tree ").map(str::to_string));
+        let sub = raw_tree(w, dir, sub_base.as_deref(), &inner);
+        entries.insert(dir_name.to_string(), format!("040000 tree {sub}"));
+    }
+    let listing: String = entries
+        .iter()
+        .map(|(name, meta)| format!("{meta}\t{name}\n"))
+        .collect();
+    git_in(w, dir, &["mktree"], listing.as_bytes())
+}
+
+/// A commit the remote gets from a device that does not play by the rules: `files` put straight
+/// into a tree on top of the remote head, then pushed.
+fn push_raw(w: &World, files: &[(&str, &[u8], &str)]) {
+    let e = w.clone_device("Evil");
+    let parts: Vec<RawFile<'_>> = files
+        .iter()
+        .map(|(path, bytes, mode)| {
+            let id = git_in(w, &e.root, &["hash-object", "-w", "--stdin"], bytes);
+            (path.split('/').collect(), id, *mode)
+        })
+        .collect();
+    let base = e.git(&["rev-parse", "HEAD^{tree}"]).trim().to_string();
+    let tree = raw_tree(w, &e.root, Some(&base), &parts);
+    let commit = e
+        .git(&["commit-tree", &tree, "-p", "HEAD", "-m", "planted"])
+        .trim()
+        .to_string();
+    e.git(&["push", "origin", &format!("{commit}:refs/heads/main")]);
+}
+
+#[test]
+fn a_remote_tree_never_writes_device_local_state_or_through_a_link() {
+    need_git!();
+    let w = World::new();
+    let (_a, b) = pair(&w, &[("Shared/keep.md", "x\n")]);
+    // here, `Shared` becomes a link to a folder outside the vault
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::remove_dir_all(b.root.join("Shared")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), b.root.join("Shared")).unwrap();
+    b.commit();
+    push_raw(
+        &w,
+        &[
+            (".writer/git/plugin-scan.json", br#"{"p":"0000"}"#, "100644"),
+            ("Shared/a.md", b"outside\n", "100644"),
+            ("ok.md", b"fine\n", "100644"),
+        ],
+    );
+    let r = b.ok();
+    assert!(!b.root.join(".writer/git/plugin-scan.json").exists());
+    assert!(!outside.path().join("a.md").exists());
+    assert_eq!(b.read("ok.md"), "fine\n");
+    let mut refused = r.refused.clone();
+    refused.sort();
+    assert_eq!(
+        refused,
+        vec![
+            ".writer/git/plugin-scan.json".to_string(),
+            "Shared/a.md".to_string()
+        ]
+    );
+    // listed for the user until dismissed
+    assert_eq!(conflicts::read(&b.root).refused.len(), 2);
+    let status = git::status(
+        &b.root,
+        &git::IdentityCache::default(),
+        false,
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
+    assert_eq!(status.refused.len(), 2);
+}
+
+#[test]
+fn a_remote_tree_with_a_case_variant_of_git_never_reaches_the_repository() {
+    need_git!();
+    let w = World::new();
+    let (_a, b) = pair(&w, &[("Note.md", "x\n")]);
+    push_raw(
+        &w,
+        &[
+            (".GIT/hooks/pre-push", b"#!/bin/sh\necho owned\n", "100755"),
+            ("ok.md", b"fine\n", "100644"),
+        ],
+    );
+    let o = b.sync();
+    // gix refuses to read such a tree, and the confinement would refuse to write it: either way
+    // nothing lands in `.git` (one folder on a case-insensitive disk) and the sync says so
+    assert!(!b.root.join(".git/hooks/pre-push").exists());
+    assert!(!b.root.join(".GIT/hooks/pre-push").exists());
+    match &o.error {
+        Some(_) => assert!(!b.root.join("ok.md").exists()),
+        None => assert_eq!(o.report.refused, vec![".GIT/hooks/pre-push".to_string()]),
+    }
+    assert!(!interrupted(&b.root));
+}
+
+/// B fetched, recorded the move, moved the branch and died before the working tree followed:
+/// `Shared.md` is still at its old content on disk.
+fn crashed_after_the_move(w: &World) -> Device {
+    let (a, b) = pair(w, &[("Shared.md", "shared\n")]);
+    a.write("Shared.md", "shared, changed by A\n");
+    a.commit();
+    a.ok();
+    let t = Transport {
+        exec: &b.exec,
+        root: &b.root,
+        helper: None,
+        secrets: Vec::new(),
+    };
+    t.fetch("main").unwrap();
+    let repo = Repo::open(&b.root).unwrap().unwrap();
+    let old = repo.head_id_string();
+    let new = repo.ref_id("refs/remotes/origin/main").unwrap();
+    write_progress(
+        &b.root,
+        &Progress {
+            old_head: old.clone(),
+            new_head: new.clone(),
+            skip: Vec::new(),
+        },
+    )
+    .unwrap();
+    repo.move_head(&new, old.as_deref()).unwrap();
+    assert_eq!(b.read("Shared.md"), "shared\n");
+    b
+}
+
+#[test]
+fn a_commit_after_an_interrupted_sync_finishes_it_instead_of_reverting_the_remote() {
+    need_git!();
+    let w = World::new();
+    let b = crashed_after_the_move(&w);
+    let before = b.log().len();
+    // the engine refuses a bare commit while the record exists
+    let repo = Repo::open(&b.root).unwrap().unwrap();
+    let refused = repo.commit(
+        &[git::Change::Edit("Shared.md".into())],
+        &super::super::message::Message::chore(super::super::message::Scope::Setup, "x", "B"),
+    );
+    assert!(matches!(refused, Err(repo::Error::Operation(_))));
+    // the user's commit recovers first: nothing reverted, nothing to commit
+    assert_eq!(b.commit(), None);
+    assert_eq!(b.read("Shared.md"), "shared, changed by A\n");
+    assert!(!interrupted(&b.root));
+    assert_eq!(b.log().len(), before);
+    b.ok();
+    assert_eq!(
+        remote_file(&w, "Shared.md").as_deref(),
+        Some("shared, changed by A\n")
+    );
+}
+
+#[test]
+fn a_sync_after_an_interrupted_sync_finishes_it_first() {
+    need_git!();
+    let w = World::new();
+    let b = crashed_after_the_move(&w);
+    let before = b.log().len();
+    let r = b.ok();
+    assert!(
+        r.written.contains(&"Shared.md".to_string()),
+        "{:?}",
+        r.written
+    );
+    assert_eq!(b.read("Shared.md"), "shared, changed by A\n");
+    assert!(!interrupted(&b.root));
+    assert_eq!(b.log().len(), before);
+    assert_eq!(
+        remote_file(&w, "Shared.md").as_deref(),
+        Some("shared, changed by A\n")
+    );
+}
+
+/// A replay that ends in a conflict on `Note.md`.
+fn overlap(w: &World) -> Device {
+    let (a, b) = pair(w, &[("Note.md", LINES)]);
+    a.write("Note.md", &LINES.replace("two", "TWO from A"));
+    a.commit();
+    a.ok();
+    b.write("Note.md", &LINES.replace("two", "TWO from B"));
+    b.commit();
+    b
+}
+
+#[test]
+fn a_status_read_in_the_middle_of_a_sync_never_drops_its_conflicts() {
+    need_git!();
+    let w = World::new();
+    let b = overlap(&w);
+    let _hook = hooks::set_after_move_head(Box::new(|root| {
+        git::status(
+            root,
+            &git::IdentityCache::default(),
+            false,
+            crate::git::Lfs::OFF,
+        )
+        .map(|_| ())
+        .map_err(Error::Repo)
+    }));
+    let r = b.ok();
+    assert_eq!(r.conflicts.len(), 1);
+    assert!(conflicts::find(&b.root, "Note.md").is_some());
+}
+
+#[test]
+fn a_crash_right_after_the_move_still_finds_the_replays_conflicts() {
+    need_git!();
+    let w = World::new();
+    let b = overlap(&w);
+    {
+        let _hook =
+            hooks::set_after_move_head(Box::new(|_| Err(Error::Io(io::Error::other("crashed")))));
+        assert!(b.sync().error.is_some());
+    }
+    assert!(interrupted(&b.root));
+    recover(&b.root, None, "B").unwrap();
+    assert!(conflicts::find(&b.root, "Note.md").is_some());
+    assert_eq!(b.read("Note.md"), LINES.replace("two", "TWO from B"));
+}
+
+#[test]
+fn a_failed_push_leaves_no_sync_record() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[("A.md", "a\n"), ("B.md", "b\n")]);
+    a.write("A.md", "a2\n");
+    a.commit();
+    a.ok();
+    b.write("B.md", "b2\n");
+    b.commit();
+    let hook = w.remote.join("hooks/pre-receive");
+    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let o = b.sync();
+    assert!(o.error.is_some());
+    // the branch moved and the working tree followed: nothing is left to recover
+    assert_eq!(b.read("A.md"), "a2\n");
+    assert!(!interrupted(&b.root));
+}
+
+#[test]
+fn a_held_token_is_never_pushed_when_the_replay_has_nothing_to_build_on() {
+    need_git!();
+    let w = World::new();
+    let a = w.device("A");
+    // the only unpushed change: a flagged plugin settings file, committed behind Writer's back
+    a.write(".obsidian/plugins/p/data.json", TOKEN_JSON);
+    a.git(&["add", "-A"]);
+    a.git(&["commit", "-m", "plugin settings"]);
+    let r = a.ok();
+    assert_eq!(r.pushed, 0);
+    assert_eq!(r.held.len(), 1);
+    assert!(remote_log_or_empty(&w).is_empty());
+}
+
+fn remote_log_or_empty(w: &World) -> String {
+    let out = Command::new("git")
+        .args(["log", "main", "--format=%s"])
+        .current_dir(&w.remote)
+        .envs(w.env().iter().map(|(k, v)| (k, v)))
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn two_binary_conflicts_of_one_file_keep_both_copies() {
+    need_git!();
+    let w = World::new();
+    let (a, b) = pair(&w, &[]);
+    a.write_bytes("pic.png", &[0, 1]);
+    a.commit();
+    a.ok();
+    b.ok();
+    let mut copies = Vec::new();
+    for round in 2u8..4 {
+        a.write_bytes("pic.png", &[0, round, 9]);
+        a.commit();
+        a.ok();
+        b.write_bytes("pic.png", &[0, round, 5]);
+        b.commit();
+        let r = b.ok();
+        assert_eq!(r.copies.len(), 1, "{:?}", r.copies);
+        copies.push(r.copies[0].1.clone());
+    }
+    assert_ne!(copies[0], copies[1]);
+    assert_eq!(
+        std::fs::read(b.root.join(&copies[0])).unwrap(),
+        vec![0, 2, 5]
+    );
+    assert_eq!(
+        std::fs::read(b.root.join(&copies[1])).unwrap(),
+        vec![0, 3, 5]
+    );
 }

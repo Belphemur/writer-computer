@@ -573,8 +573,10 @@ pub enum Merged {
     Conflict(Conflict),
 }
 
+/// Binary for the merge: not text, or an LFS pointer (two pointers are two versions of a large
+/// file; their lines are never merged).
 fn is_binary(bytes: &[u8]) -> bool {
-    bytes.contains(&0) || std::str::from_utf8(bytes).is_err()
+    bytes.contains(&0) || std::str::from_utf8(bytes).is_err() || super::lfs::is_pointer(bytes)
 }
 
 fn extension(path: &str) -> String {
@@ -621,8 +623,13 @@ pub fn merge_file(
         std::str::from_utf8(t).unwrap_or_default(),
     );
     let ext = extension(path);
+    let attributes = path.rsplit('/').next() == Some(".gitattributes")
+        && super::ignore::has_block(m)
+        && super::ignore::has_block(t);
     let text = if matches!(ext.as_str(), "md" | "markdown") {
         merge_markdown(b, m, t)
+    } else if attributes {
+        merge_attributes(b, m, t)
     } else {
         let merged = merge_text(b, m, t);
         match merged.clean() {
@@ -647,8 +654,30 @@ pub fn merge_file(
     }
 }
 
+/// A `.gitattributes` both devices changed: Writer's managed LFS block is merged as the union of
+/// the two sides' lines (each device added a large file), everything outside it as plain text
+/// (the block stands for itself as one line meanwhile), so a line either side added outside the
+/// block is kept and a true overlap outside it is a normal conflict.
+fn merge_attributes(base: &str, mine: &str, theirs: &str) -> Result<String, Conflict> {
+    use super::lfs::{block, union_block, BLOCK_PLACEHOLDER};
+    let held = |s: &str| super::ignore::replace_block(s, BLOCK_PLACEHOLDER);
+    let merged = merge_text(&held(base), &held(mine), &held(theirs));
+    match merged.clean() {
+        Some(text) => Ok(text.replace(BLOCK_PLACEHOLDER, &block(&union_block(base, mine, theirs)))),
+        None => Err(Conflict {
+            hunks: merged.conflicts(),
+            properties: Vec::new(),
+        }),
+    }
+}
+
 /// `Plan.png` to `Plan (conflict Studio 2026-11-20 1403).png`, beside the original.
-pub fn conflict_copy_name(path: &str, device: &str, stamp: &str) -> String {
+pub fn conflict_copy_name(
+    path: &str,
+    device: &str,
+    stamp: &str,
+    taken: &dyn Fn(&str) -> bool,
+) -> String {
     let (dir, file) = path.rsplit_once('/').map_or(("", path), |(d, f)| (d, f));
     let (stem, ext) = match file.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() => (s, format!(".{e}")),
@@ -658,12 +687,24 @@ pub fn conflict_copy_name(path: &str, device: &str, stamp: &str) -> String {
         .chars()
         .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':' | '(' | ')'))
         .collect();
-    let name = format!("{stem} (conflict {} {stamp}){ext}", device.trim());
-    if dir.is_empty() {
-        name
-    } else {
-        format!("{dir}/{name}")
-    }
+    let at = |n: usize| {
+        let count = if n > 1 {
+            format!(" {n}")
+        } else {
+            String::new()
+        };
+        let name = format!("{stem} (conflict {} {stamp}{count}){ext}", device.trim());
+        if dir.is_empty() {
+            name
+        } else {
+            format!("{dir}/{name}")
+        }
+    };
+    // two conflicts of one file in one minute keep both copies
+    (1..)
+        .map(at)
+        .find(|name| !taken(name))
+        .expect("an unbounded counter finds a free name")
 }
 
 #[cfg(test)]

@@ -34,6 +34,8 @@ pub enum Error {
     BadPath,
     #[error("The other version is gone")]
     Missing,
+    #[error("The note changed; reopen")]
+    Changed,
     #[error(transparent)]
     Git(#[from] repo::Error),
     #[error(transparent)]
@@ -101,12 +103,13 @@ fn versions(root: &Path, repo: &Repo, path: &str) -> Result<Versions> {
 }
 
 fn disk_text(root: &Path, path: &str) -> Result<String> {
-    text(std::fs::read(root.join(path))?)
+    text(std::fs::read(place(root, path)?.abs)?)
 }
 
 /// The view of the conflicted file at `path`. `mine` is the user's buffer when the file is open
 /// in an editor (the view must show what they see); `None` reads the file.
 pub fn open(root: &Path, path: &str, mine: Option<&str>) -> Result<View> {
+    let root = &root.canonicalize()?;
     let repo = Repo::open(root)?.ok_or(repo::Error::NotARepo)?;
     let v = versions(root, &repo, path)?;
     let mine = match mine {
@@ -124,20 +127,19 @@ pub fn open(root: &Path, path: &str, mine: Option<&str>) -> Result<View> {
     })
 }
 
+/// Where a resolution may write: the sync's confinement (`.git` in any spelling, the device-local
+/// `.writer/git`, nothing through a link).
+fn place(root: &Path, rel: &str) -> Result<vault_ops::Confined> {
+    vault_ops::confine_with(root, rel, super::sync::PROTECTED).map_err(io)
+}
+
 /// Writes `bytes` at `rel` through the one atomic write.
 fn put(root: &Path, rel: &str, bytes: &[u8]) -> Result<()> {
-    let confined = vault_ops::confine(root, rel).map_err(io)?;
-    if let Some(dir) = confined.abs.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    vault_ops::write_bytes(&confined.abs, bytes).map_err(io)
+    vault_ops::write_bytes_creating(&place(root, rel)?.abs, bytes).map_err(io)
 }
 
 fn remove(root: &Path, rel: &str) -> Result<()> {
-    match std::fs::remove_file(root.join(rel)) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
-        _ => Ok(()),
-    }
+    vault_ops::remove_file(&place(root, rel)?.abs).map_err(io)
 }
 
 fn title(path: &str) -> String {
@@ -232,6 +234,7 @@ pub fn save(
                     .join(", "),
             )
         })?;
+    let result = with_later_edits(root, path, choice.mine, result)?;
     let final_path = choice.final_path.unwrap_or(path);
     finish(
         root,
@@ -242,6 +245,29 @@ pub fn save(
         device,
         announce,
     )
+}
+
+/// The note may have changed on disk since the view opened (the editor kept saving, an agent
+/// wrote it): those edits are merged into the result (`mine_at_open` the base, the disk now and
+/// the result the two sides); when they overlap what the user resolved, nothing is written.
+fn with_later_edits(root: &Path, path: &str, mine_at_open: &str, result: String) -> Result<String> {
+    let now = match disk_text(root, path) {
+        Ok(t) => t,
+        Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => return Ok(result),
+        Err(e) => return Err(e),
+    };
+    if now == mine_at_open {
+        return Ok(result);
+    }
+    match merge::merge_file(
+        path,
+        Some(mine_at_open.as_bytes()),
+        Some(now.as_bytes()),
+        Some(result.as_bytes()),
+    ) {
+        merge::Merged::Clean { bytes: Some(b), .. } => text(b),
+        _ => Err(Error::Changed),
+    }
 }
 
 /// How a whole file is settled without the merge view (`writer git:resolve`, the binary buttons).
@@ -280,7 +306,7 @@ pub fn take(
         let v = versions(root, &repo, path)?;
         return match side {
             Take::Mine => {
-                let bytes = std::fs::read(root.join(path))?;
+                let bytes = std::fs::read(place(root, path)?.abs)?;
                 finish(root, &repo, &record, &bytes, path, device, announce)
             }
             Take::Theirs => {
@@ -307,7 +333,7 @@ pub fn take(
     }
     match side {
         Take::Mine => {
-            let mine = std::fs::read(root.join(&copy))?;
+            let mine = std::fs::read(place(root, &copy)?.abs)?;
             put(root, &file, &mine)?;
             remove(root, &copy)?;
         }

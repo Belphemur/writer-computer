@@ -9,6 +9,7 @@
 //! status does not rehash the vault). Only the paths given are committed; everything else in the
 //! index and the working tree stays as it was.
 
+use super::lfs::{self, Lfs, Pointer};
 use super::message::{self, Change, Message};
 use gix::bstr::{BStr, BString, ByteSlice};
 use std::collections::{BTreeMap, BTreeSet};
@@ -96,12 +97,49 @@ pub struct Deleted {
     pub time: i64,
 }
 
-/// A file over this is not versioned until LFS exists (the default of `git.lfs-threshold-mb`).
-pub const LARGE_FILE_BYTES: u64 = 100 * 1024 * 1024;
+/// How a file goes into a commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Via {
+    Plain,
+    /// As an LFS pointer; `needs_line`: no attribute rule covers it yet, the managed block of
+    /// `.gitattributes` gets a line for it in the same commit.
+    Pointer {
+        needs_line: bool,
+    },
+}
 
 pub struct Repo {
     root: PathBuf,
     repo: gix::Repository,
+    /// The LFS settings this operation runs under ([`Repo::with_lfs`]; off unless set).
+    lfs: Lfs,
+    /// Does any `.gitattributes` name the LFS filter? Looked up once, forgotten when Writer
+    /// rewrites the managed block.
+    lfs_rules: std::cell::Cell<Option<bool>>,
+}
+
+/// The `filter` attribute of paths, from every `.gitattributes` git reads (gix's attribute stack:
+/// the root and nested files, `info/attributes`, the global file).
+struct Rules<'r> {
+    stack: gix::AttributeStack<'r>,
+}
+
+impl Rules<'_> {
+    /// Does an attribute rule send `rel` through the `lfs` filter?
+    fn covers(&mut self, rel: &str) -> bool {
+        let mut out = self.stack.selected_attribute_matches(["filter"]);
+        let Ok(platform) = self
+            .stack
+            .at_entry(rel, Some(gix::index::entry::Mode::FILE))
+        else {
+            return false;
+        };
+        platform.matching_attributes(&mut out);
+        let hit = out
+            .iter_selected()
+            .any(|m| m.assignment.state.as_bstr().is_some_and(|v| v == "lfs"));
+        hit
+    }
 }
 
 #[cfg(test)]
@@ -146,7 +184,14 @@ impl Repo {
         Ok(Some(Repo {
             root: root.to_path_buf(),
             repo,
+            lfs: Lfs::OFF,
+            lfs_rules: Default::default(),
         }))
+    }
+
+    /// [`Repo::open`] under these LFS settings.
+    pub fn open_with(root: &Path, lfs: Lfs) -> Result<Option<Repo>> {
+        Ok(Repo::open(root)?.map(|r| r.with_lfs(lfs)))
     }
 
     /// `git init` in `root` (through gix: no `git` binary needed), or the repository already there.
@@ -158,7 +203,23 @@ impl Repo {
         Ok(Repo {
             root: root.to_path_buf(),
             repo: open_gix(root)?,
+            lfs: Lfs::OFF,
+            lfs_rules: Default::default(),
         })
+    }
+
+    /// The same repository under these LFS settings: files above the threshold are committed as
+    /// pointers (enabled), or not versioned at all (disabled; a file already in LFS stays there
+    /// either way). The settings are the caller's, never read here.
+    pub fn with_lfs(mut self, lfs: Lfs) -> Repo {
+        self.lfs = lfs;
+        self
+    }
+
+    /// The repository's common git directory (`.git`, or the main repository's for a linked
+    /// worktree): where `lfs/` lives.
+    pub fn common_dir(&self) -> &Path {
+        self.repo.common_dir()
     }
 
     pub fn root(&self) -> &Path {
@@ -236,13 +297,160 @@ impl Repo {
         entry.mode().is_blob().then(|| entry.object_id())
     }
 
-    fn disk_blob(&self, rel: &str) -> Option<gix::ObjectId> {
-        let path = self.root.join(rel);
-        if !std::fs::symlink_metadata(&path).ok()?.is_file() {
+    /// Is this blob an LFS pointer? Only a small blob is read.
+    fn pointer_in(&self, id: gix::ObjectId) -> Option<Pointer> {
+        let header = self.repo.find_header(id).ok()?;
+        if header.size() > 1024 {
             return None;
         }
+        Pointer::parse(&self.repo.find_object(id).ok()?.data)
+    }
+
+    /// Does any `.gitattributes` name the LFS filter at all? (The root file, nested ones in the
+    /// index, `info/attributes`.) Cheap, and what keeps a vault without LFS from building an
+    /// attribute stack.
+    fn lfs_attributes_present(&self) -> bool {
+        if let Some(known) = self.lfs_rules.get() {
+            return known;
+        }
+        let names = |t: &str| t.contains("filter=lfs");
+        let read = |p: PathBuf| std::fs::read_to_string(p).is_ok_and(|t| names(&t));
+        let mut found = read(self.root.join(".gitattributes"))
+            || read(self.common_dir().join("info").join("attributes"));
+        if !found {
+            if let Ok(index) = self.repo.index_or_empty() {
+                found = index.entries().iter().any(|e| {
+                    let path = e.path(&index);
+                    path.ends_with(b".gitattributes") && read(self.root.join(rel_of(path)))
+                });
+            }
+        }
+        self.lfs_rules.set(Some(found));
+        found
+    }
+
+    /// The attribute rules, only when some `.gitattributes` names the LFS filter.
+    fn lfs_rules(&self) -> Result<Option<Rules<'_>>> {
+        if !self.lfs_attributes_present() {
+            return Ok(None);
+        }
+        let index = self.repo.index_or_empty().map_err(git)?;
+        let stack = self
+            .repo
+            .attributes_only(
+                &index,
+                gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+            )
+            .map_err(git)?;
+        Ok(Some(Rules { stack }))
+    }
+
+    /// Does the file at `rel` go into a commit as an LFS pointer, and does the managed block need
+    /// a line for it? In order: a file on disk that is itself a pointer (never downloaded) is
+    /// committed as it is; a file whose version in `head` is a pointer stays in LFS (whatever the
+    /// setting: LFS off never rewrites what is there, and a moved file takes its source's
+    /// version as `head`); a file an attribute rule covers (the user's own `*.psd filter=lfs`, or
+    /// Writer's block) is a pointer whatever its size, so git's own clean filter agrees; any
+    /// other file is one when LFS is enabled and it is above the threshold (and the block gets
+    /// its line).
+    fn via(
+        &self,
+        rules: &mut Option<Rules<'_>>,
+        rel: &str,
+        path: &Path,
+        size: u64,
+        head: Option<gix::ObjectId>,
+    ) -> Via {
+        if lfs::file_is_pointer(path) {
+            return Via::Plain;
+        }
+        let covered = |rules: &mut Option<Rules<'_>>| rules.as_mut().is_some_and(|r| r.covers(rel));
+        if head.is_some_and(|h| self.pointer_in(h).is_some()) {
+            return Via::Pointer {
+                needs_line: !covered(rules),
+            };
+        }
+        if covered(rules) {
+            return Via::Pointer { needs_line: false };
+        }
+        if self.lfs.enabled && size > self.lfs.threshold {
+            return Via::Pointer { needs_line: true };
+        }
+        Via::Plain
+    }
+
+    /// A file Writer does not version: above the threshold while LFS is off, with no pointer in
+    /// HEAD and no rule that sends it to LFS.
+    fn too_large(
+        &self,
+        rules: &mut Option<Rules<'_>>,
+        rel: &str,
+        size: u64,
+        head: Option<gix::ObjectId>,
+    ) -> bool {
+        size > self.lfs.threshold
+            && !self.lfs.enabled
+            && !head.is_some_and(|h| self.pointer_in(h).is_some())
+            && !rules.as_mut().is_some_and(|r| r.covers(rel))
+    }
+
+    fn raw_id(&self, path: &Path) -> Option<gix::ObjectId> {
         let bytes = std::fs::read(path).ok()?;
         gix::objs::compute_hash(self.repo.object_hash(), gix::object::Kind::Blob, &bytes).ok()
+    }
+
+    /// Does the file on disk differ from HEAD's version `head`? An LFS file is compared with its
+    /// pointer, size first: only a file of the same size is hashed.
+    fn differs(
+        &self,
+        rules: &mut Option<Rules<'_>>,
+        rel: &str,
+        path: &Path,
+        size: u64,
+        head: gix::ObjectId,
+    ) -> bool {
+        match self.via(rules, rel, path, size, Some(head)) {
+            Via::Plain => self.raw_id(path) != Some(head),
+            Via::Pointer { .. } => match self.pointer_in(head) {
+                Some(p) => p.size != size || lfs::pointer_of_file(path).ok().as_ref() != Some(&p),
+                None => true,
+            },
+        }
+    }
+
+    /// The pointer HEAD holds for `rel`, if its version there is an LFS pointer.
+    pub fn head_pointer(&self, rel: &str) -> Option<Pointer> {
+        let id = self.head_blob(self.head_tree().as_ref(), rel)?;
+        self.pointer_in(id)
+    }
+
+    /// The size of a blob, from its header (nothing is read).
+    pub fn blob_size(&self, id: &str) -> Option<u64> {
+        let id = gix::ObjectId::from_hex(id.as_bytes()).ok()?;
+        Some(self.repo.find_header(id).ok()?.size())
+    }
+
+    /// Would Writer version a file of this size at `rel`? `false` for one over the threshold
+    /// while LFS is off that no pointer in HEAD and no LFS rule covers (it is "Not versioned").
+    pub fn can_version(&self, rel: &str, size: u64) -> bool {
+        let mut rules = self.lfs_rules().ok().flatten();
+        let head = self.head_blob(self.head_tree().as_ref(), rel);
+        !self.too_large(&mut rules, rel, size, head)
+    }
+
+    /// The pointer a blob holds, `None` when it is not a pointer file.
+    pub fn pointer_of_blob(&self, id: &str) -> Option<Pointer> {
+        self.pointer_in(gix::ObjectId::from_hex(id.as_bytes()).ok()?)
+    }
+
+    /// Files Writer's managed `.gitattributes` block tracks whose version in HEAD is a pointer:
+    /// what the panel counts as "in LFS".
+    pub fn lfs_files(&self) -> Vec<String> {
+        let text = std::fs::read_to_string(self.root.join(".gitattributes")).unwrap_or_default();
+        lfs::tracked(&text)
+            .into_iter()
+            .filter(|rel| self.head_pointer(rel).is_some())
+            .collect()
     }
 
     /// The vault's changes against HEAD, files only: what the worktree and the index differ in,
@@ -252,11 +460,37 @@ impl Repo {
         Ok(self.changes_and_skipped()?.0)
     }
 
-    /// [`Repo::changes`], plus the files Writer does not version: over [`LARGE_FILE_BYTES`] (no
-    /// LFS yet), anywhere under a `node_modules` folder, or inside a nested repository (a folder
-    /// with a `.git` of its own is that repository's, never walked into). The skipped large files
-    /// are listed (vault-relative) so the panel can say so.
+    /// [`Repo::changes`], plus the files Writer does not version: over the LFS threshold while LFS
+    /// is off (a file in LFS, or one an LFS rule covers, is versioned regardless), anywhere under
+    /// a `node_modules` folder, or inside a nested repository (a folder with a `.git` of its own
+    /// is that repository's, never walked into). The skipped large files are listed
+    /// (vault-relative) so the panel can say so.
     pub fn changes_and_skipped(&self) -> Result<(Vec<Change>, Vec<String>)> {
+        let mut rules = self.lfs_rules()?;
+        // Files an LFS rule covers are kept out of gix's status: it would run the repository's
+        // `filter.lfs` driver (a `git-lfs` child gix starts itself, outside the feature's scope)
+        // to compare them. They are compared here instead, against their pointer.
+        let mut in_lfs: Vec<(String, gix::index::entry::Stat)> = Vec::new();
+        if let Some(r) = rules.as_mut() {
+            let index = self.repo.index_or_empty().map_err(git)?;
+            for entry in index.entries() {
+                if !matches!(
+                    entry.mode,
+                    gix::index::entry::Mode::FILE | gix::index::entry::Mode::FILE_EXECUTABLE
+                ) {
+                    continue;
+                }
+                let rel = rel_of(entry.path(&index));
+                if r.covers(&rel) {
+                    in_lfs.push((rel, entry.stat));
+                }
+            }
+        }
+        // `top`: the paths are the vault's, whatever directory the process is in
+        let skip_in_gix: Vec<BString> = in_lfs
+            .iter()
+            .map(|(rel, _)| BString::from(format!(":(top,literal,exclude){rel}")))
+            .collect();
         let items = self
             .repo
             .status(gix::progress::Discard)
@@ -264,55 +498,78 @@ impl Repo {
             .untracked_files(gix::status::UntrackedFiles::Files)
             .index_worktree_rewrites(None)
             .tree_index_track_renames(gix::status::tree_index::TrackRenames::Disabled)
-            .into_iter(Vec::<BString>::new())
+            .into_iter(skip_in_gix)
             .map_err(git)?;
         let mut candidates = BTreeSet::new();
         for item in items {
             let item = item.map_err(git)?;
             candidates.insert(rel_of(item.location()));
         }
+        for (rel, stat) in &in_lfs {
+            let fresh = gix::index::fs::Metadata::from_path_no_follow(&self.root.join(rel))
+                .ok()
+                .and_then(|m| gix::index::entry::Stat::from_fs(&m).ok())
+                .is_some_and(|now| now.size == stat.size && now.mtime == stat.mtime);
+            if !fresh {
+                candidates.insert(rel.clone());
+            }
+        }
         let tree = self.head_tree();
-        let mut adds: BTreeMap<String, gix::ObjectId> = BTreeMap::new();
-        let mut deletes: BTreeMap<String, gix::ObjectId> = BTreeMap::new();
+        // (path, size) of files not in HEAD; (path, HEAD blob) of files gone from disk
+        let mut adds: Vec<(String, u64)> = Vec::new();
+        let mut deletes: Vec<(String, gix::ObjectId)> = Vec::new();
         let mut out: Vec<Change> = Vec::new();
         let mut too_large: Vec<String> = Vec::new();
         for rel in candidates {
             if self.not_ours(&rel) {
                 continue;
             }
-            if std::fs::symlink_metadata(self.root.join(&rel))
-                .is_ok_and(|m| m.is_file() && m.len() > LARGE_FILE_BYTES)
-            {
-                too_large.push(rel);
-                continue;
-            }
             let head = self.head_blob(tree.as_ref(), &rel);
-            let disk = self.disk_blob(&rel);
-            match (head, disk) {
-                (Some(h), Some(d)) if h != d => out.push(Change::Edit(rel)),
-                (None, Some(d)) => {
-                    adds.insert(rel, d);
+            let path = self.root.join(&rel);
+            let meta = std::fs::symlink_metadata(&path)
+                .ok()
+                .filter(|m| m.is_file());
+            match (head, meta) {
+                (Some(h), Some(m)) => {
+                    if self.too_large(&mut rules, &rel, m.len(), head) {
+                        too_large.push(rel);
+                    } else if self.differs(&mut rules, &rel, &path, m.len(), h) {
+                        out.push(Change::Edit(rel));
+                    }
                 }
-                (Some(h), None) if !self.root.join(&rel).is_dir() => {
-                    deletes.insert(rel, h);
-                }
+                (None, Some(m)) => adds.push((rel, m.len())),
+                (Some(h), None) if !path.is_dir() => deletes.push((rel, h)),
                 _ => {}
             }
         }
-        for (to, id) in adds {
-            let from = deletes
-                .iter()
-                .find(|(_, h)| **h == id)
-                .map(|(p, _)| p.clone());
-            match from {
-                Some(from) => {
-                    deletes.remove(&from);
+        // A delete and an add of the same content are one move, settled before the size limit
+        // is asked: a file in LFS that was renamed stays in LFS whatever the setting. Cheap
+        // first: an add is compared only with deletes of its own size (a pointer's, or the
+        // blob's from its header), and read only then.
+        for (to, size) in adds {
+            let path = self.root.join(&to);
+            let same = deletes.iter().position(|(_, h)| {
+                let ptr = self.pointer_in(*h);
+                let theirs = match &ptr {
+                    Some(p) => Some(p.size),
+                    None => self.repo.find_header(*h).ok().map(|x| x.size()),
+                };
+                theirs == Some(size)
+                    && match &ptr {
+                        Some(p) => lfs::pointer_of_file(&path).ok().as_ref() == Some(p),
+                        None => self.raw_id(&path) == Some(*h),
+                    }
+            });
+            match same {
+                Some(i) => {
+                    let (from, _) = deletes.remove(i);
                     out.push(Change::Move { from, to });
                 }
+                None if self.too_large(&mut rules, &to, size, None) => too_large.push(to),
                 None => out.push(Change::Add(to)),
             }
         }
-        out.extend(deletes.into_keys().map(Change::Delete));
+        out.extend(deletes.into_iter().map(|(rel, _)| Change::Delete(rel)));
         out.sort_by(|a, b| a.path().cmp(b.path()));
         Ok((out, too_large))
     }
@@ -332,6 +589,11 @@ impl Repo {
     pub fn commit(&self, changes: &[Change], message: &Message) -> Result<String> {
         if let Some(op) = super::operation(&self.root) {
             return Err(Error::Operation(op.label().into()));
+        }
+        // a sync that moved the branch and was interrupted is finished first (`sync::recover`):
+        // committing now would record the files it had not written yet at their old version
+        if super::sync::interrupted(&self.root) {
+            return Err(Error::Operation(super::sync::INTERRUPTED.into()));
         }
         let ids = self.identities()?;
         let repo = &self.repo;
@@ -354,19 +616,32 @@ impl Repo {
         let drop_from_index = |rel: &str, index: &mut gix::index::State| {
             index.remove_entries(|_, path, _| path == rel.as_bytes());
         };
+        let mut rules = self.lfs_rules()?;
+        // files that go into LFS and no rule covers yet: the managed block gets a line each
+        let mut lines: BTreeSet<String> = BTreeSet::new();
         for change in changes {
-            match change {
+            let (rel, from) = match change {
                 Change::Delete(rel) => {
                     editor.remove(rel.as_str()).map_err(git)?;
                     drop_from_index(rel, index);
+                    continue;
                 }
                 Change::Move { from, to } => {
                     editor.remove(from.as_str()).map_err(git)?;
                     drop_from_index(from, index);
-                    self.stage(&mut editor, index, to)?;
+                    (to, Some(from.as_str()))
                 }
-                Change::Add(rel) | Change::Edit(rel) => self.stage(&mut editor, index, rel)?,
+                Change::Add(rel) | Change::Edit(rel) => (rel, None),
+            };
+            if self.stage(&mut rules, &mut editor, index, rel, from)?
+                == (Via::Pointer { needs_line: true })
+            {
+                lines.insert(rel.clone());
             }
+        }
+        if !lines.is_empty() {
+            let included = changes.iter().any(|c| c.path() == ".gitattributes");
+            self.track_in_attributes(&mut editor, index, &lines, included)?;
         }
         index.sort_entries();
         let tree = editor.write().map_err(git)?;
@@ -386,7 +661,100 @@ impl Repo {
         Ok(id.to_string())
     }
 
+    /// Writes the managed `.gitattributes` block so it tracks `lines` besides what it tracked, and
+    /// stages the change in the same commit. A line stays while its file exists or its pointer
+    /// is still in HEAD. The committed file is the version in this commit (HEAD's, or the
+    /// user's own edit when `included`) plus the block change only: other edits to the file on
+    /// disk stay pending.
+    fn track_in_attributes(
+        &self,
+        editor: &mut gix::object::tree::Editor<'_>,
+        index: &mut gix::index::State,
+        lines: &BTreeSet<String>,
+        included: bool,
+    ) -> Result<()> {
+        let file = self.root.join(".gitattributes");
+        let on_disk = match std::fs::read_to_string(&file) {
+            Ok(t) => t,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e.into()),
+        };
+        let committed = if included {
+            on_disk.clone()
+        } else {
+            self.head_blob(self.head_tree().as_ref(), ".gitattributes")
+                .and_then(|id| self.blob(&id.to_string()).ok())
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .unwrap_or_default()
+        };
+        let mut paths = lfs::tracked(&committed);
+        paths.extend(lines.iter().cloned());
+        paths.retain(|p| {
+            std::fs::symlink_metadata(self.root.join(p)).is_ok() || self.head_pointer(p).is_some()
+        });
+        let for_commit = lfs::apply(&committed, &paths);
+        let for_disk = lfs::apply(&on_disk, &paths);
+        if for_disk != on_disk {
+            // the one confined, atomic write the app has
+            let root = self.root.canonicalize()?;
+            let confined = crate::vault_ops::confine(&root, ".gitattributes")
+                .map_err(|e| Error::Git(e.to_string()))?;
+            crate::vault_ops::write_bytes(&confined.abs, for_disk.as_bytes())
+                .map_err(|e| Error::Git(e.to_string()))?;
+        }
+        self.lfs_rules.set(None);
+        let id = self
+            .repo
+            .write_blob(for_commit.as_bytes())
+            .map_err(git)?
+            .detach();
+        if for_commit == for_disk {
+            let meta = gix::index::fs::Metadata::from_path_no_follow(&file)?;
+            self.push_entry(editor, index, ".gitattributes", id, &file, &meta)
+        } else {
+            // the file on disk holds more than the commit: the index entry is left stale on
+            // purpose, so the next status finds the rest pending
+            self.push_entry_with(
+                editor,
+                index,
+                ".gitattributes",
+                id,
+                false,
+                Default::default(),
+            )
+        }
+    }
+
     fn stage(
+        &self,
+        rules: &mut Option<Rules<'_>>,
+        editor: &mut gix::object::tree::Editor<'_>,
+        index: &mut gix::index::State,
+        rel: &str,
+        from: Option<&str>,
+    ) -> Result<Via> {
+        let path = self.root.join(rel);
+        let size = std::fs::symlink_metadata(&path).map_or(0, |m| m.len());
+        let tree = self.head_tree();
+        let head = self.head_blob(tree.as_ref(), from.unwrap_or(rel));
+        let via = self.via(rules, rel, &path, size, head);
+        if via == Via::Plain {
+            self.stage_plain(editor, index, rel)?;
+            return Ok(via);
+        }
+        // stat first, then the bytes go to the store: the same order as a plain file's
+        let meta = gix::index::fs::Metadata::from_path_no_follow(&path)?;
+        let pointer = lfs::store_file(self.common_dir(), &path)?;
+        let id = self
+            .repo
+            .write_blob(pointer.text().as_bytes())
+            .map_err(git)?
+            .detach();
+        self.push_entry(editor, index, rel, id, &path, &meta)?;
+        Ok(via)
+    }
+
+    fn stage_plain(
         &self,
         editor: &mut gix::object::tree::Editor<'_>,
         index: &mut gix::index::State,
@@ -395,7 +763,31 @@ impl Repo {
         let path = self.root.join(rel);
         let (bytes, meta) = read_after_stat(&path, || {})?;
         let id = self.repo.write_blob(&bytes).map_err(git)?.detach();
-        let executable = is_executable(&path);
+        self.push_entry(editor, index, rel, id, &path, &meta)
+    }
+
+    fn push_entry(
+        &self,
+        editor: &mut gix::object::tree::Editor<'_>,
+        index: &mut gix::index::State,
+        rel: &str,
+        id: gix::ObjectId,
+        path: &Path,
+        meta: &gix::index::fs::Metadata,
+    ) -> Result<()> {
+        let stat = gix::index::entry::Stat::from_fs(meta).map_err(git)?;
+        self.push_entry_with(editor, index, rel, id, is_executable(path), stat)
+    }
+
+    fn push_entry_with(
+        &self,
+        editor: &mut gix::object::tree::Editor<'_>,
+        index: &mut gix::index::State,
+        rel: &str,
+        id: gix::ObjectId,
+        executable: bool,
+        stat: gix::index::entry::Stat,
+    ) -> Result<()> {
         let (kind, mode) = if executable {
             (
                 gix::object::tree::EntryKind::BlobExecutable,
@@ -409,7 +801,6 @@ impl Repo {
         };
         editor.upsert(rel, kind, id).map_err(git)?;
         index.remove_entries(|_, p, _| p == rel.as_bytes());
-        let stat = gix::index::entry::Stat::from_fs(&meta).map_err(git)?;
         index.dangerously_push_entry(
             stat,
             id,
@@ -501,6 +892,13 @@ impl Repo {
     pub fn blob(&self, id: &str) -> Result<Vec<u8>> {
         let id = gix::ObjectId::from_hex(id.as_bytes()).map_err(git)?;
         Ok(self.repo.find_object(id).map_err(git)?.detach().data)
+    }
+
+    /// A blob as its reader wants it: an LFS pointer whose object is in the local store is the
+    /// object (history, diffs and Restore show the real file); a pointer not fetched stays a
+    /// pointer (see [`lfs::is_pointer`]). Sync and merge read [`Repo::blob`], the raw bytes.
+    pub fn content(&self, id: &str) -> Result<Vec<u8>> {
+        Ok(lfs::resolve(self.common_dir(), self.blob(id)?))
     }
 
     /// The file at `path` in commit `rev`: its blob id, `None` when it was not there.
@@ -1011,11 +1409,26 @@ impl Repo {
         let index: &mut gix::index::State = &mut index_file;
         let tree = self.repo.empty_tree();
         let mut editor = self.repo.edit_tree(tree.id).map_err(git)?;
+        let mut rules = self.lfs_rules()?;
+        let head = self.head_tree();
         for rel in paths {
-            if std::fs::symlink_metadata(self.root.join(rel)).is_ok_and(|m| m.is_file()) {
-                self.stage(&mut editor, index, rel)?;
-            } else {
+            let path = self.root.join(rel);
+            let Ok(meta) = gix::index::fs::Metadata::from_path_no_follow(&path) else {
                 index.remove_entries(|_, p, _| p == rel.as_bytes());
+                continue;
+            };
+            if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+                index.remove_entries(|_, p, _| p == rel.as_bytes());
+                continue;
+            }
+            // a large file the sync just wrote from HEAD's pointer is that pointer: no hashing
+            match self.head_blob(head.as_ref(), rel) {
+                Some(id) if self.pointer_in(id).is_some() && !lfs::file_is_pointer(&path) => {
+                    self.push_entry(&mut editor, index, rel, id, &path, &meta)?;
+                }
+                _ => {
+                    self.stage(&mut rules, &mut editor, index, rel, None)?;
+                }
             }
         }
         index.sort_entries();

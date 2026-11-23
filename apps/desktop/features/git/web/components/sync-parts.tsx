@@ -180,16 +180,25 @@ export function HeldPlugins() {
   );
 }
 
-/** A file brought back because one side deleted what the other edited: told once, then dismissed. */
+const NONE: string[] = [];
+
+/** A file brought back because one side deleted what the other edited, and a path a remote held
+ *  that was never written (`.git`, device-local state, through a link): told once, then dismissed. */
 export function Notices() {
-  const restored = useGitStatus((s) => s.status?.restored ?? []);
+  const restored = useGitStatus((s) => s.status?.restored ?? NONE);
+  const refused = useGitStatus((s) => s.status?.refused ?? NONE);
   const apply = useGitStatus((s) => s.apply);
-  if (restored.length === 0) return null;
+  if (restored.length === 0 && refused.length === 0) return null;
   return (
     <section data-git-notices className="space-y-1 text-xs text-[var(--text-muted)]">
       {restored.map((p) => (
         <p key={p} title={p}>
           Restored {fileLabel(p)}: it was deleted on one side and edited on the other
+        </p>
+      ))}
+      {refused.map((p) => (
+        <p key={`refused:${p}`} title={p} data-git-refused>
+          Not written: {p} (protected path)
         </p>
       ))}
       <button

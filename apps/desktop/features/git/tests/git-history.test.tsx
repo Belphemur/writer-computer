@@ -49,7 +49,7 @@ vi.mock("@/components/editor-area/editor-context-menu", async (orig) => ({
   ...(await orig<object>()),
   showNativeContextMenu: menu.show,
 }));
-const editor = vi.hoisted(() => ({ openGitHistoryTab: vi.fn(), openSettings: vi.fn() }));
+const editor = vi.hoisted(() => ({ openLocationTab: vi.fn(), openSettings: vi.fn() }));
 vi.mock("@/hooks/editor-api", async (orig) => ({ ...(await orig<object>()), ...editor }));
 
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -319,7 +319,8 @@ describe("the History tab", () => {
     expect(ipc.versionText).toHaveBeenCalledWith("/vault/Notes/Plan.md", "a3");
     expect(writeText).toHaveBeenCalledWith("the text");
     act(() => button("Open")!.click());
-    expect(editor.openGitHistoryTab).toHaveBeenCalledWith({
+    expect(editor.openLocationTab).toHaveBeenCalledWith({
+      kind: "git-history",
       path: "/vault/Notes/Plan.md",
       rev: "a3",
       version: true,
@@ -348,18 +349,18 @@ describe("the History tab", () => {
       entry.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 1 }));
       entry.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
     });
-    expect(editor.openGitHistoryTab).toHaveBeenCalledWith(
-      { path: "/vault/Notes/Plan.md", rev: "a3", version: true },
+    expect(editor.openLocationTab).toHaveBeenCalledWith(
+      { kind: "git-history", path: "/vault/Notes/Plan.md", rev: "a3", version: true },
       { activate: false },
     );
-    editor.openGitHistoryTab.mockClear();
+    editor.openLocationTab.mockClear();
     act(() => {
       entry.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true, ctrlKey: true }));
     });
-    expect(editor.openGitHistoryTab).toHaveBeenCalledTimes(1);
-    editor.openGitHistoryTab.mockClear();
+    expect(editor.openLocationTab).toHaveBeenCalledTimes(1);
+    editor.openLocationTab.mockClear();
     act(() => entry.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(editor.openGitHistoryTab).not.toHaveBeenCalled();
+    expect(editor.openLocationTab).not.toHaveBeenCalled();
   });
 
   it("shows an image side by side and the sizes of another binary", async () => {
@@ -399,16 +400,16 @@ describe("deleted files in the panel", () => {
     const entry = $('[data-git-deleted-file="Old/Idea.md"]')!;
     expect(entry.textContent).toContain("Idea");
     act(() => entry.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(editor.openGitHistoryTab).toHaveBeenLastCalledWith(
-      { path: "/vault/Old/Idea.md" },
+    expect(editor.openLocationTab).toHaveBeenLastCalledWith(
+      { kind: "git-history", path: "/vault/Old/Idea.md" },
       { activate: true },
     );
     act(() => {
       entry.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 1 }));
       entry.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
     });
-    expect(editor.openGitHistoryTab).toHaveBeenLastCalledWith(
-      { path: "/vault/Old/Idea.md" },
+    expect(editor.openLocationTab).toHaveBeenLastCalledWith(
+      { kind: "git-history", path: "/vault/Old/Idea.md" },
       { activate: false },
     );
   });
@@ -427,7 +428,10 @@ describe("deleted files in the panel", () => {
     const [items] = menu.show.mock.calls[0] as [{ text: string; action: () => void }[]];
     expect(items.map((i) => i.text)).toEqual(["Show history"]);
     items[0]!.action();
-    expect(editor.openGitHistoryTab).toHaveBeenCalledWith({ path: "/vault/Old/Idea.md" });
+    expect(editor.openLocationTab).toHaveBeenCalledWith({
+      kind: "git-history",
+      path: "/vault/Old/Idea.md",
+    });
   });
 
   it("shows no Deleted section when nothing was deleted", async () => {
@@ -460,7 +464,10 @@ describe("only with git on", () => {
     const [item] = showHistoryItems("/vault/a.md");
     expect(item).toMatchObject({ kind: "item", text: "Show history" });
     (item as { action: () => void }).action();
-    expect(editor.openGitHistoryTab).toHaveBeenCalledWith({ path: "/vault/a.md" });
+    expect(editor.openLocationTab).toHaveBeenCalledWith({
+      kind: "git-history",
+      path: "/vault/a.md",
+    });
   });
 
   it("palette command needs an active file and a set-up vault", async () => {

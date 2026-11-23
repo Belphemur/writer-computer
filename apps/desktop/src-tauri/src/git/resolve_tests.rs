@@ -167,7 +167,13 @@ fn save_commits_the_file_forgets_the_conflict_and_the_next_sync_pushes_it() {
         log.last().is_some_and(|l| l.ends_with("Merge Note")),
         "{log:?}"
     );
-    let status = git::status(&b.root, &git::IdentityCache::default(), true).unwrap();
+    let status = git::status(
+        &b.root,
+        &git::IdentityCache::default(),
+        true,
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
     assert!(status.changes.is_empty() && status.conflicts.is_empty());
     let r = b.ok();
     assert_eq!(r.pushed, 1, "{r:?}");
@@ -452,4 +458,50 @@ fn the_editors_are_told_before_the_files_are_written() {
     )
     .unwrap();
     assert_eq!(told.into_inner(), vec!["Note.md".to_string()]);
+}
+
+#[test]
+fn edits_made_after_the_view_opened_survive_save_or_stop_it() {
+    need_git!();
+    let w = World::new();
+    let (_a, b) = conflicted(&w);
+    let v = open(&b.root, "Note.md", None).unwrap();
+    let body = body_of(&v, |c| c.theirs.clone());
+    // the editor kept saving while the view was open: a line far from the overlap
+    let later = format!("{}typed later\n", v.mine);
+    b.write("Note.md", &later);
+    let choice = Choice {
+        mine: &v.mine,
+        body: &body,
+        picks: &[],
+        final_path: None,
+    };
+    save(&b.root, "Note.md", &choice, "B", None).unwrap();
+    let text = b.read("Note.md");
+    assert!(text.contains("typed later"), "{text}");
+    assert!(text.contains("three from A"), "{text}");
+
+    // the same line changed again meanwhile: nothing is written, the conflict stays
+    let w = World::new();
+    let (_a, b) = conflicted(&w);
+    let v = open(&b.root, "Note.md", None).unwrap();
+    let body = body_of(&v, |c| c.theirs.clone());
+    let later = v.mine.replace("three from B", "three from B, rewritten");
+    b.write("Note.md", &later);
+    let err = save(
+        &b.root,
+        "Note.md",
+        &Choice {
+            mine: &v.mine,
+            body: &body,
+            picks: &[],
+            final_path: None,
+        },
+        "B",
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::Changed), "{err}");
+    assert_eq!(b.read("Note.md"), later);
+    assert!(conflicts::find(&b.root, "Note.md").is_some());
 }

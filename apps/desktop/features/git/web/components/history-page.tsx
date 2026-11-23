@@ -5,7 +5,7 @@
 import { ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { openGitHistoryTab } from "@/hooks/editor-api";
+import { openLocationTab } from "@/hooks/editor-api";
 import { linkHandlers } from "@/lib/link-activation";
 import { describeError, logger } from "@/lib/logger";
 import type { PageViewProps } from "@/lib/features/slots";
@@ -211,7 +211,10 @@ function HistoryView({ path, initialRev }: { path: string; initialRev?: string }
                 compared={comparing}
                 onPick={pick}
                 onOpenTab={(v, activate) =>
-                  openGitHistoryTab({ path, rev: v.rev, version: true }, { activate })
+                  openLocationTab(
+                    { kind: "git-history", path, rev: v.rev, version: true },
+                    { activate },
+                  )
                 }
               />
             ))}

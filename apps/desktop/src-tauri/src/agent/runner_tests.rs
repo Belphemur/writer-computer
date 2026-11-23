@@ -1931,7 +1931,10 @@ fn project_chats_use_the_project_cwd_prompt_and_mode_through_the_port() {
 #[test]
 fn detect_reports_version_and_sign_in_state_of_the_override() {
     let h = Harness::new(&["ok-turn"], "normal");
-    let info = super::binary::detect(Some(h.fake.to_str().unwrap()));
+    let info = super::binary::detect(
+        &crate::features::scope::Spawner::detached(),
+        Some(h.fake.to_str().unwrap()),
+    );
     assert!(info.found);
     assert_eq!(info.version.as_deref(), Some("2.1.325"));
     assert_eq!(info.authenticated, Some(true));

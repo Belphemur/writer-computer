@@ -165,10 +165,33 @@ fn kind_of(c: &Change) -> (&'static str, String, Option<String>) {
     }
 }
 
+/// The LFS settings from the settings file (the same `Config` the app reads), with `git-lfs`
+/// looked for as the app does, and only when the setting is on. The second value is that probe
+/// (`None` while off).
+fn lfs_setting(ctx: &Ctx) -> Result<(git::Lfs, Option<bool>), CliError> {
+    let data_dir = ctx.env.data_dir()?;
+    let cfg = super::runtime::Config::from_lookup(|k| config::read_global_value(&data_dir, k));
+    let probe = cfg
+        .lfs_on
+        .then(|| Exec::new(Spawner::detached()).lfs_installed());
+    Ok((
+        git::Lfs::from_settings(cfg.lfs_on, cfg.lfs_threshold_mb, probe == Some(true)),
+        probe,
+    ))
+}
+
+/// `git lfs install --local` before a commit or sync, its failure said, never ignored.
+fn install_lfs(root: &std::path::Path, lfs: git::Lfs, out: &mut String) {
+    if let Err(e) = git::ensure_lfs(&Exec::new(Spawner::detached()), root, lfs) {
+        out.push_str(&format!("warning: large files: {}\n", e.line));
+    }
+}
+
 fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliError> {
     let format = args.format(spec)?;
     let root = ctx.root()?;
-    let s = git::status(root, &git::IdentityCache::default(), true).map_err(fail)?;
+    let (lfs, lfs_installed) = lfs_setting(ctx)?;
+    let s = git::status(root, &git::IdentityCache::default(), true, lfs).map_err(fail)?;
     if format == "json" {
         let changed: Vec<_> = s
             .changes
@@ -191,6 +214,8 @@ fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
             "held": s.held.iter().map(|h| h.path.clone()).collect::<Vec<_>>(),
             "lastCommit": s.last_commit,
             "identityError": s.identity_error,
+            "lfs": { "enabled": lfs.enabled, "installed": lfs_installed, "files": s.lfs_files },
+            "tooLarge": s.too_large,
             "changed": changed,
         })) + "\n");
     }
@@ -231,6 +256,15 @@ fn status_cmd(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<String, CliE
     }
     for h in &s.held {
         out.push_str(&format!("held back (looks like a token): {}\n", h.path));
+    }
+    out.push_str(&format!(
+        "lfs: {}, {} file{} in LFS\n",
+        if lfs.enabled { "on" } else { "off" },
+        s.lfs_files,
+        if s.lfs_files == 1 { "" } else { "s" }
+    ));
+    for f in &s.too_large {
+        out.push_str(&format!("not versioned (too large): {f}\n"));
     }
     if s.changes.is_empty() {
         out.push_str("changed: none\n");
@@ -360,10 +394,14 @@ fn commit_cmd(ctx: &Ctx, _args: &Args, _: &CommandSpec) -> Result<String, CliErr
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| message::DEFAULT_TEMPLATE.to_string());
     let dev = device::name();
-    match git::commit_user(root, &template, &git::template_ctx(&dev), &dev).map_err(fail)? {
-        Some(id) => Ok(format!("committed {}\n", &id[..id.len().min(8)])),
-        None => Ok("nothing to commit\n".into()),
+    let (lfs, _) = lfs_setting(ctx)?;
+    let mut out = String::new();
+    install_lfs(root, lfs, &mut out);
+    match git::commit_user(root, &template, &git::template_ctx(&dev), &dev, lfs).map_err(fail)? {
+        Some(id) => out.push_str(&format!("committed {}\n", &id[..id.len().min(8)])),
+        None => out.push_str("nothing to commit\n"),
     }
+    Ok(out)
 }
 
 fn repo_of(ctx: &Ctx) -> Result<(std::path::PathBuf, git::Repo), CliError> {
@@ -371,7 +409,7 @@ fn repo_of(ctx: &Ctx) -> Result<(std::path::PathBuf, git::Repo), CliError> {
     if !git::is_set_up(&root) {
         return Err(not_set_up());
     }
-    let repo = git::Repo::open(&root)
+    let repo = git::Repo::open_with(&root, lfs_setting(ctx)?.0)
         .map_err(fail)?
         .ok_or_else(not_set_up)?;
     Ok((root, repo))
@@ -501,13 +539,29 @@ fn restore_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliErr
     })
 }
 
+/// `writer git:resolve`: through the running app when the vault is open there (its editors are
+/// told and its write lock held, like the merge view's buttons), else here with the same engine.
 fn resolve_cmd(ctx: &Ctx, args: &Args, _: &CommandSpec) -> Result<String, CliError> {
     let (root, _repo) = repo_of(ctx)?;
     let rel = path_arg(ctx, args)?;
-    let side = args
+    let take = args
         .get("take")
-        .and_then(resolve::Take::parse)
+        .filter(|t| resolve::Take::parse(t).is_some())
         .ok_or_else(|| CliError::Usage("take=mine, take=theirs or take=both is required".into()))?;
+    let mut call = Map::new();
+    call.insert("path".into(), json!(rel));
+    call.insert("take".into(), json!(take));
+    match cmd_app::call_app(ctx, "git:resolve", Some(&root), call) {
+        Ok(v) if v["open"].as_bool() == Some(true) => {
+            return match v["error"].as_str() {
+                Some(e) => Err(CliError::fail(e.to_string())),
+                None => Ok(format!("resolved {rel}\n")),
+            };
+        }
+        Ok(_) | Err(CliError::NotRunning) => {}
+        Err(e) => return Err(e),
+    }
+    let side = resolve::Take::parse(take).expect("checked above");
     resolve::take(&root, &rel, side, &device::name(), None)
         .map_err(|e| CliError::fail(e.to_string()))?;
     Ok(format!("resolved {rel}\n"))
@@ -550,9 +604,11 @@ fn headless_sync(ctx: &Ctx, root: &std::path::Path) -> Result<String, CliError> 
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_else(|| message::DEFAULT_TEMPLATE.to_string());
     let dev = device::name();
-    let committed =
-        git::commit_user(root, &template, &git::template_ctx(&dev), &dev).map_err(fail)?;
+    let (lfs, _) = lfs_setting(ctx)?;
     let mut out = String::new();
+    install_lfs(root, lfs, &mut out);
+    let committed =
+        git::commit_user(root, &template, &git::template_ctx(&dev), &dev, lfs).map_err(fail)?;
     if let Some(id) = &committed {
         out.push_str(&format!("committed {}\n", &id[..id.len().min(8)]));
     }
@@ -564,13 +620,17 @@ fn headless_sync(ctx: &Ctx, root: &std::path::Path) -> Result<String, CliError> 
         return Ok(out);
     }
     let exec = Exec::new(Spawner::detached());
-    let helper = std::env::current_exe().ok().map(|exe| Helper {
-        exe,
-        source: git::state::credential_source(root),
-        service: crate::plugin_secrets::PluginSecrets::service_name(
-            crate::index::paths::RELEASE_IDENTIFIER,
-        ),
-    });
+    let service =
+        crate::plugin_secrets::PluginSecrets::service_name(crate::index::paths::RELEASE_IDENTIFIER);
+    // only whether the token is set, never its value
+    let token_saved = crate::plugin_secrets::PluginSecrets::new(Box::new(
+        crate::plugin_secrets::KeyringBackend::new(service.clone()),
+    ))
+    .feature_keys_set(&[super::sync::TOKEN_KEY.to_string()])
+    .is_ok_and(|k| !k.is_empty());
+    let helper = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Helper::for_vault(root, exe, service, token_saved));
     let outcome = engine::sync(
         root,
         &engine::Options {
@@ -578,6 +638,7 @@ fn headless_sync(ctx: &Ctx, root: &std::path::Path) -> Result<String, CliError> 
             helper: helper.as_ref(),
             secrets: Vec::new(),
             device: &dev,
+            unlocked: None,
             announce: None,
         },
     );
@@ -603,6 +664,12 @@ fn headless_sync(ctx: &Ctx, root: &std::path::Path) -> Result<String, CliError> 
     }
     for h in &r.held {
         out.push_str(&format!("held back (looks like a token): {}\n", h.path));
+    }
+    for p in &r.refused {
+        out.push_str(&format!("not written (protected path): {p}\n"));
+    }
+    for f in &r.lfs_missing {
+        out.push_str(&format!("large file not downloaded: {f}\n"));
     }
     Ok(out)
 }

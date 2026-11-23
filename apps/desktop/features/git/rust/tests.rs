@@ -198,6 +198,38 @@ fn the_settings_fragment_holds_the_spec_table() {
     assert_eq!(defaults.quiet, Some(Duration::from_secs(60)));
     assert!(defaults.agent_commits);
     assert_eq!(defaults.template, "{{notes}}");
+    // LFS: off at 100 MB by default, read from the two settings
+    assert!(!defaults.lfs_on);
+    assert_eq!(
+        defaults.lfs_threshold_mb,
+        crate::git::lfs::DEFAULT_THRESHOLD_MB
+    );
+    // the Rust constant is the schema's default, one number
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../settings.schema.json")).unwrap();
+    let def = schema["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["key"] == "git.lfs-threshold-mb")
+        .unwrap();
+    assert_eq!(
+        def["default"].as_f64(),
+        Some(crate::git::lfs::DEFAULT_THRESHOLD_MB)
+    );
+    let lfs = runtime::Config::from_lookup(|k| match k {
+        "git.lfs" => Some(ConfigValue::Bool(true)),
+        "git.lfs-threshold-mb" => Some(ConfigValue::Number(25.0)),
+        _ => None,
+    });
+    assert!(lfs.lfs_on);
+    assert_eq!(lfs.lfs_threshold_mb, 25.0);
+    // and what applies needs git-lfs: the setting alone is not LFS
+    assert!(!crate::git::Lfs::from_settings(lfs.lfs_on, lfs.lfs_threshold_mb, false).enabled);
+    assert_eq!(
+        crate::git::Lfs::from_settings(lfs.lfs_on, lfs.lfs_threshold_mb, true).threshold,
+        25 * 1024 * 1024
+    );
 }
 
 #[test]
@@ -946,6 +978,70 @@ fn a_running_sync_makes_the_feature_busy_and_stopping_the_scope_ends_it() {
     assert!(!vaults.is_syncing("main"));
 }
 
+#[cfg(unix)]
+#[test]
+fn closing_a_window_waits_for_its_sync_within_one_budget_and_never_runs_git_itself() {
+    use std::os::unix::fs::PermissionsExt;
+    let app = app_with(vec![&Git], &[]);
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    let remote = tempfile::tempdir().unwrap();
+    let sh = |cwd: &Path, args: &[&str]| {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "git {args:?}");
+    };
+    sh(remote.path(), &["init", "--bare", "-b", "main"]);
+    sh(&root, &["checkout", "-b", "main"]);
+    sh(
+        &root,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("file://{}", remote.path().display()),
+        ],
+    );
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::Existing, "d").unwrap();
+    // a remote that hangs: every push sleeps far past the budget (the repository's own hooks,
+    // whatever a global `core.hooksPath` says)
+    let hooks = root.join(".git/hooks");
+    sh(
+        &root,
+        &["config", "core.hooksPath", &hooks.to_string_lossy()],
+    );
+    let hook = hooks.join("pre-push");
+    let marker = remote.path().join("push-started");
+    std::fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\ntouch '{}'\nsleep 60\nexit 0\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    runtime::vaults(app.handle()).unwrap().open("main", &root);
+    write(&root, "b.md", "pending");
+    let start = Instant::now();
+    Git.on_workspace_close(app.handle(), "main");
+    let took = start.elapsed();
+    assert!(
+        took < sync::CLOSE_BUDGET + Duration::from_secs(3),
+        "the close waited {took:?}"
+    );
+    // the sync really ran into the hanging push, and the pending edit was committed first
+    assert!(marker.exists(), "the sync never reached the push");
+    assert!(subjects(&root).len() >= 2, "{:?}", subjects(&root));
+}
+
 // ---- settling a conflict ---------------------------------------------------------------------------
 
 #[test]
@@ -979,7 +1075,14 @@ fn a_resolution_is_busy_while_it_writes_tells_the_editors_and_asks_the_sync_to_r
     assert_eq!(busy.lock().as_deref(), Some("a commit in progress"));
     assert_eq!(scope.busy_reason(), None, "released afterwards");
     assert!(status.set_up);
-    assert_eq!(heard.lock().as_slice(), [r#"{"paths":["a.md"]}"#]);
+    // before the write, then the release once it is done (one typed payload)
+    assert_eq!(
+        heard.lock().as_slice(),
+        [
+            r#"{"paths":["a.md"],"done":false}"#,
+            r#"{"paths":["a.md"],"done":true}"#
+        ]
+    );
     // a failed resolution is refused with its own sentence, and nothing stays busy
     let err = commands::resolving(app.handle(), "main", &root, |_| {
         Err(crate::git::resolve::Error::NotConflicted)

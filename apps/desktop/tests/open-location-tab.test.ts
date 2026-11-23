@@ -7,12 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p }));
 
 import { invoke } from "@tauri-apps/api/core";
-import {
-  openFileInNewTab,
-  openGitHistoryTab,
-  openGitMergeTab,
-  openLocationTab,
-} from "../src/hooks/editor-api";
+import { openFileInNewTab, openLocationTab } from "../src/hooks/editor-api";
 import {
   deserializeLocation,
   pageKind,
@@ -53,7 +48,7 @@ beforeEach(() => {
 describe("openLocationTab", () => {
   it("opens a new tab behind the active one and keeps the active tab", () => {
     seed();
-    openGitHistoryTab({ path: "/v/a.md" }, { activate: false });
+    openLocationTab({ kind: "git-history", path: "/v/a.md" }, { activate: false });
     expect(locations().at(-1)).toEqual({ kind: "git-history", path: "/v/a.md" });
     expect(state().activeTabId).toBe("t0");
     expect(state().activeFilePath).toBe("/v/a.md");
@@ -65,7 +60,7 @@ describe("openLocationTab", () => {
       activeTabId: "l",
       activeFilePath: null,
     });
-    openGitHistoryTab({ path: "/v/a.md" }, { activate: false });
+    openLocationTab({ kind: "git-history", path: "/v/a.md" }, { activate: false });
     expect(locations().map((l) => l.kind)).toEqual(["launcher", "git-history"]);
     expect(state().activeTabId).toBe("l");
   });
@@ -76,38 +71,47 @@ describe("openLocationTab", () => {
       activeTabId: "l",
       activeFilePath: null,
     });
-    openGitHistoryTab({ path: "/v/a.md" });
+    openLocationTab({ kind: "git-history", path: "/v/a.md" });
     expect(locations()).toEqual([{ kind: "git-history", path: "/v/a.md" }]);
     expect(state().activeTabId).toBe("l");
   });
 
   it("one tab per file and per version: a second open re-targets, and only a foreground open focuses", () => {
     seed();
-    openGitHistoryTab({ path: "/v/a.md", rev: "r1" }, { activate: false });
+    openLocationTab({ kind: "git-history", path: "/v/a.md", rev: "r1" }, { activate: false });
     const historyId = state().tabs.at(-1)!.id;
-    openGitHistoryTab({ path: "/v/a.md", rev: "r2" }, { activate: false });
+    openLocationTab({ kind: "git-history", path: "/v/a.md", rev: "r2" }, { activate: false });
     expect(state().tabs).toHaveLength(3);
     expect(locations().at(-1)).toEqual({ kind: "git-history", path: "/v/a.md", rev: "r2" });
     expect(state().activeTabId).toBe("t0");
-    openGitHistoryTab({ path: "/v/a.md", rev: "r3" });
+    openLocationTab({ kind: "git-history", path: "/v/a.md", rev: "r3" });
     expect(state().activeTabId).toBe(historyId);
     // a version view of the same file is another tab, one per version
-    openGitHistoryTab({ path: "/v/a.md", rev: "r3", version: true }, { activate: false });
-    openGitHistoryTab({ path: "/v/a.md", rev: "r4", version: true }, { activate: false });
+    openLocationTab(
+      { kind: "git-history", path: "/v/a.md", rev: "r3", version: true },
+      { activate: false },
+    );
+    openLocationTab(
+      { kind: "git-history", path: "/v/a.md", rev: "r4", version: true },
+      { activate: false },
+    );
     expect(state().tabs).toHaveLength(5);
-    openGitHistoryTab({ path: "/v/a.md", rev: "r3", version: true }, { activate: false });
+    openLocationTab(
+      { kind: "git-history", path: "/v/a.md", rev: "r3", version: true },
+      { activate: false },
+    );
     expect(state().tabs).toHaveLength(5);
   });
 
   it("the merge view is one tab per file: a background open leaves the active tab, a second open focuses it", () => {
     seed();
-    openGitMergeTab({ path: "/v/a.md" }, { activate: false });
+    openLocationTab({ kind: "git-merge", path: "/v/a.md" }, { activate: false });
     expect(locations().at(-1)).toEqual({ kind: "git-merge", path: "/v/a.md" });
     expect(state().activeTabId).toBe("t0");
-    openGitMergeTab({ path: "/v/b.md" }, { activate: false });
-    openGitMergeTab({ path: "/v/a.md" }, { activate: false });
+    openLocationTab({ kind: "git-merge", path: "/v/b.md" }, { activate: false });
+    openLocationTab({ kind: "git-merge", path: "/v/a.md" }, { activate: false });
     expect(state().tabs).toHaveLength(4);
-    openGitMergeTab({ path: "/v/a.md" });
+    openLocationTab({ kind: "git-merge", path: "/v/a.md" });
     expect(state().activeTabId).toBe(state().tabs[2]!.id);
     expect(state().tabs).toHaveLength(4);
   });

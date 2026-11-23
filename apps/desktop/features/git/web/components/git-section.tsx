@@ -7,30 +7,14 @@ import { openFileAsTextInNewTab } from "@/hooks/editor-api";
 import { useAllSettings } from "@/hooks/use-settings";
 import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
-import { FEATURE_SETTINGS, type SettingDef } from "@/lib/settings-schema";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { commitNow, setPaused, setup, stop, type SetupMode } from "../ipc";
+import { LfsRow } from "./lfs-row";
+import { CARD, defsFor, KEYS, MUTED, ROW } from "./section-parts";
 import { RemoteRows } from "./remote-rows";
 import { BUTTON } from "./sync-parts";
 import { IDENTITY_COMMANDS, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
-
-const CARD =
-  "overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]";
-const ROW = "flex items-center justify-between gap-4 px-4 py-3 text-[13px]";
-const MUTED = "text-[var(--text-muted)]";
-export const KEYS = {
-  commitAfter: "git.commit-after",
-  agentCommits: "git.agent-commits",
-  commitMessage: "git.commit-message",
-  syncInterval: "git.sync-interval",
-} as const;
-
-function defsFor(...keys: string[]): SettingDef[] {
-  return ((FEATURE_SETTINGS.git ?? []) as readonly SettingDef[]).filter((d) =>
-    keys.includes(d.key),
-  );
-}
 
 function IdentityHelp() {
   return (
@@ -175,6 +159,7 @@ export function GitSection() {
         </summary>
         <div className="space-y-3">
           <SettingRows defs={defsFor(KEYS.commitMessage)} />
+          <LfsRow lfs={status.lfs} />
           <div className={CARD}>
             <div className={ROW}>
               <span>Ignored</span>

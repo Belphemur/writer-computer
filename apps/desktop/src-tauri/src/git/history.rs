@@ -8,6 +8,7 @@
 //! card shows: a note gets the rendered view too, other text files the line diff, an image its
 //! before and after, any other binary its sizes.
 
+use super::lfs;
 use super::message::{Change, Message, Scope};
 use super::repo::{Deleted, Error, Repo, Result, Version, VersionKind};
 use crate::text_diff::{self, TextDiff};
@@ -44,15 +45,35 @@ pub fn as_text(bytes: &[u8]) -> Option<&str> {
 }
 
 fn blob(repo: &Repo, id: &Option<String>) -> Result<Option<Vec<u8>>> {
-    id.as_deref().map(|i| repo.blob(i)).transpose()
+    id.as_deref().map(|i| repo.content(i)).transpose()
+}
+
+/// The size of a version's side, from its pointer when it is a large file and its header
+/// otherwise: no object is read.
+fn side_size(repo: &Repo, id: &Option<String>) -> Option<u32> {
+    let i = id.as_deref()?;
+    let size = match repo.pointer_of_blob(i) {
+        Some(p) => p.size,
+        None => repo.blob_size(i)?,
+    };
+    Some(size.min(u32::MAX as u64) as u32)
+}
+
+fn is_large(repo: &Repo, id: &Option<String>) -> bool {
+    id.as_deref()
+        .is_some_and(|i| repo.pointer_of_blob(i).is_some())
 }
 
 fn counts(repo: &Repo, v: &Version) -> (Option<u32>, Option<u32>) {
+    // a large file has no line counts: its objects are not read for a list
+    if is_large(repo, &v.before) || is_large(repo, &v.after) {
+        return (None, None);
+    }
     let side = |id: &Option<String>| -> Option<String> {
         match id {
             None => Some(String::new()),
             Some(i) => {
-                let bytes = repo.blob(i).ok()?;
+                let bytes = repo.content(i).ok()?;
                 (bytes.len() <= COUNT_MAX_BYTES)
                     .then(|| as_text(&bytes).map(str::to_string))
                     .flatten()
@@ -287,16 +308,34 @@ pub fn diff(
     against: &Against,
 ) -> Result<FileDiff> {
     let v = find(repo, path, rev)?;
+    let other: Option<Version> = match against {
+        Against::Version(o) => Some(find(repo, path, o)?),
+        _ => None,
+    };
+    // a large file diffs as its two sizes, from the pointers: no object is read
+    let (left, right): (&Option<String>, Option<&Option<String>>) = match (against, &other) {
+        (Against::Parent, _) => (&v.before, Some(&v.after)),
+        (Against::Current, _) => (&v.after, None),
+        (_, Some(w)) => (&v.after, Some(&w.after)),
+        (_, None) => unreachable!("a version comparison reads the other version"),
+    };
+    if is_large(repo, left) || right.is_some_and(|r| is_large(repo, r)) {
+        let now = std::fs::metadata(root.join(path))
+            .ok()
+            .filter(|m| m.is_file())
+            .map(|m| m.len().min(u32::MAX as u64) as u32);
+        return Ok(FileDiff::Binary {
+            before_size: side_size(repo, left),
+            after_size: right.map_or(now, |r| side_size(repo, r)),
+        });
+    }
     let (before, after) = match against {
         Against::Parent => (blob(repo, &v.before)?, blob(repo, &v.after)?),
-        Against::Current => {
-            let now = read_current(root, path);
-            (blob(repo, &v.after)?, now)
-        }
-        Against::Version(other) => {
-            let w = find(repo, path, other)?;
-            (blob(repo, &v.after)?, blob(repo, &w.after)?)
-        }
+        Against::Current => (blob(repo, &v.after)?, read_current(root, path)),
+        Against::Version(_) => (
+            blob(repo, &v.after)?,
+            blob(repo, &other.as_ref().and_then(|w| w.after.clone()))?,
+        ),
     };
     Ok(diff_bytes(path, before.as_deref(), after.as_deref()))
 }
@@ -374,7 +413,16 @@ pub fn restore(repo: &Repo, root: &Path, path: &str, rev: &str, device: &str) ->
         VersionKind::Delete => v.before.clone(),
         _ => v.after.clone(),
     };
-    let bytes = blob(repo, &wanted)?.ok_or_else(|| Error::Git("nothing to restore".into()))?;
+    let wanted_id = wanted
+        .clone()
+        .ok_or_else(|| Error::Git("nothing to restore".into()))?;
+    let pointer = repo.pointer_of_blob(&wanted_id);
+    if let Some(p) = &pointer {
+        if !lfs::has_object(repo.common_dir(), p) {
+            // never write a pointer over the user's file
+            return Err(Error::Git("This large file is not downloaded here".into()));
+        }
+    }
     // a path a different file took since the deletion is never overwritten
     let taken = root.join(path).exists()
         && repo
@@ -401,7 +449,21 @@ pub fn restore(repo: &Repo, root: &Path, path: &str, rev: &str, device: &str) ->
     if let Some(dir) = confined.abs.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    vault_ops::write_bytes(&confined.abs, &bytes).map_err(|e| Error::Git(e.to_string()))?;
+    match &pointer {
+        Some(p) => {
+            // a large file that would then not be versioned is refused, not silently left out
+            if !repo.can_version(&confined.rel, p.size) {
+                return Err(Error::Git(
+                    "Turn on large files (LFS) to restore this file".into(),
+                ));
+            }
+            lfs::materialize(repo.common_dir(), &confined.abs, p)?;
+        }
+        None => {
+            let bytes = repo.blob(&wanted_id)?;
+            vault_ops::write_bytes(&confined.abs, &bytes).map_err(|e| Error::Git(e.to_string()))?;
+        }
+    }
     let title = confined
         .rel
         .rsplit('/')

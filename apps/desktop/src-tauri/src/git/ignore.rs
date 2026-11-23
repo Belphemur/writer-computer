@@ -25,28 +25,18 @@ pub const LINES: &[&str] = &[
 /// The "Never sync this plugin" lines inside the block (`.obsidian/plugins/<id>/data.json`): kept
 /// when the block is rewritten; any other line in it is Writer's and is replaced.
 fn extras(existing: &str) -> Vec<String> {
-    let mut inside = false;
-    let mut out = Vec::new();
-    for l in existing.lines() {
-        let t = l.trim_end();
-        if t == BEGIN {
-            inside = true;
-        } else if t == END {
-            break;
-        } else if inside && t.starts_with(".obsidian/plugins/") && t.ends_with("/data.json") {
-            out.push(t.to_string());
-        }
-    }
-    out
+    block_lines(existing)
+        .into_iter()
+        .filter(|t| super::plugin_scan::plugin_of(t).is_some())
+        .map(String::from)
+        .collect()
 }
 
-fn block(extra: &[String]) -> String {
+/// A managed block holding `lines`, markers included, newline-terminated: the one shape both
+/// blocks (`.gitignore`, `.gitattributes`) are written in.
+pub(super) fn block_of<'a>(lines: impl IntoIterator<Item = &'a str>) -> String {
     let mut out = format!("{BEGIN}\n");
-    for l in LINES {
-        out.push_str(l);
-        out.push('\n');
-    }
-    for l in extra {
+    for l in lines {
         out.push_str(l);
         out.push('\n');
     }
@@ -55,10 +45,26 @@ fn block(extra: &[String]) -> String {
     out
 }
 
+fn block(extra: &[String]) -> String {
+    block_of(
+        LINES
+            .iter()
+            .copied()
+            .chain(extra.iter().map(String::as_str)),
+    )
+}
+
 /// `existing` with the managed block present and current: replaced in place when there is one,
 /// appended (after a blank line) when there is not. Every other line is byte for byte as it was.
 pub fn apply(existing: &str) -> String {
-    let wanted = block(&extras(existing));
+    replace_block(existing, &block(&extras(existing)))
+}
+
+/// `existing` with the block between [`BEGIN`] and [`END`] replaced by `wanted` (which carries both
+/// markers and ends with a newline), or appended after a blank line when there is none. The one
+/// splice of every managed block (`.gitignore` here, `.gitattributes` for LFS): lines outside the
+/// markers are never touched.
+pub(super) fn replace_block(existing: &str, wanted: &str) -> String {
     let lines: Vec<&str> = existing.split_inclusive('\n').collect();
     let begin = lines.iter().position(|l| l.trim_end() == BEGIN);
     let end = begin.and_then(|b| {
@@ -70,7 +76,7 @@ pub fn apply(existing: &str) -> String {
     match (begin, end) {
         (Some(b), Some(e)) => {
             let mut out: String = lines[..b].concat();
-            out.push_str(&wanted);
+            out.push_str(wanted);
             out.push_str(&lines[e + 1..].concat());
             out
         }
@@ -82,10 +88,29 @@ pub fn apply(existing: &str) -> String {
                 }
                 out.push('\n');
             }
-            out.push_str(&wanted);
+            out.push_str(wanted);
             out
         }
     }
+}
+
+/// The lines between the markers (none without a complete block).
+pub(super) fn block_lines(text: &str) -> Vec<&str> {
+    let mut inside = false;
+    let mut out = Vec::new();
+    for l in text.lines() {
+        let t = l.trim_end();
+        if t == BEGIN {
+            inside = true;
+        } else if t == END {
+            if inside {
+                return out;
+            }
+        } else if inside {
+            out.push(t);
+        }
+    }
+    Vec::new()
 }
 
 /// Adds `line` to the managed block (once). The block is written first when the file has none.

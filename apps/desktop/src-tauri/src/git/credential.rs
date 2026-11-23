@@ -2,8 +2,10 @@
 //! `writer git-credential --source <token|gh> --service <keychain service> get` speaks git's
 //! credential protocol (key=value lines on stdin, a blank line ends the request) and answers with
 //! the HTTPS password from the secret `features.git.token` or from `gh auth token`, read at the
-//! moment of use and never copied. It answers only `get`, only over `https`, and for the `gh`
-//! source only a GitHub host. The user's own helpers are tried by git first.
+//! moment of use and never copied. It answers only `get`, only over `https`, for the token only the
+//! host it was saved for (`--host`, recorded when the token was saved), and for the `gh` source
+//! only a GitHub host. It is registered as git's only helper for Writer's calls
+//! (`transport::Helper::config_args`), so git never offers the token to the user's helpers.
 //!
 //! The answer is a [`Lookup`] away from the keychain and from `gh` (the helper process has no
 //! app), so tests drive [`answer`] with plain closures. Nothing here logs.
@@ -50,12 +52,22 @@ fn github_host(host: &str) -> bool {
 }
 
 /// The helper's reply to `op` for `req`, or nothing (git then tries the next helper or fails).
-pub fn answer(op: &str, req: &Request, source: Source, lookup: &Lookup<'_>) -> Option<String> {
+/// `bound` is the host the token was saved for: the token answers that host only.
+pub fn answer(
+    op: &str,
+    req: &Request,
+    source: Source,
+    bound: Option<&str>,
+    lookup: &Lookup<'_>,
+) -> Option<String> {
     if op != "get" || req.protocol != "https" || req.host.is_empty() {
         return None;
     }
     let password = match source {
-        Source::Token => (lookup.token)(),
+        Source::Token if bound.is_some_and(|h| h.eq_ignore_ascii_case(&req.host)) => {
+            (lookup.token)()
+        }
+        Source::Token => None,
         Source::Gh if github_host(&req.host) => (lookup.gh)(&req.host),
         Source::Gh => None,
     }?;
@@ -66,6 +78,7 @@ pub fn answer(op: &str, req: &Request, source: Source, lookup: &Lookup<'_>) -> O
 /// The helper process: reads the request from `input`, writes the reply to `out`. Exit code 0.
 pub fn run(args: &[String], input: impl BufRead, out: &mut impl Write, lookup: &Lookup<'_>) -> u8 {
     let mut source = Source::Token;
+    let mut host: Option<&str> = None;
     let mut op = "";
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -78,12 +91,13 @@ pub fn run(args: &[String], input: impl BufRead, out: &mut impl Write, lookup: &
             "--service" => {
                 it.next();
             }
+            "--host" => host = it.next().map(String::as_str),
             other if !other.starts_with("--") => op = other,
             _ => {}
         }
     }
     let req = parse_request(input);
-    if let Some(reply) = answer(op, &req, source, lookup) {
+    if let Some(reply) = answer(op, &req, source, host, lookup) {
         let _ = out.write_all(reply.as_bytes());
     }
     0

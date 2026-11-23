@@ -6,14 +6,23 @@
 //! (the file joins the managed `.gitignore` block).
 //!
 //! Token-like: a string value, non-empty, under a key named like `token`, `secret`, `password`,
-//! `auth`, `bearer`, `apiKey`, `key` (the last word of a key), at any depth, or any string of 40+
-//! characters of the base64/hex alphabet that mixes character kinds and looks random. The scan is
-//! local; it reports the plugin id and a fingerprint, never a value, and nothing here logs.
+//! `auth`, `bearer`, `apiKey`, `APIToken`, `key` (the last word of a key), at any depth; or any
+//! string that holds a JWT (`eyJ….….…`), a `Bearer …` value, a URL with a password
+//! (`https://user:pass@host`) or a `key=` / `token=` query parameter; or any string of 40+
+//! characters of the base64/hex alphabet that mixes character kinds and looks random. A
+//! `data.json` that is not JSON is held back too (it cannot be checked). The scan is local; it
+//! reports the plugin id and a fingerprint, never a value, and nothing here logs.
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+/// `<id>` to `.obsidian/plugins/<id>/data.json` (the one spelling of the path; [`plugin_of`] reads
+/// it back).
+pub fn data_json_path(id: &str) -> String {
+    format!(".obsidian/plugins/{id}/data.json")
+}
 
 /// `.obsidian/plugins/<id>/data.json` to `<id>`.
 pub fn plugin_of(rel: &str) -> Option<&str> {
@@ -22,23 +31,29 @@ pub fn plugin_of(rel: &str) -> Option<&str> {
     (file == "data.json" && !id.is_empty() && !id.contains('/')).then_some(id)
 }
 
-/// The words of a key: `apiKey`, `api_key` and `api-key` are `api`, `key`.
+/// The words of a key: `apiKey`, `api_key` and `api-key` are `api`, `key`; an upper-case run is
+/// one word up to the capital that starts the next (`APIToken` is `api`, `token`).
 fn words(key: &str) -> Vec<String> {
+    let chars: Vec<char> = key.chars().collect();
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
-    let mut prev_lower = false;
-    for c in key.chars() {
+    for (i, &c) in chars.iter().enumerate() {
         if !c.is_alphanumeric() {
             if !cur.is_empty() {
                 out.push(std::mem::take(&mut cur));
             }
-            prev_lower = false;
             continue;
         }
-        if c.is_uppercase() && prev_lower && !cur.is_empty() {
+        let prev = i.checked_sub(1).map(|j| chars[j]);
+        let next = chars.get(i + 1).copied();
+        let lower = |x: Option<char>| x.is_some_and(|x| x.is_lowercase() || x.is_ascii_digit());
+        let starts_word = c.is_uppercase()
+            && !cur.is_empty()
+            && (lower(prev)
+                || (prev.is_some_and(char::is_uppercase) && next.is_some_and(char::is_lowercase)));
+        if starts_word {
             out.push(std::mem::take(&mut cur));
         }
-        prev_lower = c.is_lowercase() || c.is_ascii_digit();
         cur.extend(c.to_lowercase());
     }
     if !cur.is_empty() {
@@ -99,6 +114,56 @@ fn random_looking(s: &str) -> bool {
     kinds >= 2 && entropy(s) >= 3.0
 }
 
+/// A JWT: three base64url parts separated by dots, the first a JSON header (`eyJ`).
+fn has_jwt(s: &str) -> bool {
+    let url_b64 = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '=');
+    s.match_indices("eyJ").any(|(i, _)| {
+        let parts: Vec<&str> = s[i..]
+            .split(|c: char| !(url_b64(c) || c == '.'))
+            .next()
+            .unwrap_or("")
+            .split('.')
+            .collect();
+        parts.len() >= 3 && parts[..3].iter().all(|p| p.len() >= 4)
+    })
+}
+
+/// A credential written into a string: a JWT, `Bearer <x>`, a URL with a password, or a
+/// `key=` / `token=`-like query parameter with a value.
+fn embedded_secret(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    let bearer = lower.match_indices("bearer ").any(|(i, m)| {
+        let word = s[i + m.len()..].split_whitespace().next().unwrap_or("");
+        word.len() >= 8
+            && word.chars().all(|c| {
+                c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~' | '+' | '/' | '=')
+            })
+    });
+    let userinfo = lower.match_indices("://").any(|(i, m)| {
+        let rest = &s[i + m.len()..];
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        authority
+            .rsplit_once('@')
+            .and_then(|(user, _)| user.split_once(':'))
+            .is_some_and(|(_, pass)| !pass.is_empty())
+    });
+    const PARAMS: [&str; 8] = [
+        "key",
+        "token",
+        "api_key",
+        "apikey",
+        "access_token",
+        "auth",
+        "secret",
+        "password",
+    ];
+    let param = lower.split(['?', '&', '#']).skip(1).any(|pair| {
+        pair.split_once('=')
+            .is_some_and(|(k, v)| PARAMS.contains(&k) && !v.is_empty())
+    });
+    has_jwt(s) || bearer || userinfo || param
+}
+
 fn collect(v: &Value, out: &mut BTreeSet<String>) {
     match v {
         Value::Object(map) => {
@@ -112,19 +177,25 @@ fn collect(v: &Value, out: &mut BTreeSet<String>) {
             }
         }
         Value::Array(items) => items.iter().for_each(|i| collect(i, out)),
-        Value::String(s) if random_looking(s) => {
+        Value::String(s) if random_looking(s) || embedded_secret(s) => {
             out.insert(s.clone());
         }
         _ => {}
     }
 }
 
-/// The fingerprint of the token-like values of a `data.json`, `None` when it holds none (or is not
-/// JSON). It changes when a token value does.
+/// The fingerprint of the token-like values of a `data.json`, `None` when it holds none. A file
+/// that is not JSON cannot be checked: it is flagged, its fingerprint is the whole file's. It
+/// changes when a token value does.
 pub fn scan(bytes: &[u8]) -> Option<String> {
-    let value: Value = serde_json::from_slice(bytes).ok()?;
     let mut found = BTreeSet::new();
-    collect(&value, &mut found);
+    match serde_json::from_slice::<Value>(bytes) {
+        Ok(value) => collect(&value, &mut found),
+        Err(_) if bytes.iter().all(u8::is_ascii_whitespace) => return None,
+        Err(_) => {
+            found.insert(String::from_utf8_lossy(bytes).into_owned());
+        }
+    }
     if found.is_empty() {
         return None;
     }
@@ -142,13 +213,11 @@ pub fn scan(bytes: &[u8]) -> Option<String> {
     )
 }
 
-fn prefs_path(root: &Path) -> PathBuf {
-    root.join(".writer/git/plugin-scan.json")
-}
+const PREFS: &str = "plugin-scan.json";
 
 /// The "Sync anyway" decisions: plugin id to the fingerprint it was allowed with.
 fn allowed(root: &Path) -> BTreeMap<String, String> {
-    std::fs::read_to_string(prefs_path(root))
+    std::fs::read_to_string(super::local_path(root, PREFS))
         .ok()
         .and_then(|t| serde_json::from_str::<BTreeMap<String, String>>(&t).ok())
         .unwrap_or_default()
@@ -168,25 +237,22 @@ pub fn flagged(root: &Path, rel: &str, bytes: &[u8]) -> bool {
 /// "Sync anyway": records the fingerprint of the file as it is, so the file syncs until a token
 /// value changes.
 pub fn allow(root: &Path, id: &str) -> std::io::Result<()> {
-    let bytes = std::fs::read(root.join(format!(".obsidian/plugins/{id}/data.json")))?;
+    let bytes = std::fs::read(root.join(data_json_path(id)))?;
     let Some(fp) = scan(&bytes) else {
         return Ok(());
     };
     let mut map = allowed(root);
     map.insert(id.to_string(), fp);
-    let path = prefs_path(root);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(
-        path,
-        serde_json::to_string_pretty(&map).map_err(std::io::Error::other)?,
+    super::write_local(
+        root,
+        PREFS,
+        &serde_json::to_string_pretty(&map).map_err(std::io::Error::other)?,
     )
 }
 
 /// "Never sync this plugin": the file joins the managed `.gitignore` block.
 pub fn never(root: &Path, id: &str) -> std::io::Result<()> {
-    super::ignore::add_line(root, &format!(".obsidian/plugins/{id}/data.json"))
+    super::ignore::add_line(root, &data_json_path(id))
 }
 
 /// A plugin whose settings are held back.
@@ -220,4 +286,53 @@ pub fn held_among<'a>(root: &Path, paths: impl IntoIterator<Item = &'a str>) -> 
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn held(json: &str) -> bool {
+        scan(json.as_bytes()).is_some()
+    }
+
+    #[test]
+    fn upper_case_runs_split_into_words() {
+        assert_eq!(words("APIToken"), vec!["api", "token"]);
+        assert_eq!(words("apiKey"), vec!["api", "key"]);
+        assert_eq!(words("OAuthSecret"), vec!["o", "auth", "secret"]);
+        assert_eq!(words("githubPAT"), vec!["github", "pat"]);
+        assert!(token_key("APIToken") && token_key("myAPIKey") && !token_key("keyboard"));
+    }
+
+    #[test]
+    fn credentials_written_into_strings_are_found() {
+        for json in [
+            r#"{"APIToken":"abc"}"#,
+            r#"{"header":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"}"#,
+            r#"{"h":"Authorization: Bearer abcdefgh12345678"}"#,
+            r#"{"remote":"https://me:s3cret@example.com/repo.git"}"#,
+            r#"{"endpoint":"https://api.example.com/v1?key=abc123"}"#,
+            r#"{"endpoint":"https://api.example.com/v1?a=1&token=abc123"}"#,
+            "not json at all",
+            "{\"broken\": ",
+        ] {
+            assert!(held(json), "{json}");
+        }
+        for json in [
+            r#"{"url":"https://example.com/repo.git"}"#,
+            r#"{"url":"https://me@example.com/repo.git"}"#,
+            r#"{"q":"https://example.com/search?q=token"}"#,
+            r#"{"t":"bearer of good news"}"#,
+            r#"{"v":"eyJ"}"#,
+            "  \n",
+        ] {
+            assert!(!held(json), "{json}");
+        }
+    }
+
+    #[test]
+    fn the_data_json_path_round_trips() {
+        assert_eq!(plugin_of(&data_json_path("p")), Some("p"));
+    }
 }

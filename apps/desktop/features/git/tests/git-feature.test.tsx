@@ -426,6 +426,57 @@ describe("Settings > Git", () => {
     expect(advanced.textContent).toContain("Edit .gitignore");
   });
 
+  it("Advanced: Large files (LFS) over N MB, a toggle that writes both settings", () => {
+    const setSetting = vi.fn();
+    useSettingsStore.setState({
+      settings: { "git.lfs": false, "git.lfs-threshold-mb": 100 },
+      setSetting,
+    } as never);
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitSection />);
+    const row = container.querySelector("[data-git-lfs]") as HTMLElement;
+    expect(row.textContent).toContain("Large files (LFS)");
+    expect(row.textContent).toContain("over");
+    expect(row.textContent).toContain("MB");
+    expect((row.querySelector("input") as HTMLInputElement).value).toBe("100");
+    expect(row.querySelector("[data-git-lfs-hint]")).toBeNull();
+    const toggle = row.querySelector('[role="switch"]') as HTMLButtonElement;
+    expect(toggle.disabled).toBe(false);
+    act(() => toggle.click());
+    expect(setSetting).toHaveBeenCalledWith("git.lfs", true);
+  });
+
+  it("the LFS toggle is disabled with a hint while git-lfs is not installed", () => {
+    const setSetting = vi.fn();
+    useSettingsStore.setState({ settings: {}, setSetting } as never);
+    act(() =>
+      useGitStatus
+        .getState()
+        .apply(status({ lfs: { on: false, active: false, available: false, files: 0 } })),
+    );
+    render(<GitSection />);
+    const row = container.querySelector("[data-git-lfs]") as HTMLElement;
+    const toggle = row.querySelector('[role="switch"]') as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+    expect(row.textContent).toContain("Install git-lfs to use this");
+    act(() => toggle.click());
+    expect(setSetting).not.toHaveBeenCalled();
+  });
+
+  it("the panel counts the files in LFS and says nothing without any", () => {
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitPanel />);
+    expect(container.querySelector("[data-git-lfs-count]")).toBeNull();
+    act(() =>
+      useGitStatus
+        .getState()
+        .apply(status({ lfs: { on: false, active: false, available: true, files: 3 } })),
+    );
+    expect(container.querySelector("[data-git-lfs-count]")?.textContent).toBe(
+      "Large files (LFS): 3",
+    );
+  });
+
   it("opening the page asks git for the commit identity again", async () => {
     act(() => useGitStatus.getState().apply(status()));
     render(<GitSection />);

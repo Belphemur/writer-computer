@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 struct State {
@@ -21,26 +21,23 @@ struct State {
     /// Where HTTPS passwords come from (`token` or `gh`), the choice of Settings > Git.
     #[serde(default)]
     credentials: Option<String>,
+    /// The host the token was saved for: Writer's helper answers no other.
+    #[serde(default)]
+    token_host: Option<String>,
 }
 
-fn path(root: &Path) -> PathBuf {
-    root.join(".writer/git/state.json")
-}
+const FILE: &str = "state.json";
 
 fn read(root: &Path) -> State {
-    std::fs::read_to_string(path(root))
+    std::fs::read_to_string(super::local_path(root, FILE))
         .ok()
         .and_then(|t| serde_json::from_str::<State>(&t).ok())
         .unwrap_or_default()
 }
 
 fn write(root: &Path, state: &State) -> io::Result<()> {
-    let file = path(root);
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
     let text = serde_json::to_string_pretty(state).map_err(io::Error::other)?;
-    std::fs::write(file, text)
+    super::write_local(root, FILE, &text)
 }
 
 pub fn paused(root: &Path) -> bool {
@@ -99,6 +96,21 @@ pub fn set_credential_source(root: &Path, source: super::transport::Source) -> i
         root,
         &State {
             credentials: Some(source.arg().to_string()),
+            ..read(root)
+        },
+    )
+}
+
+/// The host the saved token belongs to.
+pub fn token_host(root: &Path) -> Option<String> {
+    read(root).token_host
+}
+
+pub fn set_token_host(root: &Path, host: Option<String>) -> io::Result<()> {
+    write(
+        root,
+        &State {
+            token_host: host,
             ..read(root)
         },
     )

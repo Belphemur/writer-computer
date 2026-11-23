@@ -6,19 +6,22 @@
 //! Environment of every child: a `PATH` that adds Homebrew and the standard install dirs (a GUI
 //! app's lacks them), `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`, `GH_PROMPT_DISABLED=1`,
 //! `LC_ALL=C` and `-c core.quotepath=off`, so the output is parsed from exit codes and stable
-//! English fragments only. HTTPS credentials come from Writer's own binary registered per call as a
-//! credential helper (`credential.helper=!...`, after the user's own helpers, which git tries
-//! first); the helper's command line names the binary, the source (`token` or `gh`) and the
-//! keychain service, never a token. SSH is the user's agent, untouched.
+//! English fragments only. HTTPS credentials come from Writer's own binary registered per call as
+//! the ONLY credential helper (`-c credential.helper=` resets the user's list first, so git's
+//! `store` after a success never hands Writer's token to the user's helpers), and only when Writer
+//! has a credential for the vault (a saved token, or the GitHub CLI source); otherwise git runs
+//! with the user's own helpers untouched. The helper's command line names the binary, the source
+//! (`token` or `gh`), the keychain service and the host the token was saved for, never a token.
+//! SSH is the user's agent, untouched.
 //!
 //! Errors are classified once ([`classify`]) into a short line and sanitized details: URLs lose
 //! their credentials, the vault path is hidden, known secrets are masked.
 
-use crate::features::scope::{ScopedChild, Spawner};
-use std::io::Read;
+use crate::features::scope::Spawner;
+use crate::process_run::{run as run_bounded, RunOptions};
+pub use crate::process_run::{Output, RunError};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 /// The remote Writer manages.
@@ -27,6 +30,8 @@ pub const REMOTE: &str = "origin";
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(120);
 pub const PUSH_TIMEOUT: Duration = Duration::from_secs(120);
 pub const QUICK_TIMEOUT: Duration = Duration::from_secs(15);
+/// A large-file transfer may legitimately take long (the app's close-time sync caps every call).
+pub const LFS_TIMEOUT: Duration = Duration::from_secs(1800);
 
 /// Where git and gh run: the scope's process starter and, for tests, directories searched first
 /// (a fake `gh`, a missing `git`).
@@ -38,8 +43,12 @@ pub struct Exec {
     only_prefix: bool,
     /// Extra environment for every child (tests isolate git's config with it).
     env: Vec<(String, String)>,
-    /// No call waits longer than this (the sync on window close is short).
-    cap: Option<Duration>,
+    /// No call runs past this instant (the sync on window close has one budget for all its
+    /// rounds).
+    deadline: Option<Instant>,
+    /// Where `git-lfs` is installed, looked up once (the login shell is not free). Its folder is
+    /// on every child's `PATH`, so git's own hooks (`pre-push`) find the tool too.
+    lfs_dir: std::sync::Arc<std::sync::OnceLock<Option<PathBuf>>>,
 }
 
 impl Exec {
@@ -49,13 +58,15 @@ impl Exec {
             prefix: Vec::new(),
             only_prefix: false,
             env: Vec::new(),
-            cap: None,
+            deadline: None,
+            lfs_dir: Default::default(),
         }
     }
 
-    /// Caps every call's timeout.
-    pub fn with_timeout_cap(mut self, cap: Duration) -> Exec {
-        self.cap = Some(cap);
+    /// Every call ends by `deadline` at the latest, whatever its own timeout: one budget for a
+    /// whole sync, however many calls and rounds it takes.
+    pub fn with_deadline(mut self, deadline: Instant) -> Exec {
+        self.deadline = Some(deadline);
         self
     }
 
@@ -82,43 +93,45 @@ impl Exec {
         &self.spawner
     }
 
-    /// The `PATH` of a child: tests' directories, then Homebrew's (before `/usr/bin`, where macOS
-    /// keeps a `git` stub that only asks to install the Command Line Tools), then the app's own.
-    pub(crate) fn path(&self) -> std::ffi::OsString {
-        let mut parts: Vec<PathBuf> = self.prefix.clone();
-        if !self.only_prefix {
-            for dir in ["/opt/homebrew/bin", "/usr/local/bin"] {
-                parts.push(PathBuf::from(dir));
-            }
-            parts.extend(std::env::split_paths(
-                &std::env::var_os("PATH").unwrap_or_default(),
-            ));
-            for dir in ["/usr/bin", "/bin"] {
-                let dir = PathBuf::from(dir);
-                if !parts.contains(&dir) {
-                    parts.push(dir);
-                }
-            }
+    /// The directories searched after a test's own: `plugin_env::search_dirs` (the login shell's
+    /// PATH, the app's, Homebrew and the version-manager dirs: the one list the plugin host and
+    /// the agent search too), nothing when this runner's path was set by hand.
+    fn search_dirs(&self) -> Vec<PathBuf> {
+        if self.only_prefix {
+            return Vec::new();
         }
-        let mut seen = Vec::new();
-        parts.retain(|p| {
-            let fresh = !seen.contains(p);
-            seen.push(p.clone());
-            fresh
-        });
-        std::env::join_paths(parts).unwrap_or_default()
+        crate::plugin_env::search_dirs(
+            &crate::plugin_env::login_path(),
+            &std::env::var("PATH").unwrap_or_default(),
+            crate::plugin_env::home_dir().as_deref(),
+        )
+    }
+
+    /// The `PATH` of a child: tests' directories, the folder `git-lfs` was found in (so git's own
+    /// hooks find it), then [`Exec::search_dirs`], with `/usr/bin` and `/bin` last (macOS keeps a
+    /// `git` stub in `/usr/bin` that only asks to install the Command Line Tools).
+    pub(crate) fn path(&self) -> std::ffi::OsString {
+        let mut prefix = self.prefix.clone();
+        prefix.extend(self.lfs_dir());
+        join_path(&prefix, self.search_dirs(), !self.only_prefix)
     }
 
     /// The `git` to run: the one the user's login shell finds first (`plugin_env::which`, the
     /// same lookup the plugin host and the agent use), `git` on [`Exec::path`] when it finds none
     /// or when this runner's search path was set by hand.
     fn git_program(&self) -> std::ffi::OsString {
+        self.tool_program("git")
+    }
+
+    /// `name` as `plugin_env::which` finds it; the bare name when it finds none or when this
+    /// runner's search path was set by hand (tests).
+    fn tool_program(&self, name: &str) -> std::ffi::OsString {
         if self.prefix.is_empty() {
-            if let Ok(Some(p)) = crate::plugin_env::which("git") {
+            if let Ok(Some(p)) = crate::plugin_env::which(name) {
                 return p.into_os_string();
             }
         }
-        "git".into()
+        name.into()
     }
 
     fn command(&self, program: &str, cwd: Option<&Path>) -> Command {
@@ -145,10 +158,62 @@ impl Exec {
         let mut cmd = self.command(&program.to_string_lossy(), Some(root));
         cmd.args(["-c", "core.quotepath=off"]);
         if let Some(h) = helper {
-            cmd.arg("-c").arg(h.config());
+            cmd.args(h.config_args());
         }
         cmd.args(args);
         cmd
+    }
+
+    /// The folder `git-lfs` is installed in, `None` when it is not: found the way `git` is (the
+    /// user's login shell first, `plugin_env::which`; this runner's own search path when it was
+    /// set by hand, as in tests). Asked once per runner.
+    pub fn lfs_dir(&self) -> Option<PathBuf> {
+        self.lfs_dir
+            .get_or_init(|| {
+                let found = if self.prefix.is_empty() {
+                    crate::plugin_env::which("git-lfs").ok().flatten()
+                } else {
+                    let dirs: Vec<PathBuf> = std::env::split_paths(&join_path(
+                        &self.prefix,
+                        self.search_dirs(),
+                        !self.only_prefix,
+                    ))
+                    .collect();
+                    crate::plugin_env::which_in("git-lfs", &dirs).ok().flatten()
+                };
+                found.and_then(|p| p.parent().map(Path::to_path_buf))
+            })
+            .clone()
+    }
+
+    pub fn lfs_installed(&self) -> bool {
+        self.lfs_dir().is_some()
+    }
+
+    /// `git lfs <args>` in `root`. `endpoint` pins the LFS server to the remote's own
+    /// (`-c lfs.url`, which outranks the repository's `.lfsconfig`: a vault file must not be able
+    /// to send the credentials Writer's helper answers with to another host).
+    pub fn git_lfs(
+        &self,
+        root: &Path,
+        helper: Option<&Helper>,
+        endpoint: Option<&str>,
+        args: &[&str],
+    ) -> Command {
+        let pins: Vec<String> = endpoint
+            .map(|e| {
+                vec![
+                    "-c".into(),
+                    format!("lfs.url={e}"),
+                    "-c".into(),
+                    format!("lfs.pushurl={e}"),
+                ]
+            })
+            .unwrap_or_default();
+        let mut all: Vec<&str> = pins.iter().map(String::as_str).collect();
+        all.push("lfs");
+        all.extend_from_slice(args);
+        self.git(root, helper, &all)
     }
 
     /// Any other tool with the same environment (`xcode-select`).
@@ -158,107 +223,44 @@ impl Exec {
         cmd
     }
 
+    /// `gh`, found the way [`Exec::git_program`] finds `git`.
     pub fn gh(&self, args: &[&str]) -> Command {
-        let mut cmd = self.command("gh", None);
+        let mut cmd = self.command(&self.tool_program("gh").to_string_lossy(), None);
         cmd.args(args);
         cmd
     }
 
-    /// Runs a prepared command to its end, to `timeout`, or until the scope stops.
-    pub fn run(&self, mut cmd: Command, timeout: Duration) -> Result<Output, RunError> {
-        let mut child: ScopedChild = match self.spawner.process(&mut cmd) {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(RunError::Absent),
-            Err(e) if self.spawner.token().is_cancelled() => {
-                let _ = e;
-                return Err(RunError::Cancelled);
+    /// Runs a prepared command to its end, to `timeout` (and the [`Exec::with_deadline`]), or
+    /// until the scope stops: [`crate::process_run::run`].
+    pub fn run(&self, cmd: Command, timeout: Duration) -> Result<Output, RunError> {
+        let timeout = match self.deadline {
+            Some(d) => {
+                let left = d.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(RunError::Timeout);
+                }
+                left.min(timeout)
             }
-            Err(e) => return Err(RunError::Io(e.kind().to_string())),
+            None => timeout,
         };
-        let (tx, rx) = mpsc::channel::<(bool, String)>();
-        let drain = |is_err: bool, mut pipe: Box<dyn Read + Send>| {
-            let tx = tx.clone();
-            self.spawner.spawn("git-io", move |_| {
-                let mut buf = Vec::new();
-                let _ = pipe.by_ref().take(4 << 20).read_to_end(&mut buf);
-                let _ = tx.send((is_err, String::from_utf8_lossy(&buf).into_owned()));
-            })
-        };
-        let mut pending = 0;
-        if let Some(out) = child.take_stdout() {
-            if drain(false, Box::new(out)).is_err() {
-                child.kill();
-                return Err(RunError::Cancelled);
-            }
-            pending += 1;
-        }
-        if let Some(err) = child.take_stderr() {
-            if drain(true, Box::new(err)).is_err() {
-                child.kill();
-                return Err(RunError::Cancelled);
-            }
-            pending += 1;
-        }
-        drop(tx);
-        let timeout = self.cap.map_or(timeout, |c| c.min(timeout));
-        let start = Instant::now();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(s)) => break s,
-                Ok(None) => {}
-                Err(e) => return Err(RunError::Io(e.kind().to_string())),
-            }
-            if self.spawner.token().is_cancelled() {
-                child.kill();
-                return Err(RunError::Cancelled);
-            }
-            if start.elapsed() > timeout {
-                child.kill();
-                return Err(RunError::Timeout);
-            }
-            std::thread::sleep(Duration::from_millis(15));
-        };
-        if self.spawner.token().is_cancelled() {
-            // the scope stopped and killed the child's group under us
-            return Err(RunError::Cancelled);
-        }
-        let (mut stdout, mut stderr) = (String::new(), String::new());
-        for _ in 0..pending {
-            match rx.recv_timeout(Duration::from_secs(5)) {
-                Ok((false, t)) => stdout = t,
-                Ok((true, t)) => stderr = t,
-                Err(_) => break,
-            }
-        }
-        Ok(Output {
-            code: status.code(),
-            stdout,
-            stderr,
-        })
+        run_bounded(&self.spawner, cmd, &RunOptions::new(timeout))
     }
 }
 
-#[derive(Debug)]
-pub struct Output {
-    pub code: Option<i32>,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl Output {
-    pub fn ok(&self) -> bool {
-        self.code == Some(0)
+/// `prefix`, then `dirs`, de-duplicated; `/usr/bin` and `/bin` last when `system` is set.
+fn join_path(prefix: &[PathBuf], dirs: Vec<PathBuf>, system: bool) -> std::ffi::OsString {
+    let system_dirs = [PathBuf::from("/usr/bin"), PathBuf::from("/bin")];
+    let mut parts: Vec<PathBuf> = prefix.to_vec();
+    parts.extend(
+        dirs.into_iter()
+            .filter(|d| !(system && system_dirs.contains(d))),
+    );
+    if system {
+        parts.extend(system_dirs);
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RunError {
-    /// The program is not installed.
-    Absent,
-    Timeout,
-    /// The scope stopped (the feature was turned off or the app quits).
-    Cancelled,
-    Io(String),
+    let mut seen = std::collections::HashSet::new();
+    parts.retain(|p| seen.insert(p.clone()));
+    std::env::join_paths(parts).unwrap_or_default()
 }
 
 // ---- credential helper -------------------------------------------------------------------------
@@ -296,6 +298,8 @@ pub struct Helper {
     pub source: Source,
     /// The keychain service the secret is stored under (it names the build, not a secret).
     pub service: String,
+    /// The host the token was saved for (`Source::Token`): the helper answers no other host.
+    pub host: Option<String>,
 }
 
 fn shell_quote(s: &str) -> String {
@@ -303,17 +307,53 @@ fn shell_quote(s: &str) -> String {
 }
 
 impl Helper {
-    /// `credential.helper=!'<exe>' git-credential --source token --service <service>`: git appends
-    /// the operation (`get`). No token, only where to find it.
-    pub fn config(&self) -> String {
-        format!(
+    /// The helper of the vault at `root`, `None` when Writer has no credential for it (source
+    /// `token` with no token saved): git then runs with the user's own helpers alone.
+    pub fn for_vault(
+        root: &Path,
+        exe: PathBuf,
+        service: String,
+        token_saved: bool,
+    ) -> Option<Helper> {
+        let source = super::state::credential_source(root);
+        (source == Source::Gh || token_saved).then(|| Helper {
+            exe,
+            source,
+            service,
+            host: super::state::token_host(root),
+        })
+    }
+
+    /// `-c credential.helper= -c credential.helper=!'<exe>' git-credential --source token
+    /// --service <service> --host <host>`: the empty value clears the user's helpers for this call
+    /// (git would otherwise `store` our token in them), then Writer's is the one helper; git
+    /// appends the operation (`get`). No token, only where to find it.
+    pub fn config_args(&self) -> Vec<String> {
+        let mut helper = format!(
             "credential.helper=!{} {} --source {} --service {}",
             shell_quote(&self.exe.to_string_lossy()),
             CREDENTIAL_ARG,
             self.source.arg(),
             shell_quote(&self.service)
-        )
+        );
+        if let Some(host) = &self.host {
+            helper.push_str(&format!(" --host {}", shell_quote(host)));
+        }
+        vec![
+            "-c".into(),
+            "credential.helper=".into(),
+            "-c".into(),
+            helper,
+        ]
     }
+}
+
+/// The host of an `https` remote URL (lower case, no user, port kept), `None` for any other kind.
+pub fn https_host(url: &str) -> Option<String> {
+    let rest = url.trim().strip_prefix("https://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
 /// The first argument of Writer's binary in credential-helper mode.
@@ -334,6 +374,8 @@ pub enum Kind {
     Timeout,
     /// `git` is not installed.
     NoGit,
+    /// `git-lfs` is not installed (or not on git's path).
+    NoLfs,
     /// The scope stopped while git ran.
     Cancelled,
     Other,
@@ -401,6 +443,13 @@ pub fn classify(out: &Output, root: &Path, secrets: &[&str]) -> TransportError {
     let lower = text.to_ascii_lowercase();
     let has = |needles: &[&str]| needles.iter().any(|n| lower.contains(n));
     let (kind, line) = if has(&[
+        "'lfs' is not a git command",
+        "git-lfs was not found",
+        "git-lfs: command not found",
+        "git-lfs: not found",
+    ]) {
+        (Kind::NoLfs, "Install git-lfs to sync large files")
+    } else if has(&[
         "authentication failed",
         "permission denied",
         "could not read username",
@@ -566,6 +615,39 @@ impl Transport<'_> {
         Err(self.fail(&out))
     }
 
+    fn lfs_run(&self, args: &[&str]) -> Result<(), TransportError> {
+        let endpoint = self.remote_url().as_deref().and_then(lfs_endpoint);
+        let cmd = self
+            .exec
+            .git_lfs(self.root, self.helper, endpoint.as_deref(), args);
+        let out = self.exec.run(cmd, LFS_TIMEOUT).map_err(run_error)?;
+        if out.ok() {
+            return Ok(());
+        }
+        let mut e = self.fail(&out);
+        if e.kind == Kind::Other && e.line == "Git failed" {
+            e.line = "Large file transfer failed".into();
+        }
+        Err(e)
+    }
+
+    /// `git lfs install --local`: the filters and hooks in this repository's own config only (the
+    /// user's global git config is never touched). Idempotent.
+    pub fn lfs_install(&self) -> Result<(), TransportError> {
+        self.lfs_run(&["install", "--local"])
+    }
+
+    /// `git lfs push` of what `branch` holds (objects the remote lacks; the pre-push hook would
+    /// do the same, this does not depend on hooks).
+    pub fn lfs_push(&self, branch: &str) -> Result<(), TransportError> {
+        self.lfs_run(&["push", REMOTE, &format!("refs/heads/{branch}")])
+    }
+
+    /// `git lfs fetch` of the objects the remote's `branch` points at into the local store.
+    pub fn lfs_fetch(&self, branch: &str) -> Result<(), TransportError> {
+        self.lfs_run(&["fetch", REMOTE, &format!("refs/remotes/{REMOTE}/{branch}")])
+    }
+
     /// `git push` of the branch (a fast-forward only: never forced).
     pub fn push(&self, branch: &str) -> Result<(), TransportError> {
         let spec = format!("refs/heads/{branch}:refs/heads/{branch}");
@@ -579,6 +661,20 @@ impl Transport<'_> {
             Err(self.fail(&out))
         }
     }
+}
+
+/// The LFS server of an HTTPS remote, derived the way git-lfs derives it (`<remote>.git/info/lfs`).
+/// SSH remotes authenticate through `git-lfs-authenticate` and `file://` ones use git-lfs's own
+/// local transfer: neither gets an endpoint pinned.
+pub fn lfs_endpoint(remote: &str) -> Option<String> {
+    let url = remote.trim_end_matches('/');
+    url.starts_with("https://").then(|| {
+        if url.ends_with(".git") {
+            format!("{url}/info/lfs")
+        } else {
+            format!("{url}.git/info/lfs")
+        }
+    })
 }
 
 /// A remote URL Writer accepts, normalised: SSH (`git@host:owner/repo`, `ssh://`), HTTPS, a
@@ -627,4 +723,47 @@ pub fn display_url(url: &str) -> String {
         .unwrap_or(&clean);
     let s = s.rsplit_once('@').map_or(s, |(_, r)| r);
     s.trim_end_matches(".git").replacen(':', "/", 1)
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    fn dirs(os: std::ffi::OsString) -> Vec<String> {
+        std::env::split_paths(&os)
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn the_child_path_is_the_shared_search_dirs_with_the_system_dirs_last() {
+        let home = PathBuf::from("/home/w");
+        let shared = crate::plugin_env::search_dirs("/usr/bin:/login/bin", "/app/bin", Some(&home));
+        let path = dirs(join_path(
+            &[PathBuf::from("/test/bin")],
+            shared.clone(),
+            true,
+        ));
+        // tests' dirs, then login, app and the known install dirs in search_dirs order
+        assert_eq!(path[0], "/test/bin");
+        let pos = |d: &str| path.iter().position(|p| p == d).unwrap();
+        assert!(pos("/login/bin") < pos("/app/bin"));
+        assert!(pos("/app/bin") < pos("/opt/homebrew/bin"));
+        assert!(pos("/home/w/.local/bin") < pos("/opt/homebrew/bin"));
+        // `/usr/bin` listed first by the login PATH still comes after Homebrew, once
+        assert!(pos("/opt/homebrew/bin") < pos("/usr/bin"));
+        assert_eq!(path[path.len() - 2..], ["/usr/bin", "/bin"]);
+        assert_eq!(path.iter().filter(|p| *p == "/usr/bin").count(), 1);
+        for d in &shared {
+            if d != Path::new("/usr/bin") {
+                assert!(path.contains(&d.to_string_lossy().into_owned()));
+            }
+        }
+    }
+
+    #[test]
+    fn only_prefix_replaces_everything() {
+        let path = dirs(join_path(&[PathBuf::from("/only")], Vec::new(), false));
+        assert_eq!(path, ["/only"]);
+    }
 }

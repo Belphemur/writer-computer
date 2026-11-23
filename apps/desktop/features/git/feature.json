@@ -35,7 +35,8 @@
       "git_merge_text",
       "git_conflict_open",
       "git_conflict_save",
-      "git_conflict_take"
+      "git_conflict_take",
+      "git_conflict_record"
     ],
     "events": ["git:changed", "git:applying"],
     "hooks": ["start", "onWorkspaceOpen", "onWorkspaceClose", "onExit"],
@@ -50,7 +51,7 @@
       "git:resolve"
     ],
     "skills": ["writer-git"],
-    "ipcCommands": ["git:sync"]
+    "ipcCommands": ["git:sync", "git:resolve"]
   },
   "extends": ["agent.turn-started", "agent.turn-finished"],
   "offNotes": {

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import { TextDiffView } from "@/components/diff/text-diff-view";
-import { openGitHistoryTab } from "@/hooks/editor-api";
+import { openLocationTab } from "@/hooks/editor-api";
 import { copyText } from "@/lib/copy-text";
 import { getService } from "@/lib/features/services";
+import { getRelativePath } from "@/lib/paths";
 import { reloadOpenNoteAfterWrite } from "@/lib/open-note-sync";
 import { flushSave } from "@/lib/save";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -29,10 +30,10 @@ const BUTTON =
 export type Against = { kind: "parent" } | { kind: "current" } | { kind: "version"; rev: string };
 
 /** The vault-relative form of a tab's absolute `path`, what the engine reports paths as. */
-function relativeTo(path: string): string {
-  const root = useWorkspaceStore.getState().root?.replace(/\/$/, "");
-  return root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
-}
+const relativeTo = (path: string) => {
+  const root = useWorkspaceStore.getState().root;
+  return root ? getRelativePath(path, root) : path;
+};
 
 export const againstArg = (a: Against) => (a.kind === "version" ? a.rev : a.kind);
 
@@ -177,7 +178,9 @@ export function VersionDetail({
           <button
             type="button"
             className={BUTTON}
-            onClick={() => openGitHistoryTab({ path, rev: version.rev, version: true })}
+            onClick={() =>
+              openLocationTab({ kind: "git-history", path, rev: version.rev, version: true })
+            }
           >
             Open
           </button>

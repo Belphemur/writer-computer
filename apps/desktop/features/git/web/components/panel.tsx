@@ -2,7 +2,7 @@
 // "Commit now" and "Pause". Local mode only (no remote yet). Terse: no prose.
 import { useEffect, useState } from "react";
 import { showNativeContextMenu } from "@/components/editor-area/editor-context-menu";
-import { openGitHistoryTab, openSettings } from "@/hooks/editor-api";
+import { openLocationTab, openSettings } from "@/hooks/editor-api";
 import { linkHandlers } from "@/lib/link-activation";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { describeError, logger } from "@/lib/logger";
@@ -55,7 +55,10 @@ function DeletedFiles() {
           const handlers = linkHandlers({
             kind: "custom",
             open: (intent) =>
-              openGitHistoryTab({ path }, { activate: intent !== "new-tab-background" }),
+              openLocationTab(
+                { kind: "git-history", path },
+                { activate: intent !== "new-tab-background" },
+              ),
           });
           return (
             <li key={d.path}>
@@ -117,6 +120,16 @@ function TooLarge({ names }: { names: string[] }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** How many files are in LFS: the count only (turning LFS off leaves them as they are). */
+function LfsCount({ files }: { files: number }) {
+  if (files === 0) return null;
+  return (
+    <p data-git-lfs-count className="text-xs text-[var(--text-muted)]">
+      Large files (LFS): {files}
+    </p>
   );
 }
 
@@ -255,6 +268,7 @@ export default function GitPanel() {
         </ul>
       )}
       <TooLarge names={status.tooLarge} />
+      <LfsCount files={status.lfs.files} />
       <DeletedFiles />
     </div>
   );

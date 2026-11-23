@@ -317,6 +317,11 @@ impl AgentSessions {
         Self::with_probe(timing, Arc::new(CliMcpProbe))
     }
 
+    /// The agent scope's process and thread starter: the one a one-shot `claude` call runs on.
+    pub fn spawner(&self) -> Spawner {
+        self.shared.spawn.clone()
+    }
+
     /// The registry the agent emits its points through (`api.rs`).
     pub fn points(&self) -> &Points {
         &self.shared.points
@@ -433,7 +438,7 @@ impl AgentSessions {
         let req = &p.request;
         let mut settings = req.settings.clone();
         let override_path = settings.binary_path.clone();
-        let info = binary::detect(override_path.as_deref());
+        let info = binary::detect(&self.shared.spawn, override_path.as_deref());
         let project = self.shared.ports.project();
         if settings.permission_mode == AgentPermissionMode::Manual {
             if let Some(mode) =

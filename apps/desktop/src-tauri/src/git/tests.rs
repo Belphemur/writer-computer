@@ -248,7 +248,7 @@ fn setup_commits_the_vault_with_the_block_and_status_is_clean() {
     assert!(!is_set_up(root));
     setup(root, SetupMode::LocalOnly, "Studio").unwrap();
     assert!(is_set_up(root));
-    let status = status(root, &IdentityCache::default(), true).unwrap();
+    let status = status(root, &IdentityCache::default(), true, crate::git::Lfs::OFF).unwrap();
     assert!(status.changes.is_empty(), "{:?}", status.changes);
     let repo = Repo::open(root).unwrap().unwrap();
     let log = repo.log(None, 10).unwrap();
@@ -317,13 +317,13 @@ fn deletes_and_moves_are_detected_and_committed() {
             del("Gone.md")
         ]
     );
-    let id = commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d").unwrap();
+    let id = commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d", crate::git::Lfs::OFF).unwrap();
     assert!(id.is_some());
     let log = repo.log(None, 5).unwrap();
     assert_eq!(log[0].message.scope, Some(Scope::Edit), "mixed kinds");
     assert!(repo.changes().unwrap().is_empty());
     assert_eq!(
-        commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d").unwrap(),
+        commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d", crate::git::Lfs::OFF).unwrap(),
         None
     );
     if let Some(s) = git_cli(root, &["ls-files"]) {
@@ -339,9 +339,9 @@ fn the_log_of_a_path_lists_only_its_commits() {
     write(root, "b.md", "1");
     setup(root, SetupMode::LocalOnly, "d").unwrap();
     write(root, "a.md", "2");
-    commit_user(root, "{{notes}}", &ctx(), "d").unwrap();
+    commit_user(root, "{{notes}}", &ctx(), "d", crate::git::Lfs::OFF).unwrap();
     write(root, "b.md", "2");
-    commit_user(root, "{{notes}}", &ctx(), "d").unwrap();
+    commit_user(root, "{{notes}}", &ctx(), "d", crate::git::Lfs::OFF).unwrap();
     let repo = Repo::open(root).unwrap().unwrap();
     let a = repo.log(Some("a.md"), 10).unwrap();
     assert_eq!(a.len(), 2);
@@ -367,9 +367,11 @@ fn an_agent_commit_takes_only_the_turns_files() {
         models: vec!["claude-opus-5-5".into()],
         files: vec!["theirs.md".into()],
     };
-    assert!(commit_agent(root, &turn, "Agent turn", "d")
-        .unwrap()
-        .is_some());
+    assert!(
+        commit_agent(root, &turn, "Agent turn", "d", crate::git::Lfs::OFF)
+            .unwrap()
+            .is_some()
+    );
     let repo = Repo::open(root).unwrap().unwrap();
     assert_eq!(repo.changes().unwrap(), vec![edit("mine.md")]);
     let head = &repo.log(None, 1).unwrap()[0];
@@ -378,7 +380,9 @@ fn an_agent_commit_takes_only_the_turns_files() {
     assert_eq!(head.message.chat.as_deref(), Some("chat-1"));
     assert_eq!(head.message.models, vec!["claude-opus-5-5"]);
     // a turn whose files did not change commits nothing
-    assert!(commit_agent(root, &turn, "x", "d").unwrap().is_none());
+    assert!(commit_agent(root, &turn, "x", "d", crate::git::Lfs::OFF)
+        .unwrap()
+        .is_none());
 }
 
 #[test]
@@ -394,9 +398,14 @@ fn no_identity_means_no_commit_and_an_explicit_error() {
     let repo = Repo::open(dir.path()).unwrap().unwrap();
     assert!(!repo.has_commits());
     assert!(
-        status(dir.path(), &IdentityCache::default(), true)
-            .unwrap()
-            .identity_error
+        status(
+            dir.path(),
+            &IdentityCache::default(),
+            true,
+            crate::git::Lfs::OFF
+        )
+        .unwrap()
+        .identity_error
     );
 }
 
@@ -409,9 +418,14 @@ fn a_vault_below_a_repository_is_not_that_repository() {
     std::fs::create_dir_all(&inner).unwrap();
     assert!(Repo::open(&inner).unwrap().is_none());
     assert!(
-        !status(&inner, &IdentityCache::default(), true)
-            .unwrap()
-            .set_up
+        !status(
+            &inner,
+            &IdentityCache::default(),
+            true,
+            crate::git::Lfs::OFF
+        )
+        .unwrap()
+        .set_up
     );
 }
 
@@ -802,7 +816,14 @@ fn a_plain_vault_gets_a_repository_the_block_and_no_commit_without_identity() {
     // the identity arrives later: the first commit is the setup commit, with everything in it
     set_identity(root, "Ada Writer", "ada@example.test");
     let repo = Repo::open(root).unwrap().unwrap();
-    let id = commit_user(root, DEFAULT_TEMPLATE, &ctx(), "Studio").unwrap();
+    let id = commit_user(
+        root,
+        DEFAULT_TEMPLATE,
+        &ctx(),
+        "Studio",
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
     assert!(id.is_some());
     let log = repo.log(None, 5).unwrap();
     assert_eq!(log.len(), 1);
@@ -863,7 +884,13 @@ fn a_vault_inside_another_repository_is_never_set_up_silently() {
     assert_eq!(auto_setup(&inner, "d").unwrap(), Auto::InParentRepo);
     assert!(!inner.join(".git").exists());
     assert!(!inner.join(".gitignore").exists());
-    let s = status(&inner, &IdentityCache::default(), true).unwrap();
+    let s = status(
+        &inner,
+        &IdentityCache::default(),
+        true,
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
     assert!(!s.set_up && s.parent_repo);
     // the user's own choice still sets up a repository of its own
     set_identity_global_free(&inner);
@@ -892,7 +919,7 @@ fn stopping_keeps_git_and_history_and_is_not_set_up_again_automatically() {
     assert_eq!(auto_setup(root, "d").unwrap(), Auto::Stopped);
     assert!(!is_set_up(root));
     assert!(
-        status(root, &IdentityCache::default(), true)
+        status(root, &IdentityCache::default(), true, crate::git::Lfs::OFF)
             .unwrap()
             .stopped
     );
@@ -1256,7 +1283,8 @@ fn no_commit_while_a_merge_rebase_or_the_like_is_under_way_and_it_resumes_by_its
         };
         assert_eq!(operation(root), Some(op), "{marker}");
         // every way to commit refuses, and nothing is written
-        let err = commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d").unwrap_err();
+        let err =
+            commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d", crate::git::Lfs::OFF).unwrap_err();
         assert!(matches!(err, Error::Operation(_)), "{marker}: {err}");
         assert!(err.to_string().contains(op.label()), "{err}");
         let turn = AgentTurn {
@@ -1268,7 +1296,7 @@ fn no_commit_while_a_merge_rebase_or_the_like_is_under_way_and_it_resumes_by_its
             files: vec!["a.md".into()],
         };
         assert!(matches!(
-            commit_agent(root, &turn, "t", "d"),
+            commit_agent(root, &turn, "t", "d", crate::git::Lfs::OFF),
             Err(Error::Operation(_))
         ));
         let v = repo.log(None, 1).unwrap()[0].id.clone();
@@ -1278,7 +1306,7 @@ fn no_commit_while_a_merge_rebase_or_the_like_is_under_way_and_it_resumes_by_its
         ));
         assert_eq!(std::fs::read_to_string(root.join("a.md")).unwrap(), "2");
         assert_eq!(repo.head_id_string().unwrap(), head, "{marker}");
-        let s = status(root, &IdentityCache::default(), true).unwrap();
+        let s = status(root, &IdentityCache::default(), true, crate::git::Lfs::OFF).unwrap();
         assert_eq!(s.operation, Some(op));
         // the markers go: it resumes by itself
         match restore_head {
@@ -1287,9 +1315,11 @@ fn no_commit_while_a_merge_rebase_or_the_like_is_under_way_and_it_resumes_by_its
             None => std::fs::remove_file(root.join(".git").join(marker)).unwrap(),
         }
         assert_eq!(operation(root), None, "{marker}");
-        assert!(commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d")
-            .unwrap()
-            .is_some());
+        assert!(
+            commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d", crate::git::Lfs::OFF)
+                .unwrap()
+                .is_some()
+        );
     }
 }
 
@@ -1332,15 +1362,15 @@ fn a_file_over_the_limit_is_skipped_and_listed() {
     write(root, "small.md", "s");
     // sparse: no disk is used
     let big = std::fs::File::create(root.join("huge.bin")).unwrap();
-    big.set_len(super::repo::LARGE_FILE_BYTES + 1).unwrap();
+    big.set_len(crate::git::lfs::DEFAULT_THRESHOLD + 1).unwrap();
     let repo = Repo::open(root).unwrap().unwrap();
     let (changes, skipped) = repo.changes_and_skipped().unwrap();
     assert_eq!(changes, vec![add("small.md")]);
     assert_eq!(skipped, vec!["huge.bin"]);
-    let s = status(root, &IdentityCache::default(), true).unwrap();
+    let s = status(root, &IdentityCache::default(), true, crate::git::Lfs::OFF).unwrap();
     assert_eq!(s.too_large, vec!["huge.bin"]);
     // committing everything leaves it out
-    commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d").unwrap();
+    commit_user(root, DEFAULT_TEMPLATE, &ctx(), "d", crate::git::Lfs::OFF).unwrap();
     if let Some(files) = git_cli(root, &["ls-files"]) {
         assert!(
             files.contains("small.md") && !files.contains("huge.bin"),

@@ -13,7 +13,7 @@ Writer saves versions of the vault with Git, locally. The user's edits are commi
 writer git:status
 ```
 
-lists the files changed since the last version. `remote: none` is normal for a vault that is not synced; with a remote it also shows `ahead:` and `behind:` (versions not pushed, versions of the remote not taken in), `conflict:` lines (files the last sync could not settle: their version stays as it is on disk, never with conflict markers; the line says `(renamed: <path>)` when the other device renamed the file, and `conflict (binary)` names the copy that keeps your version) and `held back` plugin settings (they look like they hold a token and are not synced).
+lists the files changed since the last version. `remote: none` is normal for a vault that is not synced; with a remote it also shows `ahead:` and `behind:` (versions not pushed, versions of the remote not taken in), `conflict:` lines (files the last sync could not settle: their version stays as it is on disk, never with conflict markers; the line says `(renamed: <path>)` when the other device renamed the file, and `conflict (binary)` names the copy that keeps your version) and `held back` plugin settings (they look like they hold a token and are not synced). `lfs:` says whether large-file storage is `on` or `off` and how many files are in it; `not versioned (too large)` lines name files over the size limit that are left out while LFS is off.
 
 ```sh
 writer git:log path=Notes/Plan.md
@@ -35,6 +35,10 @@ writer git:show path=Notes/Plan.md rev=3f2a9c1
 ```
 
 prints the file as it was in that version.
+
+## Large files
+
+A file over the size limit (100 MB by default, Settings > Git > Advanced) is not saved while LFS is off. With LFS on and `git-lfs` installed, it is saved as a small pointer and the file itself goes to the remote's large-file store; history, `git:diff` and `git:restore` show and bring back the real file (a diff of a large file is its two sizes). Do not run `git lfs` yourself, and never edit the managed block of `.gitattributes`: Writer owns it. A file already in LFS stays there when the setting is turned off.
 
 ## Restore
 

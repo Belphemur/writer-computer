@@ -2,19 +2,14 @@
 // `SPECs/git-sync-spec.md` "Merge view"): "Changed on another device — Resolve". It never opens the
 // merge view by itself, and never touches the buffer: autosave keeps writing the user's text
 // locally (the conflicted file is never committed), so nothing typed is lost.
+import { relativeInVault } from "@/lib/paths";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useGitStatus } from "../lib/status-store";
 import { openMerge } from "../lib/resolve-conflicts";
 
-/** The vault-relative form of the absolute `path`, `null` outside the vault. */
-function relativeTo(root: string | null, path: string): string | null {
-  const base = root?.replace(/\/$/, "");
-  return base && path.startsWith(`${base}/`) ? path.slice(base.length + 1) : null;
-}
-
 export default function GitNoteBar({ path }: { path: string }) {
   const root = useWorkspaceStore((s) => s.root);
-  const rel = relativeTo(root, path);
+  const rel = root ? relativeInVault(path, root) : null;
   const conflicted = useGitStatus((s) => s.status?.conflicts.some((c) => c.path === rel) ?? false);
   if (!rel || !conflicted) return null;
   return (

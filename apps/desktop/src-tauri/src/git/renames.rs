@@ -7,24 +7,41 @@
 //!
 //! 1. the commit says so (`Writer-Move-From` / `Writer-Move-To`, Writer's own moves);
 //! 2. both sides are the same blob (git's exact rename);
-//! 3. both are text of the same extension and at least half of their lines are shared (a move
-//!    that was edited too).
+//! 3. only within ONE commit ([`Similar::InCommit`]): both are text of the same extension that
+//!    share enough of their *distinctive* lines (blank lines, front matter and lines repeated in a
+//!    file do not count), at least [`MIN_SHARED`] of them, and the pair is unique: neither file
+//!    has another candidate. Notes made from one template look alike without being one file.
+//!
+//! Over a range of commits (what the other device did since the merge base) only 1 and 2 are
+//! trusted ([`Similar::Off`]): the deletion of one daily note and the creation of the next, from
+//! the same template, are two files, never a rename.
 
 use super::repo::{Entry, Mode, TreeChange};
-use crate::text_diff::lines::{diff_lines, split_lines, Edit};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The share of lines two versions must have in common to be one file renamed.
+/// The share of distinctive lines two versions must have in common to be one file renamed.
 const SIMILAR: f64 = 0.5;
-/// A file larger than this is only paired by an exact match (the line diff is not worth it).
+/// The fewest distinctive lines two versions must share to be one file renamed.
+pub const MIN_SHARED: usize = 3;
+/// A file larger than this is only paired by an exact match (the comparison is not worth it).
 const MAX_SIMILAR_BYTES: usize = 512 * 1024;
 
+/// Whether content similarity may pair files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Similar {
+    /// Hints and exact blobs only (a range of commits).
+    Off,
+    /// Also similar text, strictly (the changes of one commit).
+    InCommit,
+}
+
 /// `(from, to)` pairs: `changes` holds a deletion at `from` and an addition at `to` that are the
-/// same file. `hints` are the moves a commit message recorded. `read` loads a blob's bytes.
+/// same file. `hints` are the moves the commits recorded. `read` loads a blob's bytes.
 pub fn detect(
     changes: &[TreeChange],
     hints: &[(String, String)],
     read: &dyn Fn(&Entry) -> Option<Vec<u8>>,
+    similar: Similar,
 ) -> Vec<(String, String)> {
     let plain = |e: &Option<Entry>| e.as_ref().filter(|e| e.mode != Mode::Link).cloned();
     let mut deleted: BTreeMap<&str, Entry> = BTreeMap::new();
@@ -42,10 +59,7 @@ pub fn detect(
     }
     let mut pairs: Vec<(String, String)> = Vec::new();
     let mut taken: BTreeSet<&str> = BTreeSet::new();
-    let take = |from: &str, to: &str, pairs: &mut Vec<(String, String)>| {
-        pairs.push((from.to_string(), to.to_string()));
-    };
-    // 1. what the commit recorded
+    // 1. what the commits recorded
     for (from, to) in hints {
         if let (Some((f, _)), Some((t, _))) = (
             deleted.get_key_value(from.as_str()),
@@ -54,7 +68,7 @@ pub fn detect(
             if !taken.contains(f) && !taken.contains(t) {
                 taken.insert(f);
                 taken.insert(t);
-                take(f, t, &mut pairs);
+                pairs.push((f.to_string(), t.to_string()));
             }
         }
     }
@@ -69,38 +83,54 @@ pub fn detect(
         if let Some((to, _)) = same {
             taken.insert(from);
             taken.insert(to);
-            take(from, to, &mut pairs);
+            pairs.push((from.to_string(), to.to_string()));
         }
     }
-    // 3. mostly the same text
-    for (from, b) in &deleted {
-        if taken.contains(from) {
-            continue;
-        }
-        let Some(old) = read(b).filter(|x| x.len() <= MAX_SIMILAR_BYTES) else {
-            continue;
+    // 3. distinctive lines in common, one commit only, unique pairs only
+    if similar == Similar::InCommit {
+        let text = |e: &Entry| {
+            read(e)
+                .filter(|x| x.len() <= MAX_SIMILAR_BYTES)
+                .and_then(|x| String::from_utf8(x).ok())
         };
-        let mut best: Option<(&str, f64)> = None;
-        for (to, a) in &added {
-            if taken.contains(to) || extension(from) != extension(to) {
-                continue;
-            }
-            let Some(new) = read(a).filter(|x| x.len() <= MAX_SIMILAR_BYTES) else {
-                continue;
-            };
-            let share = similarity(&old, &new);
-            if share >= SIMILAR && best.is_none_or(|(_, s)| share > s) {
-                best = Some((to, share));
+        let sig = |m: &BTreeMap<&str, Entry>| -> BTreeMap<String, BTreeSet<String>> {
+            m.iter()
+                .filter(|(p, _)| !taken.contains(**p))
+                .filter_map(|(p, e)| Some((p.to_string(), distinctive(&text(e)?))))
+                .collect()
+        };
+        let (gone, new) = (sig(&deleted), sig(&added));
+        let mut candidates: Vec<(&str, &str)> = Vec::new();
+        for (from, a) in &gone {
+            for (to, b) in &new {
+                if extension(from) == extension(to) && alike(a, b) {
+                    candidates.push((from, to));
+                }
             }
         }
-        if let Some((to, _)) = best {
-            taken.insert(from);
-            taken.insert(to);
-            take(from, to, &mut pairs);
+        for (from, to) in &candidates {
+            let once =
+                |f: &dyn Fn(&(&str, &str)) -> bool| candidates.iter().filter(|c| f(c)).count() == 1;
+            if once(&|c| c.0 == *from) && once(&|c| c.1 == *to) {
+                pairs.push((from.to_string(), to.to_string()));
+            }
         }
     }
     pairs.sort();
     pairs
+}
+
+/// Moves recorded over a range of commits (oldest first), chained: `a -> b` then `b -> c` is
+/// `a -> c`, so the range's deletion of `a` and addition of `c` pair.
+pub fn chain(moves: impl IntoIterator<Item = (String, String)>) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (from, to) in moves {
+        match out.iter_mut().find(|(_, t)| *t == from) {
+            Some(link) => link.1 = to,
+            None => out.push((from, to)),
+        }
+    }
+    out
 }
 
 fn extension(path: &str) -> String {
@@ -110,21 +140,36 @@ fn extension(path: &str) -> String {
         .map_or(String::new(), |(_, e)| e.to_ascii_lowercase())
 }
 
-/// The share of lines two texts have in common (0 to 1); binary data shares nothing.
-fn similarity(a: &[u8], b: &[u8]) -> f64 {
-    let (Ok(a), Ok(b)) = (std::str::from_utf8(a), std::str::from_utf8(b)) else {
-        return 0.0;
-    };
-    let (la, lb) = (split_lines(a), split_lines(b));
-    let total = la.len() + lb.len();
-    if total == 0 {
-        return 1.0;
+/// The lines that identify a text: trimmed, not blank, outside the front matter, and present
+/// exactly once in it (a repeated line, `- [ ]` or a separator, says nothing about which file).
+fn distinctive(text: &str) -> BTreeSet<String> {
+    let mut lines = text.lines().peekable();
+    if lines.peek().map(|l| l.trim_end()) == Some("---") {
+        lines.next();
+        for l in lines.by_ref() {
+            if matches!(l.trim_end(), "---" | "...") {
+                break;
+            }
+        }
     }
-    let equal = diff_lines(&la, &lb)
-        .iter()
-        .filter(|e| matches!(e, Edit::Equal(..)))
-        .count();
-    (2 * equal) as f64 / total as f64
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for l in lines {
+        let t = l.trim();
+        if !t.is_empty() {
+            *counts.entry(t).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .filter(|(_, n)| *n == 1)
+        .map(|(l, _)| l.to_string())
+        .collect()
+}
+
+/// Enough distinctive lines in common, and a large enough share of them.
+fn alike(a: &BTreeSet<String>, b: &BTreeSet<String>) -> bool {
+    let shared = a.intersection(b).count();
+    shared >= MIN_SHARED && (2 * shared) as f64 / (a.len() + b.len()) as f64 >= SIMILAR
 }
 
 #[cfg(test)]
@@ -163,7 +208,7 @@ mod tests {
             change("a.md", Some("x"), None),
             change("b.md", None, Some("x")),
         ];
-        let out = detect(&changes, &[], &reader(&[]));
+        let out = detect(&changes, &[], &reader(&[]), Similar::Off);
         assert_eq!(out, vec![("a.md".to_string(), "b.md".to_string())]);
     }
 
@@ -178,18 +223,21 @@ mod tests {
             change("a.md", Some("1"), None),
             change("b.md", None, Some("2")),
         ];
-        assert_eq!(detect(&changes, &[], &reader(FILES)).len(), 1);
+        assert_eq!(
+            detect(&changes, &[], &reader(FILES), Similar::InCommit).len(),
+            1
+        );
         let changes = [
             change("a.md", Some("1"), None),
             change("b.md", None, Some("3")),
         ];
-        assert!(detect(&changes, &[], &reader(FILES)).is_empty());
+        assert!(detect(&changes, &[], &reader(FILES), Similar::InCommit).is_empty());
         // another extension is another file
         let changes = [
             change("a.md", Some("1"), None),
             change("b.txt", None, Some("2")),
         ];
-        assert!(detect(&changes, &[], &reader(FILES)).is_empty());
+        assert!(detect(&changes, &[], &reader(FILES), Similar::InCommit).is_empty());
     }
 
     #[test]
@@ -200,6 +248,63 @@ mod tests {
             change("b.md", None, Some("2")),
         ];
         let hint = [("a.md".to_string(), "b.md".to_string())];
-        assert_eq!(detect(&changes, &hint, &reader(FILES)).len(), 1);
+        assert_eq!(
+            detect(&changes, &hint, &reader(FILES), Similar::Off).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn notes_from_one_template_are_not_a_rename() {
+        static FILES: &[(&str, &str)] = &[
+            (
+                "d1",
+                "---\ndate: 2026-11-01\n---\n# Daily\n\n## Tasks\n- [ ]\n- [ ]\n\n## Journal\n\n## Links\n",
+            ),
+            (
+                "d2",
+                "---\ndate: 2026-11-20\n---\n# Daily\n\n## Tasks\n- [ ]\n- [ ]\n\n## Journal\n\n## Links\n",
+            ),
+            ("d3", "# Daily\n\n## Tasks\n## Journal\n## Links\n"),
+        ];
+        let changes = [
+            change("2026-11-01.md", Some("d1"), None),
+            change("2026-11-20.md", None, Some("d2")),
+        ];
+        // over a range: never by similarity
+        assert!(detect(&changes, &[], &reader(FILES), Similar::Off).is_empty());
+        // within a commit: two candidates for one file is no rename
+        let changes = [
+            change("2026-11-01.md", Some("d1"), None),
+            change("2026-11-20.md", None, Some("d2")),
+            change("2026-11-21.md", None, Some("d3")),
+        ];
+        assert!(detect(&changes, &[], &reader(FILES), Similar::InCommit).is_empty());
+    }
+
+    #[test]
+    fn too_few_distinctive_lines_is_no_rename() {
+        static FILES: &[(&str, &str)] = &[("1", "a\nb\n\n\n"), ("2", "a\nb\nc\n")];
+        let changes = [
+            change("a.md", Some("1"), None),
+            change("b.md", None, Some("2")),
+        ];
+        assert!(detect(&changes, &[], &reader(FILES), Similar::InCommit).is_empty());
+    }
+
+    #[test]
+    fn moves_chain_over_a_range() {
+        let m = chain([
+            ("a.md".to_string(), "b.md".to_string()),
+            ("x.md".to_string(), "y.md".to_string()),
+            ("b.md".to_string(), "c.md".to_string()),
+        ]);
+        assert_eq!(
+            m,
+            vec![
+                ("a.md".to_string(), "c.md".to_string()),
+                ("x.md".to_string(), "y.md".to_string())
+            ]
+        );
     }
 }
