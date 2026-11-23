@@ -24,6 +24,8 @@ fn fake(dir: &Path, binary: &str, script: &str) {
 
 /// The lines the real pipeline wrote while `f` ran on this thread.
 fn logged(f: impl FnOnce()) -> Vec<serde_json::Value> {
+    // `log` records (the transport's) reach the pipeline through this bridge
+    let _ = tracing_log::LogTracer::init();
     let dir = tempfile::tempdir().unwrap();
     let built = crate::logging::build(
         dir.path(),
@@ -74,9 +76,7 @@ fn a_failed_call_logs_gits_stderr_redacted_and_bounded_and_nothing_else() {
                 "https://me:argvsecret@host.test/o/private-repo.git",
             ],
         );
-        let out = exec
-            .run_masking(cmd, Duration::from_secs(20), &[TOKEN])
-            .unwrap();
+        let out = exec.run(cmd, Duration::from_secs(20)).unwrap();
         assert_eq!(out.code, Some(128));
     });
     let all = serde_json::to_string(&lines).unwrap();
@@ -170,4 +170,103 @@ fn the_credential_helper_flow_logs_neither_its_request_nor_its_answer() {
     let all = serde_json::to_string(&lines).unwrap();
     assert!(!all.contains(TOKEN) && !all.contains("password="), "{all}");
     assert!(git_lines(&lines).is_empty(), "{all}");
+}
+
+/// A token that straddles the 4 KiB cut is redacted before the cut, never half shown.
+#[cfg(unix)]
+#[test]
+fn a_token_straddling_the_cut_is_redacted_whole() {
+    let gh = format!("ghp_{}", "aB3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6");
+    assert_eq!(gh.len(), 40);
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    // the token starts 12 bytes before the cut of the stderr (4096): cut first, its first 8 body
+    // characters would be left, too few for a pattern to know them
+    let before = "x".repeat(4083);
+    fake(
+        &bin,
+        "git",
+        &format!("printf '%s %s tail' '{before}' '{gh}' >&2\nexit 1"),
+    );
+    let exec = Exec::new(Spawner::detached()).with_only_path(vec![bin]);
+    let lines = logged(|| {
+        let out = exec
+            .run(
+                exec.git(tmp.path(), None, &["fetch"]),
+                Duration::from_secs(20),
+            )
+            .unwrap();
+        assert_eq!(out.code, Some(1));
+    });
+    let all = serde_json::to_string(&lines).unwrap();
+    let body = &gh[4..];
+    for i in 0..=body.len() - 8 {
+        assert!(
+            !all.contains(&body[i..i + 8]),
+            "run {} of the token in the log",
+            &body[i..i + 8]
+        );
+    }
+    assert!(all.contains("[truncated]"));
+}
+
+#[test]
+fn a_call_is_named_by_program_and_subcommand_never_an_options_value() {
+    use super::transport::describe;
+    use std::process::Command;
+    let named = |program: &str, args: &[&str]| {
+        let mut c = Command::new(program);
+        c.args(args);
+        describe(&c)
+    };
+    assert_eq!(named("fj", &["-H", "nas", "whoami"]), "fj whoami");
+    assert_eq!(
+        named("gh", &["auth", "token", "--hostname", "host.test"]),
+        "gh auth"
+    );
+    assert_eq!(
+        named("gh", &["--hostname", "secret.host", "repo", "create"]),
+        "gh repo"
+    );
+    assert_eq!(
+        named(
+            "git",
+            &["-c", "a=b", "-c", "c=d", "lfs", "push", "origin", "x"]
+        ),
+        "git lfs push"
+    );
+    assert_eq!(
+        named("git", &["-C", "/vault/private", "fetch"]),
+        "git fetch"
+    );
+}
+
+/// git's tracing variables never reach a child: they would put request headers on stderr, which a
+/// failed call logs.
+#[cfg(unix)]
+#[test]
+fn git_trace_variables_are_not_passed_to_a_call() {
+    std::env::set_var("GIT_TRACE", "/dev/null");
+    std::env::set_var("GIT_CURL_VERBOSE", "1");
+    let tmp = tempfile::tempdir().unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    fake(
+        &bin,
+        "git",
+        "echo \"trace=[$GIT_TRACE] verbose=[$GIT_CURL_VERBOSE]\" >&2\nexit 1",
+    );
+    let exec = Exec::new(Spawner::detached()).with_only_path(vec![bin]);
+    let lines = logged(|| {
+        exec.run(
+            exec.git(tmp.path(), None, &["fetch"]),
+            Duration::from_secs(20),
+        )
+        .unwrap();
+    });
+    std::env::remove_var("GIT_TRACE");
+    std::env::remove_var("GIT_CURL_VERBOSE");
+    let all = serde_json::to_string(&lines).unwrap();
+    assert!(all.contains("trace=[] verbose=[]"), "{all}");
 }

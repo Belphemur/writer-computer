@@ -41,6 +41,7 @@ pub static FORGE: Forge = Forge {
     create,
     owner,
     default_host: None,
+    value_options: &["-H", "--host"],
 };
 
 fn create(host: Option<&str>, name: &str) -> Vec<String> {

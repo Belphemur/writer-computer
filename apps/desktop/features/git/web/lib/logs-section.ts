@@ -14,6 +14,7 @@ interface LogsSection {
 export const useLogsSection = create<LogsSection>((set) => ({
   open: false,
   reveal: 0,
-  setOpen: (open) => set({ open }),
+  // closing forgets the request: opening it by hand later must not scroll to an old error
+  setOpen: (open) => set(open ? { open } : { open: false, reveal: 0 }),
   show: () => set((s) => ({ open: true, reveal: s.reveal + 1 })),
 }));

@@ -107,11 +107,15 @@ struct Feed {
     id: u64,
     owner: String,
     target: String,
+    /// `"target":"<target>"` as the JSON line spells it: a line without it is not this feed's, and
+    /// is not even parsed.
+    needle: String,
     tx: SyncSender<LogLine>,
-    /// Start of the current one-second window, lines sent in it and lines dropped in it.
+    /// Start of the current one-second window, lines sent in it and whether the window has said
+    /// that lines were skipped.
     window: Instant,
     sent: u32,
-    skipped: u32,
+    noted: bool,
 }
 
 /// The live subscribers of the pipeline. `publish` runs on the log writer thread, so it never
@@ -121,6 +125,8 @@ pub struct Hub {
     next: AtomicU64,
     /// Feeds open, read without the lock so a line costs nothing while nobody watches.
     open: AtomicUsize,
+    /// Lines parsed for the feeds (a line no feed's target names is not).
+    parsed: AtomicUsize,
 }
 
 impl Hub {
@@ -129,6 +135,7 @@ impl Hub {
             feeds: Mutex::new(Vec::new()),
             next: AtomicU64::new(1),
             open: AtomicUsize::new(0),
+            parsed: AtomicUsize::new(0),
         }
     }
 
@@ -150,10 +157,11 @@ impl Hub {
             id,
             owner: owner.to_owned(),
             target: target.to_owned(),
+            needle: format!("\"target\":{}", serde_json::Value::from(target)),
             tx,
             window: Instant::now(),
             sent: 0,
-            skipped: 0,
+            noted: false,
         });
         self.open.store(feeds.len(), Ordering::Release);
         Some((id, rx))
@@ -183,36 +191,48 @@ impl Hub {
         self.len() == 0
     }
 
+    /// Lines parsed so far (tests: a line of no feed's target costs no parse).
+    #[cfg(test)]
+    fn parsed(&self) -> usize {
+        self.parsed.load(Ordering::Relaxed)
+    }
+
     /// Hands one written (already redacted) JSON line to the feeds of its target.
     pub fn publish(&self, json_line: &str, now: Instant) {
         if self.is_empty() {
             return;
         }
+        let mut feeds = self.feeds();
+        if !feeds.iter().any(|f| json_line.contains(&f.needle)) {
+            return;
+        }
+        self.parsed.fetch_add(1, Ordering::Relaxed);
         let Some(line) = parse_line(json_line) else {
             return;
         };
-        let mut feeds = self.feeds();
         feeds.retain_mut(|f| {
             if f.target != line.target {
                 return true;
             }
             if now.duration_since(f.window) >= Duration::from_secs(1) {
-                if f.skipped > 0 {
+                f.window = now;
+                f.sent = 0;
+                f.noted = false;
+            }
+            if f.sent >= LIVE_LINES_PER_SEC {
+                // said once, at the first line over the cap, so a burst followed by silence
+                // still ends with the marker
+                if !f.noted {
+                    f.noted = true;
                     let note = LogLine {
                         ts: line.ts.clone(),
                         level: "warn".into(),
                         target: line.target.clone(),
-                        message: format!("{} lines skipped", f.skipped),
+                        message: format!("Lines skipped (over {LIVE_LINES_PER_SEC} a second)"),
                         fields: None,
                     };
-                    let _ = f.tx.try_send(note);
+                    return !matches!(f.tx.try_send(note), Err(TrySendError::Disconnected(_)));
                 }
-                f.window = now;
-                f.sent = u32::from(f.skipped > 0);
-                f.skipped = 0;
-            }
-            if f.sent >= LIVE_LINES_PER_SEC {
-                f.skipped += 1;
                 return true;
             }
             match f.tx.try_send(line.clone()) {
@@ -220,10 +240,7 @@ impl Hub {
                     f.sent += 1;
                     true
                 }
-                Err(TrySendError::Full(_)) => {
-                    f.skipped += 1;
-                    true
-                }
+                Err(TrySendError::Full(_)) => true,
                 Err(TrySendError::Disconnected(_)) => false,
             }
         });
@@ -373,13 +390,48 @@ mod tests {
             hub.publish(&json("INFO", "git", &format!("l{i}")), t0);
         }
         let first: Vec<LogLine> = rx.try_iter().collect();
-        assert_eq!(first.len(), LIVE_LINES_PER_SEC as usize);
-        // the next second opens with the note, then lines flow again
+        assert_eq!(first.len(), LIVE_LINES_PER_SEC as usize + 1);
+        // the marker came with the first line over the cap, no later line was needed
+        assert!(first.last().unwrap().message.starts_with("Lines skipped"));
+        assert!(rx.try_recv().is_err(), "said once per window");
+        // the next second sends lines again
         hub.publish(
             &json("INFO", "git", "later"),
             t0 + Duration::from_millis(1100),
         );
         let next: Vec<String> = rx.try_iter().map(|l| l.message).collect();
-        assert_eq!(next, ["30 lines skipped", "later"]);
+        assert_eq!(next, ["later"]);
+    }
+
+    #[test]
+    fn a_line_no_feed_names_is_not_parsed() {
+        let hub = Hub::new();
+        let (_id, rx) = hub.open("main", "git").unwrap();
+        let now = Instant::now();
+        for i in 0..20 {
+            hub.publish(&json("INFO", "app", &format!("not {i}")), now);
+        }
+        assert_eq!(hub.parsed(), 0);
+        hub.publish(&json("INFO", "git", "yes"), now);
+        assert_eq!(hub.parsed(), 1);
+        assert_eq!(rx.try_recv().unwrap().message, "yes");
+        // nobody watching: nothing at all
+        let idle = Hub::new();
+        idle.publish(&json("INFO", "git", "x"), now);
+        assert_eq!(idle.parsed(), 0);
+    }
+
+    #[test]
+    fn a_reload_closes_the_feeds_of_the_window() {
+        // the page-load hook calls `close_owner` with the window label
+        let hub = Hub::new();
+        let _a = hub.open("main", "git").unwrap();
+        let _b = hub.open("other", "git").unwrap();
+        hub.close_owner("main");
+        assert_eq!(hub.len(), 1);
+        assert!(
+            hub.open("main", "git").is_some(),
+            "the reloaded page opens its own again"
+        );
     }
 }

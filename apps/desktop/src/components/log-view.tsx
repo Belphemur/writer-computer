@@ -3,10 +3,11 @@
 // allowlist is Rust's, `logging/tail.rs`). Mounting opens the feed and unmounting closes it, so a
 // page that renders it only while its section is open has no feed while it is collapsed.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { SMALL_BUTTON as BUTTON } from "@/components/button-styles";
+import * as logActions from "@/lib/log-actions";
 import { describeError, logger } from "@/lib/logger";
 import { logTail, watchLog, type LogLine } from "@/lib/logs";
 import { scrollIntoScroller } from "@/lib/scroll-into";
-import { openLogFolder } from "@/lib/tauri";
 
 /** Lines read back when the view opens. */
 const BACKLOG = 200;
@@ -15,9 +16,6 @@ const KEEP = 1000;
 /** Pixels from the end that still count as "at the end". */
 const PINNED_SLACK = 8;
 
-const BUTTON =
-  "rounded-md border border-[var(--border-color)] px-2.5 py-1 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none disabled:opacity-50";
-
 /** Error in the danger token, warning in the warning token, the rest in the text colour. */
 const LEVEL_COLOR: Record<string, string> = {
   error: "text-[var(--danger)]",
@@ -25,6 +23,10 @@ const LEVEL_COLOR: Record<string, string> = {
 };
 
 type Filter = "all" | "errors";
+
+/** What the "Errors" filter and "Show logs" are about: an error, or a warning (a failed call
+ *  that is not a refused sign-in logs as one). Colours stay by level. */
+export const isProblem = (l: LogLine) => l.level === "error" || l.level === "warn";
 
 const keyOf = (l: LogLine) => `${l.ts}|${l.level}|${l.message}`;
 
@@ -44,7 +46,7 @@ export function LogView({
   revealToken = 0,
 }: {
   target: string;
-  /** A new non-zero value scrolls to the latest error (to the end when there is none). */
+  /** A new non-zero value scrolls to the latest error or warning (to the end when there is none). */
   revealToken?: number;
 }) {
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -83,7 +85,7 @@ export function LogView({
   }, [target]);
 
   const visible = useMemo(
-    () => (filter === "errors" ? lines.filter((l) => l.level === "error") : lines),
+    () => (filter === "errors" ? lines.filter(isProblem) : lines),
     [lines, filter],
   );
 
@@ -98,7 +100,7 @@ export function LogView({
     const box = scroller.current;
     if (!box || !loaded || revealToken === 0 || revealed.current === revealToken) return;
     revealed.current = revealToken;
-    const errors = box.querySelectorAll<HTMLElement>("[data-level='error']");
+    const errors = box.querySelectorAll<HTMLElement>("[data-problem]");
     const last = errors[errors.length - 1];
     if (last) {
       pinned.current = false;
@@ -139,7 +141,9 @@ export function LogView({
             type="button"
             className={BUTTON}
             onClick={() =>
-              void openLogFolder().catch(() => logger.warn("logs", "could not open the log folder"))
+              void logActions
+                .openLogFolder()
+                .catch(() => logger.warn("logs", "could not open the log folder"))
             }
           >
             Open log folder
@@ -169,6 +173,7 @@ export function LogView({
             <div
               key={`${keyOf(l)}#${i}`}
               data-level={l.level}
+              data-problem={isProblem(l) || undefined}
               className={`whitespace-pre-wrap break-words ${LEVEL_COLOR[l.level] ?? "text-[var(--text-primary)]"}`}
             >
               <span className="text-[var(--text-muted)]">{formatLogTime(l.ts)}</span>{" "}

@@ -13,7 +13,7 @@ const logs = vi.hoisted(() => ({
   push: null as null | ((line: unknown) => void),
 }));
 vi.mock("@/lib/logs", () => ({ logTail: logs.logTail, watchLog: logs.watchLog }));
-vi.mock("@/lib/tauri", () => ({ openLogFolder: vi.fn(async () => {}) }));
+vi.mock("@/lib/log-actions", () => ({ openLogFolder: vi.fn(async () => {}) }));
 
 import { formatLogLine, LogView } from "@/components/log-view";
 import type { LogLine } from "@/lib/logs";
@@ -116,9 +116,9 @@ describe("LogView", () => {
     render(<LogView target="git" />);
     await flush();
     await act(async () => button("Errors").click());
-    expect(rows()).toHaveLength(1);
+    expect(rows()).toHaveLength(2);
     await act(async () => button("Copy").click());
-    expect(writeText).toHaveBeenCalledWith(formatLogLine(all[1]!));
+    expect(writeText).toHaveBeenCalledWith([all[1]!, all[2]!].map(formatLogLine).join("\n"));
     await act(async () => button("All").click());
     await act(async () => button("Copied").click());
     expect(writeText).toHaveBeenLastCalledWith(all.map(formatLogLine).join("\n"));
@@ -192,5 +192,35 @@ describe("LogView", () => {
     act(() => root.render(null));
     await act(async () => open(logs.stop));
     expect(logs.stop).toHaveBeenCalledTimes(2);
+  });
+
+  it("an error then a newer warning: the Errors filter keeps both and Show logs reveals the warning", async () => {
+    logs.logTail.mockResolvedValue([
+      line("error", "old error", "2026-11-23T14:00:00.000Z"),
+      line("info", "fine"),
+      line(
+        "warn",
+        "git fetch failed (exit 128): Could not resolve host",
+        "2026-11-23T14:05:00.000Z",
+      ),
+      line("info", "after"),
+    ]);
+    render(<LogView target="git" revealToken={0} />);
+    await flush();
+    await act(async () => button("Errors").click());
+    expect(rows().map((r) => r.getAttribute("data-level"))).toEqual(["error", "warn"]);
+    // colours stay by level
+    expect(rows()[1]!.className).toContain("--warning");
+    await act(async () => button("All").click());
+    layout(box(), { scrollHeight: 400, clientHeight: 100 });
+    box().getBoundingClientRect = () => ({ top: 0, bottom: 100, height: 100 }) as DOMRect;
+    rows().forEach((r, i) => {
+      (r as HTMLElement).getBoundingClientRect = () =>
+        ({ top: i * 100, bottom: i * 100 + 20 }) as DOMRect;
+    });
+    render(<LogView target="git" revealToken={1} />);
+    await flush();
+    // the warning is row 2 (200..220): moved by 210 - 50
+    expect(box().scrollTop).toBe(160);
   });
 });

@@ -576,8 +576,14 @@ pub fn run() {
         // The first finished page load means this launch got far enough to reset the
         // startup-failure counter (`features::recovery`).
         .on_page_load(|webview, payload| {
-            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
-                features::mark_ready(webview.app_handle());
+            match payload.event() {
+                tauri::webview::PageLoadEvent::Started => {
+                    // a reload forgets the page's feeds without closing them
+                    commands::logs::window_gone(webview.label());
+                }
+                tauri::webview::PageLoadEvent::Finished => {
+                    features::mark_ready(webview.app_handle());
+                }
             }
         })
         .setup(|app| {

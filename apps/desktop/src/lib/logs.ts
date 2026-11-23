@@ -4,6 +4,7 @@
 // them against the Rust parameter names.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { logger } from "@/lib/logger";
 
 export type LogLevelName = "error" | "warn" | "info" | "debug" | "trace";
 
@@ -15,11 +16,18 @@ export interface LogLine {
   fields?: Record<string, unknown>;
 }
 
+/** The fields of `LogLine`, listed once so a test can pin them to the Rust struct. */
+const FIELDS: Record<keyof LogLine, true> = {
+  ts: true,
+  level: true,
+  target: true,
+  message: true,
+  fields: true,
+};
+export const LOG_LINE_FIELDS = Object.keys(FIELDS);
+
 /** The event a live feed emits to this window (`LINE_EVENT` in `commands/logs.rs`). */
 export const LOG_LINE_EVENT = "log:line";
-
-/** The most lines `logTail` returns (the Rust cap). */
-export const LOG_TAIL_MAX = 500;
 
 export const logTail = (target: string, limit: number): Promise<LogLine[]> =>
   invoke("log_tail", { target, limit });
@@ -53,6 +61,6 @@ export async function watchLog(
   early.filter((p) => p.id === mine).forEach((p) => onLine(p.line));
   return () => {
     unlisten();
-    void logUnwatch(mine).catch(() => {});
+    void logUnwatch(mine).catch(() => logger.warn("logs", "could not close a log feed"));
   };
 }

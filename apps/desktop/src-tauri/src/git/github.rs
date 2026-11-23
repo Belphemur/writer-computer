@@ -19,6 +19,7 @@ pub static FORGE: Forge = Forge {
     accepts: |host, _| github_host(host),
     owner,
     default_host: Some("github.com"),
+    value_options: &["--hostname", "-R", "--repo"],
     create: |_, name| {
         ["repo", "create", name, "--private"]
             .map(String::from)

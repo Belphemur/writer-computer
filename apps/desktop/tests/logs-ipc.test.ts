@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { logTail, logUnwatch, logWatch } from "@/lib/logs";
+import { LOG_LINE_EVENT, LOG_LINE_FIELDS, logTail, logUnwatch, logWatch } from "@/lib/logs";
 import { DESKTOP } from "./helpers/import-graph";
 
 afterEach(() => clearMocks());
@@ -42,7 +42,21 @@ describe("log commands", () => {
     const rust = rustParams();
     for (const cmd of ["log_tail", "log_watch", "log_unwatch"]) {
       expect(rust.has(cmd), `${cmd} in commands/logs.rs`).toBe(true);
-      expect([...(sent.get(cmd) ?? [])].sort(), cmd).toEqual([...rust.get(cmd)!].sort());
+      expect(
+        [...(sent.get(cmd) ?? [])].sort((a, b) => a.localeCompare(b)),
+        cmd,
+      ).toEqual([...rust.get(cmd)!].sort((a, b) => a.localeCompare(b)));
     }
+  });
+
+  it("pins the event name and the line's fields to the Rust source", () => {
+    const logsRs = readFileSync(join(DESKTOP, "src-tauri/src/commands/logs.rs"), "utf8");
+    expect(logsRs.match(/const LINE_EVENT: &str = "([^"]+)"/)?.[1]).toBe(LOG_LINE_EVENT);
+    const tailRs = readFileSync(join(DESKTOP, "src-tauri/src/logging/tail.rs"), "utf8");
+    const body = tailRs.match(/pub struct LogLine \{([^}]*)\}/)![1]!;
+    const fields = [...body.matchAll(/pub (\w+):/g)].map((m) => m[1]!);
+    expect([...LOG_LINE_FIELDS].sort((a, b) => a.localeCompare(b))).toEqual(
+      [...fields].sort((a, b) => a.localeCompare(b)),
+    );
   });
 });

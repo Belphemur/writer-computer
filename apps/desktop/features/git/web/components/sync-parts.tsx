@@ -2,6 +2,7 @@
 // one-line error with "Details" (the sanitized git output), the files a sync could not settle, the
 // plugin settings held back by the token scan and the notices (a file restored). Terse: no prose.
 import { useState } from "react";
+import { SMALL_BUTTON } from "@/components/button-styles";
 import { linkHandlers } from "@/lib/link-activation";
 import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
@@ -11,8 +12,7 @@ import { openMerge } from "../lib/resolve-conflicts";
 import { fileLabel } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
 
-export const BUTTON =
-  "rounded-md border border-[var(--border-color)] px-2.5 py-1 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none disabled:opacity-50";
+export const BUTTON = SMALL_BUTTON;
 
 /** "Push rejected: authentication failed" with "Details", which copies the sanitized output, and
  *  "Show logs" where the Logs section is (Settings). */

@@ -15,7 +15,7 @@ const logs = vi.hoisted(() => ({
   stop: vi.fn(),
 }));
 vi.mock("@/lib/logs", () => ({ logTail: logs.logTail, watchLog: logs.watchLog }));
-vi.mock("@/lib/tauri", () => ({ openLogFolder: vi.fn(async () => {}) }));
+vi.mock("@/lib/log-actions", () => ({ openLogFolder: vi.fn(async () => {}) }));
 
 const ipc = vi.hoisted(() => ({
   status: vi.fn(),
@@ -99,6 +99,27 @@ describe("Settings > Git > Logs", () => {
     });
     expect(logs.stop).toHaveBeenCalledTimes(1);
     expect(container.querySelector("[data-log-view]")).toBeNull();
+  });
+
+  it("opening it by hand after a Show logs and a close does not scroll to the old error", async () => {
+    act(() => useGitStatus.getState().apply(baseStatus()));
+    render();
+    act(() => useLogsSection.getState().show());
+    await flush();
+    expect(useLogsSection.getState().reveal).toBe(1);
+    await act(async () => {
+      section().open = false;
+      section().dispatchEvent(new Event("toggle"));
+    });
+    expect(useLogsSection.getState().reveal).toBe(0);
+    await act(async () => {
+      section().open = true;
+      section().dispatchEvent(new Event("toggle"));
+    });
+    await flush();
+    const view = container.querySelector("[data-log-view]");
+    expect(view).not.toBeNull();
+    expect(useLogsSection.getState()).toMatchObject({ open: true, reveal: 0 });
   });
 
   it("leaving the page closes the section", async () => {

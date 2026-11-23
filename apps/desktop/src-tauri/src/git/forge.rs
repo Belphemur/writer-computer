@@ -52,6 +52,9 @@ pub struct Forge {
     pub owner: fn(&Exec, host: Option<&str>) -> Option<String>,
     /// The host of a CLI that has one default and lists none.
     pub default_host: Option<&'static str>,
+    /// Options that take a value (`-H nas`), so the log names a call by its subcommand and never
+    /// by an option's value.
+    pub value_options: &'static [&'static str],
 }
 
 impl Forge {
