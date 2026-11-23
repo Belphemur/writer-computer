@@ -1,15 +1,18 @@
 //! Writer's binary as a git credential helper (ADR 2026-11-18 point 3, spec "Credentials"):
-//! `writer git-credential --source <token|gh> --service <keychain service> get` speaks git's
+//! `writer git-credential --source <token|gh|fj> --service <keychain service> get` speaks git's
 //! credential protocol (key=value lines on stdin, a blank line ends the request) and answers with
-//! the HTTPS password from the secret `features.git.token` or from `gh auth token`, read at the
-//! moment of use and never copied. It answers only `get`, only over `https`, for the token only the
-//! host it was saved for (`--host`, recorded when the token was saved), and for the `gh` source
-//! only a GitHub host. It is registered as git's only helper for Writer's calls
+//! the HTTPS password from the secret `features.git.token` or from a forge CLI's login (`gh auth
+//! token`, `fj`'s saved login), read at the moment of use and never copied. It answers only `get`,
+//! only over `https`, for the token only the host it was saved for (`--host`, recorded when the
+//! token was saved), and for a forge source only the hosts that forge's entry accepts
+//! (`forge::Forge::accepts`: GitHub's hosts for `gh`, the host the user bound the vault to for
+//! `fj`). It is registered as git's only helper for Writer's calls
 //! (`transport::Helper::config_args`), so git never offers the token to the user's helpers.
 //!
-//! The answer is a [`Lookup`] away from the keychain and from `gh` (the helper process has no
+//! The answer is a [`Lookup`] away from the keychain and from the forge CLIs (the helper process has no
 //! app), so tests drive [`answer`] with plain closures. Nothing here logs.
 
+use super::forge::Forge;
 use super::transport::{Exec, Source};
 use std::io::{BufRead, Write};
 
@@ -43,12 +46,8 @@ pub fn parse_request(input: impl BufRead) -> Request {
 pub struct Lookup<'a> {
     /// The secret `features.git.token`.
     pub token: &'a dyn Fn() -> Option<String>,
-    /// `gh auth token --hostname <host>`.
-    pub gh: &'a dyn Fn(&str) -> Option<String>,
-}
-
-fn github_host(host: &str) -> bool {
-    host == "github.com" || host.ends_with(".github.com") || host.ends_with(".ghe.com")
+    /// The forge CLI's token for a host: [`Forge::token`].
+    pub cli: &'a dyn Fn(&Forge, &str) -> Option<String>,
 }
 
 /// The helper's reply to `op` for `req`, or nothing (git then tries the next helper or fails).
@@ -68,8 +67,8 @@ pub fn answer(
             (lookup.token)()
         }
         Source::Token => None,
-        Source::Gh if github_host(&req.host) => (lookup.gh)(&req.host),
-        Source::Gh => None,
+        Source::Cli(f) if (f.accepts)(&req.host, bound) => (lookup.cli)(f, &req.host),
+        Source::Cli(_) => None,
     }?;
     let username = req.username.as_deref().unwrap_or("git");
     Some(format!("username={username}\npassword={password}\n\n"))
@@ -111,7 +110,7 @@ pub fn service_of(args: &[String]) -> Option<&str> {
 }
 
 /// Entry of the real helper process (`main.rs`): the keychain is the secret store of the build
-/// named by `--service`, `gh` runs detached from any feature scope (this process has none).
+/// named by `--service`, the forge CLIs run detached from any feature scope (this process has none).
 pub fn run_process(args: &[String]) -> u8 {
     use crate::plugin_secrets::{KeyringBackend, PluginSecrets};
     let service = service_of(args)
@@ -126,7 +125,7 @@ pub fn run_process(args: &[String]) -> u8 {
             .map(|v| v.expose().to_string())
             .filter(|t| !t.is_empty())
     };
-    let gh = |host: &str| super::gh::auth_token(&exec, host);
+    let cli = |forge: &Forge, host: &str| (forge.token)(&exec, host);
     let stdin = std::io::stdin();
     run(
         args,
@@ -134,7 +133,7 @@ pub fn run_process(args: &[String]) -> u8 {
         &mut std::io::stdout(),
         &Lookup {
             token: &token,
-            gh: &gh,
+            cli: &cli,
         },
     )
 }

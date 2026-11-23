@@ -30,7 +30,7 @@ const ipc = vi.hoisted(() => ({
   removeRemote: vi.fn(),
   tools: vi.fn(),
   installGit: vi.fn(),
-  signInGithub: vi.fn(),
+  signIn: vi.fn(),
   setCredentials: vi.fn(),
   pluginDecision: vi.fn(),
   dismissNotices: vi.fn(),

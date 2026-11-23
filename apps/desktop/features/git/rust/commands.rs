@@ -5,12 +5,13 @@
 use super::runtime;
 use crate::commands::blocking;
 use crate::error::AppError;
+use crate::git::forge::{self, Forge, State};
 use crate::git::history::{self, Against, FileDiff};
 use crate::git::merge::{Part, Side};
 use crate::git::repo::{Version, VersionKind};
 use crate::git::resolve::{self, Choice, Take};
 use crate::git::transport::{self, Source, Transport};
-use crate::git::{self, device, gh, message::Change, plugin_scan, Repo, SetupMode};
+use crate::git::{self, device, message::Change, plugin_scan, Repo, SetupMode};
 use crate::vault_ops;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -95,7 +96,7 @@ pub struct GitStatus {
     /// Paths a remote tree held that the sync refused to write (`.git`, device-local state, a
     /// path through a link): never written.
     pub refused: Vec<String>,
-    /// Where HTTPS passwords come from: `token` or `gh`.
+    /// Where HTTPS passwords come from: `token` or a forge CLI's id (`gh`, `fj`).
     pub credentials: String,
 }
 
@@ -108,6 +109,9 @@ pub struct SyncErrorRow {
     pub details: String,
     /// The network is unreachable: the status reads Offline.
     pub offline: bool,
+    /// What failed (`auth`, `offline`, `local-network`, `other` ...): what a "Show logs" button
+    /// switches on.
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -236,6 +240,7 @@ fn status_of<R: Runtime>(
             line: f.line,
             details: f.details,
             offline: f.offline,
+            kind: f.kind.into(),
         }),
         conflicts: s
             .conflicts
@@ -744,10 +749,45 @@ pub async fn git_remote_remove<R: Runtime>(
 pub struct Tools {
     /// `git` is installed.
     pub git: bool,
-    /// `missing`, `signed-out` or `signed-in`.
-    pub gh: String,
+    /// Every forge CLI of the table ([`forge::FORGES`]) and what the machine has of it.
+    pub forges: Vec<ForgeRow>,
     /// macOS: "Install Command Line Tools" is offered when git is missing.
     pub can_install_git: bool,
+}
+
+/// One forge CLI for the setup page: its labels (written once, in the table) and its state.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgeRow {
+    /// `gh` or `fj`: what `git_sign_in` and `git_set_credentials` take.
+    pub id: String,
+    /// "GitHub CLI".
+    pub label: String,
+    /// "Sign in with GitHub".
+    pub sign_in: String,
+    /// "Install GitHub CLI".
+    pub install: String,
+    pub install_url: String,
+    /// "gh auth login".
+    pub login: String,
+    /// `missing`, `signed-out` or `signed-in`.
+    pub state: String,
+    /// The hosts it is signed in to; empty when it works on its own default host.
+    pub hosts: Vec<String>,
+}
+
+fn forge_row(exec: &transport::Exec, f: &Forge) -> ForgeRow {
+    let probe = forge::probe(exec, f);
+    ForgeRow {
+        id: f.id.into(),
+        label: f.label.into(),
+        sign_in: f.sign_in(),
+        install: f.install(),
+        install_url: f.install_url.into(),
+        login: f.login.into(),
+        state: probe.state.arg().into(),
+        hosts: probe.hosts,
+    }
 }
 
 #[tauri::command]
@@ -762,14 +802,9 @@ pub async fn git_tools<R: Runtime>(app: tauri::AppHandle<R>) -> Result<Tools, Ap
                 transport::QUICK_TIMEOUT,
             )
             .is_ok_and(|o| o.ok());
-        let gh = match gh::state(&exec) {
-            gh::State::Missing => "missing",
-            gh::State::SignedOut => "signed-out",
-            gh::State::SignedIn => "signed-in",
-        };
         Ok(Tools {
             git: git_ok,
-            gh: gh.into(),
+            forges: forge::FORGES.iter().map(|f| forge_row(&exec, f)).collect(),
             can_install_git: !git_ok && cfg!(target_os = "macos"),
         })
     })
@@ -797,52 +832,130 @@ pub async fn git_install_git<R: Runtime>(app: tauri::AppHandle<R>) -> Result<(),
     .await
 }
 
-/// "Sign in with GitHub": `gh repo create <vault name> --private`, the repository linked over
-/// HTTPS with the credentials read from `gh` at use, then a first sync.
+/// One step of "Sign in with ...", as the panel lists it.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StepRow {
+    /// `remote`, `credential` or `push`.
+    pub id: String,
+    /// `done`, `failed` or `pending` (an earlier step failed).
+    pub state: String,
+    /// What was linked, who answers, "Synced", or why it failed.
+    pub line: String,
+    /// What failed (`auth`, `offline`, `local-network`, `taken`, `other` ...), empty when it did
+    /// not: what a "Show logs" button switches on.
+    pub kind: String,
+}
+
+/// What "Sign in with ..." did: the steps in order and the fresh status.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SignInResult {
+    pub steps: Vec<StepRow>,
+    /// The repository name the host already has: offer "Link existing <name>" or another name.
+    pub taken: Option<String>,
+    pub status: GitStatus,
+}
+
+/// "Sign in with GitHub" / "Sign in with Forgejo" ([`git::signin`]): the remote (reused, created
+/// or linked), the credential and the first push, one step after the other, the first failure
+/// stopping it. `host` for a CLI signed in to several; `name` and `link_existing` after a taken
+/// name.
 #[tauri::command]
 #[specta::specta]
-pub async fn git_sign_in_github<R: Runtime>(
+pub async fn git_sign_in<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
-) -> Result<GitStatus, AppError> {
+    forge: String,
+    host: Option<String>,
+    name: Option<String>,
+    link_existing: bool,
+) -> Result<SignInResult, AppError> {
     let label = webview.label().to_string();
     blocking(move || {
         let root = window_root(&app, &label)?;
         if !git::is_set_up(&root) {
             return Err(AppError::Refused("Version history is not set up".into()));
         }
-        let (exec, helper) = transport_of(&app, &root)?;
-        match gh::state(&exec) {
-            gh::State::Missing => return Err(AppError::Refused("Install GitHub CLI first".into())),
-            gh::State::SignedOut => {
-                return Err(AppError::Refused("Run gh auth login first".into()))
-            }
-            gh::State::SignedIn => {}
+        let f = forge::by_id(&forge).ok_or_else(|| AppError::Refused("Choose a CLI".into()))?;
+        let (exec, _) = transport_of(&app, &root)?;
+        let probe = forge::probe(&exec, f);
+        match probe.state {
+            State::Missing => return Err(AppError::Refused(format!("{} first", f.install()))),
+            State::SignedOut => return Err(AppError::Refused(format!("Run {} first", f.login))),
+            State::SignedIn => {}
         }
-        let name = gh::repo_name(
-            &root
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-        );
-        let url = gh::create_repo(&exec, &root, &name).map_err(transport_error)?;
-        git::state::set_credential_source(&root, Source::Gh)?;
-        let _ = helper;
-        let helper = super::sync::helper_for(&app, &root);
-        let t = Transport {
-            exec: &exec,
-            root: &root,
-            helper: helper.as_ref(),
-            secrets: Vec::new(),
+        // a CLI signed in to several hosts works on the one asked for, never a guessed one
+        let host = if probe.hosts.is_empty() {
+            None
+        } else {
+            let asked = host.as_deref().unwrap_or_default();
+            Some(
+                probe
+                    .hosts
+                    .iter()
+                    .find(|h| h.eq_ignore_ascii_case(asked))
+                    .ok_or_else(|| AppError::Refused("Choose a host".into()))?
+                    .as_str(),
+            )
         };
-        t.set_remote(&url).map_err(transport_error)?;
-        log::info!(target: "git", "git: repository created and linked with GitHub CLI");
-        link_done(&app, &label)
+        let request = git::signin::Request {
+            forge: f,
+            host,
+            name: name.as_deref(),
+            link_existing,
+        };
+        let outcome = git::signin::run(
+            &exec,
+            &root,
+            &request,
+            &|| super::sync::helper_for(&app, &root),
+            &|| {
+                // one whole sync, now; its failure is the step's
+                if let Some(v) = runtime::vaults(&app) {
+                    v.end_sync_record_reset(&label);
+                }
+                super::sync::run(&app, &label, super::sync::Mode::Manual);
+                match runtime::vaults(&app).and_then(|v| v.record_of(&label).failure) {
+                    Some(f) => Err(git::signin::StepError {
+                        line: f.line,
+                        kind: f.kind,
+                    }),
+                    None => Ok(()),
+                }
+            },
+        );
+        log::info!(
+            target: "git",
+            "git: sign in with {}: {}",
+            f.label,
+            outcome
+                .steps
+                .iter()
+                .map(|s| format!("{} {}", s.id.name(), s.state.name()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let _ = app.emit_to(&label, runtime::CHANGED_EVENT, ());
+        Ok(SignInResult {
+            steps: outcome
+                .steps
+                .into_iter()
+                .map(|s| StepRow {
+                    id: s.id.name().into(),
+                    state: s.state.name().into(),
+                    line: s.line,
+                    kind: s.kind.into(),
+                })
+                .collect(),
+            taken: outcome.taken,
+            status: status_of(&app, &label, false)?,
+        })
     })
     .await
 }
 
-/// Chooses where HTTPS passwords come from for this vault: `token` (the secret) or `gh`.
+/// Chooses where HTTPS passwords come from for this vault: `token` (the secret) or a forge CLI.
 #[tauri::command]
 #[specta::specta]
 pub async fn git_set_credentials<R: Runtime>(
@@ -854,17 +967,15 @@ pub async fn git_set_credentials<R: Runtime>(
     blocking(move || {
         let root = window_root(&app, &label)?;
         let source = Source::parse(&source)
-            .ok_or_else(|| AppError::Refused("Choose token or GitHub CLI".into()))?;
+            .ok_or_else(|| AppError::Refused("Choose token or a CLI".into()))?;
         git::state::set_credential_source(&root, source)?;
-        if source == Source::Token {
-            // the token answers the host of the remote it was saved for, and no other
-            let host = Repo::open(&root)
-                .ok()
-                .flatten()
-                .and_then(|r| r.config_string(&format!("remote.{}.url", transport::REMOTE)))
-                .and_then(|u| transport::https_host(&u));
-            git::state::set_token_host(&root, host)?;
-        }
+        // the credential answers the host of the remote it was chosen for, and no other
+        let host = Repo::open(&root)
+            .ok()
+            .flatten()
+            .and_then(|r| r.config_string(&format!("remote.{}.url", transport::REMOTE)))
+            .and_then(|u| transport::https_host(&u));
+        git::state::set_token_host(&root, host)?;
         if let Some(v) = runtime::vaults(&app) {
             v.end_sync_record_reset(&label);
             v.request_sync(&label);

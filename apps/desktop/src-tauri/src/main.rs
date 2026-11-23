@@ -9,7 +9,7 @@ use std::process::ExitCode;
 /// basename is `writer` and we run the CLI. Invoked as `Writer` (the usual
 /// case, direct from the bundle), we run the Tauri app.
 fn main() -> ExitCode {
-    // git runs `Writer git-credential --source <token|gh> get` as a credential helper (feature
+    // git runs `Writer git-credential --source <token|gh|fj> get` as a credential helper (feature
     // `git`, spec "Credentials"): answer on stdout and exit, before anything else starts
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some(desktop_lib::git::transport::CREDENTIAL_ARG) {

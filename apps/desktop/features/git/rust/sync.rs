@@ -7,10 +7,10 @@
 //!   thread with ONE deadline for all its rounds, [`CLOSE_BUDGET`]; the closing side waits for it
 //!   that long at most and never runs network git itself). One at a time per window, and never while a commit runs; commits and agent commits
 //!   wait for it (`runtime::commit_user_now`);
-//! - **its children** (`git`, `gh`) are the feature scope's (`Exec::new(scope.spawner())`): turning
+//! - **its children** (`git`, `gh`, `fj`) are the feature scope's (`Exec::new(scope.spawner())`): turning
 //!   git off kills them, and the feature is busy (it asks first) for as long as a sync runs;
 //! - **credentials**: Writer's own binary registered as the credential helper, with the source the
-//!   user chose (`token` from the Keychain secret `features.git.token`, or `gh`); this file never
+//!   user chose (`token` from the Keychain secret `features.git.token`, or a forge CLI: `gh`, `fj`); this file never
 //!   reads a token;
 //! - **what it tells the window**: `git:changed` (status), and `git:applying` (one payload,
 //!   `runtime::Applying`) with the files about to be written, before they are, then with
@@ -87,21 +87,25 @@ fn failure(e: &engine::Error) -> SyncFailure {
             line: t.line.clone(),
             details: t.details.clone(),
             offline: matches!(t.kind, Kind::Offline | Kind::Timeout),
+            kind: t.kind.name(),
         },
         engine::Error::Repo(r) => SyncFailure {
             line: runtime::error_line(r),
             details: String::new(),
             offline: false,
+            kind: Kind::Other.name(),
         },
         engine::Error::Io(_) => SyncFailure {
             line: "Could not read or write the vault".into(),
             details: String::new(),
             offline: false,
+            kind: Kind::Other.name(),
         },
         other => SyncFailure {
             line: other.to_string(),
             details: String::new(),
             offline: false,
+            kind: Kind::Other.name(),
         },
     }
 }
@@ -153,7 +157,16 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) {
     );
     runtime::emit_applying(app, label, &outcome.report.written, true);
     let ms = started.elapsed().as_millis();
-    let failed = outcome.error.as_ref().map(failure);
+    let failed = outcome.error.as_ref().map(|e| {
+        let mut f = failure(e);
+        // a refused login of a CLI whose saved login expires says what to do about it
+        if matches!(e, engine::Error::Transport(t) if t.kind == Kind::Auth) {
+            if let Some(line) = helper.as_ref().and_then(Helper::sign_in_again) {
+                f.line = line;
+            }
+        }
+        f
+    });
     match &outcome.error {
         None => log::info!(
             target: "git",

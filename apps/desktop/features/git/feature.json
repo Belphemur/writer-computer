@@ -28,7 +28,7 @@
       "git_remote_remove",
       "git_tools",
       "git_install_git",
-      "git_sign_in_github",
+      "git_sign_in",
       "git_set_credentials",
       "git_plugin_decision",
       "git_dismiss_notices",

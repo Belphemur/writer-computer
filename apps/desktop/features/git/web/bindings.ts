@@ -55,11 +55,13 @@ export const commands = {
 	/**  macOS: starts Apple's installer for the Command Line Tools (which include git). */
 	gitInstallGit: (options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:git|git_install_git", undefined, options),
 	/**
-	 *  "Sign in with GitHub": `gh repo create <vault name> --private`, the repository linked over
-	 *  HTTPS with the credentials read from `gh` at use, then a first sync.
+	 *  "Sign in with GitHub" / "Sign in with Forgejo" ([`git::signin`]): the remote (reused, created
+	 *  or linked), the credential and the first push, one step after the other, the first failure
+	 *  stopping it. `host` for a CLI signed in to several; `name` and `link_existing` after a taken
+	 *  name.
 	 */
-	gitSignInGithub: (options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_sign_in_github", undefined, options),
-	/**  Chooses where HTTPS passwords come from for this vault: `token` (the secret) or `gh`. */
+	gitSignIn: (forge: string, host: string | null, name: string | null, linkExisting: boolean, options?: InvokeOptions) => __TAURI_INVOKE<SignInResult>("plugin:git|git_sign_in", { forge, host, name, linkExisting }, options),
+	/**  Chooses where HTTPS passwords come from for this vault: `token` (the secret) or a forge CLI. */
 	gitSetCredentials: (source: string, options?: InvokeOptions) => __TAURI_INVOKE<GitStatus>("plugin:git|git_set_credentials", { source }, options),
 	/**
 	 *  The user's choice for a plugin whose settings look like they hold a token: `allow` ("Sync
@@ -185,6 +187,25 @@ export type FileDiff =
 /**  Any other file, or one too large to diff: the sizes, `None` for a side that is absent. */
 { kind: "binary"; beforeSize: number | null; afterSize: number | null };
 
+/**  One forge CLI for the setup page: its labels (written once, in the table) and its state. */
+export type ForgeRow = {
+	/**  `gh` or `fj`: what `git_sign_in` and `git_set_credentials` take. */
+	id: string,
+	/**  "GitHub CLI". */
+	label: string,
+	/**  "Sign in with GitHub". */
+	signIn: string,
+	/**  "Install GitHub CLI". */
+	install: string,
+	installUrl: string,
+	/**  "gh auth login". */
+	login: string,
+	/**  `missing`, `signed-out` or `signed-in`. */
+	state: string,
+	/**  The hosts it is signed in to; empty when it works on its own default host. */
+	hosts: string[],
+};
+
 export type GitStatus = {
 	/**  The vault is a Git repository (set up by Writer or not). */
 	hasRepo: boolean,
@@ -241,7 +262,7 @@ export type GitStatus = {
 	 *  path through a link): never written.
 	 */
 	refused: string[],
-	/**  Where HTTPS passwords come from: `token` or `gh`. */
+	/**  Where HTTPS passwords come from: `token` or a forge CLI's id (`gh`, `fj`). */
 	credentials: string,
 };
 
@@ -322,6 +343,29 @@ export type Setup =
 /**  "Use existing repository". */
 "existing";
 
+/**  What "Sign in with ..." did: the steps in order and the fresh status. */
+export type SignInResult = {
+	steps: StepRow[],
+	/**  The repository name the host already has: offer "Link existing <name>" or another name. */
+	taken: string | null,
+	status: GitStatus,
+};
+
+/**  One step of "Sign in with ...", as the panel lists it. */
+export type StepRow = {
+	/**  `remote`, `credential` or `push`. */
+	id: string,
+	/**  `done`, `failed` or `pending` (an earlier step failed). */
+	state: string,
+	/**  What was linked, who answers, "Synced", or why it failed. */
+	line: string,
+	/**
+	 *  What failed (`auth`, `offline`, `local-network`, `taken`, `other` ...), empty when it did
+	 *  not: what a "Show logs" button switches on.
+	 */
+	kind: string,
+};
+
 export type SyncErrorRow = {
 	/**  One line: "Push rejected: authentication failed". */
 	line: string,
@@ -329,6 +373,11 @@ export type SyncErrorRow = {
 	details: string,
 	/**  The network is unreachable: the status reads Offline. */
 	offline: boolean,
+	/**
+	 *  What failed (`auth`, `offline`, `local-network`, `other` ...): what a "Show logs" button
+	 *  switches on.
+	 */
+	kind: string,
 };
 
 /**  Both views of the difference between two texts. */
@@ -349,8 +398,8 @@ export type TextDiff = {
 export type Tools = {
 	/**  `git` is installed. */
 	git: boolean,
-	/**  `missing`, `signed-out` or `signed-in`. */
-	gh: string,
+	/**  Every forge CLI of the table ([`forge::FORGES`]) and what the machine has of it. */
+	forges: ForgeRow[],
 	/**  macOS: "Install Command Line Tools" is offered when git is missing. */
 	canInstallGit: boolean,
 };

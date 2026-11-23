@@ -13,6 +13,9 @@ export type DeletedRow = wire.DeletedRow;
 export type FileDiff = wire.FileDiff;
 export type Preview = wire.Preview;
 export type Tools = wire.Tools;
+export type ForgeRow = wire.ForgeRow;
+export type SignInResult = wire.SignInResult;
+export type StepRow = wire.StepRow;
 export type SyncErrorRow = wire.SyncErrorRow;
 export type ConflictView = wire.ConflictViewRow;
 export type ConflictPart = wire.PartRow;
@@ -57,7 +60,10 @@ export interface GitCommands {
   git_remote_remove: { args: undefined; result: wire.GitStatus };
   git_tools: { args: undefined; result: wire.Tools };
   git_install_git: { args: undefined; result: null };
-  git_sign_in_github: { args: undefined; result: wire.GitStatus };
+  git_sign_in: {
+    args: { forge: string; host: string | null; name: string | null; link_existing: boolean };
+    result: wire.SignInResult;
+  };
   git_set_credentials: { args: { source: string }; result: wire.GitStatus };
   git_plugin_decision: { args: { plugin: string; choice: string }; result: wire.GitStatus };
   git_dismiss_notices: { args: undefined; result: wire.GitStatus };
@@ -113,9 +119,17 @@ export const setRemote = (url: string) => call("git_remote_set", { url });
 export const removeRemote = () => call("git_remote_remove");
 export const tools = () => call("git_tools");
 export const installGit = () => call("git_install_git");
-export const signInGithub = () => call("git_sign_in_github");
-/** `token` (the secret) or `gh` (GitHub CLI) as the source of HTTPS passwords. */
-export const setCredentials = (source: "token" | "gh") => call("git_set_credentials", { source });
+/** The one sign-in action (remote, credential, first push). `forge`: a CLI's id from
+ *  `tools().forges`; `host` for one signed in to several; `name` and `linkExisting` after a
+ *  taken name. */
+export const signIn = (
+  forge: string,
+  host: string | null = null,
+  name: string | null = null,
+  linkExisting = false,
+) => call("git_sign_in", { forge, host, name, link_existing: linkExisting });
+/** `token` (the secret) or a forge CLI's id (`gh`, `fj`) as the source of HTTPS passwords. */
+export const setCredentials = (source: string) => call("git_set_credentials", { source });
 /** `allow`: Sync anyway. `never`: Never sync this plugin. */
 export const pluginDecision = (plugin: string, choice: "allow" | "never") =>
   call("git_plugin_decision", { plugin, choice });

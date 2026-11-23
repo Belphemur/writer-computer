@@ -29,7 +29,7 @@ const ipc = vi.hoisted(() => ({
   removeRemote: vi.fn(),
   tools: vi.fn(),
   installGit: vi.fn(),
-  signInGithub: vi.fn(),
+  signIn: vi.fn(),
   setCredentials: vi.fn(),
   pluginDecision: vi.fn(),
   dismissNotices: vi.fn(),
@@ -74,7 +74,7 @@ beforeEach(() => {
   useWorkspaceStore.setState({ root: "/vault" } as never);
   Object.values(ipc).forEach((f) => f.mockReset());
   ipc.deleted.mockResolvedValue([]);
-  ipc.tools.mockResolvedValue({ git: true, gh: "missing", canInstallGit: false });
+  ipc.tools.mockResolvedValue({ git: true, forges: [], canInstallGit: false });
   // a refresh (the settings page asks on open) answers with what the store already holds
   ipc.status.mockImplementation(async () => useGitStatus.getState().status);
   container = document.createElement("div");
@@ -374,7 +374,12 @@ describe("panel sync controls", () => {
     act(() =>
       useGitStatus.getState().apply(
         linked({
-          syncError: { line: "Could not reach the remote", details: "fatal: x", offline: true },
+          syncError: {
+            line: "Could not reach the remote",
+            details: "fatal: x",
+            offline: true,
+            kind: "offline",
+          },
         }),
       ),
     );
@@ -382,6 +387,196 @@ describe("panel sync controls", () => {
     expect(container.textContent).toContain("Could not reach the remote");
     await act(async () => button("Details")!.click());
     expect(writeText).toHaveBeenCalledWith("fatal: x");
+  });
+});
+
+const forge = (patch = {}) => ({
+  id: "fj",
+  label: "Forgejo CLI",
+  signIn: "Sign in with Forgejo",
+  install: "Install Forgejo CLI",
+  installUrl: "https://codeberg.org/forgejo-contrib/forgejo-cli",
+  login: "fj auth login",
+  state: "signed-in",
+  hosts: ["codeberg.org", "git.example.test:3000"],
+  ...patch,
+});
+const gh = (patch = {}) =>
+  forge({
+    id: "gh",
+    label: "GitHub CLI",
+    signIn: "Sign in with GitHub",
+    install: "Install GitHub CLI",
+    login: "gh auth login",
+    hosts: [],
+    ...patch,
+  });
+const steps = (...states: [string, string, string?, string?][]) =>
+  states.map(([id, state, line = "", kind = ""]) => ({ id, state, line, kind }));
+
+describe("Settings > Git: Sign in with a forge CLI", () => {
+  const rows = () => [...container.querySelectorAll("[data-forge]")];
+
+  it("shows each forge in its state: signed in per host, signed out, missing", async () => {
+    ipc.tools.mockResolvedValue({
+      git: true,
+      canInstallGit: false,
+      forges: [gh({ state: "missing" }), forge()],
+    });
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitSection />);
+    await flush();
+    const text = rows().map((r) => r.textContent);
+    // GitHub is not installed: its install link; Forgejo has two hosts: a row each
+    expect(text[0]).toContain("Sign in with GitHub");
+    expect(text[0]).toContain("Install GitHub CLI");
+    expect(text).toHaveLength(3);
+    expect(text[1]).toContain("codeberg.org");
+    expect(text[2]).toContain("git.example.test:3000");
+    expect(text[1]).toContain("Create private repository");
+
+    ipc.tools.mockResolvedValue({
+      git: true,
+      canInstallGit: false,
+      forges: [gh({ state: "signed-out" }), forge({ state: "signed-out", hosts: [] })],
+    });
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(<GitSection />);
+    await flush();
+    const out = rows().map((r) => r.textContent);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toContain("Run gh auth login");
+    expect(out[1]).toContain("Run fj auth login");
+    expect(container.textContent).not.toContain("Create private repository");
+  });
+
+  it("one click runs the action for that host and lists the steps, each in its state", async () => {
+    ipc.tools.mockResolvedValue({ git: true, canInstallGit: false, forges: [forge()] });
+    ipc.signIn.mockResolvedValue({
+      steps: steps(
+        ["remote", "done", "codeberg.org/me/vault"],
+        ["credential", "done", "Forgejo CLI"],
+        ["push", "done", "Synced"],
+      ),
+      taken: null,
+      status: status({ remote: "codeberg.org/me/vault", branch: "main" }),
+    });
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitSection />);
+    await flush();
+    const second = rows()[1]!.querySelector("button")!;
+    await act(async () => second.click());
+    expect(ipc.signIn).toHaveBeenCalledWith("fj", "git.example.test:3000", null, false);
+    const listed = [...container.querySelectorAll("[data-step]")];
+    expect(listed.map((s) => [s.getAttribute("data-step"), s.getAttribute("data-state")])).toEqual([
+      ["remote", "done"],
+      ["credential", "done"],
+      ["push", "done"],
+    ]);
+    expect(container.textContent).toContain("Synced");
+    expect(container.textContent).toContain("codeberg.org/me/vault");
+  });
+
+  it("the first failure stops the list: its words and kind, the rest waiting", async () => {
+    ipc.tools.mockResolvedValue({ git: true, canInstallGit: false, forges: [gh()] });
+    ipc.signIn.mockResolvedValue({
+      steps: steps(
+        ["remote", "done", "github.com/me/v"],
+        ["credential", "done", "GitHub CLI"],
+        ["push", "failed", "Authentication failed", "auth"],
+      ),
+      taken: null,
+      status: status({ remote: "github.com/me/v", branch: "main" }),
+    });
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitSection />);
+    await flush();
+    await act(async () => rows()[0]!.querySelector("button")!.click());
+    const push = container.querySelector('[data-step="push"]')!;
+    expect(push.getAttribute("data-state")).toBe("failed");
+    expect(push.getAttribute("data-kind")).toBe("auth");
+    expect(push.textContent).toContain("Authentication failed");
+    expect(push.querySelector('[role="alert"]')).not.toBeNull();
+
+    ipc.signIn.mockResolvedValue({
+      steps: steps(
+        ["remote", "failed", "Offline", "offline"],
+        ["credential", "pending"],
+        ["push", "pending"],
+      ),
+      taken: null,
+      status: status(),
+    });
+    // the remote unlinked again (the form is back): a second try that fails at the first step
+    act(() => useGitStatus.getState().apply(status()));
+    await act(async () => rows()[0]!.querySelector("button")!.click());
+    const waiting = [...container.querySelectorAll('[data-state="pending"]')];
+    expect(waiting).toHaveLength(2);
+    expect(waiting[0]!.textContent).toContain("Waiting");
+  });
+
+  it("a taken name offers Link existing or another name, and runs again with it", async () => {
+    ipc.tools.mockResolvedValue({ git: true, canInstallGit: false, forges: [forge()] });
+    ipc.signIn.mockResolvedValue({
+      steps: steps(
+        ["remote", "failed", "Name taken: vault", "taken"],
+        ["credential", "pending"],
+        ["push", "pending"],
+      ),
+      taken: "vault",
+      status: status(),
+    });
+    act(() => useGitStatus.getState().apply(status()));
+    render(<GitSection />);
+    await flush();
+    await act(async () => rows()[0]!.querySelector("button")!.click());
+    expect(ipc.signIn).toHaveBeenLastCalledWith("fj", "codeberg.org", null, false);
+    expect(button("Link existing vault")).toBeDefined();
+    await act(async () => button("Link existing vault")!.click());
+    expect(ipc.signIn).toHaveBeenLastCalledWith("fj", "codeberg.org", "vault", true);
+
+    const input = container.querySelector(
+      'input[aria-label="Repository name"]',
+    ) as HTMLInputElement;
+    expect((button("Create") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(input, "Notes 2");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => button("Create")!.click());
+    expect(ipc.signIn).toHaveBeenLastCalledWith("fj", "codeberg.org", "Notes 2", false);
+  });
+
+  it("with a remote, the HTTPS source buttons are the table's, usable on the remote's host", async () => {
+    ipc.tools.mockResolvedValue({
+      git: true,
+      canInstallGit: false,
+      forges: [gh(), forge({ hosts: ["codeberg.org"] })],
+    });
+    act(() =>
+      useGitStatus
+        .getState()
+        .apply(status({ remote: "codeberg.org/me/v", branch: "main", credentials: "fj" })),
+    );
+    render(<GitSection />);
+    await flush();
+    const fjButton = button("Forgejo CLI") as HTMLButtonElement;
+    expect(fjButton.getAttribute("aria-pressed")).toBe("true");
+    expect(fjButton.disabled).toBe(false);
+    // GitHub CLI is signed in, and answers any GitHub host (it has no host list)
+    expect((button("GitHub CLI") as HTMLButtonElement).disabled).toBe(false);
+    ipc.tools.mockResolvedValue({
+      git: true,
+      canInstallGit: false,
+      forges: [forge({ hosts: ["other.example"] })],
+    });
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(<GitSection />);
+    await flush();
+    expect((button("Forgejo CLI") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

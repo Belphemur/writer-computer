@@ -1,32 +1,35 @@
-//! The credential helper and `gh`: answers from the secret or `gh auth token`, only for `get` over
+//! The credential helper and the forge CLIs' sources: answers from the secret or `gh auth token`, only for `get` over
 //! https, never a token in argv, in an error's details or in a log line.
 
 use super::*;
 use crate::features::scope::Spawner;
-use crate::git::gh;
-use crate::git::transport::{self, Exec, Helper, Kind, REMOTE};
+use crate::git::forge::{self, FORGEJO as FJ, GITHUB as GH};
+use crate::git::transport::{self, Exec, Helper, REMOTE};
 use std::io::Cursor;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, Once};
 
 const PLANTED: &str = "ghp_PLANTED_token_9f8e7d6c5b4a";
 
-fn ask(args: &[&str], request: &str, token: Option<&str>, gh_token: Option<&str>) -> String {
+/// `cli_token` answers for whichever forge CLI the source names (the table's functions are the
+/// real ones; here only the token's origin is replaced).
+fn ask(args: &[&str], request: &str, token: Option<&str>, cli_token: Option<&str>) -> String {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let (token, gh_token) = (token.map(str::to_string), gh_token.map(str::to_string));
-    let (t, g) = (|| token.clone(), |_: &str| gh_token.clone());
+    let (token, cli_token) = (token.map(str::to_string), cli_token.map(str::to_string));
+    let (t, c) = (|| token.clone(), |_: &Forge, _: &str| cli_token.clone());
     let mut out = Vec::new();
     let code = run(
         &args,
         Cursor::new(request.as_bytes().to_vec()),
         &mut out,
-        &Lookup { token: &t, gh: &g },
+        &Lookup { token: &t, cli: &c },
     );
     assert_eq!(code, 0);
     String::from_utf8(out).unwrap()
 }
 
 const GITHUB: &str = "protocol=https\nhost=github.com\nusername=me\n\n";
+const GITHUB_REQ: &str = "protocol=https\nhost=github.com\n\n";
 
 #[test]
 fn the_token_source_answers_get_over_https() {
@@ -144,6 +147,105 @@ fn the_gh_source_reads_the_token_at_use_and_only_for_github() {
 }
 
 #[test]
+fn the_fj_source_answers_only_the_host_the_vault_is_bound_to() {
+    let codeberg = "protocol=https\nhost=codeberg.org\nusername=me\n\n";
+    let out = ask(
+        &["--source", "fj", "--host", "codeberg.org", "get"],
+        codeberg,
+        Some("ignored"),
+        Some(PLANTED),
+    );
+    assert_eq!(out, format!("username=me\npassword={PLANTED}\n\n"));
+    // the host is compared without case
+    let loud = "protocol=https\nhost=Codeberg.ORG\n\n";
+    assert_eq!(
+        ask(
+            &["--source", "fj", "--host", "codeberg.org", "get"],
+            loud,
+            None,
+            Some(PLANTED)
+        ),
+        format!("username=git\npassword={PLANTED}\n\n")
+    );
+    // another host, even a Forgejo one, gets nothing
+    assert_eq!(
+        ask(
+            &["--source", "fj", "--host", "codeberg.org", "get"],
+            "protocol=https\nhost=evil.example\n\n",
+            None,
+            Some(PLANTED)
+        ),
+        ""
+    );
+    // not bound to any host: no answer at all, GitHub included
+    assert_eq!(
+        ask(&["--source", "fj", "get"], codeberg, None, Some(PLANTED)),
+        ""
+    );
+    assert_eq!(
+        ask(&["--source", "fj", "get"], GITHUB_REQ, None, Some(PLANTED)),
+        ""
+    );
+    // http, store and a missing token
+    assert_eq!(
+        ask(
+            &["--source", "fj", "--host", "codeberg.org", "get"],
+            "protocol=http\nhost=codeberg.org\n\n",
+            None,
+            Some(PLANTED)
+        ),
+        ""
+    );
+    assert_eq!(
+        ask(
+            &["--source", "fj", "--host", "codeberg.org", "store"],
+            codeberg,
+            None,
+            Some(PLANTED)
+        ),
+        ""
+    );
+    assert_eq!(
+        ask(
+            &["--source", "fj", "--host", "codeberg.org", "get"],
+            codeberg,
+            None,
+            None
+        ),
+        ""
+    );
+}
+
+#[test]
+fn the_sources_are_the_tables_and_the_helper_names_them() {
+    assert_eq!(Source::parse("token"), Some(Source::Token));
+    assert_eq!(Source::parse("gh"), Some(Source::Cli(&GH)));
+    assert_eq!(Source::parse("fj"), Some(Source::Cli(&FJ)));
+    assert_eq!(Source::parse("hg"), None);
+    for f in forge::FORGES {
+        assert_eq!(Source::Cli(f).arg(), f.id);
+    }
+    let h = Helper {
+        exe: PathBuf::from("/opt/Writer"),
+        source: Source::Cli(&FJ),
+        service: "svc".into(),
+        host: Some("codeberg.org".into()),
+    };
+    let args = h.config_args();
+    assert!(args[3].contains("--source fj"), "{args:?}");
+    assert!(args[3].ends_with("--host 'codeberg.org'"), "{args:?}");
+    assert_eq!(
+        h.sign_in_again().as_deref(),
+        Some("Sign in again: fj auth login")
+    );
+    let gh = Helper {
+        source: Source::Cli(&GH),
+        ..h.clone()
+    };
+    assert_eq!(gh.sign_in_again(), None, "gh's behaviour is unchanged");
+}
+
+#[test]
 fn the_helper_registration_names_where_the_token_is_never_the_token() {
     let h = Helper {
         exe: PathBuf::from("/Applications/Writer.app/Contents/MacOS/Writer"),
@@ -159,7 +261,7 @@ fn the_helper_registration_names_where_the_token_is_never_the_token() {
     assert!(args.iter().all(|a| !a.contains(PLANTED)));
     let quoted = Helper {
         exe: PathBuf::from("/Users/o'neil/Writer"),
-        source: Source::Gh,
+        source: Source::Cli(&GH),
         service: "s".into(),
         host: None,
     };
@@ -172,66 +274,6 @@ fn the_helper_registration_names_where_the_token_is_never_the_token() {
             "svc".into()
         ]),
         Some("svc")
-    );
-}
-
-// ---- gh, mocked -----------------------------------------------------------------------------------
-
-fn fake_gh(dir: &Path, script: &str) {
-    let path = dir.join("gh");
-    std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-}
-
-fn exec_with(dir: &Path) -> Exec {
-    Exec::new(Spawner::detached()).with_path_prefix(vec![dir.to_path_buf()])
-}
-
-#[cfg(unix)]
-#[test]
-fn gh_state_token_and_repo_creation_run_through_the_fake_gh() {
-    let tmp = tempfile::tempdir().unwrap();
-    fake_gh(
-        tmp.path(),
-        &format!(
-            r#"case "$1 $2" in
-  "--version "*) echo "gh version 9.9.9" ;;
-  "auth status") exit 0 ;;
-  "auth token") echo {PLANTED} ;;
-  "repo create") echo "https://github.com/me/$3" ;;
-  *) exit 2 ;;
-esac"#
-        ),
-    );
-    let exec = exec_with(tmp.path());
-    assert_eq!(gh::state(&exec), gh::State::SignedIn);
-    assert_eq!(
-        gh::auth_token(&exec, "github.com").as_deref(),
-        Some(PLANTED)
-    );
-    let url = gh::create_repo(&exec, Path::new("/v"), "My-Vault").unwrap();
-    assert_eq!(url, "https://github.com/me/My-Vault");
-    assert_eq!(gh::repo_name("My Vault / 2026"), "My-Vault---2026");
-    assert_eq!(gh::repo_name("   "), "vault");
-
-    fake_gh(
-        tmp.path(),
-        "case \"$1 $2\" in \"auth status\") exit 1 ;; *) echo gh ;; esac",
-    );
-    assert_eq!(gh::state(&exec), gh::State::SignedOut);
-    // no gh on the path at all
-    let none = tempfile::tempdir().unwrap();
-    let missing = Exec::new(Spawner::detached()).with_only_path(vec![none.path().to_path_buf()]);
-    assert_eq!(gh::state(&missing), gh::State::Missing);
-    assert_eq!(
-        gh::create_repo(&missing, Path::new("/v"), "x")
-            .unwrap_err()
-            .kind,
-        Kind::NoGit
     );
 }
 

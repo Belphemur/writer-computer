@@ -133,6 +133,8 @@ pub struct SyncFailure {
     pub details: String,
     /// The network is unreachable (the status reads Offline, not Error).
     pub offline: bool,
+    /// What failed, as [`transport::Kind::name`] (`other` for what is not a transport failure).
+    pub kind: &'static str,
 }
 
 struct Vault {

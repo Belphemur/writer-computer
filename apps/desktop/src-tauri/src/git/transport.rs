@@ -1,5 +1,5 @@
 //! The network half of the engine: system `git` for `fetch`, `push`, `ls-remote` and the local
-//! `remote` bookkeeping (ADR 2026-11-18 point 2), and the one place `gh` runs too. Every child is
+//! `remote` bookkeeping (ADR 2026-11-18 point 2), and, through [`Exec::tool`], the one place the forge CLIs (`gh`, `fj`) run too. Every child is
 //! started through the feature scope's [`Spawner`] (`process`), so turning the feature off kills
 //! it and the escape-hatch scan stays green; nothing here names `std::process::Child`.
 //!
@@ -9,14 +9,15 @@
 //! English fragments only. HTTPS credentials come from Writer's own binary registered per call as
 //! the ONLY credential helper (`-c credential.helper=` resets the user's list first, so git's
 //! `store` after a success never hands Writer's token to the user's helpers), and only when Writer
-//! has a credential for the vault (a saved token, or the GitHub CLI source); otherwise git runs
+//! has a credential for the vault (a saved token, or a forge CLI source); otherwise git runs
 //! with the user's own helpers untouched. The helper's command line names the binary, the source
-//! (`token` or `gh`), the keychain service and the host the token was saved for, never a token.
+//! (`token`, `gh` or `fj`), the keychain service and the host the token was saved for, never a token.
 //! SSH is the user's agent, untouched.
 //!
 //! Errors are classified once ([`classify`]) into a short line and sanitized details: URLs lose
 //! their credentials, the vault path is hidden, known secrets are masked.
 
+use super::forge::{self, Forge};
 use crate::features::scope::Spawner;
 use crate::process_run::{run as run_bounded, RunOptions};
 pub use crate::process_run::{Output, RunError};
@@ -34,7 +35,7 @@ pub const QUICK_TIMEOUT: Duration = Duration::from_secs(15);
 pub const LFS_TIMEOUT: Duration = Duration::from_secs(1800);
 
 /// Where git and gh run: the scope's process starter and, for tests, directories searched first
-/// (a fake `gh`, a missing `git`).
+/// (a fake `gh` or `fj`, a missing `git`).
 #[derive(Clone)]
 pub struct Exec {
     spawner: Spawner,
@@ -223,11 +224,21 @@ impl Exec {
         cmd
     }
 
-    /// `gh`, found the way [`Exec::git_program`] finds `git`.
-    pub fn gh(&self, args: &[&str]) -> Command {
-        let mut cmd = self.command(&self.tool_program("gh").to_string_lossy(), None);
+    /// A forge CLI (`gh`, `fj`), found the way [`Exec::git_program`] finds `git`.
+    pub fn tool(&self, binary: &str, args: &[&str]) -> Command {
+        let mut cmd = self.command(&self.tool_program(binary).to_string_lossy(), None);
         cmd.args(args);
         cmd
+    }
+
+    /// An environment variable as this runner's children see it: its own extra environment first
+    /// (tests give it a temporary `HOME`), then the process's.
+    pub fn var(&self, name: &str) -> Option<std::ffi::OsString> {
+        self.env
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.into())
+            .or_else(|| std::env::var_os(name))
     }
 
     /// Runs a prepared command to its end, to `timeout` (and the [`Exec::with_deadline`]), or
@@ -270,23 +281,23 @@ fn join_path(prefix: &[PathBuf], dirs: Vec<PathBuf>, system: bool) -> std::ffi::
 pub enum Source {
     /// The secret `features.git.token`.
     Token,
-    /// `gh auth token`, read at the moment of use.
-    Gh,
+    /// A forge CLI's own login (`gh auth token`, `fj`'s saved login), read at the moment of use.
+    Cli(&'static Forge),
 }
 
 impl Source {
+    /// The name in the helper's command line and in `.writer/git/state.json`.
     pub fn arg(self) -> &'static str {
         match self {
             Source::Token => "token",
-            Source::Gh => "gh",
+            Source::Cli(f) => f.id,
         }
     }
 
     pub fn parse(s: &str) -> Option<Source> {
         match s {
             "token" => Some(Source::Token),
-            "gh" => Some(Source::Gh),
-            _ => None,
+            other => forge::by_id(other).map(Source::Cli),
         }
     }
 }
@@ -298,7 +309,8 @@ pub struct Helper {
     pub source: Source,
     /// The keychain service the secret is stored under (it names the build, not a secret).
     pub service: String,
-    /// The host the token was saved for (`Source::Token`): the helper answers no other host.
+    /// The host the credential was bound to (the token's, or the forge login's the user chose):
+    /// the helper answers no other host for a source that is bound.
     pub host: Option<String>,
 }
 
@@ -307,6 +319,15 @@ fn shell_quote(s: &str) -> String {
 }
 
 impl Helper {
+    /// "Sign in again: fj auth login" for a forge whose saved login expires (git was refused),
+    /// `None` for any other source.
+    pub fn sign_in_again(&self) -> Option<String> {
+        match self.source {
+            Source::Cli(f) if f.expires => Some(format!("Sign in again: {}", f.login)),
+            _ => None,
+        }
+    }
+
     /// The helper of the vault at `root`, `None` when Writer has no credential for it (source
     /// `token` with no token saved): git then runs with the user's own helpers alone.
     pub fn for_vault(
@@ -316,7 +337,7 @@ impl Helper {
         token_saved: bool,
     ) -> Option<Helper> {
         let source = super::state::credential_source(root);
-        (source == Source::Gh || token_saved).then(|| Helper {
+        (source != Source::Token || token_saved).then(|| Helper {
             exe,
             source,
             service,
@@ -378,7 +399,30 @@ pub enum Kind {
     NoLfs,
     /// The scope stopped while git ran.
     Cancelled,
+    /// macOS refused the connection to a host on the local network (Local Network privacy).
+    LocalNetwork,
+    /// The repository name to create is already used on the host.
+    Taken,
     Other,
+}
+
+impl Kind {
+    /// The word the panel and a later "Show logs" button switch on.
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Offline => "offline",
+            Kind::Auth => "auth",
+            Kind::Rejected => "rejected",
+            Kind::NotFound => "not-found",
+            Kind::Timeout => "timeout",
+            Kind::NoGit => "no-git",
+            Kind::NoLfs => "no-lfs",
+            Kind::Cancelled => "cancelled",
+            Kind::LocalNetwork => "local-network",
+            Kind::Taken => "taken",
+            Kind::Other => "other",
+        }
+    }
 }
 
 /// A failed network call: a short line for the status and the sanitized output for "Details".
@@ -469,6 +513,12 @@ pub fn classify(out: &Output, root: &Path, secrets: &[&str]) -> TransportError {
     ]) && !has(&["could not resolve host"])
     {
         (Kind::NotFound, "Remote repository not found")
+    } else if cfg!(target_os = "macos") && has(&["no route to host"]) {
+        // macOS answers a host on the local network with this until the app is allowed there
+        (
+            Kind::LocalNetwork,
+            "macOS blocked the connection: allow Writer under Privacy & Security > Local Network",
+        )
     } else if has(&[
         "could not resolve host",
         "connection refused",
@@ -567,6 +617,20 @@ impl Transport<'_> {
         } else {
             Err(self.fail(&out))
         }
+    }
+
+    /// The branch tracks `origin/<branch>`: `branch.<b>.remote` and `branch.<b>.merge`, written to
+    /// this repository's own config by git (never the user's global one).
+    pub fn set_tracking(&self, branch: &str) -> Result<(), TransportError> {
+        let merge = format!("refs/heads/{branch}");
+        for (key, value) in [("remote", REMOTE), ("merge", merge.as_str())] {
+            let key = format!("branch.{branch}.{key}");
+            let out = self.run(&["config", "--local", &key, value], QUICK_TIMEOUT)?;
+            if !out.ok() {
+                return Err(self.fail(&out));
+            }
+        }
+        Ok(())
     }
 
     /// Unlinks the remote and forgets its tracking refs.

@@ -1,11 +1,11 @@
 // The remote part of Settings > Git (spec "Setup" and "Credentials"): the Remote row, "Add a
-// remote" (paste an SSH or HTTPS URL), "Sign in with GitHub" (GitHub CLI), the token for HTTPS
-// remotes (the secret `features.git.token`, write-only here) and where HTTPS passwords come from.
+// remote" (paste an SSH or HTTPS URL), "Sign in with GitHub" / "Sign in with Forgejo" (the forge
+// CLIs of the Rust table), the token for HTTPS remotes (the secret `features.git.token`, write-only
+// here) and where HTTPS passwords come from.
 // A missing `git` says so with "Install Command Line Tools" on macOS. Terse: no prose.
 import { useEffect, useState } from "react";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
 import { describeError, logger } from "@/lib/logger";
-import { openExternal } from "@/lib/link-activation";
 import { useFeatureSecretsStore } from "@/stores/feature-secrets-store";
 import {
   installGit,
@@ -13,13 +13,16 @@ import {
   setCredentials,
   setRemote,
   setSyncPaused,
-  signInGithub,
+  signIn,
   syncNow,
   tools,
+  type ForgeRow,
   type GitStatus,
+  type SignInResult,
   type Tools,
 } from "../ipc";
 import { useGitStatus } from "../lib/status-store";
+import { ForgeSignInRows, forgeUsable, SignInSteps } from "./forge-rows";
 import { BUTTON, lastSyncLabel, SyncError } from "./sync-parts";
 import type { SettingDef } from "@/lib/settings-schema";
 
@@ -32,7 +35,6 @@ const INPUT =
   "min-w-0 flex-1 rounded-md border border-[var(--border-color)] bg-transparent px-2 py-1 text-xs text-[var(--text-primary)] focus-visible:outline-none focus-visible:border-[var(--accent)]";
 
 export const TOKEN_KEY = "features.git.token";
-const GH_URL = "https://cli.github.com";
 
 export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: SettingDef[] }) {
   const apply = useGitStatus((s) => s.apply);
@@ -43,11 +45,16 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
   const [token, setToken] = useState("");
   const [editing, setEditing] = useState(false);
   const [machine, setMachine] = useState<Tools | null>(null);
+  const [signedIn, setSignedIn] = useState<{
+    result: SignInResult;
+    forge: ForgeRow;
+    host: string | null;
+  } | null>(null);
   const linked = status.remote !== null;
 
   useEffect(() => {
     void useFeatureSecretsStore.getState().refresh("git");
-    tools().then(setMachine, () => logger.warn("git", "could not look for git and gh"));
+    tools().then(setMachine, () => logger.warn("git", "could not look for git and the forge CLIs"));
   }, []);
 
   const run = async (action: () => Promise<GitStatus>) => {
@@ -65,6 +72,27 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
     }
   };
 
+  /** The one sign-in action; its steps (and a taken name) are shown, never thrown. */
+  const signInWith = async (
+    forge: ForgeRow,
+    host: string | null,
+    name: string | null = null,
+    link = false,
+  ) => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const result = await signIn(forge.id, host, name, link);
+      apply(result.status);
+      setSignedIn({ result, forge, host });
+    } catch (e) {
+      logger.warn("git", "sign in could not start");
+      setFailure(describeError(e).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveToken = async () => {
     if (!token.trim()) return;
     setBusy(true);
@@ -76,7 +104,7 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
   };
 
   const showForm = !linked || editing;
-  const gh = machine?.gh;
+  const forges = machine?.forges ?? [];
   return (
     <>
       {machine && !machine.git && (
@@ -132,25 +160,19 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
                 {linked ? "Change" : "Add a remote"}
               </button>
             </div>
-            <div className={`${ROW} ${DIVIDER}`}>
-              <span>Sign in with GitHub</span>
-              {gh === "missing" ? (
-                <button type="button" className={BUTTON} onClick={() => void openExternal(GH_URL)}>
-                  Install GitHub CLI
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={BUTTON}
-                  disabled={busy || gh !== "signed-in"}
-                  title={gh === "signed-out" ? "Run gh auth login" : undefined}
-                  onClick={() => void run(signInGithub)}
-                >
-                  Create private repository
-                </button>
-              )}
-            </div>
+            <ForgeSignInRows
+              forges={forges}
+              busy={busy}
+              create={(forge, host) => void signInWith(forge, host)}
+            />
           </>
+        )}
+        {signedIn && (
+          <SignInSteps
+            result={signedIn.result}
+            busy={busy}
+            retry={(name, link) => void signInWith(signedIn.forge, signedIn.host, name, link)}
+          />
         )}
         {linked && (
           <>
@@ -166,15 +188,18 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
                 >
                   Token
                 </button>
-                <button
-                  type="button"
-                  className={BUTTON}
-                  aria-pressed={status.credentials === "gh"}
-                  disabled={busy || gh !== "signed-in"}
-                  onClick={() => void run(() => setCredentials("gh"))}
-                >
-                  GitHub CLI
-                </button>
+                {forges.map((forge) => (
+                  <button
+                    key={forge.id}
+                    type="button"
+                    className={BUTTON}
+                    aria-pressed={status.credentials === forge.id}
+                    disabled={busy || !forgeUsable(forge, status)}
+                    onClick={() => void run(() => setCredentials(forge.id))}
+                  >
+                    {forge.label}
+                  </button>
+                ))}
               </span>
             </div>
             {status.credentials === "token" && (

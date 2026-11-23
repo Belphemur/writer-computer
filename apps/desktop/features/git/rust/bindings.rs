@@ -27,7 +27,7 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::git_remote_remove::<Wry>,
             commands::git_tools::<Wry>,
             commands::git_install_git::<Wry>,
-            commands::git_sign_in_github::<Wry>,
+            commands::git_sign_in::<Wry>,
             commands::git_set_credentials::<Wry>,
             commands::git_plugin_decision::<Wry>,
             commands::git_dismiss_notices::<Wry>,

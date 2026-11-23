@@ -5,7 +5,7 @@ import { summarize } from "../web/lib/state";
 import { baseStatus } from "./fixtures";
 
 const linked = (patch = {}) => baseStatus({ remote: "origin", branch: "main", ...patch });
-const failure = (offline: boolean) => ({ line: "line", details: "d", offline });
+const failure = (offline: boolean) => ({ line: "line", details: "d", offline, kind: "other" });
 
 describe("summarize a linked vault", () => {
   it("says Local without a remote and Synced with one", () => {
