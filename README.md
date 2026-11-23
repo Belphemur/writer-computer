@@ -54,6 +54,27 @@ paths, and is not even compiled into builds made from a clone of this repo.
 [`docs/telemetry.md`](./docs/telemetry.md) lists every event and property, and
 the three independent ways to keep it off.
 
+## Build and test on Linux
+
+Writer builds on Linux (x86_64 in CI, Ubuntu 26.04, which ships WebKitGTK 2.52; the app needs WebKitGTK 2.40 or newer at run time). Install the build packages from the one list CI and the container script use, plus Node 22, pnpm and Rust:
+
+```bash
+xargs -a scripts/linux-build-deps.txt sudo apt-get install -y --no-install-recommends
+```
+
+(WebKitGTK 4.1, GTK 3, libsoup 3, a C compiler for the bundled SQLite, `patchelf`/`rpm` for the packages, `xvfb` for the e2e smoke.) Then `vp install`, `vp dev`, and the validation above work as on macOS. `vp exec tauri build` makes the AppImage, `.deb` and `.rpm` (the signing key is only needed for the updater artifacts; add `--config '{"bundle":{"createUpdaterArtifacts":false}}'` without it). The e2e smoke needs `cargo install tauri-webdriver --locked`, then from `apps/desktop/e2e`: `pnpm run build:app` and `xvfb-run -a pnpm run test:smoke` (see its README).
+
+From a Mac, `scripts/linux-container.sh` does all of it in an `ubuntu:26.04` container (Rancher Desktop or any Docker; arm64 natively on Apple silicon): `check`, `test`, `bundle`, `e2e`, or `shell`.
+
+## Install and first launch
+
+Download from the [releases page](https://github.com/Belphemur/writer-computer/releases).
+
+- **macOS (Apple silicon):** open the DMG and drag Writer to Applications. Builds are not notarized yet: the first launch needs right-click > Open, or `xattr -d com.apple.quarantine /Applications/Writer.app`.
+- **Linux, AppImage:** `chmod +x Writer_*.AppImage` and run it. It updates itself. Needs glibc 2.43 or newer (Ubuntu 26.04's).
+- **Linux, `.deb` / `.rpm`:** `sudo apt install ./Writer_*.deb` or `sudo dnf install ./Writer-*.rpm`. Writer shows "Update available" with a download link; your package manager installs it.
+- **`writer` command:** the `.deb`/`.rpm` install `/usr/bin/writer`. From the AppImage or the macOS app, Settings > Command line links it into `~/.local/bin` (Linux, no sudo) or `/usr/local/bin` (macOS); Settings says when that folder is not on your PATH.
+
 ## Releases
 
-macOS releases are cut locally with `scripts/distribute.sh`. See `docs/releasing.md` for the signed, notarized release workflow and updater publishing details.
+A release is a pushed `v<version>` tag: GitHub Actions builds macOS and Linux and leaves a draft release to review and publish. See `docs/releasing.md`.

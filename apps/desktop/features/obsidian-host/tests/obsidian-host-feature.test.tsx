@@ -372,6 +372,7 @@ describe("Settings pages", () => {
       "Features",
       "Privacy",
       "Secrets",
+      "Command line",
       "Logs",
     ]);
     expect(groups[1]!.items.map((i) => i.label)).toEqual(["Manage plugins", "Copilot", "Tasks"]);

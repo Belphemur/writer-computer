@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { appliesHere, SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import type { SectionBlock, SettingsSection } from "./settings-sections";
 import { SettingRows } from "./setting-rows";
+import { CliSection } from "./cli-section";
 import { FeaturesSection } from "./features-section";
 import { LogsSection } from "./logs-section";
 import { SecretsSection } from "./secrets-section";
@@ -35,6 +36,7 @@ const BLOCK_RENDERERS: {
   category: CategoryBlock,
   themes: () => <ThemesSection />,
   secrets: () => <SecretsSection />,
+  cli: () => <CliSection />,
   logs: () => <LogsSection />,
   features: () => <FeaturesSection />,
 };

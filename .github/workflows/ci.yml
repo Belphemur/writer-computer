@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [writer-computer-agents]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The same checks on both platforms Writer ships for (ADR 2026-11-23).
+  checks:
+    name: Checks (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-26.04 }
+          - { name: macOS, os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: ./.github/actions/setup-writer
+      - name: vp check
+        run: pnpm exec vp check
+      - name: vp test
+        working-directory: apps/desktop
+        run: ../../node_modules/.bin/vp test run
+      - name: cargo test
+        working-directory: apps/desktop/src-tauri
+        run: cargo test
+      - name: cargo clippy
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy
+      - name: cargo fmt
+        working-directory: apps/desktop/src-tauri
+        run: cargo fmt --check
+
+  # The three Linux bundles build (no signing: a pull request has no key) and the e2e smoke runs
+  # against the real WebKitGTK under a virtual display.
+  linux-package:
+    name: Linux bundles and e2e
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    env:
+      NO_STRIP: true
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: ./.github/actions/setup-writer
+      - name: Bundles (AppImage, deb, rpm)
+        run: pnpm --filter desktop exec tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: The packages link the writer command
+        run: |
+          bundle=apps/desktop/src-tauri/target/release/bundle
+          dpkg-deb -I "$bundle"/deb/*.deb postinst | grep -F 'ln -sf writer-desktop /usr/bin/writer'
+          dpkg-deb -c "$bundle"/deb/*.deb | grep -E ' \./usr/bin/writer-desktop$'
+          rpm -qp --scripts "$bundle"/rpm/*.rpm | grep -F 'ln -sf writer-desktop /usr/bin/writer'
+          test -f "$bundle"/appimage/*.AppImage
+      - uses: actions/cache@v4.2.3
+        id: webdriver
+        with:
+          path: ~/.cargo/bin/tauri-webdriver
+          key: tauri-webdriver-0.2.0-${{ runner.os }}
+      - name: Install tauri-webdriver
+        if: steps.webdriver.outputs.cache-hit != 'true'
+        run: cargo install tauri-webdriver --version 0.2.0 --locked
+      - name: e2e smoke
+        working-directory: apps/desktop/e2e
+        env:
+          WRITER_E2E_DEBUG: 1
+        run: |
+          pnpm run build:app
+          xvfb-run -a -s "-screen 0 1280x900x24" pnpm run test:smoke

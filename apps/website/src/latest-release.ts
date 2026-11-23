@@ -1,7 +1,7 @@
 /**
  * Where the download button points and which version the page advertises.
  *
- * The build inlines the version from `tauri.conf.json` and derives the DMG URL
+ * The build inlines the version from `tauri.conf.json` and derives the asset URLs
  * from it (see `vite.config.ts`). That is only right on the day the site is
  * deployed: the site is redeployed by hand and the app is released far more
  * often, so the prerendered page drifts behind whatever is actually published.
@@ -17,28 +17,47 @@
  * "published" means here.
  */
 
+import { ASSET_SUFFIXES, type DownloadAssets } from "./release-assets";
+
+export type { DownloadAssets };
+
 export type Release = {
   /** Bare semver, without the tag's leading `v`. */
   version: string;
-  dmgUrl: string;
+  assets: DownloadAssets;
 };
 
 /** What the build baked in; shown until (and unless) GitHub answers. */
 export const BUILD_RELEASE: Release = {
   version: __WRITER_VERSION__,
-  dmgUrl: __WRITER_DMG_URL__,
+  assets: __WRITER_ASSETS__,
 };
 
 export const LATEST_RELEASE_URL = `https://api.github.com/repos/${__WRITER_RELEASE_REPO__}/releases/latest`;
 
 const TAG = /^v(\d+\.\d+\.\d+)$/;
-const DMG_SUFFIX = "_aarch64.dmg";
+
+/** The URL of the one asset whose name ends in `suffix`, or null. */
+function assetUrl(assets: unknown[], suffix: string): string | null {
+  for (const asset of assets) {
+    if (typeof asset !== "object" || asset === null) continue;
+    const { name, browser_download_url } = asset as {
+      name?: unknown;
+      browser_download_url?: unknown;
+    };
+    if (typeof name !== "string" || !name.endsWith(suffix)) continue;
+    if (typeof browser_download_url === "string" && browser_download_url !== "") {
+      return browser_download_url;
+    }
+  }
+  return null;
+}
 
 /**
- * Read a `releases/latest` payload down to the two fields the page needs.
- * Null when the shape is not what a Writer release looks like — a renamed
- * asset, a tag that is not `v<semver>` — so the caller keeps the build-time
- * pair rather than rendering a broken link.
+ * Read a `releases/latest` payload down to the fields the page needs: the version and one
+ * download per platform package. Null when the shape is not what a Writer release looks like —
+ * a renamed or missing asset, a tag that is not `v<semver>` — so the caller keeps the build-time
+ * value rather than rendering a broken link.
  */
 export function parseLatestRelease(payload: unknown): Release | null {
   if (typeof payload !== "object" || payload === null) return null;
@@ -48,17 +67,12 @@ export function parseLatestRelease(payload: unknown): Release | null {
   const version = TAG.exec(tag_name)?.[1];
   if (!version) return null;
 
-  for (const asset of assets as unknown[]) {
-    if (typeof asset !== "object" || asset === null) continue;
-    const { name, browser_download_url } = asset as {
-      name?: unknown;
-      browser_download_url?: unknown;
-    };
-    if (typeof name !== "string" || !name.endsWith(DMG_SUFFIX)) continue;
-    if (typeof browser_download_url !== "string" || browser_download_url === "") continue;
-    return { version, dmgUrl: browser_download_url };
-  }
-  return null;
+  const mac = assetUrl(assets, ASSET_SUFFIXES.mac);
+  const appimage = assetUrl(assets, ASSET_SUFFIXES.appimage);
+  const deb = assetUrl(assets, ASSET_SUFFIXES.deb);
+  const rpm = assetUrl(assets, ASSET_SUFFIXES.rpm);
+  if (!mac || !appimage || !deb || !rpm) return null;
+  return { version, assets: { mac, linux: { appimage, deb, rpm } } };
 }
 
 /**

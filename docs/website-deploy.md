@@ -47,22 +47,25 @@ curl -I https://writer.computer
 
 ## Download link
 
-The **Download for MacOS** button and the version label next to it are not
-tied to a deploy. The build inlines the version from
-`apps/desktop/src-tauri/tauri.conf.json` and derives the DMG URL from it, and
-that pair is what the prerendered page shows; on load the page then asks
-GitHub's REST API for the repository's latest published release
-(`/repos/joelbqz/writer-computer/releases/latest`, which excludes drafts and
-prereleases) and switches the button and label to that release's
-`*_aarch64.dmg` asset. So a release published after the last deploy is what
-visitors download, without redeploying.
+The download buttons and the version label next to them are not tied to a
+deploy. The build inlines the version from
+`apps/desktop/src-tauri/tauri.conf.json` and derives the asset URLs from it
+(`apps/website/src/release-assets.ts`: the macOS DMG and the Linux AppImage,
+.deb and .rpm), and that set is what the prerendered page shows; on load the
+page then asks GitHub's REST API for the repository's latest published release
+(`/repos/Belphemur/writer-computer/releases/latest`, which excludes drafts and
+prereleases) and switches the buttons and label to that release's assets,
+matched by file suffix. A release missing any of the four is ignored. So a
+release published after the last deploy is what visitors download, without
+redeploying.
 
 If GitHub does not answer (offline, or the unauthenticated per-IP limit of 60
-requests an hour is spent) the page keeps the build-time pair and says so in
+requests an hour is spent) the page keeps the build-time set and says so in
 the browser console. That is the one reason to still redeploy after a release:
 it keeps the fallback current. The logic lives in
-`apps/website/src/latest-release.ts`; the release asset naming it depends on is
-set by `scripts/distribute.sh`, so renaming the DMG there means updating both.
+`apps/website/src/latest-release.ts`; the asset names come from `tauri build`
+and are uploaded unchanged by `.github/workflows/release.yml`, so a change of
+product name or bundle format means updating `release-assets.ts` too.
 
 ## Search engines and AI crawlers
 

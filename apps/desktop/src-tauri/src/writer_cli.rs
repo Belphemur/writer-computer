@@ -161,6 +161,23 @@ fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
     Ok(())
 }
 
+/// File name of the app binary: `mainBinaryName` in `tauri.conf.json` (a test pins them equal).
+/// Not `writer`: that name is the CLI in `main.rs`'s multi-call dispatch.
+#[cfg(not(target_os = "macos"))]
+const APP_BINARY_NAME: &str = "writer-desktop";
+
+/// What the launcher spawns when `WRITER_APP_PATH` is unset. The CLI is the app binary itself, so
+/// the running executable is the app (`/usr/bin/writer` is a link to it). An AppImage's own file
+/// comes first: its executable lives in a mount that disappears when the CLI process exits.
+/// The binary name on PATH is the last resort.
+#[cfg(not(target_os = "macos"))]
+fn default_program(appimage: Option<OsString>, exe: Option<PathBuf>) -> OsString {
+    appimage
+        .filter(|p| !p.is_empty())
+        .or_else(|| exe.map(PathBuf::into_os_string))
+        .unwrap_or_else(|| APP_BINARY_NAME.into())
+}
+
 #[cfg(not(target_os = "macos"))]
 fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
     use std::process::Command;
@@ -169,7 +186,7 @@ fn launch_system(target: Option<&Path>) -> Result<(), LaunchError> {
         if cfg!(target_os = "windows") {
             "writer.exe".into()
         } else {
-            "writer-desktop".into()
+            default_program(std::env::var_os("APPIMAGE"), std::env::current_exe().ok())
         }
     });
 
@@ -270,6 +287,37 @@ fn fail_runtime(err: &dyn std::fmt::Display) {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn app_binary_name_is_the_configured_main_binary_name() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["mainBinaryName"], super::APP_BINARY_NAME);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn default_program_prefers_the_appimage_then_the_running_binary() {
+        use super::default_program;
+        let exe = Some(PathBuf::from("/usr/bin/writer-desktop"));
+        assert_eq!(
+            default_program(Some("/home/u/Writer.AppImage".into()), exe.clone()),
+            OsString::from("/home/u/Writer.AppImage")
+        );
+        assert_eq!(
+            default_program(Some("".into()), exe.clone()),
+            OsString::from("/usr/bin/writer-desktop")
+        );
+        assert_eq!(
+            default_program(None, exe),
+            OsString::from("/usr/bin/writer-desktop")
+        );
+        assert_eq!(
+            default_program(None, None),
+            OsString::from("writer-desktop")
+        );
+    }
     use super::*;
     use std::cell::RefCell;
     use std::fs;

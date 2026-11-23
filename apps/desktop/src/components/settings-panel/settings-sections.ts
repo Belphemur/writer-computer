@@ -12,6 +12,8 @@ export type SectionBlock =
   | { type: "themes" }
   | { type: "secrets" }
   | { type: "logs" }
+  /** Install or remove the `writer` command on the PATH (macOS and Linux). */
+  | { type: "cli" }
   /** Generated from the feature manifests: a toggle per feature, its info and failure state. */
   | { type: "features" };
 
@@ -73,6 +75,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     label: "Secrets",
     group: "General",
     blocks: [{ type: "secrets" }],
+  },
+  {
+    id: "command-line",
+    order: 125,
+    label: "Command line",
+    group: "General",
+    blocks: [{ type: "cli" }],
   },
   {
     id: "logs",

@@ -1,22 +1,9 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { appBinary } from "./app-binary.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// Built by `pnpm run build:app` (cargo tauri build --features e2e).
-// `productName` in tauri.conf.json names the .app bundle ("Writer.app") but
-// the binary inside MacOS/ keeps the Cargo crate name ("desktop") — Tauri
-// does not rename it.
-// `WRITER_E2E_APP` points at a copy of the built Writer.app (parallel work can rebuild the
-// bundle path underneath a running spec).
-const APP_BINARY = process.env.WRITER_E2E_APP
-  ? resolve(process.env.WRITER_E2E_APP, "Contents/MacOS/desktop")
-  : resolve(
-      __dirname,
-      "../src-tauri/target/release/bundle/macos/Writer.app/Contents/MacOS/desktop",
-    );
+// Built by `pnpm run build:app`; app-binary.mjs knows where it lands on each OS.
+const APP_BINARY = appBinary();
 
 /** @type {import('node:child_process').ChildProcess | undefined} */
 let proxy;

@@ -1,0 +1,29 @@
+name: Set up Writer
+description: Node, pnpm, Rust, the Linux build packages and the workspace's dependencies. Run after actions/checkout; shared by ci.yml and release.yml.
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4.1.0
+    - uses: actions/setup-node@v4.4.0
+      with:
+        node-version: 22
+        cache: pnpm
+    - name: Linux build packages
+      if: runner.os == 'Linux'
+      shell: bash
+      # The same list scripts/linux-container.sh and the README use.
+      run: |
+        sudo apt-get update
+        xargs -a scripts/linux-build-deps.txt sudo apt-get install -y --no-install-recommends
+    - name: Rust toolchain
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal --component clippy --component rustfmt
+        rustup default stable
+    - uses: Swatinem/rust-cache@v2.7.8
+      with:
+        workspaces: apps/desktop/src-tauri
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

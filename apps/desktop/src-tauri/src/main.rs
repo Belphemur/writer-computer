@@ -32,9 +32,58 @@ fn is_cli_invocation() -> bool {
     let Some(arg0) = std::env::args_os().next() else {
         return false;
     };
-    Path::new(&arg0)
+    is_cli_name(&arg0)
+        || appimage_started_as_writer(
+            std::env::var_os("APPIMAGE").is_some(),
+            std::env::var_os("ARGV0"),
+        )
+}
+
+/// `writer` as the program's base name, extension ignored.
+fn is_cli_name(arg: &std::ffi::OsStr) -> bool {
+    Path::new(arg)
         .file_stem()
         .and_then(|s| s.to_str())
         .map(|name| name.eq_ignore_ascii_case("writer"))
         .unwrap_or(false)
+}
+
+/// Inside an AppImage the running binary is `usr/bin/<app>` in the mount, so a `writer` link to
+/// the AppImage file reaches us only through `ARGV0`, which the AppImage runtime sets to the name
+/// it was started as. Only the exact name counts, so an AppImage file renamed `writer.AppImage`
+/// still opens the app.
+fn appimage_started_as_writer(in_appimage: bool, argv0: Option<std::ffi::OsString>) -> bool {
+    in_appimage && argv0.is_some_and(|a| Path::new(&a).file_name().is_some_and(|n| n == "writer"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writer_by_base_name_is_the_cli() {
+        assert!(is_cli_name("/usr/bin/writer".as_ref()));
+        assert!(is_cli_name("writer".as_ref()));
+        assert!(!is_cli_name("/usr/bin/writer-desktop".as_ref()));
+    }
+
+    #[test]
+    fn appimage_is_the_cli_only_when_started_as_exactly_writer() {
+        let argv0 = |s: &str| Some(std::ffi::OsString::from(s));
+        assert!(appimage_started_as_writer(true, argv0("writer")));
+        assert!(appimage_started_as_writer(
+            true,
+            argv0("/home/u/.local/bin/writer")
+        ));
+        assert!(!appimage_started_as_writer(
+            true,
+            argv0("./writer.AppImage")
+        ));
+        assert!(!appimage_started_as_writer(
+            true,
+            argv0("Writer_0.9.0_amd64.AppImage")
+        ));
+        assert!(!appimage_started_as_writer(false, argv0("writer")));
+        assert!(!appimage_started_as_writer(true, None));
+    }
 }

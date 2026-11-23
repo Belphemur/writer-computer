@@ -1,93 +1,85 @@
 # Releasing Writer
 
-How to cut a signed, notarized macOS release and publish it so the in-app updater picks it up. This is the process for an agent (or human) running locally on the maintainer's machine — releases are not built in CI.
+A release is a tag. Pushing `v<version>` runs `.github/workflows/release.yml`, which builds macOS arm64 and Linux x86_64 on GitHub's runners and leaves a **draft** release on `Belphemur/writer-computer`. You review the draft and publish it. Decision record: [ADR 2026-11-23](./decisions/2026-11-23-release-from-ci-on-a-version-tag-to-belphemur-writer-computer-for-macos-and-linux.md).
 
-## Pre-flight Checks
+**Bump, changelog, tag, review the draft, publish.**
 
-Before bumping anything:
+## 1. Bump the version
 
-- `vp check` and `vp test` pass.
-- The `CHANGELOG.md` entry for this release already exists. If it doesn't, write it first as a separate commit — release commits should only touch version fields.
+The version lives in four places that must agree (the workflow refuses a tag that does not match them):
 
-`scripts/distribute.sh` enforces the rest itself: it refuses to run unless you're on `master` with a clean working tree, fast-forward of `origin/master`, and the target tag doesn't already exist locally or on origin.
-
-## Step 1 — Bump the version
-
-The authoritative version lives in `apps/desktop/src-tauri/tauri.conf.json`. `scripts/distribute.sh` reads it from there to derive the tag (`v<version>`) and DMG filename. Three other files must be kept in sync so the crate, npm package, and Tauri config all agree:
-
-1. `apps/desktop/src-tauri/tauri.conf.json` — `version` field
+1. `apps/desktop/src-tauri/tauri.conf.json` — `version`
 2. `apps/desktop/src-tauri/Cargo.toml` — `[package].version`
-3. `apps/desktop/package.json` — `version` field
+3. `apps/desktop/package.json` — `version`
 4. `apps/desktop/src-tauri/Cargo.lock` — refresh with `cargo update -p desktop --offline` from `apps/desktop/src-tauri/`
 
-Use a patch bump for fixes and small improvements, a minor bump for new user-visible features. Major bumps are reserved for breaking changes or 1.0.
+Patch bump for fixes, minor for new user-visible features, major for breaking changes or 1.0. Commit it alone (`Bump version to <version>`) so it reviews in isolation.
 
-Commit with a message like `Bump version to <version>`. Do not bundle other changes into the bump commit — it should be reviewable in isolation. **Do not push or tag manually** — the script does both.
+## 2. Changelog
 
-## Step 2 — Draft user-facing release notes
+Rename `## Unreleased` in `CHANGELOG.md` to `## <version>` (a date after it is fine: `## 0.9.0 - 2026-11-24`), and start a new empty `## Unreleased` above it. The draft's notes are that section verbatim, and the in-app update dialog shows them, so keep the bullets short and user-facing. The workflow fails before building when the section is missing or empty.
 
-The detailed bullets in `CHANGELOG.md` are written for engineers — too long and too jargon-heavy for the GitHub release page. The agent drafts a short, user-facing version from the latest dated section of `CHANGELOG.md` and writes it to a markdown file (any path; a temp file is fine).
+## 3. Check, push, tag
 
-Guidelines for the drafted notes:
+`vp check`, `vp test` and the Rust checks pass (CI runs them on Linux and macOS on every push; wait for it to be green on the commit you tag). Then, from `writer-computer-agents`, with the commit pushed:
 
-- 3–8 bullets, one short line each. Lead with the user-visible behavior, not the implementation.
-- Group as you see fit — typically a short intro paragraph (optional) plus bullets, no headings needed.
-- No code spans for internal symbols (`view.setState`, `--surface-card`, etc.) and no spec/PR references.
-- Keep wording in the same voice as the existing CHANGELOG (active, terse, sentence case).
+```sh
+git tag v<version>
+git push origin v<version>
+```
 
-The draft is not the final word — you'll review and can edit it directly on GitHub before publishing.
+The workflow rejects a tag that is not `v<version>` of the version files, or whose commit is not on `writer-computer-agents`. `v<version>-rc.1` style tags are allowed and produce a pre-release draft (the version files still say `<version>`).
 
-## Step 3 — Run distribute.sh
+## 4. Review the draft
 
-Run from the repo root, passing the notes file:
+The workflow's jobs: **Check the tag** (tag, version files, branch, changelog section, signing key secret), **Build** for each platform in parallel, **Draft release**. Expect roughly an hour. Open the draft URL from the run summary and confirm the assets:
+
+- `Writer_<version>_aarch64.dmg`, `Writer.app.tar.gz` and `.sig` (macOS)
+- `Writer_<version>_amd64.AppImage` and `.sig`, `Writer_<version>_amd64.deb`, `Writer-<version>-1.x86_64.rpm` (Linux)
+- `latest.json` naming `darwin-aarch64` and `linux-x86_64`
+
+Edit the notes on GitHub if you want, then **Publish release**. Until you do, the in-app updater and the website's download button do not see it (the `latest` endpoint skips drafts and pre-releases).
+
+## 5. Verify
+
+- `https://github.com/Belphemur/writer-computer/releases/latest/download/latest.json` resolves to the new version.
+- An installed older build (AppImage or macOS app) offers the update at next launch and verifies its signature. A `.deb`/`.rpm` install shows "Update available" with a download link instead of installing.
+
+## Secrets and settings
+
+Repository secrets (Settings > Secrets and variables > Actions); no secret ever appears in the repository or a log:
+
+| Secret                                                                                                                     | Needed             | What                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`                                                                                                | yes                | The updater key (`~/.tauri/` on the maintainer's machine); its public half is `plugins.updater.pubkey` in `tauri.conf.json`.     |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`                                                                                       | yes (may be empty) | Its password.                                                                                                                    |
+| `WRITER_POSTHOG_KEY`                                                                                                       | no                 | Without it the build has telemetry off ([telemetry.md](./telemetry.md)).                                                         |
+| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | no                 | All six together switch macOS from ad-hoc signing to Developer ID signing and notarization. Any missing and the build is ad-hoc. |
+
+**Ad-hoc macOS.** Until the Developer ID secrets exist the DMG is not notarized: the first launch needs right-click > Open (or `xattr -d com.apple.quarantine /Applications/Writer.app`). Say so in the release notes.
+
+**Linux AppImage.** It is built on Ubuntu 26.04, so it needs glibc 2.43 or newer; older distributions use the `.deb`/`.rpm` of their own era.
+
+## When things go wrong
+
+- **The check job fails.** Nothing was built. The message says what to fix (version mismatch, branch, changelog section, missing secret). Fix it, commit, then move the tag: `git tag -f v<version> && git push -f origin v<version>` (only for a tag whose release was never published).
+- **A build fails.** Fix on the branch, commit, move the tag as above; the workflow reruns from the start. Re-running one job from the Actions page also works when the cause was the runner.
+- **"Could not create the draft" because the release exists.** An earlier run got that far. Delete the draft on GitHub (never a published release without asking first: users may already be updating from it), then re-run the `Draft release` job.
+- **You decide not to publish.** Delete the draft, then drop the tag: `git tag -d v<version> && git push origin :refs/tags/v<version>`.
+- **The version was wrong after publishing.** Stop and ask; do not delete a published release.
+
+## Appendix: local release (macOS arm64 only)
+
+`scripts/distribute.sh` (`pnpm distribute`) is the fallback when CI cannot be used. It builds, Developer ID signs, notarizes and uploads a draft for macOS arm64 only, so its `latest.json` lacks `linux-x86_64`: prefer the workflow, and use this only knowing the Linux updater then finds nothing.
+
+It needs a `.env` at the repo root with `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `TAURI_SIGNING_PRIVATE_KEY` (a path to the key), optionally `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `WRITER_POSTHOG_KEY` (or `WRITER_RELEASE_WITHOUT_TELEMETRY=1`). Draft user-facing notes into a file, then:
 
 ```sh
 ./scripts/distribute.sh --notes-file /tmp/release-notes.md
 ```
 
-The script will, in order:
+Pre-flight: it refuses unless you are on `writer-computer-agents` with a clean tree that is a fast-forward of `origin/writer-computer-agents` and the tag does not exist. Then it pushes the branch, builds (`tauri build --bundles app,dmg`), signs, notarizes, staples, writes `latest.json` for `darwin-aarch64`, creates the **draft** on `Belphemur/writer-computer` with the DMG, the updater tarball and `latest.json`, and tags and pushes `v<version>`. Review and publish as in step 4. If notarization fails, report Apple's log to the maintainer; do not retry blindly.
 
-1. Validate `.env`, signing credentials, and the notes file (must exist and be non-empty). Telemetry's `WRITER_POSTHOG_KEY` is read from `.env` too; the script refuses to build without it unless `WRITER_RELEASE_WITHOUT_TELEMETRY=1` is set, because a keyless release works normally and simply never reports anything, which is easy to miss — see [telemetry.md](./telemetry.md).
-2. Run pre-flight git checks (on master, clean tree, fast-forward of origin, tag doesn't already exist).
-3. Push `master` to origin so the commit the release will point at is published before the build starts.
-4. Build the desktop crate in release mode (`vp exec tauri build --bundles app,dmg`).
-5. Sign `Writer.app` and the DMG with the Developer ID identity from `.env`.
-6. Submit the app to Apple notarization and wait for the result. This is the slowest step and the most likely to fail — if Apple returns anything other than `Accepted`, stop and report the notarization log to the user.
-7. Staple the notarization ticket to the app.
-8. Bundle `Writer.app.tar.gz` and produce `Writer.app.tar.gz.sig` using the Tauri updater key.
-9. Write `latest.json` with the new version, signature, and download URL pointing at `joelbqz/writer-computer`.
-10. Create a **draft** release on `joelbqz/writer-computer` via `gh release create --draft`, uploading the DMG, the updater tarball, and `latest.json`, with the drafted notes attached.
-11. Tag this repo with `v<version>` and push the tag to origin.
-12. Print the draft URL.
+## Not covered
 
-Expect the whole script to take several minutes — most of it is the cargo release build and Apple notarization.
-
-## Step 4 — Review and publish on GitHub
-
-Open the draft URL printed by `distribute.sh`. Confirm:
-
-- Three assets are attached: `Writer_<version>_aarch64.dmg`, `Writer.app.tar.gz`, `latest.json`.
-- The notes read well; edit them inline if needed.
-
-Click **Publish release**. Until you do, the in-app updater won't see the new version (the `latest` endpoint skips drafts). If you abandon the draft instead, delete the local and remote tag manually (`git tag -d v<version> && git push origin :refs/tags/v<version>`).
-
-## Step 5 — Verify
-
-- Confirm `https://github.com/joelbqz/writer-computer/releases/latest/download/latest.json` resolves to the new version. The in-app updater hits this URL on launch (see `apps/desktop/src-tauri/tauri.conf.json`).
-- Existing installs will pick up the update on next launch.
-
-## When things go wrong
-
-- **Pre-flight check fails.** The script aborted before doing anything irreversible. Read the error, fix the underlying state (commit, pull, bump version, etc.), and re-run.
-- **Notarization fails.** Apple's response includes a submission ID. Ask the user how to proceed — do not retry blindly. Common causes: an entitlement mismatch, an unsigned binary inside the bundle, or an expired signing identity.
-- **`gh release create` fails because the tag already exists in `writer-computer`.** A previous attempt got far enough to publish. Do not delete the existing release without explicit user permission — it may already be live to users via the updater. Ask first.
-- **Build fails after the version bump is committed.** Fix the build, commit the fix, and re-run `distribute.sh`. Do not amend or revert the bump commit unless the user asks for it.
-- **The script succeeded but the local tag push failed.** The draft is created; you just need to push the tag. Run `git push origin v<version>` manually. Don't re-run the whole script.
-- **You decide not to publish the draft.** Delete the draft on GitHub, then drop the tag: `git tag -d v<version> && git push origin :refs/tags/v<version>`.
-- **You realize mid-release that the version was wrong.** Stop. Revert is risky once the GH release exists. Ask the user before taking any destructive action.
-
-## What this doc deliberately does not cover
-
-- Cross-platform releases (Windows, Linux, x86_64 macOS). The script and config are arm64-only today.
-- CI-driven releases. There is no GitHub Actions workflow for this — everything runs on the maintainer's machine because of the Apple signing requirement.
-- Rolling back a published release. There is no documented rollback procedure; if you need one, escalate to the user.
+Windows, aarch64 Linux, Flatpak, an apt/dnf repository, rolling back a published release (escalate to the maintainer).

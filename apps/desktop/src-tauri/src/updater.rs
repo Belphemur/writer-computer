@@ -35,6 +35,33 @@ fn with_parent<R: tauri::Runtime>(
     builder
 }
 
+/// Where the releases (and so the downloads for a package install) live; the updater endpoint in
+/// `tauri.conf.json` is under it (a test pins that).
+const RELEASES_URL: &str = "https://github.com/Belphemur/writer-computer/releases";
+
+/// How an update reaches this install.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstallKind {
+    /// macOS app bundle or Linux AppImage: the updater downloads, replaces and restarts.
+    SelfUpdate,
+    /// `.deb`/`.rpm`: the package manager owns the files, so we only point at the download.
+    Package,
+}
+
+/// An AppImage is the only Linux install the updater can replace; the runtime sets `APPIMAGE` to
+/// its file. Any other Linux run is a package (or a build from source) and must not self-update.
+fn install_kind(appimage: Option<&std::ffi::OsStr>) -> InstallKind {
+    if cfg!(target_os = "linux") && appimage.is_none_or(|p| p.is_empty()) {
+        InstallKind::Package
+    } else {
+        InstallKind::SelfUpdate
+    }
+}
+
+fn release_page(version: &str) -> String {
+    format!("{RELEASES_URL}/tag/v{version}")
+}
+
 const DAILY_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const DISMISSED_VERSION_FILE: &str = "updater-dismissed-version.json";
 
@@ -211,7 +238,39 @@ pub fn start_check(app: AppHandle, manual: bool) {
     });
 }
 
+/// A package install cannot be updated in place: say so and offer the release page.
+fn prompt_download(app: AppHandle, version: String) {
+    use tauri_plugin_opener::OpenerExt;
+    let parent = dialog_parent(&app);
+    let app_for_cb = app.clone();
+    let url = release_page(&version);
+    with_parent(
+        app.dialog()
+            .message(format!(
+                "Writer {version} is available.\n\nDownload the new package and install it with your package manager."
+            ))
+            .kind(MessageDialogKind::Info)
+            .title("Update Available")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Download".to_string(),
+                "Later".to_string(),
+            )),
+        parent.as_ref(),
+    )
+    .show(move |accepted| {
+        if accepted {
+            if let Err(err) = app_for_cb.opener().open_url(&url, None::<&str>) {
+                log::warn!("could not open the release page: {err}");
+            }
+        }
+        manager(&app_for_cb).set_state(UpdaterState::Idle);
+    });
+}
+
 fn prompt_install(app: AppHandle, version: String, notes: Option<String>) {
+    if install_kind(std::env::var_os("APPIMAGE").as_deref()) == InstallKind::Package {
+        return prompt_download(app, version);
+    }
     let body = match notes.as_deref() {
         Some(notes) if !notes.trim().is_empty() => {
             format!("Writer {} is available.\n\n{}", version, notes.trim())
@@ -302,4 +361,42 @@ pub fn spawn_daily_check(app: AppHandle) {
             start_check(app.clone(), false);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn only_an_appimage_self_updates_on_linux() {
+        let kind = install_kind(Some(OsStr::new("/home/ada/Writer.AppImage")));
+        assert_eq!(kind, InstallKind::SelfUpdate);
+        let none = install_kind(None);
+        let empty = install_kind(Some(OsStr::new("")));
+        if cfg!(target_os = "linux") {
+            assert_eq!((none, empty), (InstallKind::Package, InstallKind::Package));
+        } else {
+            assert_eq!(
+                (none, empty),
+                (InstallKind::SelfUpdate, InstallKind::SelfUpdate)
+            );
+        }
+    }
+
+    #[test]
+    fn download_link_is_the_tagged_release_page() {
+        assert_eq!(
+            release_page("0.9.1"),
+            "https://github.com/Belphemur/writer-computer/releases/tag/v0.9.1"
+        );
+    }
+
+    #[test]
+    fn updater_endpoint_is_under_the_releases_url() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let endpoint = conf["plugins"]["updater"]["endpoints"][0].as_str().unwrap();
+        assert!(endpoint.starts_with(RELEASES_URL), "{endpoint}");
+    }
 }

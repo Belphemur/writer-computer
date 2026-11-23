@@ -5,6 +5,9 @@ End-to-end tests for the Writer desktop app, driven via WebdriverIO and the
 plugin (the only viable WebDriver path for Tauri v2 on macOS as of April 2026 —
 official `tauri-driver` does not support macOS, see
 [tauri-apps/tauri#7068](https://github.com/tauri-apps/tauri/issues/7068)).
+The same plugin and intermediary also drive WebKitGTK, so Linux uses the same harness (a
+different binary path and `--no-bundle` build, both in `app-binary.mjs`); it needs `xvfb` on a
+machine without a display (see "Build and test on Linux" in the README).
 
 This setup is **experimental**. The plugin is early-stage; expect rough edges.
 
@@ -31,7 +34,9 @@ pnpm run test:e2e
 ```
 
 This builds the app with `--features e2e` (which embeds the WebDriver server)
-and then runs the smoke spec. The first build is slow; incremental rebuilds
+and then runs every spec (`pnpm run test:smoke` runs the smoke spec alone). On Linux the build is
+`--no-bundle` (no AppImage or packages); `WRITER_E2E_DEBUG=1` builds and runs the debug profile,
+much faster than a release build with LTO. The first build is slow; incremental rebuilds
 are fast.
 
 > The e2e build uses an isolated bundle identifier (`com.writer-computer.e2e`)
@@ -102,7 +107,7 @@ to `WRITER_E2E_SHOTS` (default `e2e/.cache/shots`).
 
 ## How it works
 
-1. `pnpm run build:app` produces `Writer.app` with the `e2e` Cargo feature,
+1. `pnpm run build:app` produces `Writer.app` (macOS) or the bare binary (Linux) with the `e2e` Cargo feature,
    which includes `tauri-plugin-webdriver` (an embedded HTTP WebDriver server).
 2. `wdio.conf.js` (`onPrepare`) spawns the `tauri-webdriver` intermediary CLI
    on port 4444.

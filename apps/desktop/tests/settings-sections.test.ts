@@ -72,6 +72,7 @@ describe("settings section registry", () => {
       "Features",
       "Privacy",
       "Secrets",
+      "Command line",
       "Logs",
     ]);
   });

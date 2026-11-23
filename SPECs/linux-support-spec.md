@@ -95,6 +95,15 @@ Built: items 6-10, 13 (reveal, trash message, terminal table and dropdown, `--co
 4. **CLI install, updates, release lane**: Linux installer, updater for AppImage, notify for deb/rpm, `distribute.sh`, website download.
 5. **Docs and website copy.**
 
+## Build, CLI install and updates (lanes 1 and 4, as built)
+
+- **Config.** `tauri.conf.json` sets `mainBinaryName` `writer-desktop` (never `writer`: that name is the CLI in `main.rs`'s multi-call dispatch; `writer_cli.rs` has a test that its constant equals it). Per-OS overlays merge over it: `tauri.macos.conf.json` (bundles `app`, `dmg`) and `tauri.linux.conf.json` (decorations off, no transparency, the whole window entry since arrays replace; bundles `appimage`, `deb`, `rpm`; the deb and rpm link `/usr/bin/writer` to `writer-desktop` from post-install scripts in `src-tauri/linux/`, removed on package removal but not upgrade; the bundler follows symlinks and copies custom files by content, so neither a link nor a copy of the binary can be listed in `files`). The 512px `icons/icon.png` is in `bundle.icon`.
+- **Package list.** `scripts/linux-build-deps.txt` is the one list the README, CI (`.github/actions/setup-writer`) and `scripts/linux-container.sh` install from.
+- **e2e per OS.** The same harness as macOS: `tauri-plugin-webdriver` (the `e2e` feature) and the `tauri-webdriver` intermediary both support WebKitGTK, so Linux needs no `tauri-driver` and no second harness. `e2e/app-binary.mjs` is the one place that knows the binary path and build flags per OS (`--no-bundle` on Linux; `WRITER_E2E_DEBUG=1` for a debug build; `CARGO_TARGET_DIR` honoured).
+- **CI and release.** `ci.yml` (checks on `ubuntu-26.04` and `macos-latest`; Linux bundles and the e2e smoke under `xvfb`), `release.yml` (ADR 2026-11-23), logic in `scripts/release.mjs` with tests in `apps/desktop/tests/release-script.test.ts`.
+- **CLI install.** Tauri-free core `src/cli_install.rs`; `commands/shell_install.rs` holds the per-OS installers and the commands `cli_status`, `install_cli`, `uninstall_cli` (macOS and Linux). Linux links `~/.local/bin/writer` to `$APPIMAGE` (else the running binary), never elevates; when `/usr/bin/writer` already links to this binary the status says `package` and there is nothing to install. `main.rs` also treats an AppImage started with `ARGV0` exactly `writer` as the CLI (the AppImage runtime sets it for a link to the file); `writer_cli.rs` launches `$APPIMAGE`, else the running binary. Settings > Command line shows the state and the "not on your PATH" line (login-shell PATH, not only the process's). The menu item ("Install 'writer' command") belongs to the window lane's menu definition and calls `commands::shell_install::install_cli_blocking` / `uninstall_cli_blocking` / `cli_status_blocking`.
+- **Updates.** `updater.rs`: an AppImage (`APPIMAGE` set) and macOS self-update; any other Linux run is a package install and the "Update available" dialog offers Download (the release page) instead of installing.
+
 ## Tests
 
 See the ADR's Implementation Plan. Real-session checklist: the ADR's Verification.

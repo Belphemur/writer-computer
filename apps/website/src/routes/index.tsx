@@ -78,7 +78,7 @@ function HomePage() {
         <div className="cta">
           <a
             className="download"
-            href={release.dmgUrl}
+            href={release.assets.mac}
             onClick={() => capture("download_started", { app_version: release.version })}
           >
             <AppleGlyph size={20} />

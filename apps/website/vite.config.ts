@@ -6,6 +6,7 @@ import { defineConfig } from "vite";
 import { devtools } from "@tanstack/devtools-vite";
 
 import { writerDocs } from "./docs-plugin";
+import { assetUrls } from "./src/release-assets";
 
 const tauriConfPath = fileURLToPath(
   new URL("../desktop/src-tauri/tauri.conf.json", import.meta.url),
@@ -14,11 +15,11 @@ const tauriConf = JSON.parse(readFileSync(tauriConfPath, "utf-8")) as {
   version: string;
 };
 
-const RELEASE_REPO = "joelbqz/writer-computer";
+const RELEASE_REPO = "Belphemur/writer-computer";
 const VERSION = tauriConf.version;
-const DMG_URL = `https://github.com/${RELEASE_REPO}/releases/download/v${VERSION}/Writer_${VERSION}_aarch64.dmg`;
+const ASSETS = assetUrls(RELEASE_REPO, VERSION);
 const RELEASES_URL = `https://github.com/${RELEASE_REPO}/releases/tag/v${VERSION}`;
-const REPO_URL = "https://github.com/joelbqz/writer-computer";
+const REPO_URL = `https://github.com/${RELEASE_REPO}`;
 
 export default defineConfig({
   plugins: [
@@ -38,7 +39,7 @@ export default defineConfig({
   define: {
     __WRITER_RELEASE_REPO__: JSON.stringify(RELEASE_REPO),
     __WRITER_VERSION__: JSON.stringify(VERSION),
-    __WRITER_DMG_URL__: JSON.stringify(DMG_URL),
+    __WRITER_ASSETS__: JSON.stringify(ASSETS),
     __WRITER_RELEASES_URL__: JSON.stringify(RELEASES_URL),
     __WRITER_REPO_URL__: JSON.stringify(REPO_URL),
     // The site shares the desktop app's PostHog project, whose key lives in the

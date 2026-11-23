@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
+# Local fallback for the macOS arm64 release (docs/releasing.md, appendix). The normal release is
+# the tag-triggered workflow .github/workflows/release.yml, which also builds Linux. This script
+# builds and publishes macOS only, so its latest.json names darwin-aarch64 alone: the Linux
+# updater finds nothing until a release that has linux-x86_64 is the latest.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
-RELEASE_REPO="joelbqz/writer-computer"
+# The branch releases are cut from, and the repository they are published to (also in
+# .github/workflows/release.yml, which is the normal way to release: docs/releasing.md).
+RELEASE_BRANCH="writer-computer-agents"
+RELEASE_REPO="Belphemur/writer-computer"
 
 NOTES_FILE=""
 while [ $# -gt 0 ]; do
@@ -80,12 +87,12 @@ TAURI_CONF="$ROOT_DIR/apps/desktop/src-tauri/tauri.conf.json"
 VERSION=$(python3 -c "import json; print(json.load(open('$TAURI_CONF'))['version'])")
 TAG="v$VERSION"
 
-# Pre-flight: must be on master, clean, in sync with origin, and the tag must
+# Pre-flight: must be on the release branch, clean, in sync with origin, and the tag must
 # not already exist anywhere. These checks are cheap — fail before the long
 # release build rather than after.
 CURRENT_BRANCH=$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD)
-if [ "$CURRENT_BRANCH" != "master" ]; then
-  echo "Error: releases must be cut from master, currently on '$CURRENT_BRANCH'"
+if [ "$CURRENT_BRANCH" != "$RELEASE_BRANCH" ]; then
+  echo "Error: releases must be cut from $RELEASE_BRANCH, currently on '$CURRENT_BRANCH'"
   exit 1
 fi
 
@@ -96,13 +103,13 @@ if ! git -C "$ROOT_DIR" diff-index --quiet HEAD --; then
 fi
 
 echo "Fetching origin to verify sync..."
-git -C "$ROOT_DIR" fetch origin master --tags
+git -C "$ROOT_DIR" fetch origin "$RELEASE_BRANCH" --tags
 
 LOCAL_REV=$(git -C "$ROOT_DIR" rev-parse HEAD)
-REMOTE_REV=$(git -C "$ROOT_DIR" rev-parse origin/master)
-BASE_REV=$(git -C "$ROOT_DIR" merge-base HEAD origin/master)
+REMOTE_REV=$(git -C "$ROOT_DIR" rev-parse "origin/$RELEASE_BRANCH")
+BASE_REV=$(git -C "$ROOT_DIR" merge-base HEAD "origin/$RELEASE_BRANCH")
 if [ "$LOCAL_REV" != "$REMOTE_REV" ] && [ "$BASE_REV" != "$REMOTE_REV" ]; then
-  echo "Error: local master is not a fast-forward of origin/master"
+  echo "Error: local $RELEASE_BRANCH is not a fast-forward of origin/$RELEASE_BRANCH"
   echo "  local:  $LOCAL_REV"
   echo "  origin: $REMOTE_REV"
   echo "  Pull or rebase before releasing."
@@ -118,10 +125,10 @@ if git -C "$ROOT_DIR" ls-remote --tags --exit-code origin "refs/tags/$TAG" >/dev
   exit 1
 fi
 
-# Push master so the commit the release points at is on origin before we build.
+# Push the branch so the commit the release points at is on origin before we build.
 # Idempotent if local already matches origin.
-echo "Pushing master to origin..."
-git -C "$ROOT_DIR" push origin master
+echo "Pushing $RELEASE_BRANCH to origin..."
+git -C "$ROOT_DIR" push origin "$RELEASE_BRANCH"
 
 echo "Building Writer $TAG..."
 

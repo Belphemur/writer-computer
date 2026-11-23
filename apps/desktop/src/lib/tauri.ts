@@ -133,6 +133,30 @@ export function recentLogErrors(limit = 200): Promise<string[]> {
   return invoke("recent_log_errors", { limit });
 }
 
+// The `writer` command on the user's PATH (Rust: `commands/shell_install.rs`, `cli_install.rs`)
+export interface CliInstallStatus {
+  /** Where the link is (or would be): `/usr/local/bin/writer`, `~/.local/bin/writer` or the package's `/usr/bin/writer`. */
+  target: string;
+  installed: boolean;
+  state: "missing" | "installed" | "stale" | "foreign";
+  /** The target's folder is on the login shell's PATH. */
+  onPath: boolean;
+  /** The link belongs to the .deb/.rpm: nothing to install or remove here. */
+  package: boolean;
+}
+
+export function cliStatus(): Promise<CliInstallStatus> {
+  return invoke("cli_status");
+}
+
+export function installCli(): Promise<CliInstallStatus> {
+  return invoke("install_cli");
+}
+
+export function uninstallCli(): Promise<CliInstallStatus> {
+  return invoke("uninstall_cli");
+}
+
 export function revealInFileManager(path: string): Promise<void> {
   return invoke("reveal_in_file_manager", { path });
 }

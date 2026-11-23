@@ -37,10 +37,12 @@ describe("Writer app", function () {
       // Promise return value. The injected `done` callback receives `null`
       // on success or an error message string on failure.
       const error = await browser.executeAsync(
-        (path, content, done) => {
+        (workspace, path, content, done) => {
           void (async () => {
             try {
               const { invoke } = window.__TAURI_INTERNALS__;
+              // File commands only touch the window's workspace, so open the temp dir as one.
+              await invoke("open_workspace", { path: workspace });
               await invoke("create_file", { path });
               await invoke("write_file", { path, content });
               done(null);
@@ -49,6 +51,7 @@ describe("Writer app", function () {
             }
           })();
         },
+        workspace,
         filePath,
         expectedContent,
       );

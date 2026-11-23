@@ -13,5 +13,18 @@
         "visible": false
       }
     ]
+  },
+  "bundle": {
+    "targets": ["appimage", "deb", "rpm"],
+    "linux": {
+      "deb": {
+        "postInstallScript": "linux/post-install.sh",
+        "preRemoveScript": "linux/deb-pre-remove.sh"
+      },
+      "rpm": {
+        "postInstallScript": "linux/post-install.sh",
+        "preRemoveScript": "linux/rpm-pre-remove.sh"
+      }
+    }
   }
 }

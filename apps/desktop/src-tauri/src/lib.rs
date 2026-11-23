@@ -3,6 +3,8 @@ mod app_menu;
 pub mod attachments;
 pub mod bases;
 pub mod cli;
+#[cfg(unix)]
+pub mod cli_install;
 pub mod code_files;
 #[cfg(test)]
 mod code_files_tests;
@@ -434,7 +436,7 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
 
 #[cfg(target_os = "macos")]
 fn refresh_cli_menu(app: &tauri::AppHandle) {
-    let installed = commands::shell_install::cli_status_blocking().installed;
+    let installed = commands::shell_install::cli_status_blocking().is_ok_and(|s| s.installed);
     let label = if installed {
         CLI_MENU_UNINSTALL_LABEL
     } else {
@@ -447,7 +449,7 @@ fn refresh_cli_menu(app: &tauri::AppHandle) {
 
 #[cfg(target_os = "macos")]
 fn run_cli_toggle(app: tauri::AppHandle) {
-    if commands::shell_install::cli_status_blocking().installed {
+    if commands::shell_install::cli_status_blocking().is_ok_and(|s| s.installed) {
         run_cli_uninstall(app);
     } else {
         run_cli_install(app);
@@ -800,11 +802,11 @@ pub fn run() {
             commands::plugins::plugin_home_file_write,
             commands::plugins::plugin_open_path,
             commands::plugins::plugin_open_url,
-            #[cfg(target_os = "macos")]
+            #[cfg(unix)]
             commands::shell_install::cli_status,
-            #[cfg(target_os = "macos")]
+            #[cfg(unix)]
             commands::shell_install::install_cli,
-            #[cfg(target_os = "macos")]
+            #[cfg(unix)]
             commands::shell_install::uninstall_cli,
         ]))
         .build(context())
