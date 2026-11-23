@@ -2,13 +2,6 @@
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 
-// jsdom has no text layout; CodeMirror measures through Range rects.
-if (!Range.prototype.getClientRects)
-  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
-if (!Range.prototype.getBoundingClientRect)
-  Range.prototype.getBoundingClientRect = () =>
-    ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect;
-
 export const COMPOSER = "[data-agent-composer]";
 
 /** The composer's editable element and its view. */

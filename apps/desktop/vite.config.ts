@@ -32,6 +32,8 @@ export default defineConfig(async () => ({
     // https://vitest.dev/guide/migration/#clearmocks-is-enabled-by-default
     clearMocks: false,
     environment: "node",
+    // Range geometry stubs for the per-file jsdom environments (see the file).
+    setupFiles: ["tests/setup/jsdom-geometry.ts"],
     include: ["tests/**/*.test.{ts,tsx}", "features/*/tests/**/*.test.{ts,tsx}"],
   },
 

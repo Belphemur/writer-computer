@@ -68,12 +68,32 @@ jobs:
       - name: Bundles (AppImage, deb, rpm)
         run: pnpm --filter desktop exec tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
       - name: The packages link the writer command
+        # Each listing goes to a file first so a failure prints what the package really holds.
+        # tauri-bundler tars the data folder with paths relative to it (`usr/bin/writer-desktop`,
+        # no `./`), so the deb listing may or may not carry a `./` prefix: both are accepted.
         run: |
           bundle=apps/desktop/src-tauri/target/release/bundle
-          dpkg-deb -I "$bundle"/deb/*.deb postinst | grep -F 'ln -s writer-desktop "$link"'
-          dpkg-deb -c "$bundle"/deb/*.deb | grep -E ' \./usr/bin/writer-desktop$'
-          rpm -qp --scripts "$bundle"/rpm/*.rpm | grep -F 'ln -s writer-desktop "$link"'
-          test -f "$bundle"/appimage/*.AppImage
+          out=$RUNNER_TEMP/package-check
+          mkdir -p "$out"
+          dpkg-deb -I "$bundle"/deb/*.deb postinst > "$out/deb-postinst.txt"
+          dpkg-deb -c "$bundle"/deb/*.deb > "$out/deb-files.txt"
+          rpm -qp --scripts "$bundle"/rpm/*.rpm > "$out/rpm-scripts.txt"
+          rpm -qpl "$bundle"/rpm/*.rpm > "$out/rpm-files.txt"
+          ls -l "$bundle"/appimage > "$out/appimage.txt"
+          fail=0
+          check() { # file, grep args...
+            f=$1; shift
+            grep "$@" "$out/$f" > /dev/null || { echo "::error::missing in $f: $*"; fail=1; }
+          }
+          check deb-postinst.txt -F 'ln -s writer-desktop "$link"'
+          check deb-files.txt -E ' (\./)?usr/bin/writer-desktop$'
+          check rpm-scripts.txt -F 'ln -s writer-desktop "$link"'
+          check rpm-files.txt -Fx /usr/bin/writer-desktop
+          check appimage.txt -E '\.AppImage$'
+          if [ "$fail" != 0 ]; then
+            for f in "$out"/*.txt; do echo "::group::$(basename "$f")"; cat "$f"; echo "::endgroup::"; done
+            exit 1
+          fi
       - name: The Linux binary's glibc floor
         run: node scripts/release.mjs glibc --binary apps/desktop/src-tauri/target/release/writer-desktop
       - uses: actions/cache@v4.2.3

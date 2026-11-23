@@ -13,13 +13,6 @@ import { act, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-if (!Range.prototype.getClientRects) {
-  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
-}
-if (!Range.prototype.getBoundingClientRect) {
-  Range.prototype.getBoundingClientRect = () =>
-    ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect;
-}
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const NEVER = Symbol("never");
