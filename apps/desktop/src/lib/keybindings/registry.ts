@@ -304,7 +304,7 @@ export class KeybindingRegistry {
 
   /** Runs the command `id` for a non-key trigger. Such a command's handler must not read key
    *  fields of the event (the history ones read only `repeat`, absent on a mouse event). */
-  invoke(id: string, e: Event): void {
+  trigger(id: string, e: Event): void {
     this.items.get(id)?.run(e as KeyboardEvent);
   }
 

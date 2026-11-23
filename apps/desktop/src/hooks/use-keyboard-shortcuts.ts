@@ -32,7 +32,7 @@ function mouseHistory(e: MouseEvent) {
   const id = `history-${direction}`;
   if (!keybindings.holds(id, e)) return;
   e.preventDefault();
-  if (e.type === "mouseup") keybindings.invoke(id, e);
+  if (e.type === "mouseup") keybindings.trigger(id, e);
 }
 
 export function useKeyboardShortcuts() {
