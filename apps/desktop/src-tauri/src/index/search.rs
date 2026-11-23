@@ -11,8 +11,8 @@ use super::fts::{
 use super::kinds::{self, TextSource, PAGE_BREAK};
 use super::note::content_hash;
 use super::rank::{
-    combine, match_name_or_title, match_path, prepare_title, recency_boost, OpenedMap, Prepared,
-    PreparedQuery, Recency,
+    combine, empty_query_key, match_name_or_title, match_path, prepare_title, recency_boost,
+    OpenedMap, Prepared, PreparedQuery, Recency,
 };
 use super::search_query::{parse_query, Filter, ParsedQuery, Term};
 use super::{Index, IndexError, Job};
@@ -260,6 +260,9 @@ impl Index {
     pub fn search(&self, query: &str, opts: &SearchOptions) -> Res<SearchPage> {
         let parsed = parse_query(query, opts.as_you_type)?;
         let Some(match_expr) = parsed.match_expr.clone() else {
+            if !parsed.filters.is_empty() {
+                return self.filter_only(&parsed, opts);
+            }
             return Ok(SearchPage {
                 total: 0,
                 hits: Vec::new(),
@@ -432,6 +435,63 @@ impl Index {
             total,
             hits,
             truncated,
+        })
+    }
+
+    /// A query made only of filters (`tag:x`, `kind:pdf`, `path:dir`): every matching file, the
+    /// way an empty query lists files (`rank::empty_query_key`: opened first, then newest
+    /// modified), in the shape of a normal page (no snippets, score 0).
+    fn filter_only(&self, parsed: &ParsedQuery, opts: &SearchOptions) -> Res<SearchPage> {
+        let (cond_sql, cond_args) = conditions(parsed, opts)?;
+        let limit = opts.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+        let offset = opts.offset as usize;
+        let (raw, total) = self.read(|c| {
+            let total: i64 = c.query_row(
+                &format!("SELECT COUNT(*) FROM files f WHERE 1 = 1{cond_sql}"),
+                params_from_iter(cond_args.iter()),
+                |r| r.get(0),
+            )?;
+            // Newest modified first bounds the pool; the opened files are then ranked first.
+            let pool = (offset + limit).max(RERANK_POOL);
+            let sql = format!(
+                "SELECT f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL}, f.kind \
+                 FROM files f WHERE 1 = 1{cond_sql} ORDER BY f.mtime DESC, f.path LIMIT {pool}"
+            );
+            let mut st = c.prepare(&sql)?;
+            let rows = st.query_map(params_from_iter(cond_args.iter()), |r| {
+                let hit = SearchHit {
+                    path: r.get(0)?,
+                    title: r.get(1)?,
+                    folder: r.get(2)?,
+                    title_override: r.get(4)?,
+                    kind: r.get(5)?,
+                    score: 0.0,
+                    fuzzy: false,
+                    snippets: Vec::new(),
+                    stale: false,
+                };
+                Ok((hit, r.get::<_, i64>(3)?))
+            })?;
+            Ok((rows.collect::<Result<Vec<_>, _>>()?, total))
+        })?;
+        let key = |(h, mtime_ms): &(SearchHit, i64)| {
+            empty_query_key(Recency {
+                opened_ms: opts.opened.get(&h.path).copied(),
+                mtime_ms: *mtime_ms,
+            })
+        };
+        let mut ranked = raw;
+        ranked.sort_by(|a, b| key(b).cmp(&key(a)).then_with(|| a.0.path.cmp(&b.0.path)));
+        let hits = ranked
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|(h, _)| h)
+            .collect();
+        Ok(SearchPage {
+            total,
+            hits,
+            truncated: false,
         })
     }
 

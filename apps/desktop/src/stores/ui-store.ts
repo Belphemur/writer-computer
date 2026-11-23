@@ -23,7 +23,8 @@ interface UIState {
   selectSidebarPanel: (id: string) => void;
   selectSettingsSection: (id: string) => void;
   hydrateSettingsSection: () => Promise<void>;
-  openCommandPalette: (intent?: CommandPaletteIntent) => void;
+  /** `search` seeds the input (a query the caller already knows, such as `tag:draft `). */
+  openCommandPalette: (intent?: CommandPaletteIntent, search?: string) => void;
   closeCommandPalette: () => void;
   setCommandPaletteSearch: (search: string) => void;
   setCommandPaletteKind: (kind: string | null) => void;
@@ -49,11 +50,11 @@ export const useUIStore = create<UIState>((set, get) => ({
     if (typeof stored === "string" && stored && get().settingsSection === DEFAULT_SETTINGS_SECTION)
       set({ settingsSection: stored });
   },
-  openCommandPalette: (intent = "search") =>
+  openCommandPalette: (intent = "search", search = "") =>
     set({
       isCommandPaletteOpen: true,
       commandPaletteIntent: intent,
-      commandPaletteSearch: "",
+      commandPaletteSearch: search,
       commandPaletteKind: null,
     }),
   closeCommandPalette: () =>

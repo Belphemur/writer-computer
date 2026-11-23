@@ -27,6 +27,8 @@ import {
   linkHandlers,
   linkIntent,
   openPathAtAnchor,
+  tagLinkTarget,
+  tagSearchQuery,
   type LinkIntent,
   type LinkTarget,
 } from "../src/lib/link-activation";
@@ -37,6 +39,7 @@ import {
   takePendingAnchor,
 } from "../src/lib/pending-anchor";
 import { dispatchMouse } from "@tests/helpers/events";
+import { useUIStore } from "../src/stores/ui-store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => {
@@ -282,5 +285,20 @@ describe("openPathAtAnchor: a heading link reveals its heading", () => {
     h.navigate.mockRejectedValueOnce(new Error("boom"));
     await expect(openPathAtAnchor("/v/a.md", "intro", "current")).rejects.toThrow("boom");
     expect(consumePendingAnchor("/v/a.md")).toBeUndefined();
+  });
+});
+
+describe("tagLinkTarget: a #tag opens the content search", () => {
+  it("every gesture opens the same search seeded with tag:, never a tab", () => {
+    for (const intent of ["current", "new-tab-background", "new-tab-active"] as const) {
+      useUIStore.getState().closeCommandPalette();
+      activateLink(tagLinkTarget("research/hlo"), intent);
+      const ui = useUIStore.getState();
+      expect(ui.isCommandPaletteOpen).toBe(true);
+      expect(ui.commandPaletteIntent).toBe("search-notes");
+      expect(ui.commandPaletteSearch).toBe(tagSearchQuery("research/hlo"));
+    }
+    expect(tagSearchQuery("a")).toBe("tag:a ");
+    expect(h.newTab).not.toHaveBeenCalled();
   });
 });

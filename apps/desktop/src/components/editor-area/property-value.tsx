@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { type PropertyRow } from "@/lib/frontmatter-properties";
 import { isWikiLink } from "@/lib/wiki-links";
 import { linkHandlers } from "@/lib/link-activation";
@@ -218,7 +218,7 @@ function LinkField({ row, actions }: FieldProps) {
   );
 }
 
-function ChipsField({ row, actions }: FieldProps) {
+function ChipsField({ row, actions, after }: FieldProps & { after?: ReactNode }) {
   const input = useRef<HTMLInputElement>(null);
   const suggest = useWikiSuggest();
   const tagString = row.kind === "tagString";
@@ -249,6 +249,7 @@ function ChipsField({ row, actions }: FieldProps) {
           <ChipRemove label={item} onRemove={() => remove(i)} />
         </span>
       ))}
+      {after}
       <input
         ref={input}
         type="text"
@@ -398,8 +399,14 @@ function ReadOnlyField({ row }: { row: PropertyRow }) {
   );
 }
 
-/** The value cell of one row, chosen by the row's kind. */
-export function PropertyValue({ row, actions, type }: FieldProps & { type?: PropertyType }) {
+/** The value cell of one row, chosen by the row's kind. `afterChips` (the tags row only): read-only
+ *  chips shown after the row's own chips. */
+export function PropertyValue({
+  row,
+  actions,
+  type,
+  afterChips,
+}: FieldProps & { type?: PropertyType; afterChips?: ReactNode }) {
   if (
     type === "relationships" &&
     (row.kind === "link" || row.kind === "empty" || (row.kind === "list" && row.editable))
@@ -427,7 +434,7 @@ export function PropertyValue({ row, actions, type }: FieldProps & { type?: Prop
     case "list":
     case "tags":
     case "tagString":
-      return <ChipsField row={row} actions={actions} />;
+      return <ChipsField row={row} actions={actions} after={afterChips} />;
     case "object":
       return row.editable ? (
         <ObjectField row={row} actions={actions} />

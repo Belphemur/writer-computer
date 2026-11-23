@@ -69,6 +69,7 @@ import { parseProperties } from "../src/lib/frontmatter-properties";
 import { useEditorStore } from "../src/stores/editor-store";
 import { usePropertiesPanelStore } from "../src/stores/properties-panel-store";
 import { useSettingsStore } from "../src/stores/settings-store";
+import { useUIStore } from "../src/stores/ui-store";
 import { usePropertyTypesStore } from "../src/stores/property-types-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
 
@@ -81,6 +82,13 @@ let root: Root;
 function setFrontmatter(frontmatter: string | null) {
   useEditorStore.setState({
     openFiles: new Map([[PATH, { path: PATH, frontmatter, content: "" } as never]]),
+  });
+}
+function setBody(content: string) {
+  useEditorStore.setState((s) => {
+    const files = new Map(s.openFiles);
+    files.set(PATH, { ...files.get(PATH)!, content } as never);
+    return { openFiles: files };
   });
 }
 const stored = () => useEditorStore.getState().openFiles.get(PATH)?.frontmatter;
@@ -205,6 +213,73 @@ describe("PropertiesPanel", () => {
       });
     });
     expect(q("section")).toBe(before);
+  });
+
+  describe("body tags", () => {
+    const bodyChips = () =>
+      [...host.querySelectorAll<HTMLElement>('button[title="In the note"]')].map(
+        (e) => e.textContent,
+      );
+
+    it("shows the body's tags after the front matter's chips, read-only, once each", async () => {
+      setFrontmatter("tags:\n  - a\n  - b");
+      setBody("Some #Draft text #a and #draft again #b/c");
+      await mount();
+      expect(bodyChips()).toEqual(["#draft", "#b/c"]);
+      const row = q('[aria-label="Remove a"]')!.closest("li")!;
+      const chips = [...row.querySelectorAll("button, input")].map(
+        (e) => e.getAttribute("title") ?? e.getAttribute("aria-label"),
+      );
+      // front matter chips (with their remove buttons), then the body's, then the add field
+      expect(chips.indexOf("Remove b")).toBeLessThan(chips.indexOf("In the note"));
+      expect(chips.indexOf("In the note")).toBeLessThan(chips.indexOf("Add to tags"));
+    });
+
+    it("follows the typing in the body", async () => {
+      setFrontmatter("tags: [a]");
+      setBody("nothing");
+      await mount();
+      expect(bodyChips()).toEqual([]);
+      await act(async () => setBody("nothing #new"));
+      expect(bodyChips()).toEqual(["#new"]);
+      await act(async () => setBody("nothing #new #a"));
+      expect(bodyChips()).toEqual(["#new"]);
+      await act(async () => setBody("nothing"));
+      expect(bodyChips()).toEqual([]);
+    });
+
+    it("ignores tags in code and URLs", async () => {
+      setFrontmatter("tags: [a]");
+      setBody("`#no` https://x.com/#no\n```\n#no\n```\n#yes");
+      await mount();
+      expect(bodyChips()).toEqual(["#yes"]);
+    });
+
+    it("gets a row of its own when the front matter has no tags", async () => {
+      setFrontmatter("status: todo");
+      setBody("a #idea");
+      await mount();
+      expect(bodyChips()).toEqual(["#idea"]);
+      expect(q('button[title="In the note"]')!.closest("li")).toBeNull();
+      expect(host.textContent).toContain("tags");
+    });
+
+    it("a click searches the tag", async () => {
+      setFrontmatter("tags: [a]");
+      setBody("#Idea");
+      useUIStore.getState().closeCommandPalette();
+      await mount();
+      await act(async () => (q('button[title="In the note"]') as HTMLButtonElement).click());
+      expect(useUIStore.getState().commandPaletteIntent).toBe("search-notes");
+      expect(useUIStore.getState().commandPaletteSearch).toBe("tag:idea ");
+    });
+
+    it("does not touch the front matter", async () => {
+      setFrontmatter("tags: [a]");
+      setBody("#idea");
+      await mount();
+      expect(stored()).toBe("tags: [a]");
+    });
   });
 
   it("edits a text value and keeps comments and neighbours", async () => {

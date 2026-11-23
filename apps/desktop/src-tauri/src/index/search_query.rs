@@ -17,7 +17,8 @@
 //!   unknown kind is an error that lists the known ones
 //! - `ext:py`, `-ext:py`             keep only (or drop) a file extension (no dot)
 //!
-//! A query without any positive term matches nothing (it is not an error).
+//! A query without any positive term and without a filter matches nothing (it is not an error);
+//! one made only of filters lists every matching file (`Index::search`, newest first).
 
 use super::fts::space_cjk;
 use super::IndexError;
@@ -55,7 +56,8 @@ pub struct Term {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ParsedQuery {
-    /// Full expression for `notes_fts`; `None` when there is no positive term.
+    /// Full expression for `notes_fts`; `None` when there is no positive term (the filters alone
+    /// then list files).
     pub match_expr: Option<String>,
     /// Positive terms ORed: what to look for in individual lines.
     pub line_expr: Option<String>,

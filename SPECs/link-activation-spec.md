@@ -44,7 +44,8 @@ A new clickable reference must use one of the three bindings. Hand-written `onAu
 Today each of these handles the middle button on its own, or not at all:
 
 - Editor: wiki links (`wiki-link-extension.ts`), Markdown links, embeds, editor context menu "Open in new tab".
-- Properties: relationship links (`property-links.ts`, `property-wikilink.tsx`).
+- Properties: relationship links (`property-links.ts`, `property-wikilink.tsx`), and the body-tag chips of the tags row (`body-tags.tsx`).
+- Editor `#tag` pills (`tag-decorations.ts`): `tagLinkTarget` opens the content search for `tag:x`; search is a palette, so every gesture opens it, never a tab.
 - Sidebar: file tree (`file-tree-node.tsx`), navigator, recent files, search results, backlinks and outline if they link to notes.
 - Palettes: Quick Open and "Search in notes" result rows (middle click and `Cmd`+`Enter` open in a new tab).
 - Agent pane: links and wiki links in rendered replies, mention pills (`pill-view.tsx`), `agent-links.ts`, attachments, tool rows naming a file, the Changes card, the context ledger, the chat list.

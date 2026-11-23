@@ -24,7 +24,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ContentSearchPalette } from "../src/components/command-palette/content-search-palette";
 import { CONTENT_SEARCH_DEBOUNCE_MS } from "../src/components/command-palette/use-content-search";
 import { openFileAtLine } from "../src/components/editor-area/reveal-line";
-import { openPathAtAnchor } from "../src/lib/link-activation";
+import { activateLink, openPathAtAnchor, tagLinkTarget } from "../src/lib/link-activation";
 import {
   hitLocation,
   isIndexBuildingError,
@@ -223,6 +223,22 @@ describe("ContentSearchPalette", () => {
     await type("a");
     await settle(500);
     expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
+  it("a clicked tag opens the palette with tag:x and lists the tagged notes, no snippets needed", async () => {
+    const tagged = (path: string) => ({ ...hit(path, 1, "", []), snippets: [] });
+    mockedInvoke.mockResolvedValue(page(tagged("Notes/Alpha.md"), tagged("Notes/Beta.md")));
+    useUIStore.getState().closeCommandPalette();
+    await mount();
+    await act(async () => activateLink(tagLinkTarget("draft"), "current"));
+    await settle();
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "index_search",
+      expect.objectContaining({ request: expect.objectContaining({ query: "tag:draft" }) }),
+    );
+    expect(text()).toContain("Alpha");
+    expect(text()).toContain("Beta");
+    expect(text()).toContain("2 results");
   });
 
   it("debounces typing into one request for the latest query", async () => {

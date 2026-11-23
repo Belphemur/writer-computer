@@ -1271,6 +1271,79 @@ fn nested_tags_match_whole_segment_prefixes_only() {
 }
 
 #[test]
+fn a_query_of_filters_only_lists_the_matching_notes_newest_first() {
+    let fx = Fixture {
+        vault: TempDir::new().unwrap(),
+        data: TempDir::new().unwrap(),
+    };
+    for (rel, body) in NESTED_TAG_NOTES {
+        write(fx.vault.path(), rel, body);
+    }
+    // Deep (body tag), Mid (front matter tag), Top: modified in that order, 10 s apart.
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(1000);
+    for (i, rel) in ["Tags/Deep.md", "Tags/Mid.md", "Tags/Top.md"]
+        .iter()
+        .enumerate()
+    {
+        let f = std::fs::File::options()
+            .write(true)
+            .open(fx.vault.path().join(rel))
+            .unwrap();
+        f.set_modified(base + std::time::Duration::from_secs(10 * i as u64))
+            .unwrap();
+    }
+    let index = open(&fx);
+    let paths = |q: &str, o: &SearchOptions| -> Vec<String> {
+        index
+            .search(q, o)
+            .unwrap()
+            .hits
+            .into_iter()
+            .map(|h| h.path)
+            .collect()
+    };
+    let none = SearchOptions::default();
+    // Nested tags match; body and front matter tags; newest modified first.
+    assert_eq!(
+        paths("tag:research", &none),
+        vec!["Tags/Top.md", "Tags/Mid.md", "Tags/Deep.md"]
+    );
+    assert_eq!(
+        paths("tag:#research/hlo", &none),
+        vec!["Tags/Mid.md", "Tags/Deep.md"]
+    );
+    assert!(paths("tag:res", &none).is_empty());
+    let page = index.search("tag:research", &none).unwrap();
+    assert_eq!(page.total, 3);
+    assert!(page.hits[0].snippets.is_empty() && !page.hits[0].stale);
+    // Bounded by the limit, `total` still counts them all; offset pages on.
+    let two = SearchOptions {
+        limit: Some(2),
+        ..Default::default()
+    };
+    let page = index.search("tag:research", &two).unwrap();
+    assert_eq!((page.total, page.hits.len()), (3, 2));
+    let next = SearchOptions {
+        limit: Some(2),
+        offset: 2,
+        ..Default::default()
+    };
+    assert_eq!(paths("tag:research", &next), vec!["Tags/Deep.md"]);
+    // An opened note ranks first (the one ranker's order).
+    let opened = SearchOptions {
+        opened: [("Tags/Deep.md".to_string(), 5_000_i64)]
+            .into_iter()
+            .collect(),
+        ..Default::default()
+    };
+    assert_eq!(paths("tag:research", &opened)[0], "Tags/Deep.md");
+    // Words plus a filter, and an empty query, are as before.
+    assert_eq!(paths("tag:research nested", &none).len(), 3);
+    assert!(paths("", &none).is_empty());
+    assert!(paths("-nested", &none).is_empty());
+}
+
+#[test]
 fn property_values_lists_distinct_scalars_with_note_counts() {
     let fx = build_fixture();
     let index = open(&fx);

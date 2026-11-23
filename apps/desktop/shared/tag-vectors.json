@@ -1,0 +1,336 @@
+{
+  "comment": "Body tags: `normalize` (raw -> tag) and `scan` (note body without front matter -> tags in order, duplicates kept). Read by src-tauri/src/index/markdown.rs (normalize_tag, scan_body) and tests/tags.test.ts (src/lib/tags.ts). SPECs/tags-spec.md, Tag Recognition Rules.",
+  "normalize": [
+    {
+      "raw": "#draft",
+      "tag": "draft"
+    },
+    {
+      "raw": "Draft",
+      "tag": "draft"
+    },
+    {
+      "raw": "  #Mixed-Case_1 ",
+      "tag": "mixed-case_1"
+    },
+    {
+      "raw": "research/hlo/docs",
+      "tag": "research/hlo/docs"
+    },
+    {
+      "raw": "a/",
+      "tag": "a"
+    },
+    {
+      "raw": "a//",
+      "tag": "a"
+    },
+    {
+      "raw": "#a/b/",
+      "tag": "a/b"
+    },
+    {
+      "raw": "/a",
+      "tag": null
+    },
+    {
+      "raw": "a//b",
+      "tag": null
+    },
+    {
+      "raw": "",
+      "tag": null
+    },
+    {
+      "raw": "#",
+      "tag": null
+    },
+    {
+      "raw": "123",
+      "tag": null
+    },
+    {
+      "raw": "#2024",
+      "tag": null
+    },
+    {
+      "raw": "2024-q1",
+      "tag": "2024-q1"
+    },
+    {
+      "raw": "1/2",
+      "tag": "1/2"
+    },
+    {
+      "raw": "a b",
+      "tag": null
+    },
+    {
+      "raw": "a.b",
+      "tag": null
+    },
+    {
+      "raw": "café",
+      "tag": "café"
+    },
+    {
+      "raw": "日本語",
+      "tag": "日本語"
+    },
+    {
+      "raw": "_",
+      "tag": "_"
+    },
+    {
+      "raw": "-",
+      "tag": "-"
+    }
+  ],
+  "scan": [
+    {
+      "why": "plain tag",
+      "body": "Hello #draft world",
+      "tags": ["draft"]
+    },
+    {
+      "why": "lowercased",
+      "body": "#Draft and #DRAFT",
+      "tags": ["draft", "draft"]
+    },
+    {
+      "why": "at line start",
+      "body": "#idea",
+      "tags": ["idea"]
+    },
+    {
+      "why": "nested",
+      "body": "see #research/hlo/docs now",
+      "tags": ["research/hlo/docs"]
+    },
+    {
+      "why": "trailing slash is trimmed",
+      "body": "#a/ b",
+      "tags": ["a"]
+    },
+    {
+      "why": "all digits is not a tag",
+      "body": "issue #123 and #2024",
+      "tags": []
+    },
+    {
+      "why": "digits with a letter",
+      "body": "#1a #2024-q1",
+      "tags": ["1a", "2024-q1"]
+    },
+    {
+      "why": "word-internal hash",
+      "body": "a#b and foo#bar",
+      "tags": []
+    },
+    {
+      "why": "hex colour after a space is a tag",
+      "body": "color: #fff",
+      "tags": ["fff"]
+    },
+    {
+      "why": "hex colour after a letter is not",
+      "body": "a#fff",
+      "tags": []
+    },
+    {
+      "why": "opening punctuation",
+      "body": "(#a) [#b] {#c} \"#d\" 'x' ,#e ;#f :#g",
+      "tags": ["a", "b", "c", "d", "e", "f", "g"]
+    },
+    {
+      "why": "other preceding char",
+      "body": "*#a -#b >#c",
+      "tags": []
+    },
+    {
+      "why": "two hashes",
+      "body": "##tag",
+      "tags": []
+    },
+    {
+      "why": "hash inside a tag ends it",
+      "body": "#a#b",
+      "tags": ["a"]
+    },
+    {
+      "why": "escaped hash",
+      "body": "\\#tag",
+      "tags": []
+    },
+    {
+      "why": "terminators",
+      "body": "#tag. #tag, #tag! #tag)",
+      "tags": ["tag", "tag", "tag", "tag"]
+    },
+    {
+      "why": "unicode letters",
+      "body": "#café #日本語 #naïve-ü",
+      "tags": ["café", "日本語", "naïve-ü"]
+    },
+    {
+      "why": "underscore and dash",
+      "body": "#a-b_c",
+      "tags": ["a-b_c"]
+    },
+    {
+      "why": "duplicates are kept",
+      "body": "#a #a",
+      "tags": ["a", "a"]
+    },
+    {
+      "why": "atx heading marker",
+      "body": "# Title",
+      "tags": []
+    },
+    {
+      "why": "atx heading marker, level 2",
+      "body": "## Title #x",
+      "tags": ["x"]
+    },
+    {
+      "why": "heading marker without a space is a tag",
+      "body": "#Title",
+      "tags": ["title"]
+    },
+    {
+      "why": "fenced block",
+      "body": "```\n#no\n```\n#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "tilde fence",
+      "body": "~~~\n#no\n~~~\n#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "fence with info",
+      "body": "```js\n#no\n```\n#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "longer fence holds a shorter one",
+      "body": "````\n```\n#no\n```\n````\n#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "unclosed fence runs to the end",
+      "body": "#a\n```\n#no\n#no",
+      "tags": ["a"]
+    },
+    {
+      "why": "indented fence",
+      "body": "  ```\n#no\n  ```\n#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "backtick fence info with a backtick is no fence",
+      "body": "``` `x`\n#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "inline code",
+      "body": "`#no` #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "double-backtick code",
+      "body": "``a ` #no`` #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "unclosed backtick is text",
+      "body": "`x #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "url fragment",
+      "body": "https://example.com/p#frag #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "url in angle brackets",
+      "body": "<https://example.com/p#frag> #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "url in parentheses",
+      "body": "(https://example.com#a) #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "wiki link heading",
+      "body": "[[Note#Heading]] #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "wiki link with alias",
+      "body": "[[Note#H|alias #no]] #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "embed",
+      "body": "![[img.png#x]] #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "same-note heading link",
+      "body": "[[#Heading]] #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "wiki link then tag without space",
+      "body": "[[a]]#yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "empty wiki link names nothing",
+      "body": "[[#]] x",
+      "tags": []
+    },
+    {
+      "why": "markdown link to a note",
+      "body": "[a](b.md#h) #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "markdown link with a title",
+      "body": "[a](b.md#h \"t #no\") #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "markdown link with a url",
+      "body": "[a](https://x.com/#h) #yes",
+      "tags": ["yes"]
+    },
+    {
+      "why": "not a link: text after the destination",
+      "body": "[a](b #yes)",
+      "tags": ["yes"]
+    },
+    {
+      "why": "two tags and a link",
+      "body": "#a [[n#h]] #b",
+      "tags": ["a", "b"]
+    },
+    {
+      "why": "crlf",
+      "body": "#a\r\n#b\r\n",
+      "tags": ["a", "b"]
+    },
+    {
+      "why": "empty",
+      "body": "",
+      "tags": []
+    },
+    {
+      "why": "no hash",
+      "body": "plain text",
+      "tags": []
+    }
+  ]
+}

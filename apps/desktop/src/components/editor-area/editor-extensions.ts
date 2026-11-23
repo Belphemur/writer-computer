@@ -29,6 +29,7 @@ import { linkNavigationExtension } from "./link-navigation";
 import { markdownFormatting } from "./markdown-formatting";
 import { mathDecorations } from "./math-decorations";
 import { mermaidDecorations } from "./mermaid-decorations";
+import { tagDecorations } from "./tag-decorations";
 import { viewportParsePlugin } from "./viewport-parse";
 import { wikiLinkExtension } from "./wiki-link-extension";
 
@@ -135,6 +136,7 @@ export function createEditorExtensions(
     headingDecorations,
     imageSrcResolver(getFilePath),
     wikiLinkExtension(getFilePath, isDisposed),
+    tagDecorations(),
     markdownFormatting,
     storeSyncExtension(getFilePath),
     editorClipboardExtension(getFilePath),

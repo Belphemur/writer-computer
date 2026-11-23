@@ -795,4 +795,33 @@ mod tests {
         assert_eq!(s.tags, vec!["tag"]);
         assert_eq!(s.headings[0].text, "A");
     }
+
+    /// `shared/tag-vectors.json` pins the tag rules; `src/lib/tags.ts` reads the same file.
+    #[test]
+    fn tag_vectors() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/tag-vectors.json")).unwrap();
+        for c in v["normalize"].as_array().unwrap() {
+            let raw = c["raw"].as_str().unwrap();
+            assert_eq!(
+                normalize_tag(raw).as_deref(),
+                c["tag"].as_str(),
+                "normalize {raw:?}"
+            );
+        }
+        for c in v["scan"].as_array().unwrap() {
+            let want: Vec<&str> = c["tags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t.as_str().unwrap())
+                .collect();
+            assert_eq!(
+                scan_body(c["body"].as_str().unwrap(), 1).tags,
+                want,
+                "scan: {}",
+                c["why"].as_str().unwrap()
+            );
+        }
+    }
 }

@@ -18,6 +18,7 @@ import {
 } from "@/lib/pending-anchor";
 import { detectPlatform, type Platform } from "@/lib/platform";
 import * as tauri from "@/lib/tauri";
+import { useUIStore } from "@/stores/ui-store";
 import { resolveWikiLink, type WikiLinkTarget } from "@/lib/wiki-links";
 
 /** What a gesture asks for: the current tab, a new tab in the background, or a new active tab. */
@@ -145,6 +146,22 @@ export function wikiLinkTarget(
         (e: unknown) => fail("resolve-failed", e),
       );
     },
+  };
+}
+
+/** The search query a tag opens: every note with the tag, nested tags included (`tag:` in the
+ *  search syntax, `SPECs/search-spec.md`). The trailing space is for the next word. */
+export function tagSearchQuery(tag: string): string {
+  return `tag:${tag} `;
+}
+
+/** A `#tag`: opens the content search seeded with the tag, for every gesture (search is a
+ *  palette, not a tab, so a background tab is not a thing; middle click and Cmd/Ctrl+click
+ *  open the same search). `tag` is the normalised name without the `#`. */
+export function tagLinkTarget(tag: string): LinkTarget {
+  return {
+    kind: "custom",
+    open: () => useUIStore.getState().openCommandPalette("search-notes", tagSearchQuery(tag)),
   };
 }
 

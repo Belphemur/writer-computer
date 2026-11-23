@@ -36,6 +36,7 @@ import {
 } from "@/lib/property-types";
 import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { AddPropertyRow } from "./add-property-row";
+import { BodyTags } from "./body-tags";
 import { PropertyTypeControl } from "./property-type-control";
 import { Chevron, PinRowButton, RemoveRowButton } from "./property-chip";
 import { PinnedChips } from "./pinned-chips";
@@ -60,6 +61,8 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
   const { frontmatter, hasFrontmatter, updateFrontmatter, removeFrontmatter } =
     useFrontmatter(filePath);
   const parsed = useMemo(() => parseProperties(frontmatter), [frontmatter]);
+  const rows = parsed.ok ? parsed.rows : [];
+  const tags = summaryTags(rows);
   const lines = frontmatter.trim() === "" ? 0 : frontmatter.split("\n").length;
   const { collapsed, toggleCollapsed, source, toggleSource } = usePropertiesPanel(filePath, {
     count: parsed.count,
@@ -150,8 +153,8 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
       ),
     );
 
-  const rows = parsed.ok ? parsed.rows : [];
-  const tags = summaryTags(rows);
+  // The tags row hosts the body's tags; a note whose front matter has none gets a row of its own.
+  const tagsRow = rows.find((r) => r.kind === "tags" || r.kind === "tagString");
   const showSource = source || !parsed.ok;
 
   return (
@@ -254,7 +257,16 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                         />
                       </span>
                       <PropertyKey row={row} actions={actions} />
-                      <PropertyValue row={row} actions={actions} type={type} />
+                      <PropertyValue
+                        row={row}
+                        actions={actions}
+                        type={type}
+                        afterChips={
+                          row === tagsRow ? (
+                            <BodyTags filePath={filePath} written={tags} />
+                          ) : undefined
+                        }
+                      />
                       {!fits && (
                         <span
                           role="status"
@@ -278,6 +290,7 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                   );
                 })}
               </ul>
+              {!tagsRow && <BodyTags filePath={filePath} written={tags} row />}
               {rows.some((row) => row.key === "title") && (
                 <p className="pt-1 text-[12px] leading-[1.4] text-[var(--text-muted)]">
                   title overrides the displayed name of this note. The file name stays{" "}
