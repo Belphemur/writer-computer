@@ -141,6 +141,9 @@
 
 ## Up Next
 
+- [ ] Git signing follow-ups (2026-11-23): `setup`, `auto_setup` and the merge resolve still sign through a detached `Exec`, so a signer prompt there is not killed when the feature stops; give them the scope's `Exec`. Verify with a real 1Password `op-ssh-sign` and a real forge's signed-commit rejection text.
+- [ ] Other features' web IPC (agent, bases, icons) still hand-type argument keys through `featureInvoke`; check them for the snake_case bug found in git and move them to the generated bindings.
+
 - Feature-contributed page kinds through a contribution point (git-history, git-merge still declared in core).
 - Note graph (typed `edges` table replacing `links`, `writer graph:*` CLI, agent graph context, later graph view): design only, [`SPECs/note-graph-spec.md`](SPECs/note-graph-spec.md), [ADR (proposed)](docs/decisions/2026-11-17-represent-the-note-graph-as-one-typed-edge-table-in-the-vault-index.md). Measured on a synthetic 5k-note/50k-edge vault (scratch crate, not in the repo). No user-visible change, so no CHANGELOG entry. Next: answer the spec's open questions (section 11), then phase 1 (schema, parser line/section/property label, parity test).
 - Automatic chat titles ([`SPECs/native-agent-spec.md`](SPECs/native-agent-spec.md) "Automatic chat titles"): done in code, Rust and TS unit-tested against a fake `claude`; the flags were run once by hand against the real CLI in an empty temp dir. Unverified in a real window: the tab title swap and the call from inside the app. History "Regenerate title" (row menu, any chat, open or not) is done too, same fake-claude unit coverage; not run in a real window. Open follow-up: the pane has no chat title menu, so there is no "Regenerate title" on the open chat's tab (history only).
