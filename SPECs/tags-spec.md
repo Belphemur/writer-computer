@@ -81,3 +81,13 @@ Tests: the shared fixture `index::NESTED_TAG_NOTES` (`#research/hlo/docs`, front
 - The Tags browser lists every tag in the workspace with the documents that contain it.
 - Clicking a tag in the editor opens the browser filtered to that tag.
 - Tags inside code blocks and frontmatter are ignored.
+
+## Inline tags in the UI (decided with the user, 2026-11-23)
+
+The index already treats body `#tags` as the note's tags (`index/markdown.rs` `scan_tags`, merged in `index/note.rs`): search `tag:`, Bases `file.hasTag`/`file.tags`, the graph, `writer tags`. What this adds is the UI, in Obsidian's spirit:
+
+- **Pill.** Outside the cursor or selection, a body `#my-tag` renders as a rounded pill in the property chip style (`property-chip.tsx` `CHIP`), `#` kept. When the cursor or selection touches it, it shows the raw text, like links and headings. Same recognition as the index: never in fences, inline code, front matter, URLs or headings' `# `, never all digits, nested `a/b` allowed.
+- **One rule, two sides.** The TS recogniser mirrors `normalize_tag`/`is_tag_char`/`scan_tags` and is pinned to Rust by shared vectors (`shared/tag-vectors.json`, read by both test suites), like `task-vectors.json`. The spec's "trailing `/` is rejected" is corrected to what the index does and the vectors pin: a trailing `/` is trimmed.
+- **Click.** Opens search for `tag:my-tag` (nested tags match). It goes through the one link-activation implementation (`src/lib/link-activation.ts`), so a middle click or Cmd/Ctrl+click opens a new background tab. A click with a modifier never moves the cursor into the pill. To edit it, move the cursor in with the keyboard, or click its end.
+- **Properties panel.** The tags row shows the YAML tags (editable, as today), then the note's body tags that are not already in YAML. These are read-only, in a quieter chip, with the tooltip "In the note". They come from the open buffer, so they update as the user types and do not wait for the index.
+- **Not in scope:** tag autocomplete, renaming a tag across the vault, a tags browser or page.
