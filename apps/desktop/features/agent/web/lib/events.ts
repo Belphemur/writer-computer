@@ -124,6 +124,7 @@ export const AGENT_EVENT_TYPES = [
   "message-received",
   "subagent-message",
   "subagent-started",
+  "subagent-model",
   "subagent-status",
 ] as const satisfies readonly AgentEventType[];
 

@@ -44,6 +44,9 @@ struct Launch {
     status: Option<SubagentRunStatus>,
     /// The final state carried the report already.
     reported: bool,
+    /// The run's own `SubagentHandback` returned: what follows from the CLI for this run (a
+    /// closing message) is its tail, not a new run. Cleared when the run resumes.
+    handed_back: bool,
 }
 
 #[derive(Default)]
@@ -78,13 +81,15 @@ impl SubTracker {
                 self.parents.insert(tool_call_id.clone(), p.clone());
                 if tool == HANDBACK_TOOL {
                     self.handbacks.insert(tool_call_id.clone());
+                    self.resumed(p, Child::Handback)
+                } else {
+                    self.resumed(p, Child::Work)
                 }
-                self.resumed(p)
             }
             AgentEvent::SubagentMessage {
                 parent_tool_call_id,
                 ..
-            } => self.resumed(parent_tool_call_id),
+            } => self.resumed(parent_tool_call_id, Child::Message),
             AgentEvent::ToolCallInput {
                 tool_call_id,
                 input,
@@ -109,7 +114,12 @@ impl SubTracker {
                     .flatten()
                     .filter(|_| *outcome == ToolOutcome::Ok);
                 match handed_back {
-                    Some(run) => self.settle(&run, SubagentRunStatus::Completed, None),
+                    Some(run) => {
+                        if let Some(l) = self.launches.get_mut(&run) {
+                            l.handed_back = true;
+                        }
+                        self.settle(&run, SubagentRunStatus::Completed, None)
+                    }
                     None => self.on_launch_result(tool_call_id, output, *outcome),
                 }
             }
@@ -230,14 +240,30 @@ impl SubTracker {
         }
     }
 
-    /// A run that was cut off (`interrupted`) works again: the orchestrator resumed it (the CLI
-    /// keeps the run's launch call as the parent of everything it does). Any other final state
-    /// stays final.
-    fn resumed(&mut self, run: &str) -> Vec<AgentEvent> {
+    /// An ended run works again: the orchestrator resumed it (the CLI keeps the run's launch call
+    /// as the parent of everything it does). Only a child event after the end says so, never a
+    /// guess, and not every child event counts:
+    ///
+    /// - the run's own handback is its end, not new work (it counts only when an earlier handback
+    ///   already returned: a resumed run that does nothing but hand back);
+    /// - a message right after a handback is the run's tail, so it does not count either (a tool
+    ///   call does, and so does a message of a run that did not hand back).
+    ///
+    /// Any end state is left the same way (`completed`, `failed`, `stopped`, `interrupted`).
+    fn resumed(&mut self, run: &str, child: Child) -> Vec<AgentEvent> {
         match self.launches.get_mut(run) {
-            Some(l) if l.status == Some(SubagentRunStatus::Interrupted) => {
+            Some(l) if l.status.is_some_and(SubagentRunStatus::is_final) => {
+                let counts = match child {
+                    Child::Work => true,
+                    Child::Message => !l.handed_back,
+                    Child::Handback => l.handed_back,
+                };
+                if !counts {
+                    return Vec::new();
+                }
                 l.status = Some(SubagentRunStatus::Running);
                 l.reported = false;
+                l.handed_back = false;
                 vec![status_event(run, SubagentRunStatus::Running, None)]
             }
             _ => Vec::new(),
@@ -287,6 +313,27 @@ impl SubTracker {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
+}
+
+/// What a child event of a run is, for [`SubTracker::resumed`].
+#[derive(Clone, Copy)]
+enum Child {
+    /// A tool call other than the handback.
+    Work,
+    /// A message the sub-agent wrote.
+    Message,
+    /// The run's own `SubagentHandback` call.
+    Handback,
+}
+
+/// The tracker's decisions about one event, split by where they go: a resume (`running` after an
+/// end) is sent before the child event that caused it, so the UI knows where in the run's calls
+/// it restarted; everything else follows the event. The one ordering both the runner and the
+/// golden harness use.
+pub fn split_decided(decided: Vec<AgentEvent>) -> (Vec<AgentEvent>, Vec<AgentEvent>) {
+    decided.into_iter().partition(
+        |e| matches!(e, AgentEvent::SubagentStatus { status, .. } if *status == SubagentRunStatus::Running),
+    )
 }
 
 fn status_event(call: &str, status: SubagentRunStatus, report: Option<String>) -> AgentEvent {
@@ -559,9 +606,143 @@ mod tests {
         started(&mut t, "h1", "SubagentHandback", Some("a1"));
         result(&mut t, "h1", "ok", ToolOutcome::Ok);
         assert_eq!(t.status_of("a1"), Some(Completed));
-        // a completed run is never revived by late calls
-        started(&mut t, "w2", "Write", Some("a2"));
-        assert_eq!(t.status_of("a2"), Some(Completed));
+    }
+
+    /// A foreground run: the handback precedes the launch result, which ends it.
+    #[test]
+    fn a_completed_foreground_run_a_child_call_resumes_and_it_completes_again() {
+        let mut t = SubTracker::default();
+        started(&mut t, "a1", "Agent", None);
+        started(&mut t, "r1", "Read", Some("a1"));
+        started(&mut t, "h1", "SubagentHandback", Some("a1"));
+        assert!(result(&mut t, "h1", "ok", ToolOutcome::Ok).contains(&st("a1", Completed, None)));
+        assert_eq!(
+            result(&mut t, "a1", "report one", ToolOutcome::Ok),
+            [st("a1", Completed, Some("report one"))]
+        );
+        assert!(!t.busy());
+        // SendMessage from the orchestrator: the run works again
+        let resumed = {
+            let mut out = Vec::new();
+            out.extend(t.observe(&AgentEvent::ToolCallStarted {
+                tool_call_id: "r2".into(),
+                tool: "Read".into(),
+                parent_tool_call_id: Some("a1".into()),
+                message_id: "m".into(),
+            }));
+            out
+        };
+        assert_eq!(resumed, [st("a1", Running, None)]);
+        assert!(t.busy(), "a resumed run keeps the turn open");
+        started(&mut t, "h2", "SubagentHandback", Some("a1"));
+        assert_eq!(
+            t.status_of("a1"),
+            Some(Running),
+            "its own handback starts nothing"
+        );
+        assert_eq!(
+            result(&mut t, "h2", "ok", ToolOutcome::Ok),
+            [st("a1", Completed, None)]
+        );
+        assert!(!t.busy());
+    }
+
+    #[test]
+    fn a_completed_background_run_a_child_call_resumes_and_a_notification_ends_it_again() {
+        let mut t = SubTracker::default();
+        started(&mut t, "a1", "Agent", None);
+        t.on_task(&TaskSignal::AsyncLaunched { call: "a1".into() });
+        result(&mut t, "a1", "", ToolOutcome::Ok);
+        t.on_task(&notified("a1", Completed, Some("first")));
+        assert_eq!(t.status_of("a1"), Some(Completed));
+        let out = t.observe(&AgentEvent::SubagentMessage {
+            message_id: "m2".into(),
+            parent_tool_call_id: "a1".into(),
+        });
+        assert_eq!(
+            out,
+            [st("a1", Running, None)],
+            "a message of a run that did not hand back"
+        );
+        assert!(t.busy());
+        assert_eq!(
+            t.on_task(&notified("a1", Completed, Some("second"))),
+            [st("a1", Completed, Some("second"))],
+            "the new report is sent again"
+        );
+        assert!(!t.busy());
+    }
+
+    #[test]
+    fn a_failed_or_stopped_run_resumes_too() {
+        for end in [Failed, Stopped] {
+            let mut t = SubTracker::default();
+            started(&mut t, "a1", "Agent", None);
+            t.on_task(&TaskSignal::AsyncLaunched { call: "a1".into() });
+            result(&mut t, "a1", "", ToolOutcome::Ok);
+            t.on_task(&notified("a1", end, None));
+            started(&mut t, "w1", "Write", Some("a1"));
+            assert_eq!(t.status_of("a1"), Some(Running), "{end:?}");
+        }
+    }
+
+    #[test]
+    fn what_the_cli_sends_for_the_runs_own_end_never_resumes_it() {
+        let mut t = SubTracker::default();
+        started(&mut t, "a1", "Agent", None);
+        t.on_task(&TaskSignal::AsyncLaunched { call: "a1".into() });
+        result(&mut t, "a1", "", ToolOutcome::Ok);
+        started(&mut t, "w1", "Write", Some("a1"));
+        // the end signal came before the handback call (task_updated first)
+        t.on_task(&TaskSignal::Updated {
+            task: "t1".into(),
+            call: Some("a1".into()),
+            status: Completed,
+        });
+        started(&mut t, "h1", "SubagentHandback", Some("a1"));
+        assert_eq!(
+            t.status_of("a1"),
+            Some(Completed),
+            "the run's own handback call"
+        );
+        assert!(result(&mut t, "h1", "ok", ToolOutcome::Ok).is_empty());
+        // the sub-agent's closing message after its handback is its tail
+        let tail = t.observe(&AgentEvent::SubagentMessage {
+            message_id: "m9".into(),
+            parent_tool_call_id: "a1".into(),
+        });
+        assert!(tail.is_empty());
+        assert_eq!(t.status_of("a1"), Some(Completed));
+        // a call after it is work: the run resumed
+        started(&mut t, "w2", "Write", Some("a1"));
+        assert_eq!(t.status_of("a1"), Some(Running));
+        // a resumed run that only hands back is a run too
+        t.observe(&AgentEvent::ToolCallFinished {
+            tool_call_id: "w2".into(),
+            output: String::new(),
+            is_error: false,
+            outcome: ToolOutcome::Ok,
+            truncated: false,
+        });
+        started(&mut t, "h2", "SubagentHandback", Some("a1"));
+        result(&mut t, "h2", "ok", ToolOutcome::Ok);
+        assert_eq!(t.status_of("a1"), Some(Completed));
+        started(&mut t, "h3", "SubagentHandback", Some("a1"));
+        assert_eq!(
+            t.status_of("a1"),
+            Some(Running),
+            "a second handback is a second run"
+        );
+    }
+
+    #[test]
+    fn a_resume_is_split_out_to_go_before_its_child_event() {
+        let (before, after) = split_decided(vec![
+            st("a1", Running, None),
+            st("a2", Completed, Some("r")),
+        ]);
+        assert_eq!(before, [st("a1", Running, None)]);
+        assert_eq!(after, [st("a2", Completed, Some("r"))]);
     }
 
     #[test]

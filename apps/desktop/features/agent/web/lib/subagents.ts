@@ -14,7 +14,7 @@
  */
 import { roleLabelOf, roleOf } from "./agent-roles";
 import { readsFile, toolKind, toolLabel, asRecord, firstLine, truncate } from "./tool-kinds";
-import type { Block, Chat, SubagentMeta, ToolBlock, Turn } from "./transcript";
+import type { Block, Chat, SubagentMeta, SubagentResume, ToolBlock, Turn } from "./transcript";
 
 /** A launch call: the tool that starts a sub-agent (`Agent`, `Task`), by the tools registry. */
 export const isLaunchCall = (block: Block): block is ToolBlock =>
@@ -75,6 +75,10 @@ export function subagentState(run: SubagentSegmentData): SubagentState {
   // the launch result came but the status word has not yet (same batch), or never will
   return meta ? "running" : "interrupted";
 }
+
+/** The model the run runs on: what its own messages reported, else the launch's tier. */
+export const subagentModel = (run: SubagentSegmentData): string | null =>
+  run.meta?.ranOn ?? run.meta?.model ?? null;
 
 /** A tool of the run waits for the user's permission. */
 export const subagentWaiting = (run: SubagentSegmentData): boolean =>
@@ -145,7 +149,30 @@ export function subagentActivity(run: SubagentSegmentData): string {
 export function subagentElapsed(run: SubagentSegmentData, now: number): number | null {
   const m = run.meta;
   if (!m || m.startedAt === null) return null;
-  return Math.max(0, (m.endedAt ?? now) - m.startedAt);
+  // a resumed run: the time of every run it had before, plus this one
+  const before = (m.resumes ?? []).reduce((sum, r) => sum + (r.ms ?? 0), 0);
+  return before + Math.max(0, (m.endedAt ?? now) - m.startedAt);
+}
+
+/** The run's children cut at its restarts: `[blocks of the run, then, for each resume, the resume
+ *  and the blocks that followed]`. A resume whose index is past the blocks (a restored note that
+ *  kept fewer) sits at the end. Without resumes: one part, no divider. */
+export type RunPart = { resume: SubagentResume | null; blocks: Block[] };
+export function runParts(run: SubagentSegmentData): RunPart[] {
+  const cuts = (run.meta?.resumes ?? []).map((r) => ({
+    r,
+    at: Math.min(Math.max(r.at, 0), run.children.length),
+  }));
+  const parts: RunPart[] = [];
+  let from = 0;
+  let resume: SubagentResume | null = null;
+  for (const c of cuts) {
+    parts.push({ resume, blocks: run.children.slice(from, c.at) });
+    from = c.at;
+    resume = c.r;
+  }
+  parts.push({ resume, blocks: run.children.slice(from) });
+  return parts;
 }
 
 const stringOf = (v: unknown): string => (typeof v === "string" ? v : "");

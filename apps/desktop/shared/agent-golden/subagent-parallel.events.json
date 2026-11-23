@@ -85,6 +85,11 @@
     "parentToolCallId": "toolu_ex"
   },
   {
+    "type": "subagent-model",
+    "toolCallId": "toolu_ex",
+    "model": "claude-haiku-4-5"
+  },
+  {
     "type": "thinking",
     "messageId": "msg_e1",
     "blockIndex": 0,
@@ -118,6 +123,11 @@
     "type": "subagent-message",
     "messageId": "msg_w1",
     "parentToolCallId": "toolu_wk"
+  },
+  {
+    "type": "subagent-model",
+    "toolCallId": "toolu_wk",
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "usage",
@@ -163,6 +173,11 @@
     "type": "subagent-message",
     "messageId": "msg_e2",
     "parentToolCallId": "toolu_ex"
+  },
+  {
+    "type": "subagent-model",
+    "toolCallId": "toolu_ex",
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "usage",

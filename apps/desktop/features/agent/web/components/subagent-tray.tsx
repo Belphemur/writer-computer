@@ -25,6 +25,7 @@ import {
   subagentElapsed,
   subagentIcon,
   subagentLabel,
+  subagentModel,
   subagentTask,
   subagentWaiting,
   trayRuns,
@@ -90,7 +91,7 @@ function TrayLine({
   const task = subagentTask(run) || label;
   const elapsed = subagentElapsed(run, now);
   const tools = subagentCounts(run.children).toolCalls;
-  const model = run.meta?.model;
+  const model = subagentModel(run);
   const waiting = running && subagentWaiting(run);
   const activity = waiting ? "Waiting for permission" : running ? subagentActivity(run) : "";
   return (

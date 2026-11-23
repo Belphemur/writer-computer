@@ -391,6 +391,11 @@
     "parentToolCallId": "toolu_q16"
   },
   {
+    "type": "subagent-model",
+    "toolCallId": "toolu_q16",
+    "model": "claude-sonnet-5-5"
+  },
+  {
     "type": "usage",
     "scope": "message",
     "inputTokens": 0,
@@ -421,6 +426,11 @@
     "parentToolCallId": "toolu_q43"
   },
   {
+    "type": "subagent-model",
+    "toolCallId": "toolu_q43",
+    "model": "claude-sonnet-5-5"
+  },
+  {
     "type": "usage",
     "scope": "message",
     "inputTokens": 0,
@@ -449,6 +459,11 @@
     "type": "subagent-message",
     "messageId": "msg_q100",
     "parentToolCallId": "toolu_q65"
+  },
+  {
+    "type": "subagent-model",
+    "toolCallId": "toolu_q65",
+    "model": "claude-sonnet-5-5"
   },
   {
     "type": "usage",

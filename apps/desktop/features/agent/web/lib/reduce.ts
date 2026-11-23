@@ -18,12 +18,14 @@ import type {
 } from "./events";
 import { contextTokensOf } from "./context-usage";
 import { foldSessionChanges } from "./session-changes";
+import { splitRuns } from "./subagents";
 import type {
   Block,
   Chat,
   ContextUsage,
   PermissionView,
   SubagentMeta,
+  SubagentResume,
   ThinkingBlock,
   ToolBlock,
   ToolPermission,
@@ -145,6 +147,31 @@ function patchSubagent(
     return { ...chat, turns };
   }
   return chat;
+}
+
+/** A run that ended works again: a new run starts at the next block it makes. The earlier run's
+ *  report and time move into `resumes`; the card's time is their sum plus the new run's. */
+function resumeSubagent(
+  chat: Chat,
+  toolCallId: string,
+  base: SubagentMeta,
+  now: number,
+): SubagentMeta {
+  const turn = chat.turns.find((t) => t.blocks.some((b) => b.id === toolCallId));
+  const at = turn ? (splitRuns(turn).runs.get(toolCallId)?.children.length ?? 0) : 0;
+  const resume: SubagentResume = {
+    at,
+    ...(base.summary ? { report: base.summary } : {}),
+    ms: base.startedAt === null ? null : Math.max(0, (base.endedAt ?? now) - base.startedAt),
+  };
+  return {
+    ...base,
+    status: "running",
+    summary: undefined,
+    startedAt: now,
+    endedAt: null,
+    resumes: [...(base.resumes ?? []), resume],
+  };
 }
 
 const blankSubagent = (): SubagentMeta => ({
@@ -470,13 +497,21 @@ export function reduceEvent(
         startedAt: meta?.startedAt ?? now,
       }));
 
+    case "subagent-model":
+      return patchSubagent(chat, event.toolCallId, (meta) => ({
+        ...(meta ?? blankSubagent()),
+        ranOn: event.model,
+      }));
+
     case "subagent-status":
       return patchSubagent(chat, event.toolCallId, (meta) => {
         const base = meta ?? blankSubagent();
-        // a run that ended stays ended; its report may follow the end once. The exception: a run
-        // cut off with its process (`interrupted`) that the orchestrator resumed works again.
-        const resumed = base.status === "interrupted" && event.status === "running";
-        if (base.status !== null && base.status !== "running" && !resumed)
+        // a run that ended stays ended; its report may follow the end once. The exception is a
+        // resume: Rust says `running` after an end when the orchestrator woke the run (a message
+        // to it), and the run starts again, remembering the one before it.
+        if (event.status === "running" && base.status !== null && base.status !== "running")
+          return resumeSubagent(chat, event.toolCallId, base, now);
+        if (base.status !== null && base.status !== "running")
           return event.report && !base.summary ? { ...base, summary: event.report } : base;
         const status: SubagentRunStatus = event.status;
         return {

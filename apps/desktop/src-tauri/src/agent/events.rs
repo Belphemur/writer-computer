@@ -364,6 +364,14 @@ pub enum AgentEvent {
         /// The model the sub-agent runs; a tier that inherits shows the chat's model.
         model: Option<String>,
     },
+    /// The model a sub-agent run really runs on: `message.model` of its own messages, as the CLI
+    /// reports it (the launch's tier in `SubagentStarted` is only what was asked for, and a type
+    /// Writer does not define has none). Mapper-originated, sent when the run's model is first
+    /// seen and whenever it changes (a resumed run on another model); never the turn's model.
+    SubagentModel {
+        tool_call_id: ToolCallId,
+        model: String,
+    },
     /// A sub-agent run changed state. Decided in one place, `sub_tracker.rs`: `running` from the
     /// launch; a foreground run ends with its launch call's result; a background run (its launch
     /// result comes back at once and says nothing about the outcome) ends only with the CLI's
@@ -1023,6 +1031,10 @@ mod tests {
             AgentEvent::SubagentMessage {
                 message_id: "m".into(),
                 parent_tool_call_id: "a".into(),
+            },
+            AgentEvent::SubagentModel {
+                tool_call_id: "a".into(),
+                model: "claude-haiku-5-5".into(),
             },
             AgentEvent::SubagentStarted {
                 tool_call_id: "a".into(),

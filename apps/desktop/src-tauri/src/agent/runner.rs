@@ -31,7 +31,7 @@ use super::files::Outgoing;
 use super::mcp_wiring::McpWiring;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
-use super::sub_tracker::{Author, SubTracker};
+use super::sub_tracker::{split_decided, Author, SubTracker};
 use super::subagents::{is_launch_tool, resolve_launch};
 use crate::features::points::Points;
 use crate::features::scope::{CancelToken, Spawner};
@@ -894,7 +894,7 @@ impl Session {
                 out.tasks.iter().flat_map(|s| g.subs.on_task(s)).collect();
             for mut ev in task_events.into_iter().chain(out.events) {
                 // runner-originated events that follow `ev`
-                let mut extra: Vec<AgentEvent> = g.subs.observe(&ev);
+                let (resumes, mut extra) = split_decided(g.subs.observe(&ev));
                 match &ev {
                     AgentEvent::ToolCallStarted {
                         tool_call_id, tool, ..
@@ -1009,6 +1009,10 @@ impl Session {
                 } = &mut ev
                 {
                     *by = g.subs.author_of(tool_call_id.as_deref()).map(|a| a.label);
+                }
+                // a resume goes first: it marks where in the run's calls it restarted
+                for r in resumes {
+                    self.apply(&mut g, r, &mut started);
                 }
                 self.apply(&mut g, ev, &mut started);
                 for ev in extra {

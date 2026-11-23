@@ -15,7 +15,8 @@ import {
   type ChatNoteDoc,
   type ChatNoteMessage,
   type ChatNoteMeta,
-  applySubagentStatus,
+  applySubagentEvent,
+  callsOfRun,
   contextLine,
   emptyMeta,
   foldAssistantEvents,
@@ -168,11 +169,11 @@ export function recordEvents(
       if (line) next = recordReceived(next, { messageId: ev.messageId, ...line, ts: now }, now);
       continue;
     }
-    if (ev.type === "subagent-status") {
+    if (ev.type === "subagent-status" || ev.type === "subagent-model") {
       // a background run that ends after its turn was written: its message is updated in place
       const late = lateSubagent(next.messages, ev.toolCallId);
       if (late) {
-        if (applySubagentStatus(late.sub, ev)) {
+        if (applySubagentEvent(late.sub, ev, callsOfRun(late.message.tools ?? [], ev.toolCallId))) {
           const messages = next.messages.slice();
           messages[late.at] = late.message;
           next = { ...next, messages };

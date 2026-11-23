@@ -118,6 +118,8 @@ describe("agent event contract", () => {
           return e.parentToolCallId;
         case "subagent-started":
           return e.name;
+        case "subagent-model":
+          return e.model;
         case "subagent-status":
           return e.status;
         default: {

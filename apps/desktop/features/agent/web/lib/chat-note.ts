@@ -81,21 +81,46 @@ export type ChatNoteSubagent = {
   role: string | null;
   /** The sub-agent type as the call named it. */
   name: string;
+  /** The tier's model as launched. */
   model: string | null;
+  /** The model the run really ran on (latest), when its messages said. Absent on older notes. */
+  ranOn?: string;
   /** How the run ended, as the backend reported it; absent: it never reported (a reopened chat
-   *  shows it as interrupted, never done). */
+   *  shows it as interrupted, never done). With `resumes`, the latest run's. */
   status?: "completed" | "failed" | "stopped";
-  /** The run's final report, cut to 500 characters. */
+  /** The run's final report, cut to 500 characters (the latest run's). */
   summary?: string;
+  /** Each time the run was resumed, in order: how many of its tool calls came before, and the
+   *  report of the run that ended there. Absent on older notes and on runs never resumed. */
+  resumes?: ChatNoteResume[];
 };
 
-/** Records a `subagent-status` on a note's sub-agent run: a final state once, then its report once.
- *  The one place that decides what the note keeps of a run's end. */
-export function applySubagentStatus(
+export type ChatNoteResume = { at: number; summary?: string };
+
+/** Records a sub-agent event on a note's run: its model, a final state once, then its report once,
+ *  and a resume (`running` after an end) as a new entry that moves the earlier report aside.
+ *  `calls` is how many tool calls the run had made when the event came: where a resume begins.
+ *  The one place that decides what the note keeps of a run's life. */
+export function applySubagentEvent(
   sub: ChatNoteSubagent,
-  ev: Extract<AgentEvent, { type: "subagent-status" }>,
+  ev: Extract<AgentEvent, { type: "subagent-status" | "subagent-model" }>,
+  calls: number,
 ): boolean {
+  if (ev.type === "subagent-model") {
+    if (sub.ranOn === ev.model) return false;
+    sub.ranOn = ev.model;
+    return true;
+  }
   let changed = false;
+  if (ev.status === "running") {
+    if (!sub.status) return false;
+    const resume: ChatNoteResume = { at: calls };
+    if (sub.summary) resume.summary = sub.summary;
+    sub.resumes = [...(sub.resumes ?? []), resume];
+    delete sub.status;
+    delete sub.summary;
+    return true;
+  }
   if (
     !sub.status &&
     (ev.status === "completed" || ev.status === "failed" || ev.status === "stopped")
@@ -109,6 +134,10 @@ export function applySubagentStatus(
   }
   return changed;
 }
+
+/** How many tool calls of the run `callId` a note's tool list holds. */
+export const callsOfRun = (tools: Iterable<ChatNoteTool>, callId: string): number =>
+  [...tools].filter((t) => t.parent === callId).length;
 
 export type ChatNoteMessage = {
   role: "user" | "assistant";
@@ -607,9 +636,10 @@ export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFol
         if (t) t.outcome = ev.outcome;
         break;
       }
-      case "subagent-status": {
+      case "subagent-status":
+      case "subagent-model": {
         const t = tools.get(ev.toolCallId);
-        if (t?.sub) applySubagentStatus(t.sub, ev);
+        if (t?.sub) applySubagentEvent(t.sub, ev, callsOfRun(tools.values(), ev.toolCallId));
         break;
       }
       case "question-resolved": {

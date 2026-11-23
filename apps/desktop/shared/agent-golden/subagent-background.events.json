@@ -101,6 +101,11 @@
     "parentToolCallId": "toolu_agent1"
   },
   {
+    "type": "subagent-model",
+    "toolCallId": "toolu_agent1",
+    "model": "claude-sonnet-5-5"
+  },
+  {
     "type": "usage",
     "scope": "message",
     "inputTokens": 0,

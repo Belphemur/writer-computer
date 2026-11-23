@@ -231,9 +231,9 @@ describe("running, waiting and parallel runs", () => {
     expect(state()).toBe("running");
     chat = reduceEvent(chat, status("completed"), 400);
     expect(state()).toBe("done");
-    // a finished run is never revived
+    // a finished run works again when Rust says so (a child event after its end, a resume)
     chat = reduceEvent(chat, status("running"), 500);
-    expect(state()).toBe("done");
+    expect(state()).toBe("running");
   });
 
   it("keeps a background run running when its turn ends, and the next send does not end it", () => {
@@ -276,7 +276,7 @@ describe("running, waiting and parallel runs", () => {
     expect(JSON.stringify(chat)).not.toMatch(/Async agent|agentId|a1b2c3|output_file/);
   });
 
-  it("does not let a repeated running status undo an end", () => {
+  it("starts a run again on a running word after its end (a resume, Rust's word only)", () => {
     let chat = chatAfter("subagent-parallel");
     chat = reduceEvent(chat, {
       type: "subagent-status",
@@ -284,7 +284,7 @@ describe("running, waiting and parallel runs", () => {
       status: "running",
       report: null,
     });
-    expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_ex")!)).toBe("done");
+    expect(subagentState(splitRuns(chat.turns[0]!).runs.get("toolu_ex")!)).toBe("running");
   });
 
   it("marks a run failed from its launch call's error", () => {

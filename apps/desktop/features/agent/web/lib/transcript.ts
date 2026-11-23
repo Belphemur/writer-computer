@@ -113,12 +113,31 @@ export type SubagentMeta = {
   role: string | null;
   /** The sub-agent type as the call named it. */
   name: string;
+  /** The tier's model as launched (`subagent-started`); null for a type Writer does not define. */
   model: string | null;
+  /** The model the run really ran on (`subagent-model`, from its own messages), the latest one;
+   *  shown in place of `model` when known. */
+  ranOn?: string;
   status: SubagentRunStatus | null;
   startedAt: number | null;
   endedAt: number | null;
-  /** The run's final report (`subagent-status`), kept in the chat note. */
+  /** The latest run's final report (`subagent-status`), kept in the chat note. */
   summary?: string;
+  /** Each time the run was resumed (`SendMessage`), in order, with what the run before it left.
+   *  `startedAt`, `endedAt` and `summary` above are always the latest run's. */
+  resumes?: SubagentResume[];
+};
+
+/** One restart of a sub-agent run: where in its blocks it began again, and the run that ended
+ *  there (its report stays readable at the divider, its time adds to the card's). */
+export type SubagentResume = {
+  /** Index in the run's own blocks (`splitRuns(...).children`) of the first block of the new run;
+   *  a restored note counts only the tool calls it kept. */
+  at: number;
+  /** The earlier run's report; absent when it left none. */
+  report?: string;
+  /** The earlier run's time in milliseconds; null when it was never timed (a restored chat). */
+  ms: number | null;
 };
 
 export type TurnStatus = "running" | TurnFinishReason;

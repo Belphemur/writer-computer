@@ -43,15 +43,22 @@ function subagentsOf(m: ChatNoteMessage): Record<string, SubagentMeta> | null {
   const runs = (m.tools ?? []).filter((t) => t.sub);
   if (runs.length === 0) return null;
   return Object.fromEntries(
-    runs.map((t) => [
-      t.id,
-      {
-        ...t.sub!,
-        status: t.sub!.status ?? "interrupted",
-        startedAt: null,
-        endedAt: null,
-      } satisfies SubagentMeta,
-    ]),
+    runs.map((t) => {
+      const { resumes, ...sub } = t.sub!;
+      return [
+        t.id,
+        {
+          ...sub,
+          status: sub.status ?? "interrupted",
+          startedAt: null,
+          endedAt: null,
+          // each earlier run's report and where the run restarted; the time was never stored
+          ...(resumes?.length
+            ? { resumes: resumes.map((r) => ({ at: r.at, ms: null, report: r.summary })) }
+            : {}),
+        } satisfies SubagentMeta,
+      ];
+    }),
   );
 }
 

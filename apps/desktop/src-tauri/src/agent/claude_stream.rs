@@ -120,6 +120,9 @@ pub struct ClaudeStreamMapper {
     /// where only sub-agents spoke (a background report, a resumed sub-agent) would hand the
     /// chat their model.
     main_model: Option<String>,
+    /// The model each sub-agent run (by launch call) last reported on its own messages, so the
+    /// event goes out once per run and again only when it changes.
+    sub_models: HashMap<String, String>,
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -432,12 +435,34 @@ impl ClaudeStreamMapper {
         }
     }
 
-    /// A message made by a sub-agent says whose it is, once, before its first block.
-    fn note_message_parent(v: &Value, message_id: &str, out: &mut MapOutput) {
-        if let Some(parent) = Self::parent_tool(v) {
-            out.events.push(AgentEvent::SubagentMessage {
-                message_id: message_id.to_string(),
-                parent_tool_call_id: parent,
+    /// A message made by a sub-agent says whose it is, once, before its first block, and which
+    /// model made it (`message.model`, never the `<synthetic>` placeholder): sent when the run's
+    /// model is first seen or changes. Never touches the turn's model, which is the main agent's.
+    fn note_message_parent(
+        &mut self,
+        v: &Value,
+        msg: Option<&Value>,
+        message_id: &str,
+        out: &mut MapOutput,
+    ) {
+        let Some(parent) = Self::parent_tool(v) else {
+            return;
+        };
+        out.events.push(AgentEvent::SubagentMessage {
+            message_id: message_id.to_string(),
+            parent_tool_call_id: parent.clone(),
+        });
+        let Some(model) = msg
+            .and_then(|m| str_of(m, "model"))
+            .filter(|m| !m.is_empty() && !m.starts_with('<'))
+        else {
+            return;
+        };
+        if self.sub_models.get(&parent).map(String::as_str) != Some(model) {
+            self.sub_models.insert(parent.clone(), model.to_string());
+            out.events.push(AgentEvent::SubagentModel {
+                tool_call_id: parent,
+                model: model.to_string(),
             });
         }
     }
@@ -453,7 +478,7 @@ impl ClaudeStreamMapper {
                     .to_string();
                 self.start_message(&id, true);
                 self.note_main_model(v, ev.get("message"));
-                Self::note_message_parent(v, &id, out);
+                self.note_message_parent(v, ev.get("message"), &id, out);
             }
             Some("content_block_start") => {
                 let idx = ev.get("index").and_then(Value::as_u64).unwrap_or(0) as u32;
@@ -551,7 +576,7 @@ impl ClaudeStreamMapper {
         if new_message {
             // No stream_event preceded it (partial messages off): a complete message.
             self.start_message(&id, false);
-            Self::note_message_parent(v, &id, out);
+            self.note_message_parent(v, Some(msg), &id, out);
             if let Some(usage) = msg.get("usage") {
                 out.events.push(Self::message_usage(v, usage));
             }
@@ -1400,6 +1425,60 @@ mod tests {
         assert_eq!(again.as_deref(), Some("claude-opus-5-5"));
     }
 
+    /// The model a sub-agent really ran on is reported once per run (again when it changes), from
+    /// its own messages, and never moves the turn's model.
+    #[test]
+    fn a_sub_agents_message_model_is_reported_for_its_run() {
+        let mut m = ClaudeStreamMapper::default();
+        let sub = |id: &str, model: &str, parent: &str| {
+            json!({"type":"assistant","message":{"id":id,"model":model,
+                "content":[{"type":"text","text":"x"}]},"parent_tool_use_id":parent})
+        };
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5",
+                "content":[{"type":"text","text":"on it"}]},"parent_tool_use_id":null}),
+            sub("s1", "claude-sonnet-5-5", "toolu_a"),
+            sub("s2", "claude-sonnet-5-5", "toolu_a"),
+            sub("s3", "<synthetic>", "toolu_a"),
+            sub("s4", "claude-haiku-5-5", "toolu_b"),
+            // resumed on another model
+            sub("s5", "claude-opus-5-5", "toolu_a"),
+        ];
+        let mut got = Vec::new();
+        for l in &lines {
+            for e in m.map_value(l).events {
+                if let AgentEvent::SubagentModel {
+                    tool_call_id,
+                    model,
+                } = e
+                {
+                    got.push((tool_call_id, model));
+                }
+            }
+        }
+        let want = [
+            ("toolu_a", "claude-sonnet-5-5"),
+            ("toolu_b", "claude-haiku-5-5"),
+            ("toolu_a", "claude-opus-5-5"),
+        ];
+        assert_eq!(
+            got,
+            want.map(|(c, m)| (c.to_string(), m.to_string())),
+            "once per run, skipping placeholders, again on a change"
+        );
+        assert_eq!(m.main_model.as_deref(), Some("claude-opus-5-5"));
+        let first = m.map_value(&sub("s6", "claude-haiku-5-5", "toolu_c"));
+        assert!(first
+            .events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::SubagentModel { .. })));
+        assert_eq!(
+            m.main_model.as_deref(),
+            Some("claude-opus-5-5"),
+            "the turn's model stays"
+        );
+    }
+
     fn golden_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/agent-golden")
     }
@@ -1426,6 +1505,7 @@ mod tests {
             "subagent-auto-background" => {
                 include_str!("fixtures/subagent-auto-background.jsonl")
             }
+            "subagent-resume" => include_str!("fixtures/subagent-resume.jsonl"),
             "question-answered" => include_str!("fixtures/question-answered.jsonl"),
             "question-skipped" => include_str!("fixtures/question-skipped.jsonl"),
             other => panic!("unknown fixture {other}"),
@@ -1433,7 +1513,7 @@ mod tests {
     }
 
     /// The mapper's events with the tracker's `subagent-status` events in the order the runner
-    /// applies them (a line's task signals first, then each event followed by what it decided).
+    /// applies them (a line's task signals first, then each event followed by what it decided, a resume before it).
     fn run(name: &str) -> (Vec<AgentEvent>, Vec<String>) {
         let mut m = ClaudeStreamMapper::new();
         let mut subs = crate::agent::sub_tracker::SubTracker::default();
@@ -1443,7 +1523,9 @@ mod tests {
             let out = m.map_line(line);
             events.extend(out.tasks.iter().flat_map(|t| subs.on_task(t)));
             for ev in out.events {
-                let decided = subs.observe(&ev);
+                let (resumes, decided) =
+                    crate::agent::sub_tracker::split_decided(subs.observe(&ev));
+                events.extend(resumes);
                 events.push(ev);
                 events.extend(decided);
             }
@@ -1482,6 +1564,43 @@ mod tests {
     /// The golden files are what the TypeScript side reads (`features/agent/tests/agent-events.test.ts`).
     /// Regenerate with `WRITER_UPDATE_GOLDEN=1 cargo test golden`.
     #[test]
+    fn a_resumed_background_run_is_running_again_before_its_first_new_call() {
+        let (events, _) = run("subagent-resume");
+        let seq: Vec<_> = statuses(&events)
+            .into_iter()
+            .map(|(c, s, r)| (c, s, r.is_some()))
+            .collect();
+        use SubagentRunStatus::{Completed, Running};
+        assert_eq!(
+            seq,
+            [
+                ("toolu_real1", Running, false),
+                ("toolu_real1", Completed, false),
+                ("toolu_real1", Running, false),
+                ("toolu_real1", Completed, false),
+            ]
+        );
+        // the resume comes before the run's first new call (the line's first child event)
+        let at = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::ToolCallStarted { tool_call_id, .. } if tool_call_id == "toolu_resume2"))
+            .unwrap();
+        let resume = events
+            .iter()
+            .rposition(|e| {
+                matches!(
+                    e,
+                    AgentEvent::SubagentStatus {
+                        status: Running,
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        assert!(resume < at);
+    }
+
+    #[test]
     fn golden_event_streams_match_the_files_typescript_reads() {
         for name in [
             "ok-turn",
@@ -1502,6 +1621,7 @@ mod tests {
             "subagent-parallel",
             "subagent-background",
             "subagent-auto-background",
+            "subagent-resume",
             "question-answered",
             "question-skipped",
         ] {

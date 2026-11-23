@@ -56,8 +56,10 @@ const running = () =>
 const finished = () => chatAfter("subagent-parallel");
 
 describe("a sub-agent card", () => {
-  it("says the role, the model, the task and the status in its header", async () => {
-    await mount(finished());
+  it("says the role, the model (the tier's, while the run reported none), the task and the status in its header", async () => {
+    const chat = finished();
+    for (const m of Object.values(chat.turns[0]!.subagents!)) delete m.ranOn;
+    await mount(chat);
     const ex = card("toolu_ex");
     expect($("[data-agent-subagent-role]", ex)!.textContent).toBe("Explorer");
     expect($("[data-agent-subagent-model]", ex)!.textContent).toBe("Haiku");
@@ -73,9 +75,10 @@ describe("a sub-agent card", () => {
     expect($("[data-agent-subagent-counts]", wk)!.textContent).toContain("1 edit");
   });
 
-  it("shows the model the event gave, short, with the full id as the tooltip", async () => {
+  it("shows the model the run really ran on, short, with the full id as the tooltip", async () => {
     const chat = finished();
-    chat.turns[0]!.subagents!.toolu_ex!.model = "claude-haiku-4-5";
+    chat.turns[0]!.subagents!.toolu_ex!.model = "sonnet";
+    chat.turns[0]!.subagents!.toolu_ex!.ranOn = "claude-haiku-4-5";
     await mount(chat);
     const model = $("[data-agent-subagent-model]", card("toolu_ex"))!;
     expect(model.textContent).toBe("Haiku 4.5");

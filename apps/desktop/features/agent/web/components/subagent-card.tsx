@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
 import { scrollIntoScroller } from "@/lib/scroll-into";
 import {
   Alert02Icon,
@@ -14,6 +14,8 @@ import {
   subagentElapsed,
   subagentIcon,
   subagentLabel,
+  subagentModel,
+  runParts,
   subagentState,
   subagentSummary,
   subagentTask,
@@ -99,6 +101,44 @@ function SubagentRun({ run }: { run: SubagentSegmentData }) {
   );
 }
 
+/** Where a run was resumed (the orchestrator sent it a message): a quiet line in its call list. The
+ *  report of the run before stays readable here. */
+function ResumedDivider({ report }: { report?: string }) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  return (
+    <div data-agent-subagent-resumed className="space-y-1 py-0.5">
+      <div className="flex items-center gap-2 text-[11.5px] text-text-muted">
+        <span aria-hidden className="h-px flex-1 bg-[var(--line-subtler)]" />
+        {report ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={() => setOpen(!open)}
+            className="flex items-center gap-1 rounded-md hover:text-text-primary"
+          >
+            Resumed
+            <Ico icon={open ? ArrowDown01Icon : ArrowRight01Icon} />
+          </button>
+        ) : (
+          <span>Resumed</span>
+        )}
+        <span aria-hidden className="h-px flex-1 bg-[var(--line-subtler)]" />
+      </div>
+      {report && open && (
+        <p
+          id={bodyId}
+          data-agent-subagent-earlier-report
+          className="px-1 text-[12.5px] whitespace-pre-wrap text-text-secondary"
+        >
+          {report}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * The result card of a finished run (spec "Sub-agent tray"): the header says who (the role's name
  * and icon from the registry), which model, what task, how it ended and what it did; its final
@@ -119,11 +159,16 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
   useLayoutEffect(() => {
     if (summaryEl.current) setMarkdownSource(summaryEl.current, summary);
   }, [summary]);
-  const model = run.meta?.model;
+  const model = subagentModel(run);
   // the sub-agent's closing text is the summary: not shown twice
-  const children = run.children.filter(
-    (b) => !(b.kind === "text" && summary !== "" && b.text.trim() === summary),
-  );
+  // and so is an earlier run's report: it is readable at its divider
+  const shown = new Set([summary, ...(run.meta?.resumes ?? []).map((r) => r.report?.trim() ?? "")]);
+  shown.delete("");
+  const parts = runParts({
+    ...run,
+    children: run.children.filter((b) => !(b.kind === "text" && shown.has(b.text.trim()))),
+  });
+  const empty = parts.every((p) => p.blocks.length === 0);
   return (
     <section
       data-agent-subagent={run.id}
@@ -195,10 +240,15 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
       )}
       {open && (
         <div id={bodyId} className="space-y-1 border-t border-[var(--line-subtler)] px-2 py-1.5">
-          {children.length > 0 ? (
-            <SegmentList segments={segmentBlocks(children)} running={false} />
-          ) : (
+          {empty && parts.length === 1 ? (
             <p className="text-[12px] text-text-muted">No activity recorded.</p>
+          ) : (
+            parts.map((part, i) => (
+              <Fragment key={i}>
+                {part.resume && <ResumedDivider report={part.resume.report} />}
+                <SegmentList segments={segmentBlocks(part.blocks)} running={false} />
+              </Fragment>
+            ))
           )}
         </div>
       )}
