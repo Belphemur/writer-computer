@@ -65,3 +65,15 @@ All chosen with the user (2026-11-20):
 - Related: `2026-04-30-build-on-tauri-v2-react-zustand.md`, `2026-11-17-keep-all-plugin-secrets-in-one-keychain-item-...` (secrets degrade), `docs/releasing.md`.
 - 2026-11-20, the user: the Linux base is Ubuntu 26.04, for CI and for local testing in a Rancher Desktop container (`ubuntu:26.04`, arm64 natively on Apple silicon, x86_64 in CI). The minimum WebKitGTK is the one 26.04 ships. If the GitHub-hosted `ubuntu-26.04` runner is not available, CI runs the same container image on `ubuntu-latest`.
 - 2026-11-20, the user: "Open in Terminal" gets one terminal table for macOS and Linux (Ghostty included on both) and a dropdown of the installed terminals; default hotkeys are per OS with Linux conventions (back/forward `Alt+←/→` and the mouse buttons; no desktop-reserved chords), enforced by a test over every binding. Spec sections "Open in Terminal" and "Default hotkeys per OS".
+- 2026-11-23, review against the work landed since 2026-11-20 (git feature phases 1-5, forge sign-in, signing, logs, agent changes, tags). What Linux adds:
+  - **Git.** It uses the system `git`, `git-lfs`, `gh` and `fj`, found on the login-shell PATH as on macOS.
+    - "Install git" (`xcode-select`) stays macOS-only. On Linux the row reads "Install git with your package manager".
+    - The credential helper is the running binary (`writer git-credential`), registered per command with its absolute path. For the AppImage that path is the mounted image's, valid for that run only, which is fine because it is never written to a config.
+    - A saved token lives in the Secret Service. With no keyring, the `token` source is unavailable with "No keyring found", and `gh`/`fj` still work.
+    - fj's login is read from `$XDG_DATA_HOME/forgejo-cli/keys.json` (default `~/.local/share`).
+    - Signing goes through git, so it is unchanged.
+    - The "No route to host" Local Network hint and `NSLocalNetworkUsageDescription` stay macOS-only (already `cfg`-gated).
+  - **Logs.** Settings > Git > Logs and "Open log folder" use the Linux log dir from `logging::log_dir` (`$XDG_STATE_HOME`, else `~/.local/state`).
+  - **Labels.** New literals added since (for example "Show in Finder" in `features/agent/web/components/skills-chip.tsx`) go through the label helper with the others.
+  - **CI and release.** CI and the release now cover macOS too, and the release is cut by a tag (ADR 2026-11-23 "Release from CI on a version tag ..."). The Linux lane of `distribute.sh` becomes the CI release job.
+  - **Testing on a Mac.** The README documents testing in a Rancher Desktop `ubuntu:26.04` container: build, unit tests, and the e2e smoke under `xvfb`.

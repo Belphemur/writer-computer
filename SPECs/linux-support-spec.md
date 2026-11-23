@@ -1,6 +1,6 @@
 # Linux support
 
-Status: designed with the user 2026-11-20, not started. ADR: [`docs/decisions/2026-11-20-support-linux-with-appimage-deb-and-rpm-writers-own-title-bar-and-ci.md`](../docs/decisions/2026-11-20-support-linux-with-appimage-deb-and-rpm-writers-own-title-bar-and-ci.md).
+Status: designed with the user 2026-11-20, refreshed 2026-11-23 (git, logs, release from CI); being built. ADR: [`docs/decisions/2026-11-20-support-linux-with-appimage-deb-and-rpm-writers-own-title-bar-and-ci.md`](../docs/decisions/2026-11-20-support-linux-with-appimage-deb-and-rpm-writers-own-title-bar-and-ci.md).
 
 ## Decisions (summary)
 
@@ -57,6 +57,13 @@ Status: designed with the user 2026-11-20, not started. ADR: [`docs/decisions/20
 ### Already cross-platform
 
 Log and data dirs, argv open path, multi-call `writer` dispatch, login-shell PATH, `claude` discovery and process-group kill, the unix CLI socket, fontconfig fonts, opener for the log folder, `#![cfg(unix)]` tests, platform UA detection, `Mod` = Ctrl, per-OS hotkeys and context-menu labels, drag regions, PDF.js worker, spellcheck dictionaries, e2e fixture scripts, telemetry `os`, file associations (verify the .desktop MIME entry).
+
+### Since 2026-11-20 (refresh 2026-11-23)
+
+20. `features/git/rust/commands.rs:872-883`: "Install git" is macOS-only (`xcode-select`) → Linux line "Install git with your package manager".
+21. `features/agent/web/components/skills-chip.tsx:153` "Show in Finder" → label helper (cosmetic 4).
+22. Git saved tokens → Secret Service, "No keyring found" without one; `gh`/`fj` unaffected; fj login in `$XDG_DATA_HOME/forgejo-cli` (done in `git/forgejo.rs`).
+23. Release: the CI release workflow (ADR 2026-11-23) builds the Linux bundles; `latest.json` `linux-x86_64` → AppImage.
 
 ## Open in Terminal (macOS and Linux)
 
