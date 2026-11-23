@@ -41,7 +41,7 @@ fn parse(line: &str) -> Option<Identity> {
 
 /// git's own words for "I have no name or email for you" (`user.useConfigOnly` makes it die with
 /// the first two; the advice line is the older wording).
-fn is_identity_error(stderr: &str) -> bool {
+pub(super) fn is_identity_error(stderr: &str) -> bool {
     let s = stderr.to_ascii_lowercase();
     [
         "no name was given",

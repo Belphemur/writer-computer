@@ -86,7 +86,7 @@ fn is_failed(app: &tauri::App<MockRuntime>, id: &str) -> bool {
 /// Runs `f` with the real log pipeline captured (`log` bridged into a file subscriber on this
 /// thread); returns the written lines.
 fn captured_log(f: impl FnOnce()) -> Vec<String> {
-    let _ = tracing_log::LogTracer::init();
+    crate::logging::test_logger();
     let dir = tempfile::tempdir().unwrap();
     let built = crate::logging::build(
         dir.path(),

@@ -704,6 +704,7 @@ impl Replay<'_> {
 /// Re-makes `local` (oldest first) on top of `onto` (`None`: an empty tree).
 fn replay(
     repo: &Repo,
+    signer: Option<&Exec>,
     root: &Path,
     onto: Option<&str>,
     local: &[String],
@@ -786,6 +787,7 @@ fn replay(
         }
         let parents: Vec<String> = st.out.head.iter().cloned().collect();
         let new = repo.write_commit(
+            signer,
             &tree,
             &parents,
             &data.message,
@@ -1177,8 +1179,13 @@ fn run(root: &Path, opts: &Options<'_>, report: &mut Report) -> Result<(), Error
         let mut oldest_first = local.clone();
         oldest_first.reverse();
         let hold = !oldest_first.is_empty() && held_in(&repo, root, &oldest_first)?;
+        // asked once per round: the replay's commits and the choice to re-make unsigned ones
+        let signer = repo.signer()?;
+        // signing is on and a local commit is not signed (made before it was turned on, perhaps
+        // refused by the remote for it): re-made signed, the dates and authors kept
+        let resign = signer.is_some() && oldest_first.iter().any(|id| !repo.is_signed(id));
         let mut seen = Seen::of(report);
-        if behind > 0 || hold {
+        if behind > 0 || hold || resign {
             match &remote {
                 Some(r) if head.is_none() || (oldest_first.is_empty() && !hold) => {
                     // fast-forward
@@ -1195,8 +1202,14 @@ fn run(root: &Path, opts: &Options<'_>, report: &mut Report) -> Result<(), Error
                     report.pulled += behind;
                 }
                 _ => {
-                    let replayed =
-                        replay(&repo, root, remote.as_deref(), &oldest_first, opts.device)?;
+                    let replayed = replay(
+                        &repo,
+                        signer.as_ref(),
+                        root,
+                        remote.as_deref(),
+                        &oldest_first,
+                        opts.device,
+                    )?;
                     report.pulled += behind;
                     report.conflicts.extend(replayed.conflicts);
                     report.copies.extend(replayed.copies);

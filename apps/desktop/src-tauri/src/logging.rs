@@ -404,6 +404,46 @@ pub fn build(dir: &Path, prefix: &str, level: LevelFilter) -> io::Result<Built> 
     })
 }
 
+/// The one `log` logger of the test process (`log` accepts a single logger for the whole process,
+/// and tests that each installed their own made the others lose their records): every record goes
+/// to the tracing dispatcher of the calling thread (what `LogTracer` does, so a test can scope a
+/// subscriber with `with_default`) and is kept for [`test_records`].
+#[cfg(test)]
+static TEST_RECORDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+pub(crate) fn test_logger() {
+    struct Shared;
+    impl log::Log for Shared {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, r: &log::Record<'_>) {
+            TEST_RECORDS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(format!("{}", r.args()));
+            let _ = tracing_log::format_trace(r);
+        }
+        fn flush(&self) {}
+    }
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = log::set_logger(&Shared);
+        log::set_max_level(log::LevelFilter::Trace);
+    });
+}
+
+/// Every `log` record of the test process so far (see [`test_logger`]).
+#[cfg(test)]
+pub(crate) fn test_records() -> Vec<String> {
+    test_logger();
+    TEST_RECORDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+}
+
 // ---------- Global install ----------
 
 static GUARD: Mutex<Option<WorkerGuard>> = Mutex::new(None);
@@ -942,7 +982,7 @@ mod tests {
 
     #[test]
     fn log_crate_records_reach_the_same_file_with_the_same_filter() {
-        let _ = tracing_log::LogTracer::init();
+        test_logger();
         let tmp = tempfile::tempdir().unwrap();
         let built = build(tmp.path(), "writer", LevelFilter::WARN).unwrap();
         tracing::dispatcher::with_default(&built.dispatch, || {

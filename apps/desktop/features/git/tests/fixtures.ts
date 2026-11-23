@@ -13,7 +13,6 @@ export const baseStatus = (patch: Partial<GitStatus> = {}): GitStatus => ({
   turnRunning: false,
   committing: false,
   error: null,
-  errorKind: null,
   errorDetails: null,
   signing: { on: false, key: false, suggested: false },
   operation: null,

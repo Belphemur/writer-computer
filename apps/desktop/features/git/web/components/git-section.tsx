@@ -14,7 +14,7 @@ import { FailureLine, LogsSection, ShowLogs } from "./logs-section";
 import { CARD, defsFor, KEYS, MUTED, ROW } from "./section-parts";
 import { RemoteRows } from "./remote-rows";
 import { SigningRow } from "./signing-row";
-import { BUTTON } from "./sync-parts";
+import { BUTTON, ErrorLine } from "./sync-parts";
 import { IDENTITY_COMMANDS, summarize } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
 
@@ -120,12 +120,23 @@ export function GitSection() {
           <span className="font-medium text-[var(--text-primary)]" data-git-state={summary?.tone}>
             {summary?.label}
           </span>
-          {summary?.tone === "error" && <ShowLogs />}
+          {summary?.tone === "error" && !failure && !status.error && !status.syncError && (
+            <ShowLogs />
+          )}
         </span>
         {last && <span className={MUTED}>Saved {last}</span>}
       </div>
       {status.identityError && <IdentityHelp />}
-      {failure && <FailureLine message={failure} />}
+      {failure ? (
+        <FailureLine message={failure} />
+      ) : (
+        status.error &&
+        !status.identityError && (
+          <div className="px-1">
+            <ErrorLine line={status.error} details={status.errorDetails} showLogs />
+          </div>
+        )
+      )}
       <RemoteRows status={status} syncDefs={defsFor(KEYS.syncInterval)} />
       <div className={CARD}>
         <div className={ROW}>

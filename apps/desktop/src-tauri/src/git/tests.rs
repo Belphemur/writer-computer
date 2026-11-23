@@ -1768,6 +1768,7 @@ fn holding_chat_notes_back_leaves_them_for_the_turns_commit() {
         "Studio",
         Lfs::OFF,
         ChatNotes::Hold,
+        None,
     )
     .unwrap();
     assert_eq!(head_message(root).ty, Some(Type::User));
@@ -1885,4 +1886,61 @@ fn a_failed_signature_requeues_the_turn_and_holds_commits_for_a_minute() {
         Action::CommitAgent(t)
     );
     assert_eq!(c.tick(t0 + SIGN_RETRY, quiet, false), Action::CommitUser);
+}
+
+#[test]
+fn a_chat_note_is_a_markdown_file_directly_in_a_chats_folder_of_either_kind() {
+    use crate::agent::api::is_chat_note;
+    let table = [
+        (".writer/chats/a.md", true),
+        (".writer/chats/a.txt", false),
+        (".writer/chats/assets/a.md", false),
+        (".writer/chats/2026/a.md", false),
+        (".writer/other/a.md", false),
+        (".chats/a.md", true),
+        ("Clients/.chats/a.md", true),
+        ("Clients/Acme/.chats/a.md", true),
+        ("Clients/.chats/assets/a.md", false),
+        ("Clients/.chats/sub/a.md", false),
+        ("Clients/chats/a.md", false),
+        ("a.md", false),
+        ("Plan.md", false),
+    ];
+    for (path, expected) in table {
+        assert_eq!(is_chat_note(path), expected, "{path}");
+        assert_eq!(message::is_chat_change(&edit(path)), expected, "{path}");
+    }
+}
+
+#[test]
+fn restoring_a_deleted_chat_note_is_an_agent_chat_commit_not_a_user_restore() {
+    let dir = history_vault();
+    let root = dir.path();
+    let rel = ".writer/chats/a.md";
+    chat_note(root, rel, CHAT_A, "Plan the review", "hi");
+    user_commit(root);
+    std::fs::remove_file(root.join(rel)).unwrap();
+    user_commit(root);
+    let repo = Repo::open(root).unwrap().unwrap();
+    let deleted = repo.file_versions(rel, 5).unwrap();
+    let before_delete = deleted
+        .iter()
+        .find(|v| v.kind == VersionKind::Delete)
+        .unwrap();
+    let done = history::restore(&repo, root, rel, &before_delete.id, "Studio").unwrap();
+    assert!(!done.commit.is_empty());
+    let m = head_message(root);
+    assert_eq!((m.ty, m.scope), (Some(Type::Agent), Some(Scope::Chat)));
+    assert_eq!(m.subject, "Plan the review");
+    assert_eq!(m.chat.as_deref(), Some(CHAT_A));
+}
+
+#[test]
+fn a_held_commit_is_reported_until_the_retry_time() {
+    let t0 = Instant::now();
+    let mut c = Cadence::new();
+    assert!(!c.held(t0));
+    c.signing_failed(t0, None);
+    assert!(c.held(t0 + Duration::from_secs(1)));
+    assert!(!c.held(t0 + SIGN_RETRY));
 }

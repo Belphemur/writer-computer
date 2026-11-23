@@ -639,16 +639,17 @@ fn project_of_dir(root: &Path, dir: &Path) -> Option<String> {
     rel_string(root, dir.parent()?)
 }
 
-/// Whether the vault-relative path (forward slashes) is a chat note: a `.md` under the vault's own
-/// chats folder or directly in a project's `.chats`. The one rule other features ask through
-/// [`super::api::is_chat_note`] (the Git history commits chat notes apart from the user's).
+/// Whether the vault-relative path (forward slashes) is a chat note: a `.md` directly in a chats
+/// folder, the vault's own (`.writer/chats`) or a project's (`<folder>/.chats`): the one rule for
+/// both. A file deeper down (the pasted images' `assets/` folder, a sub-folder) is not one. The
+/// rule other features ask through [`super::api::is_chat_note`] (the Git history commits chat
+/// notes apart from the user's).
 pub fn is_chat_note_path(rel: &str) -> bool {
-    if !rel.ends_with(".md") {
+    let Some((dir, name)) = rel.rsplit_once('/') else {
         return false;
-    }
-    let mut parts = rel.rsplit('/');
-    parts.next();
-    rel.starts_with(&format!("{VAULT_CHATS_DIR}/")) || parts.next() == Some(PROJECT_CHATS_DIR)
+    };
+    name.ends_with(".md")
+        && (dir == VAULT_CHATS_DIR || dir.rsplit('/').next() == Some(PROJECT_CHATS_DIR))
 }
 
 /// Every chats folder in the vault: the vault's own plus each `<folder>/.chats`. Hidden folders

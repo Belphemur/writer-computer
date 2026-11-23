@@ -14,22 +14,28 @@ import { useGitStatus } from "../lib/status-store";
 
 export const BUTTON = SMALL_BUTTON;
 
-/** "Push rejected: authentication failed" with "Details", which copies the sanitized output, and
- *  "Show logs" where the Logs section is (Settings). */
-export function SyncError({ showLogs = false }: { showLogs?: boolean }) {
-  const failure = useGitStatus((s) => s.status?.syncError ?? null);
+/** One failure on one line: what failed, "Details" (copies git's sanitized output) when there is
+ *  any, and "Show logs" where the Logs section is (Settings). */
+export function ErrorLine({
+  line,
+  details,
+  showLogs = false,
+}: {
+  line: string;
+  details?: string | null;
+  showLogs?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
-  if (!failure) return null;
   return (
-    <div role="alert" data-git-sync-error className="flex items-baseline gap-2 text-xs">
-      <span className="text-[var(--text-primary)]">{failure.line}</span>
-      {failure.details && (
+    <div role="alert" data-git-error className="flex items-baseline gap-2 text-xs">
+      <span className="text-[var(--text-primary)]">{line}</span>
+      {details && (
         <button
           type="button"
           className="text-[var(--text-muted)] underline hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:text-[var(--text-primary)]"
           onClick={() =>
             void navigator.clipboard
-              .writeText(failure.details)
+              .writeText(details)
               .then(() => setCopied(true))
               .catch(() => logger.warn("git", "could not copy the details"))
           }
@@ -38,6 +44,17 @@ export function SyncError({ showLogs = false }: { showLogs?: boolean }) {
         </button>
       )}
       {showLogs && <ShowLogs />}
+    </div>
+  );
+}
+
+/** "Push rejected: authentication failed" with "Details" and, in Settings, "Show logs". */
+export function SyncError({ showLogs = false }: { showLogs?: boolean }) {
+  const failure = useGitStatus((s) => s.status?.syncError ?? null);
+  if (!failure) return null;
+  return (
+    <div data-git-sync-error>
+      <ErrorLine line={failure.line} details={failure.details} showLogs={showLogs} />
     </div>
   );
 }

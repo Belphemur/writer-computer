@@ -1571,3 +1571,174 @@ fn the_merge_commands_refuse_a_vault_that_is_not_set_up_and_a_path_outside_it() 
     assert_eq!(rel, "a.md");
     assert!(commands::conflict_target(app.handle(), "main", "../x.md").is_err());
 }
+
+// ---- signing in the runtime -----------------------------------------------------------------------
+
+/// The vault signs through a fake ssh signer (`script` is its body, `$last` the buffer file);
+/// every call leaves a line in `calls`. Set up first, so the setup commit is unsigned.
+fn signing_vault(script: &str) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = vault();
+    let root = dir.path().canonicalize().unwrap();
+    write(&root, "a.md", "1");
+    crate::git::setup(&root, crate::git::SetupMode::LocalOnly, "d").unwrap();
+    let tools = tempfile::tempdir().unwrap().keep();
+    let calls = tools.join("calls");
+    let program = tools.join("sign");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\nfor last; do :; done\necho $$ >> '{calls}'\n{script}\n",
+            calls = calls.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let cfg = root.join(".git/config");
+    let mut text = std::fs::read_to_string(&cfg).unwrap();
+    text.push_str(&format!(
+        "[commit]\n\tgpgsign = true\n[gpg]\n\tformat = ssh\n[gpg \"ssh\"]\n\tprogram = {}\n[user]\n\tsigningkey = ssh-ed25519 AAAAfake\n",
+        program.display()
+    ));
+    std::fs::write(cfg, text).unwrap();
+    (dir, root, calls)
+}
+
+const SIGN_OK: &str =
+    "printf -- '-----BEGIN SSH SIGNATURE-----\\nZmFrZQ==\\n-----END SSH SIGNATURE-----\\n' > \"$last.sig\"";
+
+fn calls(file: &Path) -> usize {
+    std::fs::read_to_string(file).map_or(0, |t| t.lines().count())
+}
+
+fn have_git() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok()
+}
+
+#[cfg(unix)]
+#[test]
+fn closing_never_waits_on_a_signer_longer_than_its_budget_and_commits_nothing_unsigned() {
+    if !have_git() {
+        return;
+    }
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root, _calls) = signing_vault("sleep 10");
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    write(&root, "a.md", "2");
+    let started = Instant::now();
+    runtime::flush(app.handle(), "main");
+    let took = started.elapsed();
+    assert!(took < Duration::from_secs(9), "{took:?}");
+    assert_eq!(subjects(&root).len(), 1, "no commit, signed or not");
+    let repo = crate::git::Repo::open(&root).unwrap().unwrap();
+    assert_eq!(
+        repo.changes().unwrap().len(),
+        1,
+        "the change is still pending"
+    );
+    assert_eq!(
+        vaults.failure_of("main").map(|e| e.line),
+        Some("Signing failed: unlock your key".to_string())
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stopping_the_feature_kills_a_waiting_signer_and_counts_no_leak() {
+    if !have_git() {
+        return;
+    }
+    let app = app_with(vec![&Git], &[]);
+    crate::features::enforce_settle_for_test(app.handle(), Duration::from_millis(50));
+    let (_dir, root, calls_file) = signing_vault("sleep 30");
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    write(&root, "a.md", "2");
+    let handle = app.handle().clone();
+    let commit = std::thread::spawn(move || runtime::commit_user_now(&handle, "main"));
+    let waited = Instant::now();
+    while calls(&calls_file) == 0 {
+        assert!(
+            waited.elapsed() < Duration::from_secs(20),
+            "the signer never ran"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pid = std::fs::read_to_string(&calls_file)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .trim()
+        .to_string();
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .output()
+            .is_ok_and(|o| o.status.success())
+    };
+    assert!(alive(), "the signer waits");
+    crate::features::stop_feature(app.handle(), "git", true);
+    let result = commit.join().unwrap();
+    assert!(result.is_err(), "no commit when the scope stops");
+    let waited = Instant::now();
+    while alive() {
+        assert!(
+            waited.elapsed() < Duration::from_secs(5),
+            "the signer outlived the scope"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(
+        app.state::<crate::features::Containment>()
+            .strikes_of("git"),
+        0,
+        "no leak strike"
+    );
+    assert_eq!(subjects(&root).len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn while_commits_are_held_a_turn_start_commits_nothing_calls_no_signer_and_records_no_baseline() {
+    if !have_git() {
+        return;
+    }
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root, calls_file) = signing_vault("exit 1");
+    let vaults = runtime::vaults(app.handle()).unwrap();
+    vaults.open("main", &root);
+    write(&root, "a.md", "2");
+    // a commit that fails to sign holds the next ones
+    assert!(runtime::commit_user_now(app.handle(), "main").is_err());
+    assert_eq!(calls(&calls_file), 1);
+    assert!(vaults.held("main"));
+    write(&root, "a.md", "3");
+    emit_point(&app, &TURN_STARTED_POINT, &started(&root));
+    assert_eq!(calls(&calls_file), 1, "no signer was called");
+    assert_eq!(subjects(&root).len(), 1, "no commit");
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None, "no baseline");
+    // the sync's own first step is held too, and the cadence does nothing before the retry time
+    runtime::tick(app.handle(), later(30));
+    assert_eq!(calls(&calls_file), 1);
+    // after the retry time the signer is asked again (and works)
+    std::fs::write(
+        std::fs::read_to_string(root.join(".git/config"))
+            .unwrap()
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("program = ").map(str::to_string))
+            .unwrap(),
+        format!("#!/bin/sh\nfor last; do :; done\n{SIGN_OK}\n"),
+    )
+    .unwrap();
+    runtime::tick(app.handle(), later(3600));
+    assert_eq!(subjects(&root).len(), 2, "committed, signed");
+}

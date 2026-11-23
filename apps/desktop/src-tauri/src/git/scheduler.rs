@@ -112,6 +112,12 @@ impl Cadence {
         }
     }
 
+    /// Commits are held back at `now` (a signature failed less than [`SIGN_RETRY`] ago): no signer
+    /// is to be called, and nothing vouched for, until it has passed.
+    pub fn held(&self, now: Instant) -> bool {
+        self.hold_until.is_some_and(|until| now < until)
+    }
+
     pub fn turn_running(&self) -> bool {
         !self.running.is_empty()
     }
@@ -135,10 +141,10 @@ impl Cadence {
         if paused || self.turn_running() {
             return Action::Nothing;
         }
-        match self.hold_until {
-            Some(until) if now < until => return Action::Nothing,
-            _ => self.hold_until = None,
+        if self.held(now) {
+            return Action::Nothing;
         }
+        self.hold_until = None;
         if !self.ended.is_empty() {
             return Action::CommitAgent(self.ended.remove(0));
         }

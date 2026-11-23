@@ -9,7 +9,6 @@ use crate::git::github::FORGE as GH;
 use crate::git::transport::{self, Exec, Helper, REMOTE};
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::sync::{Mutex, Once};
 
 const PLANTED: &str = "ghp_PLANTED_token_9f8e7d6c5b4a";
 
@@ -340,28 +339,8 @@ fn the_helper_registration_names_where_the_token_is_never_the_token() {
 
 // ---- the planted token never leaks ------------------------------------------------------------------
 
-/// Every log record of the process, so a test can grep for the planted token.
-struct Capture(Mutex<Vec<String>>);
-
-impl log::Log for Capture {
-    fn enabled(&self, _: &log::Metadata<'_>) -> bool {
-        true
-    }
-    fn log(&self, r: &log::Record<'_>) {
-        self.0.lock().unwrap().push(format!("{}", r.args()));
-    }
-    fn flush(&self) {}
-}
-
-static CAPTURE: Capture = Capture(Mutex::new(Vec::new()));
-
 pub(crate) fn captured() -> Vec<String> {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        let _ = log::set_logger(&CAPTURE);
-        log::set_max_level(log::LevelFilter::Trace);
-    });
-    CAPTURE.0.lock().unwrap().clone()
+    crate::logging::test_records()
 }
 
 #[test]

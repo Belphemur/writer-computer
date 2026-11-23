@@ -253,16 +253,38 @@ impl Exec {
     /// until the scope stops: [`crate::process_run::run`]. Every call leaves one line in the log
     /// ([`log_call`]).
     pub fn run(&self, cmd: Command, timeout: Duration) -> Result<Output, RunError> {
+        self.run_with(cmd, timeout, None)
+    }
+
+    /// [`Exec::run`] with `stdin` written to the child (exact bytes) and closed: the one place the
+    /// budget, the log line and the bounded run meet.
+    pub fn run_with(
+        &self,
+        cmd: Command,
+        timeout: Duration,
+        stdin: Option<Vec<u8>>,
+    ) -> Result<Output, RunError> {
         let timeout = self.budget(timeout)?;
         let what = describe(&cmd);
         let started = Instant::now();
-        let result = run_bounded(&self.spawner, cmd, &RunOptions::new(timeout));
+        let mut opts = RunOptions::new(timeout);
+        if let Some(bytes) = stdin {
+            opts = opts.stdin_bytes(bytes);
+        }
+        let result = run_bounded(&self.spawner, cmd, &opts);
         log_call(&what, started.elapsed(), &result);
         result
     }
 
+    /// `git config --local <key> <value>` in `root`: the repository's own config, never the user's
+    /// global one (the tracking branch, `commit.gpgsign`).
+    pub fn config_local(&self, root: &Path, key: &str, value: &str) -> Result<Output, RunError> {
+        let cmd = self.git(root, None, &["config", "--local", key, value]);
+        self.run(cmd, QUICK_TIMEOUT)
+    }
+
     /// `timeout`, cut to what the [`Exec::with_deadline`] has left (`Timeout` when nothing is).
-    pub fn budget(&self, timeout: Duration) -> Result<Duration, RunError> {
+    fn budget(&self, timeout: Duration) -> Result<Duration, RunError> {
         match self.deadline {
             Some(d) => {
                 let left = d.saturating_duration_since(Instant::now());
@@ -740,7 +762,10 @@ impl Transport<'_> {
         let merge = format!("refs/heads/{branch}");
         for (key, value) in [("remote", REMOTE), ("merge", merge.as_str())] {
             let key = format!("branch.{branch}.{key}");
-            let out = self.run(&["config", "--local", &key, value], QUICK_TIMEOUT)?;
+            let out = self
+                .exec
+                .config_local(self.root, &key, value)
+                .map_err(run_error)?;
             if !out.ok() {
                 return Err(self.fail(&out));
             }

@@ -15,6 +15,7 @@ import {
   lastSyncLabel,
   Notices,
   BUTTON,
+  ErrorLine,
   SyncError,
 } from "./sync-parts";
 import { showHistoryItems } from "../menus";
@@ -183,8 +184,12 @@ export default function GitPanel() {
       )}
       <SyncError />
       {summary.tone === "error" && !status.syncError && status.conflicts.length === 0 && (
-        <div role="alert" className="text-xs text-[var(--text-primary)]">
-          <p>{summary.detail}</p>
+        <div className="text-xs text-[var(--text-primary)]">
+          {status.error && !status.identityError ? (
+            <ErrorLine line={status.error} details={status.errorDetails} />
+          ) : (
+            <p role="alert">{summary.detail}</p>
+          )}
           {status.identityError && (
             <pre className="mt-1 whitespace-pre-wrap text-[var(--text-muted)]">
               {IDENTITY_COMMANDS.join("\n")}

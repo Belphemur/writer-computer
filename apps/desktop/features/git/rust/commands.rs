@@ -70,8 +70,6 @@ pub struct GitStatus {
     pub committing: bool,
     /// The last failure, one line.
     pub error: Option<String>,
-    /// What failed (`signing`, `other`): what a "Show logs" button switches on.
-    pub error_kind: Option<String>,
     /// git's sanitized message of that failure, when it has one.
     pub error_details: Option<String>,
     /// Commit signing: what git says and whether the repository suggests it.
@@ -249,7 +247,6 @@ fn status_of<R: Runtime>(
         turn_running: vaults.as_ref().is_some_and(|v| v.turn_running(label)),
         committing: vaults.as_ref().is_some_and(|v| v.busy()),
         error: failure.as_ref().map(|e| e.line.clone()),
-        error_kind: failure.as_ref().map(|e| e.kind.to_string()),
         error_details: failure
             .as_ref()
             .map(|e| e.details.clone())
@@ -626,6 +623,11 @@ pub async fn git_restore<R: Runtime>(
     let label = webview.label().to_string();
     blocking(move || {
         let (root, repo, rel) = history_target(&app, &label, &path)?;
+        // the signer, when commits are signed, runs in the feature's scope
+        let repo = match super::sync::exec_of(&app) {
+            Some(exec) => repo.with_exec(exec),
+            None => repo,
+        };
         let v = runtime::vaults(&app);
         let _busy = v.as_ref().map(|v| v.busy_guard());
         let lock = v.as_ref().map(|v| v.write_lock(&root));

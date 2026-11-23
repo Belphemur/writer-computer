@@ -236,8 +236,6 @@ export type GitStatus = {
 	committing: boolean,
 	/**  The last failure, one line. */
 	error: string | null,
-	/**  What failed (`signing`, `other`): what a "Show logs" button switches on. */
-	errorKind: string | null,
 	/**  git's sanitized message of that failure, when it has one. */
 	errorDetails: string | null,
 	/**  Commit signing: what git says and whether the repository suggests it. */

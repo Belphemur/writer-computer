@@ -73,7 +73,24 @@ pub fn helper_for<R: Runtime>(app: &AppHandle<R>, root: &Path) -> Option<Helper>
 
 /// The children runner of the running feature (its scope's), `None` while it is off.
 pub fn exec_of<R: Runtime>(app: &AppHandle<R>) -> Option<Exec> {
-    crate::features::scope_of(app, runtime::ID).map(|s| Exec::new(s.spawner()))
+    let exec = crate::features::scope_of(app, runtime::ID).map(|s| Exec::new(s.spawner()))?;
+    // tests never read the user's git configuration (a global `commit.gpgsign` would call the
+    // user's signer)
+    #[cfg(test)]
+    let exec = exec.with_env(tests_env());
+    Some(exec)
+}
+
+/// The environment git children get in this module's tests: isolated from the user's
+/// configuration (a global `commit.gpgsign` would call the user's signer).
+#[cfg(test)]
+fn tests_env() -> Vec<(String, String)> {
+    vec![
+        ("HOME".into(), "/nonexistent".into()),
+        ("XDG_CONFIG_HOME".into(), "/nonexistent".into()),
+        ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+        ("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()),
+    ]
 }
 
 /// One short line for a failure (never a path or a credential).
@@ -161,7 +178,11 @@ pub fn run<R: Runtime>(app: &AppHandle<R>, label: &str, mode: Mode) -> Ran {
     runtime::announce_changed(app, label);
     let started = Instant::now();
     // step 1: the pending changes
-    let _ = runtime::commit_user_unchecked(app, &v, label);
+    // (not while a failed signature holds the commits: the sync then goes on with what is made)
+    if !v.held(label) {
+        let budget = (mode == Mode::Close).then_some(CLOSE_BUDGET);
+        let _ = runtime::commit_user_unchecked(app, &v, label, budget);
+    }
     let Some(mut exec) = exec_of(app) else {
         v.end_sync(label, |_| {});
         return Ran::Skipped(Skip::Stopped);

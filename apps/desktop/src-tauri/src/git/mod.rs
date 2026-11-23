@@ -362,7 +362,17 @@ pub fn commit_user(
     device: &str,
     lfs: Lfs,
 ) -> Result<Option<String>> {
-    commit_user_with(root, template, ctx, device, lfs, ChatNotes::Commit)
+    commit_user_with(root, template, ctx, device, lfs, ChatNotes::Commit, None)
+}
+
+/// The repository for a commit: LFS settings, and git's children (the signer) run through `exec`
+/// (the feature's scope) when one is given, else through a runner with no scope (the CLI).
+fn configured(repo: Repo, lfs: Lfs, exec: Option<&transport::Exec>) -> Repo {
+    let repo = repo.with_lfs(lfs);
+    match exec {
+        Some(e) => repo.with_exec(e.clone()),
+        None => repo,
+    }
 }
 
 pub fn commit_user_with(
@@ -372,8 +382,9 @@ pub fn commit_user_with(
     device: &str,
     lfs: Lfs,
     chats: ChatNotes,
+    exec: Option<&transport::Exec>,
 ) -> Result<Option<String>> {
-    let Some(repo) = before_commit(root, device)?.map(|r| r.with_lfs(lfs)) else {
+    let Some(repo) = before_commit(root, device)?.map(|r| configured(r, lfs, exec)) else {
         return Ok(None);
     };
     let (changes, _) = committable(root, &repo, repo.changes()?);
@@ -395,7 +406,7 @@ pub fn commit_user_with(
     }
     if chats == ChatNotes::Commit && !notes.is_empty() {
         // a fresh repository: the first commit moved the branch and the index
-        let repo = Repo::open_with(root, lfs)?.ok_or(Error::NotARepo)?;
+        let repo = configured(Repo::open(root)?.ok_or(Error::NotARepo)?, lfs, exec);
         let message = Message::chat(&chat_refs(root, &repo, &notes), device);
         made = Some(repo.commit(&notes, &message)?);
     }
@@ -404,14 +415,27 @@ pub fn commit_user_with(
 
 /// The chat a changed chat note is (id and title from its note, the committed one for a delete).
 fn chat_note_of(root: &Path, repo: &Repo, change: &Change) -> Option<ChatNote> {
-    let text = match change {
+    // the front matter is at the top: no more than this is read of a note that can be a megabyte
+    const HEAD: usize = 64 * 1024;
+    let bytes = match change {
         Change::Delete(rel) => {
             let id = repo.blob_id_at("HEAD", rel).ok()??;
-            String::from_utf8_lossy(&repo.blob(&id).ok()?).into_owned()
+            let mut b = repo.blob(&id).ok()?;
+            b.truncate(HEAD);
+            b
         }
-        other => std::fs::read_to_string(root.join(other.path())).ok()?,
+        other => {
+            use std::io::Read;
+            let mut b = Vec::new();
+            std::fs::File::open(root.join(other.path()))
+                .ok()?
+                .take(HEAD as u64)
+                .read_to_end(&mut b)
+                .ok()?;
+            b
+        }
     };
-    chat_note(&text)
+    chat_note(&String::from_utf8_lossy(&bytes))
 }
 
 /// `(chat id, title)` of the chats `notes` belong to, one per chat. A note that cannot be read as
@@ -430,6 +454,18 @@ fn chat_refs(root: &Path, repo: &Repo, notes: &[Change]) -> Vec<(Option<String>,
     out
 }
 
+/// The `agent(chat)` message of `changes` when they are all chat notes (a restore of one, the
+/// edits of one kept before it): chat notes are never filed as the user's own. `None` otherwise.
+pub(crate) fn chat_message(
+    root: &Path,
+    repo: &Repo,
+    changes: &[Change],
+    device: &str,
+) -> Option<Message> {
+    (!changes.is_empty() && changes.iter().all(message::is_chat_change))
+        .then(|| Message::chat(&chat_refs(root, repo, changes), device))
+}
+
 /// Commits the files a finished agent turn changed (those still different from HEAD), with its
 /// chat's note when that changed too: one turn is one commit. `None` when none of them is.
 pub fn commit_agent(
@@ -439,7 +475,18 @@ pub fn commit_agent(
     device: &str,
     lfs: Lfs,
 ) -> Result<Option<String>> {
-    let Some(repo) = before_commit(root, device)?.map(|r| r.with_lfs(lfs)) else {
+    commit_agent_with(root, turn, fallback_title, device, lfs, None)
+}
+
+pub fn commit_agent_with(
+    root: &Path,
+    turn: &scheduler::AgentTurn,
+    fallback_title: &str,
+    device: &str,
+    lfs: Lfs,
+    exec: Option<&transport::Exec>,
+) -> Result<Option<String>> {
+    let Some(repo) = before_commit(root, device)?.map(|r| configured(r, lfs, exec)) else {
         return Ok(None);
     };
     let touched: std::collections::BTreeSet<&str> = turn.files.iter().map(String::as_str).collect();

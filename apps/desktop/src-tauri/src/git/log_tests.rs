@@ -25,7 +25,7 @@ fn fake(dir: &Path, binary: &str, script: &str) {
 /// The lines the real pipeline wrote while `f` ran on this thread.
 fn logged(f: impl FnOnce()) -> Vec<serde_json::Value> {
     // `log` records (the transport's) reach the pipeline through this bridge
-    let _ = tracing_log::LogTracer::init();
+    crate::logging::test_logger();
     let dir = tempfile::tempdir().unwrap();
     let built = crate::logging::build(
         dir.path(),
@@ -269,4 +269,40 @@ fn git_trace_variables_are_not_passed_to_a_call() {
     std::env::remove_var("GIT_CURL_VERBOSE");
     let all = serde_json::to_string(&lines).unwrap();
     assert!(all.contains("trace=[] verbose=[]"), "{all}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_signed_commit_logs_its_call_and_never_the_message_or_the_signature() {
+    use super::signing_tests::{commit_user, sign_with, signer, Through};
+    use super::sync::tests::{have_git, World};
+    if !have_git() {
+        return;
+    }
+    let w = World::new();
+    let d = w.device("A");
+    d.write("Plan.md", "1\n");
+    d.setup();
+    sign_with(&d, &signer(&w.home, true));
+    let _through = Through::of(&d);
+    d.write("Plan.md", "2\n");
+    let lines = logged(|| {
+        commit_user(&d).unwrap().unwrap();
+    });
+    let all = serde_json::to_string(&lines).unwrap();
+    let git = git_lines(&lines);
+    assert!(
+        git.iter().any(|l| l["fields"]["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("git commit-tree ok in "))),
+        "{all}"
+    );
+    for secret in [
+        "user(edit)",
+        "Writer-Device",
+        "BEGIN SSH SIGNATURE",
+        "ZmFrZQ",
+    ] {
+        assert!(!all.contains(secret), "{secret}: {all}");
+    }
 }

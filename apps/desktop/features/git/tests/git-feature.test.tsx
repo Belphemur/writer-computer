@@ -711,10 +711,31 @@ describe("Settings > Git", () => {
     expect((row.querySelector('[role="switch"]') as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("a failed signature shows its line, one Show logs and Details in Settings and in the panel", () => {
+    const failed = status({
+      error: "Signing failed: unlock your key",
+      errorDetails: "incorrect passphrase",
+    });
+    act(() => useGitStatus.getState().apply(failed));
+    render(<GitSection />);
+    expect(container.textContent).toContain("Signing failed: unlock your key");
+    expect(container.querySelectorAll("[data-show-logs]")).toHaveLength(1);
+    const details = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent === "Details",
+    );
+    expect(details).toHaveLength(1);
+    render(<GitPanel />);
+    expect(container.textContent).toContain("Signing failed: unlock your key");
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent === "Details")).toBe(
+      true,
+    );
+  });
+
   it("a failed signature reads as the status error", () => {
-    expect(
-      summarize(status({ error: "Signing failed: unlock your key", errorKind: "signing" })),
-    ).toMatchObject({ label: "Error", detail: "Signing failed: unlock your key" });
+    expect(summarize(status({ error: "Signing failed: unlock your key" }))).toMatchObject({
+      label: "Error",
+      detail: "Signing failed: unlock your key",
+    });
   });
 
   it("the LFS toggle is disabled with a hint while git-lfs is not installed", () => {

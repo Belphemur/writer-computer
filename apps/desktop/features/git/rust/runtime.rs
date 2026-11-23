@@ -148,12 +148,10 @@ struct Vault {
     error: Option<VaultError>,
 }
 
-/// A failed commit: the line for the status, what failed ([`error_kind`]) and git's sanitized
-/// message for "Details".
+/// A failed commit: the line for the status and git's sanitized message for "Details".
 #[derive(Debug, Clone)]
 pub struct VaultError {
     pub line: String,
-    pub kind: &'static str,
     pub details: String,
 }
 
@@ -351,7 +349,6 @@ impl Vaults {
         if let Some(v) = self.inner.lock().get_mut(label) {
             v.error = error.map(|e| VaultError {
                 line: error_line(e),
-                kind: error_kind(e),
                 details: error_details(e),
             });
         }
@@ -393,6 +390,14 @@ impl Vaults {
     /// "Sync now", or a trigger the cadence should honour at its next pass.
     pub fn request_sync(&self, label: &str) {
         self.with(label, |v| v.sync.request());
+    }
+
+    /// Commits are held back for now (a signature failed a moment ago, `Cadence::held`).
+    pub fn held(&self, label: &str) -> bool {
+        self.inner
+            .lock()
+            .get(label)
+            .is_some_and(|v| v.cadence.held(Instant::now()))
     }
 
     pub fn turn_running(&self, label: &str) -> bool {
@@ -521,15 +526,31 @@ pub(super) fn announce_changed<R: Runtime>(app: &AppHandle<R>, label: &str) {
 /// While a sync runs nothing is committed (the sync commits first and owns the repository until it
 /// is done): the cadence tries again at its next pass.
 pub fn commit_user_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<bool, git::Error> {
-    commit_user_with(app, label, git::ChatNotes::Commit)
+    commit_user_with(app, label, git::ChatNotes::Commit, None)
+}
+
+/// How long the save before an agent turn may wait for the signer: the turn must not stall on a
+/// key prompt (it starts without a baseline instead).
+const TURN_START_BUDGET: Duration = Duration::from_secs(10);
+
+/// The runner a commit's git children (the signer) go through: the feature's scope, so turning the
+/// feature off kills a signer that waits, cut to `budget` when one is given. `None` while the
+/// feature is off.
+fn commit_exec<R: Runtime>(app: &AppHandle<R>, budget: Option<Duration>) -> Option<Exec> {
+    let exec = super::sync::exec_of(app)?;
+    Some(match budget {
+        Some(b) => exec.with_deadline(Instant::now() + b),
+        None => exec,
+    })
 }
 
 /// [`commit_user_now`] under a chat-note policy (`Hold`: before a turn, whose commit takes its
-/// chat's note).
+/// chat's note) and an optional time budget for the signer.
 fn commit_user_with<R: Runtime>(
     app: &AppHandle<R>,
     label: &str,
     chats: git::ChatNotes,
+    budget: Option<Duration>,
 ) -> Result<bool, git::Error> {
     let Some(v) = vaults(app) else {
         return Ok(false);
@@ -544,7 +565,7 @@ fn commit_user_with<R: Runtime>(
         log::info!(target: "git", "git: a sync holds the repository, the commit waits");
         return Ok(false);
     }
-    commit_user_checked(app, &v, label, chats)
+    commit_user_checked(app, &v, label, chats, budget)
 }
 
 /// [`commit_user_now`] without the sync check: the sync's own first step.
@@ -552,8 +573,9 @@ pub(super) fn commit_user_unchecked<R: Runtime>(
     app: &AppHandle<R>,
     v: &Vaults,
     label: &str,
+    budget: Option<Duration>,
 ) -> Result<bool, git::Error> {
-    commit_user_checked(app, v, label, git::ChatNotes::Commit)
+    commit_user_checked(app, v, label, git::ChatNotes::Commit, budget)
 }
 
 fn commit_user_checked<R: Runtime>(
@@ -561,8 +583,12 @@ fn commit_user_checked<R: Runtime>(
     v: &Vaults,
     label: &str,
     chats: git::ChatNotes,
+    budget: Option<Duration>,
 ) -> Result<bool, git::Error> {
     let Some(root) = v.root_of(label) else {
+        return Ok(false);
+    };
+    let Some(exec) = commit_exec(app, budget) else {
         return Ok(false);
     };
     let _busy = Busy::new(&v.committing);
@@ -580,6 +606,7 @@ fn commit_user_checked<R: Runtime>(
         &dev,
         lfs,
         chats,
+        Some(&exec),
     );
     v.committed(label);
     match &result {
@@ -617,7 +644,10 @@ fn commit_agent<R: Runtime>(app: &AppHandle<R>, label: &str, turn: &AgentTurn) {
     recover_now(app, label, &root, &dev);
     let lfs = lfs_of(app, label, false);
     ensure_lfs_installed(app, &v, &root, lfs);
-    match git::commit_agent(&root, turn, "Agent turn", &dev, lfs) {
+    let Some(exec) = commit_exec(app, None) else {
+        return;
+    };
+    match git::commit_agent_with(&root, turn, "Agent turn", &dev, lfs, Some(&exec)) {
         Ok(Some(_)) => {
             v.set_error(label, None);
             v.with(label, |vault| vault.sync.on_commit(Instant::now()));
@@ -775,7 +805,30 @@ pub fn flush<R: Runtime>(app: &AppHandle<R>, label: &str) {
     if !active(&root) || v.turn_running(label) {
         return;
     }
-    let _ = commit_user_now(app, label);
+    // on a scope thread, waited for the budget at most: a signer that waits for the user is
+    // killed at the deadline (the commit fails closed, the change stays pending) and never holds
+    // the caller's (the main) thread
+    let scope = crate::features::scope_of(app, ID).filter(|_| !v.held(label));
+    if let Some(scope) = scope {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (handle, name) = (app.clone(), label.to_string());
+        let started = scope.spawn("git-flush", move |_| {
+            let _ = commit_user_with(
+                &handle,
+                &name,
+                git::ChatNotes::Commit,
+                Some(super::sync::CLOSE_BUDGET),
+            );
+            let _ = tx.send(());
+        });
+        if started.is_ok()
+            && rx
+                .recv_timeout(super::sync::CLOSE_BUDGET + Duration::from_secs(2))
+                .is_err()
+        {
+            log::warn!(target: "git", "git: the save at close did not finish in time");
+        }
+    }
     // a short sync so the other devices have it (spec "Cadence"): on a scope thread with one
     // deadline, waited for a few seconds at most, never on the caller's (the main) thread
     if super::sync::ready(&root, false) && !v.is_syncing(label) {
@@ -807,7 +860,11 @@ pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
         if active(&root) && !v.turn_running(&label) {
             // an error (no identity, a merge begun, ...) or a sync that holds the repository:
             // the history was not brought up to the start of the turn
-            vouchable &= commit_user_with(app, &label, git::ChatNotes::Hold).is_ok()
+            // a signature that failed a moment ago holds the commits: nothing is tried, and no
+            // baseline is vouched for
+            vouchable &= !v.held(&label)
+                && commit_user_with(app, &label, git::ChatNotes::Hold, Some(TURN_START_BUDGET))
+                    .is_ok()
                 && !v.is_syncing(&label);
         } else {
             vouchable &= active(&root);

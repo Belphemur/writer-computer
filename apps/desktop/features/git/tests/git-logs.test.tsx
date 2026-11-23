@@ -158,10 +158,10 @@ describe("Show logs", () => {
     );
     render();
     await flush();
-    // the header's Error and the sync error line, no more
-    expect(showLogs()).toHaveLength(2);
+    // the error line carries the one "Show logs" (the header's would repeat it)
+    expect(showLogs()).toHaveLength(1);
     expect(section().open).toBe(false);
-    await act(async () => (showLogs()[1] as HTMLElement).click());
+    await act(async () => (showLogs()[0] as HTMLElement).click());
     await flush();
     expect(section().open).toBe(true);
     expect(

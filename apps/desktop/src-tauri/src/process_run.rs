@@ -42,7 +42,7 @@ pub enum RunError {
 pub struct RunOptions {
     pub timeout: Duration,
     /// Written to stdin, then stdin is closed.
-    pub stdin: Option<String>,
+    pub stdin: Option<Vec<u8>>,
     /// At most this many bytes are kept of each of stdout and stderr.
     pub max_out: u64,
 }
@@ -57,7 +57,13 @@ impl RunOptions {
     }
 
     pub fn stdin(mut self, text: impl Into<String>) -> Self {
-        self.stdin = Some(text.into());
+        self.stdin = Some(text.into().into_bytes());
+        self
+    }
+
+    /// Like [`RunOptions::stdin`] with exact bytes (a commit message that is not UTF-8).
+    pub fn stdin_bytes(mut self, bytes: Vec<u8>) -> Self {
+        self.stdin = Some(bytes);
         self
     }
 
@@ -83,7 +89,7 @@ pub fn run(spawner: &Spawner, mut cmd: Command, opts: &RunOptions) -> Result<Out
         // on a thread: a child that never reads must not outlive the timeout; one that exits
         // early closes the pipe and its exit status tells the story
         let fed = spawner.spawn("run-stdin", move |_| {
-            let _ = si.write_all(text.as_bytes());
+            let _ = si.write_all(&text);
         });
         if fed.is_err() {
             child.kill();

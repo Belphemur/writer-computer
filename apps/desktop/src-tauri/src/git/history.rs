@@ -437,7 +437,9 @@ pub fn restore(repo: &Repo, root: &Path, path: &str, rev: &str, device: &str) ->
         .collect();
     if !pending.is_empty() {
         let ctx = super::template_ctx(device);
-        let msg = Message::user(&pending, super::message::DEFAULT_TEMPLATE, &ctx, device);
+        let msg = super::chat_message(root, repo, &pending, device).unwrap_or_else(|| {
+            Message::user(&pending, super::message::DEFAULT_TEMPLATE, &ctx, device)
+        });
         repo.commit(&pending, &msg)?;
     }
     let target = if taken {
@@ -483,11 +485,13 @@ pub fn restore(repo: &Repo, root: &Path, path: &str, rev: &str, device: &str) ->
             commit: String::new(),
         });
     }
-    let msg = Message::user_scoped(
-        Scope::Restore,
-        &format!("{title} to {}", when(v.time)),
-        device,
-    );
+    let msg = super::chat_message(root, repo, &changes, device).unwrap_or_else(|| {
+        Message::user_scoped(
+            Scope::Restore,
+            &format!("{title} to {}", when(v.time)),
+            device,
+        )
+    });
     let commit = repo.commit(&changes, &msg)?;
     Ok(Restored {
         path: confined.rel,

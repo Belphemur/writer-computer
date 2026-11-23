@@ -39,6 +39,15 @@ pub enum Error {
     Io(#[from] io::Error),
 }
 
+/// A signing failure as the engine's error: git's "who are you" is the identity error.
+fn sign_error(e: signing::SignError) -> Error {
+    if e.no_identity {
+        Error::NoIdentity
+    } else {
+        Error::Signing { details: e.details }
+    }
+}
+
 fn git<E: std::fmt::Display>(e: E) -> Error {
     Error::Git(e.to_string())
 }
@@ -336,11 +345,18 @@ impl Repo {
         Some(Exec::new(crate::features::scope::Spawner::detached()))
     }
 
-    /// The runner commits are signed through, `None` when git's configuration does not say commits
-    /// are signed (or git is absent): the gix path is unchanged then.
-    fn signer(&self) -> Option<Exec> {
-        self.git_exec()
-            .filter(|exec| signing::enabled(exec, &self.root))
+    /// The runner commits are signed through, `None` when git's configuration says they are not
+    /// (or git is not installed): the gix path is unchanged then. Fails closed: when the
+    /// configuration cannot be read (a timeout, a deadline, a stop, a bad value) there is no
+    /// answer and so no commit ([`Error::Signing`]). Asked once per commit, and once per replay.
+    pub(crate) fn signer(&self) -> Result<Option<Exec>> {
+        let Some(exec) = self.git_exec() else {
+            return Ok(None);
+        };
+        match signing::mode(&exec, &self.root).map_err(sign_error)? {
+            true => Ok(Some(exec)),
+            false => Ok(None),
+        }
     }
 
     /// What git says about signing here, and whether recent commits are signed.
@@ -355,6 +371,24 @@ impl Repo {
         }
     }
 
+    /// Whether commit `id` carries a signature (`gpgsig`, or `gpgsig-sha256`).
+    pub fn is_signed(&self, id: &str) -> bool {
+        let Ok(id) = gix::ObjectId::from_hex(id.as_bytes()) else {
+            return false;
+        };
+        self.repo
+            .find_commit(id)
+            .ok()
+            .and_then(|c| {
+                c.decode().ok().map(|d| {
+                    d.extra_headers
+                        .iter()
+                        .any(|(k, _)| *k == "gpgsig" || *k == "gpgsig-sha256")
+                })
+            })
+            .unwrap_or(false)
+    }
+
     /// Whether any of the last `n` commits on HEAD's first-parent line carries a signature.
     fn signed_among_recent(&self, n: usize) -> bool {
         let Ok(head) = self.repo.head_id() else {
@@ -362,19 +396,15 @@ impl Repo {
         };
         let mut id = head.detach();
         for _ in 0..n {
+            if self.is_signed(&id.to_string()) {
+                return true;
+            }
             let Ok(commit) = self.repo.find_commit(id) else {
                 return false;
             };
             let Ok(decoded) = commit.decode() else {
                 return false;
             };
-            if decoded
-                .extra_headers
-                .iter()
-                .any(|(k, _)| *k == "gpgsig" || *k == "gpgsig-sha256")
-            {
-                return true;
-            }
             let next = decoded.parents().next();
             match next {
                 Some(parent) => id = parent,
@@ -400,6 +430,11 @@ impl Repo {
     /// sources ([`Repo::identities_via_gix`]). `None` for either is [`Error::NoIdentity`]: nothing
     /// is invented (git is run with `user.useConfigOnly`, and gix never guesses).
     pub fn identities(&self) -> Result<Identities> {
+        #[cfg(test)]
+        if let Some(exec) = TEST_EXEC.with(|e| e.borrow().clone()) {
+            // a test that gives git a temporary `HOME` asks it, as the app does
+            return self.identities_from(super::system::identities_with(&exec, &self.root));
+        }
         #[cfg(test)]
         if ISOLATED.with(|i| i.get()) {
             // tests read only the repository's own config, never the user's: no system git
@@ -955,7 +990,7 @@ impl Repo {
         }
         let ids = self.identities()?;
         // asked before anything is written: signing on and git unable to sign makes no commit
-        let signer = self.signer();
+        let signer = self.signer()?;
         let repo = &self.repo;
         let now = gix::date::Time::now_local_or_utc();
         let sig_of = |who: &Identity| Sig {
@@ -1025,7 +1060,7 @@ impl Repo {
                     &sig_of(&ids.author),
                     &sig_of(&ids.committer),
                 )
-                .map_err(|e| Error::Signing { details: e.details })?;
+                .map_err(sign_error)?;
                 self.move_head_as(&id, parents.first().map(String::as_str), "commit")?;
                 id
             }
@@ -1738,19 +1773,20 @@ impl Repo {
     /// A commit object (no reference moves): the replay's copy of a local commit.
     pub fn write_commit(
         &self,
+        signer: Option<&Exec>,
         tree: &str,
         parents: &[String],
         message: &[u8],
         author: &Sig,
         committer: &Sig,
     ) -> Result<String> {
-        if let Some(exec) = self.signer() {
+        if let Some(exec) = signer {
             // the replayed copy is signed again, as configured: its old signature does not hold
             // for a commit with another parent and tree
             return signing::commit_tree(
-                &exec, &self.root, tree, parents, message, author, committer,
+                exec, &self.root, tree, parents, message, author, committer,
             )
-            .map_err(|e| Error::Signing { details: e.details });
+            .map_err(sign_error);
         }
         let sig = |s: &Sig| gix::actor::Signature {
             name: s.name.as_str().into(),

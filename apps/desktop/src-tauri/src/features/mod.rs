@@ -91,6 +91,22 @@ pub use lifecycle::{
 };
 use scope::FeatureScope;
 
+/// Makes a stop look for leftovers after `delay`, with the release builds' enforcement (kill and
+/// strike): tests of a stop that must leave nothing alive.
+#[cfg(test)]
+pub(crate) fn enforce_settle_for_test<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    delay: std::time::Duration,
+) {
+    lifecycle::set_settle(
+        app,
+        lifecycle::Settle {
+            delay,
+            enforce: true,
+        },
+    );
+}
+
 #[cfg(test)]
 mod containment_tests;
 #[cfg(test)]
@@ -576,6 +592,12 @@ impl Containment {
 
     pub fn is_safe_mode(&self) -> bool {
         self.safe_mode
+    }
+
+    /// The leak strikes counted against the feature (tests of a stop that must leave nothing).
+    #[cfg(test)]
+    pub(crate) fn strikes_of(&self, id: &str) -> u32 {
+        self.strikes.lock().get(id).copied().unwrap_or(0)
     }
 
     /// Counts a leak against the feature; returns its strikes so far.
