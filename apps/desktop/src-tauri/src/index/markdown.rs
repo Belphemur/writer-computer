@@ -313,10 +313,15 @@ pub fn scan_links(text: &str) -> Vec<ParsedLink> {
     out
 }
 
+/// How far a link label may reach (bytes): a `[` with no `]` in this span is plain text, so a
+/// line of many unmatched `[` stays linear. `src/lib/tags.ts` has the same cap
+/// (`shared/tag-vectors.json` pins it).
+const MAX_LABEL_SPAN: usize = 2048;
+
 fn find_matching_bracket(b: &[u8], open: usize) -> Option<usize> {
     let mut depth = 0usize;
     let mut i = open;
-    while i < b.len() {
+    while i < b.len() && i - open <= MAX_LABEL_SPAN {
         match b[i] {
             b'\\' => i += 1,
             b'[' => depth += 1,

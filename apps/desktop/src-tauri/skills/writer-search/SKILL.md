@@ -40,7 +40,7 @@ Terms are separated by spaces and ANDed. Matching is by whole word, case-insensi
 Rules and limits:
 
 - No parentheses or nesting, no `line:`/`section:` operators, no `[property:value]` queries. Words like `NEAR` or `:` inside text are plain data.
-- A query with only exclusions or filters (`-draft`, `kind:pdf`) matches nothing (it is not an error): add a word. Punctuation-only terms are dropped.
+- A query of filters alone (`tag:x`, `kind:pdf`, `path:x`, `ext:py`) lists every matching file, opened first then newest modified, with no lines (`search:context` prints nothing for it: add a word). A query with only exclusions (`-draft`, `-kind:pdf`) or nothing matches nothing (it is not an error): add a word or a filter. Punctuation-only terms are dropped.
 - At most 2000 characters and 64 terms; beyond that it is an error (exit 1).
 - Title matches rank highest, then headings, tags, property values and body text.
 - `case` makes spelling exact (and accents significant). It examines at most the 5000 best matches.

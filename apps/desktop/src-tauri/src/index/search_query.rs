@@ -17,8 +17,9 @@
 //!   unknown kind is an error that lists the known ones
 //! - `ext:py`, `-ext:py`             keep only (or drop) a file extension (no dot)
 //!
-//! A query without any positive term and without a filter matches nothing (it is not an error);
-//! one made only of filters lists every matching file (`Index::search`, newest first).
+//! A query without any positive term and without a positive filter (`tag:`, `path:`, `file:`,
+//! `kind:`, `ext:`) matches nothing (it is not an error); one made of positive filters only lists
+//! every matching file (`Index::search`, newest first). Exclusions alone (`-kind:pdf`) match nothing.
 
 use super::fts::space_cjk;
 use super::IndexError;
@@ -44,6 +45,14 @@ pub enum Filter {
     NotExt(String),
     /// A filter whose value can never match (an invalid tag).
     Never,
+}
+
+impl Filter {
+    /// A filter that selects files (`tag:x`, `kind:pdf`, `path:x`), as against an exclusion
+    /// (`-kind:pdf`), which only narrows a text search. `Never` selects nothing, positively.
+    pub fn is_positive(&self) -> bool {
+        !matches!(self, Filter::NotKind(_) | Filter::NotExt(_))
+    }
 }
 
 /// A positive term kept for the case-sensitive post-filter.

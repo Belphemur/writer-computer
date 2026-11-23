@@ -7,6 +7,7 @@ import {
   appendListItem,
   initialValue,
   isBlank,
+  isTagKey,
   parseProperties,
   removeListItem,
   removeProperty,
@@ -38,7 +39,7 @@ import { usePropertyTypesStore } from "@/stores/property-types-store";
 import { AddPropertyRow } from "./add-property-row";
 import { BodyTags } from "./body-tags";
 import { PropertyTypeControl } from "./property-type-control";
-import { Chevron, PinRowButton, RemoveRowButton } from "./property-chip";
+import { Chevron, PinRowButton, RemoveRowButton, ROW } from "./property-chip";
 import { PinnedChips } from "./pinned-chips";
 import { isPinnable, isPinned, orderRows, pinnedRows } from "./pinned-properties";
 import { PropertyKey, PropertyValue, type PropertyActions } from "./property-value";
@@ -154,7 +155,7 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
     );
 
   // The tags row hosts the body's tags; a note whose front matter has none gets a row of its own.
-  const tagsRow = rows.find((r) => r.kind === "tags" || r.kind === "tagString");
+  const tagsRow = rows.find((r) => isTagKey(r.key));
   const showSource = source || !parsed.ok;
 
   return (
@@ -243,10 +244,7 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                   const { type, mixed } = typeOf(row);
                   const fits = rowFitsType(row, type);
                   return (
-                    <li
-                      key={row.key}
-                      className="group -mx-3 flex items-baseline gap-4 rounded-lg px-3 py-1 focus-within:bg-[var(--surface-subtle)]"
-                    >
+                    <li key={row.key} className={ROW}>
                       <span className="-mr-2.5 flex self-center">
                         <PropertyTypeControl
                           name={row.key}
@@ -289,8 +287,8 @@ export function PropertiesPanel({ filePath }: PropertiesPanelProps) {
                     </li>
                   );
                 })}
+                {!tagsRow && <BodyTags filePath={filePath} written={tags} row />}
               </ul>
-              {!tagsRow && <BodyTags filePath={filePath} written={tags} row />}
               {rows.some((row) => row.key === "title") && (
                 <p className="pt-1 text-[12px] leading-[1.4] text-[var(--text-muted)]">
                   title overrides the displayed name of this note. The file name stays{" "}

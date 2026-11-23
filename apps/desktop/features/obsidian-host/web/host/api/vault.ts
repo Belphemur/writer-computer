@@ -4,6 +4,7 @@
 // model is testable without Tauri; `vault-io-tauri.ts` implements it on the app's commands.
 import { parse as yamlParse } from "yaml";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { scanTagSpans } from "@/lib/tags";
 import { parseWikiLink, wikiLinkScanner } from "@/lib/wiki-links";
 import { Events, callerPluginId, type EventRef } from "./core";
 import { logger } from "@/lib/logger";
@@ -722,11 +723,11 @@ export function parseNoteMetadata(raw: string): CachedMetadata {
   if (embeds.length)
     out.embeds = embeds.sort((a, b) => a.position.start.offset - b.position.start.offset);
 
-  const tags: TagCache[] = [];
-  for (const m of text.matchAll(/(^|[\s(])#([\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)/gu)) {
-    const start = m.index + m[1].length;
-    tags.push({ tag: `#${m[2]}`, position: pos(start, start + m[2].length + 1) });
-  }
+  // The tags are the index's: `@/lib/tags` (fences, code, links and URLs skipped), as written.
+  const tags: TagCache[] = scanTagSpans(parsed.body).map((t) => ({
+    tag: parsed.body.slice(t.from, t.to),
+    position: pos(t.from, t.to),
+  }));
   if (tags.length) out.tags = tags;
 
   const headings: HeadingCache[] = [];

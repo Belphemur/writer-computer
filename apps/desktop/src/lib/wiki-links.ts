@@ -1,3 +1,10 @@
+// Two readers of `[[...]]` exist on purpose. `wikiLinkScanner` below is the one for rendering and
+// editing: its inner text cannot hold `]` or a newline, so `[[a] b]]` is not drawn as a link. The
+// index's `scan_links` (`src-tauri/src/index/markdown.rs`) takes everything up to the first `]]`,
+// and `lib/tags.ts` (its TypeScript twin, pinned by `shared/tag-vectors.json`) follows the index,
+// because what a `#tag` is must match what the index stores. Aligning the scanner with the index
+// would change which text renders as a link, so the two stay apart; a change to either grammar
+// changes the vectors.
 import { RENDERABLE_IMAGE_EXTENSIONS, isDocumentName } from "./attachments";
 import { slugifyHeading } from "./heading-slug";
 import { noteLabel } from "./note-title";

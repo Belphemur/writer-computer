@@ -92,6 +92,11 @@ const DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?$/;
 const NUMBER_SOURCE_RE = /^-?\d+(?:\.\d+)?$/;
 const TAG_KEYS = new Set(["tags", "tag"]);
 
+/** A top-level key that holds the note's tags (`tags`, `tag`, any case). */
+export function isTagKey(key: string): boolean {
+  return TAG_KEYS.has(key.toLowerCase());
+}
+
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------

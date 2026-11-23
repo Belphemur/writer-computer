@@ -207,7 +207,13 @@ pub fn search_context(ctx: &Ctx, args: &Args, spec: &CommandSpec) -> Result<Stri
             }
         }
     } else {
-        let found = fts_collect(ctx, args, query, u32::MAX, |h| h.snippets.len(), limit)?;
+        // Lines come from text terms: a query of filters alone lists files (no lines), and
+        // paging through every one of them to find that out would walk the vault.
+        let found = if crate::index::has_text_terms(query)? {
+            fts_collect(ctx, args, query, u32::MAX, |h| h.snippets.len(), limit)?
+        } else {
+            Vec::new()
+        };
         for h in found {
             if h.stale {
                 ctx.warn(format!(

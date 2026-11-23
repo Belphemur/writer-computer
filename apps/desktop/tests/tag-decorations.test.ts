@@ -43,8 +43,7 @@ function mount(marked: string, selection?: EditorSelection) {
 
 const pills = (view: EditorView) =>
   [...view.dom.querySelectorAll<HTMLElement>(".cm-tag-pill")].map((e) => e.textContent);
-const raw = (view: EditorView) =>
-  [...view.dom.querySelectorAll<HTMLElement>(".cm-tag-editing")].map((e) => e.textContent);
+const bare = (view: EditorView) => view.dom.querySelectorAll(".cm-tag-editing").length;
 
 describe("tag pills", () => {
   test("a tag away from the caret is a pill, # kept, the text untouched", () => {
@@ -54,35 +53,32 @@ describe("tag pills", () => {
     expect(view.state.doc.toString()).toContain("see #Draft and #research/hlo");
   });
 
-  test("the caret inside, at either end, or a selection over it shows raw text", () => {
+  test("the caret inside or at either end, or a selection over it, leaves bare text", () => {
     for (const marked of ["see #Dr|aft", "see |#Draft", "see #Draft| x"]) {
       const view = mount(`${marked}\n#other`);
-      expect(raw(view), marked).toEqual(["#Draft"]);
       expect(pills(view), marked).toEqual(["#other"]);
+      expect(bare(view), "no editing decoration (IME sees plain text)").toBe(0);
     }
     const view = mount("see #Draft x", EditorSelection.single(0, 8));
-    expect(raw(view)).toEqual(["#Draft"]);
+    expect(pills(view)).toEqual([]);
   });
 
-  test("moving the caret away turns it back into a pill, and typing a tag keeps it raw", () => {
+  test("moving the caret away turns it back into a pill, and typing a tag keeps it bare", () => {
     const view = mount("a #t|");
-    expect(raw(view)).toEqual(["#t"]);
+    expect(pills(view)).toEqual([]);
     view.dispatch({ changes: { from: 4, insert: "ag" } });
-    expect(raw(view)).toEqual(["#tag"]);
+    expect(pills(view)).toEqual([]);
     view.dispatch({ selection: { anchor: 0 } });
     expect(pills(view)).toEqual(["#tag"]);
-    expect(raw(view)).toEqual([]);
   });
 
-  test("no pill in a fence, indented code, inline code, a URL, a link or a heading marker", () => {
+  test("no pill in a fence, inline code, a URL, a link or a heading marker", () => {
     const view = mount(
       [
         "|start",
         "```",
         "#fenced",
         "```",
-        "",
-        "    #indented",
         "",
         "`#inline` https://example.com/p#frag [[Note#Heading]] [a](b.md#h)",
         "# Heading",
@@ -92,8 +88,32 @@ describe("tag pills", () => {
     expect(pills(view)).toEqual(["#yes"]);
   });
 
+  test("it follows the index on code: indented code, a fence in a list or a quote are text", () => {
+    const view = mount(
+      ["|x", "    #indented", "- ```", "#inlist", "> ```", "> #inquote"].join("\n"),
+    );
+    expect(pills(view)).toEqual(["#indented", "#inlist", "#inquote"]);
+  });
+
   test("a tag in a heading line after its marker is a pill", () => {
     expect(pills(mount("|x\n## Title #topic"))).toEqual(["#topic"]);
+  });
+
+  test("an edit that opens or closes a fence far above re-decorates the lines below", () => {
+    const lines = ["|top", ...Array.from({ length: 300 }, (_, i) => `line ${i} #t${i}`)];
+    const view = mount(lines.join("\n"));
+    const count = () => view.dom.querySelectorAll(".cm-tag-pill").length;
+    const before = count();
+    expect(before).toBeGreaterThan(0);
+    view.dispatch({ changes: { from: 0, to: 3, insert: "```" } }); // opens a fence to the end
+    expect(count()).toBe(0);
+    view.dispatch({ changes: { from: 0, to: 3, insert: "top" } });
+    expect(count()).toBe(before);
+  });
+
+  test("a line over the length cap is left undecorated", () => {
+    const view = mount(`|x\n${"a ".repeat(6000)}#big\n#small`);
+    expect(pills(view)).toEqual(["#small"]);
   });
 });
 
@@ -137,8 +157,15 @@ describe("tag click", () => {
     expect(useUIStore.getState().isCommandPaletteOpen).toBe(false);
   });
 
-  test("a tag with the caret in it is raw text and is not a link", () => {
-    const view = mount("x #a|");
-    expect(view.dom.querySelector(".cm-tag-pill")).toBeNull();
+  test("Shift+click on a pill opens nothing and does not claim the press", () => {
+    const view = mount("|x\n#a");
+    const pill = view.dom.querySelector(".cm-tag-pill")!; // CodeMirror may extend the selection over it
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, shiftKey: true });
+    pill.dispatchEvent(down);
+    pill.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }),
+    );
+    expect(useUIStore.getState().isCommandPaletteOpen).toBe(false);
+    expect(down.cancelBubble).toBe(false);
   });
 });

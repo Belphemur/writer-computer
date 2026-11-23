@@ -3,7 +3,7 @@ import { type PropertyRow } from "@/lib/frontmatter-properties";
 import { isWikiLink } from "@/lib/wiki-links";
 import { linkHandlers } from "@/lib/link-activation";
 import { openPropertyUrl } from "./property-links";
-import { CHIP, ChipRemove, Chevron, FIELD, RemoveRowButton } from "./property-chip";
+import { CHIP, ChipRemove, Chevron, FIELD, KEY_COLUMN, RemoveRowButton } from "./property-chip";
 import { useWikiSuggest, WikiLinkButton } from "./property-wikilink";
 import { RelationshipsField } from "./relationships-field";
 import { UrlField } from "./url-field";
@@ -407,6 +407,29 @@ export function PropertyValue({
   type,
   afterChips,
 }: FieldProps & { type?: PropertyType; afterChips?: ReactNode }) {
+  const field = <PropertyField row={row} actions={actions} type={type} afterChips={afterChips} />;
+  // A chips row places `afterChips` among its own chips; any other value (`tags:` empty, a text
+  // or a number) shows them after it.
+  const chipsRow =
+    (row.kind === "tags" || row.kind === "tagString") &&
+    type !== "relationships" &&
+    type !== "url" &&
+    type !== "enum";
+  if (!afterChips || chipsRow) return field;
+  return (
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+      {field}
+      {afterChips}
+    </span>
+  );
+}
+
+function PropertyField({
+  row,
+  actions,
+  type,
+  afterChips,
+}: FieldProps & { type?: PropertyType; afterChips?: ReactNode }) {
   if (
     type === "relationships" &&
     (row.kind === "link" || row.kind === "empty" || (row.kind === "list" && row.editable))
@@ -470,7 +493,7 @@ export function PropertyKey({ row, actions }: FieldProps) {
       spellCheck={false}
       onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={commitKeys(commit)}
-      className="w-[clamp(5rem,28%,10rem)] shrink-0 truncate rounded bg-transparent px-1 -mx-1 text-[13px] leading-[1.4] text-[var(--text-muted)] outline-none focus-visible:bg-[var(--surface-subtle)]"
+      className={`${KEY_COLUMN} truncate rounded bg-transparent px-1 -mx-1 text-[13px] leading-[1.4] text-[var(--text-muted)] outline-none focus-visible:bg-[var(--surface-subtle)]`}
     />
   );
 }

@@ -172,6 +172,12 @@ struct RawHit {
     size: i64,
 }
 
+/// Whether `query` has a positive text term, so a search of it can have lines to show (a query of
+/// filters alone lists files and has none).
+pub fn has_text_terms(query: &str) -> Res<bool> {
+    Ok(parse_query(query, false)?.match_expr.is_some())
+}
+
 fn system_now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -260,7 +266,7 @@ impl Index {
     pub fn search(&self, query: &str, opts: &SearchOptions) -> Res<SearchPage> {
         let parsed = parse_query(query, opts.as_you_type)?;
         let Some(match_expr) = parsed.match_expr.clone() else {
-            if !parsed.filters.is_empty() {
+            if parsed.filters.iter().any(Filter::is_positive) {
                 return self.filter_only(&parsed, opts);
             }
             return Ok(SearchPage {
@@ -438,56 +444,80 @@ impl Index {
         })
     }
 
-    /// A query made only of filters (`tag:x`, `kind:pdf`, `path:dir`): every matching file, the
-    /// way an empty query lists files (`rank::empty_query_key`: opened first, then newest
-    /// modified), in the shape of a normal page (no snippets, score 0).
+    /// A query made only of filters, at least one positive (`tag:x`, `kind:pdf`, `path:x`): every
+    /// matching file, the way an empty query lists files (`rank::empty_query_key`: opened first,
+    /// then newest modified), in the shape of a normal page (no snippets, score 0).
     fn filter_only(&self, parsed: &ParsedQuery, opts: &SearchOptions) -> Res<SearchPage> {
         let (cond_sql, cond_args) = conditions(parsed, opts)?;
         let limit = opts.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
         let offset = opts.offset as usize;
-        let (raw, total) = self.read(|c| {
+        let (hits, total) = self.read(|c| {
             let total: i64 = c.query_row(
                 &format!("SELECT COUNT(*) FROM files f WHERE 1 = 1{cond_sql}"),
                 params_from_iter(cond_args.iter()),
                 |r| r.get(0),
             )?;
-            // Newest modified first bounds the pool; the opened files are then ranked first.
-            let pool = (offset + limit).max(RERANK_POOL);
+            // The page's paths, in order. With nothing opened `empty_query_key` is the modified
+            // time, so SQL pages by it (same tie-break by path). With opened files they come first
+            // wherever they sit, so every match is ranked, then the page is cut.
+            let paths: Vec<String> = if opts.opened.is_empty() {
+                let sql = format!(
+                    "SELECT f.path FROM files f WHERE 1 = 1{cond_sql} \
+                     ORDER BY f.mtime DESC, f.path LIMIT {limit} OFFSET {offset}"
+                );
+                let mut st = c.prepare(&sql)?;
+                let rows = st.query_map(params_from_iter(cond_args.iter()), |r| r.get(0))?;
+                rows.collect::<Result<_, _>>()?
+            } else {
+                let sql = format!("SELECT f.path, f.mtime FROM files f WHERE 1 = 1{cond_sql}");
+                let mut st = c.prepare(&sql)?;
+                let rows = st.query_map(params_from_iter(cond_args.iter()), |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                })?;
+                let mut all: Vec<(String, i64)> = rows.collect::<Result<_, _>>()?;
+                let key = |(path, mtime_ms): &(String, i64)| {
+                    empty_query_key(Recency {
+                        opened_ms: opts.opened.get(path).copied(),
+                        mtime_ms: *mtime_ms,
+                    })
+                };
+                all.sort_by(|a, b| key(b).cmp(&key(a)).then_with(|| a.0.cmp(&b.0)));
+                all.into_iter()
+                    .skip(offset)
+                    .take(limit)
+                    .map(|(path, _)| path)
+                    .collect()
+            };
+            if paths.is_empty() {
+                return Ok((Vec::new(), total));
+            }
+            let marks = vec!["?"; paths.len()].join(",");
             let sql = format!(
-                "SELECT f.path, f.basename, f.folder, f.mtime, {TITLE_OVERRIDE_SQL}, f.kind \
-                 FROM files f WHERE 1 = 1{cond_sql} ORDER BY f.mtime DESC, f.path LIMIT {pool}"
+                "SELECT f.path, f.basename, f.folder, {TITLE_OVERRIDE_SQL}, f.kind \
+                 FROM files f WHERE f.path IN ({marks})"
             );
             let mut st = c.prepare(&sql)?;
-            let rows = st.query_map(params_from_iter(cond_args.iter()), |r| {
-                let hit = SearchHit {
+            let rows = st.query_map(params_from_iter(paths.iter()), |r| {
+                Ok(SearchHit {
                     path: r.get(0)?,
                     title: r.get(1)?,
                     folder: r.get(2)?,
-                    title_override: r.get(4)?,
-                    kind: r.get(5)?,
+                    title_override: r.get(3)?,
+                    kind: r.get(4)?,
                     score: 0.0,
                     fuzzy: false,
                     snippets: Vec::new(),
                     stale: false,
-                };
-                Ok((hit, r.get::<_, i64>(3)?))
+                })
             })?;
-            Ok((rows.collect::<Result<Vec<_>, _>>()?, total))
+            let mut by_path: HashMap<String, SearchHit> = rows
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(|h| (h.path.clone(), h))
+                .collect();
+            let hits = paths.iter().filter_map(|p| by_path.remove(p)).collect();
+            Ok((hits, total))
         })?;
-        let key = |(h, mtime_ms): &(SearchHit, i64)| {
-            empty_query_key(Recency {
-                opened_ms: opts.opened.get(&h.path).copied(),
-                mtime_ms: *mtime_ms,
-            })
-        };
-        let mut ranked = raw;
-        ranked.sort_by(|a, b| key(b).cmp(&key(a)).then_with(|| a.0.path.cmp(&b.0.path)));
-        let hits = ranked
-            .into_iter()
-            .skip(offset)
-            .take(limit)
-            .map(|(h, _)| h)
-            .collect();
         Ok(SearchPage {
             total,
             hits,

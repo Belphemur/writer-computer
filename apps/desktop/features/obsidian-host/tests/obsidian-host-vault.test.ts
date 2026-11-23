@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import tagVectors from "@shared/tag-vectors.json";
 import { Editor, type EditorBackend } from "../web/host/api/views";
 import {
   debounce,
@@ -86,6 +87,20 @@ describe("parseNoteMetadata", () => {
       [2, "Second"],
     ]);
     expect(getAllTags(meta)?.sort()).toEqual(["#alpha", "#beta", "#inline-tag"]);
+  });
+
+  it("finds the tags the index finds: the shared tag vectors, each as written with its position", () => {
+    for (const { why, body, tags } of tagVectors.scan) {
+      const found = parseNoteMetadata(body).tags ?? [];
+      expect(
+        found.map((t) => t.tag.slice(1).toLowerCase()),
+        why,
+      ).toEqual(tags);
+      for (const t of found) {
+        // the position is the tag's text in the note (`#` kept)
+        expect(body.slice(t.position.start.offset, t.position.end.offset), why).toBe(t.tag);
+      }
+    }
   });
 
   it("copes with invalid yaml and no frontmatter", () => {

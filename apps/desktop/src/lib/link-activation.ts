@@ -56,6 +56,14 @@ export function linkIntent(g: Gesture, platform: Platform = detectPlatform()): L
   return modifierIntent(g, platform);
 }
 
+/** Shift alone (no Cmd/Ctrl): in an editor that extends the text selection, so the CodeMirror
+ *  binding leaves it to CodeMirror instead of opening the link. Other surfaces keep treating it as
+ *  a plain click (`linkIntent` is unchanged). */
+function isShiftExtend(g: Gesture, platform: Platform = detectPlatform()): boolean {
+  const mod = platform === "macos" ? g.metaKey : g.ctrlKey;
+  return g.shiftKey && !mod && (g.button ?? 0) === 0;
+}
+
 /** The keyboard twin: `Enter` is a left click, `Cmd/Ctrl+Enter` a modifier click. */
 export function keyIntent(
   e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey">,
@@ -256,12 +264,13 @@ export function bindLinkActivation(
 // -- CodeMirror ---------------------------------------------------------------
 
 /** The CodeMirror binding: `resolve(event, view)` maps a pointer event to a target or null.
- *  Presses on a link are claimed on mousedown (the caret stays put, no autoscroll); the action
+ *  Shift+click is left to CodeMirror (it extends the selection). Presses on a link are claimed on mousedown (the caret stays put, no autoscroll); the action
  *  runs on click and auxclick. */
 export function linkActivationExtension(
   resolve: (event: MouseEvent, view: EditorView) => LinkTarget | null,
 ): Extension {
   const run = (event: MouseEvent, view: EditorView): boolean => {
+    if (isShiftExtend(event)) return false;
     const intent = linkIntent(event);
     if (!intent) return false;
     const target = resolve(event, view);
@@ -273,7 +282,7 @@ export function linkActivationExtension(
   };
   return CMEditorView.domEventHandlers({
     mousedown(event, view) {
-      if (!linkIntent(event) || !resolve(event, view)) return false;
+      if (isShiftExtend(event) || !linkIntent(event) || !resolve(event, view)) return false;
       event.preventDefault();
       event.stopPropagation();
       return true;

@@ -63,7 +63,7 @@ Today each of these handles the middle button on its own, or not at all:
 
 ## 5. Non-goals
 
-- Opening in a new window (`Shift`+click in browsers): Writer has one window per vault; `Shift`+click behaves like a left click until multi-window exists.
+- Opening in a new window (`Shift`+click in browsers): Writer has one window per vault. In the **editor** (the CodeMirror binding: wiki links, Markdown links, `#tag` pills, embeds) a plain `Shift`+click is not a link click at all: the press is not claimed and CodeMirror extends the text selection; `Cmd`/`Ctrl`+`Shift`+click still opens an activated tab. On every other surface (React and DOM bindings: lists, cells, the agent pane) `Shift`+click behaves like a left click, as `linkIntent` says (`middleOnly` rows leave it to the row).
 - Drag-a-link-to-the-tab-bar.
 
 ## 6. Implementation notes (2026-11-17)

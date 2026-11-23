@@ -15,6 +15,7 @@ import "@/lib/callouts/callouts.css";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { SAFE_ATTR, SAFE_TAGS, sanitizeHtml } from "@/lib/safe-html";
 import { bindLinkActivation } from "@/lib/link-activation";
+import { scanLineTags } from "@/lib/tags";
 import { matchWikiLinkAtStart, parseWikiLink } from "@/lib/wiki-links";
 import { openExternalUrl } from "../node/external-links";
 import {
@@ -222,7 +223,6 @@ function sanitizeNode(node: Element): void {
 // ---------------------------------------------------------------- post-pass
 
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|svg|bmp|avif)$/i;
-const TAG_RE = /(^|[\s(])#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gu;
 
 function linkTags(root: HTMLElement): void {
   const doc = root.ownerDocument;
@@ -235,20 +235,18 @@ function linkTags(root: HTMLElement): void {
   }
   for (const text of texts) {
     const value = text.textContent ?? "";
-    TAG_RE.lastIndex = 0;
-    if (!TAG_RE.test(value)) continue;
-    TAG_RE.lastIndex = 0;
+    const found = scanLineTags(value);
+    if (found.length === 0) continue;
     const frag = doc.createDocumentFragment();
     let last = 0;
-    for (const m of value.matchAll(TAG_RE)) {
-      const start = (m.index ?? 0) + m[1].length;
-      frag.append(value.slice(last, start));
+    for (const t of found) {
+      frag.append(value.slice(last, t.from));
       const a = doc.createElement("a");
       a.className = "tag";
-      a.setAttribute("href", `#${m[2]}`);
-      a.textContent = `#${m[2]}`;
+      a.setAttribute("href", `#${value.slice(t.from + 1, t.to)}`);
+      a.textContent = value.slice(t.from, t.to);
       frag.append(a);
-      last = start + 1 + m[2].length;
+      last = t.to;
     }
     frag.append(value.slice(last));
     text.replaceWith(frag);

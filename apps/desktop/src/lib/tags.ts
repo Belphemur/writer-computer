@@ -9,6 +9,13 @@
 // (offsets stay put), as the index does. Front matter is not part of the text given here (the
 // store keeps it apart).
 
+// Rust's `char::is_whitespace` is the Unicode White_Space property: NEL (U+0085) is whitespace
+// and a BOM (U+FEFF) is not, unlike JavaScript's `\s` and `trim`. The twin must agree.
+const WS = /\p{White_Space}/u;
+const isWs = (c: string) => WS.test(c);
+const trimWs = (s: string) => s.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+const trimStartWs = (s: string) => s.replace(/^\p{White_Space}+/u, "");
+
 const TAG_CHAR = /^[\p{Alphabetic}\p{N}_\-/]$/u;
 const TAG_PRECEDING = `([{,;:"'`;
 
@@ -18,7 +25,7 @@ export function isTagChar(c: string): boolean {
 
 /** Lowercase and validate a raw tag (a leading `#` is optional): `null` if it is not a tag. */
 export function normalizeTag(raw: string): string | null {
-  const t = raw.trim().replace(/^#+/, "").replace(/\/+$/, "");
+  const t = trimWs(raw).replace(/^#+/, "").replace(/\/+$/, "");
   if (t === "" || t.startsWith("/") || t.includes("//")) return null;
   const chars = [...t];
   if (!chars.every(isTagChar) || !chars.some((c) => c < "0" || c > "9")) return null;
@@ -85,8 +92,8 @@ function maskUrls(line: string): string {
     if (at < 0) break;
     let start = at;
     while (start > 0 && /[A-Za-z0-9+.-]/.test(line[start - 1]!)) start--;
-    const ws = line.slice(at).search(/\s/);
-    const end = ws < 0 ? line.length : at + ws;
+    let end = at;
+    while (end < line.length && !isWs(line[end]!)) end++;
     ranges.push([start, end]);
     from = Math.max(end, at + 3);
   }
@@ -99,9 +106,13 @@ function hasScheme(s: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]+$/.test(s.slice(0, colon));
 }
 
+/** How far a link label may reach: a `[` with no `]` in this span is plain text, so a line of many
+ *  unmatched `[` stays linear. The index has the same cap (`MAX_LABEL_SPAN`). */
+const MAX_LABEL_SPAN = 2048;
+
 function findMatchingBracket(text: string, open: number): number | null {
   let depth = 0;
-  for (let i = open; i < text.length; i++) {
+  for (let i = open; i < text.length && i - open <= MAX_LABEL_SPAN; i++) {
     const c = text[i];
     if (c === "\\") i++;
     else if (c === "[") depth++;
@@ -139,7 +150,7 @@ function parseDestination(text: string, from: number): { dest: string; end: numb
   const rest = text.slice(i);
   const close = rest.indexOf(")");
   if (close < 0) return null;
-  const between = rest.slice(0, close).trim();
+  const between = trimWs(rest.slice(0, close));
   const quote = between[0];
   const isTitle =
     between === "" ||
@@ -153,7 +164,7 @@ function wikiLinkNamesSomething(inner: string): boolean {
   const hash = target.indexOf("#");
   const path = hash < 0 ? target : target.slice(0, hash);
   const sub = hash < 0 ? "" : target.slice(hash + 1);
-  return path.trim() !== "" || sub.trim() !== "";
+  return trimWs(path) !== "" || trimWs(sub) !== "";
 }
 
 /** The spans a tag can never start in: wiki links and embeds, and the `(...)` of a markdown link
@@ -218,7 +229,7 @@ export function scanLineTags(line: string): LineTag[] {
   let i = 0;
   while (i < masked.length) {
     const c = masked[i]!;
-    if (c === "#" && (prev === null || /\s/.test(prev) || TAG_PRECEDING.includes(prev))) {
+    if (c === "#" && (prev === null || isWs(prev) || TAG_PRECEDING.includes(prev))) {
       let len = 0;
       for (const ch of masked.slice(i + 1)) {
         if (!isTagChar(ch)) break;
@@ -237,8 +248,10 @@ export function scanLineTags(line: string): LineTag[] {
   return out;
 }
 
-function fenceOpen(line: string): { ch: string; len: number } | null {
-  const t = line.trimStart();
+export type Fence = { ch: string; len: number } | null;
+
+function fenceOpen(line: string): Fence {
+  const t = trimStartWs(line);
   const ch = t[0];
   if (ch !== "`" && ch !== "~") return null;
   let len = 0;
@@ -249,28 +262,48 @@ function fenceOpen(line: string): { ch: string; len: number } | null {
 }
 
 function fenceCloses(line: string, ch: string, len: number): boolean {
-  const t = line.trim();
+  const t = trimWs(line);
   let run = 0;
   while (t[run] === ch) run++;
-  return run >= len && t.slice(run).trim() === "";
+  return run >= len && trimWs(t.slice(run)) === "";
 }
 
-/** The tags of a note body (front matter excluded), normalised, in order, duplicates kept: what
- *  the index's `scan_body` collects. */
-export function scanTags(body: string): string[] {
-  const out: string[] = [];
-  let fence: { ch: string; len: number } | null = null;
+/** The fence rule, one line at a time: what a line does to the open fence and whether the line is
+ *  fence (its opening or closing line, or inside the block) rather than text. The index's rule
+ *  (`scan_body`): any indentation, and nothing else (no quote or list awareness, no indented
+ *  code), so the editor and the index agree on what is code. */
+export function stepFence(fence: Fence, line: string): { next: Fence; skip: boolean } {
+  if (fence) return { next: fenceCloses(line, fence.ch, fence.len) ? null : fence, skip: true };
+  const next = fenceOpen(line);
+  return { next, skip: next !== null };
+}
+
+/** A tag in a body, with its offsets in the body. */
+export type BodyTag = LineTag;
+
+/** The tags of a note body (front matter excluded) with their offsets in it, in order, duplicates
+ *  kept, fences skipped: what the index's `scan_body` collects. */
+export function scanTagSpans(body: string): BodyTag[] {
+  const out: BodyTag[] = [];
+  let fence: Fence = null;
+  let offset = 0;
   for (const raw of body.split("\n")) {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    if (fence) {
-      if (fenceCloses(line, fence.ch, fence.len)) fence = null;
-      continue;
+    const step = stepFence(fence, line);
+    fence = step.next;
+    if (!step.skip) {
+      for (const t of scanLineTags(line)) {
+        out.push({ from: offset + t.from, to: offset + t.to, tag: t.tag });
+      }
     }
-    fence = fenceOpen(line);
-    if (fence) continue;
-    for (const t of scanLineTags(line)) out.push(t.tag);
+    offset += raw.length + 1;
   }
   return out;
+}
+
+/** The same, as names only. */
+export function scanTags(body: string): string[] {
+  return scanTagSpans(body).map((t) => t.tag);
 }
 
 /** `tags` without those in `written` (the front matter's, in any spelling) and without repeats,

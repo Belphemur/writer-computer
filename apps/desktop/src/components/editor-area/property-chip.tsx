@@ -4,8 +4,17 @@ import { PinIcon } from "@hugeicons/core-free-icons";
 
 export const FIELD =
   "min-w-0 flex-1 rounded bg-transparent px-1 -mx-1 text-[13px] leading-[1.4] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] placeholder:opacity-70 focus-visible:bg-[var(--surface-subtle)]";
-export const CHIP =
-  "inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--surface-subtle)] px-2 py-0.5 text-[12px] leading-[1.3] text-[var(--text-primary)]";
+/** The shape of a chip, without its colours (a quieter chip brings its own). */
+export const CHIP_SHAPE =
+  "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[12px] leading-[1.3]";
+export const CHIP = `${CHIP_SHAPE} bg-[var(--surface-subtle)] text-[var(--text-primary)]`;
+
+/** The key column of a property row, and the row shell around it, shared by every row. */
+export const KEY_COLUMN = "w-[clamp(5rem,28%,10rem)] shrink-0";
+export const ROW =
+  "group -mx-3 flex items-baseline gap-4 rounded-lg px-3 py-1 focus-within:bg-[var(--surface-subtle)]";
+/** The slot of a row's type control, left empty in a row that has none. */
+export const TYPE_SLOT = "-mr-2.5 flex w-5 shrink-0 self-center";
 
 export function ChipRemove({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (

@@ -223,6 +223,60 @@ describe("CodeMirror binding: linkActivationExtension", () => {
   });
 });
 
+describe("CodeMirror binding: Shift+click extends the selection", () => {
+  function mount() {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: "x",
+        extensions: linkActivationExtension((e) =>
+          e.target instanceof Element && e.target.id === "link" ? NOTE : null,
+        ),
+      }),
+    });
+    const link = document.createElement("span");
+    link.id = "link";
+    view.contentDOM.appendChild(link);
+    return { view, link, parent };
+  }
+
+  it("leaves a Shift press and click to CodeMirror and opens nothing", () => {
+    const { view, link, parent } = mount();
+    // A claimed press is stopped (`stopPropagation`); an unclaimed one reaches CodeMirror's own
+    // handler and the page, which is what extends the selection.
+    const seen: string[] = [];
+    parent.addEventListener("mousedown", () => seen.push("mousedown"));
+    const click = dispatchMouse(link, "click", { button: 0, shiftKey: true });
+    dispatchMouse(link, "mousedown", { button: 0, shiftKey: true });
+    expect(seen).toEqual(["mousedown"]);
+    expect(click.defaultPrevented).toBe(false);
+    expect(h.navigate).not.toHaveBeenCalled();
+    expect(h.newTab).not.toHaveBeenCalled();
+    view.destroy();
+  });
+
+  it("a plain click, Cmd/Ctrl+click and Cmd/Ctrl+Shift+click still open", () => {
+    const { view, link, parent } = mount();
+    const seen: string[] = [];
+    parent.addEventListener("mousedown", () => seen.push("mousedown"));
+    dispatchMouse(link, "mousedown", { button: 0 });
+    expect(seen).toEqual([]); // claimed: the caret does not move
+    dispatchMouse(link, "click", { button: 0 });
+    expect(h.navigate).toHaveBeenCalledTimes(1);
+    dispatchMouse(link, "click", { button: 0, metaKey: true, ctrlKey: true });
+    expect(h.newTab).toHaveBeenCalledTimes(1);
+    dispatchMouse(link, "click", { button: 0, metaKey: true, ctrlKey: true, shiftKey: true });
+    expect(h.newTab).toHaveBeenCalledTimes(2);
+    view.destroy();
+  });
+
+  it("other surfaces keep Shift as a plain click (linkIntent is unchanged)", () => {
+    expect(linkIntent({ button: 0, ...none, shiftKey: true }, "macos")).toBe("current");
+  });
+});
+
 describe("openPathAtAnchor: a heading link reveals its heading", () => {
   const reveal = vi.fn<(path: string, anchor: string, opts: AnchorOptions) => boolean>();
   registerAnchorReveal(reveal);

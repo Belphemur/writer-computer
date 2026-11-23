@@ -240,11 +240,16 @@ describe("PropertiesPanel", () => {
       setBody("nothing");
       await mount();
       expect(bodyChips()).toEqual([]);
+      const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 300))));
       await act(async () => setBody("nothing #new"));
+      expect(bodyChips(), "debounced: not yet").toEqual([]);
+      await settle();
       expect(bodyChips()).toEqual(["#new"]);
       await act(async () => setBody("nothing #new #a"));
+      await settle();
       expect(bodyChips()).toEqual(["#new"]);
       await act(async () => setBody("nothing"));
+      await settle();
       expect(bodyChips()).toEqual([]);
     });
 
@@ -260,8 +265,21 @@ describe("PropertiesPanel", () => {
       setBody("a #idea");
       await mount();
       expect(bodyChips()).toEqual(["#idea"]);
-      expect(q('button[title="In the note"]')!.closest("li")).toBeNull();
       expect(host.textContent).toContain("tags");
+    });
+
+    it("an empty `tags:` is the row that holds the body's tags: one row, not two", async () => {
+      for (const fm of ["tags:", "tags: 3", "tag:"]) {
+        setFrontmatter(fm);
+        setBody("a #idea");
+        await mount();
+        const rows = [...host.querySelectorAll("li")];
+        expect(rows.length, fm).toBe(1);
+        expect(rows[0]!.querySelector('button[title="In the note"]'), fm).not.toBeNull();
+        expect(stored()).toBe(fm);
+        await act(async () => root.unmount());
+        root = createRoot(host);
+      }
     });
 
     it("a click searches the tag", async () => {

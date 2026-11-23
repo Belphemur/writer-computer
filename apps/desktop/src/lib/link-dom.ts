@@ -12,5 +12,3 @@ export const LINK_SELECTOR = `.${RENDERED_LINK_CLASS}, .${WIKI_LINK_CLASS}`;
 /** A body `#tag` shown as a pill in the editor (`data-tag` holds the normalised tag). Not a
  *  rendered link for `LINK_SELECTOR`: it opens search, not a file. */
 export const TAG_PILL_CLASS = "cm-tag-pill";
-/** The same tag while the caret or selection touches it: raw text, no pill. */
-export const TAG_EDITING_CLASS = "cm-tag-editing";

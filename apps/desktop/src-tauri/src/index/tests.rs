@@ -1341,6 +1341,77 @@ fn a_query_of_filters_only_lists_the_matching_notes_newest_first() {
     assert_eq!(paths("tag:research nested", &none).len(), 3);
     assert!(paths("", &none).is_empty());
     assert!(paths("-nested", &none).is_empty());
+    // Exclusions alone are not a listing; with a positive filter they narrow it.
+    assert!(paths("-kind:pdf", &none).is_empty());
+    assert!(paths("-ext:md", &none).is_empty());
+    assert!(paths("-kind:pdf -ext:md", &none).is_empty());
+    assert!(paths("kind:note -ext:md", &none).is_empty()); // every note here is .md
+    assert_eq!(paths("kind:note -ext:txt", &none).len(), 4);
+    assert_eq!(paths("tag:research -kind:pdf", &none).len(), 3);
+}
+
+/// 205 tagged notes, modified a second apart (`N000` oldest): the order of a filter-only search,
+/// paged in SQL with nothing opened and ranked in Rust with some opened, agrees with
+/// `empty_query_key`, and pages tile the matches.
+#[test]
+fn a_filter_only_search_pages_in_the_one_order() {
+    let fx = Fixture {
+        vault: TempDir::new().unwrap(),
+        data: TempDir::new().unwrap(),
+    };
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(100_000);
+    for i in 0..205u64 {
+        let rel = format!("Many/N{i:03}.md");
+        write(fx.vault.path(), &rel, "body #bulk\n");
+        std::fs::File::options()
+            .write(true)
+            .open(fx.vault.path().join(&rel))
+            .unwrap()
+            .set_modified(base + std::time::Duration::from_secs(i))
+            .unwrap();
+    }
+    let index = open(&fx);
+    let page = |o: &SearchOptions, offset: u32| -> Vec<String> {
+        let o = SearchOptions {
+            offset,
+            limit: Some(100),
+            opened: o.opened.clone(),
+            ..Default::default()
+        };
+        index
+            .search("tag:bulk", &o)
+            .unwrap()
+            .hits
+            .into_iter()
+            .map(|h| h.path)
+            .collect()
+    };
+    let tiles = |o: &SearchOptions| -> Vec<String> {
+        [0, 100, 200].iter().flat_map(|&off| page(o, off)).collect()
+    };
+    let every_note_once = |all: &[String]| {
+        let mut sorted = all.to_vec();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 205);
+        assert_eq!(all.len(), 205);
+    };
+    // Nothing opened: newest first, in SQL.
+    let none = SearchOptions::default();
+    let by_sql = tiles(&none);
+    every_note_once(&by_sql);
+    assert_eq!(by_sql[0], "Many/N204.md");
+    assert_eq!(by_sql[204], "Many/N000.md");
+    // The oldest opened: it is hit 0 (not only within the newest 200), the rest keep their order,
+    // and the pages still list every note once.
+    let opened = SearchOptions {
+        opened: [("Many/N000.md".to_string(), 1_i64)].into_iter().collect(),
+        ..Default::default()
+    };
+    let by_rank = tiles(&opened);
+    every_note_once(&by_rank);
+    assert_eq!(by_rank[0], "Many/N000.md");
+    assert_eq!(by_rank[1..], by_sql[..204]);
 }
 
 #[test]

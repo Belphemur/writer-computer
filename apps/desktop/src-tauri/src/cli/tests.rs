@@ -517,6 +517,11 @@ fn search_uses_the_full_text_index_with_its_query_language() {
         "[\n  {\n    \"path\": \"Projects/Beta.md\",\n    \"line\": 6,\n    \"text\": \"beta body with the word Needle\"\n  }\n]\n"
     );
     assert_eq!(t.ok(&["search:context", "query=needle", "case"]), "");
+    // A query of filters alone has no lines to show: nothing, without paging through the vault.
+    assert_eq!(t.ok(&["search:context", "query=tag:x"]), "");
+    assert!(!crate::index::has_text_terms("tag:x").unwrap());
+    assert!(!crate::index::has_text_terms("-kind:pdf").unwrap());
+    assert!(crate::index::has_text_terms("tag:x word").unwrap());
     assert_eq!(
         t.ok(&["search:context", "query=Needle", "case"]),
         "Projects/Beta.md:6: beta body with the word Needle\n"
