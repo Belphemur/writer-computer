@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-11-23
+
+The first release from [Belphemur/writer-computer](https://github.com/Belphemur/writer-computer), for macOS (Apple silicon) and Linux (x86_64). Installs of earlier builds from the original repository do not update to it: install 0.9.0 fresh.
+
+**Install**
+
+- macOS: open the DMG and drag Writer to Applications. This build is ad-hoc signed, not notarized: the first launch needs right-click > Open, or `xattr -d com.apple.quarantine /Applications/Writer.app`.
+- Linux: the AppImage updates itself; the `.deb` and `.rpm` tell you when an update is out. Linux needs glibc 2.43 (Ubuntu 26.04 or newer) and WebKitGTK 2.40 or newer.
+- The `writer` command: the `.deb`/`.rpm` install it. Otherwise use Settings > Command line. On macOS, if you linked it with an earlier build, choose Install there again to repair the link.
+
+**Highlights**
+
+- Linux support: Writer draws its own window controls and its own app menu (☰, or press Alt). The window is opaque. Show in Folder, Open in Terminal (the terminals installed on your machine), the keyring, and Linux shortcuts all work.
+- Native agent pane over the `claude` CLI: chats saved as notes, projects, sub-agents with their own models, a Changes card with diffs and Undo (shell-command changes included when version history is on), and steering.
+- Version history and sync with git: automatic local versions, sync with GitHub or Forgejo in one sign-in, signed commits when your git config asks for them, large files (LFS), and live git logs in Settings.
+- Obsidian compatibility: Bases (table, cards and list views, embeds), community plugins, Excalidraw drawings, the PDF reader, the note graph, inline `#tags` as pills, Tasks and Dataview.
+- Editing: tables, spelling and grammar, Markdown lint, properties with types, pinned tabs, faster and more forgiving search, and rename or move with every link rewritten.
+
+The full list is under "Changes in 0.9.0, in detail" below.
+
+## Changes in 0.9.0, in detail
+
 - Website: the download button offers the Linux AppImage on Linux, with links to the .deb, .rpm and macOS builds under it. ChromeOS gets the .deb, an ARM Linux machine the releases page, and a release that lacks one file no longer hides the others (each package links to the release's page instead).
 - macOS: the `writer` command link made before 0.9.0 is broken, because the app binary is now `writer-desktop` (`Contents/MacOS/desktop` is gone). Settings > Command line says "The link is broken" and Install repairs it; the link in `/usr/local/bin` is the only thing to redo.
 - Linux: the `.deb`/`.rpm` link `/usr/bin/writer` only when the name is free or already theirs, and recognise their own relative link, so Settings > Command line reads "Installed by the package". A `writer` AppImage no longer relaunches itself in a loop when run with no arguments. A "Later" on the package update dialog is remembered like the AppImage's. The packages need glibc 2.43 or newer (Ubuntu 26.04's era) and WebKitGTK 2.40; the build fails if the binary needs a newer glibc than that floor.

@@ -74,6 +74,22 @@ describe("changelog notes", () => {
     expect(() => release.changelogNotes(log, "0.10.0")).toThrow(/no "## 0\.10\.0" section/);
     expect(() => release.changelogNotes("## 0.9.0\n\n## 0.8.0\n- a\n", "0.9.0")).toThrow(/empty/);
   });
+
+  // The notes carry a trailing newline, so the body is limit - 1 characters at the edge.
+  const section = (chars: number) => `## 0.9.0\n\n${"x".repeat(chars)}\n\n## 0.8.0\n- a\n`;
+
+  test("a section over GitHub's body limit fails, naming size and limit", () => {
+    const limit = release.GITHUB_RELEASE_BODY_LIMIT;
+    expect(limit).toBe(125000);
+    expect(() => release.changelogNotes(section(limit), "0.9.0")).toThrow(
+      new RegExp(`is ${limit + 1} characters.*limit of ${limit}.*Shorten the section`),
+    );
+  });
+
+  test("a section just under the limit passes", () => {
+    const limit = release.GITHUB_RELEASE_BODY_LIMIT;
+    expect(release.changelogNotes(section(limit - 1), "0.9.0")).toHaveLength(limit);
+  });
 });
 
 describe("latest.json merge", () => {

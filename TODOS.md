@@ -142,7 +142,8 @@
 ## Up Next
 
 - [ ] Git signing follow-ups (2026-11-23): `setup`, `auto_setup` and the merge resolve still sign through a detached `Exec`, so a signer prompt there is not killed when the feature stops; give them the scope's `Exec`. Verify with a real 1Password `op-ssh-sign` and a real forge's signed-commit rejection text.
-- [ ] Other features' web IPC (agent, bases, icons) still hand-type argument keys through `featureInvoke`; check them for the snake_case bug found in git and move them to the generated bindings.
+- [ ] Website download (2026-11-23): Chrome's reduced user agent says `x86_64` on every Linux machine and Chromebook, so ARM visitors get the x86_64 AppImage or `.deb`. Read `navigator.userAgentData.getHighEntropyValues(["architecture"])` in `useDownloadOs` when it exists, and fall back to the user agent (`apps/website/src/download.ts`).
+- [ ] Linux 0.9.0 in a real session (2026-11-23): the frameless window, the ☰ popup and Alt, Ctrl+, and Ctrl+Q, the opaque surfaces, the terminals, the sticky watch-limit notice, the `.deb`/`.rpm` `/usr/bin/writer` link, and the AppImage self-update and `ARGV0` CLI. All are tested in Rust and jsdom only (spec `SPECs/linux-support-spec.md`).
 
 - Feature-contributed page kinds through a contribution point (git-history, git-merge still declared in core).
 - Note graph (typed `edges` table replacing `links`, `writer graph:*` CLI, agent graph context, later graph view): design only, [`SPECs/note-graph-spec.md`](SPECs/note-graph-spec.md), [ADR (proposed)](docs/decisions/2026-11-17-represent-the-note-graph-as-one-typed-edge-table-in-the-vault-index.md). Measured on a synthetic 5k-note/50k-edge vault (scratch crate, not in the repo). No user-visible change, so no CHANGELOG entry. Next: answer the spec's open questions (section 11), then phase 1 (schema, parser line/section/property label, parity test).

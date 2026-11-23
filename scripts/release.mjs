@@ -91,6 +91,9 @@ export function checkVersions(tag, { tauriConf, cargoToml, packageJson }) {
   return { version, prerelease };
 }
 
+/** GitHub refuses a release body longer than this many characters. */
+export const GITHUB_RELEASE_BODY_LIMIT = 125000;
+
 /** The body of the `## <version>` section of a changelog (heading may carry a v, brackets, a date). */
 export function changelogNotes(changelog, version) {
   const lines = changelog.split("\n");
@@ -109,7 +112,14 @@ export function changelogNotes(changelog, version) {
     .join("\n")
     .trim();
   if (!body) throw new Error(`The CHANGELOG.md section for ${version} is empty.`);
-  return `${body}\n`;
+  const notes = `${body}\n`;
+  if (notes.length > GITHUB_RELEASE_BODY_LIMIT) {
+    throw new Error(
+      `The CHANGELOG.md section for ${version} is ${notes.length} characters, over GitHub's ` +
+        `release body limit of ${GITHUB_RELEASE_BODY_LIMIT}. Shorten the section.`,
+    );
+  }
+  return notes;
 }
 
 /** The one file in `dir` ending in `suffix`; zero or several is an error naming the folder. */
