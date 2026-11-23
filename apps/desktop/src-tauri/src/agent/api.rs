@@ -10,8 +10,8 @@
 //!   turn's own changes stay separate.
 //! - [`TURN_FINISHED`]: a turn is over (also with no change, and when the process died under it),
 //!   with the files it changed. Fires once per turn.
-//! - [`TURN_BASELINE`] (provider): "the text of this file as it was when the turn started", asked
-//!   when a shell command changed a file (ADR 2026-11-23 "diff shell-command changes against the
+//! - [`TURN_BASELINE`] (provider): "these files as they were when the turn started", asked when a
+//!   shell command changed files (ADR 2026-11-23 "diff shell-command changes against the
 //!   turn-start commit"). An answer is trusted as the file's pre-image (diff and Undo), so a
 //!   contributor answers only what it can vouch for; no answer keeps the file "listed without a
 //!   diff". Asked from a thread that may block (never the watcher's or the main thread).
@@ -27,6 +27,11 @@ pub struct TurnStarted {
     /// The vault root (canonical).
     pub root: PathBuf,
     pub chat_id: String,
+    /// The chat's turn sequence: the number the turn about to begin carries. The runner advances it
+    /// every time the CLI starts a turn, also one that no `turn-started` announces (a message
+    /// queued during a turn that runs after it), so a contributor that records the start of this
+    /// turn can tell a later question about another turn ([`TurnBaseline::turn`]).
+    pub turn: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,21 +70,27 @@ pub struct TurnFinished {
 pub static TURN_STARTED: Point<TurnStarted> = Point::new("agent.turn-started", "agent");
 pub static TURN_FINISHED: Point<TurnFinished> = Point::new("agent.turn-finished", "agent");
 
-/// The question of [`TURN_BASELINE`]: the file `path` (vault-relative, forward slashes) of the vault
-/// `root`, as it was when the turn of chat `chat_id` started.
+/// The question of [`TURN_BASELINE`]: the files `paths` (vault-relative, forward slashes) of the
+/// vault `root`, as they were when turn number `turn` of chat `chat_id` started. One question per
+/// batch of files, so a contributor opens what it reads once. The answer is positional, one entry
+/// per path.
 #[derive(Debug, Clone)]
 pub struct TurnBaseline {
     /// The vault root (canonical).
     pub root: PathBuf,
     pub chat_id: String,
-    pub path: String,
+    /// The chat's current turn sequence (see [`TurnStarted::turn`]): a contributor answers only
+    /// when it recorded the start of this very turn.
+    pub turn: u64,
+    pub paths: Vec<String>,
 }
 
 /// What a contributor vouches for about a file at the start of the turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Baseline {
-    /// The file existed with this text (at most `changes::MAX_FILE_BYTES`, text only).
-    Text(String),
+    /// The file existed with these bytes (at most [`BASELINE_MAX_BYTES`]). The agent decides
+    /// whether they are text, by the one rule of what its Changes card shows.
+    Bytes(Vec<u8>),
     /// The file did not exist: the command created it.
     Absent,
 }
@@ -88,5 +99,5 @@ pub enum Baseline {
 /// more than this.
 pub const BASELINE_MAX_BYTES: u64 = super::changes::MAX_FILE_BYTES;
 
-pub static TURN_BASELINE: Provider<TurnBaseline, Baseline> =
+pub static TURN_BASELINE: Provider<TurnBaseline, Vec<Option<Baseline>>> =
     Provider::new("agent.turn-baseline", "agent");

@@ -160,11 +160,10 @@ fn read_snap(abs: &Path, keep_text: bool) -> Snap {
         return Snap::Opaque(Some(print));
     }
     match std::fs::read(abs) {
-        Ok(bytes) if !bytes.contains(&0) => match String::from_utf8(bytes) {
-            Ok(text) => Snap::Text(Some(text)),
-            Err(_) => Snap::Opaque(Some(print)),
+        Ok(bytes) => match text_diff::as_text(&bytes) {
+            Some(text) => Snap::Text(Some(text.to_owned())),
+            None => Snap::Opaque(Some(print)),
         },
-        Ok(_) => Snap::Opaque(Some(print)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Snap::Text(None),
         Err(_) => Snap::Opaque(Some(print)),
     }
@@ -269,7 +268,25 @@ struct Inner {
     used: usize,
     counter: u64,
     windows: CommandWindows,
+    /// Per chat, the vault files Writer itself wrote since the chat's turn started.
+    own_writes: HashMap<String, OwnWrites>,
 }
+
+/// The files Writer wrote itself (the editor's saves) since a chat's turn began: a shell command
+/// that changes one of them did not start from the text the turn began with.
+#[derive(Default)]
+struct OwnWrites {
+    paths: std::collections::HashSet<PathBuf>,
+    /// More than [`OWN_WRITES_MAX`] paths: nothing is vouched for in this turn any more.
+    overflow: bool,
+}
+
+/// How many own writes a turn remembers before it stops vouching for anything.
+const OWN_WRITES_MAX: usize = 10_000;
+/// Paths asked about at once, and the most paths asked about per batch of changes: a mass change
+/// (a checkout, a formatter over the vault) does not turn into unbounded reads.
+const ASK_CHUNK: usize = 8;
+const ASK_MAX: usize = 256;
 
 impl Inner {
     /// Adds `f` to its chat's session baselines unless the chat has the path already (the
@@ -423,6 +440,7 @@ fn summary_of(files: &[FileRec], e: &Entry) -> FileChangeSummary {
         removed,
         old_path: e.from.map(|i| files[i].rel.clone()),
         no_diff,
+        before_known: f.command && matches!(f.pre, Snap::Text(_)),
         origin: f.origin(),
         by: f.by.as_ref().map(|a| a.label.clone()),
         by_call: f.by.as_ref().map(|a| a.call_id.clone()),
@@ -497,6 +515,7 @@ impl ChangeStore {
                 used: 0,
                 counter: 0,
                 windows: CommandWindows::default(),
+                own_writes: HashMap::new(),
             }),
             max_total,
             revert_lock: Mutex::new(()),
@@ -629,21 +648,55 @@ impl ChangeStore {
         self.inner.lock().windows.end_chat(chat_id, at);
     }
 
+    /// A turn of the chat begins: forget the files Writer wrote since the last one.
+    pub fn begin_turn(&self, chat_id: &str) {
+        self.inner
+            .lock()
+            .own_writes
+            .insert(chat_id.to_string(), OwnWrites::default());
+    }
+
+    /// Writer's own writes (the editor's saves) in the chat's vault, as the watcher reported them:
+    /// no baseline is vouched for such a file in the running turn, whatever its source says, since
+    /// the user's edit would be undone with the command's. Only for a chat whose turn has begun.
+    pub fn note_own_writes(&self, chat_id: &str, root: &Path, paths: &[PathBuf]) {
+        let Ok(root) = root.canonicalize() else {
+            return;
+        };
+        let mut g = self.inner.lock();
+        let Some(own) = g.own_writes.get_mut(chat_id) else {
+            return;
+        };
+        for p in paths {
+            let Ok(c) = vault_ops::confine(&root, &p.to_string_lossy()) else {
+                continue;
+            };
+            if own.paths.len() >= OWN_WRITES_MAX {
+                own.overflow = true;
+                break;
+            }
+            own.paths.insert(c.abs);
+        }
+    }
+
     /// Vault files the watcher reported as changed at `at` (Writer's own writes already removed
     /// by the caller). While a command window of the chat explains `at` they are recorded as
     /// "changed by a command" in the open turn and the session, except the ones the turn already
-    /// tracks. For each path new to the turn (or the session) `baseline` is asked, outside the
-    /// lock, for the text the file had when the turn started: an answer is its pre-image, none
-    /// leaves it "listed without a diff". Returns whether the chat's session may have changed
-    /// (publish it). Reads metadata only (never file text, `baseline` aside), so call it off the
-    /// watcher thread.
+    /// tracks. For the paths new to the turn (or the session) `baseline` is asked, outside the
+    /// lock and in small batches, for the bytes each had when the turn started: an answer that is
+    /// text is its pre-image, none leaves the file "listed without a diff". Never asked: a file
+    /// Writer wrote itself since the turn began or that another chat's open turn tracks (the text
+    /// from before the turn is then not the text before the command), and nothing more once the
+    /// answers fill what the store has room for. Returns whether the chat's session may have
+    /// changed (publish it). Reads metadata only (never file text, `baseline` aside), so call it
+    /// off the watcher thread.
     pub fn record_command_changes(
         &self,
         chat_id: &str,
         root: &Path,
         paths: &[PathBuf],
         at: Instant,
-        baseline: &dyn Fn(&str) -> Option<Baseline>,
+        baseline: &dyn Fn(&[String]) -> Vec<Option<Baseline>>,
     ) -> bool {
         let Ok(root) = root.canonicalize() else {
             return false;
@@ -658,29 +711,63 @@ impl ChangeStore {
         if found.is_empty() {
             return false;
         }
-        // which paths are new to the turn or to the session: only those are asked about
-        let fresh: Vec<&vault_ops::Confined> = {
+        // the paths new to the turn or to the session that a baseline may be asked about, and the
+        // room the store has for the answers
+        let (fresh, budget): (Vec<&vault_ops::Confined>, usize) = {
             let g = self.inner.lock();
             let turn = g.open.get(chat_id);
             let session = g.sessions.get(chat_id);
-            found
+            let own = g.own_writes.get(chat_id);
+            let elsewhere = |abs: &Path| {
+                g.open
+                    .iter()
+                    .any(|(chat, t)| chat != chat_id && t.files.iter().any(|f| f.abs == abs))
+            };
+            let fresh = found
                 .iter()
                 .filter(|c| {
                     !turn.is_some_and(|t| t.files.iter().any(|f| f.abs == c.abs))
                         || !session.is_some_and(|s| s.files.iter().any(|f| f.abs == c.abs))
                 })
-                .collect()
+                .filter(|c| !own.is_some_and(|o| o.overflow || o.paths.contains(&c.abs)))
+                .filter(|c| !elsewhere(&c.abs))
+                .collect();
+            (fresh, self.max_total.saturating_sub(g.used))
         };
-        let answers: Vec<(&Path, Snap)> = fresh
-            .into_iter()
-            .filter_map(|c| match baseline(&c.rel)? {
-                Baseline::Text(text) if text.len() as u64 <= MAX_FILE_BYTES => {
-                    Some((c.abs.as_path(), Snap::Text(Some(text))))
-                }
-                Baseline::Text(_) => None,
-                Baseline::Absent => Some((c.abs.as_path(), Snap::Text(None))),
-            })
-            .collect();
+        let mut answers: Vec<(&Path, Snap)> = Vec::new();
+        let (mut returned, mut kept) = (0usize, 0usize);
+        for chunk in fresh
+            .iter()
+            .take(ASK_MAX)
+            .copied()
+            .collect::<Vec<_>>()
+            .chunks(ASK_CHUNK)
+        {
+            if returned >= budget {
+                break;
+            }
+            let rels: Vec<String> = chunk.iter().map(|c| c.rel.clone()).collect();
+            for (c, answer) in chunk.iter().zip(baseline(&rels)) {
+                let snap = match answer {
+                    Some(Baseline::Absent) => Snap::Text(None),
+                    Some(Baseline::Bytes(bytes)) => {
+                        returned += bytes.len();
+                        match text_diff::as_text(&bytes) {
+                            Some(text)
+                                if bytes.len() as u64 <= MAX_FILE_BYTES
+                                    && kept + bytes.len() <= budget =>
+                            {
+                                kept += bytes.len();
+                                Snap::Text(Some(text.to_owned()))
+                            }
+                            _ => continue,
+                        }
+                    }
+                    None => continue,
+                };
+                answers.push((c.abs.as_path(), snap));
+            }
+        }
         let mut g = self.inner.lock();
         for c in &found {
             let mut pre = answers
@@ -715,7 +802,10 @@ impl ChangeStore {
     /// Takes the chat's open turn out of the store, if any file was snapshotted or a shell ran.
     /// Cheap (no file IO): call it under the runner's lock, then [`ChangeStore::finish`] outside.
     pub fn close_turn(&self, chat_id: &str) -> Option<ClosedTurn> {
-        let turn = self.inner.lock().open.remove(chat_id)?;
+        let mut g = self.inner.lock();
+        g.own_writes.remove(chat_id);
+        let turn = g.open.remove(chat_id)?;
+        drop(g);
         Some(ClosedTurn {
             chat_id: chat_id.to_string(),
             turn,

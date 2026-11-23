@@ -74,6 +74,15 @@ pub struct TextDiff {
 /// `old` against `new`. `None` when the pair is too large to diff. `rendered` also builds the
 /// note view (front matter rows and blocks), which is only worth its cost for a Markdown note
 /// that is about to be shown.
+/// The text of `bytes` when it is text: valid UTF-8 and no NUL byte. The one rule of what Writer
+/// shows as text rather than as a binary file (the agent's Changes card, the version history).
+pub fn as_text(bytes: &[u8]) -> Option<&str> {
+    if bytes.contains(&0) {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok()
+}
+
 pub fn compare(old: &str, new: &str, rendered: bool) -> Option<TextDiff> {
     let (la, lb) = (split_lines(old), split_lines(new));
     if la.len() + lb.len() > MAX_DIFF_LINES {

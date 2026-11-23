@@ -453,6 +453,12 @@ export type FileChangeSummary = {
 	/**  Not shown as a diff: binary, too large, or not safely readable. Counts are 0. */
 	noDiff?: boolean,
 	/**
+	 *  A `command` file whose text from before the turn is known (the Git history vouched for
+	 *  it): its counts and diff are real and Undo exists, `origin` stays `command`. Absent
+	 *  otherwise.
+	 */
+	beforeKnown?: boolean,
+	/**
 	 *  Absent: a normal edit. `before-unknown` files have no diff and no Undo, nor a `command`
 	 *  file with no vouched "before" (`no_diff` is set with them).
 	 */

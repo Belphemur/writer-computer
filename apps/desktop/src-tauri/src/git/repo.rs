@@ -53,13 +53,50 @@ pub struct Identities {
     pub committer: Identity,
 }
 
-/// What [`Repo::text_at`] found.
+/// What [`Repo::baselines_at`] can vouch for about one path of a commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TextAt {
-    Text(String),
-    /// The commit has no entry at that path.
+pub enum BaselineAt {
+    /// The file's bytes there (never more than the reader's cap; the reader decides whether they
+    /// are text).
+    Bytes(Vec<u8>),
+    /// The commit has no such file, under any spelling of its name, and git does not ignore it.
     Absent,
-    Unreadable,
+    /// Anything else: a folder, a link, over the cap, an LFS object not here, a conversion between
+    /// blob and file, a path git ignores or does not version.
+    Unknown,
+}
+
+/// A name as a case-insensitive or normalizing file system would compare it.
+pub(crate) fn fold_name(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    name.nfc().collect::<String>().to_lowercase()
+}
+
+/// Is `rel`, or a folder above it, excluded by the ignore rules? An error reads as ignored.
+fn ignored(stack: &mut gix::AttributeStack<'_>, rel: &str) -> bool {
+    let parts: Vec<&str> = rel.split('/').collect();
+    (1..=parts.len()).any(|n| {
+        let mode = if n == parts.len() {
+            gix::index::entry::Mode::FILE
+        } else {
+            gix::index::entry::Mode::DIR
+        };
+        match stack.at_entry(parts[..n].join("/").as_str(), Some(mode)) {
+            Ok(platform) => platform.is_excluded(),
+            Err(_) => true,
+        }
+    })
+}
+
+/// What one pass over the working tree found, against a commit.
+struct Scan {
+    changes: Vec<Change>,
+    /// Over the size limit, not versioned.
+    too_large: Vec<String>,
+    /// Entries on disk that are not regular files (a symlink).
+    non_files: Vec<String>,
+    /// LFS-covered files that are still a pointer on disk.
+    pointers: Vec<String>,
 }
 
 /// One commit of the history.
@@ -147,6 +184,39 @@ impl Rules<'_> {
         let hit = out
             .iter_selected()
             .any(|m| m.assignment.state.as_bstr().is_some_and(|v| v == "lfs"));
+        hit
+    }
+}
+
+impl Rules<'_> {
+    /// Does git convert the file at `rel` between the blob and the working tree: `text`, `eol`,
+    /// `crlf`, `ident`, `working-tree-encoding` set to anything but off, or a `filter` that is not
+    /// `lfs` (an LFS file is handled by its pointer)?
+    fn converts(&mut self, rel: &str) -> bool {
+        let mut out = self.stack.selected_attribute_matches([
+            "text",
+            "eol",
+            "crlf",
+            "ident",
+            "working-tree-encoding",
+            "filter",
+        ]);
+        let Ok(platform) = self
+            .stack
+            .at_entry(rel, Some(gix::index::entry::Mode::FILE))
+        else {
+            return true;
+        };
+        platform.matching_attributes(&mut out);
+        let hit = out.iter_selected().any(|m| {
+            use gix::attrs::StateRef;
+            let state = m.assignment.state;
+            match (m.assignment.name.as_str(), state) {
+                (_, StateRef::Unspecified | StateRef::Unset) => false,
+                ("filter", StateRef::Value(v)) => v.as_bstr() != "lfs",
+                _ => true,
+            }
+        });
         hit
     }
 }
@@ -343,6 +413,12 @@ impl Repo {
         if !self.lfs_attributes_present() {
             return Ok(None);
         }
+        self.attribute_rules().map(Some)
+    }
+
+    /// The attribute rules of every `.gitattributes` git reads (one stack, shared by the LFS
+    /// checks and the baseline's conversion check).
+    fn attribute_rules(&self) -> Result<Rules<'_>> {
         let index = self.repo.index_or_empty().map_err(git)?;
         let stack = self
             .repo
@@ -351,7 +427,7 @@ impl Repo {
                 gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
             )
             .map_err(git)?;
-        Ok(Some(Rules { stack }))
+        Ok(Rules { stack })
     }
 
     /// Does the file at `rel` go into a commit as an LFS pointer, and does the managed block need
@@ -475,7 +551,17 @@ impl Repo {
     /// is that repository's, never walked into). The skipped large files are listed
     /// (vault-relative) so the panel can say so.
     pub fn changes_and_skipped(&self) -> Result<(Vec<Change>, Vec<String>)> {
+        let scan = self.scan(None)?;
+        Ok((scan.changes, scan.too_large))
+    }
+
+    /// [`Repo::changes_and_skipped`] against commit `head` (HEAD when `None`: one id read once by
+    /// a caller that needs the commit and the status to agree), with the other things a caller
+    /// that wants to know what is *not* different has to know about.
+    fn scan(&self, head: Option<&str>) -> Result<Scan> {
         let mut rules = self.lfs_rules()?;
+        let head_commit = head.map(|h| self.find(h)).transpose()?;
+        let mut pointers: Vec<String> = Vec::new();
         // Files an LFS rule covers are kept out of gix's status: it would run the repository's
         // `filter.lfs` driver (a `git-lfs` child gix starts itself, outside the feature's scope)
         // to compare them. They are compared here instead, against their pointer.
@@ -491,6 +577,9 @@ impl Repo {
                 }
                 let rel = rel_of(entry.path(&index));
                 if r.covers(&rel) {
+                    if lfs::file_is_pointer(&self.root.join(&rel)) {
+                        pointers.push(rel.clone());
+                    }
                     in_lfs.push((rel, entry.stat));
                 }
             }
@@ -500,10 +589,11 @@ impl Repo {
             .iter()
             .map(|(rel, _)| BString::from(format!(":(top,literal,exclude){rel}")))
             .collect();
-        let items = self
-            .repo
-            .status(gix::progress::Discard)
-            .map_err(git)?
+        let mut platform = self.repo.status(gix::progress::Discard).map_err(git)?;
+        if let Some(commit) = &head_commit {
+            platform = platform.head_tree(commit.tree_id().map_err(git)?.detach());
+        }
+        let items = platform
             .untracked_files(gix::status::UntrackedFiles::Files)
             .index_worktree_rewrites(None)
             .tree_index_track_renames(gix::status::tree_index::TrackRenames::Disabled)
@@ -523,7 +613,11 @@ impl Repo {
                 candidates.insert(rel.clone());
             }
         }
-        let tree = self.head_tree();
+        let tree = match &head_commit {
+            Some(c) => c.tree().ok(),
+            None => self.head_tree(),
+        };
+        let mut non_files: Vec<String> = Vec::new();
         // (path, size) of files not in HEAD; (path, HEAD blob) of files gone from disk
         let mut adds: Vec<(String, u64)> = Vec::new();
         let mut deletes: Vec<(String, gix::ObjectId)> = Vec::new();
@@ -538,6 +632,9 @@ impl Repo {
             let meta = std::fs::symlink_metadata(&path)
                 .ok()
                 .filter(|m| m.is_file());
+            if meta.is_none() && std::fs::symlink_metadata(&path).is_ok() && !path.is_dir() {
+                non_files.push(rel.clone());
+            }
             match (head, meta) {
                 (Some(h), Some(m)) => {
                     if self.too_large(&mut rules, &rel, m.len(), head) {
@@ -580,87 +677,174 @@ impl Repo {
         }
         out.extend(deletes.into_iter().map(|(rel, _)| Change::Delete(rel)));
         out.sort_by(|a, b| a.path().cmp(b.path()));
-        Ok((out, too_large))
+        Ok(Scan {
+            changes: out,
+            too_large,
+            non_files,
+            pointers,
+        })
     }
 
-    /// Every path the working tree still differs from HEAD in, or that Writer does not version:
-    /// what [`Repo::changes_and_skipped`] finds, with a move's old path, as vault-relative paths.
-    /// After a commit it is what the commit could not take.
-    pub fn uncommitted(&self) -> Result<BTreeSet<String>> {
-        let (changes, skipped) = self.changes_and_skipped()?;
-        let mut out: BTreeSet<String> = skipped.into_iter().collect();
-        for c in &changes {
+    /// Every path the working tree differs from commit `head` in, or that Writer does not version
+    /// or cannot compare: what [`Repo::scan`] finds (changes, a move's old path, files over the
+    /// size limit), the entries on disk that are not regular files (a symlink hides what it points
+    /// at), LFS files that are still pointers on disk, and the index entries git is told not to
+    /// look at (skip-worktree, assume-unchanged). Vault-relative. After a commit it is what the
+    /// commit could not take; a path outside it is, as far as git's own comparison goes, what
+    /// `head` holds.
+    pub fn uncommitted_at(&self, head: &str) -> Result<BTreeSet<String>> {
+        let scan = self.scan(Some(head))?;
+        let mut out: BTreeSet<String> = scan.too_large.into_iter().collect();
+        out.extend(scan.non_files);
+        out.extend(scan.pointers);
+        for c in &scan.changes {
             out.insert(c.path().to_string());
             if let Change::Move { from, .. } = c {
                 out.insert(from.clone());
             }
         }
+        let index = self.repo.index_or_empty().map_err(git)?;
+        for entry in index.entries() {
+            if entry.flags.intersects(
+                gix::index::entry::Flags::SKIP_WORKTREE | gix::index::entry::Flags::ASSUME_VALID,
+            ) {
+                out.insert(rel_of(entry.path(&index)));
+            }
+        }
         Ok(out)
     }
 
-    /// Is `rel`, or a folder above it, ignored by the repository's rules (the vault's
-    /// `.gitignore` files, `info/exclude`, the user's global file)? An error reads as ignored:
-    /// the caller is deciding what it can vouch for.
-    pub fn is_ignored(&self, rel: &str) -> bool {
-        let Ok(index) = self.repo.index_or_empty() else {
-            return true;
+    /// What the history can say about each of `paths` as commit `rev` holds them, for a reader
+    /// capped at `max_bytes` (see [`BaselineAt`]); the answer is positional. The attribute and
+    /// ignore rules are built once for the batch. A conversion git applies between the blob and the
+    /// file (line endings, `ident`, an encoding, a filter other than LFS) makes the blob not the
+    /// bytes that were on disk: such a path gets [`BaselineAt::Unknown`], and every path does while
+    /// `core.autocrlf` is on.
+    pub fn baselines_at(&self, rev: &str, paths: &[&str], max_bytes: u64) -> Vec<BaselineAt> {
+        let unknown = || vec![BaselineAt::Unknown; paths.len()];
+        let Ok(commit) = self.find(rev) else {
+            return unknown();
         };
-        let Ok(mut stack) = self.repo.excludes(
-            &index,
-            None,
-            gix::worktree::stack::state::ignore::Source::WorktreeThenIdMappingIfNotSkipped,
-        ) else {
-            return true;
+        let autocrlf = self
+            .config_string("core.autocrlf")
+            .is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "true" | "input"));
+        if autocrlf {
+            return unknown();
+        }
+        let Ok(mut rules) = self.attribute_rules() else {
+            return unknown();
         };
-        let parts: Vec<&str> = rel.split('/').collect();
-        (1..=parts.len()).any(|n| {
-            let mode = if n == parts.len() {
-                gix::index::entry::Mode::FILE
-            } else {
-                gix::index::entry::Mode::DIR
-            };
-            match stack.at_entry(parts[..n].join("/").as_str(), Some(mode)) {
-                Ok(platform) => platform.is_excluded(),
-                Err(_) => true,
+        // built when the first missing path needs it
+        let mut excludes: Option<Option<gix::AttributeStack<'_>>> = None;
+        paths
+            .iter()
+            .map(|rel| {
+                if self.not_ours(rel) || rules.converts(rel) {
+                    return BaselineAt::Unknown;
+                }
+                self.baseline_of(&commit, rel, max_bytes, &mut excludes)
+            })
+            .collect()
+    }
+
+    fn baseline_of<'r>(
+        &'r self,
+        commit: &gix::Commit<'_>,
+        rel: &str,
+        max_bytes: u64,
+        excludes: &mut Option<Option<gix::AttributeStack<'r>>>,
+    ) -> BaselineAt {
+        let Ok(tree) = commit.tree() else {
+            return BaselineAt::Unknown;
+        };
+        let Ok(entry) = tree.lookup_entry_by_path(rel) else {
+            return BaselineAt::Unknown;
+        };
+        let Some(entry) = entry else {
+            // not there under this exact name: a name that differs only by case or Unicode
+            // normalization is the same file on a case-insensitive or normalizing file system
+            if self.has_name_variant(&tree, rel) {
+                return BaselineAt::Unknown;
             }
-        })
-    }
-
-    /// Is `rel` somewhere Writer never versions (under `node_modules`, or inside a repository of
-    /// its own)? Its absence from a commit says nothing.
-    pub fn is_foreign(&self, rel: &str) -> bool {
-        self.not_ours(rel)
-    }
-
-    /// The text of the file at `rel` in commit `rev`, for a reader with a size cap: nothing is read
-    /// above `max_bytes` (an LFS file is read from the local store only when its pointer says it
-    /// fits). [`TextAt::Unreadable`] for anything that is not a text file of that size there (a
-    /// folder, a link, binary or non-UTF-8 content, an LFS object not downloaded).
-    pub fn text_at(&self, rev: &str, rel: &str, max_bytes: u64) -> Result<TextAt> {
-        let commit = self.find(rev)?;
-        let tree = commit.tree().map_err(git)?;
-        let Some(entry) = tree.lookup_entry_by_path(rel).map_err(git)? else {
-            return Ok(TextAt::Absent);
+            let stack = excludes.get_or_insert_with(|| self.excludes_stack());
+            return match stack.as_mut() {
+                Some(stack) => {
+                    if ignored(stack, rel) {
+                        BaselineAt::Unknown
+                    } else {
+                        BaselineAt::Absent
+                    }
+                }
+                None => BaselineAt::Unknown,
+            };
         };
         if !entry.mode().is_blob() {
-            return Ok(TextAt::Unreadable);
+            return BaselineAt::Unknown;
         }
         let id = entry.object_id();
-        let size = self.repo.find_header(id).map_err(git)?.size();
-        let bytes = match self.pointer_in(id) {
-            Some(p) if p.size > max_bytes => return Ok(TextAt::Unreadable),
-            Some(_) => self.content(&id.to_string())?,
-            None if size > max_bytes => return Ok(TextAt::Unreadable),
-            None => self.blob(&id.to_string())?,
+        let Ok(header) = self.repo.find_header(id) else {
+            return BaselineAt::Unknown;
         };
-        if bytes.len() as u64 > max_bytes || bytes.contains(&0) || lfs::is_pointer(&bytes) {
-            return Ok(TextAt::Unreadable);
+        let bytes = match self.pointer_in(id) {
+            Some(p) if p.size > max_bytes => return BaselineAt::Unknown,
+            Some(_) => self.content(&id.to_string()),
+            None if header.size() > max_bytes => return BaselineAt::Unknown,
+            None => self.blob(&id.to_string()),
+        };
+        match bytes {
+            // an LFS object that is not here stays a pointer: not the file's content
+            Ok(bytes) if bytes.len() as u64 <= max_bytes && !lfs::is_pointer(&bytes) => {
+                BaselineAt::Bytes(bytes)
+            }
+            _ => BaselineAt::Unknown,
         }
-        Ok(String::from_utf8(bytes).map_or(TextAt::Unreadable, TextAt::Text))
     }
 
-    /// Under `node_modules`, or inside a folder that is a repository of its own.
-    fn not_ours(&self, rel: &str) -> bool {
+    /// Does a folder along `rel` hold a name that is not `rel`'s but folds to it (case,
+    /// NFC/NFD), at the first component the tree lacks exactly? Anything unreadable says yes.
+    fn has_name_variant(&self, tree: &gix::Tree<'_>, rel: &str) -> bool {
+        let mut tree = tree.clone();
+        let parts: Vec<&str> = rel.split('/').collect();
+        for (i, part) in parts.iter().enumerate() {
+            let mut exact = None;
+            let mut folded = false;
+            for entry in tree.iter() {
+                let Ok(entry) = entry else { return true };
+                let name = entry.filename().to_str_lossy();
+                if name == *part {
+                    exact = Some((entry.mode(), entry.oid().to_owned()));
+                    break;
+                }
+                folded |= fold_name(&name) == fold_name(part);
+            }
+            match exact {
+                None => return folded,
+                Some(_) if i + 1 == parts.len() => return false,
+                Some((mode, id)) if mode.is_tree() => match self.repo.find_tree(id) {
+                    Ok(next) => tree = next,
+                    Err(_) => return true,
+                },
+                Some(_) => return true,
+            }
+        }
+        false
+    }
+
+    /// The ignore rules (the vault's `.gitignore` files, `info/exclude`, the user's global file).
+    fn excludes_stack(&self) -> Option<gix::AttributeStack<'_>> {
+        let index = self.repo.index_or_empty().ok()?;
+        self.repo
+            .excludes(
+                &index,
+                None,
+                gix::worktree::stack::state::ignore::Source::WorktreeThenIdMappingIfNotSkipped,
+            )
+            .ok()
+    }
+
+    /// Under `node_modules`, or inside a folder that is a repository of its own: Writer never
+    /// versions it, so a commit says nothing about it.
+    pub(crate) fn not_ours(&self, rel: &str) -> bool {
         let parts: Vec<&str> = rel.split('/').collect();
         if parts.contains(&"node_modules") {
             return true;

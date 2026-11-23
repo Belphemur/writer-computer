@@ -473,6 +473,11 @@ pub struct FileChangeSummary {
     /// Not shown as a diff: binary, too large, or not safely readable. Counts are 0.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_diff: bool,
+    /// A `command` file whose text from before the turn is known (the Git history vouched for
+    /// it): its counts and diff are real and Undo exists, `origin` stays `command`. Absent
+    /// otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub before_known: bool,
     /// Absent: a normal edit. `before-unknown` files have no diff and no Undo, nor a `command`
     /// file with no vouched "before" (`no_diff` is set with them).
     #[serde(default, skip_serializing_if = "ChangeOrigin::is_edit")]
@@ -1055,6 +1060,7 @@ mod tests {
                     removed: 0,
                     old_path: Some("b.md".into()),
                     no_diff: false,
+                    before_known: false,
                     origin: ChangeOrigin::Edit,
                     by: None,
                     by_call: None,
@@ -1085,6 +1091,7 @@ mod tests {
                 removed: 1,
                 old_path: None,
                 no_diff: false,
+                before_known: false,
                 origin: ChangeOrigin::Edit,
                 by: Some("worker".into()),
                 by_call: Some("toolu_1".into()),
@@ -1130,6 +1137,7 @@ mod tests {
                     removed: 0,
                     old_path: None,
                     no_diff: false,
+                    before_known: false,
                     origin: ChangeOrigin::Edit,
                     by: None,
                     by_call: None,

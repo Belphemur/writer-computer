@@ -48,7 +48,7 @@ Chosen: **A**, with the user's answers (2026-11-23): diff **and Undo**; when git
 
 - Good: with git on (the default), command changes get real diffs and Undo in the card, the row and the Session changes tab; with git off nothing changes.
 - Good: the first provider point lands with a real user and a contract test.
-- Bad: a user's own edit to a file during the turn (no user commit while a turn runs) is part of that file's diff, as it already is for files edited by tools; Undo still refuses if the file changed after the turn ended.
+- Bad: a user's edit to a file during the turn, made before the command ran, would be part of the diff and undone with it (no user commit runs during a turn). The agent therefore asks nothing for a path Writer wrote itself since the turn began (the editor's saves, from the watcher's own-write list) or that another chat's open turn tracks: those stay "listed without a diff". An edit by a tool outside Writer (a terminal) cannot be told apart from the command's and is part of the diff, as ever; Undo still refuses if the file changed after the turn ended.
 - Bad: with two chats running commands at once, both cards show the same file's diff (as both list it today).
 
 ## Implementation Plan
@@ -89,5 +89,11 @@ Chosen: **A**, with the user's answers (2026-11-23): diff **and Undo**; when git
 - Bad: reading every note at every turn costs IO and memory in every vault, against the 64 MiB budget, to diff the few files a command changes. Rejected on cost.
 
 ## More Information
+
+- **Deviations from the plan above, made in review (2026-11-23).**
+  - The point carries `turn`, the chat's turn sequence, instead of a `turn_id`: the runner advances it every time a message starts a CLI turn, queued and steered turns included, and git answers only for the sequence it recorded (and drops the record when the turn finishes). Without it, a queued second turn would have been answered from before the first.
+  - The question is a batch (`paths`, positional answers) so git opens the repository and builds its attribute and ignore rules once; the agent asks in batches of 8, at most 256 paths per change, and stops once the answers fill the room the store has. An answer is `Baseline::Bytes`: git hands over bytes (at most 2 MiB), the agent applies the one text rule (`text_diff::as_text`, also the history's).
+  - Git gives no answer, beyond ADR point 3: while `core.autocrlf` is `true` or `input`; for a path with a `text`, `eol`, `crlf`, `ident` or `working-tree-encoding` attribute or a `filter` other than lfs (the blob is not the file's bytes); for index entries marked skip-worktree or assume-unchanged, symlinks and LFS pointers still on disk (all counted as not committed); for `Absent` when the commit holds the name under another case or Unicode normalization; for any LFS blob that is a pointer whose object is not local or is over the cap.
+  - Git records HEAD once and reads the status against that commit, under the repository's write lock. It no longer checks for an identity: soundness comes from what the commit could not take being in the not-committed set.
 
 - Related: `2026-11-18-show-a-chats-changed-notes-in-a-compact-row-above-the-composer-with-a-full-session-diff-tab.md`, `2026-11-18-sync-vaults-with-a-built-in-git-feature-rust-merge-and-system-git-transport.md`, `2026-11-20-let-features-cooperate-through-owned-points-optional-services-and-rare-requires.md`.

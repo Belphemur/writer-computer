@@ -36,12 +36,12 @@ pub struct Row {
     pub removed: Option<u32>,
 }
 
-/// The text of a blob, when it is text: valid UTF-8, no NUL, not huge.
+/// The text of a blob, when it is text (`text_diff::as_text`, the one rule) and not huge.
 pub fn as_text(bytes: &[u8]) -> Option<&str> {
-    if bytes.len() > TEXT_MAX_BYTES || bytes.iter().take(8192).any(|b| *b == 0) {
+    if bytes.len() > TEXT_MAX_BYTES {
         return None;
     }
-    std::str::from_utf8(bytes).ok()
+    crate::text_diff::as_text(bytes)
 }
 
 fn blob(repo: &Repo, id: &Option<String>) -> Result<Option<Vec<u8>>> {

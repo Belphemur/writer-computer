@@ -650,7 +650,7 @@ fn bash_in(store: &ChangeStore, root: &Path) {
 
 fn seen(store: &ChangeStore, chat: &str, root: &Path, rels: &[&str], at: Instant) -> bool {
     let paths: Vec<PathBuf> = rels.iter().map(|r| root.join(r)).collect();
-    store.record_command_changes(chat, root, &paths, at, &|_| None)
+    store.record_command_changes(chat, root, &paths, at, &|rels| vec![None; rels.len()])
 }
 
 /// [`seen`] with an asker: `answers` maps a vault-relative path to what the baseline provider says.
@@ -662,11 +662,15 @@ fn seen_asking(
     answers: &[(&str, Baseline)],
 ) -> bool {
     let paths: Vec<PathBuf> = rels.iter().map(|r| root.join(r)).collect();
-    let ask = |rel: &str| {
-        answers
-            .iter()
-            .find(|(p, _)| *p == rel)
-            .map(|(_, b)| b.clone())
+    let ask = |rels: &[String]| -> Vec<Option<Baseline>> {
+        rels.iter()
+            .map(|rel| {
+                answers
+                    .iter()
+                    .find(|(p, _)| p == rel)
+                    .map(|(_, b)| b.clone())
+            })
+            .collect()
     };
     store.record_command_changes(CHAT, root, &paths, at, &ask)
 }
@@ -851,7 +855,7 @@ fn what_writer_does_not_show_or_the_agent_keeps_to_itself_is_never_listed() {
         &root,
         &[out.path().join("o.md")],
         t + Duration::from_millis(10),
-        &|_| None
+        &|rels| vec![None; rels.len()]
     ));
     assert!(finish(&store).is_none(), "nothing to show");
     assert!(store.session_summary(CHAT, &root).is_none());
@@ -1199,6 +1203,10 @@ fn an_old_file_never_looks_raced() {
 
 // ---- a baseline vouched for by the provider point (ADR 2026-11-23) ----
 
+fn txt(s: &str) -> Baseline {
+    Baseline::Bytes(s.as_bytes().to_vec())
+}
+
 fn one_command(store: &ChangeStore, root: &Path) -> Instant {
     let t = Instant::now();
     bash_in(store, root);
@@ -1216,7 +1224,7 @@ fn a_command_file_with_a_text_baseline_gets_a_diff_counts_and_an_undo_that_resto
     let store = ChangeStore::default();
     std::fs::write(root.join("n.md"), "after\n").unwrap();
     let t = one_command(&store, &root);
-    let answers = [("n.md", Baseline::Text("before\n".into()))];
+    let answers = [("n.md", txt("before\n"))];
     assert!(seen_asking(
         &store,
         &root,
@@ -1249,7 +1257,7 @@ fn undo_of_a_command_change_refuses_after_a_later_edit() {
     let store = ChangeStore::default();
     std::fs::write(root.join("n.md"), "after\n").unwrap();
     let t = one_command(&store, &root);
-    let answers = [("n.md", Baseline::Text("before\n".into()))];
+    let answers = [("n.md", txt("before\n"))];
     seen_asking(&store, &root, &["n.md"], t, &answers);
     end_command(&store, t);
     let s = finish(&store).unwrap();
@@ -1295,9 +1303,9 @@ fn no_answer_keeps_todays_row_and_the_asker_is_asked_once_per_new_path() {
     std::fs::write(root.join("n.md"), "after\n").unwrap();
     let t = one_command(&store, &root);
     let asked = std::cell::Cell::new(0);
-    let ask = |_: &str| {
-        asked.set(asked.get() + 1);
-        None
+    let ask = |rels: &[String]| {
+        asked.set(asked.get() + rels.len());
+        vec![None; rels.len()]
     };
     let p = [root.join("n.md")];
     store.record_command_changes(CHAT, &root, &p, t, &ask);
@@ -1319,7 +1327,7 @@ fn an_edit_snapshotted_file_keeps_its_snapshot_and_is_not_asked() {
     cap(&store, &root, "Edit", "a.md");
     std::fs::write(root.join("a.md"), "two\n").unwrap();
     let t = one_command(&store, &root);
-    let ask = |_: &str| -> Option<Baseline> { panic!("the turn tracks it already") };
+    let ask = |_: &[String]| -> Vec<Option<Baseline>> { panic!("the turn tracks it already") };
     store.record_command_changes(CHAT, &root, &[root.join("a.md")], t, &ask);
     end_command(&store, t);
     let s = finish(&store).unwrap();
@@ -1339,7 +1347,7 @@ fn an_answer_over_the_file_cap_is_no_answer() {
         &root,
         &["n.md"],
         t,
-        &[("n.md", Baseline::Text(huge))],
+        &[("n.md", Baseline::Bytes(huge.into_bytes()))],
     );
     end_command(&store, t);
     assert!(file(&finish(&store).unwrap(), "n.md").no_diff);
@@ -1352,25 +1360,13 @@ fn the_session_baseline_is_the_answer_of_the_first_turn_that_touched_the_path() 
     // turn 1: the command rewrites v0 into v1
     std::fs::write(root.join("n.md"), "v1\n").unwrap();
     let t = one_command(&store, &root);
-    seen_asking(
-        &store,
-        &root,
-        &["n.md"],
-        t,
-        &[("n.md", Baseline::Text("v0\n".into()))],
-    );
+    seen_asking(&store, &root, &["n.md"], t, &[("n.md", txt("v0\n"))]);
     end_command(&store, t);
     finish(&store).unwrap();
     // turn 2: another command, whose turn started at v1
     std::fs::write(root.join("n.md"), "v2\n").unwrap();
     let t = one_command(&store, &root);
-    seen_asking(
-        &store,
-        &root,
-        &["n.md"],
-        t,
-        &[("n.md", Baseline::Text("v1\n".into()))],
-    );
+    seen_asking(&store, &root, &["n.md"], t, &[("n.md", txt("v1\n"))]);
     end_command(&store, t);
     let s = finish(&store).unwrap();
     // the card of turn 2 diffs against v1, the session against v0
@@ -1394,15 +1390,129 @@ fn a_session_baseline_from_an_answer_marks_by_command_with_counts() {
     let store = ChangeStore::default();
     std::fs::write(root.join("n.md"), "after\n").unwrap();
     let t = one_command(&store, &root);
+    seen_asking(&store, &root, &["n.md"], t, &[("n.md", txt("before\n"))]);
+    let ss = sess(&store, &root);
+    let f = sess_file(&ss, "n.md");
+    assert_eq!(f.origin, ChangeOrigin::Command);
+    assert_eq!((f.added, f.removed), (1, 1));
+}
+
+#[test]
+fn a_path_writer_wrote_itself_since_the_turn_began_is_never_asked_about() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("mine.md"), "the user's edit, after the command\n").unwrap();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    store.begin_turn(CHAT);
+    let t = one_command(&store, &root);
+    // the editor saved mine.md after the turn began
+    store.note_own_writes(CHAT, &root, &[root.join("mine.md")]);
+    let answers = [
+        ("mine.md", txt("before the user's edit\n")),
+        ("n.md", txt("before\n")),
+    ];
+    seen_asking(&store, &root, &["mine.md", "n.md"], t, &answers);
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    assert!(
+        file(&s, "mine.md").no_diff,
+        "an own write is not vouched for"
+    );
+    assert!(!file(&s, "mine.md").before_known);
+    assert!(!file(&s, "n.md").no_diff);
+    assert!(file(&s, "n.md").before_known);
+    // a new turn forgets them
+    store.begin_turn(CHAT);
+    let t = one_command(&store, &root);
+    std::fs::write(root.join("mine.md"), "later\n").unwrap();
+    seen_asking(&store, &root, &["mine.md"], t, &answers);
+    end_command(&store, t);
+    assert!(!file(&finish(&store).unwrap(), "mine.md").no_diff);
+}
+
+#[test]
+fn a_path_another_chats_open_turn_tracks_is_not_asked_about() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("shared.md"), "edited by the other chat\n").unwrap();
+    std::fs::write(root.join("mine.md"), "after\n").unwrap();
+    // the other chat's turn already tracks shared.md
+    store.capture(
+        "chat-2",
+        &root,
+        &root,
+        "Edit",
+        &json!({"file_path": path(&root, "shared.md")}),
+    );
+    let t = one_command(&store, &root);
+    let asked = std::cell::RefCell::new(Vec::<String>::new());
+    let ask = |rels: &[String]| {
+        asked.borrow_mut().extend(rels.iter().cloned());
+        vec![None; rels.len()]
+    };
+    let paths = [root.join("shared.md"), root.join("mine.md")];
+    store.record_command_changes(CHAT, &root, &paths, t, &ask);
+    assert_eq!(*asked.borrow(), vec!["mine.md".to_string()]);
+}
+
+#[test]
+fn asking_stops_once_the_answers_fill_the_room_the_store_has() {
+    let (_d, root) = vault();
+    // room for about three of the answers below
+    let store = ChangeStore::with_cap(100);
+    let rels: Vec<String> = (0..40).map(|i| format!("f{i}.md")).collect();
+    for rel in &rels {
+        std::fs::write(root.join(rel), "after\n").unwrap();
+    }
+    let t = one_command(&store, &root);
+    let asked = std::cell::Cell::new(0usize);
+    let ask = |batch: &[String]| {
+        asked.set(asked.get() + batch.len());
+        batch.iter().map(|_| Some(txt(&"x".repeat(30)))).collect()
+    };
+    let paths: Vec<PathBuf> = rels.iter().map(|r| root.join(r)).collect();
+    store.record_command_changes(CHAT, &root, &paths, t, &ask);
+    assert!(
+        asked.get() <= 8,
+        "one batch, then it stops: {}",
+        asked.get()
+    );
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    let known = s.files.iter().filter(|f| f.before_known).count();
+    assert!((1..=3).contains(&known), "{known} answers kept");
+    assert_eq!(s.files.len(), 40, "every file is still listed");
+}
+
+#[test]
+fn an_answer_that_is_not_text_is_no_answer() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
     seen_asking(
         &store,
         &root,
         &["n.md"],
         t,
-        &[("n.md", Baseline::Text("before\n".into()))],
+        &[("n.md", Baseline::Bytes(vec![b'a', 0, b'b']))],
     );
-    let ss = sess(&store, &root);
-    let f = sess_file(&ss, "n.md");
-    assert_eq!(f.origin, ChangeOrigin::Command);
-    assert_eq!((f.added, f.removed), (1, 1));
+    end_command(&store, t);
+    assert!(file(&finish(&store).unwrap(), "n.md").no_diff);
+}
+
+#[test]
+fn only_a_command_file_with_a_vouched_before_says_before_known() {
+    let (_d, root) = vault();
+    let store = ChangeStore::default();
+    std::fs::write(root.join("a.md"), "one\n").unwrap();
+    cap(&store, &root, "Edit", "a.md");
+    std::fs::write(root.join("a.md"), "two\n").unwrap();
+    std::fs::write(root.join("n.md"), "after\n").unwrap();
+    let t = one_command(&store, &root);
+    seen_asking(&store, &root, &["n.md"], t, &[("n.md", txt("before\n"))]);
+    end_command(&store, t);
+    let s = finish(&store).unwrap();
+    assert!(file(&s, "n.md").before_known);
+    assert!(!file(&s, "a.md").before_known, "an edit is not marked");
 }

@@ -53,19 +53,23 @@ export const ORIGIN_NOTE: Record<
 };
 
 /** The note of a file that is not an ordinary edit; `undefined` for one. */
-export function originNote(f: Pick<FileChangeSummary, "origin" | "noDiff">) {
+export function originNote(f: Pick<FileChangeSummary, "origin" | "beforeKnown">) {
   if (!f.origin || f.origin === "edit") return undefined;
-  return ORIGIN_NOTE[f.origin === "command" && !f.noDiff ? "command-compared" : f.origin];
+  return ORIGIN_NOTE[f.origin === "command" && f.beforeKnown ? "command-compared" : f.origin];
 }
 
 /** A command-changed file with no "before": only known to differ, not whether it was created. */
-export function commandWithoutBefore(f: Pick<FileChangeSummary, "origin" | "noDiff">): boolean {
-  return f.origin === "command" && !!f.noDiff;
+export function commandWithoutBefore(
+  f: Pick<FileChangeSummary, "origin" | "beforeKnown">,
+): boolean {
+  return f.origin === "command" && !f.beforeKnown;
 }
 
 /** Status word of a file row: a command-changed file with no "before" is only known to differ
  *  ("Changed"), as whether it was created or modified is not known. */
-export function statusLabel(f: Pick<FileChangeSummary, "origin" | "noDiff" | "status">): string {
+export function statusLabel(
+  f: Pick<FileChangeSummary, "origin" | "beforeKnown" | "status">,
+): string {
   return commandWithoutBefore(f) && f.status !== "deleted" ? "Changed" : STATUS_LABEL[f.status];
 }
 

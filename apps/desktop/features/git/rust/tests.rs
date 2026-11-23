@@ -100,6 +100,7 @@ fn started(root: &Path) -> TurnStarted {
     TurnStarted {
         root: root.to_path_buf(),
         chat_id: "chat-1".into(),
+        turn: 1,
     }
 }
 
@@ -473,15 +474,29 @@ fn a_missing_identity_is_an_explicit_error_state_and_nothing_is_committed() {
 
 use crate::agent::api::{Baseline, TurnBaseline, TURN_BASELINE};
 
+fn ask_turn(
+    app: &tauri::App<MockRuntime>,
+    root: &Path,
+    chat: &str,
+    turn: u64,
+    path: &str,
+) -> Option<Baseline> {
+    app.state::<crate::features::points::Points>()
+        .ask(
+            &TURN_BASELINE,
+            &TurnBaseline {
+                root: root.to_path_buf(),
+                chat_id: chat.into(),
+                turn,
+                paths: vec![path.into()],
+            },
+        )
+        .and_then(|mut answers| answers.pop().flatten())
+}
+
+/// Turn 1 of the chat, the one [`start_turn`] announces.
 fn ask(app: &tauri::App<MockRuntime>, root: &Path, chat: &str, path: &str) -> Option<Baseline> {
-    app.state::<crate::features::points::Points>().ask(
-        &TURN_BASELINE,
-        &TurnBaseline {
-            root: root.to_path_buf(),
-            chat_id: chat.into(),
-            path: path.into(),
-        },
-    )
+    ask_turn(app, root, chat, 1, path)
 }
 
 fn start_turn(app: &tauri::App<MockRuntime>, root: &Path, chat: &str) {
@@ -491,6 +506,7 @@ fn start_turn(app: &tauri::App<MockRuntime>, root: &Path, chat: &str) {
         &TurnStarted {
             root: root.to_path_buf(),
             chat_id: chat.into(),
+            turn: 1,
         },
     );
 }
@@ -519,7 +535,7 @@ fn the_turn_start_commit_answers_text_and_absent_and_the_users_pending_edit_is_i
     write(&root, "made.md", "new");
     assert_eq!(
         ask(&app, &root, "chat-1", "a.md"),
-        Some(Baseline::Text("2 pending".into()))
+        Some(Baseline::Bytes("2 pending".as_bytes().to_vec()))
     );
     assert_eq!(
         ask(&app, &root, "chat-1", "made.md"),
@@ -562,7 +578,7 @@ fn a_file_uncommitted_when_the_turn_began_gets_no_answer() {
     assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
     assert_eq!(
         ask(&app, &root, "chat-1", "c.md"),
-        Some(Baseline::Text("clean".into()))
+        Some(Baseline::Bytes("clean".as_bytes().to_vec()))
     );
 }
 
@@ -600,6 +616,197 @@ fn the_record_is_dropped_when_the_vault_closes_and_when_git_shuts_down() {
     assert!(ask(&app, &root, "chat-1", "a.md").is_some());
     vaults.shutdown();
     assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+}
+
+/// Runs the system `git` in `root` with a throwaway HOME and no system config (never the user's).
+fn system_git(root: &Path, home: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_AUTHOR_NAME", "Ada")
+        .env("GIT_AUTHOR_EMAIL", "ada@example.test")
+        .env("GIT_COMMITTER_NAME", "Ada")
+        .env("GIT_COMMITTER_EMAIL", "ada@example.test")
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_turn_that_ended_or_a_turn_that_was_not_announced_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    start_turn(&app, &root, "chat-1");
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some());
+    // a message queued during the turn runs as turn 2, which nothing announced
+    assert_eq!(ask_turn(&app, &root, "chat-1", 2, "a.md"), None);
+    // the turn ends: its start answers for it no more
+    emit_point(&app, &TURN_FINISHED_POINT, &finished(&root, &[]));
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+}
+
+#[test]
+fn a_file_git_converts_between_blob_and_disk_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (dir, root) = baseline_vault(&app);
+    let home = tempfile::tempdir().unwrap();
+    // `* text eol=crlf`: the blob holds LF, the file on disk CRLF, and status calls it clean
+    write(&root, ".gitattributes", "crlf.md text eol=crlf\n");
+    write(&root, "crlf.md", "one\ntwo\n");
+    system_git(&root, home.path(), &["add", "-A"]);
+    system_git(&root, home.path(), &["commit", "-q", "-m", "crlf"]);
+    std::fs::remove_file(root.join("crlf.md")).unwrap();
+    system_git(&root, home.path(), &["checkout", "--", "crlf.md"]);
+    assert_eq!(
+        std::fs::read(root.join("crlf.md")).unwrap(),
+        b"one\r\ntwo\r\n"
+    );
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "crlf.md"), None);
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some(), "a plain file");
+    // `core.autocrlf` converts every file
+    let cfg = root.join(".git/config");
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, format!("{text}[core]\n\tautocrlf = input\n")).unwrap();
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "a.md"), None);
+    drop(dir);
+}
+
+#[test]
+fn skip_worktree_and_assume_unchanged_entries_get_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    let home = tempfile::tempdir().unwrap();
+    write(&root, "hidden.md", "1");
+    write(&root, "assumed.md", "1");
+    system_git(&root, home.path(), &["add", "-A"]);
+    system_git(&root, home.path(), &["commit", "-q", "-m", "more"]);
+    system_git(
+        &root,
+        home.path(),
+        &["update-index", "--skip-worktree", "hidden.md"],
+    );
+    system_git(
+        &root,
+        home.path(),
+        &["update-index", "--assume-unchanged", "assumed.md"],
+    );
+    // edits git is told not to look at
+    write(&root, "hidden.md", "2");
+    write(&root, "assumed.md", "2");
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "hidden.md"), None);
+    assert_eq!(ask(&app, &root, "chat-1", "assumed.md"), None);
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some());
+}
+
+#[test]
+fn a_name_that_differs_only_by_case_or_normalization_is_never_absent() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    write(&root, "Note.md", "committed");
+    write(&root, "caf\u{e9}.md", "composed");
+    start_turn(&app, &root, "chat-1");
+    // another spelling of a committed file is not a file that did not exist
+    assert_eq!(ask(&app, &root, "chat-1", "note.md"), None);
+    assert_eq!(ask(&app, &root, "chat-1", "cafe\u{301}.md"), None);
+    assert_eq!(
+        ask(&app, &root, "chat-1", "Note.md"),
+        Some(Baseline::Bytes(b"committed".to_vec()))
+    );
+    // a genuinely new name is
+    assert_eq!(
+        ask(&app, &root, "chat-1", "fresh.md"),
+        Some(Baseline::Absent)
+    );
+}
+
+#[test]
+fn a_symlink_present_at_the_start_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    std::os::unix::fs::symlink("a.md", root.join("link.md")).unwrap();
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "link.md"), None);
+}
+
+#[test]
+fn a_committed_file_that_grew_past_the_size_limit_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    {
+        let state = app.state::<AppState>().get_or_create("main");
+        state
+            .settings
+            .write()
+            .as_mut()
+            .unwrap()
+            .set_global("git.lfs-threshold-mb", ConfigValue::Number(1.0))
+            .unwrap();
+    }
+    write(&root, "big.md", "small");
+    start_turn(&app, &root, "chat-0");
+    emit_point(
+        &app,
+        &TURN_FINISHED_POINT,
+        &TurnFinished {
+            chat_id: "chat-0".into(),
+            ..finished(&root, &[])
+        },
+    );
+    // over the limit with LFS off: the next commit skips it, so it stays "not in the commit"
+    write(&root, "big.md", &"x".repeat(1_300_000));
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "big.md"), None);
+    assert!(ask(&app, &root, "chat-1", "a.md").is_some());
+}
+
+#[test]
+fn an_lfs_pointer_still_on_disk_gets_no_answer() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    let pointer = crate::git::lfs::Pointer {
+        oid: "a".repeat(64),
+        size: 5,
+    };
+    write(
+        &root,
+        ".gitattributes",
+        "/p.md filter=lfs diff=lfs merge=lfs -text\n",
+    );
+    write(&root, "p.md", &pointer.text());
+    start_turn(&app, &root, "chat-1");
+    assert_eq!(ask(&app, &root, "chat-1", "p.md"), None);
+}
+
+#[test]
+fn what_is_uncommitted_is_read_against_the_commit_it_is_given() {
+    let app = app_with(vec![&Git], &[]);
+    let (_dir, root) = baseline_vault(&app);
+    let repo = crate::git::Repo::open(&root).unwrap().unwrap();
+    let first = repo.head_id_string().unwrap();
+    write(&root, "a.md", "2");
+    crate::git::commit_user(
+        &root,
+        crate::git::message::DEFAULT_TEMPLATE,
+        &crate::git::template_ctx("d"),
+        "d",
+        crate::git::Lfs::OFF,
+    )
+    .unwrap();
+    let repo = crate::git::Repo::open(&root).unwrap().unwrap();
+    let second = repo.head_id_string().unwrap();
+    assert_ne!(first, second);
+    assert!(repo.uncommitted_at(&first).unwrap().contains("a.md"));
+    assert!(!repo.uncommitted_at(&second).unwrap().contains("a.md"));
 }
 
 #[test]

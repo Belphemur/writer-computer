@@ -334,11 +334,20 @@ fn a_provider_skips_a_panicking_or_failed_contributor_and_retracts_a_stopped_one
     assert_eq!(points.ask(&ANSWER, &()), Some("answered"));
     assert!(!is_live(app.handle(), "aa-panicker"));
     wait_stopped(&app, "aa-panicker");
+    // the release retracts right after the stop is observable: allow it a moment under load
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while points.extended_by(ANSWER.id, "aa-panicker") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert!(!points.extended_by(ANSWER.id, "aa-panicker"));
     // a failed contributor is silent at once, then retracted
     fail_for_test(app.handle(), "pt-answerer");
     assert_eq!(points.ask(&ANSWER, &()), None);
     wait_stopped(&app, "pt-answerer");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while points.contributors(ANSWER.id) > 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(points.contributors(ANSWER.id), 0);
     // the owner is not consulted: it may be off and still ask
     write_switch(app.handle(), "pt-owner", false);

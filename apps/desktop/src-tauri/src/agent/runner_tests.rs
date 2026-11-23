@@ -2401,7 +2401,12 @@ fn a_command_changed_file_with_a_vouched_baseline_has_a_diff_and_an_undo() {
     h.sessions
         .points()
         .provide_raw(&api::TURN_BASELINE, "probe-git", move |q| {
-            (q.root == mine && q.path == "notes.txt").then(|| api::Baseline::Text("old\n".into()))
+            (q.root == mine).then(|| {
+                q.paths
+                    .iter()
+                    .map(|p| (p == "notes.txt").then(|| api::Baseline::Bytes(b"old\n".to_vec())))
+                    .collect()
+            })
         });
     h.start(CHAT);
     h.send(CHAT, "run it");
@@ -2434,6 +2439,135 @@ fn a_command_changed_file_with_a_vouched_baseline_has_a_diff_and_an_undo() {
     assert_eq!(out[0].result, RevertResult::Reverted);
     assert_eq!(std::fs::read_to_string(&notes).unwrap(), "old\n");
     h.sessions.points().retract("probe-git");
+}
+
+/// A message queued during a turn starts a turn that no `agent.turn-started` announces: the
+/// baseline recorded for the first turn must not answer for the second (it would diff, and Undo
+/// would wipe, what the first turn did). The question carries the chat's turn sequence, which the
+/// runner advances on every start, so a contributor can tell.
+#[test]
+fn a_queued_second_turn_is_a_new_turn_for_the_baseline_question() {
+    use crate::agent::api;
+    use std::sync::{Arc, Mutex};
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "old\n").unwrap();
+    // turn 2 is the command fixture
+    let derived = std::fs::read_to_string(fixture("subagent-bash"))
+        .unwrap()
+        .replace("__FILE__", &notes.to_string_lossy());
+    std::fs::write(h.fdir.join("derived.jsonl"), derived).unwrap();
+    std::fs::write(
+        h.fdir.join("turns.txt"),
+        format!(
+            "{}\n{}\n",
+            fixture("ok-turn").display(),
+            h.fdir.join("derived.jsonl").display()
+        ),
+    )
+    .unwrap();
+    let started: Arc<Mutex<Vec<u64>>> = Arc::default();
+    let asked: Arc<Mutex<Vec<u64>>> = Arc::default();
+    let (log, mine) = (Arc::clone(&started), h.root.clone());
+    h.sessions
+        .points()
+        .extend_raw(&api::TURN_STARTED, "probe-started", move |a| {
+            if a.root == mine {
+                log.lock().unwrap().push(a.turn);
+            }
+        });
+    // a contributor that, like git, answers only for the turn whose start it recorded
+    let (seen, recorded, mine) = (Arc::clone(&asked), Arc::clone(&started), h.root.clone());
+    h.sessions
+        .points()
+        .provide_raw(&api::TURN_BASELINE, "probe-git", move |q| {
+            (q.root == mine).then(|| {
+                seen.lock().unwrap().push(q.turn);
+                let known = recorded.lock().unwrap().last() == Some(&q.turn);
+                q.paths
+                    .iter()
+                    .map(|_| known.then(|| api::Baseline::Bytes(b"before turn 1\n".to_vec())))
+                    .collect()
+            })
+        });
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    h.send(CHAT, "second"); // queued: runs after the first turn, announced by nobody
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.next(CHAT, "the command's complete input", |e| {
+        matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_bash1")
+    });
+    std::fs::write(&notes, "new\n").unwrap();
+    h.sessions
+        .paths_changed("w", &h.root, vec![notes.clone()], vec![]);
+    let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+        matches!(e, AgentEvent::SessionChanges(_))
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(*started.lock().unwrap(), vec![1], "one announced start");
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![2],
+        "asked about the second turn"
+    );
+    assert!(live.files[0].no_diff, "listed without a diff, as before");
+    assert!(!live.files[0].before_known);
+    h.go();
+    let summary = turn_changes(&mut h);
+    let detail = h
+        .sessions
+        .changes()
+        .detail(CHAT, &summary.turn_id, &h.root)
+        .unwrap();
+    assert_eq!(detail.files[0].undo, UndoState::Unavailable);
+    h.sessions.points().retract("probe-started");
+    h.sessions.points().retract("probe-git");
+}
+
+/// Git off (no contributor of `agent.turn-baseline`), or a contributor with no answer: the file a
+/// command changed keeps today's row, with no diff, counts or Undo.
+#[test]
+fn without_a_baseline_a_command_file_keeps_todays_row() {
+    use crate::agent::api;
+    for contributor in [false, true] {
+        let mut h = Harness::new(&["subagent-bash"], "normal");
+        let notes = h.root.join("notes.txt");
+        std::fs::write(&notes, "old\n").unwrap();
+        h.use_fixture_for("subagent-bash", &notes);
+        if contributor {
+            h.sessions
+                .points()
+                .provide_raw(&api::TURN_BASELINE, "probe-git", |q| {
+                    Some(vec![None; q.paths.len()])
+                });
+        }
+        h.start(CHAT);
+        h.send(CHAT, "run it");
+        h.next(CHAT, "the command's complete input", |e| {
+            matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "toolu_bash1")
+        });
+        std::fs::write(&notes, "new\n").unwrap();
+        h.sessions
+            .paths_changed("w", &h.root, vec![notes.clone()], vec![]);
+        let AgentEvent::SessionChanges(live) = h.next(CHAT, "the live session changes", |e| {
+            matches!(e, AgentEvent::SessionChanges(_))
+        }) else {
+            unreachable!()
+        };
+        let f = &live.files[0];
+        assert_eq!(f.origin, ChangeOrigin::Command);
+        assert!(f.no_diff && !f.before_known && (f.added, f.removed) == (0, 0));
+        h.go();
+        let summary = turn_changes(&mut h);
+        let detail = h
+            .sessions
+            .changes()
+            .detail(CHAT, &summary.turn_id, &h.root)
+            .unwrap();
+        assert_eq!(detail.files[0].undo, UndoState::Unavailable);
+        h.sessions.points().retract("probe-git");
+    }
 }
 
 /// ADR 2026-11-18 (changed notes row): the chat's changed notes are sent live when a sub-agent's

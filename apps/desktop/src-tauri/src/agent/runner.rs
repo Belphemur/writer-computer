@@ -284,6 +284,10 @@ struct Inner {
     /// This chat is between "an idle send decided to start a turn" and "its message is queued":
     /// a second concurrent send sees it and does not announce the same turn again.
     turn_starting: bool,
+    /// The chat's turn sequence: advanced every time a message starts a turn of the CLI
+    /// (`flush_queue`), also one that no `agent.turn-started` announces (a message queued during a
+    /// turn). A contributor of `agent.turn-baseline` answers only for the turn it recorded.
+    turn_seq: u64,
     queue: VecDeque<Outgoing>,
     inflight: Vec<Outgoing>,
     /// Messages written mid-turn (steers and queued lines) that the CLI has not acknowledged yet:
@@ -513,6 +517,7 @@ impl Session {
                 turn_model: None,
                 sub_models: Vec::new(),
                 turn_starting: false,
+                turn_seq: 0,
                 queue: VecDeque::new(),
                 inflight: Vec::new(),
                 unechoed: Vec::new(),
@@ -1040,20 +1045,30 @@ impl Session {
         }
     }
 
+    /// Writer's own writes in the vault (the editor's saves), as the watcher reported them: the
+    /// running turn will not vouch for these files' text from before it (`changes.rs`).
+    pub(crate) fn own_paths_written(&self, own: &[PathBuf]) {
+        self.changes.note_own_writes(&self.chat_id, &self.root, own);
+    }
+
     /// The watcher's changed vault paths (Writer's own writes removed), delivered at `at`: the
     /// files a running shell command of this chat changed join its changes (`changes.rs`).
     pub(crate) fn vault_paths_changed(&self, paths: &[PathBuf], at: Instant) {
         // what the turn-baseline provider (the Git history, when it is on) vouches for; no
         // contributor means no answer at once
-        let baseline = |rel: &str| {
-            self.points.ask(
-                &api::TURN_BASELINE,
-                &api::TurnBaseline {
-                    root: self.root.clone(),
-                    chat_id: self.chat_id.clone(),
-                    path: rel.to_string(),
-                },
-            )
+        let turn = self.inner.lock().turn_seq;
+        let baseline = |rels: &[String]| {
+            self.points
+                .ask(
+                    &api::TURN_BASELINE,
+                    &api::TurnBaseline {
+                        root: self.root.clone(),
+                        chat_id: self.chat_id.clone(),
+                        turn,
+                        paths: rels.to_vec(),
+                    },
+                )
+                .unwrap_or_default()
         };
         if self
             .changes
@@ -1652,6 +1667,8 @@ impl Session {
             None => out.text.clone(),
         };
         g.turn_active = true;
+        g.turn_seq += 1;
+        self.changes.begin_turn(&self.chat_id);
         g.last_activity = Instant::now();
         if g.state == AgentSessionState::Idle || g.state == AgentSessionState::Reconnecting {
             g.state = AgentSessionState::Running;
@@ -1682,11 +1699,12 @@ impl Session {
         // an idle chat's message starts a turn: `agent.turn-started` (may block, no lock held).
         // The decision is made and recorded under the lock, so of two concurrent sends to an
         // idle chat exactly one announces the turn.
-        let starts_turn = {
+        let (starts_turn, turn) = {
             let mut g = self.inner.lock();
             let idle = !g.terminal && !self.is_busy(&g) && !g.turn_starting;
             g.turn_starting |= idle;
-            idle
+            // the number the turn takes when its message is flushed
+            (idle, g.turn_seq + 1)
         };
         if starts_turn {
             self.points.emit(
@@ -1694,6 +1712,7 @@ impl Session {
                 &api::TurnStarted {
                     root: self.root.clone(),
                     chat_id: self.chat_id.clone(),
+                    turn,
                 },
             );
         }

@@ -687,6 +687,27 @@ describe("TurnChangesCard", () => {
     expect(container.textContent).not.toContain("A shell command ran");
   });
 
+  it("reads a vouched before from beforeKnown, not from noDiff", async () => {
+    // before known but the pair too large to diff: still compared, no "listed without" footer
+    const tooBig: TurnChangesSummary["files"][number] = {
+      path: "big.md",
+      status: "modified",
+      added: 0,
+      removed: 0,
+      noDiff: true,
+      origin: "command",
+      beforeKnown: true,
+    };
+    await mount(turn(summaryOf([tooBig], true)));
+    const row = container.querySelector('[data-agent-change-file="big.md"]')!;
+    expect(row.querySelector("[data-agent-change-origin]")!.getAttribute("title")).toContain(
+      "compared with the version from before the turn",
+    );
+    expect(row.textContent).toContain("Modified");
+    expect(row.textContent).not.toContain("Changed");
+    expect(container.textContent).not.toContain("A shell command ran");
+  });
+
   it("a command file with a vouched before keeps the marker and shows counts, a diff and Undo", async () => {
     const compared: TurnChangesSummary["files"][number] = {
       path: "run.md",
@@ -694,6 +715,7 @@ describe("TurnChangesCard", () => {
       added: 1,
       removed: 1,
       origin: "command",
+      beforeKnown: true,
     };
     turnChanges.mockResolvedValue({
       turnId: "t1",

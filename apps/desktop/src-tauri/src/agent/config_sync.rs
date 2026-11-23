@@ -403,10 +403,12 @@ impl Worker {
                 }) => {
                     let external: Vec<PathBuf> =
                         paths.iter().filter(|p| !own.contains(p)).cloned().collect();
+                    let own_paths: Vec<PathBuf> = own.to_vec();
                     for s in shared.all() {
                         if s.label != label || s.root != root {
                             continue;
                         }
+                        s.own_paths_written(&own_paths);
                         s.vault_paths_changed(&external, at);
                         let hit = paths.iter().find_map(|p| affects_chat(p, &s.cwd, &s.root));
                         if let Some(reason) = hit {

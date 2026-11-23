@@ -173,10 +173,13 @@ pub struct Vaults {
     /// The repository at the start of each chat's running or last turn, per vault and chat: what
     /// the agent's `turn-baseline` question is answered from (`git::baseline`). Memory only; a
     /// chat's next turn, its vault closing and `shutdown` drop it.
-    turn_starts: Mutex<HashMap<(PathBuf, String), git::baseline::TurnStart>>,
+    turn_starts: Mutex<HashMap<(PathBuf, String), StoredStart>>,
     /// Repositories `git lfs install --local` was run for (or found done) since the feature started.
     lfs_installed_in: Mutex<std::collections::HashSet<PathBuf>>,
 }
+
+/// A recorded turn start and the agent's turn sequence it belongs to.
+type StoredStart = (u64, Arc<git::baseline::TurnStart>);
 
 /// Counts a commit in progress for [`Vaults::busy`].
 struct Busy<'a>(&'a AtomicUsize);
@@ -712,6 +715,7 @@ pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
     v.turn_starts.lock().remove(&key);
     let labels = v.labels_of(&root);
     let mut vouchable = !labels.is_empty();
+    let first_label = labels.first().cloned();
     for label in labels {
         if active(&root) && !v.turn_running(&label) {
             // an error (no identity, a merge begun, ...) or a sync that holds the repository:
@@ -724,31 +728,48 @@ pub fn turn_started<R: Runtime>(app: &AppHandle<R>, args: &TurnStarted) {
             vault.cadence.turn_started(&args.chat_id, Instant::now())
         });
     }
-    if vouchable && !v.stopped() {
-        if let Some(start) = git::baseline::record(&root) {
-            v.turn_starts.lock().insert(key, start);
+    if let (true, Some(label)) = (vouchable && !v.stopped(), first_label) {
+        let lfs = lfs_of(app, &label, false);
+        // under the repository's write lock: no commit, sync or restore moves the branch or the
+        // files between the commit that was read and the status that was taken
+        let lock = v.write_lock(&root);
+        let _write = lock.lock();
+        if let Some(start) = git::baseline::record(&root, lfs) {
+            v.turn_starts
+                .lock()
+                .insert(key, (args.turn, Arc::new(start)));
         }
     }
 }
 
-/// `agent.turn-baseline`: the text of a file as it was when the chat's turn started, when the
-/// history can vouch for it (`git::baseline::answer`); no answer otherwise.
-pub fn turn_baseline<R: Runtime>(app: &AppHandle<R>, query: &TurnBaseline) -> Option<Baseline> {
+/// `agent.turn-baseline`: the files as they were when the chat's turn `turn` started, those the
+/// history can vouch for (`git::baseline::answer`), positionally; no answer for a turn it did not
+/// record (a message queued during a turn starts one `turn-started` does not announce) and for
+/// anything it cannot vouch for.
+pub fn turn_baseline<R: Runtime>(
+    app: &AppHandle<R>,
+    query: &TurnBaseline,
+) -> Option<Vec<Option<Baseline>>> {
     let v = vaults(app).filter(|v| !v.stopped())?;
     let root = query
         .root
         .canonicalize()
         .unwrap_or_else(|_| query.root.clone());
-    let start = v
-        .turn_starts
-        .lock()
-        .get(&(root.clone(), query.chat_id.clone()))
-        .cloned()?;
+    let start = {
+        let starts = v.turn_starts.lock();
+        let (turn, start) = starts.get(&(root.clone(), query.chat_id.clone()))?;
+        (*turn == query.turn).then(|| Arc::clone(start))?
+    };
     Some(
-        match git::baseline::answer(&root, &start, &query.path, BASELINE_MAX_BYTES)? {
-            git::baseline::Vouched::Text(text) => Baseline::Text(text),
-            git::baseline::Vouched::Absent => Baseline::Absent,
-        },
+        git::baseline::answer(&root, &start, &query.paths, BASELINE_MAX_BYTES)
+            .into_iter()
+            .map(|found| {
+                found.map(|v| match v {
+                    git::baseline::Vouched::Bytes(bytes) => Baseline::Bytes(bytes),
+                    git::baseline::Vouched::Absent => Baseline::Absent,
+                })
+            })
+            .collect(),
     )
 }
 
@@ -772,6 +793,10 @@ pub fn turn_finished<R: Runtime>(app: &AppHandle<R>, args: &TurnFinished) {
         .root
         .canonicalize()
         .unwrap_or_else(|_| args.root.clone());
+    // the turn is over: what it started from answers for it no more
+    v.turn_starts
+        .lock()
+        .remove(&(root.clone(), args.chat_id.clone()));
     for label in v.labels_of(&root) {
         let cfg = config_of(app, &label);
         let commit = (cfg.agent_commits && !args.files.is_empty()).then(|| AgentTurn {
