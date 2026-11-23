@@ -242,8 +242,19 @@ impl Exec {
     }
 
     /// Runs a prepared command to its end, to `timeout` (and the [`Exec::with_deadline`]), or
-    /// until the scope stops: [`crate::process_run::run`].
+    /// until the scope stops: [`crate::process_run::run`]. Every call leaves one line in the log
+    /// ([`log_call`]).
     pub fn run(&self, cmd: Command, timeout: Duration) -> Result<Output, RunError> {
+        self.run_masking(cmd, timeout, &[])
+    }
+
+    /// [`Exec::run`] that also masks `secrets` (a token read for this call) in what it logs.
+    pub fn run_masking(
+        &self,
+        cmd: Command,
+        timeout: Duration,
+        secrets: &[&str],
+    ) -> Result<Output, RunError> {
         let timeout = match self.deadline {
             Some(d) => {
                 let left = d.saturating_duration_since(Instant::now());
@@ -254,7 +265,84 @@ impl Exec {
             }
             None => timeout,
         };
-        run_bounded(&self.spawner, cmd, &RunOptions::new(timeout))
+        let what = describe(&cmd);
+        let started = Instant::now();
+        let result = run_bounded(&self.spawner, cmd, &RunOptions::new(timeout));
+        log_call(&what, started.elapsed(), &result, secrets);
+        result
+    }
+}
+
+/// The most of a failed call's stderr that reaches the log.
+const LOGGED_STDERR: usize = 4096;
+
+/// What a call is named in the log: the program and its subcommand, nothing else (`git fetch`,
+/// `git lfs push`, `gh auth`). Never the arguments: they hold URLs and a vault's paths.
+fn describe(cmd: &Command) -> String {
+    let program = Path::new(cmd.get_program())
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let args: Vec<String> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    // `-c key=value` pairs and options come before the subcommand
+    let mut words = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "-c" {
+            it.next();
+        } else if !a.starts_with('-') {
+            words.push(a.as_str());
+        }
+    }
+    let word = |w: &str| w.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let mut name = program;
+    if let Some(sub) = words.first().filter(|w| word(w)) {
+        name.push(' ');
+        name.push_str(sub);
+        if *sub == "lfs" {
+            if let Some(next) = words.get(1).filter(|w| word(w)) {
+                name.push(' ');
+                name.push_str(next);
+            }
+        }
+    }
+    name
+}
+
+/// One line per call on target `git` (the one Settings > Git shows): `info` with the duration on
+/// success; on a failure `error` for a refused sign-in and `warn` for the rest, with the exit code
+/// and git's stderr (credentials in URLs and `secrets` gone, at most [`LOGGED_STDERR`] bytes, then
+/// the pipeline redacts again). stdout is never logged: it holds what a helper or `gh auth token`
+/// answered.
+fn log_call(what: &str, took: Duration, result: &Result<Output, RunError>, secrets: &[&str]) {
+    let ms = took.as_millis();
+    match result {
+        Ok(out) if out.ok() => tracing::info!(target: "git", "{what} ok in {ms}ms"),
+        Ok(out) => {
+            let code = out.code.map_or("signal".to_string(), |c| c.to_string());
+            let stderr = crate::logging::truncated(
+                &sanitize(&out.stderr, Path::new(""), secrets),
+                LOGGED_STDERR,
+            );
+            let tail = if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            };
+            let message = format!("{what} failed (exit {code}) in {ms}ms{tail}");
+            if classify(out, Path::new(""), &[]).kind == Kind::Auth {
+                tracing::error!(target: "git", "{message}");
+            } else {
+                tracing::warn!(target: "git", "{message}");
+            }
+        }
+        Err(RunError::Timeout) => tracing::warn!(target: "git", "{what} timed out after {ms}ms"),
+        Err(RunError::Io(kind)) => tracing::warn!(target: "git", "{what} could not run: {kind}"),
+        Err(RunError::Absent) => tracing::info!(target: "git", "{what}: program not found"),
+        Err(RunError::Cancelled) => tracing::info!(target: "git", "{what} stopped"),
     }
 }
 
@@ -584,7 +672,11 @@ impl Transport<'_> {
 
     fn run(&self, args: &[&str], timeout: Duration) -> Result<Output, TransportError> {
         self.exec
-            .run(self.exec.git(self.root, self.helper, args), timeout)
+            .run_masking(
+                self.exec.git(self.root, self.helper, args),
+                timeout,
+                &self.secrets(),
+            )
             .map_err(run_error)
     }
 
@@ -684,7 +776,10 @@ impl Transport<'_> {
         let cmd = self
             .exec
             .git_lfs(self.root, self.helper, endpoint.as_deref(), args);
-        let out = self.exec.run(cmd, LFS_TIMEOUT).map_err(run_error)?;
+        let out = self
+            .exec
+            .run_masking(cmd, LFS_TIMEOUT, &self.secrets())
+            .map_err(run_error)?;
         if out.ok() {
             return Ok(());
         }

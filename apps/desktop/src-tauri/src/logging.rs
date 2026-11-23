@@ -11,9 +11,13 @@
 //!   env var `WRITER_LOG` (`error|warn|info|debug|trace|off`) wins over the setting.
 //! - Writing never blocks the caller: events are formatted on the calling thread and handed to
 //!   a worker thread through a bounded channel (lossy when the disk stalls, never blocking).
+//! - Views: [`tail`] reads a target's last lines back and feeds a live subscriber from the writer
+//!   thread, after redaction (a settings page shows its feature's log).
 //! - Everything a line contains is redacted in [`sanitize_line`] right before it is queued, so
 //!   every source (this crate's `log` macros, `tracing`, the frontend bridge, the panic hook)
 //!   gets the same treatment. Logs never leave the machine.
+
+pub mod tail;
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -294,6 +298,9 @@ impl<W: Write> Write for SanitizingWriter<W> {
             .clone();
         let line = sanitize_line(&text, self.pid, home().as_deref(), &roots);
         self.inner.write_all(line.as_bytes())?;
+        // The live feeds of a settings page get the very line the file got: a counter check
+        // when nobody watches, else a target compare and a non-blocking send each.
+        tail::hub().publish(&line, std::time::Instant::now());
         Ok(data.len())
     }
     fn flush(&mut self) -> io::Result<()> {

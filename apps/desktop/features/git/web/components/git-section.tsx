@@ -1,5 +1,5 @@
 // Settings > Git, the short layout of the spec: a status line, the Remote rows (`remote-rows.tsx`),
-// Save versions, Sync (with a remote), Agent turns, and the rest folded under Advanced. Before setup it
+// Save versions, Sync (with a remote), Agent turns, the rest folded under Advanced, and Logs. Before setup it
 // offers the setup choices instead. Text stays terse.
 import { useEffect, useState } from "react";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
@@ -10,6 +10,7 @@ import { formatRelativeTime } from "@/lib/relative-time";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { commitNow, setPaused, setup, stop, type SetupMode } from "../ipc";
 import { LfsRow } from "./lfs-row";
+import { FailureLine, LogsSection, ShowLogs } from "./logs-section";
 import { CARD, defsFor, KEYS, MUTED, ROW } from "./section-parts";
 import { RemoteRows } from "./remote-rows";
 import { BUTTON } from "./sync-parts";
@@ -114,17 +115,16 @@ export function GitSection() {
   return (
     <div className="space-y-6">
       <div className="flex items-baseline justify-between px-1 text-[13px]">
-        <span className="font-medium text-[var(--text-primary)]" data-git-state={summary?.tone}>
-          {summary?.label}
+        <span className="flex items-baseline gap-2">
+          <span className="font-medium text-[var(--text-primary)]" data-git-state={summary?.tone}>
+            {summary?.label}
+          </span>
+          {summary?.tone === "error" && <ShowLogs />}
         </span>
         {last && <span className={MUTED}>Saved {last}</span>}
       </div>
       {status.identityError && <IdentityHelp />}
-      {failure && (
-        <p role="alert" className="px-1 text-[13px]">
-          {failure}
-        </p>
-      )}
+      {failure && <FailureLine message={failure} />}
       <RemoteRows status={status} syncDefs={defsFor(KEYS.syncInterval)} />
       <div className={CARD}>
         <div className={ROW}>
@@ -170,6 +170,7 @@ export function GitSection() {
           </div>
         </div>
       </details>
+      <LogsSection />
       {/* the page re-renders when a setting changes */}
       <span hidden>{String(settings[KEYS.commitAfter])}</span>
     </div>

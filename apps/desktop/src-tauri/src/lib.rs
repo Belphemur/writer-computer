@@ -126,6 +126,7 @@ fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
             commands::plugins::stop_window_work(&handle, &label);
             commands::index::stop_window(&handle, &label);
             commands::ipc::window_gone(&handle, &label);
+            commands::logs::window_gone(&label);
             handle.state::<AppState>().remove(&label);
         }
         _ => {}
@@ -679,6 +680,9 @@ pub fn run() {
             commands::logs::log_info,
             commands::logs::open_log_folder,
             commands::logs::recent_log_errors,
+            commands::logs::log_tail,
+            commands::logs::log_watch,
+            commands::logs::log_unwatch,
             commands::features::features_status,
             commands::features::features_restart_normally,
             commands::features::feature_secret_get,

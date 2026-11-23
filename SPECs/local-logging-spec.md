@@ -56,6 +56,7 @@ Applied by `logging::sanitize_line` on the writer thread to every line:
 - Vault roots become `<vault>`, the home directory (and any `/Users/<x>`, `/home/<x>`) becomes `~`.
 - `sk-...`, GitHub and Slack tokens, AWS key ids, `Bearer ...`, `Authorization: ...`, `api_key=`, `token=`, `password=`, `secret=` style pairs (also inside JSON) and URL userinfo become `[redacted]`; URL query strings become `?[redacted]`.
 - Lines over 16 KB have their strings truncated.
+- Failed `git`, `git-lfs`, `gh` and `fj` calls log their stderr (at most 4 KiB, credentials in URLs and the token read for the call masked, then these rules) on target `git`, named by program and subcommand only (`git fetch`, `gh auth`), never by arguments. It may hold remote host and repository names (already in the remote URL Writer logs). The credential helper's request and answer, and every call's stdout, are never logged (`git/log_tests.rs`).
 - Nothing logs note contents, `secretStorage` values or clipboard text; callers pass error text, not data. A plugin that prints a note in its own `console.error` would have that text capped but not recognized: this is a known limit.
 
 ## UX
@@ -63,10 +64,12 @@ Applied by `logging::sanitize_line` on the writer thread to every line:
 - Command palette: "Open log folder" and "Copy recent errors" (last 200 error/warn lines, redacted, one line each).
 - Settings > Logs: the log folder path, the same two buttons, and the level setting. Failed plugins in Settings > Manage plugins say "details: Settings, Logs".
 - No new capability permission: opening the folder uses the opener plugin from Rust.
+- Log view (ADR 2026-11-23): the core component `src/components/log-view.tsx` shows one target's lines, today's last 200 then live, in a settings section (Settings > Git > Logs is the first; the next feature adds its target to `logging::tail::WATCHABLE_TARGETS`). Time, level and message per line, monospace, errors in `--danger`, warnings in `--warning`; All / Errors, Copy (the visible lines), Open log folder; pinned to the end unless scrolled up; no feed while the section is closed.
+- Commands `log_tail { target, limit <= 500 }` (the last 4 MiB of today's `writer.*.log`, newest last), `log_watch { target }` (returns an id; lines arrive as the `log:line` event `{ id, line }` on the asking window) and `log_unwatch { id }`, only for allowlisted targets. The feed is fed by the writer thread after `sanitize_line` (`logging/tail.rs`: a counter check when nobody watches, else a target compare and a non-blocking `try_send`), so the view shows exactly what the file holds. At most 50 lines per second per feed, then a "n lines skipped" line; at most 8 feeds per window; feeds end on `log_unwatch`, when the section closes and when the window is destroyed.
 
 ## Tests
 
-Rust (`logging::tests`, `commands::logs::tests`): path and secret redaction, JSON validity after truncation, level resolution and runtime reload, file naming, retention of 3 files per prefix, concurrent writers (8 threads) produce whole lines, 50k events do not block with a dead disk, `log` crate bridge, recent-errors merge, panic description, frontend entry shape and rate limiter. Frontend (`tests/logger.test.ts`, `plugin-error-logging.test.ts`, `logs-section.test.tsx`, `command-registry.test.ts`): batching, dedupe, caps, rate limit, handler wiring, IPC failure logging, plugin phases, the Settings block and palette commands.
+Rust (`logging::tests`, `logging::tail::tests` (tail bounded and target-only, feeds, rate cap, lifetime), `commands::logs::tests`, `git::log_tests`): path and secret redaction, JSON validity after truncation, level resolution and runtime reload, file naming, retention of 3 files per prefix, concurrent writers (8 threads) produce whole lines, 50k events do not block with a dead disk, `log` crate bridge, recent-errors merge, panic description, frontend entry shape and rate limiter. Frontend (`tests/logger.test.ts`, `plugin-error-logging.test.ts`, `logs-section.test.tsx`, `command-registry.test.ts`, `log-view.test.tsx`, `logs-ipc.test.ts`): batching, dedupe, caps, rate limit, handler wiring, IPC failure logging, plugin phases, the Settings block and palette commands.
 
 ## Not verified
 

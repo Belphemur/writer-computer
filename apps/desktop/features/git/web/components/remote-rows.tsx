@@ -23,6 +23,7 @@ import {
 } from "../ipc";
 import { useGitStatus } from "../lib/status-store";
 import { ForgeSignInRows, forgeUsable, SignInSteps } from "./forge-rows";
+import { FailureLine } from "./logs-section";
 import { BUTTON, lastSyncLabel, SyncError } from "./sync-parts";
 import type { SettingDef } from "@/lib/settings-schema";
 
@@ -249,12 +250,8 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
           </>
         )}
       </div>
-      <SyncError />
-      {failure && (
-        <p role="alert" className="px-1 text-[13px]">
-          {failure}
-        </p>
-      )}
+      <SyncError showLogs />
+      {failure && <FailureLine message={failure} />}
       {linked && <SettingRows defs={syncDefs} />}
     </>
   );

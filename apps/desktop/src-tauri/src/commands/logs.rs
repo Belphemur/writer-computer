@@ -5,10 +5,12 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 use tauri_plugin_opener::OpenerExt;
 
 use super::blocking;
 use crate::error::AppError;
+use crate::logging::tail::{self, LogLine};
 use crate::logging::{self, truncated};
 
 const MAX_BATCH: usize = 100;
@@ -176,6 +178,81 @@ pub async fn recent_log_errors(limit: Option<usize>) -> Result<Vec<String>, AppE
     .await
 }
 
+/// The event a live feed emits to the window that opened it.
+const LINE_EVENT: &str = "log:line";
+
+fn watchable(target: &str) -> Result<(), AppError> {
+    if tail::watchable(target) {
+        Ok(())
+    } else {
+        Err(AppError::Refused(format!("No log view for {target}")))
+    }
+}
+
+/// The last `limit` (at most 500) redacted lines of `target` from today's app log, oldest first.
+#[tauri::command]
+pub async fn log_tail(target: String, limit: Option<usize>) -> Result<Vec<LogLine>, AppError> {
+    watchable(&target)?;
+    let limit = limit.unwrap_or(200);
+    blocking(move || {
+        let dir = logging::log_dir().ok_or_else(|| AppError::NotFound("log folder".into()))?;
+        Ok(tail::tail(&dir, &target, limit))
+    })
+    .await
+}
+
+#[derive(Serialize, Clone)]
+struct LinePayload {
+    /// The feed the line belongs to (`log_watch`'s answer): a window may hold several.
+    id: u64,
+    line: LogLine,
+}
+
+/// Opens a live feed of `target`: each new redacted line reaches the asking window as a
+/// `log:line` event `{ id, line }`, at most 50 a second. Returns the feed's id.
+#[tauri::command]
+pub async fn log_watch(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    target: String,
+) -> Result<u64, AppError> {
+    watchable(&target)?;
+    let label = webview.label().to_owned();
+    let (id, rx) = tail::hub()
+        .open(&label, &target)
+        .ok_or_else(|| AppError::Refused("Too many log views are open".into()))?;
+    // The pipeline's writer thread only queues (never blocks); this thread does the emitting and
+    // ends when the feed is closed (the sender drops).
+    let spawned = std::thread::Builder::new()
+        .name("log-feed".into())
+        .spawn(move || {
+            for line in rx {
+                if app
+                    .emit_to(&label, LINE_EVENT, LinePayload { id, line })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        tail::hub().close(webview.label(), id);
+        return Err(AppError::Io(e.to_string()));
+    }
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn log_unwatch(webview: tauri::Webview, id: u64) -> Result<(), AppError> {
+    tail::hub().close(webview.label(), id);
+    Ok(())
+}
+
+/// A window is gone: its feeds end.
+pub fn window_gone(label: &str) {
+    tail::hub().close_owner(label);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +308,46 @@ mod tests {
         assert_eq!(lines[0]["fields"]["window"], "w-1");
         assert!(!lines[0].to_string().contains("abc12345"));
         assert!(lines[1]["fields"]["message"].as_str().unwrap().len() < 4100);
+    }
+
+    #[test]
+    fn a_feed_through_the_real_pipeline_gets_redacted_lines_of_its_target_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let built = logging::build(
+            tmp.path(),
+            "writer",
+            tracing::level_filters::LevelFilter::INFO,
+        )
+        .unwrap();
+        let (id, rx) = tail::hub().open("feed-test", "feed-test-target").unwrap();
+        tracing::dispatcher::with_default(&built.dispatch, || {
+            tracing::info!(target: "somewhere-else", "not for the feed");
+            tracing::warn!(
+                target: "feed-test-target",
+                "failed https://me:hunter2pw@host.test/r.git token=abcd1234efgh"
+            );
+        });
+        let line = rx.recv_timeout(Duration::from_secs(30)).unwrap();
+        assert_eq!(line.level, "warn");
+        assert!(
+            line.message.contains("https://[redacted]@host.test"),
+            "{line:?}"
+        );
+        assert!(!line.message.contains("hunter2pw") && !line.message.contains("abcd1234"));
+        assert!(rx.try_recv().is_err());
+        drop(built);
+        // the feed carries what the file has
+        let text = logging_files(tmp.path());
+        assert!(!text.contains("hunter2pw"));
+        assert!(tail::hub().close("feed-test", id));
+        window_gone("feed-test");
+    }
+
+    #[test]
+    fn only_allowlisted_targets_have_a_view() {
+        assert!(watchable("git").is_ok());
+        assert!(watchable("frontend").is_err());
+        assert!(watchable("panic").is_err());
     }
 
     fn logging_files(dir: &std::path::Path) -> String {

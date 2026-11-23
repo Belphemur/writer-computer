@@ -178,7 +178,12 @@ Agent turns     [✓] Own version per turn
    Commit message     {{notes}}
    Large files (LFS)  [ ] over [100] MB
    Ignored            [Edit .gitignore block]
+▸ Logs
+   [All] [Errors]            [Copy] [Open log folder]
+   14:03:21 ERROR git fetch failed (exit 128): fatal: Authentication failed for ...
 ```
+
+Logs is a collapsed section that mounts the core log view for target `git` (today's lines, then live, errors red; no feed while collapsed). Every error (the status line, the sync error, a failed sign-in step, an action's failure) carries "Show logs", which opens the section at the latest error. Every `git`, `git-lfs`, `gh` and `fj` call logs one line on target `git` (program and subcommand, duration; on failure the exit code and stderr, redacted, at most 4 KiB; never arguments, never a helper's answer). Spec: `SPECs/local-logging-spec.md` "UX".
 
 Without a remote the Remote row reads "None" with "Add a remote", and "Sync" is hidden. Before setup the page shows the four setup choices (below) instead.
 

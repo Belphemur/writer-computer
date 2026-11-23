@@ -30,6 +30,8 @@ pub mod ignore;
 pub mod lfs;
 #[cfg(test)]
 mod lfs_tests;
+#[cfg(test)]
+mod log_tests;
 pub mod merge;
 pub mod message;
 pub mod plugin_scan;

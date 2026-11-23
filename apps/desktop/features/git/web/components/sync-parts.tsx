@@ -6,6 +6,7 @@ import { linkHandlers } from "@/lib/link-activation";
 import { describeError, logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { conflictTake, dismissNotices, pluginDecision } from "../ipc";
+import { ShowLogs } from "./logs-section";
 import { openMerge } from "../lib/resolve-conflicts";
 import { fileLabel } from "../lib/state";
 import { useGitStatus } from "../lib/status-store";
@@ -13,8 +14,9 @@ import { useGitStatus } from "../lib/status-store";
 export const BUTTON =
   "rounded-md border border-[var(--border-color)] px-2.5 py-1 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-subtle)] focus-visible:bg-[var(--surface-subtle)] focus-visible:outline-none disabled:opacity-50";
 
-/** "Push rejected: authentication failed" with "Details", which copies the sanitized output. */
-export function SyncError() {
+/** "Push rejected: authentication failed" with "Details", which copies the sanitized output, and
+ *  "Show logs" where the Logs section is (Settings). */
+export function SyncError({ showLogs = false }: { showLogs?: boolean }) {
   const failure = useGitStatus((s) => s.status?.syncError ?? null);
   const [copied, setCopied] = useState(false);
   if (!failure) return null;
@@ -35,6 +37,7 @@ export function SyncError() {
           {copied ? "Copied" : "Details"}
         </button>
       )}
+      {showLogs && <ShowLogs />}
     </div>
   );
 }

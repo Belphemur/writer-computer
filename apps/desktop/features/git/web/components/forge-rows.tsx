@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { openExternal } from "@/lib/link-activation";
 import type { ForgeRow, GitStatus, SignInResult } from "../ipc";
+import { ShowLogs } from "./logs-section";
 import { BUTTON } from "./sync-parts";
 
 const ROW = "flex items-center justify-between gap-4 px-4 py-3 text-[13px]";
@@ -79,7 +80,7 @@ const INPUT =
 
 /** What "Sign in with ..." did, step by step; the first failure is the last step shown, the rest
  *  wait. A taken name offers "Link existing <name>" or another name. Every step carries its
- *  `kind`, so a "Show logs" button next to a failed one is a single line here. */
+ *  `kind`; a failed one carries "Show logs". */
 export function SignInSteps({
   result,
   busy,
@@ -103,11 +104,14 @@ export function SignInSteps({
             className="flex items-baseline justify-between gap-4"
           >
             <span>{STEP_LABELS[step.id] ?? step.id}</span>
-            <span
-              role={step.state === "failed" ? "alert" : undefined}
-              className={step.state === "pending" ? MUTED : undefined}
-            >
-              {step.state === "pending" ? "Waiting" : step.line}
+            <span className="flex items-baseline gap-2">
+              <span
+                role={step.state === "failed" ? "alert" : undefined}
+                className={step.state === "pending" ? MUTED : undefined}
+              >
+                {step.state === "pending" ? "Waiting" : step.line}
+              </span>
+              {step.state === "failed" && <ShowLogs />}
             </span>
           </li>
         ))}
