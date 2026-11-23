@@ -1,4 +1,6 @@
 pub mod agent;
+#[cfg(target_os = "macos")]
+mod app_menu;
 pub mod attachments;
 pub mod bases;
 pub mod cli;
@@ -7,7 +9,6 @@ pub mod code_files;
 mod code_files_tests;
 mod commands;
 mod config;
-#[cfg(target_os = "macos")]
 mod dock_menu;
 pub mod dql;
 pub mod dropped;
@@ -28,6 +29,7 @@ mod macos;
 pub mod managed_skills;
 pub mod markdown_mask;
 pub mod open_target;
+pub mod platform;
 mod plugin_consent;
 mod plugin_env;
 mod plugin_home_files;
@@ -60,15 +62,15 @@ use state::AppState;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use tauri::menu::MenuItem;
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
 use tauri::{DragDropEvent, Emitter, Manager, PhysicalPosition, WebviewWindow, WindowEvent};
 
 #[cfg(target_os = "macos")]
-const CLI_MENU_INSTALL_LABEL: &str = "Install 'writer' Command Line Tool…";
-#[cfg(target_os = "macos")]
-const CLI_MENU_UNINSTALL_LABEL: &str = "Uninstall 'writer' Command Line Tool…";
+use app_menu::{
+    CLI_INSTALL_LABEL_MACOS as CLI_MENU_INSTALL_LABEL,
+    CLI_UNINSTALL_LABEL_MACOS as CLI_MENU_UNINSTALL_LABEL,
+};
 
 #[cfg(target_os = "macos")]
 struct CliMenuItem(MenuItem<tauri::Wry>);
@@ -102,13 +104,13 @@ fn reveal_window(window: &WebviewWindow) {
 fn attach_window_handlers(app: &tauri::AppHandle, window: &WebviewWindow) {
     let label = window.label().to_string();
     let handle = app.clone();
-    #[cfg(target_os = "macos")]
     let this_window = window.clone();
     window.on_window_event(move |event| match event {
-        // macOS only: elsewhere there is no Dock to bring a hidden window
-        // back, so a close must stay a close.
-        #[cfg(target_os = "macos")]
-        WindowEvent::CloseRequested { api, .. } if label == MAIN_WINDOW_LABEL => {
+        // macOS only (`Os::hides_window_on_close`): elsewhere there is no Dock to bring a
+        // hidden window back, so a close stays a close and the last one quits.
+        WindowEvent::CloseRequested { api, .. }
+            if platform::Os::current().hides_window_on_close(&label) =>
+        {
             api.prevent_close();
             let _ = this_window.hide();
         }
@@ -314,66 +316,28 @@ fn position_new_window(app: &tauri::AppHandle, window: &WebviewWindow) {
     let _ = window.set_position(PhysicalPosition::new(x, y));
 }
 
-/// Build the native menu bar and wire updater menu events. macOS only needs a
-/// menu at all because of the auto-updater; the rest of the items are standard
-/// predefined actions so nothing has to be rewired on the frontend.
+/// Build the app menu from the one definition (`app_menu`) and wire its events: the native menu
+/// bar on macOS, the popup menu behind the chrome bar's menu button elsewhere (no menu-bar row).
 #[cfg(desktop)]
 fn install_app_menu(
     app: &tauri::AppHandle,
     app_data_dir: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let check_item = MenuItemBuilder::with_id("updater.check", "Check for Updates…").build(app)?;
+    let os = platform::Os::current();
+    let mut built = app_menu::build(app, os)?;
+    let check_item = built
+        .items
+        .remove(app_menu::UPDATER_CHECK_ID)
+        .expect("the menu definition has the updater item");
 
-    let preferences_item = MenuItemBuilder::with_id("preferences.open", "Preferences…")
-        .accelerator("CmdOrCtrl+,")
-        .build(app)?;
-
-    #[cfg(target_os = "macos")]
-    let cli_item = MenuItemBuilder::with_id("cli.toggle", CLI_MENU_INSTALL_LABEL).build(app)?;
-
-    let app_submenu = {
-        let b = SubmenuBuilder::new(app, "Writer")
-            .item(&PredefinedMenuItem::about(app, Some("About Writer"), None)?)
-            .separator()
-            .item(&check_item)
-            .separator()
-            .item(&preferences_item);
-        #[cfg(target_os = "macos")]
-        let b = b.item(&cli_item);
-        b.separator()
-            .item(&PredefinedMenuItem::services(app, None)?)
-            .separator()
-            .item(&PredefinedMenuItem::hide(app, None)?)
-            .item(&PredefinedMenuItem::hide_others(app, None)?)
-            .item(&PredefinedMenuItem::show_all(app, None)?)
-            .separator()
-            .item(&PredefinedMenuItem::quit(app, None)?)
-            .build()?
-    };
-
-    let edit_submenu = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
-        .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
-        .build()?;
-
-    let window_submenu = SubmenuBuilder::new(app, "Window")
-        .minimize()
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
-        .item(&PredefinedMenuItem::close_window(app, None)?)
-        .build()?;
-
-    let menu = MenuBuilder::new(app)
-        .item(&app_submenu)
-        .item(&edit_submenu)
-        .item(&window_submenu)
-        .build()?;
-
-    app.set_menu(menu)?;
+    match os {
+        platform::Os::MacOs => {
+            app.set_menu(built.menu.clone())?;
+        }
+        platform::Os::Linux => {
+            app.manage(app_menu::PopupMenu(built.menu.clone()));
+        }
+    }
 
     let menu_items = updater::UpdaterMenuItems { check: check_item };
     app.manage(updater::UpdaterManager::new(menu_items, app_data_dir));
@@ -387,16 +351,37 @@ fn install_app_menu(
     )));
 
     #[cfg(target_os = "macos")]
-    {
+    if let Some(cli_item) = built.items.remove(app_menu::CLI_ID) {
         app.manage(CliMenuItem(cli_item));
         refresh_cli_menu(app);
     }
 
     app.on_menu_event(|app, event| match event.id().0.as_str() {
-        "updater.check" => updater::start_check(app.clone(), true),
-        "preferences.open" => emit_to_focused_window(app, "menu:open-preferences"),
+        app_menu::UPDATER_CHECK_ID => updater::start_check(app.clone(), true),
+        app_menu::PREFERENCES_ID => emit_to_focused_window(app, "menu:open-preferences"),
         #[cfg(target_os = "macos")]
-        "cli.toggle" => run_cli_toggle(app.clone()),
+        app_menu::CLI_ID => run_cli_toggle(app.clone()),
+        // Linux: the install command belongs to the CLI install lane; the web side listens.
+        #[cfg(not(target_os = "macos"))]
+        app_menu::CLI_ID => emit_to_focused_window(app, "menu:install-cli"),
+        // Ordinary items standing in for predefined ones GTK lacks (see `app_menu`). Quit goes
+        // through `exit`, the same path as the macOS quit item.
+        app_menu::QUIT_ID => app.exit(0),
+        app_menu::MINIMIZE_ID => {
+            if let Some(w) = focused_window(app) {
+                let _ = w.minimize();
+            }
+        }
+        app_menu::FULLSCREEN_ID => {
+            if let Some(w) = focused_window(app) {
+                let _ = w.set_fullscreen(!w.is_fullscreen().unwrap_or(false));
+            }
+        }
+        app_menu::CLOSE_WINDOW_ID => {
+            if let Some(w) = focused_window(app) {
+                let _ = w.close();
+            }
+        }
         _ => {}
     });
 
@@ -411,9 +396,9 @@ fn install_app_menu(
 /// from `is_focused`): the main window if visible, else any visible window.
 /// `webview_windows()` returns a `HashMap` whose iteration order is
 /// non-deterministic, so the explicit main-window preference matters.
-fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
+fn focused_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
     let windows = app.webview_windows();
-    let target = windows
+    windows
         .values()
         .find(|w| w.is_focused().unwrap_or(false))
         .or_else(|| {
@@ -421,8 +406,12 @@ fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
                 .get(MAIN_WINDOW_LABEL)
                 .filter(|w| w.is_visible().unwrap_or(false))
         })
-        .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)));
-    if let Some(window) = target {
+        .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
+        .cloned()
+}
+
+fn emit_to_focused_window(app: &tauri::AppHandle, event: &str) {
+    if let Some(window) = focused_window(app) {
         let _ = app.emit_to(window.label(), event, ());
     }
 }
@@ -680,6 +669,7 @@ pub fn run() {
         })
         // The plugin host's commands are gated by the `obsidian-host` feature (switch, failure).
         .invoke_handler(features::obsidian_host::gated(tauri::generate_handler![
+            app_menu::app_menu_popup,
             commands::ipc::ipc_ready,
             commands::ipc::ipc_reply,
             commands::logs::log_event,

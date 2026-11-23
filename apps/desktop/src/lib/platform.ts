@@ -8,3 +8,43 @@ export function detectPlatform(): Platform {
   if (/Win/i.test(ua)) return "windows";
   return "linux";
 }
+
+/** Room the window chrome reserves for what the platform draws in the title row, in CSS px. */
+export type ChromeInset = { start: number; end: number };
+
+/** macOS: the traffic lights sit at the left. */
+const TRAFFIC_LIGHT_INSET = 92;
+/** Linux: the menu button at the left (12px edge + 32px button + 8px gap). */
+const MENU_BUTTON_INSET = 52;
+/** Linux: Writer's minimize, maximize and close at the right (3 x 36px + 8px edge). */
+const WINDOW_CONTROLS_INSET = 116;
+
+/** Whether Writer draws its own minimize, maximize and close: Linux without the desktop's frame. */
+export function drawsWindowControls(
+  platform: Platform = detectPlatform(),
+  nativeDecorations = false,
+): boolean {
+  return platform === "linux" && !nativeDecorations;
+}
+
+/** The one source of the chrome inset (ADR 2026-11-20): the layouts and the tab strip read it, so
+ *  no component hard-codes a platform's gap. */
+export function chromeInset(
+  platform: Platform = detectPlatform(),
+  nativeDecorations = false,
+): ChromeInset {
+  if (platform === "macos") return { start: TRAFFIC_LIGHT_INSET, end: 0 };
+  if (platform === "linux") {
+    return {
+      start: MENU_BUTTON_INSET,
+      end: drawsWindowControls(platform, nativeDecorations) ? WINDOW_CONTROLS_INSET : 0,
+    };
+  }
+  return { start: 0, end: 0 };
+}
+
+/** Marks the root with the platform once, so CSS can branch on it (`:root[data-platform="linux"]`). */
+export function installPlatformAttribute(platform: Platform = detectPlatform()) {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-platform", platform);
+}

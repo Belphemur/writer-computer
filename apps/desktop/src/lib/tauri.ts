@@ -416,6 +416,33 @@ export function closeWindow(): Promise<void> {
   return getCurrentWindow().close();
 }
 
+export function minimizeWindow(): Promise<void> {
+  return getCurrentWindow().minimize();
+}
+
+export function toggleMaximizeWindow(): Promise<void> {
+  return getCurrentWindow().toggleMaximize();
+}
+
+export function isWindowMaximized(): Promise<boolean> {
+  return getCurrentWindow().isMaximized();
+}
+
+/** Calls `handler` on every resize of this window; resolves to the unsubscribe function. */
+export function onWindowResized(handler: () => void): Promise<() => void> {
+  return getCurrentWindow().onResized(handler);
+}
+
+/** The desktop's own title bar and buttons on or off (Linux, setting `appearance.native-decorations`). */
+export function setWindowDecorations(decorated: boolean): Promise<void> {
+  return getCurrentWindow().setDecorations(decorated);
+}
+
+/** Open the app menu at the pointer (Linux; `app_menu::app_menu_popup`). */
+export function openAppMenu(): Promise<void> {
+  return invoke("app_menu_popup");
+}
+
 // Image commands (spec: SPECs/image-insertion-spec.md)
 export interface AttachmentSaved {
   /** Vault-relative (note-relative in a standalone window). */

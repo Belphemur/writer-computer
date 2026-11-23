@@ -3,12 +3,15 @@ import { Sidebar } from "./sidebar";
 import { EditorArea } from "./editor-area";
 import { EditorTabs } from "./editor-area/editor-tabs";
 import { SidebarToggleButton } from "./sidebar/sidebar-toggle-button";
+import { AppMenuButton } from "./app-menu-button";
+import { WindowControls } from "./window-controls";
 import { CompactFileLayout } from "./compact-file-layout";
 import { WelcomeScreen } from "./welcome";
 import { DockPane } from "./dock-pane";
 import { FeatureHealthNotices } from "./feature-health-notices";
 import { useDockWidth, useExclusiveDocks, useOpenDockId } from "@/hooks/use-docks";
 import { FeatureSlot } from "./feature-slot";
+import { useChromeInset } from "@/hooks/use-chrome-frame";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useWorkspaceChromeMode, useWorkspaceRoot } from "@/hooks/use-workspace";
 import { resolveAppView } from "@/lib/app-view";
@@ -43,7 +46,9 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
     clampSidebarWidth(sidebarWidth, maxSidebarWidth),
   );
   const draftSidebarWidthRef = useRef(draftSidebarWidth);
-  const tabChromeLeft = isSidebarCollapsed ? 132 : draftSidebarWidth + 12;
+  const inset = useChromeInset();
+  // Collapsed: past the platform's controls and the sidebar toggle (28px + 12px gap).
+  const tabChromeLeft = isSidebarCollapsed ? inset.start + 40 : draftSidebarWidth + 12;
 
   const setClampedSidebarWidth = useCallback(
     (nextWidth: number) => {
@@ -137,9 +142,10 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
         className="pointer-events-none absolute left-0 top-0 z-50 flex items-center"
         style={{
           height: "var(--chrome-bar-height)",
-          padding: "var(--chrome-control-padding) 12px var(--chrome-control-padding) 92px",
+          padding: `var(--chrome-control-padding) 12px var(--chrome-control-padding) ${inset.start}px`,
         }}
       >
+        <AppMenuButton />
         <SidebarToggleButton />
       </div>
       {!showWelcome && (
@@ -147,8 +153,9 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
           className="pointer-events-none absolute top-0 z-40"
           style={{
             left: tabChromeLeft,
-            // A dock is a full-height column: the tab strip ends at its left edge.
-            right: dockInset + 12,
+            // A dock is a full-height column: the tab strip ends at its left edge. With no dock
+            // it ends before the window controls.
+            right: dockInset ? dockInset + 12 : 12 + inset.end,
             transition: isSidebarDragging ? "none" : "left 140ms ease-out",
           }}
         >
@@ -187,6 +194,7 @@ function WorkspaceLayout({ showWelcome }: { showWelcome: boolean }) {
           {dockId ? <DockPane id={dockId} /> : null}
         </div>
       </div>
+      <WindowControls />
       <FeatureHealthNotices />
     </div>
   );

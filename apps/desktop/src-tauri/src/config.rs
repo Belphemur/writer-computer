@@ -250,6 +250,9 @@ pub struct SettingDef {
     pub normalize: Option<SettingNormalization>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<SettingScope>,
+    /// `"linux"`: the setting only applies there, so Settings lists it on that OS only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     pub default: ConfigValue,
 }
 
@@ -1068,6 +1071,22 @@ mod tests {
         assert_eq!(
             settings.get("editor.font-size"),
             Some(&ConfigValue::Number(20.0))
+        );
+    }
+
+    #[test]
+    fn native_decorations_is_a_linux_only_global_setting_off_by_default() {
+        let def = settings_schema()
+            .into_iter()
+            .find(|d| d.key == "appearance.native-decorations")
+            .expect("the native decorations setting is in the schema");
+        assert_eq!(def.value_type, "boolean");
+        assert_eq!(def.platform.as_deref(), Some("linux"));
+        assert_eq!(def.scope, Some(SettingScope::Global));
+        assert_eq!(def.default, ConfigValue::Bool(false));
+        assert_eq!(
+            default_settings().get("appearance.native-decorations"),
+            Some(&ConfigValue::Bool(false))
         );
     }
 

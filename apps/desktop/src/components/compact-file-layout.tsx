@@ -9,6 +9,9 @@ import {
   useState,
 } from "react";
 import { EditorArea } from "./editor-area";
+import { AppMenuButton } from "./app-menu-button";
+import { WindowControls } from "./window-controls";
+import { useChromeInset } from "@/hooks/use-chrome-frame";
 import { CompactRecentsList } from "./compact-recents-list";
 import { ScrollFade } from "@/components/scroll-fade";
 import {
@@ -52,6 +55,7 @@ interface PickerFrameGeometry {
 // hover, focus, metrics) with a functional-updater bail-out; a reducer would not collapse renders.
 // eslint-disable-next-line react-doctor/no-giant-component, react-doctor/prefer-useReducer
 export function CompactFileLayout() {
+  const inset = useChromeInset();
   const activeFilePath = useActiveFilePath();
   const openFiles = useOpenFiles();
   const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
@@ -325,9 +329,10 @@ export function CompactFileLayout() {
         className="pointer-events-none absolute left-0 top-0 z-50 flex items-center"
         style={{
           height: "var(--chrome-bar-height)",
-          padding: "var(--chrome-control-padding) 12px var(--chrome-control-padding) 92px",
+          padding: `var(--chrome-control-padding) 12px var(--chrome-control-padding) ${inset.start}px`,
         }}
       >
+        <AppMenuButton />
         <CompactNavControls />
       </div>
       <div
@@ -439,6 +444,7 @@ export function CompactFileLayout() {
       <div className="relative h-full min-w-0 bg-bg">
         <EditorArea showFooter={false} />
       </div>
+      <WindowControls />
     </div>
   );
 }

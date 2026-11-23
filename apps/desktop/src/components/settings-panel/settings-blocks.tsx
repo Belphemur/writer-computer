@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { detectPlatform } from "@/lib/platform";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import type { SectionBlock, SettingsSection } from "./settings-sections";
 import { SettingRows } from "./setting-rows";
@@ -16,7 +17,10 @@ export function CategoryBlock({
   block: BlockOf<"category">;
   hideTitle: boolean;
 }) {
-  const defs = SETTINGS_SCHEMA.filter((def) => def.category === block.category);
+  const platform = detectPlatform();
+  const defs = SETTINGS_SCHEMA.filter(
+    (def) => def.category === block.category && (!def.platform || def.platform === platform),
+  );
   if (defs.length === 0) return null;
   return (
     <section className="mb-10" data-settings-category={block.category}>

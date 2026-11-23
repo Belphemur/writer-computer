@@ -945,3 +945,18 @@ button.agent-pill:hover {
 .agent-composer-editor[data-disabled] {
   opacity: 0.6;
 }
+
+/* Linux: opaque, no translucency (see `lib/theme.ts`): the window has no vibrancy behind it, so
+   blurring what is under a floating surface only costs paint time. */
+:root[data-platform="linux"] {
+  --bg-opacity: 1;
+}
+
+:root[data-platform="linux"] .surface-card,
+:root[data-platform="linux"] [cmdk-dialog],
+:root[data-platform="linux"] .modal-backdrop,
+:root[data-platform="linux"] .compact-picker-card-surface,
+:root[data-platform="linux"] .cm-tooltip.cm-tooltip-autocomplete {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

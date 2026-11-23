@@ -1,4 +1,5 @@
 import projectColors from "@shared/project-colors.json";
+import { detectPlatform } from "./platform";
 import {
   getPrimaryDefs,
   SETTINGS_SCHEMA,
@@ -32,6 +33,8 @@ function resolveMode(preference: ThemePreference): ThemeMode {
  *  than as a 1:1 cssVar binding. */
 const DERIVED_PRIMARIES: Partial<Record<PrimarySuffix, (v: unknown) => [string, string]>> = {
   translucent: (v) => {
+    // Linux windows are opaque (no vibrancy, and X11 without a compositor paints black).
+    if (detectPlatform() === "linux") return ["--bg-opacity", "1"];
     const t = clamp(Number(v) || 0, 0, 100);
     return ["--bg-opacity", String(1 - (t / 100) * 0.95)];
   },

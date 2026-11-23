@@ -7,6 +7,7 @@ import { WindowTitle } from "./components/window-title";
 import { useIsStartupResolved } from "./hooks/use-workspace";
 import { useFileWatcher } from "./hooks/use-file-watcher";
 import { useIpcRequests } from "./hooks/use-ipc-requests";
+import { useNativeDecorations } from "./hooks/use-chrome-frame";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useMenuEvents } from "./hooks/use-menu-events";
 import { useOpenDrop } from "./hooks/use-open-drop";
@@ -21,6 +22,7 @@ function App() {
   useFileWatcher();
   useKeyboardShortcuts();
   useMenuEvents();
+  useNativeDecorations();
   useOpenDrop();
   useIpcRequests(isStartupResolved);
 

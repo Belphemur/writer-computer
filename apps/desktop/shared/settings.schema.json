@@ -97,6 +97,16 @@
       "default": "system"
     },
     {
+      "key": "appearance.native-decorations",
+      "label": "Native Window Frame",
+      "description": "Use the desktop's own title bar and window buttons (for tiling window managers). Takes effect at once.",
+      "category": "Appearance",
+      "type": "boolean",
+      "platform": "linux",
+      "scope": "global",
+      "default": false
+    },
+    {
       "key": "appearance.sidebar-width",
       "label": "Sidebar Width",
       "description": "Default sidebar width in pixels",
