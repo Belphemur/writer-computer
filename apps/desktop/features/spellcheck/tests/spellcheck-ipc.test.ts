@@ -2,25 +2,27 @@
 // every wrapper sends the argument names the Rust commands read.
 // @vitest-environment jsdom
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { describeFeatureIpc } from "@tests/helpers/feature-ipc";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import manifest from "../feature.json";
-import { commands } from "../web/bindings";
 import * as ipc from "../web/ipc";
 
 afterEach(() => clearMocks());
 
-const snake = (camel: string) => camel.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-
-describe("the spellcheck commands", () => {
-  it("are the same set in the manifest and in the generated bindings", () => {
-    expect(Object.keys(commands).map(snake).sort()).toEqual([...manifest.rust.commands].sort());
-  });
-
-  it("are invoked by the generated bindings on the plugin route", () => {
-    for (const [name, fn] of Object.entries(commands)) {
-      expect(fn.toString(), name).toContain(`"plugin:spellcheck|${snake(name)}"`);
-    }
-  });
+describeFeatureIpc({
+  id: manifest.id,
+  commands: manifest.rust.commands,
+  calls: {
+    spellcheck_check: () => ipc.check({ path: "a.md", text: "hi", version: 1, language: null }),
+    spellcheck_dictionaries: () => ipc.dictionaries(),
+    spellcheck_install_dictionary: () => ipc.installDictionary("en"),
+    spellcheck_remove_dictionary: () => ipc.removeDictionary("en"),
+    spellcheck_personal_words: () => ipc.personalWords(),
+    spellcheck_add_word: () => ipc.addWord("w"),
+    spellcheck_remove_word: () => ipc.removeWord("w"),
+    spellcheck_ignore_word: () => ipc.ignoreWord("a.md", "w"),
+    spellcheck_unignore_word: () => ipc.unignoreWord("a.md", "w"),
+  },
 });
 
 describe("the wrappers", () => {

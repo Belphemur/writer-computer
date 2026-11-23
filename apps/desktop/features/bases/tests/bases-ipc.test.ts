@@ -1,43 +1,33 @@
-// The Bases IPC after the move into a plugin: every command is called as `plugin:bases|<command>`,
-// the manifest, the generated bindings and the typed client name the same commands, and the
-// wrappers keep the argument names the Rust side reads.
+// The Bases IPC: `describeFeatureIpc` pins every wrapper to the generated bindings (route, command
+// set, argument names); the cases below keep what the wrappers add (null for an omitted option).
 // @vitest-environment jsdom
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { describeFeatureIpc } from "@tests/helpers/feature-ipc";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import manifest from "../feature.json";
-import { commands } from "../web/bindings";
 import * as ipc from "../web/ipc";
 
 afterEach(() => clearMocks());
 
-const snake = (camel: string) => camel.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-const call = ipc.basesCommand as unknown as (c: string, a?: object) => Promise<unknown>;
-
-describe("the Bases commands", () => {
-  it("are the same set in the manifest and in the generated bindings", () => {
-    expect(Object.keys(commands).map(snake).sort()).toEqual([...manifest.rust.commands].sort());
-    expect(manifest.rust.commands).toHaveLength(10);
-  });
-
-  it("are invoked by the generated bindings on the plugin route", () => {
-    for (const [name, fn] of Object.entries(commands)) {
-      expect(fn.toString(), name).toContain(`"plugin:bases|${snake(name)}"`);
-    }
-  });
-
-  it.each(manifest.rust.commands)("%s is called as plugin:bases|%s", async (command) => {
-    const seen: string[] = [];
-    mockIPC((cmd) => void seen.push(cmd));
-    await call(command, {});
-    expect(seen).toEqual([`plugin:bases|${command}`]);
-  });
-
-  it("a command the manifest does not declare never reaches Rust", async () => {
-    let reached = false;
-    mockIPC(() => void (reached = true));
-    await expect(call("base_nope", {})).rejects.toThrow(/declares no command/);
-    expect(reached).toBe(false);
-  });
+describeFeatureIpc({
+  id: manifest.id,
+  commands: manifest.rust.commands,
+  calls: {
+    base_list: () => ipc.baseList(),
+    base_read: () => ipc.baseRead("a.base"),
+    base_parse_text: () => ipc.baseParseText("views: []"),
+    base_functions: () => ipc.baseFunctions(),
+    base_query: () =>
+      ipc.baseQuery({ path: "a.base", view: "V", thisPath: "n.md", nowOffsetMinutes: 60 }),
+    base_query_text: () =>
+      ipc.baseQueryText({ text: "views: []", view: "V", thisPath: "n.md", nowOffsetMinutes: 60 }),
+    base_eval: () =>
+      ipc.baseEval({ expression: "1", thisPath: "n.md", nowOffsetMinutes: 60, text: "t" }),
+    note_properties: () => ipc.noteProperties("n.md"),
+    note_property_set: () =>
+      ipc.notePropertySet({ path: "n.md", name: "a", value: 1, valueType: "number" }),
+    note_property_remove: () => ipc.notePropertyRemove({ path: "n.md", name: "a" }),
+  },
 });
 
 describe("the wrappers", () => {
@@ -59,8 +49,14 @@ describe("the wrappers", () => {
         "plugin:bases|base_query",
         { path: "a.base", view: "V", thisPath: "n.md", nowOffsetMinutes: 60 },
       ],
-      ["plugin:bases|base_query_text", { text: "views: []", thisPath: "n.md" }],
-      ["plugin:bases|base_eval", { expression: "1", thisPath: "n.md", text: "formulas: {}" }],
+      [
+        "plugin:bases|base_query_text",
+        { text: "views: []", view: null, thisPath: "n.md", nowOffsetMinutes: null },
+      ],
+      [
+        "plugin:bases|base_eval",
+        { expression: "1", thisPath: "n.md", nowOffsetMinutes: null, text: "formulas: {}" },
+      ],
       [
         "plugin:bases|note_property_set",
         { path: "n.md", name: "a", value: 1, valueType: "number" },

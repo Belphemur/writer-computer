@@ -123,7 +123,7 @@ describe("activation", () => {
     await host.activate("icons");
     await vi.waitFor(() => expect(fileIconOf("/vault/Notes/Idea.md")?.icon).toBe("emoji:🚀"));
     expect(useIconizeStatus.getState().unsupported).toBe(2);
-    expect(invoke).toHaveBeenCalledWith("plugin:icons|icons_resolved", undefined);
+    expect(invoke).toHaveBeenCalledWith("plugin:icons|icons_resolved", undefined, undefined);
   });
 
   it("reloads when the backend reports a change on disk and when the workspace changes", async () => {
@@ -273,7 +273,7 @@ describe("the picker", () => {
     expect(remove).toBeDefined();
     await act(async () => remove!.click());
     await vi.waitFor(() => expect(iconCalls()).toHaveLength(1));
-    expect(iconCalls()[0]).toEqual([
+    expect(iconCalls()[0]!.slice(0, 2)).toEqual([
       "plugin:icons|icons_remove",
       { paths: ["/vault/Notes/Idea.md"] },
     ]);

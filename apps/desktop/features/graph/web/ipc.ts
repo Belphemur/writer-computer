@@ -5,13 +5,12 @@
 // The wire types come from the generated `bindings.ts` (tauri-specta, Rust half in `../rust/`),
 // so a field change in Rust is a type error here. `Plain` only drops the `| null` the generator
 // adds to every optional field (Rust never sends null for them: it skips `None`), so the rest of
-// the web half reads them as plain optional fields. `graph-ipc.test.ts` ties the bindings to the
-// manifest. Tests mock this module, so nothing else reaches the backend.
+// the web half reads them as plain optional fields. `tests/helpers/feature-ipc.ts` pins every call
+// to the bindings and the manifest. Tests mock this module, so nothing else reaches the backend.
 import { invoke } from "@tauri-apps/api/core";
-import { featureInvoke } from "@/lib/features/ipc";
 import { onIndexChanged as onCoreIndexChanged } from "@/lib/content-search";
-import manifest from "../feature.json";
 import type * as wire from "./bindings";
+import { commands } from "./bindings";
 
 type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never }[keyof T];
 type Plain<T> = { [K in keyof T]: K extends OptionalKeys<T> ? Exclude<T[K], null> : T[K] };
@@ -26,31 +25,23 @@ export type GraphSlice = Omit<wire.GraphSlice, "nodes" | "edges"> & {
 export type GraphSliceArgs = Plain<wire.GraphSliceRequest>;
 export type GraphStats = wire.GraphStats;
 
-export interface GraphCommands {
-  graph_slice: { args: { request: GraphSliceArgs }; result: GraphSlice };
-  graph_stats: { args: undefined; result: GraphStats };
-  graph_config_read: { args: undefined; result: string | null };
-  graph_config_write: { args: { content: string }; result: null };
-}
-
-const call = featureInvoke<GraphCommands>(manifest.id, manifest.rust.commands);
-
 export function graphSlice(args: GraphSliceArgs): Promise<GraphSlice> {
-  return call("graph_slice", { request: args });
+  // The answer is the wire one; `Plain` only narrows the `| null` Rust never sends.
+  return commands.graphSlice(args) as Promise<GraphSlice>;
 }
 
 export function graphStats(): Promise<GraphStats> {
-  return call("graph_stats");
+  return commands.graphStats();
 }
 
 /** The raw text of `.writer/graph.json` (section 6 of SPECs/graph-view-spec.md), or `null` when
  *  the vault has none yet. The Rust half confines it to the vault and writes it atomically. */
 export function graphConfigRead(): Promise<string | null> {
-  return call("graph_config_read");
+  return commands.graphConfigRead();
 }
 
 export async function graphConfigWrite(content: string): Promise<void> {
-  await call("graph_config_write", { content });
+  await commands.graphConfigWrite(content);
 }
 
 /** Frontmatter per note, from the index (a core command): what color rules and Group by read.

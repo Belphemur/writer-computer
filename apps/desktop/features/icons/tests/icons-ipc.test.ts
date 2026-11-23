@@ -3,27 +3,25 @@
 // the Rust commands read.
 // @vitest-environment jsdom
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { describeFeatureIpc } from "@tests/helpers/feature-ipc";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import manifest from "../feature.json";
-import { commands } from "../web/bindings";
 import * as ipc from "../web/ipc";
 
 afterEach(() => clearMocks());
 
-const snake = (camel: string) => camel.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+describeFeatureIpc({
+  id: manifest.id,
+  commands: manifest.rust.commands,
+  calls: {
+    icons_resolved: () => ipc.iconsResolved(),
+    icons_set: () => ipc.iconsSet(["a.md"], "emoji:x", "#112233"),
+    icons_remove: () => ipc.iconsRemove(["a.md"]),
+  },
+});
 
-describe("the icons commands", () => {
-  it("are the same set in the manifest and in the generated bindings", () => {
-    expect(Object.keys(commands).map(snake).sort()).toEqual([...manifest.rust.commands].sort());
-  });
-
-  it("are invoked by the generated bindings on the plugin route", () => {
-    for (const [name, fn] of Object.entries(commands)) {
-      expect(fn.toString(), name).toContain(`"plugin:icons|${snake(name)}"`);
-    }
-  });
-
-  it("have a manifest event named like the web half listens to it", () => {
+describe("the icons event", () => {
+  it("is a manifest event named like the web half listens to it", () => {
     expect(manifest.rust.events).toEqual([`icons:${ipc.ICONS_CHANGED}`]);
   });
 });

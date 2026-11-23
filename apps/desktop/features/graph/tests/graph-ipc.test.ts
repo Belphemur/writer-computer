@@ -3,25 +3,22 @@
 // the Rust commands read (`graph_slice` takes one `request` object).
 // @vitest-environment jsdom
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { describeFeatureIpc } from "@tests/helpers/feature-ipc";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import manifest from "../feature.json";
-import { commands } from "../web/bindings";
 import * as ipc from "../web/ipc";
 
 afterEach(() => clearMocks());
 
-const snake = (camel: string) => camel.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-
-describe("the graph commands", () => {
-  it("are the same set in the manifest and in the generated bindings", () => {
-    expect(Object.keys(commands).map(snake).sort()).toEqual([...manifest.rust.commands].sort());
-  });
-
-  it("are invoked by the generated bindings on the plugin route", () => {
-    for (const [name, fn] of Object.entries(commands)) {
-      expect(fn.toString(), name).toContain(`"plugin:graph|${snake(name)}"`);
-    }
-  });
+describeFeatureIpc({
+  id: manifest.id,
+  commands: manifest.rust.commands,
+  calls: {
+    graph_slice: () => ipc.graphSlice({ center: "a.md", depth: 1 }),
+    graph_stats: () => ipc.graphStats(),
+    graph_config_read: () => ipc.graphConfigRead(),
+    graph_config_write: () => ipc.graphConfigWrite("{}"),
+  },
 });
 
 describe("the wrappers", () => {
