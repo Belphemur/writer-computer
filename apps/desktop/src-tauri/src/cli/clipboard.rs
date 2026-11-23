@@ -46,9 +46,41 @@ impl Clipboard for SystemClipboard {
                 Err(e) => return Err(format!("--copy failed: {e}")),
             }
         }
-        Err(format!(
-            "--copy needs a clipboard tool, but {} was not found in PATH",
-            missing.join(" or ")
-        ))
+        Err(missing_tools_message(&missing))
+    }
+}
+
+/// The `--copy` error when no clipboard tool is on PATH. On Linux it names both tools and which
+/// session each serves, so the fix is one package install (`wl-clipboard` or `xclip`).
+fn missing_tools_message(missing: &[&str]) -> String {
+    let tools = missing.join(" or ");
+    if missing.contains(&"wl-copy") {
+        format!(
+            "--copy needs a clipboard tool, but {tools} was not found in PATH: install wl-clipboard (wl-copy, Wayland) or xclip (X11)"
+        )
+    } else {
+        format!("--copy needs a clipboard tool, but {tools} was not found in PATH")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_error_names_both_tools_and_their_packages() {
+        let message = missing_tools_message(&["wl-copy", "xclip"]);
+        assert!(message.contains("wl-copy or xclip"));
+        assert!(message.contains("wl-clipboard"));
+        assert!(message.contains("Wayland") && message.contains("X11"));
+    }
+
+    #[test]
+    fn other_platforms_keep_the_plain_error() {
+        let message = missing_tools_message(&["pbcopy"]);
+        assert_eq!(
+            message,
+            "--copy needs a clipboard tool, but pbcopy was not found in PATH"
+        );
     }
 }

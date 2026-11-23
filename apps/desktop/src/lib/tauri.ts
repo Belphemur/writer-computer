@@ -319,6 +319,18 @@ export function listSystemFonts(): Promise<string[]> {
   return invoke("list_system_fonts");
 }
 
+// Terminals found on this machine (the Default Terminal dropdown)
+export interface TerminalInfo {
+  id: string;
+  label: string;
+  /** Every name a stored value may use for it. */
+  names: string[];
+}
+
+export function listTerminals(): Promise<TerminalInfo[]> {
+  return invoke("list_terminals");
+}
+
 // Settings commands
 export function getSettings(): Promise<Record<string, unknown>> {
   return invoke("get_settings");

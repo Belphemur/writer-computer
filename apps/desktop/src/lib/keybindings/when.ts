@@ -52,7 +52,7 @@ export function isDrawingCanvasFocused(): boolean {
   return document.activeElement?.closest("[data-drawing-canvas]") != null;
 }
 
-export const WHEN: Record<WhenName, (e: KeyboardEvent) => boolean> = {
+export const WHEN: Record<WhenName, (e: Event) => boolean> = {
   "not-compact": () => !isCompactFileMode(),
   "editor-not-focused": () => !isEditableTargetFocused(),
   // The agent pane keeps Cmd+[ / Cmd+] for its chat switcher.

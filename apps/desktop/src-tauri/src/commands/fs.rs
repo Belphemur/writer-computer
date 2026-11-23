@@ -1040,8 +1040,16 @@ pub fn delete_entry_with(path: &str, permanent: bool) -> Result<(), AppError> {
         }
         return Ok(());
     }
-    trash::delete(&entry_path).map_err(|e| AppError::Io(e.to_string()))?;
+    trash::delete(&entry_path).map_err(|e| trash_failure(&e.to_string()))?;
     Ok(())
+}
+
+/// A failed move to the trash, in words that name the likely cause: on Linux a mount (an external
+/// or network drive) without a trash folder cannot take the file, and the OS error alone does not say so.
+fn trash_failure(reason: &str) -> AppError {
+    AppError::Io(format!(
+        "Couldn't move to the trash: {reason}. The drive may have no trash folder; delete permanently instead."
+    ))
 }
 
 #[tauri::command]
@@ -1076,6 +1084,23 @@ pub async fn file_exists(path: String, webview: tauri::Webview, app: tauri::AppH
         .unwrap_or(false)
 }
 
+/// Select `target` with `reveal`; when that fails (no FileManager1 on the session bus, a file manager
+/// without it), log why and open the containing folder with `open_dir` instead.
+#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(dead_code))]
+fn reveal_or_open_parent(
+    target: &Path,
+    reveal: impl FnOnce(&Path) -> Result<(), String>,
+    open_dir: impl FnOnce(&Path) -> Result<(), AppError>,
+) -> Result<(), AppError> {
+    match reveal(target) {
+        Ok(()) => Ok(()),
+        Err(reason) => {
+            log::warn!("reveal through the file manager failed, opening the folder: {reason}");
+            open_dir(target.parent().unwrap_or(target))
+        }
+    }
+}
+
 pub fn reveal_in_file_manager_impl(path: &str) -> Result<(), AppError> {
     let target = PathBuf::from(path);
     if !target.exists() {
@@ -1104,13 +1129,19 @@ pub fn reveal_in_file_manager_impl(path: &str) -> Result<(), AppError> {
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        // Linux: just open the parent directory with xdg-open. There is no
-        // portable way to select the target file.
-        let parent = target.parent().unwrap_or(&target);
-        std::process::Command::new("xdg-open")
-            .arg(parent)
-            .spawn()
-            .map_err(|e| AppError::Io(e.to_string()))?;
+        // Linux: the opener selects the file through the file manager's D-Bus interface
+        // (org.freedesktop.FileManager1); without it, open the folder.
+        reveal_or_open_parent(
+            &target,
+            |path| tauri_plugin_opener::reveal_item_in_dir(path).map_err(|e| e.to_string()),
+            |dir| {
+                std::process::Command::new("xdg-open")
+                    .arg(dir)
+                    .spawn()
+                    .map(drop)
+                    .map_err(|e| AppError::Io(e.to_string()))
+            },
+        )?;
     }
 
     Ok(())
@@ -1187,6 +1218,51 @@ pub async fn read_document(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn trash_failure_names_the_cause_and_the_way_out() {
+        let message = trash_failure("cross-device link").to_string();
+        assert!(message.contains("cross-device link"));
+        assert!(message.contains("no trash folder"));
+        assert!(message.contains("delete permanently"));
+    }
+
+    #[test]
+    fn reveal_selects_the_file_and_only_falls_back_to_the_folder_when_that_fails() {
+        let target = Path::new("/vault/notes/a.md");
+        let opened = std::cell::RefCell::new(None);
+        reveal_or_open_parent(
+            target,
+            |path| {
+                assert_eq!(path, target);
+                Ok(())
+            },
+            |dir| {
+                *opened.borrow_mut() = Some(dir.to_path_buf());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*opened.borrow(), None, "a working reveal opens no folder");
+
+        reveal_or_open_parent(
+            target,
+            |_| Err("no FileManager1 on the bus".into()),
+            |dir| {
+                *opened.borrow_mut() = Some(dir.to_path_buf());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*opened.borrow(), Some(PathBuf::from("/vault/notes")));
+
+        let failed = reveal_or_open_parent(
+            target,
+            |_| Err("x".into()),
+            |_| Err(AppError::Io("xdg-open missing".into())),
+        );
+        assert!(failed.unwrap_err().to_string().contains("xdg-open missing"));
+    }
 
     #[test]
     fn read_directory_without_titles_skips_the_file_opens() {

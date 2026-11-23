@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { showEditorNotice } from "@/components/editor-area/editor-notice-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitFileChanged, type FileChangeKind } from "@/lib/features/workspace-events";
@@ -80,6 +81,15 @@ export function useFileWatcher() {
       void useSettingsStore.getState().loadSettings();
     });
 
+    // The watcher could not start (on Linux, usually the inotify limit): the message says how to fix it.
+    const unlistenWatchFailed = listen<{ message: string; workspace: WorkspaceIdentity }>(
+      "fs:watch-failed",
+      (event) => {
+        if (!isWorkspaceEventCurrent(event.payload.workspace, getWorkspaceEventIdentity())) return;
+        showEditorNotice(event.payload.message);
+      },
+    );
+
     const unlistenDir = listen<FileChangePayload>("fs:directory-changed", (event) => {
       const { path, kind, workspace } = event.payload;
       if (!isWorkspaceEventCurrent(workspace, getWorkspaceEventIdentity())) return;
@@ -114,6 +124,7 @@ export function useFileWatcher() {
       void unlistenIndexComplete.then((fn) => fn());
       void unlistenSidebarMetadata.then((fn) => fn());
       void unlistenSettings.then((fn) => fn());
+      void unlistenWatchFailed.then((fn) => fn());
       void unlistenDir.then((fn) => fn());
     };
   }, []);

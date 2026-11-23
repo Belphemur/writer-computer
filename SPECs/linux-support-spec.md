@@ -83,6 +83,10 @@ The keybinding registry already takes per-OS keys (`registry.ts` `PlatformKeys`,
 - User overrides stay per OS (`hotkeys.json` has a section per OS).
 - `docs/keyboard-shortcuts.md` shows each OS's keys (the site page renders the current OS first); the shortcuts list in Settings shows the current OS's chords.
 
+## Lane 3 status (2026-11-23)
+
+Built: items 6-10, 13 (reveal, trash message, terminal table and dropdown, `--copy` error, watch-limit message, per-OS history keys, mouse side buttons, HiDPI table, pinch), the label helper (`context-menu-utils.ts`: file manager, secret store, install git), the WebKitGTK check (`lib/webview-support.ts`: it asks the web view for `color-mix` and CSS nesting, minimum 2.44) and the git install hint. Item 15 needed no code (`writer-plugin://localhost` is not http, so it already falls through; a test pins it with the Windows subdomain). Item 13 found every font stack already ending in `system-ui`, `sans-serif` or `monospace`. Linux-only code is `reveal_in_file_manager_impl`'s Linux arm in `commands/fs.rs` and the `tauri_plugin_opener::reveal_item_in_dir` call; everything else compiles and is tested on macOS.
+
 ## Lanes
 
 1. **Build and CI** (first): config overlay, `mainBinaryName`, prerequisites doc, e2e per OS, `.github/workflows/ci.yml`.

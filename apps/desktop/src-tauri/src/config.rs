@@ -229,7 +229,7 @@ pub struct SettingDef {
     pub description: String,
     pub category: String,
     #[serde(rename = "type")]
-    pub value_type: String, // "string" | "number" | "boolean" | "enum" | "list" | "color" | "range" | "font"
+    pub value_type: String, // "string" | "number" | "boolean" | "enum" | "list" | "color" | "range" | "font" | "terminal"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<String>>, // enum + list
     #[serde(default, skip_serializing_if = "Option::is_none")]

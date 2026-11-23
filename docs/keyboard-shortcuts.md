@@ -2,7 +2,7 @@
 
 <!-- The canonical shortcut map. It is also published as is at writer.computer/docs/keyboard-shortcuts/, so keep the prose readable for users and put implementation notes in HTML comments like this one, which the site leaves out. The first line must stay "# Keyboard shortcuts" (see apps/website/src/docs/pages.ts). -->
 
-Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃.
+Every keyboard shortcut in Writer Computer. On macOS, Cmd is ⌘, Alt is ⌥ (Option) and Ctrl is ⌃. On Linux and Windows, read Cmd as Ctrl; the tables name the few shortcuts that differ.
 
 These are the defaults. You can change any shortcut, and give one to any command, in Settings > Hotkeys; your keys are stored per operating system.
 
@@ -14,29 +14,33 @@ These work anywhere in the window, whether or not you are typing in a note.
 
 <!-- One entry per row in `apps/desktop/src/lib/keybindings/core-bindings.ts` (the keybinding registry; `useKeyboardShortcuts` only iterates it). `tests/keybindings.test.ts` fails when this table and the registry disagree, in either direction: add a shortcut there and here together. A binding whose id equals a palette command id makes the palette show the key. Cmd+Shift+F opens the palette in its `search-notes` mode (SPECs/search-spec.md): Enter opens the match in the current tab, Cmd+Enter in a new tab. It is free of conflicts: the editor's find is Cmd+F and nothing else binds Shift+F. -->
 
-| Shortcut        | Action                                                                                                   |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| Cmd+P           | Command palette: search notes by name, and run commands                                                  |
-| Cmd+O           | Same as Cmd+P                                                                                            |
-| Cmd+Shift+P     | Command palette, also when no workspace is open                                                          |
-| Cmd+Shift+F     | Search in notes: full-text search of note contents                                                       |
-| Cmd+N           | Create new note                                                                                          |
-| Cmd+T           | New tab                                                                                                  |
-| Cmd+Shift+T     | Reopen the last closed tab (repeat for older ones, up to 25)                                             |
-| Cmd+Shift+A     | Show or hide the Agent pane (focuses its message box when it opens)                                      |
-| Cmd+W           | Close current tab (a pinned tab is unpinned first); hides the window when only an empty new tab is left  |
-| Cmd+\\          | Toggle sidebar                                                                                           |
-| Ctrl+Tab        | Next tab                                                                                                 |
-| Ctrl+Shift+Tab  | Previous tab                                                                                             |
-| Cmd+1 ... Cmd+9 | Jump to Nth tab                                                                                          |
-| Cmd+= / Cmd++   | Zoom editor text in (numpad + works too)                                                                 |
-| Cmd+-           | Zoom editor text out (Cmd+Shift+- and numpad − work too)                                                 |
-| Cmd+0           | Actual size (zoom back to 100%); in an image tab, fit the image to the page; in a PDF tab, fit the width |
-| Cmd+F           | In a PDF tab, find in the PDF (in a note, the editor's own find, below)                                  |
-| Alt+ArrowLeft   | Navigate back (outside the note; inside it, moves by word)                                               |
-| Alt+ArrowRight  | Navigate forward (outside the note; inside it, moves by word)                                            |
-| Cmd+[           | Navigate back, everywhere including the note (Tab / Shift+Tab indent)                                    |
-| Cmd+]           | Navigate forward, everywhere including the note                                                          |
+| Shortcut        | Action                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Cmd+P           | Command palette: search notes by name, and run commands                                                                      |
+| Cmd+O           | Same as Cmd+P                                                                                                                |
+| Cmd+Shift+P     | Command palette, also when no workspace is open                                                                              |
+| Cmd+Shift+F     | Search in notes: full-text search of note contents                                                                           |
+| Cmd+N           | Create new note                                                                                                              |
+| Cmd+T           | New tab                                                                                                                      |
+| Cmd+Shift+T     | Reopen the last closed tab (repeat for older ones, up to 25)                                                                 |
+| Cmd+Shift+A     | Show or hide the Agent pane (focuses its message box when it opens)                                                          |
+| Cmd+W           | Close current tab (a pinned tab is unpinned first); hides the window when only an empty new tab is left                      |
+| Cmd+\\          | Toggle sidebar                                                                                                               |
+| Ctrl+Tab        | Next tab                                                                                                                     |
+| Ctrl+Shift+Tab  | Previous tab                                                                                                                 |
+| Cmd+1 ... Cmd+9 | Jump to Nth tab                                                                                                              |
+| Cmd+= / Cmd++   | Zoom editor text in (numpad + works too)                                                                                     |
+| Cmd+-           | Zoom editor text out (Cmd+Shift+- and numpad − work too)                                                                     |
+| Cmd+0           | Actual size (zoom back to 100%); in an image tab, fit the image to the page; in a PDF tab, fit the width                     |
+| Cmd+F           | In a PDF tab, find in the PDF (in a note, the editor's own find, below)                                                      |
+| Alt+ArrowLeft   | Navigate back: everywhere on Linux and Windows, the note included; on macOS outside the note only (inside it, moves by word) |
+| Alt+ArrowRight  | Navigate forward: everywhere on Linux and Windows; on macOS outside the note only                                            |
+| Cmd+[           | macOS only: navigate back, everywhere including the note (Tab / Shift+Tab indent)                                            |
+| Cmd+]           | macOS only: navigate forward, everywhere including the note                                                                  |
+
+On Linux and Windows the mouse's back and forward side buttons do the same as Alt+ArrowLeft and Alt+ArrowRight; on macOS they send Cmd+[ and Cmd+]. Linux defaults avoid the shortcuts desktops keep for themselves (anything with Super, Ctrl+Alt+T, Ctrl+Alt+Arrow, Alt+F2, Alt+Tab, Ctrl+Alt+Delete, Alt+Space).
+
+<!-- Per-OS keys are the registry's `{ mac, other }` lists in `core-bindings.ts`; `tests/keybindings-per-os.test.ts` pins back/forward per OS, bans literal `Meta`/`Ctrl` where the OSes differ (allowlist: Ctrl+Tab) and checks the Linux defaults against the reserved list above. The mouse buttons are `lib/keybindings/mouse-history.ts`. -->
 
 Pinned tabs (right-click a tab, "Pin tab", or "Pin Tab" in the palette) stay at the left of the tab strip. A middle click on a tab closes it, but on a pinned tab it unpins it instead; Cmd+W (and "Close Current Tab" in the palette) does the same, so a pinned tab never closes by accident. "Close others" and "Close all" leave pinned tabs open. Cmd+1 ... Cmd+9 and Ctrl+Tab count pinned tabs first. See [SPECs/pinned-tabs-spec.md](../SPECs/pinned-tabs-spec.md).
 

@@ -74,10 +74,10 @@ describe("default terminal setting", () => {
     expect(definition).toMatchObject({
       label: "Default Terminal",
       description:
-        "Terminal application name on macOS, or executable name/full path on Windows and Linux. Leave blank for Writer's platform default; arguments are not supported.",
+        "Pick an installed terminal, or Other for an app name (macOS) or an executable name or path.",
       category: "Workspace",
-      type: "string",
-      placeholder: "Platform default",
+      type: "terminal",
+      placeholder: "System default",
       normalize: "trim",
       scope: "global",
       default: "",

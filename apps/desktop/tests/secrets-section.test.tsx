@@ -8,6 +8,8 @@ vi.mock("../src/lib/tauri", () => ({ confirmAction: vi.fn(async () => true) }));
 
 import { SecretsSection } from "../src/components/settings-panel/secrets-section";
 import { confirmAction } from "../src/lib/tauri";
+import { secretStoreLabelForPlatform } from "../src/components/sidebar/context-menu-utils";
+import { detectPlatform } from "../src/lib/platform";
 import { setSecretsClient, useSecretsStore } from "../src/stores/secrets-store";
 import { workspaceListeners } from "../src/lib/features/workspace-events";
 import { SecretStorage } from "../features/obsidian-host/web/host/api/secret-storage";
@@ -87,7 +89,7 @@ describe("Settings > Secrets", () => {
     await mount();
     const notice = container.querySelector("[data-secrets-error]")?.textContent ?? "";
     expect(notice).toContain("keychain locked");
-    expect(notice).toContain("couldn't read the Keychain");
+    expect(notice).toContain(`couldn't read the ${secretStoreLabelForPlatform(detectPlatform())}`);
     expect(notice).toContain("run without them");
     failList = null;
     await act(async () => button("Retry").click());

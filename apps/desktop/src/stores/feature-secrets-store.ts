@@ -69,7 +69,7 @@ export const useFeatureSecretsStore = create<FeatureSecretsState>((set, get) => 
 /** What `ctx.secrets` is: the feature's own secrets, by declared key. Rust refuses any other key. */
 export interface FeatureSecrets {
   get(key: string): Promise<string | null>;
-  /** Rejects when the write failed (a key the manifest does not declare, a locked Keychain). */
+  /** Rejects when the write failed (a key the manifest does not declare, a locked keychain or keyring). */
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
 }

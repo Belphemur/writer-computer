@@ -1,16 +1,19 @@
 interface SelectControlProps {
   value: string;
   options: string[];
+  /** Display text by option value; an option without one shows its value. */
+  labels?: Record<string, string>;
   onChange: (value: string) => void;
   ariaLabel?: string;
   disabled?: boolean;
   className?: string;
 }
 
-/** Shared ordinary select used by enum and installed-font settings. */
+/** Shared ordinary select used by enum, installed-font and terminal settings. */
 export function SelectControl({
   value,
   options,
+  labels,
   onChange,
   ariaLabel,
   disabled = false,
@@ -26,7 +29,7 @@ export function SelectControl({
     >
       {options.map((option) => (
         <option key={option} value={option}>
-          {option}
+          {labels?.[option] ?? option}
         </option>
       ))}
     </select>

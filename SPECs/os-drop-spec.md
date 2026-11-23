@@ -5,7 +5,11 @@ Files and folders dragged from Finder onto Writer land in one of three places. O
 ## The dispatcher (`src/lib/os-drop.ts`)
 
 - While the window's drag-drop is on, the webview gets no HTML5 events for Finder files, so the only source is Tauri's `onDragDropEvent`. `useOsDrop()` (mounted once, in the editor area) subscribes and dispatches to the registered targets: the open note (`editorOsDropTarget`), the sidebar tree (`useTreeOsDrop`) and the agent composer (`chat-image-target.ts`, a feature, through the registry). A target says whether a CSS point is over it, shows a highlight while a drag with files hovers it (`hover(point | null)`) and takes the drop (`drop(point, paths)`).
-- **The position.** Tauri types it as physical pixels, but only Windows reports them. macOS (wry's `draggingLocation`, view points) and Linux (GTK widget coordinates) already report CSS pixels. The old code divided by `devicePixelRatio` everywhere, which on a Retina screen halves the point: the composer, at the bottom right, was never under the (halved) pointer, so the drop and the highlight did nothing. `dropPoint` divides on Windows only; tested with a 2x macOS drop at the composer's point.
+- **The position.** Tauri types it as physical pixels, but only Windows reports them. macOS (wry's `draggingLocation`, view points) and Linux (GTK widget coordinates) already report CSS pixels. The old code divided by `devicePixelRatio` everywhere, which on a Retina screen halves the point: the composer, at the bottom right, was never under the (halved) pointer, so the drop and the highlight did nothing. `dropPoint` divides on Windows only (the `POSITION_UNIT` table: macOS and Linux `css`, Windows `physical`); tested with a 2x macOS drop at the composer's point.
+
+### Verify on Linux
+
+`dropPoint` takes Linux as CSS pixels (GTK widget coordinates, logical). Only a real session confirms it: drag a file from the file manager onto the composer, the note and a folder row, then check the highlight and the drop land under the pointer on X11 at 1x and 2x, on Wayland at 1x, 2x and a fractional scale (125%, 150%). If the point is off by the scale, change the Linux entry of `POSITION_UNIT` (`src/lib/os-drop.ts`) to `physical`; nothing else moves.
 
 ## The Rust seam (`src-tauri/src/dropped.rs`, Tauri-free)
 

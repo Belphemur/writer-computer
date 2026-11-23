@@ -25,10 +25,12 @@ import {
   keybindings,
   resolveKeys,
   type Keybinding,
+  type OsKey,
 } from "../src/lib/keybindings/registry";
 import { useEditorStore } from "../src/stores/editor-store";
 import { useWorkspaceStore } from "../src/stores/workspace-store";
 
+const OS_KEYS: readonly OsKey[] = ["mac", "windows", "linux"];
 const key = (init: KeyboardEventInit & { code?: string }) =>
   new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
 const always = {
@@ -175,19 +177,20 @@ function documentedGlobalChords(): string[] {
 
 describe("docs/keyboard-shortcuts.md Global table", () => {
   // Core bindings plus what the built-in features contribute (Cmd+Shift+A is the agent's).
+  // The defaults of every OS: the doc lists a chord once, with the OS it is for in the prose.
   // Linux-only bindings (no macOS keys) are documented in the "App menu" section, not "Global".
   const registryChords = () =>
     new Set(
       keybindings
         .list()
         .filter((b) => resolveKeys(b.keys, "mac").length > 0)
-        .flatMap((b) => keybindings.defaultKeys(b.id)),
+        .flatMap((b) => OS_KEYS.flatMap((os) => resolveKeys(b.keys, os).map(normalizeChord))),
     );
 
   it("has a registry entry for every documented shortcut", () => {
     const docs = documentedGlobalChords();
     expect(docs.length).toBeGreaterThanOrEqual(20);
-    // `Cmd+[` / `Cmd+]` are Meta-only in the registry; docs say Cmd.
+    // macOS `Cmd+[` / `Cmd+]` are `Meta` in the registry; docs say Cmd.
     const known = new Set([...registryChords()].map((c) => c.replace("Meta+", "Mod+")));
     const missing = docs.filter((c) => !known.has(c));
     expect(missing).toEqual([]);
@@ -246,8 +249,14 @@ describe("dispatch keeps the old handler behaviour", () => {
   const back = vi.fn(async () => {});
   const forward = vi.fn(async () => {});
 
+  // These pin the macOS defaults (Cmd+[ history); the Linux ones are in keybindings-per-os.test.ts.
+  let ua: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    ua = vi
+      .spyOn(window.navigator, "userAgent", "get")
+      .mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)");
+    keybindings.setOverrides({}); // drops the resolved-keys cache
     back.mockClear();
     forward.mockClear();
     useEditorStore.setState({ navigateBack: back, navigateForward: forward });
@@ -258,6 +267,8 @@ describe("dispatch keeps the old handler behaviour", () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.innerHTML = "";
+    ua.mockRestore();
+    keybindings.setOverrides({});
   });
 
   it("Cmd+[ and Cmd+] go back and forward in the capture phase, ignoring repeats", () => {

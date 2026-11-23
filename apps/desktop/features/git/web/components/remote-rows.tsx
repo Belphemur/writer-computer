@@ -5,7 +5,9 @@
 // A missing `git` says so with "Install Command Line Tools" on macOS. Terse: no prose.
 import { useEffect, useState } from "react";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
+import { installGitLabelForPlatform } from "@/components/sidebar/context-menu-utils";
 import { describeError, logger } from "@/lib/logger";
+import { detectPlatform } from "@/lib/platform";
 import { useFeatureSecretsStore } from "@/stores/feature-secrets-store";
 import {
   installGit,
@@ -111,10 +113,12 @@ export function RemoteRows({ status, syncDefs }: { status: GitStatus; syncDefs: 
       {machine && !machine.git && (
         <div role="alert" data-git-missing className={`${ROW} ${CARD}`}>
           <span>Git is not installed</span>
-          {machine.canInstallGit && (
+          {machine.canInstallGit ? (
             <button type="button" className={BUTTON} onClick={() => void installGit()}>
               Install Command Line Tools
             </button>
+          ) : (
+            <span className={MUTED}>{installGitLabelForPlatform(detectPlatform())}</span>
           )}
         </div>
       )}

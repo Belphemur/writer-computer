@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealLabelForPlatform } from "@/components/sidebar/context-menu-utils";
+import { detectPlatform } from "@/lib/platform";
 import { useCliCatalog, useDiskSkills, type Chat } from "@features/agent/web/hooks/use-agent";
 import {
   SOURCE_LABEL,
@@ -150,7 +152,9 @@ export function SkillsChip({ chat }: { chat: Chat }) {
                         : vaultLinkHandlers(s.path))}
                       className="mt-0.5 text-[11px] text-text-muted underline hover:text-text-primary"
                     >
-                      {s.source === "global" ? "Show in Finder" : "Open SKILL.md"}
+                      {s.source === "global"
+                        ? revealLabelForPlatform(detectPlatform())
+                        : "Open SKILL.md"}
                     </button>
                   )}
                 </li>

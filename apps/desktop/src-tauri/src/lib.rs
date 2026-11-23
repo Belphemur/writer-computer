@@ -45,6 +45,7 @@ pub mod spellcheck;
 mod state;
 pub mod tasks;
 mod telemetry;
+pub mod terminals;
 pub mod text_diff;
 #[cfg(desktop)]
 mod updater;
@@ -732,6 +733,7 @@ pub fn run() {
             commands::workspace::open_file_in_standalone_window,
             commands::workspace::watch_standalone_file,
             commands::fonts::list_system_fonts,
+            commands::workspace::list_terminals,
             commands::hotkeys::hotkeys_read,
             commands::hotkeys::hotkeys_write,
             commands::hotkeys::hotkeys_read_obsidian,

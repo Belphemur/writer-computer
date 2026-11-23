@@ -13,7 +13,10 @@ import { detectPlatform, type Platform } from "@/lib/platform";
  * The position: Tauri types it as physical pixels, but only Windows reports them. macOS (wry's
  * `draggingLocation`, view points) and Linux (GTK widget coordinates) report CSS pixels already, so
  * dividing by `devicePixelRatio` there halves the point on a Retina screen and every hit test
- * misses what is under the pointer (the broken composer drop).
+ * misses what is under the pointer (the broken composer drop). Linux's GTK reports widget
+ * coordinates, which WebKitGTK scales with the screen (the widget is in logical pixels, whatever the
+ * integer or fractional scale), so they are CSS pixels too; that is the one claim only a real
+ * session checks (spec `SPECs/os-drop-spec.md` "Verify on Linux").
  */
 export type DropPoint = { x: number; y: number };
 
@@ -34,13 +37,21 @@ export function registerOsDropTarget(target: OsDropTarget): () => void {
   return () => void targets.delete(target);
 }
 
+/** The unit of the position Tauri reports, per platform: the one table the conversion reads. */
+const POSITION_UNIT = {
+  macos: "css",
+  windows: "physical",
+  linux: "css",
+} as const satisfies Record<Platform, "css" | "physical">;
+
 /** A Tauri drop position as a CSS point. */
 export function dropPoint(
   position: { x: number; y: number },
   platform: Platform = detectPlatform(),
   pixelRatio?: number,
 ): DropPoint {
-  const scale = platform === "windows" ? pixelRatio || window.devicePixelRatio || 1 : 1;
+  const scale =
+    POSITION_UNIT[platform] === "physical" ? pixelRatio || window.devicePixelRatio || 1 : 1;
   return { x: position.x / scale, y: position.y / scale };
 }
 

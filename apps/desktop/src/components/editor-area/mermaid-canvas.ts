@@ -20,6 +20,8 @@ import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { baseSyntaxHighlights, generalSyntaxHighlights } from "@/lib/prosemark-core/main";
 import { createCodeCopyButton } from "@/lib/code-copy-button";
+import { detectPlatform, type Platform } from "@/lib/platform";
+import { wheelFactor } from "@/lib/viewer-zoom";
 import type { RenderError, RenderResult } from "./mermaid-renderer";
 
 export const MERMAID_CANVAS_HEIGHT = 480;
@@ -31,7 +33,7 @@ const BUTTON_ZOOM_FACTOR = 1.2;
 const KEY_ZOOM_FACTOR = 1.15;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 // WebKit reports trackpad pinch as a synthetic Ctrl-wheel event with small
-// pixel deltas; give that path a higher multiplier so pinch feels responsive.
+// pixel deltas; on macOS give that path a higher multiplier so pinch feels responsive.
 const PINCH_ZOOM_SENSITIVITY = 0.01;
 const KEY_PAN_STEP = 24;
 const FIT_MARGIN_PX = 16;
@@ -65,6 +67,20 @@ export type MermaidCanvasHandle = {
   updateSource(diagram: RenderResult | RenderError, sourceText: string): void;
   destroy(): void;
 };
+
+/** The zoom factor of a Cmd/Ctrl + wheel event. macOS: Cmd + wheel is a notch and WebKit's pinch is
+ *  a Ctrl + wheel with small deltas, so Ctrl gets the pinch sensitivity. Elsewhere Ctrl is the
+ *  wheel's own modifier and a pinch (WebKitGTK sends it as Ctrl + wheel too) cannot be told apart
+ *  by the key, so both go through the shared viewer curve: delta-proportional and clamped, small for
+ *  a pinch and one gentle step for a notch. */
+export function canvasWheelFactor(
+  e: Pick<WheelEvent, "deltaY" | "ctrlKey" | "metaKey">,
+  platform: Platform = detectPlatform(),
+): number {
+  if (platform !== "macos") return wheelFactor(e.deltaY);
+  const sensitivity = e.ctrlKey && !e.metaKey ? PINCH_ZOOM_SENSITIVITY : WHEEL_ZOOM_SENSITIVITY;
+  return Math.exp(-e.deltaY * sensitivity);
+}
 
 export function mountMermaidCanvas(
   host: HTMLElement,
@@ -324,9 +340,7 @@ export function mountMermaidCanvas(
     (e) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       e.preventDefault();
-      const sensitivity = e.ctrlKey && !e.metaKey ? PINCH_ZOOM_SENSITIVITY : WHEEL_ZOOM_SENSITIVITY;
-      const factor = Math.exp(-e.deltaY * sensitivity);
-      zoomAt(e.clientX, e.clientY, factor);
+      zoomAt(e.clientX, e.clientY, canvasWheelFactor(e));
     },
     { passive: false },
   );

@@ -3,6 +3,7 @@ use crate::commands::settings::get_global_string_setting;
 use crate::error::AppError;
 use crate::ignore::WorkspaceIgnore;
 use crate::state::{AppState, WorkspaceRuntimeDrop, WorkspaceState};
+use crate::terminals::{self, LaunchPlatform};
 use crate::watcher::drop_watcher_off_thread;
 use crate::PendingOpenPayload;
 use serde::{Deserialize, Serialize};
@@ -29,11 +30,12 @@ struct IndexCompleteEvent {
     file_count: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LaunchPlatform {
-    MacOs,
-    Windows,
-    Linux,
+/// The `fs:watch-failed` payload: the watcher could not start (the inotify limit, usually).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WatchFailedEvent {
+    message: String,
+    workspace: crate::watcher::WorkspaceIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,74 +76,76 @@ fn terminal_launch_specs(
         execution,
     };
 
-    match (platform, preferred_terminal) {
-        (LaunchPlatform::MacOs, Some(program)) => vec![spec(
-            "open",
-            vec![
-                "-a".into(),
-                program.into(),
-                target_dir.to_string_lossy().into_owned(),
-            ],
-            false,
-            TerminalExecution::WaitForSuccess,
-        )],
-        (LaunchPlatform::MacOs, None) => vec![spec(
-            "open",
-            vec![
-                "-a".into(),
-                "Terminal".into(),
-                target_dir.to_string_lossy().into_owned(),
-            ],
-            false,
-            TerminalExecution::WaitForSuccess,
-        )],
-        (LaunchPlatform::Windows, Some(program)) => {
-            vec![spec(program, Vec::new(), true, TerminalExecution::Detached)]
-        }
-        (LaunchPlatform::Windows, None) => vec![spec(
-            "cmd.exe",
-            vec!["/K".into()],
-            true,
-            TerminalExecution::Detached,
-        )],
-        (LaunchPlatform::Linux, Some(program)) => vec![spec(
-            program,
-            Vec::new(),
-            false,
-            TerminalExecution::Detached,
-        )],
-        (LaunchPlatform::Linux, None) => {
-            let mut programs = Vec::new();
-            if let Some(program) = terminal_env
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                programs.push(program.to_string());
-            }
-            for fallback in [
-                "x-terminal-emulator",
-                "ghostty",
-                "gnome-terminal",
-                "konsole",
-                "xfce4-terminal",
-            ] {
-                if !programs.iter().any(|program| program == fallback) {
-                    programs.push(fallback.to_string());
-                }
-            }
-            programs
-                .into_iter()
-                .map(|program| spec(&program, Vec::new(), false, TerminalExecution::Detached))
-                .collect()
-        }
-    }
-}
+    let linux_spec =
+        |program: &str, args: Vec<String>| spec(program, args, false, TerminalExecution::Detached);
+    // A stored name that is in the table gets its folder flags; anything else is opaque and runs as
+    // typed (a name on macOS, an executable name or path on Linux).
+    let linux_for =
+        |name: &str| match terminals::find(name).and_then(|t| t.linux_command(target_dir)) {
+            Some((program, args)) => linux_spec(program, args),
+            None => linux_spec(name, Vec::new()),
+        };
 
-fn current_launch_platform() -> LaunchPlatform {
-    match std::env::consts::OS {
-        "macos" => LaunchPlatform::MacOs,
-        "windows" => LaunchPlatform::Windows,
-        _ => LaunchPlatform::Linux,
+    match platform {
+        LaunchPlatform::MacOs => {
+            let app = match preferred_terminal {
+                Some(name) => terminals::find(name)
+                    .and_then(|t| t.mac_app)
+                    .unwrap_or(name),
+                None => terminals::by_id(terminals::MAC_DEFAULT_ID)
+                    .mac_app
+                    .expect("the macOS default has an app"),
+            };
+            vec![spec(
+                "open",
+                vec![
+                    "-a".into(),
+                    app.into(),
+                    target_dir.to_string_lossy().into_owned(),
+                ],
+                false,
+                TerminalExecution::WaitForSuccess,
+            )]
+        }
+        LaunchPlatform::Windows => match preferred_terminal {
+            Some(program) => vec![spec(program, Vec::new(), true, TerminalExecution::Detached)],
+            None => vec![spec(
+                "cmd.exe",
+                vec!["/K".into()],
+                true,
+                TerminalExecution::Detached,
+            )],
+        },
+        LaunchPlatform::Linux => match preferred_terminal {
+            Some(program) => vec![linux_for(program)],
+            None => {
+                // `$TERMINAL`, then Debian's alternative, then each installed entry of the table
+                // (a missing program fails to spawn and the next is tried).
+                let mut names: Vec<String> = Vec::new();
+                let env = terminal_env
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                names.extend(env.map(String::from));
+                names.push(terminals::LINUX_ALTERNATIVE_ID.into());
+                names.extend(
+                    terminals::TERMINALS
+                        .iter()
+                        .filter(|t| t.linux.is_some())
+                        .map(|t| t.id.to_string()),
+                );
+                let mut seen = Vec::new();
+                names
+                    .iter()
+                    .map(|name| linux_for(name))
+                    .filter(|launch| {
+                        let key = launch.program.clone();
+                        let fresh = !seen.contains(&key);
+                        seen.push(key);
+                        fresh
+                    })
+                    .collect()
+            }
+        },
     }
 }
 
@@ -276,7 +280,7 @@ fn launch_terminal(
     let preferred_terminal = (!preferred_terminal.is_empty()).then_some(preferred_terminal);
     let terminal_env = std::env::var("TERMINAL").ok();
     let specs = terminal_launch_specs(
-        current_launch_platform(),
+        terminals::current_platform(),
         target_dir,
         preferred_terminal,
         terminal_env.as_deref(),
@@ -371,6 +375,19 @@ pub fn close_workspace(
         })?;
     drop_workspace_runtime_off_thread(runtime);
     Ok(())
+}
+
+/// The terminals found on this machine for the Default Terminal dropdown. Probes the disk (and the
+/// login shell's PATH on Linux), so the settings page asks for it when it opens, never at startup.
+#[tauri::command]
+pub async fn list_terminals() -> Result<Vec<terminals::TerminalInfo>, AppError> {
+    crate::commands::blocking(|| {
+        let platform = terminals::current_platform();
+        Ok(terminals::detect(platform, |terminal| {
+            terminals::installed(platform, terminal)
+        }))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -564,7 +581,19 @@ fn run_workspace_bootstrap(
             }
         }
         Err(e) => {
-            log::error!("Failed to start file watcher: {}", e);
+            let message = crate::watcher::watch_failure_message(&e);
+            log::error!("Failed to start file watcher: {e}");
+            let _ = handle.emit_to(
+                label.clone(),
+                "fs:watch-failed",
+                WatchFailedEvent {
+                    message,
+                    workspace: crate::watcher::WorkspaceIdentity {
+                        root: root.to_string_lossy().into_owned(),
+                        epoch,
+                    },
+                },
+            );
         }
     }
 
@@ -1267,21 +1296,39 @@ mod tests {
         assert!(custom_windows[0].new_console);
         assert_eq!(custom_windows[0].execution, TerminalExecution::Detached);
 
-        let linux = terminal_launch_specs(LaunchPlatform::Linux, root, None, Some(" ghostty "));
-        assert_eq!(
-            linux
+        let programs = |specs: &[TerminalLaunchSpec]| {
+            specs
                 .iter()
-                .map(|spec| spec.program.as_str())
-                .collect::<Vec<_>>(),
-            [
-                "ghostty",
-                "x-terminal-emulator",
-                "gnome-terminal",
-                "konsole",
-                "xfce4-terminal"
-            ]
+                .map(|spec| spec.program.clone())
+                .collect::<Vec<_>>()
+        };
+        let table_order = [
+            "ghostty",
+            "kitty",
+            "wezterm",
+            "alacritty",
+            "foot",
+            "gnome-terminal",
+            "kgx",
+            "konsole",
+            "xfce4-terminal",
+        ];
+
+        // `$TERMINAL` first (with its folder flags), then `x-terminal-emulator`, then the table.
+        let linux = terminal_launch_specs(LaunchPlatform::Linux, root, None, Some(" kitty "));
+        let mut expected = vec!["kitty", "x-terminal-emulator", "ghostty"];
+        expected.extend(
+            table_order
+                .iter()
+                .filter(|p| !["kitty", "ghostty"].contains(p)),
         );
-        assert!(linux.iter().all(|spec| spec.args.is_empty()));
+        assert_eq!(programs(&linux), expected);
+        assert_eq!(linux[0].args, ["--directory", "/workspace with spaces"]);
+        assert!(linux[1].args.is_empty());
+        assert_eq!(
+            linux[2].args,
+            ["--working-directory=/workspace with spaces"]
+        );
         assert!(linux.iter().all(|spec| spec.current_dir == root));
         assert!(linux.iter().all(|spec| !spec.new_console));
         assert!(linux
@@ -1289,19 +1336,24 @@ mod tests {
             .all(|spec| spec.execution == TerminalExecution::Detached));
 
         let linux_without_env = terminal_launch_specs(LaunchPlatform::Linux, root, None, None);
-        assert_eq!(
-            linux_without_env
-                .iter()
-                .map(|spec| spec.program.as_str())
-                .collect::<Vec<_>>(),
-            [
-                "x-terminal-emulator",
-                "ghostty",
-                "gnome-terminal",
-                "konsole",
-                "xfce4-terminal"
-            ]
-        );
+        let mut expected = vec!["x-terminal-emulator"];
+        expected.extend(table_order);
+        assert_eq!(programs(&linux_without_env), expected);
+
+        // An unknown `$TERMINAL` runs as typed, once, ahead of the rest.
+        let odd_env = terminal_launch_specs(LaunchPlatform::Linux, root, None, Some("my-term"));
+        assert_eq!(odd_env[0].program, "my-term");
+        assert!(odd_env[0].args.is_empty());
+
+        // A table id carries its folder flags on Linux and its app name on macOS.
+        let picked = terminal_launch_specs(LaunchPlatform::Linux, root, Some("wezterm"), None);
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].program, "wezterm");
+        assert_eq!(picked[0].args, ["start", "--cwd", "/workspace with spaces"]);
+        let iterm = terminal_launch_specs(LaunchPlatform::MacOs, root, Some("iterm2"), None);
+        assert_eq!(iterm[0].args, ["-a", "iTerm", "/workspace with spaces"]);
+        let ghostty = terminal_launch_specs(LaunchPlatform::MacOs, root, Some("ghostty"), None);
+        assert_eq!(ghostty[0].args, ["-a", "Ghostty", "/workspace with spaces"]);
 
         let opaque = "ghostty --execute 'not a flag'";
         let custom_linux =

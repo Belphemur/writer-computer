@@ -402,10 +402,10 @@
     {
       "key": "workspace.default-terminal",
       "label": "Default Terminal",
-      "description": "Terminal application name on macOS, or executable name/full path on Windows and Linux. Leave blank for Writer's platform default; arguments are not supported.",
+      "description": "Pick an installed terminal, or Other for an app name (macOS) or an executable name or path.",
       "category": "Workspace",
-      "type": "string",
-      "placeholder": "Platform default",
+      "type": "terminal",
+      "placeholder": "System default",
       "normalize": "trim",
       "scope": "global",
       "default": ""

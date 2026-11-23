@@ -190,13 +190,16 @@ describe("plugin fetch", () => {
         "blob:https://x/1",
         "ipc://localhost/cmd",
         "asset://localhost/a",
+        // Linux and macOS serve the plugin scheme as `writer-plugin://localhost` (not http, so it
+        // falls through on the protocol); Windows serves the same files from a subdomain.
         "writer-plugin://localhost/id/main.js",
+        "http://writer-plugin.localhost/id/main.js",
         "ftp://x/y",
         "http://ipc.localhost/cmd",
       ]) {
         expect(await (await pluginScopedFetch(u)).text()).toBe("native");
       }
-      expect(native).toHaveBeenCalledTimes(7);
+      expect(native).toHaveBeenCalledTimes(8);
       expect(ipc.seen).toHaveLength(0);
       uninstall();
     } finally {

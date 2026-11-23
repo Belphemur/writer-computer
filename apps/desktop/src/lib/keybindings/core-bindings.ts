@@ -39,16 +39,17 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
   {
     // Inside the editor, Alt+Arrow is CodeMirror's word-wise cursor motion.
     id: "navigate-back",
-    keys: ["Alt+ArrowLeft"],
-    description: "Navigate back (outside the note)",
+    // Only macOS needs this one: elsewhere `history-back` below is Alt+Arrow everywhere.
+    keys: { mac: ["Alt+ArrowLeft"], other: [] },
+    description: "Navigate back (macOS: outside the note)",
     category: "Navigation",
     when: "editor-not-focused",
     run: () => void useEditorStore.getState().navigateBack(),
   },
   {
     id: "navigate-forward",
-    keys: ["Alt+ArrowRight"],
-    description: "Navigate forward (outside the note)",
+    keys: { mac: ["Alt+ArrowRight"], other: [] },
+    description: "Navigate forward (macOS: outside the note)",
     category: "Navigation",
     when: "editor-not-focused",
     run: () => void useEditorStore.getState().navigateForward(),
@@ -215,12 +216,14 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
     category: "Navigation",
     run: () => void quitApp(),
   },
-  // Cmd+[ / Cmd+] are history back / forward everywhere, the note included (what mouse drivers send
-  // for the side buttons). Capture phase, so it wins over CodeMirror's indent bindings (Tab and
-  // Shift-Tab still indent); the agent pane keeps them for its chat switcher.
+  // History back / forward everywhere, the note included. macOS: Cmd+[ / Cmd+] (what mouse drivers
+  // send for the side buttons; `Meta`, not `Mod`, so Ctrl+[ stays free). Elsewhere: Alt+Arrow, the
+  // desktop convention, free in the note because word motion is Ctrl+Arrow there; the mouse side
+  // buttons arrive as buttons 3 and 4 (`mouse-history.ts`). Capture phase, so it wins over
+  // CodeMirror's own bindings (Tab and Shift-Tab still indent); the agent pane keeps them.
   {
     id: "history-back",
-    keys: ["Meta+["],
+    keys: { mac: ["Meta+["], other: ["Alt+ArrowLeft"] },
     description: "Navigate back, everywhere including the note",
     category: "Navigation",
     phase: "capture",
@@ -231,7 +234,7 @@ export const CORE_BINDINGS: readonly Keybinding[] = [
   },
   {
     id: "history-forward",
-    keys: ["Meta+]"],
+    keys: { mac: ["Meta+]"], other: ["Alt+ArrowRight"] },
     description: "Navigate forward, everywhere including the note",
     category: "Navigation",
     phase: "capture",

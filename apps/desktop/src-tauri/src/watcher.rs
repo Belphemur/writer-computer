@@ -190,6 +190,19 @@ fn notify_observers(state: &WorkspaceState, label: &str, root: &Path, events: &[
     }
 }
 
+/// What the user is told when the watcher cannot start. Linux watches each folder through inotify and
+/// a big vault can pass `fs.inotify.max_user_watches`; that case names the sysctl that fixes it.
+pub fn watch_failure_message(error: &notify::Error) -> String {
+    const ENOSPC: i32 = 28;
+    let limit = matches!(error.kind, notify::ErrorKind::MaxFilesWatch)
+        || matches!(&error.kind, notify::ErrorKind::Io(io) if io.raw_os_error() == Some(ENOSPC));
+    if limit {
+        "Too many files to watch for changes. Raise the limit with `sudo sysctl fs.inotify.max_user_watches=524288`, then reopen the vault.".into()
+    } else {
+        format!("Couldn't watch the vault for changes: {error}")
+    }
+}
+
 /// Start a file watcher targeted at a specific window. All emitted events
 /// are routed via `emit_to(&window_label, ...)` so two windows hosting
 /// different workspaces don't cross-talk on file events. The watcher
@@ -625,6 +638,25 @@ pub fn drop_watcher_off_thread(watcher: Option<RecommendedWatcher>) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn watch_limit_failures_name_the_sysctl() {
+        for error in [
+            notify::Error::new(notify::ErrorKind::MaxFilesWatch),
+            notify::Error::io(std::io::Error::from_raw_os_error(28)),
+        ] {
+            let message = watch_failure_message(&error);
+            assert!(message.contains("fs.inotify.max_user_watches"), "{message}");
+            assert!(message.contains("Too many files"));
+        }
+    }
+
+    #[test]
+    fn other_watch_failures_keep_their_reason() {
+        let message = watch_failure_message(&notify::Error::generic("boom"));
+        assert!(message.contains("boom"));
+        assert!(!message.contains("sysctl"));
+    }
 
     const ROOT: &str = "/workspace";
 

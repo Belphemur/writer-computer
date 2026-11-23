@@ -13,6 +13,14 @@ describe("drop position", () => {
     expect(dropPoint({ x: 300, y: 700 }, "linux", 2)).toEqual({ x: 300, y: 700 });
   });
 
+  it("Linux is CSS pixels at any scale, integer or fractional (HiDPI X11 and Wayland)", () => {
+    for (const ratio of [1, 1.25, 1.5, 2, 3]) {
+      expect(dropPoint({ x: 412.5, y: 96 }, "linux", ratio)).toEqual({ x: 412.5, y: 96 });
+    }
+    // With no ratio given the live `devicePixelRatio` is not consulted either.
+    expect(dropPoint({ x: 10, y: 20 }, "linux")).toEqual({ x: 10, y: 20 });
+  });
+
   it("Windows reports physical pixels: they are divided by the ratio", () => {
     expect(dropPoint({ x: 600, y: 1400 }, "windows", 2)).toEqual({ x: 300, y: 700 });
     expect(dropPoint({ x: 150, y: 150 }, "windows", 1.5)).toEqual({ x: 100, y: 100 });

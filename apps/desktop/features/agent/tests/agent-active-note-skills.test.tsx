@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
+import { revealLabelForPlatform } from "@/components/sidebar/context-menu-utils";
+import { detectPlatform } from "@/lib/platform";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -264,7 +266,7 @@ describe("@activenote and the Skills chip", () => {
     expect(rows[1]).toContain("/my-global");
     expect(rows[1]).toContain("global");
     const reveal = $$("[data-agent-skill-row] button").find(
-      (b) => b.textContent === "Show in Finder",
+      (b) => b.textContent === revealLabelForPlatform(detectPlatform()),
     )!;
     act(() => reveal.click());
     expect(hoisted.reveal).toHaveBeenCalledWith("/Users/me/.claude/skills/my-global/SKILL.md");

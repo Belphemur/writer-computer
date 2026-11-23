@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { detectPlatform } from "@/lib/platform";
 import { confirmAction } from "@/lib/tauri";
+import { secretStoreLabelForPlatform } from "@/components/sidebar/context-menu-utils";
 import { useSecretsStore } from "@/stores/secrets-store";
 import { BUTTON, ROW, SecretForm } from "./secret-form";
 
@@ -9,6 +11,7 @@ export function SecretsSection() {
   const save = useSecretsStore((s) => s.save);
   const remove = useSecretsStore((s) => s.remove);
   const [editing, setEditing] = useState<string | null>(null);
+  const store = secretStoreLabelForPlatform(detectPlatform());
 
   useEffect(() => {
     void refresh();
@@ -25,8 +28,8 @@ export function SecretsSection() {
   return (
     <section className="mb-10" data-secrets>
       <p className="mb-4 text-[13px] text-[var(--text-muted)]">
-        Secrets such as API keys live in your system keychain and are shared by all plugins and
-        vaults. Plugins pick a secret by name; values are never shown here.
+        Secrets such as API keys live in your system {store.toLowerCase()} and are shared by all
+        plugins and vaults. Plugins pick a secret by name; values are never shown here.
       </p>
       {status === "error" && (
         <div
@@ -34,7 +37,7 @@ export function SecretsSection() {
           data-secrets-error
           className="mb-4 rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)] px-4 py-3 text-[13px] text-[var(--text-secondary)]"
         >
-          Writer couldn't read the Keychain — plugins that need API keys will run without them.
+          Writer couldn't read the {store} — plugins that need API keys will run without them.
           <span className="mt-1 block text-[12px] text-[var(--text-muted)]">{error}</span>
           <button type="button" className={`${BUTTON} mt-2`} onClick={() => void refresh()}>
             Retry
