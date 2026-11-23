@@ -90,12 +90,17 @@ export type ChatNoteSubagent = {
   status?: "completed" | "failed" | "stopped";
   /** The run's final report, cut to 500 characters (the latest run's). */
   summary?: string;
+  /** The run was cut off (its process went away) and has not been resumed since: the note's way
+   *  to know it ended, as `status` is only written for a real end. */
+  interrupted?: true;
   /** Each time the run was resumed, in order: how many of its tool calls came before, and the
    *  report of the run that ended there. Absent on older notes and on runs never resumed. */
   resumes?: ChatNoteResume[];
 };
 
-export type ChatNoteResume = { at: number; summary?: string };
+/** One restart of a run: how many of its tool calls, over the whole chat, came before it, the
+ *  report of the run that ended there, and whether that run had been cut off instead. */
+export type ChatNoteResume = { at: number; summary?: string; interrupted?: true };
 
 /** Records a sub-agent event on a note's run: its model, a final state once, then its report once,
  *  and a resume (`running` after an end) as a new entry that moves the earlier report aside.
@@ -113,19 +118,27 @@ export function applySubagentEvent(
   }
   let changed = false;
   if (ev.status === "running") {
-    if (!sub.status) return false;
+    // a resume: only a run the note saw end (or cut off) can be resumed
+    if (!sub.status && !sub.interrupted) return false;
     const resume: ChatNoteResume = { at: calls };
     if (sub.summary) resume.summary = sub.summary;
+    if (sub.interrupted) resume.interrupted = true;
     sub.resumes = [...(sub.resumes ?? []), resume];
     delete sub.status;
     delete sub.summary;
+    delete sub.interrupted;
     return true;
+  }
+  if (ev.status === "interrupted" && !sub.status && !sub.interrupted) {
+    sub.interrupted = true;
+    changed = true;
   }
   if (
     !sub.status &&
     (ev.status === "completed" || ev.status === "failed" || ev.status === "stopped")
   ) {
     sub.status = ev.status;
+    delete sub.interrupted;
     changed = true;
   }
   if (ev.report && !sub.summary) {
@@ -135,9 +148,15 @@ export function applySubagentEvent(
   return changed;
 }
 
-/** How many tool calls of the run `callId` a note's tool list holds. */
-export const callsOfRun = (tools: Iterable<ChatNoteTool>, callId: string): number =>
-  [...tools].filter((t) => t.parent === callId).length;
+/** How many tool calls the run `callId` made so far: over every message the note holds and the
+ *  turn in flight. The one count behind a resume's place (`ChatNoteResume.at`), whether the
+ *  event comes while its turn is open or after the run's message was written. */
+export const callsOfRun = (
+  written: readonly Pick<ChatNoteMessage, "tools">[],
+  inFlight: readonly ChatNoteTool[],
+  callId: string,
+): number =>
+  [...written.flatMap((m) => m.tools ?? []), ...inFlight].filter((t) => t.parent === callId).length;
 
 export type ChatNoteMessage = {
   role: "user" | "assistant";
@@ -590,7 +609,11 @@ export type AssistantFold = {
 
 /** Fold the events of one turn into the assistant message of the note: the final text of each
  *  block (a `text` event replaces its deltas), the tool trail and how the turn ended. */
-export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFold {
+export function foldAssistantEvents(
+  events: readonly AgentEvent[],
+  /** The messages the note holds already: a run's calls before this turn count for a resume. */
+  written: readonly ChatNoteMessage[] = [],
+): AssistantFold {
   const blocks = new Map<string, string>();
   const tools = new Map<string, ChatNoteTool>();
   // messages a sub-agent made: its text belongs to its run, not to the assistant's answer
@@ -639,7 +662,8 @@ export function foldAssistantEvents(events: readonly AgentEvent[]): AssistantFol
       case "subagent-status":
       case "subagent-model": {
         const t = tools.get(ev.toolCallId);
-        if (t?.sub) applySubagentEvent(t.sub, ev, callsOfRun(tools.values(), ev.toolCallId));
+        if (t?.sub)
+          applySubagentEvent(t.sub, ev, callsOfRun(written, [...tools.values()], ev.toolCallId));
         break;
       }
       case "question-resolved": {

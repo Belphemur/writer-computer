@@ -92,7 +92,7 @@ export function recordSteer(note: NoteState, msg: SentMessage): NoteState {
 /** The turn in flight (its pending events) closed into an assistant message of the note, with
  *  its usage counted. A part with nothing to say (no text, no tool) is not written. */
 function closeAssistant(note: NoteState, now: number): NoteState {
-  const fold = foldAssistantEvents(note.pending);
+  const fold = foldAssistantEvents(note.pending, note.messages);
   const lastUser = [...note.messages].reverse().find((m) => m.role === "user");
   // a steer the CLI ran as its own turn, or a message injected mid-turn, gives another
   // assistant message after the same user message
@@ -173,7 +173,8 @@ export function recordEvents(
       // a background run that ends after its turn was written: its message is updated in place
       const late = lateSubagent(next.messages, ev.toolCallId);
       if (late) {
-        if (applySubagentEvent(late.sub, ev, callsOfRun(late.message.tools ?? [], ev.toolCallId))) {
+        const inFlight = foldAssistantEvents(next.pending, next.messages).tools;
+        if (applySubagentEvent(late.sub, ev, callsOfRun(next.messages, inFlight, ev.toolCallId))) {
           const messages = next.messages.slice();
           messages[late.at] = late.message;
           next = { ...next, messages };

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Alert02Icon,
   ArrowDown01Icon,
@@ -35,24 +35,13 @@ import {
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { Ico, Spinner } from "./agent-icon";
 import { vaultLinkHandlers } from "./agent-links";
+import { useNow } from "@features/agent/web/hooks/use-now";
 import { Counts, OriginMarker } from "./change-parts";
 import { roleIcon } from "./role-icons";
 import { SegmentList, STATE_TEXT } from "./subagent-card";
 
 /** From this many runs on, the tray folds into one summary line. */
 const FOLD_AT = 3;
-
-/** The clock of the tray: one tick a second while a run is going, none otherwise. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [active]);
-  return now;
-}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 

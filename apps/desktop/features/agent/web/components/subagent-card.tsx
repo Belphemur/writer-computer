@@ -1,4 +1,5 @@
 import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
+import { useNow } from "@features/agent/web/hooks/use-now";
 import { scrollIntoScroller } from "@/lib/scroll-into";
 import {
   Alert02Icon,
@@ -96,8 +97,36 @@ function SubagentRun({ run }: { run: SubagentSegmentData }) {
         Started {label}
         {task ? `: ${task}` : ""}
       </p>
-      {subagentState(run) !== "running" && <SubagentCard run={run} />}
+      {/* a run that works for the first time is in the tray; a resumed one keeps its card, which
+          reads Running with its earlier calls above the divider (spec 3.14) */}
+      {(subagentState(run) !== "running" || (run.meta?.resumes?.length ?? 0) > 0) && (
+        <SubagentCard run={run} />
+      )}
     </>
+  );
+}
+
+/** A sub-agent's report: Markdown shown as written, a selection of it copies its own text. The one
+ *  rendering of a run's report, its summary and an earlier run's alike. */
+function ReportText({
+  text,
+  dataAttr,
+  className,
+  id,
+}: {
+  text: string;
+  dataAttr: string;
+  className: string;
+  id?: string;
+}) {
+  const el = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    if (el.current) setMarkdownSource(el.current, text);
+  }, [text]);
+  return (
+    <p ref={el} id={id} {...{ [dataAttr]: "" }} className={className}>
+      {text}
+    </p>
   );
 }
 
@@ -127,13 +156,12 @@ function ResumedDivider({ report }: { report?: string }) {
         <span aria-hidden className="h-px flex-1 bg-[var(--line-subtler)]" />
       </div>
       {report && open && (
-        <p
+        <ReportText
           id={bodyId}
-          data-agent-subagent-earlier-report
+          text={report}
+          dataAttr="data-agent-subagent-earlier-report"
           className="px-1 text-[12.5px] whitespace-pre-wrap text-text-secondary"
-        >
-          {report}
-        </p>
+        />
       )}
     </div>
   );
@@ -149,16 +177,15 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const state = subagentState(run);
-  const elapsed = subagentElapsed(run, 0);
+  const running = state === "running";
+  // a running card (a resumed run) shows its live, summed time
+  const now = useNow(running);
+  const elapsed = subagentElapsed(run, now);
   const counts = subagentCounts(run.children);
   const label = subagentLabel(run);
   const task = subagentTask(run);
-  const summary = subagentSummary(run);
-  const summaryEl = useRef<HTMLParagraphElement>(null);
-  // the report is Markdown shown as written: a selection of it copies its own text
-  useLayoutEffect(() => {
-    if (summaryEl.current) setMarkdownSource(summaryEl.current, summary);
-  }, [summary]);
+  // the report of the latest run; while it works again the earlier ones are at their dividers
+  const summary = running ? "" : subagentSummary(run);
   const model = subagentModel(run);
   // the sub-agent's closing text is the summary: not shown twice
   // and so is an earlier run's report: it is readable at its divider
@@ -203,10 +230,14 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
             </span>
           )}
           <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-text-muted">
-            <Ico
-              icon={state === "done" ? Tick02Icon : Alert02Icon}
-              className={state === "failed" ? "text-[var(--agent-error)]" : "text-text-icon-muted"}
-            />
+            {!running && (
+              <Ico
+                icon={state === "done" ? Tick02Icon : Alert02Icon}
+                className={
+                  state === "failed" ? "text-[var(--agent-error)]" : "text-text-icon-muted"
+                }
+              />
+            )}
             <span data-agent-subagent-status>{STATE_TEXT[state]}</span>
             {elapsed !== null && (
               <span data-agent-subagent-elapsed>· {formatDuration(elapsed)}</span>
@@ -230,17 +261,15 @@ export function SubagentCard({ run }: { run: SubagentSegmentData }) {
         </span>
       </button>
       {summary && (
-        <p
-          ref={summaryEl}
-          data-agent-subagent-summary
+        <ReportText
+          text={summary}
+          dataAttr="data-agent-subagent-summary"
           className={`px-2 pb-1.5 text-[12.5px] whitespace-pre-wrap text-text-secondary ${open ? "" : "line-clamp-2"}`}
-        >
-          {summary}
-        </p>
+        />
       )}
       {open && (
         <div id={bodyId} className="space-y-1 border-t border-[var(--line-subtler)] px-2 py-1.5">
-          {empty && parts.length === 1 ? (
+          {empty ? (
             <p className="text-[12px] text-text-muted">No activity recorded.</p>
           ) : (
             parts.map((part, i) => (

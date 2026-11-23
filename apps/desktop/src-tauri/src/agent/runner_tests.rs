@@ -130,9 +130,10 @@ struct Harness {
 }
 
 /// The sub-agents' models join the turn's: `agent.turn-finished` names the main model first, then
-/// each distinct sub-agent model (here the worker tier runs on another model than the chat).
+/// each distinct sub-agent model: the one the run reported on its own messages (the fixture's is
+/// the chat's model), not the tier it was asked for (`opus` here).
 #[test]
-fn a_turn_with_a_sub_agent_on_another_model_names_both_models() {
+fn a_turn_names_the_model_a_sub_agent_really_ran_on_not_its_tier() {
     use crate::agent::api;
     use std::sync::{Arc, Mutex};
 
@@ -164,10 +165,7 @@ fn a_turn_with_a_sub_agent_on_another_model_names_both_models() {
         !models.lock().unwrap().is_empty()
     });
     let seen = models.lock().unwrap().clone();
-    assert_eq!(
-        seen,
-        vec![vec!["claude-sonnet-5-5".to_string(), "opus".to_string()]]
-    );
+    assert_eq!(seen, vec![vec!["claude-sonnet-5-5".to_string()]]);
 }
 
 /// Two sends racing to an idle chat announce one turn between them (the decision is taken under
@@ -2830,6 +2828,106 @@ fn a_real_background_sub_agent_write_after_the_result_updates_the_row_and_the_ca
     let card = turn_changes(&mut h);
     assert_eq!(card.files.len(), 1);
     assert_eq!(card.files[0].by.as_deref(), Some("worker"));
+}
+
+/// A run that ended is resumed by the main agent in a LATER turn (`SendMessage`; the CLI starts
+/// its task again, then the run's calls follow). The tracker keeps its runs across turns: the run
+/// is `running` again and the calls of the resumed run are still the worker's (spec 3.14). The
+/// capture is synthetic (`subagent-resume`, built from a real claude 2.1.326 resume).
+#[test]
+fn a_run_resumed_in_a_later_turn_runs_again_and_its_calls_are_still_the_workers() {
+    let mut h = Harness::new(&["subagent-resume"], "normal");
+    let notes = h.root.join("notes.txt");
+    std::fs::write(&notes, "one\n").unwrap();
+    h.use_fixture_for("subagent-resume", &notes);
+    h.start(CHAT);
+    h.send(CHAT, "write it in the background");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+    h.go();
+    let allow = |h: &Harness, request_id: &str| {
+        h.sessions
+            .permission(
+                "w",
+                CHAT,
+                request_id,
+                PermissionDecision::Allow,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+    };
+    let ask = |h: &mut Harness| match h.next(CHAT, "a permission request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    }) {
+        AgentEvent::PermissionRequest {
+            request_id,
+            tool_call_id,
+            by,
+            ..
+        } => (request_id, tool_call_id, by),
+        _ => unreachable!(),
+    };
+    // turn 1's background write, then the woken turn 2
+    let (request_id, call, by) = ask(&mut h);
+    assert_eq!(
+        (call.as_deref(), by.as_deref()),
+        (Some("toolu_real3"), Some("worker"))
+    );
+    allow(&h, &request_id);
+    h.go();
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    // turn 3: the resumed run's write is still attributed to the worker
+    let (request_id, call, by) = ask(&mut h);
+    assert_eq!(call.as_deref(), Some("toolu_resume2"));
+    assert_eq!(by.as_deref(), Some("worker"), "the roles outlive the turn");
+    allow(&h, &request_id);
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.drain();
+
+    // the run is running again in turn 3, then done again
+    let statuses: Vec<_> = h
+        .seen
+        .iter()
+        .filter_map(|e| match &e.event {
+            AgentEvent::SubagentStatus {
+                tool_call_id,
+                status,
+                ..
+            } if tool_call_id == "toolu_real1" => Some(*status),
+            _ => None,
+        })
+        .collect();
+    use SubagentRunStatus::{Completed, Running};
+    assert_eq!(statuses, [Running, Completed, Running, Completed]);
+    let turn_ends: Vec<usize> = h
+        .seen
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| matches!(e.event, AgentEvent::TurnFinished { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let second_running = h
+        .seen
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            matches!(
+                &e.event,
+                AgentEvent::SubagentStatus {
+                    status: Running,
+                    ..
+                }
+            )
+        })
+        .map(|(i, _)| i)
+        .nth(1)
+        .unwrap();
+    assert!(
+        turn_ends.len() >= 2 && second_running > turn_ends[1],
+        "resumed after the second turn closed: {turn_ends:?} {second_running}"
+    );
 }
 
 /// Item 5d: in manual mode the sub-agent's edit raises a permission card that says who asks and

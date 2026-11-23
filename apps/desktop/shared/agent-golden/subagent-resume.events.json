@@ -249,8 +249,7 @@
       "Agent",
       "Edit",
       "Read",
-      "Write",
-      "SendMessage"
+      "Write"
     ],
     "slashCommands": [],
     "skills": [],
@@ -269,8 +268,14 @@
     "toolCallId": "toolu_resume1",
     "input": {
       "to": "writer-worker",
-      "message": "also read it again"
+      "message": "write it again"
     }
+  },
+  {
+    "type": "subagent-status",
+    "toolCallId": "toolu_real1",
+    "status": "running",
+    "report": null
   },
   {
     "type": "tool-call-finished",
@@ -281,47 +286,68 @@
     "truncated": false
   },
   {
-    "type": "subagent-status",
-    "toolCallId": "toolu_real1",
-    "status": "running",
-    "report": null
+    "type": "text",
+    "messageId": "msg_resume_b",
+    "blockIndex": 0,
+    "text": "I sent the follow-up to the same agent."
   },
   {
     "type": "subagent-message",
-    "messageId": "msg_resume_b",
+    "messageId": "msg_resume_c",
     "parentToolCallId": "toolu_real1"
   },
   {
     "type": "tool-call-started",
     "toolCallId": "toolu_resume2",
-    "messageId": "msg_resume_b",
-    "tool": "Read",
+    "messageId": "msg_resume_c",
+    "tool": "Write",
     "parentToolCallId": "toolu_real1"
   },
   {
     "type": "tool-call-input",
     "toolCallId": "toolu_resume2",
     "input": {
-      "file_path": "__FILE__"
+      "file_path": "__FILE__",
+      "content": "hello again"
     }
+  },
+  {
+    "type": "permission-request",
+    "requestId": "00000000-0000-4000-8000-000000000901",
+    "toolCallId": "toolu_resume2",
+    "tool": "Write",
+    "displayName": "Write",
+    "input": {
+      "file_path": "__FILE__",
+      "content": "hello again"
+    },
+    "description": "bg.md",
+    "decisionReason": null,
+    "suggestions": [
+      {
+        "type": "setMode",
+        "mode": "acceptEdits",
+        "destination": "session"
+      }
+    ]
   },
   {
     "type": "tool-call-finished",
     "toolCallId": "toolu_resume2",
-    "output": "1\thello background",
+    "output": "The file __FILE__ has been updated successfully.",
     "isError": false,
     "outcome": "ok",
     "truncated": false
   },
   {
     "type": "subagent-message",
-    "messageId": "msg_resume_c",
+    "messageId": "msg_resume_d",
     "parentToolCallId": "toolu_real1"
   },
   {
     "type": "tool-call-started",
     "toolCallId": "toolu_resume3",
-    "messageId": "msg_resume_c",
+    "messageId": "msg_resume_d",
     "tool": "SubagentHandback",
     "parentToolCallId": "toolu_real1"
   },
@@ -329,7 +355,7 @@
     "type": "tool-call-input",
     "toolCallId": "toolu_resume3",
     "input": {
-      "report": "read it again"
+      "report": "wrote it again"
     }
   },
   {
@@ -345,5 +371,27 @@
     "toolCallId": "toolu_real1",
     "status": "completed",
     "report": null
+  },
+  {
+    "type": "usage",
+    "scope": "turn",
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "costUsd": 0.01975152,
+    "contextWindow": null,
+    "model": "claude-haiku-5-5"
+  },
+  {
+    "type": "turn-finished",
+    "reason": "completed",
+    "durationMs": 5149,
+    "apiDurationMs": 12728,
+    "numTurns": 2,
+    "isError": false,
+    "result": "The background agent finished. It read `",
+    "sessionId": "00000000-0000-4000-8000-000000000001",
+    "errors": []
   }
 ]

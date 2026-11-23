@@ -491,6 +491,12 @@
     }
   },
   {
+    "type": "subagent-status",
+    "toolCallId": "toolu_q65",
+    "status": "completed",
+    "report": null
+  },
+  {
     "type": "tool-call-finished",
     "toolCallId": "toolu_q97",
     "output": "(Bash completed with no output)",
@@ -541,12 +547,6 @@
     "isError": false,
     "outcome": "ok",
     "truncated": false
-  },
-  {
-    "type": "subagent-status",
-    "toolCallId": "toolu_q65",
-    "status": "stopped",
-    "report": null
   },
   {
     "type": "tool-call-finished",

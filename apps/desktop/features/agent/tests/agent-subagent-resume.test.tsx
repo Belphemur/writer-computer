@@ -14,6 +14,8 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 import { Transcript } from "@features/agent/web/components/transcript";
 import { chatFromNote } from "@features/agent/web/lib/chat-from-note";
 import {
+  applySubagentEvent,
+  callsOfRun,
   foldAssistantEvents,
   parseChatNote,
   serializeChatNote,
@@ -33,6 +35,7 @@ import {
 } from "@features/agent/web/lib/subagents";
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { useSettingsStore } from "@/stores/settings-store";
+import { newNoteState, recordEvents, recordSend } from "@features/agent/web/lib/chat-persist";
 import { goldens } from "./helpers/agent-goldens";
 import { withRunnerStarts } from "./helpers/agent-subagents";
 
@@ -259,8 +262,174 @@ describe("the card of a resumed run", () => {
     expect($("[data-agent-subagent-earlier-report]")!.textContent).toBe("report one");
   });
 
-  it("shows no card while it works again (the tray has it)", async () => {
-    await mount(replay(7));
+  it("keeps the card mounted while it works again: Running, live summed time, earlier calls, divider, then the new calls", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    try {
+      vi.setSystemTime(11000);
+      let chat = replay(7);
+      chat = reduceEvent(chat, call("r2", "Read", "a1"), 9100);
+      await mount(chat);
+      expect($("[data-agent-subagent]")!.getAttribute("data-state")).toBe("running");
+      expect($("[data-agent-subagent-status]")!.textContent).toBe("Running");
+      // 0 -> 5000 before, 9000 -> now (11000) after
+      expect($("[data-agent-subagent-elapsed]")!.textContent).toBe("· 7s");
+      expect($("[data-agent-subagent-summary]")).toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect($("[data-agent-subagent-elapsed]")!.textContent).toBe("· 9s");
+      act(() => $("button[aria-expanded]")!.click());
+      expect($("[data-agent-subagent-resumed]")).not.toBeNull();
+      expect(
+        container.querySelectorAll("[data-agent-group], [data-agent-tool]").length,
+      ).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never shows a card for a first run that works (the tray has it)", async () => {
+    await mount(replay(5));
     expect($("[data-agent-subagent]")).toBeNull();
+  });
+
+  it("says No activity recorded when every part is empty", async () => {
+    const chat = replay();
+    // a restored note that kept no calls of the run
+    chat.turns[0]!.blocks = chat.turns[0]!.blocks.filter(
+      (b) => !("parentToolCallId" in b && b.parentToolCallId === "a1"),
+    );
+    await mount(chat);
+    act(() => $("button[aria-expanded]")!.click());
+    expect(container.textContent).toContain("No activity recorded.");
+  });
+});
+
+describe("the golden resumed background run through the real persist path", () => {
+  const events = () => withRunnerStarts(goldens["subagent-resume"]!);
+
+  const live = () => {
+    let chat = appendUserTurn(
+      createChat("c"),
+      { messageId: "u", text: "go", context: [] },
+      0,
+      true,
+    );
+    for (const [i, e] of events().entries()) chat = reduceEvent(chat, e, 1000 + i * 10);
+    return chat;
+  };
+
+  /** The events as the pane records them: a send, then every event, written at each turn end. */
+  const restored = () => {
+    let note = recordSend(newNoteState("c1", null, 0), {
+      messageId: "u",
+      text: "go",
+      context: [],
+      ts: 1,
+    } as never);
+    for (const e of events()) note = recordEvents(note, [e], 5).note;
+    const doc = parseChatNote(
+      serializeChatNote({
+        meta: note.meta,
+        trimmed: 0,
+        extraFrontmatter: "",
+        messages: note.messages,
+      }),
+    )!;
+    return chatFromNote(doc, { projectPath: null });
+  };
+
+  const runOfChat = (chat: Chat) => {
+    for (const t of chat.turns) {
+      const r = splitRuns(t).runs.get("toolu_real1");
+      if (r) return r;
+    }
+    throw new Error("no run");
+  };
+  const toolIds = (blocks: readonly { kind: string; id: string }[]) =>
+    blocks.filter((b) => b.kind === "tool").map((b) => b.id);
+
+  it("restores the run's divider where the live one is, and its calls with the run", () => {
+    const liveParts = runParts(runOfChat(live()));
+    const backParts = runParts(runOfChat(restored()));
+    expect(liveParts).toHaveLength(2);
+    expect(backParts.map((p) => toolIds(p.blocks))).toEqual(
+      liveParts.map((p) => toolIds(p.blocks)),
+    );
+    expect(backParts[1]!.blocks.length).toBeGreaterThan(0);
+    expect(backParts.map((p) => p.resume !== null)).toEqual([false, true]);
+  });
+
+  it("keeps no call of the run among the main agent's in the turns after", () => {
+    const chat = restored();
+    const runIds = new Set(toolIds(runOfChat(chat).children));
+    for (const t of chat.turns)
+      for (const b of splitRuns(t).main) expect(runIds.has(b.id)).toBe(false);
+    expect(runIds.has("toolu_resume2")).toBe(true);
+  });
+});
+
+describe("the note's view of a resume", () => {
+  const sub = (extra = {}) => ({ role: null, name: "w", model: null, ...extra });
+
+  it("marks the earlier run as interrupted and clears the end", () => {
+    const run = sub();
+    applySubagentEvent(
+      run,
+      { type: "subagent-status", toolCallId: "a1", status: "interrupted", report: null },
+      0,
+    );
+    expect(run).toMatchObject({ interrupted: true });
+    applySubagentEvent(
+      run,
+      { type: "subagent-status", toolCallId: "a1", status: "running", report: null },
+      3,
+    );
+    expect(run).toEqual(sub({ resumes: [{ at: 3, interrupted: true }] }));
+  });
+
+  it("counts a run's calls over the written messages and the turn in flight", () => {
+    const tool = (id: string, parent?: string) => ({
+      id,
+      tool: "Read",
+      input: {},
+      outcome: "ok" as const,
+      ...(parent ? { parent } : {}),
+    });
+    expect(
+      callsOfRun(
+        [{ tools: [tool("x", "a1"), tool("y")] }, { tools: [tool("z", "a1")] }],
+        [tool("w", "a1")],
+        "a1",
+      ),
+    ).toBe(3);
+  });
+
+  it("ignores resumes of a note that are not the shape written", () => {
+    const tools = [
+      {
+        id: "a1",
+        tool: "Agent",
+        input: {},
+        outcome: "ok" as const,
+        sub: sub({
+          status: "completed",
+          resumes: [{ at: "x" }, null, { at: 2, summary: "s" }, 7] as never,
+        }),
+      },
+    ];
+    const doc: ChatNoteDoc = {
+      meta: { ...emptyMeta("c1", 0), title: "t" },
+      trimmed: 0,
+      extraFrontmatter: "",
+      messages: [
+        { role: "user", id: "u", at: 1, text: "go" },
+        { role: "assistant", id: "a", at: 2, text: "", reason: "completed", tools },
+      ],
+    };
+    const chat = chatFromNote(doc, { projectPath: null });
+    expect(splitRuns(chat.turns[chat.turns.length - 1]!).runs.get("a1")!.meta!.resumes).toEqual([
+      { at: 2, ms: null, report: "s" },
+    ]);
   });
 });

@@ -3,12 +3,13 @@
  * comes from the note alone"). Tool rows come back collapsed with their input and outcome; tool
  * output is never stored, so it is absent.
  */
-import type { ChatNoteDoc, ChatNoteMessage } from "./chat-note";
+import type { ChatNoteDoc, ChatNoteMessage, ChatNoteResume } from "./chat-note";
 import { chatFileRef } from "./chat-files";
 import type { ChatSummary } from "./events";
 import { createChat } from "./reduce";
 import type { Chat, SubagentMeta, ToolBlock, Turn, UserMessage } from "./transcript";
 import { restoreSessionChanges } from "./session-changes";
+import { isLaunchCall } from "./subagents";
 
 function toolBlocks(m: ChatNoteMessage): ToolBlock[] {
   return (m.tools ?? []).map((t) => ({
@@ -44,7 +45,12 @@ function subagentsOf(m: ChatNoteMessage): Record<string, SubagentMeta> | null {
   if (runs.length === 0) return null;
   return Object.fromEntries(
     runs.map((t) => {
-      const { resumes, ...sub } = t.sub!;
+      const { resumes, interrupted: _cut, ...sub } = t.sub!;
+      // the note is a file a person can edit: only entries of the shape written are read
+      const valid = (Array.isArray(resumes) ? resumes : []).filter(
+        (r): r is ChatNoteResume =>
+          typeof r === "object" && r !== null && typeof r.at === "number" && Number.isFinite(r.at),
+      );
       return [
         t.id,
         {
@@ -53,8 +59,14 @@ function subagentsOf(m: ChatNoteMessage): Record<string, SubagentMeta> | null {
           startedAt: null,
           endedAt: null,
           // each earlier run's report and where the run restarted; the time was never stored
-          ...(resumes?.length
-            ? { resumes: resumes.map((r) => ({ at: r.at, ms: null, report: r.summary })) }
+          ...(valid.length
+            ? {
+                resumes: valid.map((r) => ({
+                  at: r.at,
+                  ms: null,
+                  ...(typeof r.summary === "string" && r.summary ? { report: r.summary } : {}),
+                })),
+              }
             : {}),
         } satisfies SubagentMeta,
       ];
@@ -90,6 +102,8 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
   let current: Turn | null = null;
   // the turn a mid-turn message went into: the assistant message after it goes on in that turn
   let resumed: Turn | null = null;
+  // the turn of each launch call, for the calls of its run that came later
+  const launchTurns = new Map<string, Turn>();
   for (const [index, m] of doc.messages.entries()) {
     const last = turns[turns.length - 1];
     if (m.role === "user" && m.steer && last) {
@@ -124,7 +138,13 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
       current = open(null, m.at);
       turns.push(current);
     }
-    current.blocks.push(...toolBlocks(m));
+    for (const block of toolBlocks(m)) {
+      // a run's call that comes after its turn closed (a background run, or one resumed in a later
+      // turn) belongs to the turn that launched it, as live
+      const launched = block.parentToolCallId ? launchTurns.get(block.parentToolCallId) : undefined;
+      (launched ?? current).blocks.push(block);
+      if (isLaunchCall(block)) launchTurns.set(block.id, current);
+    }
     const subagents = subagentsOf(m);
     if (subagents) current.subagents = { ...current.subagents, ...subagents };
     if (m.text.trim()) {

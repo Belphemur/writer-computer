@@ -31,7 +31,7 @@ use super::files::Outgoing;
 use super::mcp_wiring::McpWiring;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
-use super::sub_tracker::{split_decided, Author, SubTracker};
+use super::sub_tracker::{Author, Decided, SubTracker};
 use super::subagents::{is_launch_tool, resolve_launch};
 use crate::features::points::Points;
 use crate::features::scope::{CancelToken, Spawner};
@@ -201,6 +201,48 @@ fn receipt_id(message_id: &str) -> String {
     }
 }
 
+/// The models a turn's sub-agents ran on, in launch order, one per run: the model the run
+/// reported on its own messages (`subagent-model`, what really ran), else the tier's model it was
+/// launched with. The one list `agent.turn-finished` (the Git history's `Writer-Model` trailer)
+/// reads.
+#[derive(Default)]
+struct SubModels {
+    runs: Vec<(String, Option<String>, Option<String>)>,
+}
+
+impl SubModels {
+    fn run(&mut self, call: &str) -> &mut (String, Option<String>, Option<String>) {
+        if let Some(i) = self.runs.iter().position(|r| r.0 == call) {
+            return &mut self.runs[i];
+        }
+        self.runs.push((call.to_string(), None, None));
+        self.runs.last_mut().unwrap()
+    }
+
+    /// The tier's model, the fallback.
+    fn tier(&mut self, call: &str, model: &str) {
+        self.run(call).1 = Some(model.to_string());
+    }
+
+    /// The model the run reported (the latest one after a resume).
+    fn reported(&mut self, call: &str, model: &str) {
+        self.run(call).2 = Some(model.to_string());
+    }
+
+    /// One model per run, distinct, first run first.
+    fn models(self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (_, tier, reported) in self.runs {
+            if let Some(m) = reported.or(tier) {
+                if !out.contains(&m) {
+                    out.push(m);
+                }
+            }
+        }
+        out
+    }
+}
+
 struct PendingPerm {
     input: Value,
     suggestions: Vec<Value>,
@@ -278,9 +320,9 @@ struct Inner {
     turn_active: bool,
     /// The model the last usage report named for this turn (handed to `agent.turn-finished`).
     turn_model: Option<String>,
-    /// The distinct models the turn's sub-agents run on (first launch first), handed to
-    /// `agent.turn-finished` after the main model.
-    sub_models: Vec<String>,
+    /// The models the turn's sub-agents run on, handed to `agent.turn-finished` after the main
+    /// model.
+    sub_models: SubModels,
     /// This chat is between "an idle send decided to start a turn" and "its message is queued":
     /// a second concurrent send sees it and does not announce the same turn again.
     turn_starting: bool,
@@ -515,7 +557,7 @@ impl Session {
                 pending: HashMap::new(),
                 turn_active: false,
                 turn_model: None,
-                sub_models: Vec::new(),
+                sub_models: SubModels::default(),
                 turn_starting: false,
                 turn_seq: 0,
                 queue: VecDeque::new(),
@@ -894,7 +936,10 @@ impl Session {
                 out.tasks.iter().flat_map(|s| g.subs.on_task(s)).collect();
             for mut ev in task_events.into_iter().chain(out.events) {
                 // runner-originated events that follow `ev`
-                let (resumes, mut extra) = split_decided(g.subs.observe(&ev));
+                let Decided {
+                    before: resumes,
+                    after: mut extra,
+                } = g.subs.observe(&ev);
                 match &ev {
                     AgentEvent::ToolCallStarted {
                         tool_call_id, tool, ..
@@ -927,9 +972,7 @@ impl Session {
                                 g.session_model.as_deref().or(g.settings.model.as_deref());
                             if let Some(launch) = resolve_launch(input, &g.agent_tiers, inherited) {
                                 if let Some(m) = launch.model.as_ref() {
-                                    if !g.sub_models.contains(m) {
-                                        g.sub_models.push(m.clone());
-                                    }
+                                    g.sub_models.tier(tool_call_id, m);
                                 }
                                 extra.push(AgentEvent::SubagentStarted {
                                     tool_call_id: tool_call_id.clone(),
@@ -967,6 +1010,10 @@ impl Session {
                                 .command_finished(&self.chat_id, call, Instant::now());
                         }
                     }
+                    AgentEvent::SubagentModel {
+                        tool_call_id,
+                        model,
+                    } => g.sub_models.reported(tool_call_id, model),
                     AgentEvent::Usage {
                         scope: UsageScope::Turn,
                         model,
@@ -975,22 +1022,22 @@ impl Session {
                     AgentEvent::TurnFinished { reason, .. } => {
                         // A sub-agent still working after a normal end (a background task, woken
                         // later) keeps the card open for its late edits; any other end closes it.
-                        let keep_open = *reason == TurnFinishReason::Completed && g.subs.busy();
+                        // (the tracker's rule; settled runs stay known for a later resume)
+                        let (keep_open, ended) = g.subs.on_turn_finished(*reason);
                         g.background_open = keep_open;
                         if !keep_open {
                             let main = g.turn_model.take();
                             let mut models: Vec<String> = main.into_iter().collect();
-                            for m in std::mem::take(&mut g.sub_models) {
+                            for m in std::mem::take(&mut g.sub_models).models() {
                                 if !models.contains(&m) {
                                     models.push(m);
                                 }
                             }
                             turn_over = Some(models);
                             // a run that never got its end signal ends with the last turn
-                            extra.extend(g.subs.end_running(SubagentRunStatus::Interrupted));
+                            extra.extend(ended);
                             self.changes.commands_ended(&self.chat_id, Instant::now());
                             g.tool_names.clear();
-                            g.subs.clear();
                             // taken before `apply` flushes a queued message that starts the next turn
                             closed = self.changes.close_turn(&self.chat_id);
                         }
@@ -1389,8 +1436,9 @@ impl Session {
                 self.log.push(ev);
             }
             // a card kept open for a sub-agent ends with the process: nothing more can arrive
+            // the process is gone: so is everything it knew of its runs
+            g.subs.clear();
             if std::mem::take(&mut g.background_open) {
-                g.subs.clear();
                 g.tool_names.clear();
                 closed = self.changes.close_turn(&self.chat_id);
             }
@@ -2514,5 +2562,21 @@ mod tests {
         assert_eq!(r[2], format!("<{} bytes>", json.len()));
         assert!(!r.join(" ").contains("/Users"));
         assert_eq!(r[4], "x");
+    }
+}
+
+#[cfg(test)]
+mod sub_models_tests {
+    use super::SubModels;
+
+    #[test]
+    fn the_reported_model_wins_over_the_tier_and_the_tier_is_the_fallback() {
+        let mut m = SubModels::default();
+        m.tier("a1", "sonnet");
+        m.tier("a2", "haiku");
+        m.reported("a1", "claude-opus-5-5");
+        m.reported("a1", "claude-opus-5-5");
+        m.reported("a3", "claude-opus-5-5");
+        assert_eq!(m.models(), ["claude-opus-5-5", "haiku"]);
     }
 }

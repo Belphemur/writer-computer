@@ -125,6 +125,12 @@ pub struct ClaudeStreamMapper {
     sub_models: HashMap<String, String>,
 }
 
+/// The model an API message names, without the CLI's `<synthetic>` placeholder: the one filter
+/// for the main agent's model and a sub-agent's.
+fn message_model(msg: &Value) -> Option<&str> {
+    str_of(msg, "model").filter(|m| !m.is_empty() && !m.starts_with('<'))
+}
+
 fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(Value::as_str)
 }
@@ -397,10 +403,7 @@ impl ClaudeStreamMapper {
         if Self::parent_tool(v).is_some() {
             return;
         }
-        if let Some(m) = msg
-            .and_then(|m| str_of(m, "model"))
-            .filter(|m| !m.is_empty() && !m.starts_with('<'))
-        {
+        if let Some(m) = msg.and_then(message_model) {
             self.main_model = Some(m.to_string());
         }
     }
@@ -452,10 +455,7 @@ impl ClaudeStreamMapper {
             message_id: message_id.to_string(),
             parent_tool_call_id: parent.clone(),
         });
-        let Some(model) = msg
-            .and_then(|m| str_of(m, "model"))
-            .filter(|m| !m.is_empty() && !m.starts_with('<'))
-        else {
+        let Some(model) = msg.and_then(message_model) else {
             return;
         };
         if self.sub_models.get(&parent).map(String::as_str) != Some(model) {
@@ -1523,11 +1523,18 @@ mod tests {
             let out = m.map_line(line);
             events.extend(out.tasks.iter().flat_map(|t| subs.on_task(t)));
             for ev in out.events {
-                let (resumes, decided) =
-                    crate::agent::sub_tracker::split_decided(subs.observe(&ev));
-                events.extend(resumes);
+                let crate::agent::sub_tracker::Decided { before, after } = subs.observe(&ev);
+                events.extend(before);
+                let finished = match &ev {
+                    AgentEvent::TurnFinished { reason, .. } => Some(*reason),
+                    _ => None,
+                };
                 events.push(ev);
-                events.extend(decided);
+                events.extend(after);
+                // the turn's end, by the tracker's rule (the runner's too)
+                if let Some(reason) = finished {
+                    events.extend(subs.on_turn_finished(reason).1);
+                }
             }
             unsupported.extend(out.unsupported_control_request);
         }

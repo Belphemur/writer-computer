@@ -38,6 +38,11 @@ const ALLOWED: [string, string, string][] = [
   ],
   ["agent/web/index.ts", "subscribe", DOCK],
   [
+    "agent/web/hooks/use-now.ts",
+    "setInterval",
+    "a React effect's clock: the effect's cleanup clears it when the component unmounts or stops being active",
+  ],
+  [
     "agent/web/lib/chat-saver.ts",
     "setTimeout",
     "the debounced chat save: `resetAgentStore` flushes it when the feature turns off, so no word is lost",
