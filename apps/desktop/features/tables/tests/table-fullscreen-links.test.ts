@@ -37,14 +37,6 @@ vi.mock("@/components/editor-area/link-navigation", async () => {
   };
 });
 
-if (!Range.prototype.getClientRects) {
-  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
-}
-if (!Range.prototype.getBoundingClientRect) {
-  Range.prototype.getBoundingClientRect = () =>
-    ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect;
-}
-
 import { dispatchMouse } from "@tests/helpers/events";
 import { editorNotePath } from "@/lib/editor-views";
 import { RENDERED_LINK_CLASS, WIKI_LINK_CLASS } from "@/lib/link-dom";
