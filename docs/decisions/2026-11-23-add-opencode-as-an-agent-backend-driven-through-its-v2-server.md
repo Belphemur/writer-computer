@@ -167,7 +167,9 @@ Phases, one at a time, each validated and reviewed before the next (the project 
 ## Verification
 
 - [ ] Phase 1 lands with `git diff` showing no change under `src-tauri/src/agent/fixtures/` or `shared/agent-golden/`, and the full test suite green.
-- [ ] An OpenCode chat in a real window sends, streams text and tools, asks permission, runs a sub-agent, stops on Stop, and resumes after a Writer restart.
+- [ ] An OpenCode chat in a real window sends, streams text and tools, asks permission, stops on Stop, and resumes after a Writer restart.
+- [ ] A question the agent asks (`form.created`) shows in the question card like Claude's `AskUserQuestion`, and the answer reaches the agent.
+- [ ] A sub-agent shows in the chat and the tray like a Claude sub-agent: card, model, its own tool calls, running and done, resumed. It is fed by the child session's events, routed to the parent chat.
 - [ ] The server listens only on `127.0.0.1`, rejects a request without the password, and is gone after its window closes (`pgrep -f "opencode serve"`).
 - [ ] No file is written under the vault's `.opencode/` or `~/.config/opencode`, and the password appears in no log.
 - [ ] The models table lists the server's models with costs and capabilities, and a switched-off model is absent from the composer's dropdown.
