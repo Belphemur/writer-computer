@@ -70,6 +70,8 @@ fn wait_for(what: &str, cond: impl Fn() -> bool) {
 fn every_registered_feature_starts_and_stops_twice_and_leaves_nothing_alive() {
     // the icons and code-files flags are process-wide: stopping them must not race their own tests
     let _icons = crate::icons::TEST_SWITCH.lock();
+    // stopping code-files publishes the notes-only policy: keep it off the process-wide one
+    let _policy = crate::code_files::test_policy_guard(crate::code_files::Policy::default());
     let mut all = registry::<MockRuntime>();
     all.extend(fixture::registry::<MockRuntime>());
     for f in all {
@@ -229,6 +231,8 @@ fn wait_stopped(app: &tauri::App<MockRuntime>, id: &str) {
 #[test]
 fn is_live_agrees_with_started_through_start_stop_and_failure_for_every_feature() {
     let _icons = crate::icons::TEST_SWITCH.lock();
+    // stopping code-files publishes the notes-only policy: keep it off the process-wide one
+    let _policy = crate::code_files::test_policy_guard(crate::code_files::Policy::default());
     let mut all = registry::<MockRuntime>();
     all.extend(fixture::registry::<MockRuntime>());
     for f in all {

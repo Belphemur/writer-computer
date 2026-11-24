@@ -432,6 +432,8 @@ fn a_crash_while_native_code_was_live_turns_its_setting_off_on_the_next_launch()
     );
 
     // the plan reaches the webview for the notice, and the disabled features are not planned
+    // code-files publishes its policy when it starts or stops: keep it off the process-wide one
+    let _policy = crate::code_files::test_policy_guard(crate::code_files::Policy::default());
     let app = mock_app();
     install_booted(app.handle(), registry::<MockRuntime>(), &settings, booted);
     let status = status(app.handle());
@@ -462,6 +464,8 @@ fn two_failed_startups_start_safe_mode_and_ready_resets_the_counter() {
         Some(true)
     );
 
+    // code-files publishes its policy when it starts or stops: keep it off the process-wide one
+    let _policy = crate::code_files::test_policy_guard(crate::code_files::Policy::default());
     let app = mock_app();
     install_booted(app.handle(), registry::<MockRuntime>(), &settings, booted);
     assert!(status(app.handle()).safe_mode);

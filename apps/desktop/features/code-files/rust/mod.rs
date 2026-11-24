@@ -215,4 +215,18 @@ mod tests {
         .unwrap();
         assert!(!features::cli_enabled(dir.path(), "code-files"));
     }
+
+    #[test]
+    fn stopping_the_feature_degrades_the_policy_and_starting_it_brings_it_back() {
+        // a state of its own and a policy of its own: nothing else's start or stop shows here
+        let _policy = cf::test_policy_guard(cf::Policy::default());
+        let (_d, s) = settings(&[]);
+        let state = State::new();
+        state.set_wanted(policy_for(&s));
+        assert!(cf::policy().code, "running: code files are listed");
+        state.set_running(false);
+        assert!(!cf::policy().code, "stopped: notes only");
+        state.set_running(true);
+        assert!(cf::policy().code, "started again: code files are back");
+    }
 }

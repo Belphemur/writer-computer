@@ -275,6 +275,9 @@ mod tests {
         let writer_app_state = app_state.clone();
         let writer_window_state = writer_state.clone();
         let writer = std::thread::spawn(move || {
+            // applying settings publishes the code-files policy: keep it off the process-wide one
+            let _policy =
+                crate::code_files::test_policy_guard(crate::code_files::Policy::default());
             with_global_settings_mut(&writer_app_state, &writer_window_state, |settings| {
                 writer_entered_tx.send(()).unwrap();
                 release_writer_rx.recv().unwrap();
@@ -294,6 +297,9 @@ mod tests {
         let init_window_state = initializing_state.clone();
         let init_config_dir = config_dir.path().to_path_buf();
         let initializer = std::thread::spawn(move || {
+            // applying settings publishes the code-files policy: keep it off the process-wide one
+            let _policy =
+                crate::code_files::test_policy_guard(crate::code_files::Policy::default());
             init_window_settings_at(&init_app_state, &init_window_state, init_config_dir).unwrap();
             initialized_tx.send(()).unwrap();
         });

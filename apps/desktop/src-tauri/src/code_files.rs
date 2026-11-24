@@ -147,17 +147,28 @@ thread_local! {
     static TEST_POLICY: std::cell::RefCell<Option<Policy>> = const { std::cell::RefCell::new(None) };
 }
 
+/// `policy` is this thread's policy until the guard drops (tests only).
+#[cfg(test)]
+pub(crate) struct TestPolicyGuard;
+
+#[cfg(test)]
+impl Drop for TestPolicyGuard {
+    fn drop(&mut self) {
+        TEST_POLICY.with(|p| *p.borrow_mut() = None);
+    }
+}
+
+#[cfg(test)]
+#[must_use = "the policy is this thread's only while the guard lives"]
+pub(crate) fn test_policy_guard(policy: Policy) -> TestPolicyGuard {
+    TEST_POLICY.with(|p| *p.borrow_mut() = Some(policy));
+    TestPolicyGuard
+}
+
 /// Run `f` with `policy` as this thread's policy (tests only).
 #[cfg(test)]
 pub(crate) fn with_policy_for_test<T>(policy: Policy, f: impl FnOnce() -> T) -> T {
-    struct Reset;
-    impl Drop for Reset {
-        fn drop(&mut self) {
-            TEST_POLICY.with(|p| *p.borrow_mut() = None);
-        }
-    }
-    TEST_POLICY.with(|p| *p.borrow_mut() = Some(policy));
-    let _reset = Reset;
+    let _guard = test_policy_guard(policy);
     f()
 }
 
@@ -174,8 +185,41 @@ pub fn policy() -> Policy {
     with_current(Policy::clone)
 }
 
+/// Make `policy` the one in force.
 pub fn set_policy(policy: Policy) {
+    // Writes follow the reads: a thread under `with_policy_for_test` updates its own copy, so a
+    // test that starts, stops or re-applies the `code-files` feature cannot hide code files from
+    // the tests reading the process-wide policy.
+    #[cfg(test)]
+    {
+        let diverted = TEST_POLICY.with(|p| {
+            let mut p = p.borrow_mut();
+            if p.is_some() {
+                *p = Some(policy.clone());
+            }
+            p.is_some()
+        });
+        if diverted {
+            return;
+        }
+    }
     *POLICY.write() = policy;
+}
+
+/// Wrap `f`, which will run on another thread, so it runs under this thread's test policy (tests
+/// only; a thread a feature failure spawns to release its scope).
+#[cfg(test)]
+pub(crate) fn carry_test_policy<T>(f: impl FnOnce() -> T) -> impl FnOnce() -> T {
+    let carried = TEST_POLICY.with(|p| p.borrow().clone());
+    move || match carried {
+        Some(policy) => with_policy_for_test(policy, f),
+        None => f(),
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) fn carry_test_policy<T>(f: impl FnOnce() -> T) -> impl FnOnce() -> T {
+    f
 }
 
 /// Build a policy from the raw setting values; `None` keeps the default for that key. With the

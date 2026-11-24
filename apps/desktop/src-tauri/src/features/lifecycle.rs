@@ -348,9 +348,9 @@ pub(super) fn stop_after_failure<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let (app, id) = (app.clone(), id.to_string());
     let spawned = std::thread::Builder::new()
         .name("feature-failed-stop".into())
-        .spawn(move || {
+        .spawn(crate::code_files::carry_test_policy(move || {
             let _ = reconcile(&app, f, Trigger::Failure);
-        });
+        }));
     if let Err(e) = spawned {
         log::warn!("feature {id}: could not release its scope after the failure: {e}");
     }
