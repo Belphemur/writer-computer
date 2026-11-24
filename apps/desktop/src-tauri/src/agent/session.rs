@@ -888,7 +888,8 @@ impl AgentSessions {
             .shared
             .all()
             .into_iter()
-            .filter(|s| s.cwd.starts_with(folder))
+            // a chat already closing (terminal, waiting for its process) is not stopped again
+            .filter(|s| s.cwd.starts_with(folder) && !s.is_terminal())
             .collect();
         let busy = inside.iter().filter(|s| s.is_working()).count();
         if busy > 0 {

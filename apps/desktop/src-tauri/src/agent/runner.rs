@@ -1451,15 +1451,17 @@ impl Session {
         g.queue.clear();
         g.state = AgentSessionState::Ended;
         self.drop_pending(g);
+        // Leave the shared map before saying so: whoever acts on `SessionEnded` (a second stop,
+        // a new start) must not find this session still listed.
+        if let Some(shared) = self.shared.upgrade() {
+            shared.remove_if_same(self);
+        }
         self.log.push(AgentEvent::SessionEnded {
             reason,
             exit_code: code,
             signal,
         });
         self.log.close();
-        if let Some(shared) = self.shared.upgrade() {
-            shared.remove_if_same(self);
-        }
     }
 
     // ---------------------------------------------------------------- outbound

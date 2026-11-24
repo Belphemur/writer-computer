@@ -3264,6 +3264,8 @@ fn stop_idle_in_closes_the_idle_chats_of_the_folder_and_only_those() {
     // a chat of the vault root is outside the folder
     h.start(OTHER_CHAT);
     assert_eq!(h.sessions.stop_idle_in(&folder), Ok(1));
+    // a chat still closing (its process not yet gone) is not counted twice
+    assert_eq!(h.sessions.stop_idle_in(&folder), Ok(0));
     match h.next(CHAT, "session-ended", |e| {
         matches!(e, AgentEvent::SessionEnded { .. })
     }) {

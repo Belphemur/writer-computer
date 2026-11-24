@@ -469,7 +469,10 @@ impl Worker {
                 .collect();
             for chat_id in due {
                 debounce.remove(&chat_id);
-                if let Some(s) = shared.sessions.lock().get(&chat_id).cloned() {
+                // copy it out first: `settle` takes the session's own lock, which is held
+                // before the map's elsewhere (`finish_terminal`)
+                let session = shared.sessions.lock().get(&chat_id).cloned();
+                if let Some(s) = session {
                     s.settle();
                 }
             }
