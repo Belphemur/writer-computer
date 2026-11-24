@@ -1,16 +1,29 @@
 """Shared helper for the OpenCode spike. Standard library only.
 
-Starts OUR OWN `opencode serve` (free port, random password, temp cwd, Writer-style env), records the
+Starts OUR OWN `opencode serve` (free port, random password, temp cwd, Writer-style env: Writer's own config file and an empty config home, project config off, no inherited OPENCODE_*), records the
 `/api/event` SSE stream to a file, does Basic-auth HTTP calls, and always stops the server.
 Never touches the user's `opencode service` or port 4096, never reads OpenCode's auth/config files and
 never calls /api/credential or /api/integration/*/connect/*.
 """
-import base64, http.client, json, os, secrets, shutil, signal, socket, subprocess, sys, threading, time
+import base64, http.client, json, os, secrets, shutil, signal, socket, subprocess, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+def _inside_git_checkout(path):
+    p = os.path.abspath(path)
+    while True:
+        if os.path.exists(os.path.join(p, ".git")):
+            return True
+        if os.path.dirname(p) == p:
+            return False
+        p = os.path.dirname(p)
+
+
 # Everything the recorder writes (raw captures, configs, server logs, the empty config home) goes under
-# OC_WORK, default ./oc-work in the current directory. Nothing is written next to the scripts.
-WORK = os.path.abspath(os.environ.get("OC_WORK") or os.path.join(os.getcwd(), "oc-work"))
+# OC_WORK, default a fresh temporary directory. A folder inside a git checkout is refused: raw captures
+# hold unscrubbed local paths and must never be committed by accident.
+WORK = os.path.abspath(os.environ.get("OC_WORK") or tempfile.mkdtemp(prefix="oc-work-"))
+if _inside_git_checkout(WORK):
+    sys.exit(f"refusing OC_WORK inside a git checkout: {WORK}")
 RAW = os.path.join(WORK, "raw")
 # Everything environment-specific is an env var (run.py sets them from its arguments).
 BIN = os.environ.get("OC_BIN") or "opencode"
@@ -58,40 +71,57 @@ class Server:
         self._stop = False
 
     # -- lifecycle -------------------------------------------------------------------------
-    def __enter__(self):
-        os.makedirs(RAW, exist_ok=True)
-        os.makedirs(os.path.join(WORK, "xdg-config"), exist_ok=True)
-        env = dict(os.environ)  # real HOME: the login is found there, never read by us
+    def build_env(self):
+        """The server's environment: no inherited OPENCODE_* variable (a stray OPENCODE_CONFIG_CONTENT or
+        OPENCODE_CONFIG_DIR would bring the user's own setup back), then Writer's own, with the project
+        config (`opencode.json`, `.opencode/` in the working directory) switched off. The real HOME stays so
+        the login resolves; the config home is empty and recreated empty on every start."""
+        env = {k: v for k, v in os.environ.items() if not k.startswith("OPENCODE_")}
+        xdg = os.path.join(WORK, "xdg-config")
+        shutil.rmtree(xdg, ignore_errors=True)
+        os.makedirs(xdg)
         env.update(
             OPENCODE_SERVER_PASSWORD=self.pw,
             OPENCODE_CONFIG=self.cfg_path,
+            OPENCODE_DISABLE_PROJECT_CONFIG="1",
             OPENCODE_DISABLE_CLAUDE_CODE="1",
             OPENCODE_DISABLE_AUTOUPDATE="1",
+            XDG_CONFIG_HOME=xdg,
         )
-        # An empty XDG_CONFIG_HOME keeps the user's own global config (dozens of MCP servers) out of
-        # the spike; logins live in the data dir and still apply.
-        env["XDG_CONFIG_HOME"] = os.path.join(WORK, "xdg-config")
-        env.update(self.env_extra)
+        for k, v in self.env_extra.items():  # a scenario may override; None removes the variable
+            if v is None:
+                env.pop(k, None)
+            else:
+                env[k] = v
+        return env
+
+    def __enter__(self):
+        os.makedirs(RAW, exist_ok=True)
+        env = self.build_env()
         cmd = [BIN, "serve", "--hostname", "127.0.0.1", "--port", str(self.port)]
         assert "service" not in cmd and self.port != 4096  # never the user's background service or its port
         if self.debug:
             cmd += ["--log-level", "debug", "--print-logs"]
         log = open(self.log_path, "w")
         self.proc = subprocess.Popen(cmd, cwd=self.cwd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        t = time.time()
-        while time.time() - t < 60:
-            if "server listening" in open(self.log_path).read():
-                break
-            if self.proc.poll() is not None:
-                raise RuntimeError("server exited: " + open(self.log_path).read()[-500:])
-            time.sleep(0.2)
-        else:
-            raise RuntimeError("server did not start")
-        threading.Thread(target=self._sse, daemon=True).start()
-        time.sleep(0.5)
-        code, r = self.api("GET", "/api/permission/saved", timeout=10)
-        self.saved_before = {x["id"] for x in (r or {}).get("data", [])}
-        return self
+        try:  # anything failing from here on must not leave the server running
+            t = time.time()
+            while time.time() - t < 60:
+                if "server listening" in open(self.log_path).read():
+                    break
+                if self.proc.poll() is not None:
+                    raise RuntimeError("server exited: " + open(self.log_path).read()[-500:])
+                time.sleep(0.2)
+            else:
+                raise RuntimeError("server did not start")
+            threading.Thread(target=self._sse, daemon=True).start()
+            time.sleep(0.5)
+            code, r = self.api("GET", "/api/permission/saved", timeout=10)
+            self.saved_before = {x["id"] for x in (r or {}).get("data", [])}
+            return self
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
 
     def __exit__(self, *a):
         self._stop = True
@@ -100,7 +130,7 @@ class Server:
                 self.api("DELETE", f"/api/session/{sid}", timeout=10)
             code, r = self.api("GET", "/api/permission/saved", timeout=10)
             for x in (r or {}).get("data", []):
-                if x["id"] not in self.saved_before:
+                if x["id"] not in getattr(self, "saved_before", {x["id"] for x in r["data"]}):
                     self.api("DELETE", f"/api/permission/saved/{x['id']}", timeout=10)
         except Exception as e:
             print("cleanup failed", repr(e)[:80])

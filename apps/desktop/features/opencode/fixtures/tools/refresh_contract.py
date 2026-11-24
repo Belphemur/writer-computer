@@ -2,15 +2,17 @@
 
   python3 -I refresh_contract.py --out DIR [--bin opencode] [--previous DIR/openapi-<old>.json] [--work DIR]
 
+--work holds the private server's config and logs (default: a fresh temporary directory, never inside a git
+checkout).
+
 Starts its own server (same safety rules as run.py), reads `GET /api/info` for the version and `GET /openapi.json`,
 writes DIR/openapi-<version>.json, and, with --previous, prints the added and removed routes and events, and the
 changes (request, parameters, responses; $refs resolved) in the routes and events listed in used.json.
 Exit code 1 when something Writer uses changed, so an upgrade does not slip through.
 """
-import argparse, json, os, sys
+import argparse, json, os, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from oc import Server  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -80,11 +82,13 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--bin", default=None)
     p.add_argument("--previous", default="")
+    p.add_argument("--work", default="", help="folder for the private server's config and logs (default: a temp dir)")
     a = p.parse_args()
+    work = os.path.abspath(a.work) if a.work else tempfile.mkdtemp(prefix="oc-contract-")
+    os.environ["OC_WORK"] = work  # before oc is imported: it reads its folders at import time
     if a.bin:
         os.environ["OC_BIN"] = a.bin
-        import oc
-        oc.BIN = a.bin
+    from oc import Server
     with Server("contract", cfg={}) as s:
         code, info = s.api("GET", "/api/info")
         version = info["version"]

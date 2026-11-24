@@ -13,7 +13,7 @@ import argparse, os, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCENARIOS = [
     "s01_text", "s02_edit", "s03_shell", "s04_question", "s05_subagent", "s06_interrupt_steer_queue",
-    "s07_mcp", "s07b_mcp_direct", "s08_errors", "s09_extras", "s11_control", "s11b_instructions", "s12_rest", "s13_title", "s14_auth",
+    "s07_mcp", "s07b_mcp_direct", "s08_errors", "s09_extras", "s11_control", "s11b_instructions", "s12_rest", "s13_title", "s14_auth", "s15_project_config",
 ]
 
 

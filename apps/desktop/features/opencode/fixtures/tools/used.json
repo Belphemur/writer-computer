@@ -1,5 +1,5 @@
 {
-  "note": "Interim list of what Writer reads or calls, seeded from SPECs/opencode-backend-spec.md. Phase 2 replaces it with the list derived from agent/opencode_api.rs (the single source); refresh_contract.py then reads that.",
+  "note": "Interim list of what Writer reads or calls, seeded from SPECs/opencode-backend-spec.md. Phase 2 replaces it with the list derived from features/opencode/rust/opencode_api.rs (the single source); refresh_contract.py then reads that.",
   "routes": [
     "GET /api/info", "GET /api/event", "GET /api/model", "GET /api/provider", "GET /api/mcp", "GET /api/skill", "GET /api/command", "GET /api/agent",
     "POST /api/session", "GET /api/session/{sessionID}", "DELETE /api/session/{sessionID}", "PATCH /api/session/{sessionID}",
