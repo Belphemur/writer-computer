@@ -27,7 +27,7 @@ The procedure and its rules live in [`docs/releasing.md`](../../../docs/releasin
    - "Checks (Linux)" and "Linux bundles and e2e" must pass.
    - "Checks (macOS)" is often cancelled because no runner is free. A cancelled job is not a failure, so say so and go on.
    - A failed job is a failure: fix it first.
-6. **Tag** (§3): `git tag v<version> && git push origin v<version>`. Then find the release run with `gh -R Belphemur/writer-computer run list --workflow release.yml --limit 1` and watch its **Check the tag** job. If it fails, follow the doc's "When things go wrong".
+6. **Tag** (§3): `git tag -m "Writer <version>" v<version> && git push origin v<version>` (the repo signs tags, so a bare `git tag` fails with "no tag message?"). Then find the release run with `gh -R Belphemur/writer-computer run list --workflow release.yml --limit 1` and watch its **Check the tag** job. If it fails, follow the doc's "When things go wrong".
 7. **Hand over.** The run takes about an hour and ends in a **draft**. Tell the maintainer:
    - the run URL;
    - that the draft needs their review and **Publish release** (§4, §5);
