@@ -3,7 +3,11 @@
 ## Unreleased
 
 - Git: a same-size edit saved in the same second as a commit of other files could vanish from the changes list; the index now marks such entries for a content check.
-- OpenCode (feature): chat with your OpenCode models in the Agent pane. Pick it for a new chat when `opencode` is installed, choose models and effort in the chat, and manage the model list (All, Enabled, Free, search, prices) and saved permission rules in Settings > Agent > OpenCode. Deleting a chat deletes its OpenCode session; your own OpenCode config does not apply.
+- OpenCode (feature): a second agent backend. Pick it per chat when `opencode` 2.4 or newer is installed and signed in, with the default under Settings > Agent > Default agent. Writer runs OpenCode with its own config, so your global OpenCode config, plugins and MCP servers do not apply. [Use OpenCode in Writer](https://writer.computer/docs/use-opencode/).
+- OpenCode: Settings > Agent > OpenCode has a models table (All, Enabled, Free, search, prices) where you switch models off, the tier models, and the saved permission rules of the vault's project. Reasoning effort shows in the chat's model chip.
+- OpenCode: Ask before edit, Auto-edit files and Plan only. Plan only is read-only: it can look things up on the web and ask questions, and it writes and runs nothing. A switch to Auto or Don't ask asks like Ask before edit.
+- OpenCode: questions show in the question card, and sub-agents show as cards and in the tray, as with Claude.
+- OpenCode: deleting a chat deletes its OpenCode session; archiving keeps it.
 - "Choose binary…" on the agent pane's not-found card now remembers the program you pick (for the chat's own agent).
 - A missing `claude` program now shows a clear "not found" message in the agent pane.
 

@@ -63,6 +63,13 @@ export const DOCS: ContentSection = {
       source: "src/docs/sidebar.md",
     },
     {
+      slug: "use-opencode",
+      title: "Use OpenCode in Writer",
+      description:
+        "Chat with OpenCode in Writer Computer's agent pane: what to install, how Writer's own OpenCode config works, picking models, permission modes and the known limits.",
+      source: "src/docs/use-opencode.md",
+    },
+    {
       slug: "keyboard-shortcuts",
       title: "Keyboard shortcuts",
       description:

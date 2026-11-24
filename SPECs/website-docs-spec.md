@@ -27,5 +27,5 @@ Add a small docs section to writer.computer at `/docs/`, so search engines and A
 ## Validation
 
 - `vp check`, `vp test` (`apps/website/tests/docs.test.ts` renders every registered page and covers the title check, comment stripping, heading ids, sitemap and `llms.txt` generation).
-- `vp run website#build` prerenders `/`, `/docs/` and the nine pages; each has one title, description, canonical and `og:url`, and the docs pages carry the extra JSON-LD.
+- `vp run website#build` prerenders `/`, `/docs/` and the ten pages; each has one title, description, canonical and `og:url`, and the docs pages carry the extra JSON-LD.
 - Screenshots at 1440 px and 390 px; no page scrolls horizontally at 390 px. Client-side navigation between docs pages swaps the page and its head without a reload.
