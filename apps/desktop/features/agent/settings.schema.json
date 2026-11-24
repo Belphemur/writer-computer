@@ -266,6 +266,16 @@
       "type": "boolean",
       "scope": "global",
       "default": false
+    },
+    {
+      "key": "agent.default-backend",
+      "label": "Default agent",
+      "description": "The agent a new chat starts on. A chat keeps its agent; the new-chat menu can pick another one.",
+      "category": "Agent",
+      "type": "string",
+      "normalize": "trim",
+      "scope": "global",
+      "default": "claude"
     }
   ]
 }

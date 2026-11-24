@@ -320,6 +320,7 @@ fn default_route(req: &Req, s: &Arc<Shared>) -> (u16, Value) {
             (200, info)
         }
         ("POST", ["api", "session"]) => (200, recorded("session-create")),
+        ("POST", ["api", "session", _, "generate"]) => (200, recorded("generate")),
         ("GET", ["api", "session", "active"]) => (
             200,
             json!({"data": s.active.lock().iter().map(|id| (id.clone(), json!({}))).collect::<serde_json::Map<_, _>>()}),

@@ -6,6 +6,7 @@
  */
 import claudeTable from "@shared/agent-tools/claude.json";
 import writerMcp from "@shared/agent-tools/writer-mcp.json";
+import { agentBackendContributions } from "@/lib/features/agent-backends";
 import { roleLabelOf } from "./agent-roles";
 import type { PermissionPersist, PermissionSuggestion } from "./events";
 import type { PermissionView } from "./transcript";
@@ -104,18 +105,42 @@ export function buildSpecs(table: ToolTable) {
   return { specs, mcp, fallback: specOf(table.fallback, table.fallback), table };
 }
 
+type Specs = ReturnType<typeof buildSpecs>;
+
 const TABLE = buildSpecs(claudeTable as unknown as ToolTable);
 
+const contributed = new WeakMap<object, Specs>();
+
+/** Claude's table first, then every registered backend's (tool names do not collide across
+ *  backends, `agent-tool-table.test.ts`). Read at each call: a backend's feature may be turned on
+ *  or off while the window is open. */
+function tables(): Specs[] {
+  return [
+    TABLE,
+    ...agentBackendContributions.list().map((b) => {
+      const t = b.toolTable as object;
+      let specs = contributed.get(t);
+      if (!specs) contributed.set(t, (specs = buildSpecs(t as ToolTable)));
+      return specs;
+    }),
+  ];
+}
+
 /** The spec of a Writer MCP tool by its command; undefined for the others. */
-function mcpToolSpec(tool: string): ToolSpec | undefined {
-  const mcp = TABLE.mcp;
+function mcpToolSpec(table: Specs, tool: string): ToolSpec | undefined {
+  const mcp = table.mcp;
   if (!mcp?.prefix || !tool.startsWith(mcp.prefix)) return undefined;
   const command = tool.slice(mcp.prefix.length);
   return mcp.classes.find((c) => c.match.test(command))?.spec;
 }
 
-export const toolSpec = (tool: string): ToolSpec =>
-  TABLE.specs.get(tool) ?? mcpToolSpec(tool) ?? TABLE.fallback;
+export const toolSpec = (tool: string): ToolSpec => {
+  for (const t of tables()) {
+    const spec = t.specs.get(tool) ?? mcpToolSpec(t, tool);
+    if (spec) return spec;
+  }
+  return TABLE.fallback;
+};
 export const toolKind = (tool: string): ToolKind => toolSpec(tool).kind;
 export const readsFile = (tool: string): boolean => toolSpec(tool).readsFile === true;
 /** The role of a tool, when it has one (`shell`, `create`, `launch` ...). */
@@ -123,6 +148,9 @@ export const toolRole = (tool: string): ToolRole | undefined => toolSpec(tool).r
 /** The name of the first tool with `role` in the table (the one a rule is written for). */
 export const toolNameOf = (role: ToolRole): string | undefined =>
   TABLE.table.tools.find((t) => t.role === role)?.name;
+
+/** Every registered table, for the test that holds them to one meaning per tool name. */
+export const toolTablesForTests = (): Specs[] => tables();
 
 export const KIND_LABEL: Record<ToolKind, string> = {
   execute: "Run a command",

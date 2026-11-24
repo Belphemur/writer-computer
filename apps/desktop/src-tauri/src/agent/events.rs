@@ -813,6 +813,10 @@ pub struct StartSessionRequest {
     pub resume_session_id: Option<String>,
     pub settings: AgentSettings,
     pub append_system_prompt: Option<String>,
+    /// The backend a new chat runs on (the id of `writer-chat-backend`); `None`: Claude. A chat
+    /// that already has a session keeps the one it has.
+    #[serde(default)]
+    pub backend: Option<String>,
 }
 
 /// Who chose a chat's title: nobody yet (the first message, cut), the automatic titler, or the
@@ -844,6 +848,9 @@ pub struct ChatSummary {
     pub preview: Option<String>,
     #[serde(default)]
     pub title_source: TitleSource,
+    /// The agent the chat runs on (`writer-chat-backend`); `None`: Claude, the core's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -1344,6 +1351,7 @@ mod tests {
                 tier_models: BTreeMap::from([("cheap".to_string(), Some("haiku".to_string()))]),
             },
             append_system_prompt: None,
+            backend: None,
         });
         round_trip(&ChatSummary {
             chat_id: "c".into(),
@@ -1358,6 +1366,7 @@ mod tests {
             pinned: true,
             preview: Some("hi".into()),
             title_source: TitleSource::Auto,
+            backend: Some("other".into()),
         });
         round_trip(&ProjectInfo {
             path: "Projects/Demo".into(),

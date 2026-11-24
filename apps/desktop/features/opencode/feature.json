@@ -1,0 +1,30 @@
+{
+  "id": "opencode",
+  "name": "OpenCode",
+  "version": "1.0.0",
+  "description": "Chat with OpenCode models over your notes, as a second backend of the Agent pane.",
+  "enabledByDefault": true,
+  "activation": ["onStartup"],
+  "settingsNamespace": "agent.opencode",
+  "memory": {
+    "level": "low",
+    "note": "Registers one entry for the Agent pane at startup. One opencode process starts per window with an OpenCode chat (or when Settings lists its models) and stops with the window; with the feature off nothing runs."
+  },
+  "rust": {
+    "commands": [
+      "opencode_models",
+      "opencode_remove_saved_rule",
+      "opencode_saved_rules",
+      "opencode_status"
+    ],
+    "events": ["opencode:models-updated"],
+    "hooks": ["start", "onWorkspaceClose", "onExit"]
+  },
+  "extends": ["agent.backends"],
+  "offNotes": {
+    "agent.backends": "New chats can't use OpenCode, and its chats won't open until you turn it back on"
+  },
+  "contributes": {
+    "agentBackends": ["opencode.backend"]
+  }
+}

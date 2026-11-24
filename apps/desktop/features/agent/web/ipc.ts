@@ -50,6 +50,8 @@ export interface AgentCommands {
       chatId: string;
       /** Vault-relative project folder, or null for the vault root. */
       projectPath: string | null;
+      /** The chat's backend id (`backends.ts`); null: Claude. */
+      backend: string | null;
       resumeSessionId: string | null;
       settings: AgentSettings;
       /** The project's `AGENTS.md` text is injected through this. */

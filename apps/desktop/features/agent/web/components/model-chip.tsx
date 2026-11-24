@@ -1,21 +1,29 @@
 import { useEffect, useRef, useState } from "react";
+import { EFFORT_LEVELS } from "@/lib/features/agent-backends";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { usePopoverPlacement } from "@/hooks/use-popover-placement";
 import { setAgentChatModel, setAgentDefaultModel } from "@features/agent/web/hooks/agent-api";
 import { useChatModel } from "@features/agent/web/hooks/use-agent";
-import { useEnabledAgentModels } from "@features/agent/web/hooks/use-enabled-agent-models";
+import { useChatModelChoices } from "@features/agent/web/hooks/use-enabled-agent-models";
 import type { ChatId } from "@features/agent/web/lib/events";
 import { reportedMatches, shortModelName } from "@features/agent/web/lib/model-label";
 import { DEFAULT_MODEL_ID } from "@features/agent/web/lib/model-catalog";
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 
-const EFFORTS = [null, "low", "medium", "high", "xhigh", "max"] as const;
-const effortLabel = (e: (typeof EFFORTS)[number]) => (e === null ? "Default" : e);
+const CHIP_EFFORTS = [null, ...EFFORT_LEVELS] as const;
+const effortLabel = (e: (typeof CHIP_EFFORTS)[number]) => (e === null ? "Default" : e);
 
 /** The model chip: the model the chat runs (the CLI's own report wins once a turn has finished),
  *  a menu of the enabled models, the effort when the model takes one, and "Set as default". */
 export function ModelChip({ chatId }: { chatId: ChatId }) {
-  const { choice, reported, sessionModel, pending } = useChatModel(chatId);
-  const models = useEnabledAgentModels({ currentModel: choice.model, sessionModel });
+  const { choice, reported, sessionModel, pending, backendId } = useChatModel(chatId);
+  const backend = backendOrDefault(backendId);
+  const models = useChatModelChoices(backendId, { currentModel: choice.model, sessionModel });
+  // a live list names its models; Claude's ids are shortened by `shortModelName`
+  const nameOf = (id: string) =>
+    backend.modelsSource === "live" && id !== DEFAULT_MODEL_ID
+      ? (models.find((m) => m.id === id)?.label ?? shortModelName(id))
+      : shortModelName(id);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -25,7 +33,7 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
   const current = models.find((m) => m.id === requestedId);
   const matches = reportedMatches(choice.model, reported);
   // Pending: the selection, at once. Applied: what the CLI says it runs (it wins over the request).
-  const label = shortModelName(pending ? requestedId : (reported ?? requestedId));
+  const label = nameOf(pending ? requestedId : (reported ?? requestedId));
 
   useEffect(() => {
     if (!open) return;
@@ -49,9 +57,9 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
         aria-label={`Model: ${label}`}
         title={
           pending
-            ? `Switching to ${shortModelName(requestedId)}`
+            ? `Switching to ${nameOf(requestedId)}`
             : reported && !matches
-              ? `Requested ${shortModelName(requestedId)}, running ${shortModelName(reported)}`
+              ? `Requested ${nameOf(requestedId)}, running ${nameOf(reported)}`
               : undefined
         }
         data-agent-model-chip
@@ -101,9 +109,11 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
           {current?.supportsEffort !== false && (
             <>
               <div className="mt-1 border-t border-[var(--line-subtle)] px-2 pt-1.5 text-[10.5px] text-text-muted">
-                Effort (restarts the session)
+                {backend.effortRestarts ? "Effort (restarts the session)" : "Effort"}
               </div>
-              {EFFORTS.map((e) => (
+              {CHIP_EFFORTS.filter(
+                (e) => e === null || !current?.efforts || current.efforts.includes(e),
+              ).map((e) => (
                 <button
                   key={e ?? "default"}
                   role="menuitemradio"
@@ -127,7 +137,7 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
             type="button"
             onClick={() => {
               setOpen(false);
-              void setAgentDefaultModel(choice);
+              void setAgentDefaultModel(choice, backendId);
             }}
             className="mt-1 block w-full rounded-md border-t border-[var(--line-subtle)] px-2 py-1.5 text-left text-[12px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
           >
@@ -135,13 +145,13 @@ export function ModelChip({ chatId }: { chatId: ChatId }) {
           </button>
           {pending ? (
             <div data-agent-model-footer className="px-2 py-1 text-[10.5px] text-text-muted">
-              Switching to {shortModelName(requestedId)}…
+              Switching to {nameOf(requestedId)}…
             </div>
           ) : (
             reported &&
             !matches && (
               <div data-agent-model-footer className="px-2 py-1 text-[10.5px] text-text-muted">
-                Running {shortModelName(reported)}
+                Running {nameOf(reported)}
               </div>
             )
           )}

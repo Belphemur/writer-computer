@@ -91,6 +91,8 @@ pub enum ServerError {
     /// A version older than [`MIN_VERSION`], of another major, or one that is not a version.
     Unsupported(String),
     Failed(String),
+    /// The server was stopped (its window closed, the feature went off): it never starts again.
+    Closed,
 }
 
 impl std::fmt::Display for ServerError {
@@ -104,6 +106,7 @@ impl std::fmt::Display for ServerError {
                 )
             }
             ServerError::Failed(m) => write!(f, "{m}"),
+            ServerError::Closed => write!(f, "OpenCode is stopped"),
         }
     }
 }
@@ -363,7 +366,18 @@ struct Inner {
     reload_deadline_ms: AtomicU64,
     /// The epoch of the server start whose agent list was found to be Writer's own (0: none).
     agents_ok: AtomicU64,
+    /// Sessions of Writer's own helper calls (a title): not a chat's turn, so they are not
+    /// counted by the gate that holds a reload or by what turning the feature off waits for.
+    untracked: Mutex<std::collections::HashSet<String>>,
+    /// Told each time a start of the server succeeded (what is owed to the server from before:
+    /// the sessions of deleted chats).
+    on_up: Mutex<Option<UpHook>>,
+    /// Told when the server says its models changed (`model.updated`).
+    on_models: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
 }
+
+/// What runs when a start succeeded, with the server's client.
+pub type UpHook = Box<dyn Fn(&Client) + Send + Sync>;
 
 #[derive(Default)]
 struct Gate {
@@ -416,6 +430,9 @@ impl OpencodeServer {
                 gate: Mutex::new(Gate::default()),
                 reload_deadline_ms: AtomicU64::new(RELOAD_DEADLINE.as_millis() as u64),
                 agents_ok: AtomicU64::new(0),
+                untracked: Mutex::new(Default::default()),
+                on_up: Mutex::new(None),
+                on_models: Mutex::new(None),
             }),
         })
     }
@@ -425,11 +442,13 @@ impl OpencodeServer {
     }
 
     /// How many events were dropped because no chat owned their session.
+    #[cfg(test)]
     pub fn dropped(&self) -> u64 {
         self.inner.dropped.load(Ordering::SeqCst)
     }
 
     /// How many times a server process was started (a restart counts).
+    #[cfg(test)]
     pub fn starts(&self) -> u64 {
         self.inner.starts.load(Ordering::SeqCst)
     }
@@ -450,7 +469,7 @@ impl OpencodeServer {
     pub fn ensure_started(&self) -> Result<Connection, ServerError> {
         let _one = self.inner.start_lock.lock();
         if self.inner.closed.load(Ordering::SeqCst) {
-            return Err(ServerError::Failed("OpenCode is stopped".into()));
+            return Err(ServerError::Closed);
         }
         if let Some(c) = self.connection() {
             return Ok(c);
@@ -547,11 +566,30 @@ impl OpencodeServer {
             client: client.clone(),
             info,
         });
+        if let Some(hook) = inner.on_up.lock().as_ref() {
+            hook(&client);
+        }
         Ok(Connection {
             client,
             epoch,
             version,
         })
+    }
+
+    /// What to do each time the server came up (set once by its owner, before the first start).
+    pub fn on_up(&self, hook: UpHook) {
+        *self.inner.on_up.lock() = Some(hook);
+    }
+
+    /// What to do when the server says its models changed (the settings page reads them again).
+    pub fn on_models_changed(&self, hook: Box<dyn Fn() + Send + Sync>) {
+        *self.inner.on_models.lock() = Some(hook);
+    }
+
+    /// `session` is a helper call's, not a chat's: its turns do not hold a reload and are not
+    /// "running turns". Call it before the session first runs.
+    pub fn untrack(&self, session: &str) {
+        self.inner.untracked.lock().insert(session.to_string());
     }
 
     /// Writes Writer's config file (spec section 8) when `text` differs from what was written
@@ -673,14 +711,25 @@ impl OpencodeServer {
         self.inner.routes.lock().owner.get(session) == Some(&key)
     }
 
+    /// How many sessions of this server are executing a turn now (children included): what
+    /// turning the feature off would cut short.
+    pub fn running_turns(&self) -> usize {
+        self.inner.gate.lock().running.len()
+    }
+
     /// Stops the process and the runtime: the window or the vault closed.
+    ///
+    /// The runtime goes first: the event stream we hold open is what keeps a server from ending
+    /// on SIGTERM, and a start that is waiting for the process fails at once. Then the process
+    /// gets its signal and, a few seconds later, the kill. Blocks for as long as the process
+    /// takes to end: call it off the UI thread (`Servers` does).
     pub fn shutdown(&self) {
-        let _one = self.inner.start_lock.lock();
         self.inner.closed.store(true, Ordering::SeqCst);
+        self.inner.io.stop();
+        let _one = self.inner.start_lock.lock();
         if let Some(live) = self.inner.live.lock().take() {
             live.process.stop();
         }
-        self.inner.io.stop();
     }
 }
 
@@ -702,6 +751,9 @@ impl Inner {
         let Some(session) = ev.session_id() else {
             return false;
         };
+        if self.untracked.lock().contains(session) {
+            return false;
+        }
         let mut g = self.gate.lock();
         match ev.kind.as_str() {
             "session.execution.started" => {
@@ -740,6 +792,9 @@ impl Inner {
         let Some(session) = session else {
             // server-wide events name no session; the chats read the models again on this one
             if ev.kind == "model.updated" {
+                if let Some(hook) = self.on_models.lock().as_ref() {
+                    hook();
+                }
                 self.broadcast(&ChatInput::Event(ev));
             }
             return;

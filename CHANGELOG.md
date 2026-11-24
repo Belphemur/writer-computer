@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Git: a same-size edit saved in the same second as a commit of other files could vanish from the changes list; the index now marks such entries for a content check.
+- OpenCode (feature): chat with your OpenCode models in the Agent pane. Pick it for a new chat when `opencode` is installed, choose models and effort in the chat, and manage the model list (All, Enabled, Free, search, prices) and saved permission rules in Settings > Agent > OpenCode. Deleting a chat deletes its OpenCode session; your own OpenCode config does not apply.
+- "Choose binary…" on the agent pane's not-found card now remembers the program you pick (for the chat's own agent).
 - A missing `claude` program now shows a clear "not found" message in the agent pane.
 
 ## 0.9.0 - 2026-11-23

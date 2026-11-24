@@ -38,6 +38,7 @@ impl Endpoint {
     }
 
     /// An endpoint with a wrong or missing password (tests: the 401 path).
+    #[cfg(test)]
     pub fn without_password(base: &str) -> Self {
         Self {
             base: base.trim_end_matches('/').to_string(),

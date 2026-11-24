@@ -476,6 +476,7 @@ mod tests {
                     tier_models: Default::default(),
                 },
                 append_system_prompt: None,
+                backend: None,
             },
             inject_agents_md: InjectAgentsMd::Auto,
             cli_dir: None,

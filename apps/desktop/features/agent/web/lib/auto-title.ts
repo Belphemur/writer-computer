@@ -5,6 +5,7 @@
  * cuts and the sanitising.
  */
 import { type ChatNoteMessage, type ChatNoteMeta, titleSourceOf } from "./chat-note";
+import { backendOrDefault } from "./backends";
 import type { ChatSummary, RegenerateOutcome, RegenerateRefusal, TitleSource } from "./events";
 import type { NoteState } from "./chat-persist";
 import type { Chat } from "./transcript";
@@ -70,12 +71,28 @@ export function applyTitleSummary(
 
 export type { RegenerateOutcome, RegenerateRefusal };
 
+/** What a refusal names when the caller does not know the chat's agent (the history list: a saved
+ *  summary has no backend). */
+const DEFAULT_PRODUCT = backendOrDefault(null).product;
+
 /** The inline sentence for each refusal: the one place that words them. */
 export const REGENERATE_REFUSAL_TEXT: Record<RegenerateRefusal, string> = {
-  "no-binary": "Claude Code was not found. Check Settings > Agent.",
+  "no-binary": `${DEFAULT_PRODUCT} was not found. Check Settings > Agent.`,
+  unavailable: `${DEFAULT_PRODUCT} is turned off. Turn it on in Settings > Features.`,
   "no-reply": "This chat has no reply to title yet.",
   failed: "Could not generate a title. The old one is kept.",
 };
+
+/** The sentence for a refusal, naming the chat's agent (`product` of its backend descriptor) when
+ *  the caller knows it. */
+export function refusalText(reason: RegenerateRefusal, product?: string): string {
+  if (!product) return REGENERATE_REFUSAL_TEXT[reason];
+  if (reason === "no-binary") return `${product} was not found. Check Settings > Agent.`;
+  if (reason === "unavailable") {
+    return `${product} is turned off. Turn it on in Settings > Features.`;
+  }
+  return REGENERATE_REFUSAL_TEXT[reason];
+}
 
 /** "Regenerate title" needs something to title: at least one user message (the saved note holds
  *  the assistant reply, which only Rust can check; it answers `no-reply` when there is none). */

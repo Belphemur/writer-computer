@@ -180,6 +180,8 @@ export type ModelChoice = {
   /** What to put in `AgentSettings.model` / `--model`: null for the CLI default. */
   value: string | null;
   supportsEffort: boolean;
+  /** The effort levels the model offers; absent: all of them (Claude's catalog only says yes or no). */
+  efforts?: readonly string[];
 };
 
 /** The models the composer's chip offers: the enabled ones, plus the model the chat currently

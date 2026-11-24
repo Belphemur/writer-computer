@@ -14,7 +14,7 @@ export const commands = {
 	 *  the `agent.binary-path` setting is used.
 	 */
 	agentDetectBinary: (binaryOverride: string | null, options?: InvokeOptions) => __TAURI_INVOKE<AgentBinaryInfo>("plugin:agent|agent_detect_binary", { binaryOverride }, options),
-	agentStart: (chatId: string, projectPath: string | null, resumeSessionId: string | null, settings: AgentSettings, appendSystemPrompt: string | null, options?: InvokeOptions) => __TAURI_INVOKE<StartedIds>("plugin:agent|agent_start", { chatId, projectPath, resumeSessionId, settings, appendSystemPrompt }, options),
+	agentStart: (chatId: string, projectPath: string | null, resumeSessionId: string | null, settings: AgentSettings, appendSystemPrompt: string | null, backend: string | null, options?: InvokeOptions) => __TAURI_INVOKE<StartedIds>("plugin:agent|agent_start", { chatId, projectPath, resumeSessionId, settings, appendSystemPrompt, backend }, options),
 	agentSend: (chatId: string, messageId: string, text: string, context: ContextRef[], options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_send", { chatId, messageId, text, context }, options),
 	/**
 	 *  A steer: like `agent_send`, but forced into the running turn at once (`priority:"now"`: the
@@ -159,6 +159,13 @@ export type AgentBinaryInfo = {
 	 *  email, organisation, id or path.
 	 */
 	account: string | null,
+	/**
+	 *  Whether the version found is one Writer supports: `None` when the backend has no such rule
+	 *  (Claude) or the version is unknown. Filled by the backend that has a rule.
+	 */
+	supported: boolean | null,
+	/**  The oldest version Writer supports, for the card that says it does not. */
+	minVersion: string | null,
 };
 
 export type AgentErrorKind = "binary-not-found" | "spawn-denied" | "spawn-failed" | "auth" | "rate-limit" | "api" | "protocol" | "process-exited" | "timeout" | "unknown";
@@ -367,6 +374,8 @@ export type ChatSummary = {
 	/**  First user message, one line, for the history list and its search. */
 	preview?: string | null,
 	titleSource?: TitleSource,
+	/**  The agent the chat runs on (`writer-chat-backend`); `None`: Claude, the core's own. */
+	backend?: string | null,
 };
 
 /**
@@ -686,8 +695,10 @@ export type RegenerateOutcome = { status: "done"; summary: ChatSummary } | { sta
 
 /**  Why "Regenerate title" did nothing; the history list words each one. */
 export type RegenerateRefusal = 
-/**  No `claude` program was found. */
+/**  The chat's program was not found. */
 "no-binary" | 
+/**  The chat's agent is switched off (Settings > Features): there is nothing to ask. */
+"unavailable" | 
 /**  The chat has no assistant reply yet. */
 "no-reply" | 
 /**  The call failed or answered junk; the old title stays. */

@@ -54,7 +54,7 @@ beforeEach(() => {
     modes: {},
     view: "chat",
     backend: "tauri",
-    binary: null,
+    binaries: {},
     currentProjectPath: null,
   });
 });

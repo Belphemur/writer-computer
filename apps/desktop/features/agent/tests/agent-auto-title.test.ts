@@ -172,14 +172,16 @@ async function chatWithExchanges(client: ChatHistoryClient, n: number) {
     notes: {},
     chatModels: {},
     backend: "tauri",
-    binary: {
-      found: true,
-      path: "/x",
-      version: "1",
-      source: "path",
-      searched: [],
-      authenticated: true,
-      account: null,
+    binaries: {
+      claude: {
+        found: true,
+        path: "/x",
+        version: "1",
+        source: "path",
+        searched: [],
+        authenticated: true,
+        account: null,
+      },
     },
     currentProjectPath: null,
   });

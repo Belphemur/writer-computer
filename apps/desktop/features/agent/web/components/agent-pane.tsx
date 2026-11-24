@@ -29,6 +29,8 @@ import { ProjectsList } from "./projects-list";
 import { HistorySlot, ProjectHomeSlot } from "./slots";
 import { Transcript } from "./transcript";
 import { UsageLine } from "./usage-line";
+import { DEFAULT_BACKEND_ID, useBackends } from "@features/agent/web/lib/backends";
+import { detectUsableBackends } from "@features/agent/web/stores/backend-usability";
 import { useDetectBinaryOnMount } from "./use-detect-binary";
 
 /**
@@ -45,14 +47,21 @@ export function AgentPane() {
   const chat = useAgentChat(chatId);
   const draft = useAgentDraft(chatId);
   const queued = useQueuedMessage(chatId);
-  const binary = useAgentBinary();
+  const backendId = chat?.backendId ?? DEFAULT_BACKEND_ID;
+  const binary = useAgentBinary(backendId);
   const [dragging, setDragging] = useState(false);
   // The chats open in this vault come back when the pane first mounts (and on a vault switch).
   const root = useWorkspaceRoot();
   useEffect(() => {
     if (root) void restoreAgentChats(root);
   }, [root]);
-  useDetectBinaryOnMount(binary !== null || !open);
+  useDetectBinaryOnMount(binary !== null || !open, backendId);
+  // which backends the new-chat picker may offer: found once per session, again for a backend whose
+  // feature was turned on meanwhile
+  const backends = useBackends();
+  useEffect(() => {
+    if (open) void detectUsableBackends();
+  }, [open, backends]);
 
   const onResizeStart = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {

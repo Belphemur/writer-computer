@@ -9,8 +9,8 @@
 //! - sessions die with their window, vault, trust and the app (`kill_window`, `kill_root`,
 //!   `kill_all`) and after 30 idle minutes (resumed on the next message).
 
-use super::backend::{self, Backend};
-use super::binary;
+use super::api::BACKENDS;
+use super::backend::{self, is_uuid, Backend};
 use super::changes::ChangeStore;
 use super::config_sync::{CliMcpProbe, McpProbe, Msg, Worker};
 use super::events::*;
@@ -304,14 +304,6 @@ pub struct StartParams {
     pub sink: Sink,
 }
 
-fn is_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.char_indices().all(|(i, c)| match i {
-            8 | 13 | 18 | 23 => c == '-',
-            _ => c.is_ascii_hexdigit(),
-        })
-}
-
 impl AgentSessions {
     /// Over plain threads, for tests of this core (the app uses [`Self::with_spawner`]).
     pub fn with_timing(timing: Timing) -> Self {
@@ -433,14 +425,16 @@ impl AgentSessions {
 
     fn config_for(
         &self,
-        backend: &'static Backend,
+        backend: &Backend,
         p: &StartParams,
         cwd: &Path,
     ) -> Result<(LaunchConfig, Option<SpawnError>), String> {
         let req = &p.request;
         let mut settings = req.settings.clone();
         let override_path = settings.binary_path.clone();
-        let info = binary::detect(&self.shared.spawn, override_path.as_deref());
+        let info = backend
+            .ops()
+            .detect(&self.shared.spawn, override_path.as_deref());
         let project = self.shared.ports.project();
         if settings.permission_mode == AgentPermissionMode::Manual {
             if let Some(mode) =
@@ -568,7 +562,7 @@ impl AgentSessions {
                 resume: false,
                 shared: Arc::downgrade(&self.shared),
                 sink,
-                backend: backend::claude(),
+                backend: backend::claude_shared(),
             },
             config,
             make,
@@ -580,6 +574,23 @@ impl AgentSessions {
         Ok(session)
     }
 
+    /// The backend a new chat asks for: the core's own (Claude, also when none is named) or the one
+    /// a feature answers the `agent.backends` point with. With no answer the feature is off.
+    pub fn backend_for(&self, id: Option<&str>) -> Result<Arc<Backend>, Rejected> {
+        match id.filter(|i| !i.is_empty() && *i != backend::claude().id) {
+            None => Ok(backend::claude_shared()),
+            Some(id) => self
+                .shared
+                .points
+                .ask(&BACKENDS, &id.to_string())
+                .ok_or_else(|| {
+                    Rejected(format!(
+                        "the {id} agent is not available: turn it on in Settings > Features"
+                    ))
+                }),
+        }
+    }
+
     /// Create (or find) the chat's session and make sure its process runs. Blocking: login
     /// shell, version probe. Spawn-class failures are `error` events of the
     /// chat; only bad input is `Err`.
@@ -588,9 +599,15 @@ impl AgentSessions {
         if !is_uuid(&req.chat_id) {
             return Err(Rejected("chat id must be a uuid".into()));
         }
+        let existing = self.shared.sessions.lock().get(&req.chat_id).cloned();
+        // a chat keeps its backend; a new one gets the one it asked for
+        let backend = match existing.as_ref().filter(|s| !s.is_terminal()) {
+            Some(s) => Arc::clone(s.backend()),
+            None => self.backend_for(req.backend.as_deref())?,
+        };
         if let Some(r) = &req.resume_session_id {
-            if !is_uuid(r) {
-                return Err(Rejected("session id must be a uuid".into()));
+            if !backend.ops().session_id_ok(r) {
+                return Err(Rejected("not a session id of this backend".into()));
             }
         }
         let cwd = self
@@ -599,7 +616,6 @@ impl AgentSessions {
             .project()
             .resolve_cwd(&p.root, req.project_path.as_deref())
             .map_err(Rejected)?;
-        let existing = self.shared.sessions.lock().get(&req.chat_id).cloned();
         if let Some(s) = &existing {
             if s.label != p.label {
                 return Err(Rejected("this chat belongs to another window".into()));
@@ -609,17 +625,13 @@ impl AgentSessions {
             }
         }
         let existing = existing.filter(|s| !s.is_terminal());
-        // a chat keeps its backend; a new one gets the one new chats use
-        let backend = existing
-            .as_ref()
-            .map_or_else(backend::for_new_chat, |s| s.backend());
 
-        let (config, missing) = match self.config_for(backend, &p, &cwd) {
+        let (config, missing) = match self.config_for(&backend, &p, &cwd) {
             Ok(c) => c,
             Err(e) => {
                 log::warn!(target: "agent", "agent: could not prepare the project context");
                 // surface it on the chat; no process starts without its instructions
-                let session = self.session_for(backend, &p, &cwd, existing, None)?;
+                let session = self.session_for(&backend, &p, &cwd, existing, None)?;
                 session.fail(&SpawnError::Invalid(format!(
                     "Could not prepare the project context: {e}"
                 )));
@@ -629,7 +641,7 @@ impl AgentSessions {
                 });
             }
         };
-        let session = self.session_for(backend, &p, &cwd, existing, Some(config))?;
+        let session = self.session_for(&backend, &p, &cwd, existing, Some(config))?;
         if let Some(err) = missing {
             session.fail(&err);
         } else if let Err(err) = session.ensure_process() {
@@ -643,7 +655,7 @@ impl AgentSessions {
 
     fn session_for(
         &self,
-        backend: &'static Backend,
+        backend: &Arc<Backend>,
         p: &StartParams,
         cwd: &Path,
         existing: Option<Arc<Session>>,
@@ -682,7 +694,7 @@ impl AgentSessions {
                 resume: req.resume_session_id.is_some(),
                 shared: Arc::downgrade(&self.shared),
                 sink: Arc::clone(&p.sink),
-                backend,
+                backend: Arc::clone(backend),
             },
             config,
         )
@@ -847,10 +859,11 @@ impl AgentSessions {
     }
 
     pub fn resume(&self, label: &str, chat_id: &str, session_id: &str) -> Result<(), Rejected> {
-        if !is_uuid(session_id) {
-            return Err(Rejected("session id must be a uuid".into()));
+        let session = self.get(label, chat_id)?;
+        if !session.backend().ops().session_id_ok(session_id) {
+            return Err(Rejected("not a session id of this backend".into()));
         }
-        self.get(label, chat_id)?.rebind(session_id.to_string());
+        session.rebind(session_id.to_string());
         Ok(())
     }
 

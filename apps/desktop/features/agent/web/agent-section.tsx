@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { linkHandlers } from "@/lib/link-activation";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
-import { createTauriAgentClient } from "@features/agent/web/lib/client";
+import { EFFORT_LABEL, EFFORT_LEVELS } from "@/lib/features/agent-backends";
+import { FeaturePane } from "@/components/feature-pane";
 import {
-  AGENT_BACKENDS,
   DEFAULT_BACKEND_ID,
-  backendById,
   deriveBackendStatus,
+  detectBackend,
+  useBackends,
   type AgentBackendDescriptor,
   type BackendGlyph,
   type BackendStatus,
@@ -20,11 +21,15 @@ import {
   DEFAULT_MODEL_ID,
 } from "@features/agent/web/lib/model-catalog";
 import { PERMISSION_MODE_LABEL } from "@features/agent/web/lib/agent-settings";
+import {
+  detectUsableBackends,
+  useUsableBackends,
+} from "@features/agent/web/stores/backend-usability";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
 import { AgentMemory } from "./agent-memory";
 import { AgentModels } from "./agent-models";
-import { ROW, SELECT, SelectRow } from "./agent-rows";
+import { ROW, SELECT, SelectRow } from "@/components/settings-panel/select-row";
 import { TierModels } from "./tier-models";
 import { SettingRows } from "@/components/settings-panel/setting-rows";
 
@@ -34,11 +39,10 @@ const CARD =
   "overflow-hidden rounded-2xl border border-[var(--line-subtler)] bg-[var(--surface-card)]";
 const BUTTON =
   "shrink-0 rounded-lg border border-[var(--line-subtle)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle-strong)] disabled:opacity-50";
-const COMING_SOON_NOTE =
-  'Coming soon. See "Other backends" in the agent spec; Claude is the only backend today.';
+const COMING_SOON_NOTE = 'Coming soon. See "Other backends" in the agent spec.';
 
 function Glyph({ glyph, size = 18 }: { glyph: BackendGlyph; size?: number }) {
-  // Writer's own marks, not vendor logos: a spark for Claude, a plain letter tile for the rest.
+  // Writer's own marks, not vendor logos: a spark for Claude, a letter tile for the rest.
   if (glyph === "claude") {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
@@ -47,22 +51,29 @@ function Glyph({ glyph, size = 18 }: { glyph: BackendGlyph; size?: number }) {
       </svg>
     );
   }
-  const letter = { opencode: "O", codex: "X" }[glyph];
   return (
     <span
       aria-hidden="true"
       style={{ width: size, height: size, fontSize: size * 0.6 }}
       className="inline-flex items-center justify-center rounded-md border border-current font-semibold"
     >
-      {letter}
+      {glyph}
     </span>
   );
 }
 
-function BackendTabs({ activeId }: { activeId: string }) {
+function BackendTabs({
+  backends,
+  activeId,
+  onSelect,
+}: {
+  backends: readonly AgentBackendDescriptor[];
+  activeId: string;
+  onSelect: (id: string) => void;
+}) {
   return (
     <div role="tablist" aria-label="Agent backend" className="mb-4 flex flex-wrap gap-2">
-      {AGENT_BACKENDS.map((b) => {
+      {backends.map((b) => {
         const active = b.id === activeId;
         const soon = b.status === "coming-soon";
         return (
@@ -74,6 +85,7 @@ function BackendTabs({ activeId }: { activeId: string }) {
             aria-disabled={soon || undefined}
             disabled={soon}
             data-agent-backend-tab={b.id}
+            onClick={() => onSelect(b.id)}
             title={soon ? COMING_SOON_NOTE : undefined}
             className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors ${
               active
@@ -99,11 +111,11 @@ function useBackendStatus(backend: AgentBackendDescriptor, override: string) {
     setError(null);
     setInfo(null);
     try {
-      setInfo(await createTauriAgentClient().detectBinary({ binaryOverride: override || null }));
+      setInfo(await detectBackend(backend, override || null));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [override]);
+  }, [backend, override]);
   useEffect(() => {
     void detect();
   }, [detect]);
@@ -164,20 +176,22 @@ function StatusBadge({ status }: { status: BackendStatus }) {
   }
 }
 
-function statusDetail(status: BackendStatus): string {
+function statusDetail(status: BackendStatus, backend: AgentBackendDescriptor): string {
   switch (status.kind) {
     case "ready":
       return `${status.path}${status.version ? `  ${status.version}` : ""}`;
     case "not-found":
-      return "Claude Code was not found on this computer.";
+      return `${backend.product} was not found on this computer.`;
     case "needs-sign-in":
-      return `${status.path}. Run claude in a terminal and sign in.`;
+      return `${status.path}. ${backend.signIn.hint}`;
     case "unsupported-version":
-      return `${status.path}  ${status.version}. Tested with ${status.minVersion} and later; it may still work.`;
+      return `${status.path}  ${status.version}. ${
+        status.minVersion ? `Tested with ${status.minVersion} and later; ` : ""
+      }it may still work.`;
     case "error":
       return status.message;
     case "checking":
-      return "Looking for the claude program…";
+      return `Looking for the ${backend.program} program…`;
   }
 }
 
@@ -188,21 +202,33 @@ function SchemaRows({ keys }: { keys: readonly string[] }) {
 
 const EFFORT_OPTIONS: { value: string; label: string }[] = [
   { value: "default", label: "Agent default" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "xhigh", label: "Extra high" },
-  { value: "max", label: "Max" },
+  ...EFFORT_LEVELS.map((value) => ({ value, label: EFFORT_LABEL[value] })),
 ];
 
 /** Settings > Agent: the same layout as Copilot's agent settings, on Writer's own components. */
 export function AgentSection() {
-  const backend = backendById(DEFAULT_BACKEND_ID)!;
+  const backends = useBackends();
+  const [activeId, setActiveId] = useState(DEFAULT_BACKEND_ID);
+  // a tab whose feature was turned off falls back to Claude's (the first entry)
+  const backend =
+    backends.find((b) => b.id === activeId && b.status === "available") ?? backends[0]!;
   const settings = useAllSettings();
   const setSetting = useSetSetting();
   const [configuring, setConfiguring] = useState(false);
-  const override = text(settings["agent.binary-path"], "");
+  const override = text(settings[backend.keys.binaryPath], "");
   const { status, redetect } = useBackendStatus(backend, override);
+  const usable = useUsableBackends();
+  useEffect(() => {
+    void detectUsableBackends();
+  }, [backends]);
+  // The backend's own tab body, when it contributes one; Claude's built-in layout otherwise.
+  const panel = useMemo(
+    () =>
+      backend.settingsPanel && backend.owner
+        ? { owner: backend.owner, load: backend.settingsPanel }
+        : null,
+    [backend],
+  );
 
   const model = text(settings["agent.model"], "");
   const effort = text(settings["agent.effort"], "default");
@@ -213,13 +239,35 @@ export function AgentSection() {
   const effortOk = modelSupportsEffort(model);
 
   async function locate() {
-    const picked = await locateBinary();
-    if (picked) await setSetting("agent.binary-path", picked);
+    const picked = await locateBinary(backend.program);
+    if (picked) await setSetting(backend.keys.binaryPath, picked);
   }
 
   return (
     <section className="mb-10" data-agent-section>
-      <BackendTabs activeId={backend.id} />
+      {usable.length >= 2 && (
+        <div className={`${CARD} mb-4`}>
+          <SelectRow title="Default agent" description="New chats start on this agent.">
+            <select
+              aria-label="Default agent"
+              value={
+                usable.some((b) => b.id === settings["agent.default-backend"])
+                  ? text(settings["agent.default-backend"], "")
+                  : DEFAULT_BACKEND_ID
+              }
+              className={SELECT}
+              onChange={(e) => void setSetting("agent.default-backend", e.target.value)}
+            >
+              {usable.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
+          </SelectRow>
+        </div>
+      )}
+      <BackendTabs backends={backends} activeId={backend.id} onSelect={setActiveId} />
       <div className={CARD}>
         <div className={ROW} data-agent-header>
           <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -237,7 +285,7 @@ export function AgentSection() {
                 data-agent-binary-status
                 className="mt-0.5 select-text break-all font-mono text-[12px] text-[var(--text-muted)]"
               >
-                {statusDetail(status)}
+                {statusDetail(status, backend)}
               </div>
               {status.kind === "not-found" && (
                 <div className="mt-2 flex gap-2">
@@ -258,9 +306,11 @@ export function AgentSection() {
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <button type="button" className={BUTTON} onClick={() => setConfiguring(true)}>
-              Configure
-            </button>
+            {!panel && (
+              <button type="button" className={BUTTON} onClick={() => setConfiguring(true)}>
+                Configure
+              </button>
+            )}
             <button
               type="button"
               className="rounded-md px-1.5 text-[12px] text-[var(--text-muted)] hover:bg-[var(--item-hover-bg)] hover:text-[var(--text-primary)]"
@@ -271,70 +321,82 @@ export function AgentSection() {
           </div>
         </div>
 
-        <SelectRow
-          title="Default model"
-          description="Used for new chats on this agent. Open chats switch on their next turn."
-        >
-          <select
-            aria-label="Default model"
-            value={modelSettingToId(model)}
-            className={SELECT}
-            onChange={(e) => void setSetting("agent.model", modelIdToSetting(e.target.value))}
-          >
-            {modelRows.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.id === DEFAULT_MODEL_ID ? "Agent default" : r.label}
-              </option>
-            ))}
-          </select>
-        </SelectRow>
-        <SelectRow
-          title="Default effort"
-          description={
-            effortOk
-              ? "How hard the model thinks by default."
-              : "The selected model has no effort levels."
-          }
-        >
-          <select
-            aria-label="Default effort"
-            disabled={!effortOk}
-            value={effortOk ? effort : "default"}
-            className={SELECT}
-            onChange={(e) => void setSetting("agent.effort", e.target.value)}
-          >
-            {EFFORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </SelectRow>
+        {panel ? (
+          <FeaturePane contribution={panel} />
+        ) : (
+          <>
+            <SelectRow
+              title="Default model"
+              description="Used for new chats on this agent. Open chats switch on their next turn."
+            >
+              <select
+                aria-label="Default model"
+                value={modelSettingToId(model)}
+                className={SELECT}
+                onChange={(e) => void setSetting("agent.model", modelIdToSetting(e.target.value))}
+              >
+                {modelRows.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.id === DEFAULT_MODEL_ID ? "Agent default" : r.label}
+                  </option>
+                ))}
+              </select>
+            </SelectRow>
+            <SelectRow
+              title="Default effort"
+              description={
+                effortOk
+                  ? "How hard the model thinks by default."
+                  : "The selected model has no effort levels."
+              }
+            >
+              <select
+                aria-label="Default effort"
+                disabled={!effortOk}
+                value={effortOk ? effort : "default"}
+                className={SELECT}
+                onChange={(e) => void setSetting("agent.effort", e.target.value)}
+              >
+                {EFFORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </SelectRow>
 
-        <AgentModels
-          backendLabel={backend.label}
-          enabled={enabled}
-          currentModel={model || null}
-          onChange={(next) => void setSetting("agent.enabled-models", next)}
-        />
+            <AgentModels
+              backendLabel={backend.label}
+              enabled={enabled}
+              currentModel={model || null}
+              onChange={(next) => void setSetting("agent.enabled-models", next)}
+            />
+          </>
+        )}
       </div>
 
-      <h2 className="mt-8 mb-1 text-[13px] font-medium text-[var(--text-muted)]">
-        Auto mode permissions
-      </h2>
-      <p className="mb-3 text-[13px] text-[var(--text-muted)]">
-        The permission mode decides what the agent may do without asking:{" "}
-        {Object.entries(PERMISSION_MODE_LABEL)
-          .map(([k, v]) => `${k} (${v})`)
-          .join(", ")}
-        . <code>auto</code> is Claude Code&apos;s own auto mode: it lets a classifier approve
-        routine actions and still asks for risky ones. Writer never offers a mode that skips
-        permission checks. The rules below are passed to every chat as <code>--allowedTools</code>{" "}
-        and <code>--disallowedTools</code>; a deny rule always wins.
-      </p>
-      <SchemaRows
-        keys={["agent.permission-mode", "agent.allowed-tools", "agent.disallowed-tools"]}
-      />
+      {panel ? (
+        <SchemaRows keys={["agent.permission-mode"]} />
+      ) : (
+        <>
+          <h2 className="mt-8 mb-1 text-[13px] font-medium text-[var(--text-muted)]">
+            Auto mode permissions
+          </h2>
+          <p className="mb-3 text-[13px] text-[var(--text-muted)]">
+            The permission mode decides what the agent may do without asking:{" "}
+            {Object.entries(PERMISSION_MODE_LABEL)
+              .map(([k, v]) => `${k} (${v})`)
+              .join(", ")}
+            . <code>auto</code> is Claude Code&apos;s own auto mode: it lets a classifier approve
+            routine actions and still asks for risky ones. Writer never offers a mode that skips
+            permission checks. The rules below are passed to every chat as{" "}
+            <code>--allowedTools</code> and <code>--disallowedTools</code>; a deny rule always wins.
+          </p>
+          <SchemaRows
+            keys={["agent.permission-mode", "agent.allowed-tools", "agent.disallowed-tools"]}
+          />
+        </>
+      )}
 
       <h2 className="mt-8 mb-3 text-[13px] font-medium text-[var(--text-muted)]">
         Chats and context
@@ -361,15 +423,19 @@ export function AgentSection() {
 
       <AgentMemory />
 
-      <h2 className="mt-8 mb-1 text-[13px] font-medium text-[var(--text-muted)]">
-        Sub-agent models
-      </h2>
-      <p className="mb-3 text-[13px] text-[var(--text-muted)]">
-        Each sub-agent role runs on a model tier, and each tier has one model for this agent. The
-        cheap tier also writes automatic chat titles.
-      </p>
-      <TierModels />
-      {configuring && (
+      {!panel && (
+        <>
+          <h2 className="mt-8 mb-1 text-[13px] font-medium text-[var(--text-muted)]">
+            Sub-agent models
+          </h2>
+          <p className="mb-3 text-[13px] text-[var(--text-muted)]">
+            Each sub-agent role runs on a model tier, and each tier has one model for this agent.
+            The cheap tier also writes automatic chat titles.
+          </p>
+          <TierModels />
+        </>
+      )}
+      {configuring && !panel && (
         <AgentConfigureDialog
           onClose={() => setConfiguring(false)}
           onRedetect={() => void redetect()}

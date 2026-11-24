@@ -3,8 +3,11 @@ import { preloadSections } from "@/lib/features/section-loader";
 import { generatedFeatureSection } from "@/components/settings-panel/generated-feature-section";
 import type { FeatureNavSection } from "@/components/settings-panel/settings-sections";
 import { FEATURE_MANIFESTS, isFeatureEnabled } from "@/lib/features/manifests";
-import { settingsSectionContributions } from "@/lib/features/settings-sections";
-import { featureOfOwner } from "@/lib/features/id";
+import { agentBackendContributions } from "@/lib/features/agent-backends";
+import {
+  featuresWithOwnPage,
+  settingsSectionContributions,
+} from "@/lib/features/settings-sections";
 import { FEATURE_SETTINGS } from "@/lib/settings-schema";
 import { isOffForSession, useFeatureHealth } from "@/stores/feature-health-store";
 import { useAllSettings } from "@/hooks/use-settings";
@@ -18,9 +21,10 @@ export function useFeatureSections(): FeatureNavSection[] {
   const safeMode = useFeatureHealth((s) => s.safeMode);
   const sessionOff = useFeatureHealth((s) => s.sessionOff);
   const contributed = useRegistryItems(settingsSectionContributions);
+  const backends = useRegistryItems(agentBackendContributions);
 
   return useMemo(() => {
-    const own = new Set(contributed.map((c) => featureOfOwner(c.owner)));
+    const own = featuresWithOwnPage(contributed, backends);
     const generated = FEATURE_MANIFESTS.filter(
       (m) =>
         !own.has(m.id) &&
@@ -28,7 +32,7 @@ export function useFeatureSections(): FeatureNavSection[] {
         !isOffForSession({ safeMode, sessionOff }, m.id),
     ).flatMap((m) => generatedFeatureSection(m, FEATURE_SETTINGS[m.id] ?? []) ?? []);
     return [...contributed, ...generated];
-  }, [contributed, settings, safeMode, sessionOff]);
+  }, [contributed, backends, settings, safeMode, sessionOff]);
 }
 
 /** Preloads the chunk of every page in `sections` (the features that are on) while Settings is

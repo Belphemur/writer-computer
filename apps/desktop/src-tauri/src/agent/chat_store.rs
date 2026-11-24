@@ -770,6 +770,7 @@ fn summary_of(root: &Path, abs: &Path, meta: &ChatMeta) -> ChatSummary {
         pinned: meta.pinned,
         preview: meta.preview.clone(),
         title_source: meta.title_source(),
+        backend: meta.backend.clone(),
     }
 }
 

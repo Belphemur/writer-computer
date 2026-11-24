@@ -600,6 +600,15 @@
       "scope": "global"
     },
     {
+      "key": "features.opencode.enabled",
+      "label": "OpenCode",
+      "description": "Turns the OpenCode feature on or off.",
+      "category": "Features",
+      "type": "boolean",
+      "default": true,
+      "scope": "global"
+    },
+    {
       "key": "features.tables.enabled",
       "label": "Tables",
       "description": "Turns the Tables feature on or off.",

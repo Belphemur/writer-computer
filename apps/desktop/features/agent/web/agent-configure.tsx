@@ -12,12 +12,12 @@ function describe(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** "Locate…": pick the `claude` program and store it as `agent.binary-path`. */
-export async function locateBinary(): Promise<string | null> {
+/** "Locate…": pick the backend's program; the caller stores it under its `binaryPath` key. */
+export async function locateBinary(program: string): Promise<string | null> {
   const picked = await openDialog({
     directory: false,
     multiple: false,
-    title: "Choose the claude program",
+    title: `Choose the ${program} program`,
   });
   return typeof picked === "string" ? picked : null;
 }
@@ -105,7 +105,7 @@ export function AgentConfigureDialog({
   }
 
   async function locate() {
-    const picked = await locateBinary();
+    const picked = await locateBinary("claude");
     if (picked) {
       setDraft(picked);
       commit(picked);

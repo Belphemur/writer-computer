@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { usePopoverPlacement } from "@/hooks/use-popover-placement";
-import { useChatContext } from "@features/agent/web/hooks/use-agent";
+import { useAgentChat, useChatContext } from "@features/agent/web/hooks/use-agent";
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 import type { ChatId } from "@features/agent/web/lib/events";
 import type { ContextLevel, ContextStatus } from "@features/agent/web/lib/context-usage";
 import { formatTokens } from "@features/agent/web/lib/timeline";
@@ -32,6 +33,7 @@ export function contextSummary({ used, window, percent }: ContextStatus): string
  *  no percentage. Hover or click opens the breakdown of the last API call. */
 export function ContextRing({ chatId }: { chatId: ChatId }) {
   const status = useChatContext(chatId);
+  const product = backendOrDefault(useAgentChat(chatId)?.backendId).product;
   const [pinned, setPinned] = useState(false);
   const [hover, setHover] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -115,7 +117,7 @@ export function ContextRing({ chatId }: { chatId: ChatId }) {
             {b ? "Last request to the model. " : ""}
             {status.window === null && b
               ? "The window size is reported after the first finished turn."
-              : "Window size as reported by Claude Code."}
+              : `Window size as reported by ${product}.`}
           </p>
           {status.level === "danger" && (
             <p role="note" className="mt-2 text-[var(--danger)]">

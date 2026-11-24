@@ -3,18 +3,16 @@
  * keys and their defaults live in `shared/settings.schema.json` (one contract for Rust and TS);
  * nothing here repeats a default.
  */
-import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
-import { AGENT_TIERS, claudeTierSettingKey } from "./agent-roles";
+import { EFFORT_LEVELS } from "@/lib/features/agent-backends";
+import { agentSettingDefault } from "./setting-default";
+
+export { agentSettingDefault };
+import { AGENT_TIERS } from "./agent-roles";
+import { backendOrDefault, DEFAULT_BACKEND_ID, type AgentBackendDescriptor } from "./backends";
 import type { AgentMemory, AgentPermissionMode, AgentSettings } from "./events";
 
 const MODES: readonly AgentPermissionMode[] = ["manual", "acceptEdits", "plan", "auto", "dontAsk"];
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const MEMORIES: readonly AgentMemory[] = ["vault", "default", "off"];
-
-/** The default of an `agent.*` key: `shared/settings.schema.json` is the one source of truth. */
-export function agentSettingDefault(key: string): unknown {
-  return SETTINGS_SCHEMA.find((d) => d.key === key)?.default;
-}
 
 /** A stored value, or the schema default while settings have not hydrated or hold a bad value. */
 function read(settings: Record<string, unknown>, key: string): unknown {
@@ -35,14 +33,20 @@ const list = (v: unknown): string[] =>
 /** A chat's own model and effort (null model: "Agent default", no `--model`). */
 export type ChatModelChoice = { model: string | null; effort: AgentSettings["effort"] };
 
-export function agentSettingsFrom(settings: Record<string, unknown>): AgentSettings {
+/** `backend`: the descriptor of the chat's backend, whose keys hold the program, model, effort and
+ *  tier models (the permission, memory and display settings are shared). Absent: Claude's. */
+export function agentSettingsFrom(
+  settings: Record<string, unknown>,
+  backend: AgentBackendDescriptor = backendOrDefault(DEFAULT_BACKEND_ID),
+): AgentSettings {
+  const keys = backend.keys;
   const mode = read(settings, "agent.permission-mode");
-  const effort = read(settings, "agent.effort");
+  const effort = read(settings, keys.effort);
   const memory = read(settings, "agent.memory");
   return {
-    binaryPath: str(read(settings, "agent.binary-path")),
-    model: str(read(settings, "agent.model")),
-    effort: (EFFORTS as readonly unknown[]).includes(effort)
+    binaryPath: str(read(settings, keys.binaryPath)),
+    model: str(read(settings, keys.model)),
+    effort: (EFFORT_LEVELS as readonly unknown[]).includes(effort)
       ? (effort as AgentSettings["effort"])
       : null,
     permissionMode: (MODES as readonly unknown[]).includes(mode)
@@ -58,7 +62,7 @@ export function agentSettingsFrom(settings: Record<string, unknown>): AgentSetti
       : (agentSettingDefault("agent.memory") as AgentMemory),
     // One stored value per tier; Rust resolves them (blank means the tier's default model).
     tierModels: Object.fromEntries(
-      AGENT_TIERS.map((tier) => [tier, str(read(settings, claudeTierSettingKey(tier)))]),
+      AGENT_TIERS.map((tier) => [tier, str(read(settings, keys.tiers[tier] ?? ""))]),
     ),
   };
 }

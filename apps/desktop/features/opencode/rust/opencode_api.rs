@@ -15,7 +15,9 @@
 //! Never logged from here or anywhere that holds these values: prompts, tool input and output,
 //! file contents, paths, the password. Error bodies are reduced to `_tag` and status.
 
-#![allow(non_snake_case)]
+// The table also describes routes, bodies and events the contract test pins but no code calls yet
+// (a send-now `PATCH`, the runtime MCP routes): they are the wire, not dead code.
+#![allow(non_snake_case, dead_code)]
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -199,7 +201,11 @@ routes! {
     /// `?message=` is what the asker is told.
     FORM_CANCEL = Delete "/api/session/{sessionID}/form/{formID}";
     GENERATE = Post "/api/session/{sessionID}/generate", body GenerateBody;
+    /// `?projectID=` limits the list to one project's rules.
     SAVED_RULES = Get "/api/permission/saved";
+    PROJECTS = Get "/api/project";
+    /// `?location[directory]=` (deepObject): the location's own project, as the server resolves it.
+    LOCATION = Get "/api/location";
     SAVED_RULE_DELETE = Delete "/api/permission/saved/{id}";
     MCP_PUT = Put "/api/experimental/mcp/{server}", body McpPutBody;
     MCP_DELETE = Delete "/api/experimental/mcp/{server}";

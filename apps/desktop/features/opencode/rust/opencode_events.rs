@@ -139,6 +139,7 @@ impl MapState {
     }
 
     /// Names the codemode tool (`Role::Codemode` of the tool table).
+    #[cfg(test)]
     pub fn with_codemode(mut self, tool: Option<&str>) -> Self {
         self.codemode = tool.map(String::from);
         self

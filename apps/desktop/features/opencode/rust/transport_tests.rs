@@ -18,13 +18,7 @@ use std::time::{Duration, Instant};
 
 /// The real policy of the proposal (spec 10.9), over the real tool table.
 fn policy(root: &std::path::Path) -> Arc<ModePolicy> {
-    Arc::new(
-        ModePolicy::new(
-            super::events_tests::table(),
-            ModelRef::parse("fake/fake-model"),
-        )
-        .for_vault(root.to_path_buf()),
-    )
+    Arc::new(ModePolicy::new(super::events_tests::table()).for_vault(root.to_path_buf()))
 }
 
 fn settings(mode: AgentPermissionMode) -> AgentSettings {
@@ -246,7 +240,9 @@ fn the_first_send_makes_the_session_announces_it_and_posts_the_prompt_with_a_sta
         create["location"]["directory"],
         r.cwd.to_string_lossy().as_ref()
     );
-    assert_eq!(create["model"]["id"], "fake-model");
+    // Writer never picks a model here: a blank one is resolved before the start (the web's one
+    // resolver), so none is sent and the server keeps its own
+    assert!(create["model"].is_null());
     assert!(
         create.get("permissions").is_none(),
         "no rules outside of Plan"
@@ -740,16 +736,16 @@ fn a_sub_agents_events_reach_the_chat_and_in_plan_its_session_gets_the_plan_rule
         l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::TurnFinished { .. }))))
     });
     assert_eq!(r.h.server.dropped(), 0, "no event of a sub-agent was lost");
-    let events = r.events();
-    assert!(
-        count(&events, |e| matches!(
-            e,
-            AgentEvent::ToolCallStarted {
-                parent_tool_call_id: Some(_),
-                ..
-            }
-        )) > 0
-    );
+    // a child's own calls are read from its message list after it is linked, so they can come
+    // after the end of the main turn: wait for them, never assume the order
+    r.until("a call of the sub-agent", |l| {
+        l.iter().any(|i| {
+            matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(
+                e,
+                AgentEvent::ToolCallStarted { parent_tool_call_id: Some(_), .. }
+            )))
+        })
+    });
     // the child's rules were set when it was created, before anything it did could run
     wait_for("the child patch", 10, || {
         fake.find("PATCH", "")
@@ -1965,7 +1961,7 @@ fn the_captured_agent_lists_decide_as_the_check_needs() {
             .map(|(id, v)| json!({"id": id, "mode": v[0], "hidden": v[1], "disabled": v[2]}))
             .collect()
     };
-    let ours = ModePolicy::new(super::events_tests::table(), None).known_agents();
+    let ours = ModePolicy::new(super::events_tests::table()).known_agents();
     assert!(super::transport::foreign_agent(&list("immediately"), &ours).is_some());
     assert_eq!(super::transport::foreign_agent(&list("later"), &ours), None);
     assert_eq!(
@@ -1981,7 +1977,7 @@ fn a_policy_with_no_vault_fails_the_start_and_names_why() {
     let r = Rig::build(
         "2.4.0",
         |_| {},
-        |_| Arc::new(ModePolicy::new(super::events_tests::table(), None)),
+        |_| Arc::new(ModePolicy::new(super::events_tests::table())),
     );
     match r.start(1, false, "chat") {
         Err(SpawnError::Failed {
@@ -2055,4 +2051,67 @@ fn a_reload_puts_the_instruction_entry_of_every_live_chat_back_once() {
     wait_for("the entry put back", 10, || puts() == 2);
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(puts(), 2);
+}
+
+#[test]
+fn a_model_the_user_switched_off_refuses_the_start_before_any_server_runs() {
+    let r = Rig::build(
+        "2.4.0",
+        |_| {},
+        |root| {
+            Arc::new(
+                ModePolicy::new(super::events_tests::table())
+                    .with_disabled(Arc::new(|| vec!["fake/off".to_string()]))
+                    .for_vault(root.to_path_buf()),
+            )
+        },
+    );
+    let mut l = launch(AgentPermissionMode::Manual);
+    l.settings.model = Some("fake/off".into());
+    let err =
+        r.t.start(&StartRequest {
+            gen: 1,
+            session_id: "s",
+            resume: false,
+            launch: &l,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(&err, SpawnError::Invalid(m) if m.contains("fake/off") && m.contains("switched off")),
+        "{err:?}"
+    );
+    assert_eq!(r.h.launcher.launches(), 0, "no process for a refused model");
+    // another model, and a variant of the same one, are judged by the slug alone
+    l.settings.model = Some("fake/on".into());
+    assert!(r
+        .t
+        .start(&StartRequest {
+            gen: 2,
+            session_id: "s",
+            resume: false,
+            launch: &l,
+        })
+        .is_ok());
+}
+
+#[test]
+fn a_switched_off_model_is_refused_with_its_variant_too() {
+    let policy = ModePolicy::new(super::events_tests::table())
+        .with_disabled(Arc::new(|| vec!["fake/off".to_string()]));
+    let off = ModelRef::parse("fake/off#high").unwrap();
+    assert!(policy.refuse_model(&off).is_some());
+    assert!(policy
+        .refuse_model(&ModelRef::parse("fake/on#high").unwrap())
+        .is_none());
+}
+
+#[test]
+fn a_chat_on_a_stopped_server_is_gone_for_good_and_not_a_failed_start() {
+    // the feature went off and on again: the chat still holds the old server, which never starts
+    // again; the `Session` reads `Gone` as terminal and the next start asks for the backend anew
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "s").unwrap();
+    r.h.server.shutdown();
+    let err = r.start(2, false, "s").unwrap_err();
+    assert_eq!(err, SpawnError::Gone);
 }

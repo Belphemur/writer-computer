@@ -216,14 +216,16 @@ describe("the / menu in the composer", () => {
       cliCatalog: null,
       view: "chat",
       backend: "tauri",
-      binary: {
-        found: true,
-        path: "/x",
-        version: "1",
-        source: "path",
-        searched: [],
-        authenticated: true,
-        account: null,
+      binaries: {
+        claude: {
+          found: true,
+          path: "/x",
+          version: "1",
+          source: "path",
+          searched: [],
+          authenticated: true,
+          account: null,
+        },
       },
     });
     container = document.createElement("div");

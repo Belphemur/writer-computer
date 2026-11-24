@@ -9,7 +9,7 @@ import {
   type ModelRow,
 } from "@features/agent/web/lib/model-catalog";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
-import { INPUT } from "./agent-rows";
+import { INPUT } from "@/components/settings-panel/select-row";
 
 function matches(row: ModelRow, query: string): boolean {
   const q = query.trim().toLowerCase();

@@ -8,7 +8,7 @@ import {
   isValidModelId,
 } from "@features/agent/web/lib/model-catalog";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
-import { INPUT, SELECT, SelectRow } from "./agent-rows";
+import { INPUT, SELECT, SelectRow } from "@/components/settings-panel/select-row";
 
 const CUSTOM = "__custom__";
 

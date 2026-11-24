@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 
-// The row shell and the control classes the Agent page shares (the page itself, the model catalog
-// and the sub-agent tier models), so one look is written once.
+// The row shell and the control classes of a titled settings row with its control on the right: the
+// Agent page, its model catalog and tier models, and the backend panels features contribute to it
+// share them, so one look is written once.
 
 export const ROW = "flex items-center justify-between gap-4 px-4 py-3.5";
 export const SELECT =

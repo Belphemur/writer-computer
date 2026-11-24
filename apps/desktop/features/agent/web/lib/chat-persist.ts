@@ -3,6 +3,7 @@
  * transcript and folded from the same events. Pure: the store owns the state, `chat-saver.ts` owns
  * the debounced writes, `chat-note.ts` (lane 4) owns the format.
  */
+import { chatIdIsSession, DEFAULT_BACKEND_ID } from "./backends";
 import { isChatFileRef } from "./chat-files";
 import type { AgentEvent, ContextRef } from "./events";
 import {
@@ -42,9 +43,17 @@ export type NoteState = {
   steers?: ChatNoteMessage[];
 };
 
-export function newNoteState(chatId: string, projectPath: string | null, now: number): NoteState {
+export function newNoteState(
+  chatId: string,
+  projectPath: string | null,
+  now: number,
+  backendId: string = DEFAULT_BACKEND_ID,
+): NoteState {
   return {
-    meta: { ...emptyMeta(chatId, now), projectPath },
+    meta: {
+      ...emptyMeta(chatId, now, { id: backendId, chatIdIsSession: chatIdIsSession(backendId) }),
+      projectPath,
+    },
     messages: [],
     trimmed: 0,
     extraFrontmatter: "",
@@ -220,7 +229,7 @@ export function dropLastExchange(note: NoteState): NoteState {
 /** The whole note for `agent_save_chat`. */
 export function buildNote(
   chat: Pick<Chat, "chatId" | "title" | "projectPath" | "session" | "resumeSessionId"> &
-    Partial<Pick<Chat, "reportedModel">>,
+    Partial<Pick<Chat, "reportedModel" | "backendId">>,
   note: NoteState,
   now: number,
   /** The model the user picked in the composer; wins over what the CLI reported. */
@@ -232,6 +241,7 @@ export function buildNote(
     ...note.meta,
     title: titleSourceOf(note.meta) === "none" ? titleHint : note.meta.title,
     projectPath: chat.projectPath,
+    backend: chat.backendId ?? note.meta.backend,
     sessionId: chat.session?.sessionId ?? chat.resumeSessionId ?? note.meta.sessionId,
     cliVersion: chat.session?.cliVersion ?? note.meta.cliVersion,
     model: chosenModel ?? chat.reportedModel ?? chat.session?.model ?? note.meta.model,

@@ -11,10 +11,18 @@ import {
   type EventPump,
   type Unsubscribe,
 } from "@features/agent/web/lib/client";
-import { claudeTierSettingKey } from "@features/agent/web/lib/agent-roles";
+import { backendOrDefault, detectBackend, listBackends } from "@features/agent/web/lib/backends";
+import {
+  detectUsableBackends,
+  resolveDefaultBackend,
+  useBackendUsability,
+} from "@features/agent/web/stores/backend-usability";
+import { agentBackendContributions } from "@/lib/features/agent-backends";
+import { resolveStartModel } from "@features/agent/web/lib/live-models";
 import { agentSettingsFrom, type ChatModelChoice } from "@features/agent/web/lib/agent-settings";
 import type {
   AgentBinaryInfo,
+  AgentSettings,
   AgentEvent,
   AgentErrorKind,
   AgentPermissionMode,
@@ -73,6 +81,7 @@ import { logger } from "@/lib/logger";
 import { loadAgentChats, saveAgentChats, type AgentChatsSession } from "@/lib/session";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import type { DetectedProgram } from "@/lib/features/agent-backends";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { usePaneStore } from "@features/agent/web/stores/pane-store";
 import type { FeatureContext } from "@/lib/features/types";
@@ -154,7 +163,8 @@ interface AgentState {
   historyError: string | null;
   view: AgentView;
   backend: AgentBackend;
-  binary: AgentBinaryInfo | null;
+  /** What program detection said, per backend id (the not-found card reads it). */
+  binaries: Record<string, DetectedProgram | AgentBinaryInfo | null>;
   /** Project (vault-relative folder) new chats start in; Lane 3 sets it from the switcher. */
   currentProjectPath: string | null;
   /** Bumped to ask the composer to take focus. */
@@ -214,7 +224,14 @@ interface AgentState {
   answerQuestion: (requestId: string, answers: QuestionAnswer[] | null) => Promise<void>;
   setPermissionMode: (mode: AgentPermissionMode) => Promise<void>;
   retry: () => Promise<void>;
-  detectBinary: (override?: string | null) => Promise<void>;
+  /** Detects a backend's program (the chat's not-found card reads it); resolves to what it found,
+   *  null when the check failed. */
+  detectBinary: (
+    backendId: string,
+    override?: string | null,
+  ) => Promise<DetectedProgram | AgentBinaryInfo | null>;
+  /** The backend of an untouched chat (the new-chat picker); its model choice is forgotten. */
+  setChatBackend: (chatId: ChatId, backendId: string) => void;
   openNewProjectDialog: (opts?: { folder?: string | null }) => void;
   closeNewProjectDialog: () => void;
   /** Applies a batch from the event pump (also the test seam). */
@@ -631,7 +648,7 @@ async function maybeAutoTitle(chatId: ChatId) {
     await persistence.saver().flush(chatId);
     const summary = await persistence.history.autoTitle({
       chatId,
-      titleModel: titleModelSetting(),
+      titleModel: titleModelSetting(chat.backendId),
       chatModel: chatModels[chatId]?.model ?? chat.reportedModel ?? null,
     });
     if (summary) adoptTitleSummary(chatId, summary);
@@ -640,11 +657,18 @@ async function maybeAutoTitle(chatId: ChatId) {
   }
 }
 
-/** The title call runs on the cheap tier: `agent.claude.model-cheap`, `null` when blank (Rust then
- *  uses the tier's default). */
-function titleModelSetting(): string | null {
-  const m = useSettingsStore.getState().settings[claudeTierSettingKey("cheap")];
+/** The title call runs on the cheap tier of the chat's backend (`keys.tiers.cheap`), `null` when
+ *  blank (Rust then uses the tier's default, else the chat's own model). */
+function titleModelSetting(backendId: string): string | null {
+  const key = backendOrDefault(backendId).keys.tiers.cheap;
+  const m = key ? useSettingsStore.getState().settings[key] : undefined;
   return typeof m === "string" ? m : null;
+}
+
+/** The effort a chat of `backendId` starts with: that backend's `effort` setting. */
+function settingsEffortFor(backendId: string): ChatModelChoice["effort"] {
+  return agentSettingsFrom(useSettingsStore.getState().settings, backendOrDefault(backendId))
+    .effort;
 }
 
 /** "Reload session" for one chat: restarts its idle process with `--resume`. Resolves to the
@@ -680,9 +704,56 @@ function adoptTitleSummary(chatId: ChatId, summary: ChatSummary) {
  *  live. Never throws for a refusal: the outcome says why. */
 export async function regenerateChatTitle(chatId: ChatId): Promise<RegenerateOutcome> {
   await persistence.saver().flush(chatId);
-  const outcome = await persistence.history.regenerateTitle(chatId, titleModelSetting());
+  const backendId = useAgentStore.getState().chats[chatId]?.backendId;
+  const outcome = await persistence.history.regenerateTitle(
+    chatId,
+    titleModelSetting(backendId ?? backendOrDefault(null).id),
+  );
   if (outcome.status === "done") adoptTitleSummary(chatId, outcome.summary);
   return outcome;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The backend of a chat nothing has happened in
+
+/** Chats whose backend the user picked (the new-chat picker): a later re-resolution leaves them. */
+const pickedBackend = new Set<ChatId>();
+
+/** Gives an untouched chat another backend: its note and model choice start over. */
+function applyChatBackend(chatId: ChatId, backendId: string) {
+  const { chats, drafts } = useAgentStore.getState();
+  const chat = chats[chatId];
+  if (!chat || chat.backendId === backendId) return;
+  if (!isUntouchedChat(chat, drafts[chatId])) return;
+  useAgentStore.setState((s) => {
+    const note = s.notes[chatId];
+    return {
+      ...withChat(s, chatId, { ...chat, backendId, resumeSessionId: null }),
+      notes: note
+        ? {
+            ...s.notes,
+            [chatId]: newNoteState(chatId, chat.projectPath, note.meta.createdAt, backendId),
+          }
+        : s.notes,
+      chatModels: omitKey(s.chatModels, chatId),
+    };
+  });
+}
+
+/** The default backend was resolved before detection finished (or a backend came or went): the
+ *  untouched chats the user did not pick for take the default now. Content never moves. */
+export function reresolveUntouchedChats() {
+  const { order, chats, drafts } = useAgentStore.getState();
+  const target = resolveDefaultBackend(
+    useSettingsStore.getState().settings["agent.default-backend"],
+    listBackends(),
+    useBackendUsability.getState().usable,
+  );
+  for (const id of order) {
+    const chat = chats[id];
+    if (chat && !pickedBackend.has(id) && isUntouchedChat(chat, drafts[id]))
+      applyChatBackend(id, target);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -751,15 +822,23 @@ export const useAgentStore = create<AgentState>((set, get) => {
     try {
       const { client } = await ensureRuntime();
       if (!live) {
-        const settings = agentSettingsFrom(useSettingsStore.getState().settings);
+        const settings = agentSettingsFrom(
+          useSettingsStore.getState().settings,
+          backendOrDefault(before.backendId),
+        );
+        const chosen = { ...settings, ...get().chatModels[chatId] };
+        // a blank model of a live backend becomes its first enabled one, before the start
+        const resolved = await resolveStartModel(backendOrDefault(before.backendId), chosen);
         await client.start({
           chatId,
           projectPath: before.projectPath,
+          backend: before.backendId,
           resumeSessionId,
           settings: {
             ...settings,
             permissionMode: get().modes[chatId] ?? settings.permissionMode,
-            ...get().chatModels[chatId],
+            model: resolved.model,
+            effort: resolved.effort as AgentSettings["effort"],
           },
           appendSystemPrompt: null,
         });
@@ -998,7 +1077,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     cliCatalog: null,
     view: "chat",
     backend: "tauri",
-    binary: null,
+    binaries: {},
     currentProjectPath: null,
     focusComposerTick: 0,
     newProjectDialog: { open: false, folder: null },
@@ -1029,7 +1108,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         resuming: {},
         skills: {},
         cliCatalog: null,
-        binary: null,
+        binaries: {},
       });
       get().newChat();
     },
@@ -1063,10 +1142,21 @@ export const useAgentStore = create<AgentState>((set, get) => {
         return active.chatId;
       }
       const chatId = newId();
-      const chat = createChat(chatId, { projectPath: projectPath ?? defaultProjectPath() });
+      const backendId = resolveDefaultBackend(
+        useSettingsStore.getState().settings["agent.default-backend"],
+        listBackends(),
+        useBackendUsability.getState().usable,
+      );
+      const chat = createChat(chatId, {
+        projectPath: projectPath ?? defaultProjectPath(),
+        backendId,
+      });
       set((s) => ({
         chats: { ...s.chats, [chatId]: chat },
-        notes: { ...s.notes, [chatId]: newNoteState(chatId, chat.projectPath, Date.now()) },
+        notes: {
+          ...s.notes,
+          [chatId]: newNoteState(chatId, chat.projectPath, Date.now(), backendId),
+        },
         order: [...s.order, chatId],
         activeChatId: chatId,
         view: "chat",
@@ -1321,12 +1411,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const chatId = get().activeChatId;
       if (!chatId) return;
       const prev = get().chatModels[chatId];
-      const settings = agentSettingsFrom(useSettingsStore.getState().settings);
+      const chat = get().chats[chatId];
       const choice: ChatModelChoice = {
         model,
-        effort: effort === undefined ? (prev?.effort ?? settings.effort) : effort,
+        effort:
+          effort === undefined
+            ? (prev?.effort ?? settingsEffortFor(chat?.backendId ?? ""))
+            : effort,
       };
-      const chat = get().chats[chatId];
       const prevReported = chat?.reportedModel ?? null;
       const live = !!chat?.session && chat.state !== "ended";
       // Optimistic: the chip shows the selection at once; a live session confirms it later. The
@@ -1385,17 +1477,25 @@ export const useAgentStore = create<AgentState>((set, get) => {
       set((s) => withChat(s, chatId, { ...s.chats[chatId]!, error: null, state: "idle" }));
       await deliver(chatId, last.user.text, last.user.context);
     },
-    detectBinary: async (override) => {
+    detectBinary: async (backendId, override) => {
+      const backend = backendOrDefault(backendId);
       try {
         const { client } = await ensureRuntime();
-        const binary = await client.detectBinary({
-          binaryOverride:
-            override ?? agentSettingsFrom(useSettingsStore.getState().settings).binaryPath,
-        });
-        set({ binary });
+        const binary = await detectBackend(
+          backend,
+          override ?? agentSettingsFrom(useSettingsStore.getState().settings, backend).binaryPath,
+          client,
+        );
+        set((s) => ({ binaries: { ...s.binaries, [backendId]: binary } }));
+        return binary;
       } catch {
-        set({ binary: null });
+        set((s) => ({ binaries: { ...s.binaries, [backendId]: null } }));
+        return null;
       }
+    },
+    setChatBackend: (chatId, backendId) => {
+      pickedBackend.add(chatId);
+      applyChatBackend(chatId, backendId);
     },
     openNewProjectDialog: (opts) =>
       set({ newProjectDialog: { open: true, folder: opts?.folder ?? null } }),
@@ -1540,7 +1640,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
       // the vault changed while the notes loaded: this restore is stale
       if (chatRestore.root !== root || useWorkspaceStore.getState().root !== root) return;
       if (restored.length > 0) {
-        const settingsEffort = agentSettingsFrom(useSettingsStore.getState().settings).effort;
         set((s) => {
           const chats = { ...s.chats };
           const notes = { ...s.notes };
@@ -1558,7 +1657,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
           for (const r of restored) {
             chats[r.chat.chatId] = r.chat;
             notes[r.chat.chatId] = r.note;
-            if (r.model) chatModels[r.chat.chatId] = { model: r.model, effort: settingsEffort };
+            if (r.model)
+              chatModels[r.chat.chatId] = {
+                model: r.model,
+                effort: settingsEffortFor(r.chat.backendId),
+              };
           }
           const order = [...restored.map((r) => r.chat.chatId), ...keep];
           const current = s.activeChatId && keep.includes(s.activeChatId) ? s.activeChatId : null;
@@ -1591,7 +1694,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const doc = parseChatNote(markdown);
         const chat = chatFromNote(doc, summary);
         const savedModel = doc.meta.model;
-        const settingsEffort = agentSettingsFrom(useSettingsStore.getState().settings).effort;
+        const settingsEffort = settingsEffortFor(chat.backendId);
         set((s) => {
           // An untouched empty tab makes room instead of piling up.
           const active = s.activeChatId ? s.chats[s.activeChatId] : null;
@@ -1638,6 +1741,26 @@ const ensureChatTab = (open: boolean) => {
 // while the feature is active, released when it deactivates.
 function wireAgentStore(ctx: FeatureContext) {
   ensureChatTab(usePaneStore.getState().open);
+
+  // Untouched chats follow the default backend as it becomes known: when detection finishes or a
+  // backend's feature is turned on or off.
+  ctx.subscribe(useBackendUsability, (s, prev) => {
+    if (s.usable !== prev.usable) reresolveUntouchedChats();
+  });
+  ctx.onDispose(agentBackendContributions.subscribe(reresolveUntouchedChats));
+  // A program path changed (Settings, Locate, Choose binary): look again, for the not-found card
+  // and for which backends are usable.
+  ctx.subscribe(useSettingsStore, (s, prev) => {
+    const moved = listBackends().filter(
+      (b) =>
+        b.status === "available" &&
+        s.settings[b.keys.binaryPath] !== prev.settings[b.keys.binaryPath],
+    );
+    if (moved.length === 0) return;
+    const { binaries } = useAgentStore.getState();
+    for (const b of moved) if (b.id in binaries) void useAgentStore.getState().detectBinary(b.id);
+    void detectUsableBackends({ force: true });
+  });
   ctx.subscribe(usePaneStore, (s, prev) => {
     if (s.open !== prev.open) ensureChatTab(s.open);
   });

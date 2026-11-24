@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  AGENT_BACKENDS,
   backendById,
+  listBackends,
   compareVersions,
   deriveBackendStatus,
   parseVersion,
@@ -23,13 +23,15 @@ import {
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 
 describe("backend registry", () => {
-  it("has Claude as the only available backend; the rest are coming soon", () => {
-    expect(AGENT_BACKENDS.filter((b) => b.status === "available").map((b) => b.id)).toEqual([
-      "claude",
-    ]);
-    expect(AGENT_BACKENDS.map((b) => b.id)).toEqual(["opencode", "claude", "codex"]);
-    for (const b of AGENT_BACKENDS.filter((b) => b.status === "coming-soon")) {
-      expect(b.detectCommand).toBeNull();
+  it("has Claude as the only available backend without a contribution; Codex is coming soon", () => {
+    expect(
+      listBackends()
+        .filter((b) => b.status === "available")
+        .map((b) => b.id),
+    ).toEqual(["claude"]);
+    expect(listBackends().map((b) => b.id)).toEqual(["claude", "codex"]);
+    for (const b of listBackends().filter((b) => b.status === "coming-soon")) {
+      expect(b.detect).toBeUndefined();
     }
     expect(backendById("claude")?.minVersion).toBe("2.1.325");
   });
@@ -53,6 +55,8 @@ describe("backend registry", () => {
       searched: [],
       authenticated: null,
       account: null,
+      supported: null,
+      minVersion: null,
       ...over,
     });
     const found = info({});

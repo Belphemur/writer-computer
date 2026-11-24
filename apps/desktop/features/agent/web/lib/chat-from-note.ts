@@ -6,6 +6,7 @@
 import type { ChatNoteDoc, ChatNoteMessage, ChatNoteResume } from "./chat-note";
 import { chatFileRef } from "./chat-files";
 import type { ChatSummary } from "./events";
+import { chatIdIsSession, DEFAULT_BACKEND_ID } from "./backends";
 import { createChat } from "./reduce";
 import type { Chat, SubagentMeta, ToolBlock, Turn, UserMessage } from "./transcript";
 import { restoreSessionChanges } from "./session-changes";
@@ -163,12 +164,13 @@ export function chatFromNote(doc: ChatNoteDoc, summary: Pick<ChatSummary, "proje
     // An assistant message closes its turn: the next user message opens a new one.
     current = null;
   }
-  const base = createChat(doc.meta.chatId, { projectPath: summary.projectPath });
+  const backendId = doc.meta.backend ?? DEFAULT_BACKEND_ID;
+  const base = createChat(doc.meta.chatId, { projectPath: summary.projectPath, backendId });
   return {
     ...base,
     title: doc.meta.title,
     turns,
-    resumeSessionId: doc.meta.sessionId ?? doc.meta.chatId,
+    resumeSessionId: doc.meta.sessionId ?? (chatIdIsSession(backendId) ? doc.meta.chatId : null),
     totalCostUsd: doc.meta.usage?.costUsd ?? 0,
     ...(doc.sessionChanges ? { sessionChanges: restoreSessionChanges(doc.sessionChanges) } : {}),
   };

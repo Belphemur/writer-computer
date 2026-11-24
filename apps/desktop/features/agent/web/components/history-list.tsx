@@ -1,3 +1,4 @@
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHoverTooltip } from "@/components/hover-tooltip";
 import { openPath } from "@/lib/link-activation";
@@ -7,7 +8,7 @@ import { regenerateAgentChatTitle } from "@features/agent/web/hooks/agent-api";
 import {
   canRegenerateTitle,
   NOTHING_TO_TITLE_TEXT,
-  REGENERATE_REFUSAL_TEXT,
+  refusalText,
   type RegenerateOutcome,
 } from "@features/agent/web/lib/auto-title";
 import { parseChatNote, transcriptMarkdown } from "@features/agent/web/lib/chat-note";
@@ -351,7 +352,10 @@ export function HistoryList({
         setRegenFor(id, undefined);
         await reload();
       } else {
-        setRegenFor(id, { phase: "error", message: REGENERATE_REFUSAL_TEXT[outcome.reason] });
+        setRegenFor(id, {
+          phase: "error",
+          message: refusalText(outcome.reason, backendOrDefault(chat.backend).product),
+        });
       }
     } catch (e) {
       setRegenFor(id, {

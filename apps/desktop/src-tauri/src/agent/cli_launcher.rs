@@ -40,6 +40,21 @@ pub fn ensure(dir: &Path, exe: &Path) -> std::io::Result<PathBuf> {
     Ok(dir.to_path_buf())
 }
 
+/// The directory holding the launcher, made once per run in `<app data>/bin`; `None` (logged once)
+/// when it could not be made, so an agent is told there is no `writer` command instead of being
+/// promised one. The one place the directory is decided, for every backend. Blocking: file IO.
+pub fn shared_dir(app_data: &Path) -> Option<PathBuf> {
+    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        std::env::current_exe()
+            .map_err(|e| e.to_string())
+            .and_then(|exe| ensure(&app_data.join("bin"), &exe).map_err(|e| e.to_string()))
+            .inspect_err(|e| log::warn!(target: "agent", "agent: no writer launcher: {e}"))
+            .ok()
+    })
+    .clone()
+}
+
 /// No launcher outside Unix (the CLI shim is macOS-first): the agent is told there is no CLI.
 #[cfg(not(unix))]
 pub fn ensure(_dir: &Path, _exe: &Path) -> std::io::Result<PathBuf> {

@@ -1,0 +1,6 @@
+{
+  "identifier": "feature-opencode",
+  "description": "Grants the OpenCode feature's commands to every Writer window.",
+  "windows": ["main", "w-*"],
+  "permissions": ["opencode:default"]
+}

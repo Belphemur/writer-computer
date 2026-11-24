@@ -2,12 +2,12 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Alert02Icon } from "@hugeicons/core-free-icons";
 import { detectAgentBinary, retryAgent } from "@features/agent/web/hooks/agent-api";
+import { backendOrDefault } from "@features/agent/web/lib/backends";
+import { useSettingsStore } from "@/stores/settings-store";
 import { openExternal } from "@/lib/link-activation";
 import { copyRecentErrors } from "@/lib/log-actions";
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { Ico } from "./agent-icon";
-
-export const INSTALL_URL = "https://code.claude.com/docs";
 
 export function Button({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
@@ -21,13 +21,19 @@ export function Button({ onClick, children }: { onClick: () => void; children: R
   );
 }
 
-export async function chooseBinary() {
+/** "Choose binary…": the picked program is detected first; only a program that is found becomes
+ *  the backend's `binaryPath` setting (what the next start reads). Otherwise the card stays on
+ *  "not found" and nothing is saved. The setting change makes every reader look again. */
+export async function chooseBinary(backendId: string) {
+  const backend = backendOrDefault(backendId);
   const picked = await openDialog({
     multiple: false,
     directory: false,
-    title: "Choose the claude binary",
+    title: `Choose the ${backend.program} binary`,
   });
-  if (typeof picked === "string") await detectAgentBinary(picked);
+  if (typeof picked !== "string") return;
+  const found = await detectAgentBinary(backendId, picked);
+  if (found?.found) await useSettingsStore.getState().setSetting(backend.keys.binaryPath, picked);
 }
 
 function resetText(resetsAt: number | null): string | null {
@@ -40,31 +46,35 @@ function resetText(resetsAt: number | null): string | null {
 export function ErrorCard({ chat }: { chat: Chat }) {
   const err = chat.error;
   if (!err) return null;
+  const backend = backendOrDefault(chat.backendId);
   let title = "Something went wrong";
   let body: string | null = err.message;
   let actions: React.ReactNode = null;
   switch (err.kind) {
     case "binary-not-found":
-      title = "Claude Code was not found";
-      body =
-        "Writer could not find the `claude` program. Install Claude Code, or choose its location.";
+      title = `${backend.product} was not found`;
+      body = `Writer could not find the \`${backend.program}\` program. Install ${backend.product}, or choose its location.`;
       actions = (
         <>
-          <Button onClick={() => void chooseBinary()}>Choose binary…</Button>
-          <Button onClick={() => void openExternal(INSTALL_URL)}>Install Claude Code</Button>
+          <Button onClick={() => void chooseBinary(backend.id)}>Choose binary…</Button>
+          {backend.installUrl && (
+            <Button onClick={() => void openExternal(backend.installUrl!)}>
+              Install {backend.product}
+            </Button>
+          )}
         </>
       );
       break;
     case "spawn-denied":
-      title = "Writer was not allowed to start Claude";
+      title = `Writer was not allowed to start ${backend.label}`;
       actions = <Button onClick={() => void retryAgent()}>Ask again</Button>;
       break;
     case "auth":
       title = "Sign in required";
-      body = "Run `claude` in a terminal and type /login, then retry.";
+      body = backend.signIn.hint;
       actions = (
         <>
-          <Button onClick={() => void writeText("claude")}>Copy command</Button>
+          <Button onClick={() => void writeText(backend.signIn.command)}>Copy command</Button>
           <Button onClick={() => void retryAgent()}>Retry</Button>
         </>
       );
@@ -75,11 +85,11 @@ export function ErrorCard({ chat }: { chat: Chat }) {
       actions = <Button onClick={() => void retryAgent()}>Retry</Button>;
       break;
     case "protocol":
-      title = "Unexpected response from Claude";
+      title = `Unexpected response from ${backend.label}`;
       actions = <Button onClick={() => void copyRecentErrors()}>Copy diagnostics</Button>;
       break;
     default:
-      title = err.kind === "timeout" ? "Claude timed out" : "Something went wrong";
+      title = err.kind === "timeout" ? `${backend.label} timed out` : "Something went wrong";
       if (err.retryable || err.kind === "unknown" || err.kind === "spawn-failed")
         actions = <Button onClick={() => void retryAgent()}>Retry</Button>;
   }

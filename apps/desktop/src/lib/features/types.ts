@@ -11,6 +11,7 @@ import type { DirEntry } from "@/types/fs";
 import type { Keybinding } from "@/lib/keybindings/registry";
 import type { FeatureSecrets } from "@/stores/feature-secrets-store";
 import type { PaletteCommandSource } from "./palette";
+import type { AgentBackendContribution } from "./agent-backends";
 import type { ServiceContribution } from "./services";
 import type { SlotContribution } from "./slots";
 import type { WorkspaceListenerContribution } from "./workspace-events";
@@ -25,7 +26,8 @@ export type ContributionIdPoint =
   | "statusItems"
   | "overlays"
   | "fileTreeDecorations"
-  | "beforeSave";
+  | "beforeSave"
+  | "agentBackends";
 
 /** The static facts in `src-tauri/src/features/<id>/feature.json` that the web side may read. */
 export interface FeatureManifest {
@@ -34,6 +36,8 @@ export interface FeatureManifest {
   version: string;
   description: string;
   enabledByDefault?: boolean;
+  /** The prefix of the feature's own settings keys when it is not the id (`agent.opencode`). */
+  settingsNamespace?: string;
   /** Activation events: `onStartup`, `onWorkspaceOpen`, `onFileKind:<kind>`, ... */
   activation?: string[];
   /** Shown in Settings > Features so users see what the feature costs. */
@@ -301,6 +305,8 @@ export interface Contributions {
   /** What this window answers to the feature's `ipc_commands` over the CLI socket
    *  (`ipc-requests.ts`). */
   ipcRequests?: readonly IpcRequestContribution[];
+  /** Agent backends the pane can chat with (`agent-backends.ts`, the `agent.backends` point). */
+  agentBackends?: readonly AgentBackendContribution[];
   /** Typed capabilities other code finds through `getService` (`services.ts`). */
   services?: readonly ServiceContribution[];
   // Declared by the spec, no host registry yet (lands with its first pilot).

@@ -87,19 +87,14 @@ pub fn resolve_entry(
         );
         None
     };
-    let Some(root) = root_real else {
-        return skip("no vault to confine it to");
+    let (real, rel) = match link_target(path, parent_real, root_real) {
+        LinkTarget::Inside { real, rel } => (real, rel),
+        LinkTarget::NoRoot => return skip("no vault to confine it to"),
+        LinkTarget::Dangling => return skip("dangling"),
+        LinkTarget::Outside => return skip("target is outside the vault"),
+        LinkTarget::Cycle => return skip("target is the vault root or an ancestor (cycle)"),
     };
-    let Ok(real) = path.canonicalize() else {
-        return skip("dangling");
-    };
-    let Ok(rel) = real.strip_prefix(root) else {
-        return skip("target is outside the vault");
-    };
-    if rel.as_os_str().is_empty() || parent_real.starts_with(&real) {
-        return skip("target is the vault root or an ancestor (cycle)");
-    }
-    if !crate::code_files::rel_is_visible(rel) {
+    if !crate::code_files::rel_is_visible(&rel) {
         return skip("target is hidden by the visibility policy");
     }
     let kind = match std::fs::metadata(&real) {
@@ -112,6 +107,40 @@ pub fn resolve_entry(
         real,
         symlink: true,
     })
+}
+
+/// Where a symlink points, judged against the vault: the one primitive every walker that follows
+/// links builds its policy on ([`resolve_entry`] adds visibility and the file or folder kind; the
+/// OpenCode config's skill check only wants to know whether a link leaves the vault).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkTarget {
+    /// The canonical target, and its path below the vault root.
+    Inside { real: PathBuf, rel: PathBuf },
+    /// There is no vault to confine the link to.
+    NoRoot,
+    /// The target does not exist.
+    Dangling,
+    /// The target is outside the vault.
+    Outside,
+    /// The target is the vault root or the folder of the link, or an ancestor of it.
+    Cycle,
+}
+
+/// Classifies the symlink `path` that sits in the folder whose canonical path is `parent_real`.
+pub fn link_target(path: &Path, parent_real: &Path, root_real: Option<&Path>) -> LinkTarget {
+    let Some(root) = root_real else {
+        return LinkTarget::NoRoot;
+    };
+    let Ok(real) = path.canonicalize() else {
+        return LinkTarget::Dangling;
+    };
+    let Ok(rel) = real.strip_prefix(root).map(Path::to_path_buf) else {
+        return LinkTarget::Outside;
+    };
+    if rel.as_os_str().is_empty() || parent_real.starts_with(&real) {
+        return LinkTarget::Cycle;
+    }
+    LinkTarget::Inside { real, rel }
 }
 
 /// [`resolve_entry`] for one path (no `read_dir` entry at hand): a fixed child such as `skills`.
@@ -216,6 +245,34 @@ mod tests {
         ] {
             assert!(resolve(&root, rel).is_none(), "{rel}");
         }
+    }
+
+    /// The primitive both policies stand on: it says only where a link points, never whether the
+    /// target is visible (that is `resolve_entry`'s policy, and the skill check's is its own).
+    #[test]
+    fn link_target_says_where_a_link_points_and_nothing_about_visibility() {
+        let (_t, root) = vault();
+        let (_o, outside) = vault();
+        fs::create_dir_all(root.join("a/b")).unwrap();
+        fs::create_dir_all(root.join(".git")).unwrap();
+        symlink(&outside, root.join("out")).unwrap();
+        symlink("nowhere", root.join("dangling")).unwrap();
+        symlink("..", root.join("a/b/up")).unwrap();
+        symlink(".git", root.join("g")).unwrap();
+        let parent = |rel: &str| root.join(rel).parent().unwrap().canonicalize().unwrap();
+        let t = |rel: &str, r: Option<&Path>| link_target(&root.join(rel), &parent(rel), r);
+        assert_eq!(t("out", Some(&root)), LinkTarget::Outside);
+        assert_eq!(t("dangling", Some(&root)), LinkTarget::Dangling);
+        assert_eq!(t("a/b/up", Some(&root)), LinkTarget::Cycle);
+        assert_eq!(t("g", None), LinkTarget::NoRoot);
+        // a link into a hidden folder is still inside: the policy is the caller's
+        assert_eq!(
+            t("g", Some(&root)),
+            LinkTarget::Inside {
+                real: root.join(".git"),
+                rel: PathBuf::from(".git")
+            }
+        );
     }
 
     #[test]

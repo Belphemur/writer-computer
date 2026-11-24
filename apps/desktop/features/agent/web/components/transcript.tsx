@@ -1,3 +1,4 @@
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 import type { Chat } from "@features/agent/web/lib/transcript";
 import { segmentTurn } from "@features/agent/web/lib/timeline";
 import { ErrorCard } from "./error-card";
@@ -72,7 +73,7 @@ export function Transcript({ chat }: { chat: Chat }) {
           )}
           {chat.state === "starting" && !last?.blocks.length && (
             <p role="status" className="px-1 text-[12.5px] text-text-muted">
-              Starting Claude…
+              Starting {backendOrDefault(chat.backendId).label}…
             </p>
           )}
           <ErrorCard chat={chat} />

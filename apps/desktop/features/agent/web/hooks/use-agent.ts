@@ -11,6 +11,7 @@ import type { AgentPermissionMode } from "@features/agent/web/lib/events";
 import { useActiveFilePath } from "@/hooks/use-tabs";
 import { useWorkspaceRoot } from "@/hooks/use-workspace";
 import type { ChatId } from "@features/agent/web/lib/events";
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 import { contextStatus, type ContextStatus } from "@features/agent/web/lib/context-usage";
 
 export type { SkillsEntry } from "@features/agent/web/stores/agent-store";
@@ -37,8 +38,9 @@ export function useAgentView() {
 export function useAgentBackend() {
   return useAgentStore((s) => s.backend);
 }
-export function useAgentBinary() {
-  return useAgentStore((s) => s.binary);
+/** What program detection said about a backend; null before it ran (or when it failed). */
+export function useAgentBinary(backendId: string) {
+  return useAgentStore((s) => s.binaries[backendId] ?? null);
 }
 export function useAgentChatIds() {
   return useAgentStore((s) => s.order);
@@ -90,20 +92,28 @@ export function useChatModel(chatId: ChatId | null): {
   sessionModel: string | null;
   /** Selected in a running session, not yet confirmed by the CLI. */
   pending: boolean;
+  /** The chat's backend (its keys hold the defaults). */
+  backendId: string;
 } {
+  const backendId = useAgentStore((s) => (chatId ? s.chats[chatId]?.backendId : undefined));
   const own = useAgentStore((s) => (chatId ? s.chatModels[chatId] : undefined));
   const reported = useAgentStore((s) => (chatId ? (s.chats[chatId]?.reportedModel ?? null) : null));
   const sessionModel = useAgentStore((s) =>
     chatId ? (s.chats[chatId]?.session?.model ?? null) : null,
   );
   const pending = useAgentStore((s) => (chatId ? !!s.modelPending[chatId] : false));
-  const model = useSettingsStore((s) => s.settings["agent.model"]);
-  const effort = useSettingsStore((s) => s.settings["agent.effort"]);
+  // a new chat starts on its backend's default model and effort
+  const backend = backendOrDefault(backendId);
+  const model = useSettingsStore((s) => s.settings[backend.keys.model]);
+  const effort = useSettingsStore((s) => s.settings[backend.keys.effort]);
   const base = useMemo(() => {
-    const d = agentSettingsFrom({ "agent.model": model, "agent.effort": effort });
+    const d = agentSettingsFrom(
+      { [backend.keys.model]: model, [backend.keys.effort]: effort },
+      backend,
+    );
     return { model: d.model, effort: d.effort };
-  }, [model, effort]);
-  return { choice: own ?? base, reported, sessionModel, pending };
+  }, [backend, model, effort]);
+  return { choice: own ?? base, reported, sessionModel, pending, backendId: backend.id };
 }
 
 /** How full the chat's context window is (`web/lib/context-usage.ts`); null without a chat. */

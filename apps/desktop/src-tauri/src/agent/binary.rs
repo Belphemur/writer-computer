@@ -1,12 +1,14 @@
-//! Finding the `claude` binary and its version (spec 7, "Binary discovery").
+//! Finding a backend's program and its version (spec 7, "Binary discovery"): `claude` for the core,
+//! and any other backend's through [`Program`] (its name and its own install folders).
 //!
-//! Order: the `agent.binary-path` override (absolute, executable regular file), then the app's
-//! PATH, the login-shell PATH (`plugin_env::login_path`, cached), the known install dirs
-//! (`plugin_env::search_dirs`: `~/.claude/local`, Homebrew, version-manager bin dirs). The
-//! version probe is Writer's own fixed `claude --version` with a 5 s timeout and the filtered
-//! environment; it is not a plugin spawn, so it needs no consent and does not count toward the
-//! process cap. The sign-in probe is the CLI's own `claude auth status --json` (local, prints
-//! JSON, exit 1 when signed out, never starts a login or opens a browser), same env and timeout.
+//! Order: the backend's path setting (`agent.binary-path` for Claude; absolute, executable regular
+//! file), then the app's PATH, the login-shell PATH (`plugin_env::login_path`, cached), the known
+//! install dirs (`plugin_env::search_dirs`: `~/.claude/local`, Homebrew, version-manager bin
+//! dirs) and the program's own `extra_dirs`. The version probe is Writer's own fixed
+//! `<program> --version` with a 5 s timeout and the filtered environment; it is not a plugin
+//! spawn, so it needs no consent and does not count toward the process cap. The sign-in probe is
+//! Claude's own `claude auth status --json` (local, prints JSON, exit 1 when signed out, never
+//! starts a login or opens a browser), same env and timeout; no other backend has one.
 
 use crate::features::scope::Spawner;
 use crate::plugin_env;
@@ -47,6 +49,11 @@ pub struct AgentBinaryInfo {
     /// A non-sensitive label (sign-in method and plan, e.g. `claude.ai, enterprise`); never an
     /// email, organisation, id or path.
     pub account: Option<String>,
+    /// Whether the version found is one Writer supports: `None` when the backend has no such rule
+    /// (Claude) or the version is unknown. Filled by the backend that has a rule.
+    pub supported: Option<bool>,
+    /// The oldest version Writer supports, for the card that says it does not.
+    pub min_version: Option<String>,
 }
 
 /// Result of `claude auth status`.
@@ -92,8 +99,34 @@ pub fn parse_auth_status(stdout: &str) -> AuthStatus {
     }
 }
 
-/// Pure lookup, no probe. `app`/`login` are PATH-style strings.
+/// Pure lookup of the `claude` program, no probe. `app`/`login` are PATH-style strings.
 pub fn locate(
+    override_path: Option<&str>,
+    app: &str,
+    login: &str,
+    home: Option<&Path>,
+) -> (Option<(PathBuf, BinarySource)>, Vec<String>) {
+    locate_program(&CLAUDE, override_path, app, login, home)
+}
+
+/// A backend's program: its name and the install folders, relative to the home folder, searched
+/// besides the ones every program shares (`plugin_env::search_dirs`). Core names none but its own.
+#[derive(Debug, Clone, Copy)]
+pub struct Program {
+    pub name: &'static str,
+    pub extra_dirs: &'static [&'static str],
+}
+
+/// The program of the core's own backend, the one this module was written for.
+pub const CLAUDE: Program = Program {
+    name: "claude",
+    extra_dirs: &[],
+};
+
+/// [`locate`] for any backend's program: the one lookup, so the order (override, app PATH, login
+/// PATH, known install folders) is the same for every backend.
+pub fn locate_program(
+    program: &Program,
     override_path: Option<&str>,
     app: &str,
     login: &str,
@@ -113,8 +146,16 @@ pub fn locate(
     }
     let app_dirs: Vec<PathBuf> = std::env::split_paths(app).collect();
     let login_dirs: Vec<PathBuf> = std::env::split_paths(login).collect();
-    let dirs = plugin_env::search_dirs(login, app, home);
-    let hit = plugin_env::which_in("claude", &dirs).ok().flatten();
+    let mut dirs = plugin_env::search_dirs(login, app, home);
+    if let Some(h) = home {
+        for extra in program.extra_dirs {
+            let d = h.join(extra);
+            if !dirs.contains(&d) {
+                dirs.push(d);
+            }
+        }
+    }
+    let hit = plugin_env::which_in(program.name, &dirs).ok().flatten();
     let Some(hit) = hit else {
         return (
             None,
@@ -273,7 +314,10 @@ fn probe_auth_with(spawner: &Spawner, program: &Path, timeout: Duration) -> Auth
 }
 
 /// [`locate`] with the real environment. Blocking when it needs the login shell's PATH.
-fn locate_here(override_path: Option<&str>) -> (Option<(PathBuf, BinarySource)>, Vec<String>) {
+fn locate_here(
+    program: &Program,
+    override_path: Option<&str>,
+) -> (Option<(PathBuf, BinarySource)>, Vec<String>) {
     let app = std::env::var("PATH").unwrap_or_default();
     // the login shell is only needed without an override
     let login = if override_path.is_some_and(|o| !o.trim().is_empty()) {
@@ -281,7 +325,8 @@ fn locate_here(override_path: Option<&str>) -> (Option<(PathBuf, BinarySource)>,
     } else {
         plugin_env::login_path()
     };
-    locate(
+    locate_program(
+        program,
         override_path,
         &app,
         &login,
@@ -292,15 +337,35 @@ fn locate_here(override_path: Option<&str>) -> (Option<(PathBuf, BinarySource)>,
 /// The `claude` program alone, without the version and sign-in probes (a one-shot helper call
 /// that must not wait for them). Blocking (login shell).
 pub fn find(override_path: Option<&str>) -> Option<PathBuf> {
-    locate_here(override_path).0.map(|(path, _)| path)
+    find_program(&CLAUDE, override_path)
+}
+
+/// [`find`] for any backend's program.
+pub fn find_program(program: &Program, override_path: Option<&str>) -> Option<PathBuf> {
+    locate_here(program, override_path).0.map(|(path, _)| path)
 }
 
 /// The `agent_detect_binary` result. Blocking (login shell, version probe).
 pub fn detect(spawner: &Spawner, override_path: Option<&str>) -> AgentBinaryInfo {
-    let (found, searched) = locate_here(override_path);
+    detect_program(spawner, &CLAUDE, override_path, true)
+}
+
+/// [`detect`] for any backend's program. `probe_sign_in` runs `claude auth status`, which only
+/// Claude has: another backend reports `authenticated: None` (unknown) and finds out at send time.
+pub fn detect_program(
+    spawner: &Spawner,
+    program: &Program,
+    override_path: Option<&str>,
+    probe_sign_in: bool,
+) -> AgentBinaryInfo {
+    let (found, searched) = locate_here(program, override_path);
     match found {
         Some((path, source)) => {
-            let auth = probe_auth(spawner, &path);
+            let auth = if probe_sign_in {
+                probe_auth(spawner, &path)
+            } else {
+                AuthStatus::default()
+            };
             AgentBinaryInfo {
                 found: true,
                 version: probe_version(spawner, &path),
@@ -309,6 +374,8 @@ pub fn detect(spawner: &Spawner, override_path: Option<&str>) -> AgentBinaryInfo
                 path: Some(path.to_string_lossy().into_owned()),
                 source: Some(source),
                 searched,
+                supported: None,
+                min_version: None,
             }
         }
         None => AgentBinaryInfo {
@@ -319,6 +386,8 @@ pub fn detect(spawner: &Spawner, override_path: Option<&str>) -> AgentBinaryInfo
             version: None,
             source: None,
             searched,
+            supported: None,
+            min_version: None,
         },
     }
 }
@@ -515,5 +584,34 @@ mod tests {
         let broken = d.path().join("broken");
         exe(&broken, "#!/bin/sh\nexit 1\n");
         assert_eq!(probe_version(&Spawner::detached(), &broken), None);
+    }
+
+    #[test]
+    fn a_program_searches_its_own_folders_and_no_other_programs() {
+        let home = tempfile::tempdir().unwrap();
+        let bin = home.path().join(".other-agent/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let prog = bin.join("other-agent-cli");
+        std::fs::write(&prog, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&prog, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let other = Program {
+            name: "other-agent-cli",
+            extra_dirs: &[".other-agent/bin"],
+        };
+        // its own folder is searched for it
+        let (found, _) = locate_program(&other, None, "", "", Some(home.path()));
+        assert_eq!(found.unwrap().0, prog);
+        // and for Claude, the core, there is no other backend's folder: not in the folders it searches,
+        // and its own name is not found there
+        let (found, searched) = locate_program(&CLAUDE, None, "", "", Some(home.path()));
+        assert!(found.is_none_or(|(p, _)| !p.starts_with(home.path())));
+        assert!(
+            !searched.iter().any(|d| d.contains(".other-agent")),
+            "{searched:?}"
+        );
+        let shared = crate::plugin_env::search_dirs("", "", Some(home.path()));
+        assert!(!shared
+            .iter()
+            .any(|d| d.to_string_lossy().contains(".other-agent")));
     }
 }

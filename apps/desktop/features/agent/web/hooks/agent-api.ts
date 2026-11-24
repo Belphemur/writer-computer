@@ -17,6 +17,7 @@ import type {
   PermissionPersist,
   QuestionAnswer,
 } from "@features/agent/web/lib/events";
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 import { logger } from "@/lib/logger";
 import { useSettingsStore } from "@/stores/settings-store";
 import { usePaneStore } from "@features/agent/web/stores/pane-store";
@@ -62,8 +63,10 @@ export const sendAgentNow = (text: string) => useAgentStore.getState().sendNow(t
 export const stopAgent = () => useAgentStore.getState().stop();
 export const removeQueuedMessage = (id: ChatId) => useAgentStore.getState().removeQueued(id);
 export const retryAgent = () => useAgentStore.getState().retry();
-export const detectAgentBinary = (override?: string | null) =>
-  useAgentStore.getState().detectBinary(override);
+export const detectAgentBinary = (backendId: string, override?: string | null) =>
+  useAgentStore.getState().detectBinary(backendId, override);
+export const setAgentChatBackend = (chatId: ChatId, backendId: string) =>
+  useAgentStore.getState().setChatBackend(chatId, backendId);
 export const decideAgentPermission = (
   requestId: string,
   decision: "allow" | "deny",
@@ -77,11 +80,16 @@ export const setAgentPermissionMode = (m: AgentPermissionMode) =>
   useAgentStore.getState().setPermissionMode(m);
 export const setAgentChatModel = (model: string | null, effort?: ChatModelChoice["effort"]) =>
   useAgentStore.getState().setChatModel(model, effort);
-/** "Set as default" in the model menu: writes `agent.model` ("" is Agent default) and `agent.effort`. */
-export async function setAgentDefaultModel(choice: ChatModelChoice): Promise<void> {
+/** "Set as default" in the model menu: writes the chat's backend's model ("" is the agent's
+ *  default) and effort settings. */
+export async function setAgentDefaultModel(
+  choice: ChatModelChoice,
+  backendId: string,
+): Promise<void> {
   const { setSetting } = useSettingsStore.getState();
-  await setSetting("agent.model", choice.model ?? "");
-  await setSetting("agent.effort", choice.effort ?? "default");
+  const { keys } = backendOrDefault(backendId);
+  await setSetting(keys.model, choice.model ?? "");
+  await setSetting(keys.effort, choice.effort ?? "default");
 }
 export const openNewProjectDialog = (opts?: { folder?: string | null }) =>
   useAgentStore.getState().openNewProjectDialog(opts);

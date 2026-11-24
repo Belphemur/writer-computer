@@ -496,14 +496,16 @@ describe("the composer and the transcript", () => {
       modes: {},
       view: "chat",
       backend: "tauri",
-      binary: {
-        found: true,
-        path: "/x",
-        version: "1",
-        source: "path",
-        searched: [],
-        authenticated: true,
-        account: null,
+      binaries: {
+        claude: {
+          found: true,
+          path: "/x",
+          version: "1",
+          source: "path",
+          searched: [],
+          authenticated: true,
+          account: null,
+        },
       },
     });
     hoisted.saveImage.mockReset();

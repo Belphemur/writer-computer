@@ -7,6 +7,7 @@
  * Pure: no IO, no Tauri. Notes hold text the user sent and the agent answered, a one-line list of
  * attached paths per message and a capped tool trail; never tool output or note contents.
  */
+import { backendOrDefault } from "./backends";
 import { parse as parseYaml } from "yaml";
 import { embedLine } from "@/lib/attachments";
 import type {
@@ -191,13 +192,18 @@ export type ChatNoteDoc = {
   extraFrontmatter: string;
 };
 
-export const emptyMeta = (chatId: string, now: number): ChatNoteMeta => ({
+/** `backend`: the chat's backend id and whether the chat id doubles as its session id. */
+export const emptyMeta = (
+  chatId: string,
+  now: number,
+  backend: { id: string; chatIdIsSession: boolean } = backendOrDefault(null),
+): ChatNoteMeta => ({
   chatId,
   title: "New chat",
   titleRenamed: false,
   titleAuto: false,
-  backend: "claude",
-  sessionId: chatId,
+  backend: backend.id,
+  sessionId: backend.chatIdIsSession ? chatId : null,
   project: null,
   projectPath: null,
   cliVersion: null,

@@ -16,10 +16,12 @@
 //!   contributor answers only what it can vouch for; no answer keeps the file "listed without a
 //!   diff". Asked from a thread that may block (never the watcher's or the main thread).
 
+use super::backend::Backend;
 use crate::features::points::{Point, Provider};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-/// The one backend today; the contract names it so a second backend adds a value, not a field.
+/// The core's own backend; every other one comes through [`BACKENDS`].
 pub const BACKEND_CLAUDE: &str = "claude";
 
 #[derive(Debug, Clone)]
@@ -124,3 +126,10 @@ pub const BASELINE_MAX_BYTES: u64 = super::changes::MAX_FILE_BYTES;
 
 pub static TURN_BASELINE: Provider<TurnBaseline, Vec<Option<Baseline>>> =
     Provider::new("agent.turn-baseline", "agent");
+
+/// "Give me backend `id`" (the argument is the id a chat note keeps in `writer-chat-backend`): a
+/// feature that brings an agent backend answers for its own id with a [`Backend`]. The agent asks
+/// when a chat starts and never names who answers; the core's own backend (Claude) is not asked
+/// for, and with no answer a chat of that backend says it is not available (the feature is off).
+/// Asked from a blocking thread; an answer is cheap.
+pub static BACKENDS: Provider<String, Arc<Backend>> = Provider::new("agent.backends", "agent");

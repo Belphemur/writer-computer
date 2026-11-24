@@ -6,6 +6,7 @@
  * unknown event types are ignored (forward compatible); user actions that are not events
  * (send, stop) have their own helpers below so the state machine lives in one file.
  */
+import { DEFAULT_BACKEND_ID } from "./backends";
 import type {
   AgentEvent,
   AgentSessionState,
@@ -33,9 +34,13 @@ import type {
   TurnStatus,
 } from "./transcript";
 
-export function createChat(chatId: ChatId, opts: { projectPath?: string | null } = {}): Chat {
+export function createChat(
+  chatId: ChatId,
+  opts: { projectPath?: string | null; backendId?: string } = {},
+): Chat {
   return {
     chatId,
+    backendId: opts.backendId ?? DEFAULT_BACKEND_ID,
     title: "New chat",
     projectPath: opts.projectPath ?? null,
     state: "idle",

@@ -73,6 +73,11 @@ impl SpawnError {
                 "This chat was closed".to_string(),
                 false,
             ),
+            Self::Gone => (
+                AgentErrorKind::SpawnFailed,
+                "This chat's agent was stopped: send again to start it".to_string(),
+                true,
+            ),
         };
         AgentEvent::Error {
             kind,
@@ -94,7 +99,7 @@ pub(crate) struct SessionInit {
     pub shared: Weak<Shared>,
     pub sink: Sink,
     /// The agent this chat runs on.
-    pub backend: &'static Backend,
+    pub backend: Arc<Backend>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -355,7 +360,7 @@ pub struct Session {
     me: Weak<Session>,
     shared: Weak<Shared>,
     /// The agent this chat runs on: its tool table, adapters and transport.
-    backend: &'static Backend,
+    backend: Arc<Backend>,
     /// How the backend carries the chat (`transport.rs`): called outside `inner`'s critical
     /// sections where it can block, and the only way anything reaches the backend.
     transport: Arc<dyn Transport>,
@@ -402,7 +407,7 @@ fn inbound_loop(rx: Receiver<Inbound>, session: Weak<Session>, token: CancelToke
 impl Session {
     /// An `Err` is a thread the host refused (the feature is stopping): the chat is not created.
     pub(crate) fn new(init: SessionInit, config: LaunchConfig) -> Result<Arc<Session>, String> {
-        let backend = init.backend;
+        let backend = Arc::clone(&init.backend);
         Self::with_transport(init, config, |t| backend.connect(t))
     }
 
@@ -426,6 +431,7 @@ impl Session {
         })?;
         let log =
             EventLog::new(init.chat_id.clone(), init.sink, &spawner).map_err(|e| e.to_string())?;
+        let tools = init.backend.tools();
         let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             chat_id: init.chat_id,
@@ -463,7 +469,7 @@ impl Session {
                 pid: None,
                 state: AgentSessionState::Idle,
                 tool_names: HashMap::new(),
-                subs: SubTracker::new(init.backend.tools()),
+                subs: SubTracker::new(tools),
                 background_open: false,
                 last_session: None,
                 pending: HashMap::new(),
@@ -505,8 +511,8 @@ impl Session {
 
     // ---------------------------------------------------------------- queries
 
-    pub(crate) fn backend(&self) -> &'static Backend {
-        self.backend
+    pub(crate) fn backend(&self) -> &Arc<Backend> {
+        &self.backend
     }
 
     pub fn is_live(&self) -> bool {
@@ -666,6 +672,12 @@ impl Session {
                 g.live_gen = None;
                 g.spawning = false;
                 self.live.store(false, Ordering::SeqCst);
+                if e == SpawnError::Gone {
+                    // terminal: the chat says why, the session ends, and the next start of the
+                    // chat resolves its backend again (the callers' own error is then dropped)
+                    self.log.push(e.to_event(self.transport.phrases()));
+                    self.finish_terminal(&mut g, SessionEndReason::Closed, None, None);
+                }
                 Err(e)
             }
         }
@@ -1038,7 +1050,9 @@ impl Session {
             } => {
                 g.mcp_failing = config_sync::failing(mcp_servers);
                 // watch a failing server only when a recovery could restart this chat
-                let watch = !g.mcp_failing.is_empty() && self.restarts_on_config(g);
+                let watch = !g.mcp_failing.is_empty()
+                    && self.restarts_on_config(g)
+                    && self.backend.ops().mcp_cli_probe();
                 if let Some(shared) = self.shared.upgrade() {
                     shared.send_config(Msg::Mcp {
                         chat_id: self.chat_id.clone(),
@@ -1399,7 +1413,9 @@ impl Session {
                 g.turn_active = false;
                 g.queue.clear();
                 g.inflight.clear();
-                g.state = AgentSessionState::Error;
+                if !g.terminal {
+                    g.state = AgentSessionState::Error;
+                }
                 self.log.push(e.to_event(self.transport.phrases()));
             }
         }
@@ -1567,7 +1583,9 @@ impl Session {
             if let Err(e) = self.ensure_process() {
                 let mut g = self.inner.lock();
                 g.queue.clear();
-                g.state = AgentSessionState::Error;
+                if !g.terminal {
+                    g.state = AgentSessionState::Error;
+                }
                 self.log.push(e.to_event(self.transport.phrases()));
                 drop(g);
                 if starts_turn {

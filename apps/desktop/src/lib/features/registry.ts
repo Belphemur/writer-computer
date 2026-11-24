@@ -16,6 +16,7 @@ import { featureEventName } from "./events";
 import { assertFeatureId, ownerOf } from "./id";
 import { recordFailure } from "./health";
 import { editorExtensionContributions } from "./editor-extensions";
+import { agentBackendContributions } from "./agent-backends";
 import { dockContributions } from "./docks";
 import { fileTreeDecorationContributions } from "./file-tree";
 import { menuContributions, menuKey } from "./menus";
@@ -63,6 +64,7 @@ export function defineFeature<T extends FeatureDefinition>(def: T): T {
     ...(c.workspaceListeners ?? []),
     ...(c.ipcRequests ?? []),
     ...(c.services ?? []),
+    ...(c.agentBackends ?? []),
   ].map((x) => x.id);
   for (const id of ids) {
     if (!id.startsWith(`${def.id}.`)) {
@@ -191,6 +193,7 @@ export function createFeatureHost({
     workspaceListeners.removeOwner(ownerOf(id));
     ipcRequestHandlers.removeOwner(ownerOf(id));
     serviceContributions.removeOwner(ownerOf(id));
+    agentBackendContributions.removeOwner(ownerOf(id));
   }
 
   /** First use of a contribution: activate, then run it. A failure is logged, never thrown at a key press. */
@@ -292,6 +295,9 @@ export function createFeatureHost({
         }
         for (const x of def.contributes?.services ?? []) {
           serviceContributions.add(x.id, { ...x, owner: o });
+        }
+        for (const x of def.contributes?.agentBackends ?? []) {
+          agentBackendContributions.add(x.id, { ...x, owner: o });
         }
         const section = def.contributes?.settingsSection;
         if (section) settingsSectionContributions.add(section.id, { ...section, owner: o });

@@ -29,6 +29,8 @@
     "DELETE /api/session/{sessionID}/form/{formID}",
     "POST /api/session/{sessionID}/generate",
     "GET /api/permission/saved",
+    "GET /api/project",
+    "GET /api/location",
     "DELETE /api/permission/saved/{id}",
     "PUT /api/experimental/mcp/{server}",
     "DELETE /api/experimental/mcp/{server}",

@@ -208,8 +208,9 @@ fn fragment_entries(m: &Manifest, fragment: &str) -> Result<Vec<Value>, String> 
         let key = e["key"]
             .as_str()
             .ok_or(format!("{id}: entry without key"))?;
-        if !key.starts_with(&format!("{id}.")) {
-            return Err(format!("{id}: key {key} must start with \"{id}.\""));
+        let namespace = m.settings_namespace.as_deref().unwrap_or(id);
+        if !key.starts_with(&format!("{namespace}.")) {
+            return Err(format!("{id}: key {key} must start with \"{namespace}.\""));
         }
         for field in FRAGMENT_FIELDS {
             if e.get(field).is_none() {
@@ -313,6 +314,34 @@ fn fixture_checks(
     )
 }
 
+/// A feature's settings namespace and the keys of its fragment.
+type Namespaced = (String, String, Vec<String>);
+
+/// Namespaces are the one thing that keeps two features' settings apart: no two features share one,
+/// and a feature's key never sits in another feature's namespace. A namespace may nest in another
+/// (`agent.opencode` inside `agent`: the declared `settingsNamespace`), and then the key belongs
+/// to the more specific one: the outer feature must not use it.
+fn check_namespaces(features: &[Namespaced]) -> Result<(), String> {
+    for (i, (a, ns_a, _)) in features.iter().enumerate() {
+        if let Some((b, _, _)) = features[i + 1..].iter().find(|(_, ns_b, _)| ns_b == ns_a) {
+            return Err(format!("{a} and {b} share the settings namespace {ns_a:?}"));
+        }
+    }
+    for (id, ns, keys) in features {
+        for key in keys {
+            for (other, other_ns, _) in features {
+                let inner = format!("{other_ns}.");
+                if other != id && other_ns.len() > ns.len() && key.starts_with(&inner) {
+                    return Err(format!(
+                        "{id}: key {key} falls in the namespace of {other} ({other_ns})"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn every_registered_feature_matches_its_folder_capability_and_settings() {
     let defs = registry::<Wry>();
@@ -323,6 +352,7 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
         .map(|d| d.key)
         .collect();
     let mut ids = BTreeSet::new();
+    let mut namespaces: Vec<Namespaced> = Vec::new();
     for def in &defs {
         let m = def.manifest().expect("feature.json parses");
         assert!(ids.insert(m.id.clone()), "duplicate feature id {}", m.id);
@@ -354,11 +384,22 @@ fn every_registered_feature_matches_its_folder_capability_and_settings() {
         }
         check_schema(&shared, &[kill_switch(&m)]).unwrap();
         check_secret_declarations(&m).unwrap();
+        let mut keys = Vec::new();
         if let Some(raw) = def.settings_source() {
             let own = fragment_entries(&m, raw).unwrap();
             check_fragment_merged(&shared, &own, &merged_keys).unwrap();
+            keys = own
+                .iter()
+                .filter_map(|e| e["key"].as_str().map(String::from))
+                .collect();
         }
+        namespaces.push((
+            m.id.clone(),
+            m.settings_namespace.clone().unwrap_or_else(|| m.id.clone()),
+            keys,
+        ));
     }
+    check_namespaces(&namespaces).unwrap();
     // A feature folder without a registry entry would silently get ACL but no plugin, unless it has
     // no Rust half (a TypeScript-only feature): then it has no plugin to register and only its
     // kill switch has to be in the shared schema.
@@ -745,4 +786,31 @@ fn a_socket_command_that_is_not_namespaced_or_names_another_feature_fails_the_co
     for bad in [NOT_NAMESPACED, OTHER_FEATURE, NO_FEATURE, CORE_NAME] {
         assert!(check_ipc_commands(&Bad(bad)).is_err());
     }
+}
+
+#[test]
+fn settings_namespaces_never_overlap_and_no_key_sits_in_another_features_namespace() {
+    let feature = |id: &str, ns: &str, keys: &[&str]| -> Namespaced {
+        (
+            id.into(),
+            ns.into(),
+            keys.iter().map(|k| k.to_string()).collect(),
+        )
+    };
+    // a nested namespace is fine while the outer feature keeps off it
+    check_namespaces(&[
+        feature("agent", "agent", &["agent.claude.model", "agent.memory"]),
+        feature("opencode", "agent.opencode", &["agent.opencode.model"]),
+        feature("git", "git", &["git.enabled"]),
+    ])
+    .unwrap();
+    // the same namespace twice
+    let twice = check_namespaces(&[feature("a", "x", &[]), feature("b", "x", &[])]);
+    assert!(twice.unwrap_err().contains("share the settings namespace"));
+    // the outer feature uses a key of the inner one's namespace
+    let inside = check_namespaces(&[
+        feature("agent", "agent", &["agent.opencode.model"]),
+        feature("opencode", "agent.opencode", &[]),
+    ]);
+    assert!(inside.unwrap_err().contains("falls in the namespace"));
 }

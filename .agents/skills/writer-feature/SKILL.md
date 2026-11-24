@@ -35,6 +35,8 @@ TS-only feature: `feature.json`, `web/index.ts`, `tests/`. That is zero shared-f
 
 Required: `id`, `name`, `version`, `description`, `enabledByDefault`, `memory: { level: low|medium|high, note }`, `activation` (`onStartup` | `onWorkspaceOpen` | `onFileKind:<k>` | `onView:<id>` | `onCommand:<id>`; only `onStartup` is acted on by the loader, the rest are lazy by use).
 
+`settingsNamespace` (optional): the prefix of the fragment's keys when it is not the id, for a backend of the agent that keeps its settings next to the agent's (`agent.opencode`; the contract test holds every key to it).
+
 `rust`: `commands` (must equal the `#[tauri::command]` fns, contract test), `events` (`<id>:<name>`, never a dot), `hooks` (`setup`, `onWorkspaceOpen`, `onWorkspaceClose`, `onExit`), `skills`, `cliCommands`, `indexDdl`.
 
 `contributes` (every contributed id starts with `<id>.`):
@@ -65,7 +67,7 @@ Icons come from `@hugeicons/core-free-icons`. `load` thunks are dynamic imports.
 1. Search for an existing contribution point that fits (spec 6.5). No fit: add the point as a registry in `src/lib/features/` plus one `removeOwner` and one `add` loop in `registry.ts`, one row in the spec table, a fixture test (see `tests/features-sidebar-contributions.test.tsx`).
 2. Create `feature.json` and `web/index.ts` (`manifest.contributes` ids = definition ids: `tests/features-contract.test.ts` fails otherwise).
 3. Add the kill switch to `apps/desktop/shared/settings.schema.json` verbatim as the Rust contract test prints it (`features.<id>.enabled`, category "Features"). Its description has no restart sentence for a TS-only feature.
-4. Settings of its own: `settings.schema.json` fragment (every entry: key with `<id>.` prefix, label, description, category, type, default). The Settings sidebar shows a generated page; give it a custom one with `settingsSection` if rows are not enough.
+4. Settings of its own: `settings.schema.json` fragment (every entry: key with `<id>.` prefix, or its `settingsNamespace`, label, description, category, type, default). The Settings sidebar shows a generated page; give it a custom one with `settingsSection` if rows are not enough.
 5. Tests in `features/<id>/tests/`: registers and unregisters cleanly (counts return to zero), kill switch removes everything, a throwing contribution is contained, core has no import of the feature.
 6. Docs (section 8), then validation (section 9).
 

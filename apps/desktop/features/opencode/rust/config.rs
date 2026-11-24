@@ -24,6 +24,7 @@ use crate::agent::permission_update::rule_json;
 use crate::agent::project::{AGENTS_FILE, CLAUDE_FILE};
 use crate::agent::skills::SKILL_DIRS;
 use crate::agent::tool_table::{Kind, Role, ToolTable};
+use crate::fs_entry::{self, LinkTarget};
 use crate::vault_ops;
 use serde_json::{json, Map, Value};
 use std::path::Path;
@@ -140,11 +141,11 @@ fn skill_folder_is_clean(dir: &Path, root_real: &Path) -> bool {
             };
             let path = entry.path();
             let real = if ft.is_symlink() {
-                match path.canonicalize() {
-                    Ok(r) if r.starts_with(root_real) => r,
-                    Ok(_) => return false,
-                    // dangling: nothing to load
-                    Err(_) => continue,
+                match fs_entry::link_target(&path, dir, Some(root_real)) {
+                    LinkTarget::Inside { real, .. } => real,
+                    LinkTarget::Outside | LinkTarget::NoRoot => return false,
+                    // dangling: nothing to load; a loop back to a folder above is walked already
+                    LinkTarget::Dangling | LinkTarget::Cycle => continue,
                 }
             } else {
                 path

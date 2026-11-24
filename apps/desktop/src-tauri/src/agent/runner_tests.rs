@@ -334,6 +334,7 @@ impl Harness {
                 resume_session_id: None,
                 settings: self.settings(),
                 append_system_prompt: None,
+                backend: None,
             },
             inject_agents_md: InjectAgentsMd::Auto,
             cli_dir: None,
@@ -3798,4 +3799,125 @@ fn a_process_that_goes_away_ends_its_running_sub_agent_cards_as_interrupted() {
         AgentEvent::SubagentStatus { tool_call_id, status: SubagentRunStatus::Interrupted, .. }
             if tool_call_id == "toolu_agent1"
     ));
+}
+
+// ---------------------------------------------------------------------------------------------
+// The backend of a chat: the `agent.backends` point (spec `SPECs/opencode-backend-spec.md` phase 4)
+
+/// A backend a feature would bring: it refuses to connect, so what a test sees of it is which
+/// backend the chat asked, and whose rules judged the session id.
+struct FakeBackendOps;
+
+impl super::backend::BackendOps for FakeBackendOps {
+    fn binary_setting(&self) -> &'static str {
+        "agent.fake.binary-path"
+    }
+    fn find(&self, _: Option<&str>) -> Option<PathBuf> {
+        None
+    }
+    fn detect(
+        &self,
+        _: &crate::features::scope::Spawner,
+        _: Option<&str>,
+    ) -> super::binary::AgentBinaryInfo {
+        super::binary::AgentBinaryInfo {
+            found: false,
+            path: None,
+            version: None,
+            source: None,
+            searched: vec![],
+            authenticated: None,
+            account: None,
+            supported: None,
+            min_version: None,
+        }
+    }
+    fn skills_installed(&self, _: &Path) -> bool {
+        false
+    }
+    fn session_id_ok(&self, id: &str) -> bool {
+        id.starts_with("fake_")
+    }
+    fn connect(
+        &self,
+        _: super::transport::TransportInit,
+    ) -> Result<Arc<dyn super::transport::Transport>, String> {
+        Err("the fake backend was asked to connect".into())
+    }
+    fn titler<'a>(
+        &self,
+        _: &super::backend::HelperCtx<'a>,
+    ) -> Option<Box<dyn super::title::TitleAsker + 'a>> {
+        None
+    }
+}
+
+fn fake_backend() -> Arc<super::backend::Backend> {
+    Arc::new(super::backend::Backend::new(
+        "fake",
+        &super::claude_adapter::ClaudeAdapter,
+        Arc::new(FakeBackendOps),
+    ))
+}
+
+#[test]
+fn a_new_chat_runs_on_claude_unless_a_feature_answers_for_the_backend_it_asks() {
+    let h = Harness::new(&[], "normal");
+    // no name, an empty name and Claude's own are the core's backend, never asked of the point
+    for id in [None, Some(""), Some("claude")] {
+        assert_eq!(h.sessions.backend_for(id).unwrap().id, "claude");
+    }
+    // a name nobody answers for: the feature is off, and the chat says so
+    let err = h.sessions.backend_for(Some("fake")).err().unwrap();
+    assert!(
+        err.0.contains("fake") && err.0.contains("not available"),
+        "{}",
+        err.0
+    );
+    // with an answer it is that backend
+    h.sessions
+        .points()
+        .provide_raw(&crate::agent::api::BACKENDS, "fake-feature", |id| {
+            (id == "fake").then(fake_backend)
+        });
+    assert_eq!(h.sessions.backend_for(Some("fake")).unwrap().id, "fake");
+    assert!(h.sessions.backend_for(Some("other")).is_err());
+    h.sessions.points().retract("fake-feature");
+    assert!(h.sessions.backend_for(Some("fake")).is_err());
+}
+
+#[test]
+fn a_chat_starts_on_the_backend_it_asked_for_and_is_judged_by_its_session_id_rules() {
+    let h = Harness::new(&[], "normal");
+    h.sessions
+        .points()
+        .provide_raw(&crate::agent::api::BACKENDS, "fake-feature", |id| {
+            (id == "fake").then(fake_backend)
+        });
+    let mut p = h.params("3f1c4ee0-a111-4d52-8c36-6a2f41a29b7c", "w", None);
+    p.request.backend = Some("fake".into());
+    // a Claude (uuid) session id is not this backend's
+    p.request.resume_session_id = Some("3f1c4ee0-a111-4d52-8c36-6a2f41a29b7d".into());
+    let err = h.sessions.start(p).err().unwrap();
+    assert!(err.0.contains("not a session id"), "{}", err.0);
+    // its own id passes, and the chat then reaches the backend's transport
+    let mut p = h.params("3f1c4ee0-a111-4d52-8c36-6a2f41a29b7c", "w", None);
+    p.request.backend = Some("fake".into());
+    p.request.resume_session_id = Some("fake_1".into());
+    let err = h.sessions.start(p).err().unwrap();
+    assert!(
+        err.0.contains("fake backend was asked to connect"),
+        "{}",
+        err.0
+    );
+    // and a Claude chat does not accept the other's id
+    let mut p = h.params("4f1c4ee0-a111-4d52-8c36-6a2f41a29b7c", "w", None);
+    p.request.resume_session_id = Some("fake_1".into());
+    assert!(h
+        .sessions
+        .start(p)
+        .err()
+        .unwrap()
+        .0
+        .contains("not a session id"));
 }

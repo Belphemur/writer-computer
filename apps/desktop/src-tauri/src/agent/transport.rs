@@ -37,6 +37,10 @@ pub enum SpawnError {
         retryable: bool,
     },
     Ended,
+    /// What the connection ran on is gone for good (its server was stopped with the feature or
+    /// the window): the chat's session ends, and the next start of the chat asks for its backend
+    /// again instead of reusing this one.
+    Gone,
 }
 
 /// What a backend says to the user when it fails, in its own words (the program is named here and

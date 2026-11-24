@@ -60,8 +60,12 @@ pub trait Policy: Send + Sync {
     fn known_agents(&self) -> Vec<String> {
         Vec::new()
     }
-    /// The model when the chat names none.
-    fn default_model(&self) -> Option<ModelRef>;
+    /// Why the chat may not start on `model`, `None` when it may (a model the user switched off).
+    /// A chat that names none runs on the server's own default: Writer resolves a blank model
+    /// before the start (one resolver, the web's), never here.
+    fn refuse_model(&self, _model: &ModelRef) -> Option<String> {
+        None
+    }
     /// Writer answers this request of the chat's own session `once` itself, no card (the mode
     /// accepts it: edits under accept-edits; the chat's own memory folder). Never for a
     /// sub-agent's session, and never as an OpenCode session rule: a session-level allow beats a
@@ -290,6 +294,15 @@ fn file_value(f: &FilePart) -> Value {
     })
 }
 
+/// The model a start asks for, `None` when the chat names none.
+fn requested_model(req: &StartRequest<'_>) -> Option<ModelRef> {
+    req.launch
+        .settings
+        .model
+        .as_deref()
+        .and_then(ModelRef::parse)
+}
+
 impl Transport for OpencodeTransport {
     fn phrases(&self) -> &'static Phrases {
         &PHRASES
@@ -298,6 +311,7 @@ impl Transport for OpencodeTransport {
     fn start(&self, req: &StartRequest<'_>) -> Result<(), SpawnError> {
         let failed = |e: ServerError| match e {
             ServerError::NotFound => SpawnError::NotFound,
+            ServerError::Closed => SpawnError::Gone,
             ServerError::Unsupported(_) => SpawnError::Failed {
                 kind: AgentErrorKind::SpawnFailed,
                 message: e.to_string(),
@@ -322,6 +336,9 @@ impl Transport for OpencodeTransport {
                 })?;
         if let Some(text) = config {
             self.inner.server.apply_config(&text).map_err(failed)?;
+        }
+        if let Some(why) = requested_model(req).and_then(|m| self.inner.policy.refuse_model(&m)) {
+            return Err(SpawnError::Invalid(why));
         }
         let _conn: Connection = self.inner.server.ensure_started().map_err(failed)?;
         {
@@ -1048,7 +1065,7 @@ impl TInner {
             location: Location {
                 directory: self.cwd.to_string_lossy().into_owned(),
             },
-            model: model.or_else(|| self.policy.default_model()),
+            model,
             agent: self.policy.agent(mode),
             permissions: Some(self.policy.session_rules(mode)).filter(|r| !r.is_empty()),
             parentID: None,

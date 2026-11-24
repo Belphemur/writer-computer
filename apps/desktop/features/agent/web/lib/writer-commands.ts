@@ -8,11 +8,8 @@
  * Writer's command wins over a skill or CLI command of the same name: the menu keeps the other row
  * (with its source) but sending runs the Writer one.
  */
-import {
-  REGENERATE_REFUSAL_TEXT,
-  NOTHING_TO_TITLE_TEXT,
-  type RegenerateOutcome,
-} from "./auto-title";
+import { backendOrDefault } from "./backends";
+import { refusalText, NOTHING_TO_TITLE_TEXT, type RegenerateOutcome } from "./auto-title";
 import type { ChatId } from "./events";
 import type { Chat } from "./transcript";
 
@@ -46,7 +43,7 @@ export const WRITER_COMMANDS: readonly WriterCommand[] = [
         const out = await regenerateTitle(chatId);
         return out.status === "done"
           ? `Title regenerated: ${out.summary.title}`
-          : REGENERATE_REFUSAL_TEXT[out.reason];
+          : refusalText(out.reason, backendOrDefault(chat.backendId).product);
       } catch (e) {
         return `Could not regenerate the title: ${String(e)}`;
       }

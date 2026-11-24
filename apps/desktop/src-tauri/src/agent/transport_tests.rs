@@ -897,3 +897,24 @@ fn a_message_of_a_replaced_connection_is_dropped() {
     let events = r.until("the real text", |_, ev| ev.contains(&text("real")));
     assert!(!events.contains(&text("ghost")));
 }
+
+#[test]
+fn a_backend_that_is_gone_ends_the_session_for_good_with_one_error() {
+    let r = Rig::new();
+    *r.fake.fail_start.lock() = Some(SpawnError::Gone);
+    r.send("work");
+    let events = r.until("the end", |s, _| s == AgentSessionState::Ended);
+    assert!(r.session.is_terminal(), "a gone backend is terminal");
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Error { .. }))
+            .count(),
+        1,
+        "{events:?}"
+    );
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, AgentEvent::SessionEnded { .. })));
+    assert_eq!(r.fake.count(|c| matches!(c, Call::Send { .. })), 0);
+}

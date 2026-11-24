@@ -236,6 +236,8 @@ export type Chat = {
   /** Tab title; set from the first user message unless renamed. */
   title: string;
   projectPath: string | null;
+  /** The agent backend this chat talks to (`backends.ts`); a chat keeps it for good. */
+  backendId: string;
   state: AgentSessionState;
   turns: Turn[];
   session: SessionInfo | null;

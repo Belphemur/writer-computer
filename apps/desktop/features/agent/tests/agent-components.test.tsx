@@ -83,14 +83,16 @@ beforeEach(() => {
     modes: {},
     view: "chat",
     backend: "tauri",
-    binary: {
-      found: true,
-      path: "/x",
-      version: "1",
-      source: "path",
-      searched: [],
-      authenticated: true,
-      account: null,
+    binaries: {
+      claude: {
+        found: true,
+        path: "/x",
+        version: "1",
+        source: "path",
+        searched: [],
+        authenticated: true,
+        account: null,
+      },
     },
   });
   hoisted.search.mockClear();

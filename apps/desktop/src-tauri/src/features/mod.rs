@@ -140,9 +140,6 @@ pub(crate) mod icons;
 mod lint;
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
 pub(crate) mod obsidian_host;
-// Nothing registers the OpenCode feature before phase 4 (spec 11): outside the tests its pieces
-// have no caller. In a test build every item must be used, so dead code in it still warns.
-#[cfg_attr(not(test), allow(dead_code))]
 #[path = "../../../features/opencode/rust/mod.rs"]
 pub(crate) mod opencode;
 #[path = "../../../features/pdf/rust/mod.rs"]
@@ -175,6 +172,11 @@ pub struct Manifest {
     /// Points of other features (or `core.*`) this feature adds behaviour to.
     #[serde(default)]
     pub extends: Vec<String>,
+    /// The prefix of this feature's settings keys when it is not the feature id: a backend of the
+    /// agent keeps its settings under `agent.<id>.` next to the agent's own. The contract test
+    /// holds every key of the fragment to `<namespace>.`.
+    #[serde(default)]
+    pub settings_namespace: Option<String>,
 }
 
 /// A point the feature owns: `id` is `<feature id>.<point>`, `kind` is `hook` (the only kind built).
@@ -383,6 +385,7 @@ pub fn registry<R: Runtime>() -> Vec<&'static dyn Feature<R>> {
         &icons::Icons,
         &lint::Lint,
         &obsidian_host::ObsidianHost,
+        &opencode::Opencode,
         &pdf::Pdf,
         &spellcheck::Spellcheck,
         &tasks::Tasks,
@@ -1243,6 +1246,7 @@ mod tests {
                 "icons",
                 "lint",
                 "obsidian-host",
+                "opencode",
                 "pdf",
                 "spellcheck",
                 "tasks"
@@ -1297,8 +1301,8 @@ mod tests {
         let reloaded = Settings::new(dir.path().to_path_buf()).unwrap();
         assert_eq!(
             plan(registry::<Wry>(), &reloaded).len(),
-            13,
-            "the agent, bases, code-files, dataview, excalidraw, git, graph, icons, lint, obsidian-host, pdf, spellcheck and tasks still start"
+            14,
+            "the agent, bases, code-files, dataview, excalidraw, git, graph, icons, lint, obsidian-host, opencode, pdf, spellcheck and tasks still start"
         );
         // an unrelated write keeps the line instead of tripping over it
         s.set_global(

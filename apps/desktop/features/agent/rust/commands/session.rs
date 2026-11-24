@@ -19,7 +19,7 @@ use crate::error::AppError;
 use crate::state::AppState;
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tauri::{Emitter, Manager, Runtime};
 
 fn rejected(r: Rejected) -> AppError {
@@ -48,24 +48,13 @@ fn inject_setting<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> InjectA
     )
 }
 
-/// The directory holding the `writer` launcher (`agent::cli_launcher`), made once per run in the
-/// app's data directory; `None` (logged once) when it could not be made, so the agent is told
-/// there is no `writer` command instead of being promised one. Blocking: file IO.
+/// The directory holding the `writer` launcher (`agent::cli_launcher::shared_dir`). Blocking:
+/// file IO.
 fn launcher_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
-    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let made = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())
-            .and_then(|d| {
-                let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-                cli_launcher::ensure(&d.join("bin"), &exe).map_err(|e| e.to_string())
-            });
-        made.inspect_err(|e| log::warn!(target: "agent", "agent: no writer launcher: {e}"))
-            .ok()
-    })
-    .clone()
+    app.path()
+        .app_data_dir()
+        .ok()
+        .and_then(|d| cli_launcher::shared_dir(&d))
 }
 
 /// `{ binaryOverride?: string | null }` -> where `claude` is and its version. Without an override
@@ -89,6 +78,8 @@ pub async fn agent_detect_binary<R: Runtime>(
     blocking(move || Ok(binary::detect(&spawner, override_path.as_deref()))).await
 }
 
+// the chat, its project, resume id, settings, system prompt and backend, then the two handles
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub async fn agent_start<R: Runtime>(
@@ -97,6 +88,7 @@ pub async fn agent_start<R: Runtime>(
     resume_session_id: Option<String>,
     settings: AgentSettings,
     append_system_prompt: Option<String>,
+    backend: Option<String>,
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<StartedIds, AppError> {
@@ -111,6 +103,7 @@ pub async fn agent_start<R: Runtime>(
             resume_session_id,
             settings,
             append_system_prompt,
+            backend,
         },
         inject_agents_md: inject_setting(&app, &label),
         cli_dir: None,

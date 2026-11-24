@@ -30,6 +30,7 @@ pub mod files;
 pub(crate) mod golden_tests;
 pub mod mcp_wiring;
 pub mod memory;
+pub mod pending_delete;
 pub mod permission_rules;
 pub mod permission_update;
 pub mod ports;

@@ -1,0 +1,78 @@
+{
+  "settings": [
+    {
+      "key": "agent.opencode.binary-path",
+      "label": "OpenCode binary",
+      "description": "Absolute path of the opencode program to run. Leave blank to find it automatically (PATH, your login shell's PATH, common install folders).",
+      "category": "Agent",
+      "type": "string",
+      "scope": "global",
+      "default": "",
+      "normalize": "trim",
+      "placeholder": "Auto-detect"
+    },
+    {
+      "key": "agent.opencode.model",
+      "label": "Model",
+      "description": "The model a new OpenCode chat starts on, as provider/model. Blank: the first enabled model of the list.",
+      "category": "Agent",
+      "type": "string",
+      "scope": "global",
+      "default": "",
+      "normalize": "trim",
+      "placeholder": "First enabled"
+    },
+    {
+      "key": "agent.opencode.effort",
+      "label": "Effort",
+      "description": "Reasoning effort of a new OpenCode chat when the model has levels. Default leaves it to OpenCode.",
+      "category": "Agent",
+      "type": "enum",
+      "scope": "global",
+      "default": "default",
+      "options": ["default", "low", "medium", "high", "xhigh", "max"]
+    },
+    {
+      "key": "agent.opencode.disabled-models",
+      "label": "Models switched off",
+      "description": "Models of the OpenCode list that the model picker leaves out, as provider/model. Switched in Settings > Agent > OpenCode.",
+      "category": "Agent",
+      "type": "list",
+      "scope": "global",
+      "default": []
+    },
+    {
+      "key": "agent.opencode.model-cheap",
+      "label": "Cheap tier model",
+      "description": "Model for the cheap tier: the read-only writer-explorer sub-agent and automatic chat titles, as provider/model. Blank: the chat's own model.",
+      "category": "Agent",
+      "type": "string",
+      "scope": "global",
+      "default": "",
+      "normalize": "trim",
+      "placeholder": "Chat's own"
+    },
+    {
+      "key": "agent.opencode.model-standard",
+      "label": "Standard tier model",
+      "description": "Model for the standard tier: the writer-worker sub-agent that makes delegated edits, as provider/model. Blank: the chat's own model.",
+      "category": "Agent",
+      "type": "string",
+      "scope": "global",
+      "default": "",
+      "normalize": "trim",
+      "placeholder": "Chat's own"
+    },
+    {
+      "key": "agent.opencode.model-strong",
+      "label": "Strong tier model",
+      "description": "Model for the strong tier, for sub-agents that need the most capable model (none uses it yet), as provider/model. Blank: the chat's own model.",
+      "category": "Agent",
+      "type": "string",
+      "scope": "global",
+      "default": "",
+      "normalize": "trim",
+      "placeholder": "Chat's own"
+    }
+  ]
+}

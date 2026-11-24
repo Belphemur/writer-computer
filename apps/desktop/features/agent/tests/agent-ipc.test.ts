@@ -29,6 +29,7 @@ const FULL: { [K in keyof AgentCommands]: AgentArgs<K> } = {
   agent_start: {
     chatId: "c",
     projectPath: null,
+    backend: null,
     resumeSessionId: null,
     settings,
     appendSystemPrompt: null,

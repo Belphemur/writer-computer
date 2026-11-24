@@ -20,6 +20,10 @@ use crate::cli::mcp::{self, ToolSpec};
 use crate::vault_ops;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+/// The slugs of the models the user switched off.
+pub type Disabled = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
 
 /// The session rules of Plan, like Claude's plan mode: nothing is written and nothing has a side
 /// effect, but the agent can still look things up and ask. An allow-list behind `*: deny`, all of
@@ -101,7 +105,9 @@ fn in_memory(ask: &Ask<'_>, memory: &Path, resource: &str) -> bool {
 
 pub struct ModePolicy {
     plan: Vec<Value>,
-    default_model: Option<ModelRef>,
+    /// The models the user switched off (read when a chat starts, so a change applies to the next
+    /// start of a running chat too).
+    disabled: Disabled,
     table: &'static ToolTable,
     /// The permission action of an edit (the table's replace tool: `write` asks for it as well).
     edit_action: Option<String>,
@@ -110,14 +116,20 @@ pub struct ModePolicy {
 }
 
 impl ModePolicy {
-    pub fn new(table: &'static ToolTable, default_model: Option<ModelRef>) -> Self {
+    pub fn new(table: &'static ToolTable) -> Self {
         Self {
             plan: plan_rules(table, &mcp::tools()),
-            default_model,
+            disabled: Arc::new(Vec::new),
             table,
             edit_action: table.name_of(Role::Replace).map(String::from),
             root: None,
         }
+    }
+
+    /// The models switched off in Settings (`agent.opencode.disabled-models`), asked at each start.
+    pub fn with_disabled(mut self, disabled: Disabled) -> Self {
+        self.disabled = disabled;
+        self
     }
 
     /// The policy of one vault: it builds the config file for it ([`Policy::config`]).
@@ -143,8 +155,11 @@ impl Policy for ModePolicy {
         Some(config::AGENT.into())
     }
 
-    fn default_model(&self) -> Option<ModelRef> {
-        self.default_model.clone()
+    fn refuse_model(&self, model: &ModelRef) -> Option<String> {
+        let slug = model.slug();
+        (self.disabled)()
+            .contains(&slug)
+            .then(|| format!("The model {slug} is switched off in Settings > Agent > OpenCode"))
     }
 
     fn known_agents(&self) -> Vec<String> {
@@ -273,7 +288,7 @@ mod tests {
 
     #[test]
     fn only_plan_has_session_rules_and_children_get_them_only_there() {
-        let p = ModePolicy::new(table(), None);
+        let p = ModePolicy::new(table());
         for mode in [
             AgentPermissionMode::Manual,
             AgentPermissionMode::AcceptEdits,
@@ -390,7 +405,7 @@ mod tests {
     /// requests of the chat's own session Writer answers itself.
     #[test]
     fn golden_every_mode_as_the_session_gets_it() {
-        let p = ModePolicy::new(table(), ModelRef::parse("fake/model"));
+        let p = ModePolicy::new(table());
         let probes = [
             ("edit", "notes.md"),
             ("edit", ".writer/memory/MEMORY.md"),
@@ -429,7 +444,7 @@ mod tests {
 
     #[test]
     fn no_mode_but_plan_has_rules_of_the_session_and_none_ever_allows() {
-        let p = ModePolicy::new(table(), None);
+        let p = ModePolicy::new(table());
         for mode in MODES {
             let all = p
                 .session_rules(mode)
@@ -462,7 +477,7 @@ mod tests {
 
     #[test]
     fn the_chats_own_memory_folder_is_written_without_a_card_and_nothing_near_it_is() {
-        let p = ModePolicy::new(table(), None);
+        let p = ModePolicy::new(table());
         for mode in [AgentPermissionMode::Manual, AgentPermissionMode::Auto] {
             assert!(
                 allows(&p, mode, "edit", ".writer/memory/MEMORY.md"),
@@ -526,7 +541,7 @@ mod tests {
     #[test]
     fn a_relative_resource_is_relative_to_the_sessions_directory_and_only_the_chats_folder_counts()
     {
-        let p = ModePolicy::new(table(), None);
+        let p = ModePolicy::new(table());
         let (cwd, memory) = (Path::new("/vault/p/q"), Path::new("/vault/p/q/.memory"));
         let check = |r: &str| {
             let r = [r.to_string()];
@@ -566,7 +581,7 @@ mod tests {
         std::os::unix::fs::symlink(&elsewhere, memory.join("dir-out")).unwrap();
         std::os::unix::fs::symlink(elsewhere.join("f.md"), memory.join("file-out.md")).unwrap();
         std::fs::write(memory.join("plain.md"), "x").unwrap();
-        let p = ModePolicy::new(table(), None);
+        let p = ModePolicy::new(table());
         let check = |cwd: &Path, r: &str| {
             let r = [r.to_string()];
             p.auto_allow(&Ask {
@@ -609,7 +624,7 @@ mod tests {
 
     #[test]
     fn accepting_edits_answers_any_edit_of_the_chat_and_nothing_else() {
-        let p = ModePolicy::new(table(), None);
+        let p = ModePolicy::new(table());
         let m = AgentPermissionMode::AcceptEdits;
         assert!(allows(&p, m, "edit", "notes.md"));
         for other in ["shell", "webfetch", "read"] {
@@ -620,11 +635,11 @@ mod tests {
     #[test]
     fn a_policy_of_a_vault_builds_the_config_and_one_without_fails() {
         let launch = super::super::transport_tests::launch(AgentPermissionMode::Manual);
-        assert!(ModePolicy::new(table(), None).config(&launch).is_err());
+        assert!(ModePolicy::new(table()).config(&launch).is_err());
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         std::fs::write(root.join("AGENTS.md"), "x").unwrap();
-        let text = ModePolicy::new(table(), None)
+        let text = ModePolicy::new(table())
             .for_vault(root.clone())
             .config(&launch)
             .unwrap()
@@ -638,7 +653,7 @@ mod tests {
         // the same launch is the same text: no rewrite, no reload
         assert_eq!(
             text,
-            ModePolicy::new(table(), None)
+            ModePolicy::new(table())
                 .for_vault(root)
                 .config(&launch)
                 .unwrap()

@@ -93,19 +93,52 @@ pub enum TitleError {
     Store(ChatStoreError),
 }
 
+/// The one-shot model call behind a title: each backend asks in its own way (`claude -p`, a
+/// throwaway session of the server), the rules around it (what text is sent, what a title is,
+/// when it is applied) are this module's, once.
+pub trait TitleAsker {
+    /// The models to try in order (`None`: the backend's own default); `setting` is the user's
+    /// cheap-tier model, `chat_model` the chat's own.
+    fn candidates(&self, setting: Option<&str>, chat_model: Option<&str>) -> Vec<Option<String>> {
+        model_candidates(setting, chat_model)
+    }
+
+    /// One call: the title it answered, already cleaned, `None` on any failure. Blocking up to
+    /// the call's own timeout: blocking thread only. Nothing about the text is ever logged.
+    fn ask(&self, model: Option<&str>, system: &str, prompt: &str) -> Option<String>;
+}
+
 /// Where the one-shot `claude` call runs: the agent scope's starter, the program and the chat's
 /// own directory.
-pub struct TitleTarget<'a> {
+pub struct ClaudeAsker<'a> {
     pub spawner: &'a Spawner,
     pub program: &'a Path,
     pub cwd: &'a Path,
+}
+
+impl TitleAsker for ClaudeAsker<'_> {
+    fn ask(&self, model: Option<&str>, system: &str, prompt: &str) -> Option<String> {
+        let args = build_title_args(model, system).ok()?;
+        match run_capture(
+            self.spawner,
+            self.program,
+            &args,
+            self.cwd,
+            Some(prompt),
+            TITLE_TIMEOUT,
+            MAX_OUTPUT_BYTES,
+        ) {
+            Some((true, out)) => parse_output(&out),
+            _ => None,
+        }
+    }
 }
 
 /// Read the chat note, ask for a title and apply it with `action` (`AutoTitle` or
 /// `RegenerateTitle`). `chat_model` is the fallback model; `None` uses the note's own. `program`
 /// and `cwd` come from a consent the caller already checked.
 pub fn title_chat(
-    target: &TitleTarget,
+    asker: &dyn TitleAsker,
     root: &Path,
     chat_id: &str,
     setting: Option<&str>,
@@ -123,7 +156,7 @@ pub fn title_chat(
         .and_then(|m| m.model);
     let chat_model = chat_model.map(str::to_string).or(note_model);
     let text =
-        suggest(target, setting, chat_model.as_deref(), &messages).ok_or(TitleError::Failed)?;
+        suggest(asker, setting, chat_model.as_deref(), &messages).ok_or(TitleError::Failed)?;
     match chat_store::action(root, chat_id, action, Some(&text), false) {
         Ok(Some(summary)) => Ok(summary),
         Ok(None) => Err(TitleError::Failed),
@@ -236,37 +269,22 @@ pub fn parse_output(stdout: &str) -> Option<String> {
     sanitize_title(v.get("result")?.as_str()?)
 }
 
-/// Ask `program` (in `cwd`, a chat's own directory) for a title. Blocking up to the 30 s timeout:
-/// blocking thread only. `None` on any failure; nothing about the text is logged.
+/// Ask for a title through `asker`. Blocking up to its timeout: blocking thread only. `None` on
+/// any failure; nothing about the text is logged.
 pub fn suggest(
-    target: &TitleTarget,
+    asker: &dyn TitleAsker,
     setting: Option<&str>,
     chat_model: Option<&str>,
     messages: &[TitleMessage],
 ) -> Option<String> {
     let prompt = build_prompt(messages)?;
-    for model in model_candidates(setting, chat_model) {
-        let Ok(args) = build_title_args(model.as_deref(), SYSTEM_PROMPT) else {
-            continue;
-        };
+    for model in asker.candidates(setting, chat_model) {
         let started = std::time::Instant::now();
-        let reply = run_capture(
-            target.spawner,
-            target.program,
-            &args,
-            target.cwd,
-            Some(&prompt),
-            TITLE_TIMEOUT,
-            MAX_OUTPUT_BYTES,
-        );
-        let title = match reply {
-            Some((true, out)) => parse_output(&out),
-            _ => None,
-        };
+        let title = asker.ask(model.as_deref(), SYSTEM_PROMPT, &prompt);
         log::debug!(
             target: "agent",
             "agent: title call finished (model: {}, ok: {}, {} ms)",
-            if model.is_some() { "named" } else { "cli default" },
+            if model.is_some() { "named" } else { "default" },
             title.is_some(),
             started.elapsed().as_millis()
         );
@@ -450,8 +468,8 @@ esac
         spawner: Spawner,
     }
 
-    fn target<'a>(f: &'a Fake, cwd: &'a Path) -> TitleTarget<'a> {
-        TitleTarget {
+    fn target<'a>(f: &'a Fake, cwd: &'a Path) -> ClaudeAsker<'a> {
+        ClaudeAsker {
             spawner: &f.spawner,
             program: &f.program,
             cwd,
@@ -550,7 +568,7 @@ esac
         // a missing program
         assert_eq!(
             suggest(
-                &TitleTarget {
+                &ClaudeAsker {
                     spawner: &Spawner::detached(),
                     program: &f.dir.path().join("nope"),
                     cwd: cwd.path()

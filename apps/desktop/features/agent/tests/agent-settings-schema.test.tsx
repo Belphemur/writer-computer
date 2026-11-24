@@ -37,13 +37,17 @@ const DEFAULT_ALLOWED = [
   "Bash(writer version)",
 ];
 
-const agent = SETTINGS_SCHEMA.filter((d) => d.key.startsWith("agent."));
+// the OpenCode feature's keys (`agent.opencode.*`) are its own fragment and test
+const agent = SETTINGS_SCHEMA.filter(
+  (d) => d.key.startsWith("agent.") && !d.key.startsWith("agent.opencode."),
+);
 const byKey = (k: string) => agent.find((d) => d.key === k)!;
 
 describe("agent.* settings contract", () => {
   it("defines exactly the documented keys with the spec defaults", () => {
     expect(Object.fromEntries(agent.map((d) => [d.key, d.default]))).toEqual({
       "agent.binary-path": "",
+      "agent.default-backend": "claude",
       "agent.model": "",
       "agent.effort": "default",
       "agent.enabled-models": ["default", "opus", "sonnet", "haiku"],
@@ -224,10 +228,10 @@ describe("Settings > Agent", { timeout: 30_000 }, () => {
     await featureHost.unregister("agent");
   });
 
-  it("shows Claude active and the other backends as disabled coming-soon pills", async () => {
+  it("shows Claude active and the others as disabled coming-soon pills", async () => {
     await mount();
     const tabs = [...container.querySelectorAll<HTMLButtonElement>("[data-agent-backend-tab]")];
-    expect(tabs.map((t) => t.dataset.agentBackendTab)).toEqual(["opencode", "claude", "codex"]);
+    expect(tabs.map((t) => t.dataset.agentBackendTab)).toEqual(["claude", "codex"]);
     expect(tabs.filter((t) => t.getAttribute("aria-selected") === "true")).toHaveLength(1);
     for (const t of tabs.filter((t) => t.dataset.agentBackendTab !== "claude")) {
       expect(t.disabled).toBe(true);
