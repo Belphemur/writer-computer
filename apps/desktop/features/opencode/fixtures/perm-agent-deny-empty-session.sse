@@ -1,0 +1,172 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500158209,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"quiet-lagoon","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","agent":"w-deny","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500159634,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your edit tool to replace alpha by gamma in a.txt. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500159636,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500159955,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500159957,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500160488,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500159969},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500160491,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500160492,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500160593,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to replace \"alpha\" with \"gamma\" in a file called a.txt. Let me first look at the file to"}}
+
+data: {"id":"evt_fake0011","created":1795500160662,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" understand its content, then make the edit."}}
+
+data: {"id":"evt_fake0012","created":1795500160662,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795500160690,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to replace \"alpha\" with \"gamma\" in a file called a.txt. Let me first look at the file to understand its content, then make the edit.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795500160693,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795500160695,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500160697,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795500160701,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"Read file a.txt, lines 1-1\n1: alpha"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":2}}
+
+data: {"id":"evt_fake0018","created":1795500160702,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":5554,"output":14,"reasoning":44,"cache":{"read":256,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795500160703,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0,"tokens":{"input":5554,"output":14,"reasoning":44,"cache":{"read":256,"write":0}}}}
+
+data: {"id":"evt_fake0020","created":1795500161183,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500160710},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795500161187,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795500161189,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795500161292,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The file contains \"alpha\" on line 1. I need to replace \"alpha\" with \"gamma\". Let me use the edit tool."}}
+
+data: {"id":"evt_fake0024","created":1795500161334,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","name":"edit"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795500161386,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The file contains \"alpha\" on line 1. I need to replace \"alpha\" with \"gamma\". Let me use the edit tool.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0026","created":1795500161387,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","text":"{\"filePath\": \"a.txt\", \"oldString\": \"alpha\", \"newString\": \"gamma\"}"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795500161388,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","input":{"filePath":"a.txt","oldString":"alpha","newString":"gamma"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500161389,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500161389,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","error":{"type":"tool.execution","message":"No tool named \"edit\" is currently available. Please use a tool from the available tool list."},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":2}}
+
+data: {"id":"evt_fake0030","created":1795500161390,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":133,"output":27,"reasoning":38,"cache":{"read":5760,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795500161391,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0,"tokens":{"input":5687,"output":41,"reasoning":82,"cache":{"read":6016,"write":0}}}}
+
+data: {"id":"evt_fake0032","created":1795500161775,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":6139,"output":52,"reasoning":82,"cache":{"read":6016,"write":0}}}}
+
+data: {"id":"evt_fake0033","created":1795500161776,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Replace alpha with gamma in a.txt"},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795500162054,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795500161396},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795500162058,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0036","created":1795500162059,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500162161,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"There's no edit tool available. Let me check what tools are available. The user"}}
+
+data: {"id":"evt_fake0038","created":1795500162272,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":" asked me to use \"edit tool\" but it"}}
+
+data: {"id":"evt_fake0039","created":1795500162391,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"'s not available. Let me search for tools."}}
+
+data: {"id":"evt_fake0040","created":1795500162397,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","name":"search"},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795500162398,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"There's no edit tool available. Let me check what tools are available. The user asked me to use \"edit tool\" but it's not available. Let me search for tools.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795500162398,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","text":"{\"query\": \"edit\"}"},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0043","created":1795500162399,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","input":{"query":"edit"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795500162399,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795500162400,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","error":{"type":"tool.execution","message":"No tool named \"search\" is currently available. Please use a tool from the available tool list."},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":2}}
+
+data: {"id":"evt_fake0046","created":1795500162400,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":115,"output":13,"reasoning":44,"cache":{"read":5888,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":36,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795500162401,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":6254,"output":65,"reasoning":126,"cache":{"read":11904,"write":0}}}}
+
+data: {"id":"evt_fake0048","created":1795500162977,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0005","started":1795500162405},"durable":{"aggregateID":"ses_fake0001","seq":37,"version":1}}
+
+data: {"id":"evt_fake0049","created":1795500162987,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0001","seq":38,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795500162990,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":39,"version":1}}
+
+data: {"id":"evt_fake0051","created":1795500163091,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":"Hmm, the search tool isn't available either."}}
+
+data: {"id":"evt_fake0052","created":1795500163194,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" Wait, the instructions say the tools listed below"}}
+
+data: {"id":"evt_fake0053","created":1795500163312,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" and search cannot be called directly - they only"}}
+
+data: {"id":"evt_fake0054","created":1795500163432,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" work as JavaScript inside the execute tool. So I need to use execute"}}
+
+data: {"id":"evt_fake0055","created":1795500163552,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" to call tools. But execute is a normal tool call? Let me check -"}}
+
+data: {"id":"evt_fake0056","created":1795500163673,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" execute is listed as a tool. Let"}}
+
+data: {"id":"evt_fake0057","created":1795500163780,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" me use execute to search for an edit tool.\n\nActually wait, looking at the available tools: generate_image, generate_video"}}
+
+data: {"id":"evt_fake0058","created":1795500163914,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":", glob, grep, question, read, shell, skill, subagent, webfetch, websearch"}}
+
+data: {"id":"evt_fake0059","created":1795500164032,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":", execute. There's no edit tool directly.\n\nThe instruction says \"Use your edit tool\" but it"}}
+
+data: {"id":"evt_fake0060","created":1795500164152,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":"'s not available. Maybe I need to use shell with sed,"}}
+
+data: {"id":"evt_fake0061","created":1795500164212,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" or maybe there's an edit tool accessible via execute. Let me try execute to search."}}
+
+data: {"id":"evt_fake0062","created":1795500164212,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","id":"call-fake-0004","name":"execute"},"durable":{"aggregateID":"ses_fake0001","seq":40,"version":1}}
+
+data: {"id":"evt_fake0063","created":1795500164371,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"text":"Hmm, the search tool isn't available either. Wait, the instructions say the tools listed below and search cannot be called directly - they only work as JavaScript inside the execute tool. So I need to use execute to call tools. But execute is a normal tool call? Let me check - execute is listed as a tool. Let me use execute to search for an edit tool.\n\nActually wait, looking at the available tools: generate_image, generate_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, execute. There's no edit tool directly.\n\nThe instruction says \"Use your edit tool\" but it's not available. Maybe I need to use shell with sed, or maybe there's an edit tool accessible via execute. Let me try execute to search.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":41,"version":1}}
+
+data: {"id":"evt_fake0064","created":1795500164375,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","id":"call-fake-0004","text":"{\"code\": \"const r = await search({ query: \\\"edit\\\" });\\nconsole.log(JSON.stringify(r, null, 2));\\n\"}"},"durable":{"aggregateID":"ses_fake0001","seq":42,"version":1}}
+
+data: {"id":"evt_fake0065","created":1795500164376,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","id":"call-fake-0004","input":{"code":"const r = await search({ query: \"edit\" });\nconsole.log(JSON.stringify(r, null, 2));\n"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":43,"version":1}}
+
+data: {"id":"evt_fake0066","created":1795500164379,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0001","seq":44,"version":1}}
+
+data: {"id":"evt_fake0067","created":1795500164398,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","id":"call-fake-0004","metadata":{"toolCalls":[{"tool":"search","status":"running","input":{"query":"edit"}}]}}}
+
+data: {"id":"evt_fake0068","created":1795500164399,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","id":"call-fake-0004","content":[{"type":"text","text":"Logs:\n{\n  \"items\": [],\n  \"remaining\": 0,\n  \"next\": null\n}"}],"metadata":{"toolCalls":[{"tool":"search","status":"completed","input":{"query":"edit"}}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":45,"version":2}}
+
+data: {"id":"evt_fake0069","created":1795500164401,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":153,"output":35,"reasoning":171,"cache":{"read":5952,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":46,"version":1}}
+
+data: {"id":"evt_fake0070","created":1795500164401,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":6407,"output":100,"reasoning":297,"cache":{"read":17856,"write":0}}}}
+
+data: {"id":"evt_fake0071","created":1795500164726,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795500164407},"durable":{"aggregateID":"ses_fake0001","seq":47,"version":1}}
+
+data: {"id":"evt_fake0072","created":1795500164729,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":48,"version":1}}
+
+data: {"id":"evt_fake0073","created":1795500164731,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":49,"version":1}}
+
+data: {"id":"evt_fake0074","created":1795500164834,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"No edit tool found. The user asked me to use an edit tool, but it's not available. I'll"}}
+
+data: {"id":"evt_fake0075","created":1795500164920,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" need to use shell to do the replacement. Let me use sed."}}
+
+data: {"id":"evt_fake0076","created":1795500164920,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","id":"call-fake-0005","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":50,"version":1}}
+
+data: {"id":"evt_fake0077","created":1795500165011,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"No edit tool found. The user asked me to use an edit tool, but it's not available. I'll need to use shell to do the replacement. Let me use sed.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":51,"version":1}}
+
+data: {"id":"evt_fake0078","created":1795500165014,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","id":"call-fake-0005","text":"{\"command\": \"sed -i '' 's/alpha/gamma/' a.txt && cat a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":52,"version":1}}
+
+data: {"id":"evt_fake0079","created":1795500165016,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","id":"call-fake-0005","input":{"command":"sed -i '' 's/alpha/gamma/' a.txt && cat a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":53,"version":1}}
+
+data: {"id":"evt_fake0080","created":1795500165017,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":54,"version":1}}
+
+data: {"id":"evt_fake0081","created":1795500165021,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"shell","resources":["sed -i '' 's/alpha/gamma/' a.txt","cat a.txt"],"save":["sed *","cat *"],"source":{"type":"tool","messageID":"msg_fake0006","id":"call-fake-0005"}}}
+
+data: {"id":"evt_fake0082","created":1795500165163,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"reject"}}
+
+data: {"id":"evt_fake0083","created":1795500165165,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","id":"call-fake-0005","error":{"type":"aborted","message":"The user declined this tool call"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":55,"version":2}}
+
+data: {"id":"evt_fake0084","created":1795500165168,"type":"session.step.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":264,"output":35,"reasoning":39,"cache":{"read":6080,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":56,"version":1}}
+
+data: {"id":"evt_fake0085","created":1795500165170,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":6671,"output":135,"reasoning":336,"cache":{"read":23936,"write":0}}}}
+
+data: {"id":"evt_fake0086","created":1795500165170,"type":"session.execution.interrupted","data":{"sessionID":"ses_fake0001","reason":"shutdown"},"durable":{"aggregateID":"ses_fake0001","seq":57,"version":1}}
+

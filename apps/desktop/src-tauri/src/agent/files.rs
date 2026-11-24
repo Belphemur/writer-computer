@@ -112,6 +112,10 @@ pub struct Outgoing {
     /// Written as a plain line carrying this `uuid`, so the CLI's echo of it is the receipt (a
     /// message sent while a turn ran, `Session::queue_line`; it keeps the id through a replay).
     pub receipt: Option<String>,
+    /// The id a turn-starting message is delivered under, given when it is first written and kept
+    /// through a replay, so a backend that tracks items by id (OpenCode) sees a re-send as the
+    /// same item and a new message as a new one.
+    pub start: Option<String>,
 }
 
 impl Outgoing {
@@ -120,6 +124,7 @@ impl Outgoing {
             text: text.into(),
             files: Vec::new(),
             receipt: None,
+            start: None,
         }
     }
 }

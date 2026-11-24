@@ -1,0 +1,298 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500207116,"type":"session.created","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","slug":"swift-star","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault-kid-plain"},"subpath":"","agent":"p-deny","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500207505,"type":"session.inbox.enqueued","location":{"directory":"/vault-kid-plain"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Delegate to your kid-plain sub-agent: have it use its edit tool (it must try) to replace beta by delta in b.txt. Then tell me what it reported."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500207506,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500207512,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500207513,"type":"session.inbox.delivered","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500207889,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500207521},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500207890,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500207891,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500207994,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to delegate to the kid-plain sub-agent. It should try to use"}}
+
+data: {"id":"evt_fake0011","created":1795500208107,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" its edit tool to replace \"beta\" by \"delta\" in b.txt. Then report what it reported.\n\nLet me first check the file b.txt"}}
+
+data: {"id":"evt_fake0012","created":1795500208124,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" exists."}}
+
+data: {"id":"evt_fake0013","created":1795500208124,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"glob"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795500208146,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to delegate to the kid-plain sub-agent. It should try to use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then report what it reported.\n\nLet me first check the file b.txt exists.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795500208147,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"pattern\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500208147,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"pattern":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795500208148,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795500208158,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"/vault-kid-plain/b.txt"}],"metadata":{"count":1,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":2}}
+
+data: {"id":"evt_fake0019","created":1795500208159,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":4007,"output":15,"reasoning":58,"cache":{"read":1856,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795500208159,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0,"tokens":{"input":4007,"output":15,"reasoning":58,"cache":{"read":1856,"write":0}}}}
+
+data: {"id":"evt_fake0021","created":1795500208314,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4478,"output":26,"reasoning":58,"cache":{"read":1856,"write":0}}}}
+
+data: {"id":"evt_fake0022","created":1795500208315,"type":"session.renamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","title":"Replace beta with delta in b.txt"},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795500209122,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500208164},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795500209124,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795500209124,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0026","created":1795500209226,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Read b.txt to see its contents."}}
+
+data: {"id":"evt_fake0027","created":1795500209231,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500209232,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Read b.txt to see its contents.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500209233,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","text":"{\"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795500209234,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","input":{"path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795500209234,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795500209236,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","content":[{"type":"text","text":"Read file b.txt, lines 1-1\n1: beta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":2}}
+
+data: {"id":"evt_fake0033","created":1795500209237,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":195,"output":14,"reasoning":15,"cache":{"read":5824,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795500209237,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4673,"output":40,"reasoning":73,"cache":{"read":7680,"write":0}}}}
+
+data: {"id":"evt_fake0035","created":1795500209539,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795500209242},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0036","created":1795500209540,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500209540,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795500209616,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"Now delegate to kid-plain subagent."}}
+
+data: {"id":"evt_fake0039","created":1795500209616,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","name":"subagent"},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795500209889,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"Now delegate to kid-plain subagent.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795500209890,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","text":"{\"agent\": \"kid-plain\", \"description\": \"edit b.txt beta to delta\", \"prompt\": \"Use your edit tool (you must try) to replace 'beta' by 'delta' in b.txt. Then report what happened.\"}"},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795500209891,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","input":{"agent":"kid-plain","description":"edit b.txt beta to delta","prompt":"Use your edit tool (you must try) to replace 'beta' by 'delta' in b.txt. Then report what happened."},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0043","created":1795500209891,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795500209893,"type":"session.created","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","slug":"quiet-harbor","version":"2.4.0","projectID":"prj_fake0001","parentID":"ses_fake0001","location":{"directory":"/vault-kid-plain"},"subpath":"","title":"edit b.txt beta to delta","agent":"kid-plain","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0002","seq":0,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795500209894,"type":"session.tool.progress","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","metadata":{"sessionID":"ses_fake0002","status":"running"}}}
+
+data: {"id":"evt_fake0046","created":1795500209894,"type":"session.inbox.enqueued","location":{"directory":"/vault-kid-plain"},"data":{"inboxID":"msg_fake0005","sessionID":"ses_fake0002","item":{"type":"user","payload":{"text":"You are a subagent spawned by another session.\nUse your edit tool (you must try) to replace 'beta' by 'delta' in b.txt. Then report what happened."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0002","seq":1,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795500209895,"type":"experimental.job.updated","location":{"directory":"/vault-kid-plain"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"running","title":"edit b.txt beta to delta","time":{"started":1795500209894},"childSessionID":"ses_fake0002","agent":"kid-plain","description":"edit b.txt beta to delta"}}}
+
+data: {"id":"evt_fake0048","created":1795500209895,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","content":[{"type":"text","text":"The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."}],"metadata":{"sessionID":"ses_fake0002","status":"running","truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":2}}
+
+data: {"id":"evt_fake0049","created":1795500209895,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":57,"output":59,"reasoning":16,"cache":{"read":6016,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":36,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795500209896,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4730,"output":99,"reasoning":89,"cache":{"read":13696,"write":0}}}}
+
+data: {"id":"evt_fake0051","created":1795500209901,"type":"session.execution.started","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":2,"version":1}}
+
+data: {"id":"evt_fake0052","created":1795500209905,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","delta":{"core/codemode":"hash_fake0005","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0002","seq":3,"version":2}}
+
+data: {"id":"evt_fake0053","created":1795500209905,"type":"session.inbox.delivered","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","inboxID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0002","seq":4,"version":1}}
+
+data: {"id":"evt_fake0054","created":1795500210305,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795500209900},"durable":{"aggregateID":"ses_fake0001","seq":37,"version":1}}
+
+data: {"id":"evt_fake0055","created":1795500210306,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":38,"version":1}}
+
+data: {"id":"evt_fake0056","created":1795500210307,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":39,"version":1}}
+
+data: {"id":"evt_fake0057","created":1795500210308,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","agent":"kid-plain","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0007","started":1795500209908},"durable":{"aggregateID":"ses_fake0002","seq":5,"version":1}}
+
+data: {"id":"evt_fake0058","created":1795500210308,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":6,"version":1}}
+
+data: {"id":"evt_fake0059","created":1795500210308,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":7,"version":1}}
+
+data: {"id":"evt_fake0060","created":1795500210409,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"The subagent is working in the background. I should wait for the result. But the instructions say not"}}
+
+data: {"id":"evt_fake0061","created":1795500210409,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":"The user wants me to replace 'beta' with 'delta' in a file called b.txt. Let me first"}}
+
+data: {"id":"evt_fake0062","created":1795500210502,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":" find the file, then edit it."}}
+
+data: {"id":"evt_fake0063","created":1795500210502,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","name":"glob"},"durable":{"aggregateID":"ses_fake0002","seq":8,"version":1}}
+
+data: {"id":"evt_fake0064","created":1795500210522,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" to poll. I'll end response and wait for"}}
+
+data: {"id":"evt_fake0065","created":1795500210538,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"text":"The user wants me to replace 'beta' with 'delta' in a file called b.txt. Let me first find the file, then edit it.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":9,"version":1}}
+
+data: {"id":"evt_fake0066","created":1795500210539,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","text":"{\"pattern\": \"**/b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":10,"version":1}}
+
+data: {"id":"evt_fake0067","created":1795500210539,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","input":{"pattern":"**/b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":11,"version":1}}
+
+data: {"id":"evt_fake0068","created":1795500210540,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":12,"version":1}}
+
+data: {"id":"evt_fake0069","created":1795500210549,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","content":[{"type":"text","text":"/vault-kid-plain/b.txt"}],"metadata":{"count":1,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":13,"version":2}}
+
+data: {"id":"evt_fake0070","created":1795500210550,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":6069,"output":18,"reasoning":37,"cache":{"read":0,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":14,"version":1}}
+
+data: {"id":"evt_fake0071","created":1795500210550,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6069,"output":18,"reasoning":37,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0072","created":1795500210643,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" notification. Actually, I need to tell user what launched. Let me just wait for"}}
+
+data: {"id":"evt_fake0073","created":1795500210660,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" background result."}}
+
+data: {"id":"evt_fake0074","created":1795500210660,"type":"session.text.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":40,"version":1}}
+
+data: {"id":"evt_fake0075","created":1795500210763,"type":"session.text.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"I've delegated to the kid-plain sub-agent to edit b.txt."}}
+
+data: {"id":"evt_fake0076","created":1795500210790,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"The subagent is working in the background. I should wait for the result. But the instructions say not to poll. I'll end response and wait for notification. Actually, I need to tell user what launched. Let me just wait for background result.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":41,"version":1}}
+
+data: {"id":"evt_fake0077","created":1795500210791,"type":"session.text.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" Waiting for its report."}}
+
+data: {"id":"evt_fake0078","created":1795500210791,"type":"session.text.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"I've delegated to the kid-plain sub-agent to edit b.txt. Waiting for its report."},"durable":{"aggregateID":"ses_fake0001","seq":42,"version":1}}
+
+data: {"id":"evt_fake0079","created":1795500210791,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":43,"version":1}}
+
+data: {"id":"evt_fake0080","created":1795500210792,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","finish":"stop","rawFinish":"stop","tokens":{"input":267,"output":21,"reasoning":60,"cache":{"read":6016,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":44,"version":1}}
+
+data: {"id":"evt_fake0081","created":1795500210792,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4997,"output":120,"reasoning":149,"cache":{"read":19712,"write":0}}}}
+
+data: {"id":"evt_fake0082","created":1795500210793,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":45,"version":1}}
+
+data: {"id":"evt_fake0083","created":1795500210900,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","agent":"kid-plain","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0008","started":1795500210555},"durable":{"aggregateID":"ses_fake0002","seq":15,"version":1}}
+
+data: {"id":"evt_fake0084","created":1795500210901,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":16,"version":1}}
+
+data: {"id":"evt_fake0085","created":1795500210901,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":17,"version":1}}
+
+data: {"id":"evt_fake0086","created":1795500210972,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"Found b.txt. Let me read it first."}}
+
+data: {"id":"evt_fake0087","created":1795500210972,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","name":"read"},"durable":{"aggregateID":"ses_fake0002","seq":18,"version":1}}
+
+data: {"id":"evt_fake0088","created":1795500211126,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"text":"Found b.txt. Let me read it first.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":19,"version":1}}
+
+data: {"id":"evt_fake0089","created":1795500211127,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","text":"{\"path\": \"/vault-kid-plain/b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":20,"version":1}}
+
+data: {"id":"evt_fake0090","created":1795500211127,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","input":{"path":"/vault-kid-plain/b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":21,"version":1}}
+
+data: {"id":"evt_fake0091","created":1795500211128,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":22,"version":1}}
+
+data: {"id":"evt_fake0092","created":1795500211129,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","content":[{"type":"text","text":"Read file /vault-kid-plain/b.txt, lines 1-1\n1: beta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":23,"version":2}}
+
+data: {"id":"evt_fake0093","created":1795500211129,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":191,"output":84,"reasoning":17,"cache":{"read":6016,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":24,"version":1}}
+
+data: {"id":"evt_fake0094","created":1795500211130,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6260,"output":102,"reasoning":54,"cache":{"read":6016,"write":0}}}}
+
+data: {"id":"evt_fake0095","created":1795500211460,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","agent":"kid-plain","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0009","started":1795500211134},"durable":{"aggregateID":"ses_fake0002","seq":25,"version":1}}
+
+data: {"id":"evt_fake0096","created":1795500211461,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009"},"durable":{"aggregateID":"ses_fake0002","seq":26,"version":1}}
+
+data: {"id":"evt_fake0097","created":1795500211461,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":27,"version":1}}
+
+data: {"id":"evt_fake0098","created":1795500211564,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"delta":"The file contains \"beta\"."}}
+
+data: {"id":"evt_fake0099","created":1795500211567,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"delta":" Now I'll replace it with \"delta\"."}}
+
+data: {"id":"evt_fake0100","created":1795500211567,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","name":"edit"},"durable":{"aggregateID":"ses_fake0002","seq":28,"version":1}}
+
+data: {"id":"evt_fake0101","created":1795500211824,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"text":"The file contains \"beta\". Now I'll replace it with \"delta\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":29,"version":1}}
+
+data: {"id":"evt_fake0102","created":1795500211825,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","text":"{\"newString\": \"delta\", \"oldString\": \"beta\", \"path\": \"/vault-kid-plain/b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":30,"version":1}}
+
+data: {"id":"evt_fake0103","created":1795500211825,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","input":{"newString":"delta","oldString":"beta","path":"/vault-kid-plain/b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":31,"version":1}}
+
+data: {"id":"evt_fake0104","created":1795500211826,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009"},"durable":{"aggregateID":"ses_fake0002","seq":32,"version":1}}
+
+data: {"id":"evt_fake0105","created":1795500211828,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","content":[{"type":"text","text":"Edited b.txt (1 replacement)"}],"metadata":{"files":[{"file":"b.txt","patch":"Index: b.txt\n===================================================================\n--- b.txt\n+++ b.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-beta\n+delta\n","status":"modified","additions":1,"deletions":1}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":33,"version":2}}
+
+data: {"id":"evt_fake0106","created":1795500211829,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":260,"output":98,"reasoning":23,"cache":{"read":6144,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":34,"version":1}}
+
+data: {"id":"evt_fake0107","created":1795500211829,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6520,"output":200,"reasoning":77,"cache":{"read":12160,"write":0}}}}
+
+data: {"id":"evt_fake0108","created":1795500212162,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","agent":"kid-plain","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0010","started":1795500211833},"durable":{"aggregateID":"ses_fake0002","seq":35,"version":1}}
+
+data: {"id":"evt_fake0109","created":1795500212163,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010"},"durable":{"aggregateID":"ses_fake0002","seq":36,"version":1}}
+
+data: {"id":"evt_fake0110","created":1795500212164,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":37,"version":1}}
+
+data: {"id":"evt_fake0111","created":1795500212232,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"The edit was successful. Now I'll report what happened."}}
+
+data: {"id":"evt_fake0112","created":1795500212232,"type":"session.text.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0},"durable":{"aggregateID":"ses_fake0002","seq":38,"version":1}}
+
+data: {"id":"evt_fake0113","created":1795500212335,"type":"session.text.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \""}}
+
+data: {"id":"evt_fake0114","created":1795500212349,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"text":"The edit was successful. Now I'll report what happened.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":39,"version":1}}
+
+data: {"id":"evt_fake0115","created":1795500212350,"type":"session.text.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"delta\"."}}
+
+data: {"id":"evt_fake0116","created":1795500212350,"type":"session.text.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"text":"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \"delta\"."},"durable":{"aggregateID":"ses_fake0002","seq":40,"version":1}}
+
+data: {"id":"evt_fake0117","created":1795500212350,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010"},"durable":{"aggregateID":"ses_fake0002","seq":41,"version":1}}
+
+data: {"id":"evt_fake0118","created":1795500212351,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","finish":"stop","rawFinish":"stop","tokens":{"input":143,"output":28,"reasoning":20,"cache":{"read":6400,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":42,"version":1}}
+
+data: {"id":"evt_fake0119","created":1795500212351,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6663,"output":228,"reasoning":97,"cache":{"read":18560,"write":0}}}}
+
+data: {"id":"evt_fake0120","created":1795500212353,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":43,"version":1}}
+
+data: {"id":"evt_fake0121","created":1795500212354,"type":"session.inbox.enqueued","data":{"inboxID":"msg_fake0011","sessionID":"ses_fake0001","item":{"type":"synthetic","payload":{"text":"<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"completed\" description=\"edit b.txt beta to delta\">\nI successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \"delta\".\n</background-result>","description":"edit b.txt beta to delta","metadata":{"source":"subagent","childID":"ses_fake0002","agent":"kid-plain","state":"completed"}},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":46,"version":1}}
+
+data: {"id":"evt_fake0122","created":1795500212355,"type":"experimental.job.updated","location":{"directory":"/vault-kid-plain"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"completed","title":"edit b.txt beta to delta","time":{"started":1795500209894,"completed":1795500212355},"childSessionID":"ses_fake0002","agent":"kid-plain","description":"edit b.txt beta to delta"}}}
+
+data: {"id":"evt_fake0123","created":1795500212355,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":47,"version":1}}
+
+data: {"id":"evt_fake0124","created":1795500212357,"type":"session.inbox.delivered","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0011"},"durable":{"aggregateID":"ses_fake0001","seq":48,"version":1}}
+
+data: {"id":"evt_fake0125","created":1795500212799,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0012","started":1795500212361},"durable":{"aggregateID":"ses_fake0001","seq":49,"version":1}}
+
+data: {"id":"evt_fake0126","created":1795500212801,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012"},"durable":{"aggregateID":"ses_fake0001","seq":50,"version":1}}
+
+data: {"id":"evt_fake0127","created":1795500212802,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":51,"version":1}}
+
+data: {"id":"evt_fake0128","created":1795500212828,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","ordinal":0,"delta":"The kid-plain sub-agent reported it successfully replaced beta with delta. Let me verify."}}
+
+data: {"id":"evt_fake0129","created":1795500212828,"type":"session.tool.input.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":52,"version":1}}
+
+data: {"id":"evt_fake0130","created":1795500212840,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","ordinal":0,"text":"The kid-plain sub-agent reported it successfully replaced beta with delta. Let me verify.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":53,"version":1}}
+
+data: {"id":"evt_fake0131","created":1795500212842,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","text":"{\"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":54,"version":1}}
+
+data: {"id":"evt_fake0132","created":1795500212843,"type":"session.tool.called","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","input":{"path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":55,"version":1}}
+
+data: {"id":"evt_fake0133","created":1795500212845,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012"},"durable":{"aggregateID":"ses_fake0001","seq":56,"version":1}}
+
+data: {"id":"evt_fake0134","created":1795500212847,"type":"session.tool.success","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","content":[{"type":"text","text":"Read file b.txt, lines 1-1\n1: delta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":57,"version":2}}
+
+data: {"id":"evt_fake0135","created":1795500212848,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":173,"output":14,"reasoning":25,"cache":{"read":6272,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":58,"version":1}}
+
+data: {"id":"evt_fake0136","created":1795500212849,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":5170,"output":134,"reasoning":174,"cache":{"read":25984,"write":0}}}}
+
+data: {"id":"evt_fake0137","created":1795500213203,"type":"session.step.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0013","started":1795500212858},"durable":{"aggregateID":"ses_fake0001","seq":59,"version":1}}
+
+data: {"id":"evt_fake0138","created":1795500213211,"type":"session.step.first-token","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013"},"durable":{"aggregateID":"ses_fake0001","seq":60,"version":1}}
+
+data: {"id":"evt_fake0139","created":1795500213212,"type":"session.reasoning.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":61,"version":1}}
+
+data: {"id":"evt_fake0140","created":1795500213276,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"delta":"The edit worked. Report to user."}}
+
+data: {"id":"evt_fake0141","created":1795500213276,"type":"session.text.started","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":62,"version":1}}
+
+data: {"id":"evt_fake0142","created":1795500213379,"type":"session.text.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"delta":"The kid-plain sub-agent reported: \"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains"}}
+
+data: {"id":"evt_fake0143","created":1795500213460,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"text":"The edit worked. Report to user.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":63,"version":1}}
+
+data: {"id":"evt_fake0144","created":1795500213461,"type":"session.text.delta","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"delta":" 'delta'.\" Verified \u2014 b.txt now contains \"delta\"."}}
+
+data: {"id":"evt_fake0145","created":1795500213461,"type":"session.text.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"text":"The kid-plain sub-agent reported: \"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains 'delta'.\" Verified \u2014 b.txt now contains \"delta\"."},"durable":{"aggregateID":"ses_fake0001","seq":64,"version":1}}
+
+data: {"id":"evt_fake0146","created":1795500213461,"type":"session.step.streamed","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013"},"durable":{"aggregateID":"ses_fake0001","seq":65,"version":1}}
+
+data: {"id":"evt_fake0147","created":1795500213462,"type":"session.step.ended","location":{"directory":"/vault-kid-plain"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","finish":"stop","rawFinish":"stop","tokens":{"input":109,"output":50,"reasoning":13,"cache":{"read":6400,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":66,"version":1}}
+
+data: {"id":"evt_fake0148","created":1795500213462,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":5279,"output":184,"reasoning":187,"cache":{"read":32384,"write":0}}}}
+
+data: {"id":"evt_fake0149","created":1795500213463,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":67,"version":1}}
+

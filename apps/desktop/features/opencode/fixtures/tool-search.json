@@ -1,0 +1,209 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0005",
+    "time": {
+     "created": 1795495742072
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795495741689,
+     "firstToken": 1795495742064,
+     "streamed": 1795495742069,
+     "completed": 1795495742070
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "Done.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795495742065,
+       "completed": 1795495742067
+      }
+     },
+     {
+      "type": "text",
+      "text": "Done."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 278,
+     "output": 9,
+     "reasoning": 5,
+     "cache": {
+      "read": 6656,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795495740932,
+     "firstToken": 1795495741266,
+     "streamed": 1795495741521,
+     "completed": 1795495741681
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "Now grep for \"cat\" in markdown files.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795495741266,
+       "completed": 1795495741514
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0002",
+      "name": "grep",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "pattern": "cat",
+        "path": "/vault",
+        "include": "*.md"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Found 2 matches\n/vault/notes.md:\n  Line 3: I have a cat named Tom.\n\n\n/vault/docs/todo.md:\n  Line 1: - cat food\n"
+        }
+       ],
+       "metadata": {
+        "matches": 2,
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795495741342,
+       "ran": 1795495741519,
+       "completed": 1795495741679
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 321,
+     "output": 89,
+     "reasoning": 17,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795495739536,
+     "firstToken": 1795495739964,
+     "streamed": 1795495740252,
+     "completed": 1795495740923
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to use glob to list markdown files, then grep to find the word \"cat\" in them, then say done. Let me do this step by step.\n\nFirst, glob for markdown files. Then grep for \"cat\". Then say done.\n\nLet me start with glob.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795495739966,
+       "completed": 1795495740247
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "glob",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "pattern": "**/*.md"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "/vault/notes.md\n/vault/plan.md\n/vault/docs/todo.md"
+        }
+       ],
+       "metadata": {
+        "count": 3,
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795495740198,
+       "ran": 1795495740250,
+       "completed": 1795495740922
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3740,
+     "output": 16,
+     "reasoning": 66,
+     "cache": {
+      "read": 2624,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795495739530
+    },
+    "text": "Use your glob tool to list the markdown files, then your grep tool to find the word cat in them. Then say done.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

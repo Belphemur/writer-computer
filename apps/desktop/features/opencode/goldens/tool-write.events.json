@@ -1,0 +1,174 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to create a file named plan.md with the single line \"- water the plants\" and then say done. I'll use the",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " write tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "write",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to create a file named plan.md with the single line \"- water the plants\" and then say done. I'll use the write tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "content": "- water the plants",
+        "path": "plan.md"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0001",
+      "tool": "write",
+      "displayName": null,
+      "input": {
+        "content": "- water the plants",
+        "path": "plan.md"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "edit",
+              "ruleContent": "*"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        },
+        {
+          "type": "setMode",
+          "mode": "acceptEdits",
+          "destination": "session"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "allowed"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "Created file successfully: plan.md",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3419,
+      "outputTokens": 62,
+      "cacheReadTokens": 2944,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "File created successfully. Now I need to say \"done\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "File created successfully. Now I need to say \"done\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "done"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "done"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3819,
+      "outputTokens": 23,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7238,
+      "outputTokens": 85,
+      "cacheReadTokens": 5568,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 2380,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

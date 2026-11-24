@@ -1,0 +1,166 @@
+{
+  "$comment": "OpenCode's tools, defined once (spec SPECs/opencode-backend-spec.md, A11 and section 7): tool name -> neutral kind, role, argument names and label words, in the shape of shared/agent-tools/claude.json (read by src-tauri/src/agent/tool_table.rs and, in phase 3, by features/agent/web/lib/tool-kinds.ts through the `agent.backends` point). Recorded against opencode 2.4.0 (fixtures/ and fixtures/tools/s16..s22): edit {path (relative to the session cwd, absolute when a sub-agent wrote it), oldString, newString, replaceAll}; write {path, content} (its permission action is `edit`); shell {command}; read {path}; glob {pattern, path?}; grep {pattern, path?, include?}; webfetch {url, format?}; websearch {query}; subagent {agent, description, prompt}; question {questions[]}; execute {code} (codemode, below). NOT captured, assumed: apply_patch, todowrite and skill were not in the tool list of the free model used for the captures; their rows follow the binary's names and the kinds of section 7 and are marked below. A tool with no row is `other` (the fallback). The `execute` row is Writer's codemode: the mapper shows its inner calls as rows named `<server>_<tool>` (the `mcp.prefix`), so the classes of Writer's own MCP tools are the same as in claude.json and are read from there, not copied (phase 3 wires that: one list for both backends).",
+  "backend": "opencode",
+  "protocolOnly": [],
+  "fallback": {
+    "kind": "other",
+    "past": "Used",
+    "present": "Using",
+    "noun": ["tool", "tools"],
+    "args": {
+      "primary": ["description", "query", "path", "command", "url", "name"]
+    }
+  },
+  "tools": [
+    {
+      "name": "shell",
+      "kind": "execute",
+      "role": "shell",
+      "past": "Ran",
+      "present": "Running",
+      "noun": ["command", "commands"],
+      "args": {
+        "primary": ["command"]
+      }
+    },
+    {
+      "name": "read",
+      "kind": "read",
+      "role": "read",
+      "past": "Read",
+      "present": "Reading",
+      "noun": ["note", "notes"],
+      "readsFile": true,
+      "args": {
+        "primary": ["path"]
+      }
+    },
+    {
+      "name": "glob",
+      "kind": "search",
+      "past": "Listed",
+      "present": "Listing",
+      "noun": ["search", "searches"],
+      "args": {
+        "primary": ["pattern"]
+      }
+    },
+    {
+      "name": "grep",
+      "kind": "search",
+      "past": "Searched",
+      "present": "Searching",
+      "noun": ["search", "searches"],
+      "args": {
+        "primary": ["pattern"]
+      }
+    },
+    {
+      "name": "edit",
+      "kind": "edit",
+      "role": "replace",
+      "past": "Edited",
+      "present": "Editing",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["path"],
+        "paths": ["path"],
+        "old": "oldString",
+        "new": "newString",
+        "all": "replaceAll"
+      }
+    },
+    {
+      "name": "write",
+      "kind": "edit",
+      "role": "create",
+      "past": "Wrote",
+      "present": "Writing",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["path"],
+        "paths": ["path"],
+        "content": "content"
+      }
+    },
+    {
+      "name": "apply_patch",
+      "kind": "edit",
+      "past": "Patched",
+      "present": "Patching",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["path"],
+        "paths": ["path"]
+      }
+    },
+    {
+      "name": "webfetch",
+      "kind": "fetch",
+      "past": "Fetched",
+      "present": "Fetching",
+      "noun": ["page", "pages"],
+      "args": {
+        "primary": ["url"]
+      }
+    },
+    {
+      "name": "websearch",
+      "kind": "fetch",
+      "past": "Searched the web for",
+      "present": "Searching the web for",
+      "noun": ["search", "searches"],
+      "args": {
+        "primary": ["query"]
+      }
+    },
+    {
+      "name": "subagent",
+      "kind": "agent",
+      "role": "launch",
+      "past": "Ran subagent",
+      "present": "Running subagent",
+      "noun": ["subagent", "subagents"],
+      "args": {
+        "primary": ["description"],
+        "agentType": "agent"
+      }
+    },
+    {
+      "name": "question",
+      "kind": "other",
+      "role": "question",
+      "past": "Asked",
+      "present": "Asking",
+      "noun": ["question", "questions"]
+    },
+    {
+      "name": "todowrite",
+      "kind": "other",
+      "past": "Updated",
+      "present": "Updating",
+      "noun": ["todo list", "todo lists"]
+    },
+    {
+      "name": "skill",
+      "kind": "other",
+      "past": "Used skill",
+      "present": "Using skill",
+      "noun": ["skill", "skills"],
+      "args": {
+        "primary": ["name"]
+      }
+    },
+    {
+      "name": "execute",
+      "kind": "other",
+      "past": "Ran code",
+      "present": "Running code",
+      "noun": ["script", "scripts"],
+      "role": "codemode"
+    }
+  ],
+  "mcp": {
+    "prefix": "writer_"
+  }
+}

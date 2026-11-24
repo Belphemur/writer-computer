@@ -1,0 +1,200 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500216886,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"quick-sailor","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","agent":"e-ask","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500218267,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your edit tool to replace alpha by gamma in a.txt. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500218268,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500218273,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500218273,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500218676,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"e-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500218280},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500218677,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500218678,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500218781,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to use the edit tool to replace \"alpha\" by \"gamma\" in a.txt. Let me first"}}
+
+data: {"id":"evt_fake0011","created":1795500218870,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" read the file to see its contents."}}
+
+data: {"id":"evt_fake0012","created":1795500218870,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795500218875,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to use the edit tool to replace \"alpha\" by \"gamma\" in a.txt. Let me first read the file to see its contents.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795500218878,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795500218879,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500218880,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795500218884,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"Read file a.txt, lines 1-1\n1: alpha"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":2}}
+
+data: {"id":"evt_fake0018","created":1795500218886,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3673,"output":14,"reasoning":40,"cache":{"read":2688,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795500218886,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0,"tokens":{"input":3673,"output":14,"reasoning":40,"cache":{"read":2688,"write":0}}}}
+
+data: {"id":"evt_fake0020","created":1795500219129,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":4125,"output":25,"reasoning":40,"cache":{"read":2688,"write":0}}}}
+
+data: {"id":"evt_fake0021","created":1795500219129,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Replace alpha with gamma in a.txt"},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795500219402,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"e-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500218893},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795500219402,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795500219403,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795500219437,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\"."}}
+
+data: {"id":"evt_fake0026","created":1795500219437,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","name":"edit"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795500219807,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500219809,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","text":"{\"newString\": \"gamma\", \"oldString\": \"alpha\", \"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500219811,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","input":{"newString":"gamma","oldString":"alpha","path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795500219812,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795500219814,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"edit","resources":["a.txt"],"save":["*"],"metadata":{"files":[{"file":"a.txt","patch":"Index: a.txt\n===================================================================\n--- a.txt\n+++ a.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-alpha\n+gamma\n","status":"modified","additions":1,"deletions":1}]},"source":{"type":"tool","messageID":"msg_fake0003","id":"call-fake-0002"}}}
+
+data: {"id":"evt_fake0032","created":1795500220108,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"always"}}
+
+data: {"id":"evt_fake0033","created":1795500220110,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","content":[{"type":"text","text":"Edited a.txt (1 replacement)"}],"metadata":{"files":[{"file":"a.txt","patch":"Index: a.txt\n===================================================================\n--- a.txt\n+++ a.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-alpha\n+gamma\n","status":"modified","additions":1,"deletions":1}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":2}}
+
+data: {"id":"evt_fake0034","created":1795500220112,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3816,"output":13,"reasoning":40,"cache":{"read":2624,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795500220113,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":7941,"output":38,"reasoning":80,"cache":{"read":5312,"write":0}}}}
+
+data: {"id":"evt_fake0036","created":1795500220541,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"e-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795500220118},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500220544,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795500220545,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795500220546,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"Done."}}
+
+data: {"id":"evt_fake0040","created":1795500220546,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795500220556,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"Done.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795500220558,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"done"}}
+
+data: {"id":"evt_fake0043","created":1795500220558,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"done"},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795500220559,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795500220560,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"stop","rawFinish":"stop","tokens":{"input":175,"output":8,"reasoning":5,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0046","created":1795500220561,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":8116,"output":46,"reasoning":85,"cache":{"read":11648,"write":0}}}}
+
+data: {"id":"evt_fake0047","created":1795500220563,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":1}}
+
+data: {"id":"evt_fake0048","created":1795500222732,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","slug":"eager-wolf","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","agent":"e-deny","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0002","seq":0,"version":1}}
+
+data: {"id":"evt_fake0049","created":1795500222737,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0005","sessionID":"ses_fake0002","item":{"type":"user","payload":{"text":"Use your edit tool to replace alpha by gamma in a.txt. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0002","seq":1,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795500222738,"type":"session.execution.started","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":2,"version":1}}
+
+data: {"id":"evt_fake0051","created":1795500222746,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","delta":{"core/codemode":"hash_fake0005","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0002","seq":3,"version":2}}
+
+data: {"id":"evt_fake0052","created":1795500222746,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","inboxID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0002","seq":4,"version":1}}
+
+data: {"id":"evt_fake0053","created":1795500223358,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"e-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795500222752},"durable":{"aggregateID":"ses_fake0002","seq":5,"version":1}}
+
+data: {"id":"evt_fake0054","created":1795500223361,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0002","seq":6,"version":1}}
+
+data: {"id":"evt_fake0055","created":1795500223363,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":7,"version":1}}
+
+data: {"id":"evt_fake0056","created":1795500223388,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"The user wants me to replace \"alpha\" with \"gamma\" in a.txt. Let me first read the file to see its contents."}}
+
+data: {"id":"evt_fake0057","created":1795500223388,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","name":"read"},"durable":{"aggregateID":"ses_fake0002","seq":8,"version":1}}
+
+data: {"id":"evt_fake0058","created":1795500223412,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"text":"The user wants me to replace \"alpha\" with \"gamma\" in a.txt. Let me first read the file to see its contents.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":9,"version":1}}
+
+data: {"id":"evt_fake0059","created":1795500223415,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","text":"{\"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":10,"version":1}}
+
+data: {"id":"evt_fake0060","created":1795500223416,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","input":{"path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":11,"version":1}}
+
+data: {"id":"evt_fake0061","created":1795500223417,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0002","seq":12,"version":1}}
+
+data: {"id":"evt_fake0062","created":1795500223420,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","content":[{"type":"text","text":"Read file a.txt, lines 1-1\n1: alpha"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":13,"version":2}}
+
+data: {"id":"evt_fake0063","created":1795500223421,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":2994,"output":14,"reasoning":35,"cache":{"read":2816,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":14,"version":1}}
+
+data: {"id":"evt_fake0064","created":1795500223422,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":2994,"output":14,"reasoning":35,"cache":{"read":2816,"write":0}}}}
+
+data: {"id":"evt_fake0065","created":1795500223863,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"e-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0007","started":1795500223429},"durable":{"aggregateID":"ses_fake0002","seq":15,"version":1}}
+
+data: {"id":"evt_fake0066","created":1795500223865,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":16,"version":1}}
+
+data: {"id":"evt_fake0067","created":1795500223866,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":17,"version":1}}
+
+data: {"id":"evt_fake0068","created":1795500223969,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":"The file contains"}}
+
+data: {"id":"evt_fake0069","created":1795500224032,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":" \"alpha\". I need to replace it with \"gamma\". I'll use the edit tool."}}
+
+data: {"id":"evt_fake0070","created":1795500224032,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","name":"edit"},"durable":{"aggregateID":"ses_fake0002","seq":18,"version":1}}
+
+data: {"id":"evt_fake0071","created":1795500224060,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"text":"The file contains \"alpha\". I need to replace it with \"gamma\". I'll use the edit tool.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":19,"version":1}}
+
+data: {"id":"evt_fake0072","created":1795500224062,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","text":"{\"newString\": \"gamma\", \"oldString\": \"alpha\"}"},"durable":{"aggregateID":"ses_fake0002","seq":20,"version":1}}
+
+data: {"id":"evt_fake0073","created":1795500224063,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","input":{"newString":"gamma","oldString":"alpha"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":21,"version":1}}
+
+data: {"id":"evt_fake0074","created":1795500224063,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":22,"version":1}}
+
+data: {"id":"evt_fake0075","created":1795500224065,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","error":{"type":"tool.execution","message":"No tool named \"edit\" is currently available. Please use a tool from the available tool list."},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":23,"version":2}}
+
+data: {"id":"evt_fake0076","created":1795500224066,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":124,"output":25,"reasoning":26,"cache":{"read":5760,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":24,"version":1}}
+
+data: {"id":"evt_fake0077","created":1795500224067,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":3118,"output":39,"reasoning":61,"cache":{"read":8576,"write":0}}}}
+
+data: {"id":"evt_fake0078","created":1795500224532,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"e-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0008","started":1795500224075},"durable":{"aggregateID":"ses_fake0002","seq":25,"version":1}}
+
+data: {"id":"evt_fake0079","created":1795500224535,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":26,"version":1}}
+
+data: {"id":"evt_fake0080","created":1795500224536,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":27,"version":1}}
+
+data: {"id":"evt_fake0081","created":1795500224640,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"The edit tool isn't available. Let me check what tools are available. I have `"}}
+
+data: {"id":"evt_fake0082","created":1795500224751,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"shell`, `read`, `write`, `glob`, `grep`, etc. Let me use shell to do the replacement, or maybe I can use the write tool. Actually, let"}}
+
+data: {"id":"evt_fake0083","created":1795500224870,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":" me check if there's a write tool. Yes, there should be a write tool. Let me use shell with sed,"}}
+
+data: {"id":"evt_fake0084","created":1795500224991,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":" or use write to overwrite the file.\n\nActually, let me re-read the available tools. I"}}
+
+data: {"id":"evt_fake0085","created":1795500225011,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":5.07e-05,"tokens":{"input":3570,"output":50,"reasoning":61,"cache":{"read":8576,"write":0}}}}
+
+data: {"id":"evt_fake0086","created":1795500225012,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","title":"Replace alpha with gamma in a.txt"},"durable":{"aggregateID":"ses_fake0002","seq":29,"version":1}}
+
+data: {"id":"evt_fake0087","created":1795500225113,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":" see `read`, `write`? Let me check. The tools listed: generate_image, generate_video, glob, grep, question, read, shell"}}
+
+data: {"id":"evt_fake0088","created":1795500225232,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":", skill, subagent, webfetch, websearch, execute. No edit, no write. Hmm.\n\nWait, maybe I should use shell with sed"}}
+
+data: {"id":"evt_fake0089","created":1795500225290,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":". Let me do that."}}
+
+data: {"id":"evt_fake0090","created":1795500225290,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","name":"shell"},"durable":{"aggregateID":"ses_fake0002","seq":30,"version":1}}
+
+data: {"id":"evt_fake0091","created":1795500225367,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"text":"The edit tool isn't available. Let me check what tools are available. I have `shell`, `read`, `write`, `glob`, `grep`, etc. Let me use shell to do the replacement, or maybe I can use the write tool. Actually, let me check if there's a write tool. Yes, there should be a write tool. Let me use shell with sed, or use write to overwrite the file.\n\nActually, let me re-read the available tools. I see `read`, `write`? Let me check. The tools listed: generate_image, generate_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, execute. No edit, no write. Hmm.\n\nWait, maybe I should use shell with sed. Let me do that.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":31,"version":1}}
+
+data: {"id":"evt_fake0092","created":1795500225370,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","text":"{\"command\": \"sed -i '' 's/alpha/gamma/' a.txt && cat a.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":32,"version":1}}
+
+data: {"id":"evt_fake0093","created":1795500225372,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","input":{"command":"sed -i '' 's/alpha/gamma/' a.txt && cat a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":33,"version":1}}
+
+data: {"id":"evt_fake0094","created":1795500225373,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":34,"version":1}}
+
+data: {"id":"evt_fake0095","created":1795500225377,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0002","sessionID":"ses_fake0002","action":"shell","resources":["sed -i '' 's/alpha/gamma/' a.txt","cat a.txt"],"save":["sed *","cat *"],"source":{"type":"tool","messageID":"msg_fake0008","id":"call-fake-0005"}}}
+
+data: {"id":"evt_fake0096","created":1795500225507,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","requestID":"per_fake0002","reply":"reject"}}
+
+data: {"id":"evt_fake0097","created":1795500225508,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","error":{"type":"aborted","message":"The user declined this tool call"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":35,"version":2}}
+
+data: {"id":"evt_fake0098","created":1795500225511,"type":"session.step.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":156,"output":29,"reasoning":175,"cache":{"read":5824,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":36,"version":1}}
+
+data: {"id":"evt_fake0099","created":1795500225514,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":5.07e-05,"tokens":{"input":3726,"output":79,"reasoning":236,"cache":{"read":14400,"write":0}}}}
+
+data: {"id":"evt_fake0100","created":1795500225514,"type":"session.execution.interrupted","data":{"sessionID":"ses_fake0002","reason":"shutdown"},"durable":{"aggregateID":"ses_fake0002","seq":37,"version":1}}
+

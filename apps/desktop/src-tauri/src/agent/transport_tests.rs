@@ -8,6 +8,7 @@
 
 use super::events::*;
 use super::files::Outgoing;
+use super::permission_update::updated_permissions;
 use super::runner::Session;
 use super::session::{AgentSessions, Sink, Timing};
 use super::transport::{
@@ -155,7 +156,7 @@ impl Transport for Fake {
 
     fn send(&self, msg: &Outbound<'_>) -> Receipt {
         let (delivery, id) = match msg.delivery {
-            Delivery::Start => ("start".to_string(), String::new()),
+            Delivery::Start { .. } => ("start".to_string(), String::new()),
             Delivery::Steer { receipt } => ("steer".to_string(), receipt.to_string()),
             Delivery::Queued { receipt } => ("queued".to_string(), receipt.to_string()),
         };
@@ -192,7 +193,17 @@ impl Transport for Fake {
 
     fn answer_permission(&self, request_id: &str, reply: PermissionReply<'_>) {
         let (allow, text) = match reply {
-            PermissionReply::Allow { updated, .. } => (true, format!("{} updates", updated.len())),
+            PermissionReply::Allow {
+                persist,
+                suggestions,
+                ..
+            } => (
+                true,
+                format!(
+                    "{} updates",
+                    updated_permissions(suggestions, persist, None).len()
+                ),
+            ),
             PermissionReply::Deny { message } => (false, message.to_string()),
         };
         self.record(Call::Permission {

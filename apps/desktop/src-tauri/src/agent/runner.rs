@@ -1454,7 +1454,7 @@ impl Session {
         if !g.ready || g.turn_active || g.terminal || g.closing.is_some() {
             return;
         }
-        let Some(out) = g.queue.pop_front() else {
+        let Some(mut out) = g.queue.pop_front() else {
             if matches!(
                 g.state,
                 AgentSessionState::Starting | AgentSessionState::Reconnecting
@@ -1463,6 +1463,10 @@ impl Session {
             }
             return;
         };
+        if out.receipt.is_none() {
+            out.start
+                .get_or_insert_with(|| uuid::Uuid::new_v4().to_string());
+        }
         g.inflight.push(out.clone());
         let sent = match g.seed.take() {
             Some(seed) => format!("{seed}\n\n{}", out.text),
@@ -1497,7 +1501,9 @@ impl Session {
                 self.transport.send(&Outbound {
                     text: &sent,
                     files: &out.files,
-                    delivery: Delivery::Start,
+                    delivery: Delivery::Start {
+                        receipt: out.start.as_deref().unwrap_or_default(),
+                    },
                 });
             }
         }
@@ -2015,7 +2021,9 @@ impl Session {
             PermissionDecision::Allow => (
                 PermissionReply::Allow {
                     input: &p.input,
-                    updated: &perms,
+                    persist,
+                    rules: rules.as_deref(),
+                    suggestions: &p.suggestions,
                 },
                 PermissionResolution::Allowed,
             ),

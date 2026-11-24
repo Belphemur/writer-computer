@@ -768,6 +768,7 @@ impl AgentSessions {
                 text,
                 files,
                 receipt: None,
+                start: None,
             },
         ))
     }

@@ -1,0 +1,252 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to delegate to the \"writer-broken\" sub-agent to have it read notes.md, then",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " tell them what happened.\n\nLet me use the subagent tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "subagent",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to delegate to the \"writer-broken\" sub-agent to have it read notes.md, then tell them what happened.\n\nLet me use the subagent tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "agent": "writer-broken",
+        "description": "Read notes.md file",
+        "prompt": "Please read the notes.md file in the working directory."
+      }
+    },
+    {
+      "type": "subagent-status",
+      "toolCallId": "call-fake-0001",
+      "status": "running",
+      "report": null
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3757,
+      "outputTokens": 84,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "subagent-status",
+      "toolCallId": "call-fake-0001",
+      "status": "failed",
+      "report": "Model unavailable: fakeprovider/fakemodel"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The subagent is running in the background. I should wait for it to complete and report back. The instructions",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " say not to poll. I'll end",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " my response here and wait for the background result.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "text": "I've delegated the task to the `writer-broken` sub-agent ("
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "text": "session `ses_fake0002`). It's running in the background"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The subagent is running in the background. I should wait for it to complete and report back. The instructions say not to poll. I'll end my response here and wait for the background result.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "text": " to read `notes.md`. I'll let you know what happens once it reports back."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "text": "I've delegated the task to the `writer-broken` sub-agent (session `ses_fake0002`). It's running in the background to read `notes.md`. I'll let you know what happens once it reports back."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 266,
+      "outputTokens": 114,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The subagent failed with \"Model unavailable: fakeprovider/fakemodel\". This is because the writer-broken sub-agent's model is not",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " available. I should report this to the user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "The sub-agent failed. It couldn't run because its model isn't available: `"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "fakeprovider/fakemodel` is unavailable. So `notes.md` was never actually"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The subagent failed with \"Model unavailable: fakeprovider/fakemodel\". This is because the writer-broken sub-agent's model is not available. I should report this to the user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": " read.\n\nWould you like me to read `notes.md` myself instead, or try a different approach?"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "The sub-agent failed. It couldn't run because its model isn't available: `fakeprovider/fakemodel` is unavailable. So `notes.md` was never actually read.\n\nWould you like me to read `notes.md` myself instead, or try a different approach?"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 188,
+      "outputTokens": 103,
+      "cacheReadTokens": 6592,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 4211,
+      "outputTokens": 301,
+      "cacheReadTokens": 15552,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 3654,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": [
+    {
+      "task": "Started { task: \"ses_fake0002\", call: Some(\"call-fake-0001\"), background: true }"
+    },
+    {
+      "task": "Notified { task: \"ses_fake0002\", call: Some(\"call-fake-0001\"), status: Failed, report: Some(\"Model unavailable: fakeprovider/fakemodel\") }"
+    }
+  ]
+}

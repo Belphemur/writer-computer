@@ -1,0 +1,232 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to use the edit tool to replace \"alpha\" by \"gamma\" in a.txt. Let me first",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " read the file to see its contents.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to use the edit tool to replace \"alpha\" by \"gamma\" in a.txt. Let me first read the file to see its contents.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "path": "a.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "Read file a.txt, lines 1-1\n1: alpha",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3673,
+      "outputTokens": 54,
+      "cacheReadTokens": 2688,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0003",
+      "tool": "edit",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "newString": "gamma",
+        "oldString": "alpha",
+        "path": "a.txt"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0002",
+      "tool": "edit",
+      "displayName": null,
+      "input": {
+        "newString": "gamma",
+        "oldString": "alpha",
+        "path": "a.txt"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "edit",
+              "ruleContent": "*"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        },
+        {
+          "type": "setMode",
+          "mode": "acceptEdits",
+          "destination": "session"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "allowed"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "Edited a.txt (1 replacement)",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3816,
+      "outputTokens": 53,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Done.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Done.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "done"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "done"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 175,
+      "outputTokens": 13,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7664,
+      "outputTokens": 120,
+      "cacheReadTokens": 11648,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 2295,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

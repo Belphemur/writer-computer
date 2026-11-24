@@ -1,0 +1,585 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to delegate to a writer-explorer sub-agent. The task is to have it use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then tell the user what it reported.\n\nLet me first explore",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " the working",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " directory to find b.txt. Actually, the user said \"delegate to your writer-explorer sub-agent\"",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " - so I should launch the subagent with the task. Let me do that directly.\n\nI need to know",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " the file path. Let me first check the directory. Actually, the subagent can",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " find it. But let me just delegate with instructions",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ".\n\nLet me launch the subagent.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "subagent",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to delegate to a writer-explorer sub-agent. The task is to have it use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then tell the user what it reported.\n\nLet me first explore the working directory to find b.txt. Actually, the user said \"delegate to your writer-explorer sub-agent\" - so I should launch the subagent with the task. Let me do that directly.\n\nI need to know the file path. Let me first check the directory. Actually, the subagent can find it. But let me just delegate with instructions.\n\nLet me launch the subagent.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "agent": "writer-explorer",
+        "description": "Edit b.txt beta->delta",
+        "prompt": "In the current working directory, find the file named b.txt. Use your edit tool to replace the text \"beta\" with \"delta\" in that file. You must try to use the edit tool. Report what happened (success or failure and any error message)."
+      }
+    },
+    {
+      "type": "subagent-status",
+      "toolCallId": "call-fake-0001",
+      "status": "running",
+      "report": null
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3798,
+      "outputTokens": 221,
+      "cacheReadTokens": 2752,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The subagent is running. I should wait for the background result. The",
+      "estimatedTokens": null
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0005",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "subagent-model",
+      "toolCallId": "call-fake-0001",
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to find a file named b.txt in the current working directory, then",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " instructions",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " say not to poll. I'll end my response briefly.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " use the edit tool to replace \"beta\" with \"delta\" in that file. Let me first look for the file.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0005",
+      "tool": "glob",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "I've launched the writer"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to find a file named b.txt in the current working directory, then use the edit tool to replace \"beta\" with \"delta\" in that file. Let me first look for the file.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "pattern": "b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "/vault/b.txt",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "-explorer sub-agent to replace \""
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The subagent is running. I should wait for the background result. The instructions say not to poll. I'll end my response briefly.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "beta\" with \"delta\" in b.txt using its edit tool. Waiting for its report."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "I've launched the writer-explorer sub-agent to replace \"beta\" with \"delta\" in b.txt using its edit tool. Waiting for its report."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 379,
+      "outputTokens": 69,
+      "cacheReadTokens": 6528,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 4177,
+      "outputTokens": 290,
+      "cacheReadTokens": 9280,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 3521,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0006",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Found the file at /tmp/opencode",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "riter-computer/60ac003b-646c-4962-af90-f449c6cb",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "ef84/vault/b.txt. Now let me read it to confirm",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " contents, then edit.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0003",
+      "messageId": "msg_fake0006",
+      "tool": "read",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Found the file at /vault/b.txt. Now let me read it to confirm contents, then edit.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0003",
+      "input": {
+        "path": "/vault/b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0003",
+      "output": "Read file /vault/b.txt, lines 1-1\n1: beta",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0007",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains \"beta\". Now use edit tool to replace \"beta\" with \"delta\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0004",
+      "messageId": "msg_fake0007",
+      "tool": "edit",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains \"beta\". Now use edit tool to replace \"beta\" with \"delta\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0004",
+      "input": {
+        "newString": "delta",
+        "oldString": "beta",
+        "path": "/vault/b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0004",
+      "output": "Edited b.txt (1 replacement)",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0008",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The edit succeeded. Report to",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "text": "Found `b.txt` at `/tmp/opencode"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "text": "-computer/vault"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "text": "2/b.txt`. It contained `beta`.\n\nUsed the edit tool to replace `"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "text": "beta` with `delta`. Result: **success** — \"Edited b.txt (1 replacement)\". No errors"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The edit succeeded. Report to user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "text": "."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "text": "Found `b.txt` at `/vault/b.txt`. It contained `beta`.\n\nUsed the edit tool to replace `beta` with `delta`. Result: **success** — \"Edited b.txt (1 replacement)\". No errors."
+    },
+    {
+      "type": "subagent-status",
+      "toolCallId": "call-fake-0001",
+      "status": "completed",
+      "report": "delta\">\nFound `b.txt` at `/vault/b.txt`. It contained `beta`.\n\nUsed the edit tool to replace `beta` with `delta`. Result: **success** — \"Edited b.txt (1 replacement)\". No errors."
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The subagent reported success. I'll relay that",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "The writer-explorer sub-agent reported success: it found `b.txt` at `/"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "private/tmp/claude-502/-Users-user-repos-writer-computer/60ac003b-646c-4962-af90-f44"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "9c6cbef84/vault/b.txt` (which contained `beta`), used the edit tool to replace `beta`"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The subagent reported success. I'll relay that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": " with `delta`, and got the result \"Edited b.txt (1 replacement)\" with no errors."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "The writer-explorer sub-agent reported success: it found `b.txt` at `/vault/b.txt` (which contained `beta`), used the edit tool to replace `beta` with `delta`, and got the result \"Edited b.txt (1 replacement)\" with no errors."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 4392,
+      "outputTokens": 144,
+      "cacheReadTokens": 2752,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 4392,
+      "outputTokens": 144,
+      "cacheReadTokens": 2752,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1094,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": [
+    {
+      "task": "Started { task: \"ses_fake0002\", call: Some(\"call-fake-0001\"), background: true }"
+    },
+    {
+      "task": "Notified { task: \"ses_fake0002\", call: Some(\"call-fake-0001\"), status: Completed, report: Some(\"delta\\\">\\nFound `b.txt` at `/vault/b.txt`. It contained `beta`.\\n\\nUsed the edit tool to replace `beta` with `delta`. Result: **success** — \\\"Edited b.txt (1 replacement)\\\". No errors.\") }"
+    }
+  ]
+}

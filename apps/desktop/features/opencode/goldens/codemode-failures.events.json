@@ -1,0 +1,237 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to make a single code execution call that calls three tools from the writer MCP server:\n1. tools.writer.note_count()\n2. tools.writer.note_denied",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "()\n3. tools.writer.note_fail()\n\nEach wrapped in try/catch, return an array with each outcome. Then tell them each outcome.\n\nLet me write this code.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "execute",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to make a single code execution call that calls three tools from the writer MCP server:\n1. tools.writer.note_count()\n2. tools.writer.note_denied()\n3. tools.writer.note_fail()\n\nEach wrapped in try/catch, return an array with each outcome. Then tell them each outcome.\n\nLet me write this code.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "code": "async function callSafely(fn, name) {\n  try {\n    const result = await fn();\n    return { tool: name, status: \"success\", result };\n  } catch (err) {\n    return { tool: name, status: \"error\", error: String(err && err.message ? err.message : err) };\n  }\n}\n\nconst outcomes = await Promise.all([\n  callSafely(() => tools.writer.note_count(), \"note_count\"),\n  callSafely(() => tools.writer.note_denied(), \"note_denied\"),\n  callSafely(() => tools.writer.note_fail(), \"note_fail\"),\n]);\n\nreturn outcomes;\n"
+      }
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001:0",
+      "messageId": "msg_fake0002",
+      "tool": "writer_note_count",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001:0",
+      "input": {}
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001:0",
+      "output": "",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001:1",
+      "messageId": "msg_fake0002",
+      "tool": "writer_note_fail",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001:1",
+      "input": {}
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001:1",
+      "output": "",
+      "isError": true,
+      "outcome": "error",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "[{\"tool\":\"note_count\",\"status\":\"success\",\"result\":\"The fake vault holds 42 notes.\"},{\"tool\":\"note_denied\",\"status\":\"error\",\"error\":\"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"},{\"tool\":\"note_fail\",\"status\":\"error\",\"error\":\"The fake vault is unreadable.\"}]",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3895,
+      "outputTokens": 221,
+      "cacheReadTokens": 2560,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The result shows:\n- note_count: success, \"The fake vault holds 42 notes.\"\n- note_denied: error,",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"\n- note_fail: error, \"The fake vault is unreadable.\"\n\nWait, the user asked to call tools.writer.note_denied()",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " but it doesn't exist. The catalog only shows note_count and note_fail. So note_denied doesn't exist as",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " a tool. The error message says unknown tool.\n\nLet me report these outcomes.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "Here are the outcomes from the single code execution call:\n\n1"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": ". **`tools.writer.note_count()`** — ✅ Success: \"The fake vault holds 42 notes.\"\n2. **`tools.writer.note_denied()`** — ❌"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": " Error: \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\" (This tool doesn't exist in the writer MCP"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": " server; only `note_count` and `note_fail` are available.)\n3. **`tools.writer.note_fail()`** — ❌ Error"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": ": \"The fake vault is unreadable.\"\n\nReturned array:\n```json\n[\n  {\""
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "tool\":\"note_count\",\"status\":\"success\",\"result\":\"The fake vault holds 42 notes.\"},\n  {\"tool\":\"note_den"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The result shows:\n- note_count: success, \"The fake vault holds 42 notes.\"\n- note_denied: error, \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"\n- note_fail: error, \"The fake vault is unreadable.\"\n\nWait, the user asked to call tools.writer.note_denied() but it doesn't exist. The catalog only shows note_count and note_fail. So note_denied doesn't exist as a tool. The error message says unknown tool.\n\nLet me report these outcomes.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "ied\",\"status\":\"error\",\"error\":\"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"},\n  {\"tool\":\"note_fail\",\"status\":\"error\",\"error\":\"The fake vault is unreadable.\"}\n]\n```"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "Here are the outcomes from the single code execution call:\n\n1. **`tools.writer.note_count()`** — ✅ Success: \"The fake vault holds 42 notes.\"\n2. **`tools.writer.note_denied()`** — ❌ Error: \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\" (This tool doesn't exist in the writer MCP server; only `note_count` and `note_fail` are available.)\n3. **`tools.writer.note_fail()`** — ❌ Error: \"The fake vault is unreadable.\"\n\nReturned array:\n```json\n[\n  {\"tool\":\"note_count\",\"status\":\"success\",\"result\":\"The fake vault holds 42 notes.\"},\n  {\"tool\":\"note_denied\",\"status\":\"error\",\"error\":\"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"},\n  {\"tool\":\"note_fail\",\"status\":\"error\",\"error\":\"The fake vault is unreadable.\"}\n]\n```"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 358,
+      "outputTokens": 321,
+      "cacheReadTokens": 6400,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 4253,
+      "outputTokens": 542,
+      "cacheReadTokens": 8960,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 2738,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

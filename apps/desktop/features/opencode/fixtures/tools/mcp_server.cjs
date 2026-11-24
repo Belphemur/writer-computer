@@ -6,9 +6,15 @@ rl.on("line", (line) => {
   if (m.method === "initialize") {
     send({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake-writer", version: "0.0.1" } } });
   } else if (m.method === "tools/list") {
-    send({ jsonrpc: "2.0", id: m.id, result: { tools: [{ name: "note_count", description: "Returns how many notes the fake vault holds. Read only.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } }] } });
+    send({ jsonrpc: "2.0", id: m.id, result: { tools: [{ name: "note_count", description: "Returns how many notes the fake vault holds. Read only.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } },
+      { name: "note_fail", description: "Always fails (to see how a failed call shows). Read only.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } },
+      { name: "note_denied", description: "A tool a permission rule denies. Read only.", inputSchema: { type: "object", properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } }] } });
   } else if (m.method === "tools/call") {
-    send({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: "The fake vault holds 42 notes." }] } });
+    if (m.params && m.params.name === "note_fail") {
+      send({ jsonrpc: "2.0", id: m.id, result: { isError: true, content: [{ type: "text", text: "The fake vault is unreadable." }] } });
+    } else {
+      send({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: "The fake vault holds 42 notes." }] } });
+    }
   } else if (m.id !== undefined && m.method) {
     send({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "no such method" } });
   }

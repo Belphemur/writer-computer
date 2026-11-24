@@ -140,6 +140,11 @@ pub(crate) mod icons;
 mod lint;
 #[path = "../../../features/obsidian-host/rust/mod.rs"]
 pub(crate) mod obsidian_host;
+// Nothing registers the OpenCode feature before phase 4 (spec 11): outside the tests its pieces
+// have no caller. In a test build every item must be used, so dead code in it still warns.
+#[cfg_attr(not(test), allow(dead_code))]
+#[path = "../../../features/opencode/rust/mod.rs"]
+pub(crate) mod opencode;
 #[path = "../../../features/pdf/rust/mod.rs"]
 pub(crate) mod pdf;
 #[path = "../../../features/spellcheck/rust/mod.rs"]

@@ -5,7 +5,7 @@ Starts OUR OWN `opencode serve` (free port, random password, temp cwd, Writer-st
 Never touches the user's `opencode service` or port 4096, never reads OpenCode's auth/config files and
 never calls /api/credential or /api/integration/*/connect/*.
 """
-import base64, http.client, json, os, secrets, shutil, signal, socket, subprocess, sys, tempfile, threading, time
+import base64, http.client, json, os, re, secrets, shutil, signal, socket, subprocess, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 def _inside_git_checkout(path):
@@ -48,7 +48,7 @@ def free_port():
 
 
 class Server:
-    def __init__(self, name, cfg=None, files=None, env=None, debug=False):
+    def __init__(self, name, cfg=None, files=None, env=None, debug=False, port0=False):
         self.name = name
         os.makedirs(WORK, exist_ok=True)
         self.cwd = os.path.join(WORK, "cwd-" + name)
@@ -60,6 +60,8 @@ class Server:
             open(p, "w").write(text)
         self.cfg_path = os.path.join(WORK, f"cfg-{name}.json")
         json.dump(cfg if cfg is not None else BASE_CFG, open(self.cfg_path, "w"), indent=2)
+        # port0: the server picks its own port (`--port 0`) and the ready line says which
+        self.port0 = port0
         self.port = free_port()
         self.pw = secrets.token_hex(16)
         self.env_extra = env or {}
@@ -98,7 +100,7 @@ class Server:
     def __enter__(self):
         os.makedirs(RAW, exist_ok=True)
         env = self.build_env()
-        cmd = [BIN, "serve", "--hostname", "127.0.0.1", "--port", str(self.port)]
+        cmd = [BIN, "serve", "--hostname", "127.0.0.1", "--port", "0" if self.port0 else str(self.port)]
         assert "service" not in cmd and self.port != 4096  # never the user's background service or its port
         if self.debug:
             cmd += ["--log-level", "debug", "--print-logs"]
@@ -108,6 +110,9 @@ class Server:
             t = time.time()
             while time.time() - t < 60:
                 if "server listening" in open(self.log_path).read():
+                    if self.port0:
+                        self.port = int(re.search(r"server listening on http://127\.0\.0\.1:(\d+)", open(self.log_path).read()).group(1))
+                        assert self.port != 0
                     break
                 if self.proc.poll() is not None:
                     raise RuntimeError("server exited: " + open(self.log_path).read()[-500:])
@@ -235,6 +240,15 @@ class Server:
                 continue
             if sid is None or sid in json.dumps(e):
                 print(json.dumps({k: v for k, v in e.items() if k not in ("location",)})[:width])
+
+    def brief(self, sids, start=0, width=420, skip=("session.reasoning.delta", "session.text.delta", "session.instructions.updated", "plugin.updated", "session.tool.input.delta")):
+        """One line per event of the given sessions (what the scenarios print to read a run)."""
+        for e in self.events[start:]:
+            if e["type"] in skip or not any(x in json.dumps(e) for x in sids):
+                continue
+            d = e.get("data", {})
+            rest = {k: v for k, v in d.items() if k not in ("sessionID", "assistantMessageID", "tokens", "native")}
+            print(e["type"], str(d.get("sessionID", ""))[-5:], json.dumps(rest)[:width])
 
     def dump(self, name, sid):
         """Save the session's messages and its events to raw/<name>.*"""

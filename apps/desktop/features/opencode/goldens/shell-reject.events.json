@@ -1,0 +1,121 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to run `echo hello` using the shell tool and report",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " its output.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to run `echo hello` using the shell tool and report its output.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "command": "echo hello"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0001",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "echo hello"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "echo *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "The user declined this tool call",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 22,
+      "outputTokens": 41,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 22,
+      "outputTokens": 41,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "interrupted",
+      "durationMs": 926,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

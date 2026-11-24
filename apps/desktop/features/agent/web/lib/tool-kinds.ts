@@ -5,11 +5,26 @@
  * `SPECs/opencode-backend-spec.md` A11) that the Rust side reads too: this file spells no tool name.
  */
 import claudeTable from "@shared/agent-tools/claude.json";
+import writerMcp from "@shared/agent-tools/writer-mcp.json";
 import { roleLabelOf } from "./agent-roles";
 import type { PermissionPersist, PermissionSuggestion } from "./events";
 import type { PermissionView } from "./transcript";
 
+/** The neutral kinds: `shared/agent-tools/kinds.json` is the list (the Rust `Kind` and its test read
+ * it too); `TOOL_KIND_KEYS` below makes the compiler hold this union to it. */
 export type ToolKind = "execute" | "edit" | "read" | "search" | "fetch" | "agent" | "other";
+
+/** Every `ToolKind` once: a kind added to the union and not here (or the reverse) fails to compile,
+ * and the table test compares the keys with the shared list. */
+export const TOOL_KIND_KEYS: Record<ToolKind, true> = {
+  execute: true,
+  edit: true,
+  read: true,
+  search: true,
+  fetch: true,
+  agent: true,
+  other: true,
+};
 
 /** What shared code asks of a tool beyond its kind (the Rust `Role`). */
 export type ToolRole =
@@ -19,7 +34,9 @@ export type ToolRole =
   | "multi-replace"
   | "create"
   | "launch"
-  | "handback";
+  | "handback"
+  | "codemode"
+  | "question";
 
 type ToolSpec = {
   kind: ToolKind;
@@ -52,7 +69,7 @@ type TableRow = {
 type ToolTable = {
   fallback: TableRow;
   tools: TableRow[];
-  mcp?: { prefix: string; classes: (TableRow & { match: string })[] };
+  mcp?: { prefix: string };
 };
 
 /** A row completed with the fallback's words. */
@@ -76,7 +93,8 @@ export function buildSpecs(table: ToolTable) {
   );
   const mcp = table.mcp && {
     prefix: table.mcp.prefix,
-    classes: table.mcp.classes.map((c) => ({
+    // what each command is does not depend on the backend: one shared file
+    classes: (writerMcp.classes as unknown as (TableRow & { match: string })[]).map((c) => ({
       match: new RegExp(c.match),
       spec: specOf(c, table.fallback),
     })),

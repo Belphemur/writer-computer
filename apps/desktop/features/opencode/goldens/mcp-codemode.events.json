@@ -1,0 +1,185 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to call the note_count tool from the writer MCP server. I can see it's available in the Code",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Mode catalog as `tools.writer.note_count()`. Let me call it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "execute",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to call the note_count tool from the writer MCP server. I can see it's available in the Code Mode catalog as `tools.writer.note_count()`. Let me call it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "code": "const result = await tools.writer.note_count();\nreturn result;"
+      }
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001:0",
+      "messageId": "msg_fake0002",
+      "tool": "writer_note_count",
+      "parentToolCallId": "call-fake-0001"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001:0",
+      "input": {}
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0001:0",
+      "tool": "writer_note_count",
+      "displayName": null,
+      "input": {},
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "writer_note_count",
+              "ruleContent": "*"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "allowed"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001:0",
+      "output": "",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "The fake vault holds 42 notes.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3828,
+      "outputTokens": 72,
+      "cacheReadTokens": 2560,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The tool returned that the fake vault holds 42 notes. I'll tell the user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The tool returned that the fake vault holds 42 notes. I'll tell the user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The `note_count` tool returned **42** notes in the fake vault."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The `note_count` tool returned **42** notes in the fake vault."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 144,
+      "outputTokens": 46,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 3972,
+      "outputTokens": 118,
+      "cacheReadTokens": 8896,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1527,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

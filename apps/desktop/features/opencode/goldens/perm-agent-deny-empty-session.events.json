@@ -1,0 +1,477 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to replace \"alpha\" with \"gamma\" in a file called a.txt. Let me first look at the file to",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " understand its content, then make the edit.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to replace \"alpha\" with \"gamma\" in a file called a.txt. Let me first look at the file to understand its content, then make the edit.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "path": "a.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "Read file a.txt, lines 1-1\n1: alpha",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 5554,
+      "outputTokens": 58,
+      "cacheReadTokens": 256,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains \"alpha\" on line 1. I need to replace \"alpha\" with \"gamma\". Let me use the edit tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0003",
+      "tool": "edit",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains \"alpha\" on line 1. I need to replace \"alpha\" with \"gamma\". Let me use the edit tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "filePath": "a.txt",
+        "oldString": "alpha",
+        "newString": "gamma"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "No tool named \"edit\" is currently available. Please use a tool from the available tool list.",
+      "isError": true,
+      "outcome": "error",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 133,
+      "outputTokens": 65,
+      "cacheReadTokens": 5760,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "There's no edit tool available. Let me check what tools are available. The user",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " asked me to use \"edit tool\" but it",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "'s not available. Let me search for tools.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0003",
+      "messageId": "msg_fake0004",
+      "tool": "search",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "There's no edit tool available. Let me check what tools are available. The user asked me to use \"edit tool\" but it's not available. Let me search for tools.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0003",
+      "input": {
+        "query": "edit"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0003",
+      "output": "No tool named \"search\" is currently available. Please use a tool from the available tool list.",
+      "isError": true,
+      "outcome": "error",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 115,
+      "outputTokens": 57,
+      "cacheReadTokens": 5888,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Hmm, the search tool isn't available either.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Wait, the instructions say the tools listed below",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " and search cannot be called directly - they only",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " work as JavaScript inside the execute tool. So I need to use execute",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " to call tools. But execute is a normal tool call? Let me check -",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " execute is listed as a tool. Let",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " me use execute to search for an edit tool.\n\nActually wait, looking at the available tools: generate_image, generate_video",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ", glob, grep, question, read, shell, skill, subagent, webfetch, websearch",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ", execute. There's no edit tool directly.\n\nThe instruction says \"Use your edit tool\" but it",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "'s not available. Maybe I need to use shell with sed,",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " or maybe there's an edit tool accessible via execute. Let me try execute to search.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0004",
+      "messageId": "msg_fake0005",
+      "tool": "execute",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Hmm, the search tool isn't available either. Wait, the instructions say the tools listed below and search cannot be called directly - they only work as JavaScript inside the execute tool. So I need to use execute to call tools. But execute is a normal tool call? Let me check - execute is listed as a tool. Let me use execute to search for an edit tool.\n\nActually wait, looking at the available tools: generate_image, generate_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, execute. There's no edit tool directly.\n\nThe instruction says \"Use your edit tool\" but it's not available. Maybe I need to use shell with sed, or maybe there's an edit tool accessible via execute. Let me try execute to search.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0004",
+      "input": {
+        "code": "const r = await search({ query: \"edit\" });\nconsole.log(JSON.stringify(r, null, 2));\n"
+      }
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0004:0",
+      "messageId": "msg_fake0005",
+      "tool": "search",
+      "parentToolCallId": "call-fake-0004"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0004:0",
+      "input": {
+        "query": "edit"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0004:0",
+      "output": "",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0004",
+      "output": "Logs:\n{\n  \"items\": [],\n  \"remaining\": 0,\n  \"next\": null\n}",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 153,
+      "outputTokens": 206,
+      "cacheReadTokens": 5952,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "No edit tool found. The user asked me to use an edit tool, but it's not available. I'll",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " need to use shell to do the replacement. Let me use sed.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0005",
+      "messageId": "msg_fake0006",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "No edit tool found. The user asked me to use an edit tool, but it's not available. I'll need to use shell to do the replacement. Let me use sed.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0005",
+      "input": {
+        "command": "sed -i '' 's/alpha/gamma/' a.txt && cat a.txt"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0005",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "sed -i '' 's/alpha/gamma/' a.txt && cat a.txt"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "sed *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "cat *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0005",
+      "output": "The user declined this tool call",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 264,
+      "outputTokens": 74,
+      "cacheReadTokens": 6080,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 6219,
+      "outputTokens": 460,
+      "cacheReadTokens": 23936,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "interrupted",
+      "durationMs": 5534,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

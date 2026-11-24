@@ -1,0 +1,159 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to run `sleep 20` with the shell tool, then reply with \"done\". Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to run `sleep 20` with the shell tool, then reply with \"done\". Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "command": "sleep 20"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "[no output; output file: /home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out]\n\nCommand interrupted by the user (shell ID: sh_fake0001).",
+      "isError": true,
+      "outcome": "error",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3426,
+      "outputTokens": 52,
+      "cacheReadTokens": 2944,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 3426,
+      "outputTokens": 52,
+      "cacheReadTokens": 2944,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "interrupted",
+      "durationMs": 1956,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user now wants me to just reply with \"pivot\" instead of \"done\". Let",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user now wants me to just reply with \"pivot\" instead of \"done\". Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "pivot"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "pivot"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 251,
+      "outputTokens": 33,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 251,
+      "outputTokens": 33,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 482,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

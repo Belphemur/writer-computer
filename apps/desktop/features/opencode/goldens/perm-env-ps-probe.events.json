@@ -1,0 +1,183 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to run exactly this command: `ps -E -o command= -p $PPID | tr '",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " ' '\\n' | grep -c -E '^OPENCODE_SERVER_PASSWORD='`\n\nAnd show only its output, nothing else. Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to run exactly this command: `ps -E -o command= -p $PPID | tr ' ' '\\n' | grep -c -E '^OPENCODE_SERVER_PASSWORD='`\n\nAnd show only its output, nothing else. Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "command": "ps -E -o command= -p $PPID | tr ' ' '\\n' | grep -c -E '^OPENCODE_SERVER_PASSWORD='"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0001",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "ps -E -o command= -p $PPID | tr ' ' '\\n' | grep -c -E '^OPENCODE_SERVER_PASSWORD='"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "ps *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "tr *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "grep *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "allowed"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "1\n",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3384,
+      "outputTokens": 108,
+      "cacheReadTokens": 3008,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The output is 1.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " The user said \"show me its output, nothing else\". So I should just output 1.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The output is 1. The user said \"show me its output, nothing else\". So I should just output 1.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "1"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "1"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 177,
+      "outputTokens": 37,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 3561,
+      "outputTokens": 145,
+      "cacheReadTokens": 9344,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1674,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

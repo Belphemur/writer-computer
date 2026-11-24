@@ -1,0 +1,203 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to replace \"alpha\" by \"gamma\" in a file called a.txt using the edit tool. Let me first read",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " the file to see its contents.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to replace \"alpha\" by \"gamma\" in a file called a.txt using the edit tool. Let me first read the file to see its contents.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "path": "a.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "Read file a.txt, lines 1-1\n1: alpha",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3747,
+      "outputTokens": 56,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\" using the edit tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0003",
+      "tool": "edit",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\" using the edit tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "newString": "gamma",
+        "oldString": "alpha",
+        "path": "a.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "Edited a.txt (1 replacement)",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 116,
+      "outputTokens": 58,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The edit",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " was successful. Now I should say \"done\" as requested.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The edit was successful. Now I should say \"done\" as requested.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "done."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "done."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 128,
+      "outputTokens": 27,
+      "cacheReadTokens": 6400,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 3991,
+      "outputTokens": 141,
+      "cacheReadTokens": 15360,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1985,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

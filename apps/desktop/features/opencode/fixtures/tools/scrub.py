@@ -1,6 +1,6 @@
 """The only way captures enter the repo: scrub raw recordings into fixtures, then check them (stdlib only).
 
-  python3 -I scrub.py --raw DIR --out DIR [--deny word,word]     scrub, then check
+  python3 -I scrub.py --raw DIR --out DIR [--only name,name] [--deny word,word]     scrub, then check
   python3 -I scrub.py --check DIR [--deny word,word]             check only (what the cargo test also asserts)
 
 Scrubbing (applied to every string, including inside base64 values and cursors):
@@ -40,6 +40,32 @@ FIXTURES = {
     "error-unknown-provider": ("s08-unknown-provider", {"messages": "s08-unknown-provider.messages.json"}, "s08"),
     "error-provider-auth": ("s08-provider-without-login", {"messages": "s08-provider-without-login.messages.json"}, "s08"),
     "files-mention": ("s09-files-mention", {"messages": "s09-files-mention.messages.json"}, "s09"),
+    # phase 2 captures
+    "tool-write": ("s16-write", {"messages": "s16-write.messages.json"}, "s16"),
+    "tool-search": ("s16-search", {"messages": "s16-search.messages.json"}, "s16"),
+    "question-multi": ("s17-multi", {"messages": "s17-multi.messages.json"}, "s17"),
+    "question-skip": ("s17-skip", {"messages": "s17-skip.messages.json"}, "s17"),
+    "subagent-child-edit": ("s18-child-edit", {"parent": "s18-child-edit-parent.messages.json", "child": "s18-child-edit-child.messages.json"}, "s18b"),
+    "subagent-failed": ("s19-subagent-failed", {"parent": "s19-subagent-failed-parent.messages.json"}, "s19"),
+    # permission model captures (s29 to s31, spec 10.9)
+    "perm-parent-deny-child-edit": ("s29a", {}, "s29a"),
+    "perm-session-allow-agent-deny": ("s29a2", {}, "s29a2"),
+    "perm-agent-deny-empty-session": ("s29b-w-deny", {}, "s29b"),
+    "perm-agent-ask-empty-session": ("s29b-w-ask", {}, "s29b"),
+    "perm-child-own-rules": ("s29d-kid-ask", {}, "s29d-kid-ask"),
+    "perm-child-config-rules": ("s29d-kid-plain", {}, "s29d-kid-plain"),
+    "perm-saved-vs-agent-deny": ("s29e", {}, "s29e"),
+    "perm-switch-deny-to-allow": ("s30c-w-deny-to-w-allow", {}, "s30c-w-deny"),
+    "perm-switch-allow-to-deny": ("s30c-w-allow-to-w-deny", {}, "s30c-w-allow"),
+    "perm-env-shell-probe": ("s30f", {}, "s30f"),
+    "perm-env-shell-wrapper": ("s31b", {}, "s31b"),
+    "perm-env-ps-probe": ("s31c", {}, "s31c"),
+    "perm-plan-deny-vs-saved": ("s32g", {}, "s32g"),
+    "perm-session-deny-vs-child-allow": ("s32h", {}, "s32h"),
+    "perm-subagent-deny-by-resource": ("s30g", {}, "s30g"),
+    "steer-now": ("s20-steer-now", {"messages": "s20-steer-now.messages.json"}, "s20"),
+    "reject-message": ("s21-reject", {"messages": "s21-reject.messages.json"}, "s21"),
+    "codemode-failures": ("s22-codemode-failures", {"messages": "s22-codemode-failures.messages.json"}, "s22"),
 }
 NOISE = {"plugin.updated", "config.updated", "integration.updated", "provider.updated", "model.updated", "agent.updated", "command.updated",
          "skill.updated", "artifact.updated", "websearch.updated", "reference.updated", "project.updated"}
@@ -72,7 +98,7 @@ class Scrubber:
 
     def text(self, t):
         t = re.sub(r"(file://)?/[^\s\"\\:]*?/cwd-[A-Za-z0-9]+", lambda m: (m.group(1) or "") + "/vault", t)
-        t = re.sub(r"(?:/private)?/var/folders/[^\s\"\\]*", "/tmp/opencode", t)
+        t = re.sub(r"(?:/private)?/var/folders/[^\s\"\\]*|/private/tmp/[^\s\"\\]*", "/tmp/opencode", t)
         if HOME and HOME != "/":
             t = t.replace(HOME, "/home/user")
         if len(USER) >= 4 and USER not in ("user", "root"):
@@ -131,9 +157,11 @@ def first_frame(raw_dir, run):
     raise SystemExit(f"{p}: no server.connected frame")
 
 
-def scrub(raw, out):
+def scrub(raw, out, only=()):
     os.makedirs(out, exist_ok=True)
     for name, (ev, files, run) in FIXTURES.items():
+        if only and name not in only:
+            continue
         sc = Scrubber()
         evs = [json.loads(l) for l in open(os.path.join(raw, ev + ".events.jsonl"))]
         evs = [first_frame(raw, run)] + [e for e in evs if e["type"] not in NOISE]
@@ -150,7 +178,7 @@ def scrub(raw, out):
     for fn in ("s12-rest.json", "s13-rest.json", "s14-rest.json"):  # reply collections recorded without a scenario
         if os.path.exists(os.path.join(raw, fn)):
             rest.update(json.load(open(os.path.join(raw, fn))))
-    if rest:
+    if rest and not only:
         with open(os.path.join(out, "rest.json"), "w") as f:
             f.write(dumps(Scrubber().value(rest), indent=1) + "\n")
 
@@ -196,13 +224,14 @@ def main():
     p.add_argument("--raw")
     p.add_argument("--out")
     p.add_argument("--check")
+    p.add_argument("--only", default="", help="comma-separated fixture names to (re)scrub, when the raw captures of the others are gone")
     p.add_argument("--deny", default="", help="comma-separated extra words that must not appear (also OC_SCRUB_DENY)")
     a = p.parse_args()
     deny = [w for w in (a.deny + "," + os.environ.get("OC_SCRUB_DENY", "")).split(",") if w]
     if a.check:
         check(a.check, deny)
     elif a.raw and a.out:
-        scrub(a.raw, a.out)
+        scrub(a.raw, a.out, [n for n in a.only.split(',') if n])
         check(a.out, deny)
     else:
         p.error("give --raw and --out, or --check")

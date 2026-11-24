@@ -1,0 +1,180 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to use the question tool to ask about tabs vs spaces, then tell them exactly what the tool returned. Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "question",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to use the question tool to ask about tabs vs spaces, then tell them exactly what the tool returned. Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "questions": [
+          {
+            "question": "Should I use tabs or spaces for indentation?",
+            "header": "Indentation",
+            "options": [
+              {
+                "label": "tabs",
+                "description": "Use tab characters for indentation"
+              },
+              {
+                "label": "spaces",
+                "description": "Use space characters for indentation"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "question-request",
+      "requestId": "frm_fake0001",
+      "toolCallId": "call-fake-0001",
+      "questions": [
+        {
+          "question": "Should I use tabs or spaces for indentation?",
+          "header": "Indentation",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "tabs",
+              "description": "Use tab characters for indentation"
+            },
+            {
+              "label": "spaces",
+              "description": "Use space characters for indentation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "question-resolved",
+      "requestId": "frm_fake0001",
+      "toolCallId": "call-fake-0001",
+      "resolution": "skipped"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "The user prefers not to answer",
+      "isError": true,
+      "outcome": "error",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3748,
+      "outputTokens": 108,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The tool returned an error: \"The user prefers not to answer\". Let me tell the user exactly what",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " was returned.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The tool returned an error: \"The user prefers not to answer\". Let me tell the user exactly what was returned.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The question tool returned exactly this:\n\n```\n{\"error\":{\"type\":\"tool.execution\",\"message\":\"The user prefers not to answer\"},\"content\":[]}\n```"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The question tool returned exactly this:\n\n```\n{\"error\":{\"type\":\"tool.execution\",\"message\":\"The user prefers not to answer\"},\"content\":[]}\n```"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3503,
+      "outputTokens": 65,
+      "cacheReadTokens": 3008,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7251,
+      "outputTokens": 173,
+      "cacheReadTokens": 5632,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1558,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

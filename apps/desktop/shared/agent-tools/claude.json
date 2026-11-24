@@ -193,29 +193,6 @@
     }
   ],
   "mcp": {
-    "prefix": "mcp__writer__",
-    "classes": [
-      {
-        "match": "^(search|search_context|files|folders|tags?|tasks|graph_.+|bases?(_.+)?|dql|properties|property_read)$",
-        "kind": "search",
-        "past": "Searched",
-        "present": "Searching",
-        "noun": ["search", "searches"],
-        "args": {
-          "primary": ["query", "file", "path", "name", "tag", "format"]
-        }
-      },
-      {
-        "match": "^(read|file|folder|outline|wordcount|active|status|vaults?)$",
-        "kind": "read",
-        "past": "Read",
-        "present": "Reading",
-        "noun": ["note", "notes"],
-        "readsFile": true,
-        "args": {
-          "primary": ["file", "path"]
-        }
-      }
-    ]
+    "prefix": "mcp__writer__"
   }
 }

@@ -1,0 +1,202 @@
+{
+ "parent": {
+  "data": [
+   {
+    "id": "msg_fake0007",
+    "time": {
+     "created": 1795496081238
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0006",
+    "time": {
+     "created": 1795496080385,
+     "firstToken": 1795496080726,
+     "streamed": 1795496081235,
+     "completed": 1795496081236
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The subagent failed with \"Model unavailable: fakeprovider/fakemodel\". This is because the writer-broken sub-agent's model is not available. I should report this to the user.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496080727,
+       "completed": 1795496081233
+      }
+     },
+     {
+      "type": "text",
+      "text": "The sub-agent failed. It couldn't run because its model isn't available: `fakeprovider/fakemodel` is unavailable. So `notes.md` was never actually read.\n\nWould you like me to read `notes.md` myself instead, or try a different approach?"
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 188,
+     "output": 57,
+     "reasoning": 46,
+     "cache": {
+      "read": 6592,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0004",
+    "metadata": {
+     "source": "subagent",
+     "childID": "ses_fake0002",
+     "agent": "writer-broken",
+     "state": "error"
+    },
+    "time": {
+     "created": 1795496080380
+    },
+    "text": "<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"error\" description=\"Read notes.md file\">\nModel unavailable: fakeprovider/fakemodel\n</background-result>",
+    "description": "Read notes.md file",
+    "type": "synthetic"
+   },
+   {
+    "id": "msg_fake0005",
+    "time": {
+     "created": 1795496078383,
+     "firstToken": 1795496078944,
+     "streamed": 1795496080375,
+     "completed": 1795496080375
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The subagent is running in the background. I should wait for it to complete and report back. The instructions say not to poll. I'll end my response here and wait for the background result.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496078945,
+       "completed": 1795496080372
+      }
+     },
+     {
+      "type": "text",
+      "text": "I've delegated the task to the `writer-broken` sub-agent (session `ses_fake0002`). It's running in the background to read `notes.md`. I'll let you know what happens once it reports back."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 266,
+     "output": 66,
+     "reasoning": 48,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795496077600,
+     "firstToken": 1795496078063,
+     "streamed": 1795496078369,
+     "completed": 1795496078377
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to delegate to the \"writer-broken\" sub-agent to have it read notes.md, then tell them what happened.\n\nLet me use the subagent tool.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496078064,
+       "completed": 1795496078364
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "subagent",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "agent": "writer-broken",
+        "description": "Read notes.md file",
+        "prompt": "Please read the notes.md file in the working directory."
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."
+        }
+       ],
+       "metadata": {
+        "sessionID": "ses_fake0002",
+        "status": "running",
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795496078217,
+       "ran": 1795496078368,
+       "completed": 1795496078376
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3757,
+     "output": 46,
+     "reasoning": 38,
+     "cache": {
+      "read": 2624,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795496077592
+    },
+    "text": "Delegate to your writer-broken sub-agent: have it read notes.md. Then tell me what happened.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

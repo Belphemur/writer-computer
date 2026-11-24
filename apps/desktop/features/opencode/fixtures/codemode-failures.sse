@@ -1,0 +1,84 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795496091101,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"In ONE code execution call, call tools.writer.note_count(), tools.writer.note_denied() and tools.writer.note_fail() from the writer MCP server, wrapping each in try/catch, and return an array with each outcome. Then tell me each outcome."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795496091104,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795496091109,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0005","created":1795496091110,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0006","created":1795496091486,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795496091117},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795496091488,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795496091489,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795496091592,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to make a single code execution call that calls three tools from the writer MCP server:\n1. tools.writer.note_count()\n2. tools.writer.note_denied"}}
+
+data: {"id":"evt_fake0010","created":1795496091681,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"()\n3. tools.writer.note_fail()\n\nEach wrapped in try/catch, return an array with each outcome. Then tell them each outcome.\n\nLet me write this code."}}
+
+data: {"id":"evt_fake0011","created":1795496091681,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"execute"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795496091836,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.31e-05,"tokens":{"input":486,"output":9,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0013","created":1795496091836,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Writer MCP tool outcomes"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795496092130,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to make a single code execution call that calls three tools from the writer MCP server:\n1. tools.writer.note_count()\n2. tools.writer.note_denied()\n3. tools.writer.note_fail()\n\nEach wrapped in try/catch, return an array with each outcome. Then tell them each outcome.\n\nLet me write this code.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795496092134,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"code\": \"async function callSafely(fn, name) {\\n  try {\\n    const result = await fn();\\n    return { tool: name, status: \\\"success\\\", result };\\n  } catch (err) {\\n    return { tool: name, status: \\\"error\\\", error: String(err && err.message ? err.message : err) };\\n  }\\n}\\n\\nconst outcomes = await Promise.all([\\n  callSafely(() => tools.writer.note_count(), \\\"note_count\\\"),\\n  callSafely(() => tools.writer.note_denied(), \\\"note_denied\\\"),\\n  callSafely(() => tools.writer.note_fail(), \\\"note_fail\\\"),\\n]);\\n\\nreturn outcomes;\\n\"}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795496092136,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"code":"async function callSafely(fn, name) {\n  try {\n    const result = await fn();\n    return { tool: name, status: \"success\", result };\n  } catch (err) {\n    return { tool: name, status: \"error\", error: String(err && err.message ? err.message : err) };\n  }\n}\n\nconst outcomes = await Promise.all([\n  callSafely(() => tools.writer.note_count(), \"note_count\"),\n  callSafely(() => tools.writer.note_denied(), \"note_denied\"),\n  callSafely(() => tools.writer.note_fail(), \"note_fail\"),\n]);\n\nreturn outcomes;\n"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795496092138,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795496092157,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"toolCalls":[{"tool":"writer.note_count","status":"running"}]}}}
+
+data: {"id":"evt_fake0019","created":1795496092161,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"[{\"tool\":\"note_count\",\"status\":\"success\",\"result\":\"The fake vault holds 42 notes.\"},{\"tool\":\"note_denied\",\"status\":\"error\",\"error\":\"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"},{\"tool\":\"note_fail\",\"status\":\"error\",\"error\":\"The fake vault is unreadable.\"}]"}],"metadata":{"toolCalls":[{"tool":"writer.note_count","status":"completed"},{"tool":"writer.note_fail","status":"error"}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0020","created":1795496092162,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3895,"output":143,"reasoning":78,"cache":{"read":2560,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795496092163,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.31e-05,"tokens":{"input":4381,"output":152,"reasoning":78,"cache":{"read":2560,"write":0}}}}
+
+data: {"id":"evt_fake0022","created":1795496092499,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795496092169},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795496092502,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795496092504,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795496092608,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The result shows:\n- note_count: success, \"The fake vault holds 42 notes.\"\n- note_denied: error,"}}
+
+data: {"id":"evt_fake0026","created":1795496092714,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"\n- note_fail: error, \"The fake vault is unreadable.\"\n\nWait, the user asked to call tools.writer.note_denied()"}}
+
+data: {"id":"evt_fake0027","created":1795496092835,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" but it doesn't exist. The catalog only shows note_count and note_fail. So note_denied doesn't exist as"}}
+
+data: {"id":"evt_fake0028","created":1795496092935,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" a tool. The error message says unknown tool.\n\nLet me report these outcomes."}}
+
+data: {"id":"evt_fake0029","created":1795496092935,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795496093040,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Here are the outcomes from the single code execution call:\n\n1"}}
+
+data: {"id":"evt_fake0031","created":1795496093156,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":". **`tools.writer.note_count()`** \u2014 \u2705 Success: \"The fake vault holds 42 notes.\"\n2. **`tools.writer.note_denied()`** \u2014 \u274c"}}
+
+data: {"id":"evt_fake0032","created":1795496093275,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" Error: \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\" (This tool doesn't exist in the writer MCP"}}
+
+data: {"id":"evt_fake0033","created":1795496093395,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" server; only `note_count` and `note_fail` are available.)\n3. **`tools.writer.note_fail()`** \u2014 \u274c Error"}}
+
+data: {"id":"evt_fake0034","created":1795496093517,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":": \"The fake vault is unreadable.\"\n\nReturned array:\n```json\n[\n  {\""}}
+
+data: {"id":"evt_fake0035","created":1795496093636,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"tool\":\"note_count\",\"status\":\"success\",\"result\":\"The fake vault holds 42 notes.\"},\n  {\"tool\":\"note_den"}}
+
+data: {"id":"evt_fake0036","created":1795496093831,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The result shows:\n- note_count: success, \"The fake vault holds 42 notes.\"\n- note_denied: error, \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"\n- note_fail: error, \"The fake vault is unreadable.\"\n\nWait, the user asked to call tools.writer.note_denied() but it doesn't exist. The catalog only shows note_count and note_fail. So note_denied doesn't exist as a tool. The error message says unknown tool.\n\nLet me report these outcomes.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795496093834,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"ied\",\"status\":\"error\",\"error\":\"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"},\n  {\"tool\":\"note_fail\",\"status\":\"error\",\"error\":\"The fake vault is unreadable.\"}\n]\n```"}}
+
+data: {"id":"evt_fake0038","created":1795496093834,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Here are the outcomes from the single code execution call:\n\n1. **`tools.writer.note_count()`** \u2014 \u2705 Success: \"The fake vault holds 42 notes.\"\n2. **`tools.writer.note_denied()`** \u2014 \u274c Error: \"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\" (This tool doesn't exist in the writer MCP server; only `note_count` and `note_fail` are available.)\n3. **`tools.writer.note_fail()`** \u2014 \u274c Error: \"The fake vault is unreadable.\"\n\nReturned array:\n```json\n[\n  {\"tool\":\"note_count\",\"status\":\"success\",\"result\":\"The fake vault holds 42 notes.\"},\n  {\"tool\":\"note_denied\",\"status\":\"error\",\"error\":\"Unknown tool 'writer.note_denied'. Did you mean tools.writer.note_count?\"},\n  {\"tool\":\"note_fail\",\"status\":\"error\",\"error\":\"The fake vault is unreadable.\"}\n]\n```"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795496093836,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795496093838,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"stop","rawFinish":"stop","tokens":{"input":358,"output":202,"reasoning":119,"cache":{"read":6400,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795496093839,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.31e-05,"tokens":{"input":4739,"output":354,"reasoning":197,"cache":{"read":8960,"write":0}}}}
+
+data: {"id":"evt_fake0042","created":1795496093842,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+

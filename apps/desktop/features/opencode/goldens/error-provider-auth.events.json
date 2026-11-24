@@ -1,0 +1,35 @@
+{
+  "events": [
+    {
+      "type": "error",
+      "kind": "auth",
+      "message": "Not signed in to this provider.",
+      "retryable": false
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": null,
+      "contextWindow": null,
+      "model": "fake-provider/fake-model"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "error",
+      "durationMs": 48,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": true,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": [
+        "Not signed in to this provider."
+      ]
+    }
+  ],
+  "signals": []
+}

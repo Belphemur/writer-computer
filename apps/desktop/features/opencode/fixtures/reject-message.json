@@ -1,0 +1,154 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795496089652
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795496088701,
+     "firstToken": 1795496089104,
+     "streamed": 1795496089646,
+     "completed": 1795496089648
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "Both commands were rejected with \"permission.rejected\" and message \"Writer says: ask the user in plain words first\". This means I need to ask the user in plain words first before running shell commands. Let me just tell the user what happened and ask if they want me to proceed.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496089105,
+       "completed": 1795496089641
+      }
+     },
+     {
+      "type": "text",
+      "text": "Both shell commands were rejected with a permission error: \"Writer says: ask the user in plain words first.\" It appears the environment requires me to ask you in plain words before running shell commands.\n\nSo, to clarify: would you like me to run `echo one` and `echo two` using the shell tool? If so, I'll retry both commands."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 172,
+     "output": 74,
+     "reasoning": 67,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795496085760,
+     "firstToken": 1795496086231,
+     "streamed": 1795496086399,
+     "completed": 1795496088691
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to run two shell commands in the same step. I can make both calls in parallel.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496086232,
+       "completed": 1795496086392
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "error",
+       "input": {
+        "command": "echo one"
+       },
+       "error": {
+        "type": "permission.rejected",
+        "message": "Writer says: ask the user in plain words first"
+       }
+      },
+      "time": {
+       "created": 1795496086347,
+       "ran": 1795496086394,
+       "completed": 1795496088689
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0002",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "error",
+       "input": {
+        "command": "echo two"
+       },
+       "error": {
+        "type": "permission.rejected",
+        "message": "Writer says: ask the user in plain words first"
+       }
+      },
+      "time": {
+       "created": 1795496086384,
+       "ran": 1795496086398,
+       "completed": 1795496088691
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3432,
+     "output": 38,
+     "reasoning": 24,
+     "cache": {
+      "read": 2944,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795496085753
+    },
+    "text": "Run `echo one` with your shell tool and `echo two` with your shell tool, both in the same step. Then say what happened.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

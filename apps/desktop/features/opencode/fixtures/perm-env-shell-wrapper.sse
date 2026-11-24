@@ -1,0 +1,80 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500548478,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"swift-island","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500549946,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Run exactly this command with your shell tool and show me its output, nothing else: env | grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='"},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500549948,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500549955,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500549955,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500550673,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500549963},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500550676,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500550677,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500550679,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to run exactly this command and show its output, nothing else."}}
+
+data: {"id":"evt_fake0011","created":1795500550689,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795500550691,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to run exactly this command and show its output, nothing else.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795500550692,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"command\": \"env | grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795500550693,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"command":"env | grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795500550693,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500550696,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"shell","resources":["env","grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='"],"save":["env *","grep *"],"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0001"}}}
+
+data: {"id":"evt_fake0017","created":1795500550874,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"once"}}
+
+data: {"id":"evt_fake0018","created":1795500550879,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.24e-05,"tokens":{"input":479,"output":9,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0019","created":1795500550880,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"OpenCode environment variables"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795500550941,"type":"shell.created","location":{"directory":"/vault"},"data":{"info":{"id":"sh_fake0001","status":"running","command":"env | grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='","cwd":"/vault","shell":"/tmp/opencode","file":"/home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out","metadata":{"sessionID":"ses_fake0001"},"time":{"started":1795500550941},"pid":1}}}
+
+data: {"id":"evt_fake0021","created":1795500550942,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"shellID":"sh_fake0001"}}}
+
+data: {"id":"evt_fake0022","created":1795500551030,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"0\n"},{"type":"text","text":"Exit code: 1"}],"metadata":{"status":"completed","truncated":false,"exit":1},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0023","created":1795500551031,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3761,"output":7,"reasoning":54,"cache":{"read":2624,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795500551031,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.24e-05,"tokens":{"input":4240,"output":16,"reasoning":54,"cache":{"read":2624,"write":0}}}}
+
+data: {"id":"evt_fake0025","created":1795500551033,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"shell","id":"sh_fake0001","sessionID":"ses_fake0001","status":"completed","title":"env | grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='","time":{"started":1795500550942,"completed":1795500551029},"shellID":"sh_fake0001","command":"env | grep -c -E '^(OPENCODE_SERVER_PASSWORD|OPENCODE_CONFIG|XDG_CONFIG_HOME)='"}}}
+
+data: {"id":"evt_fake0026","created":1795500551457,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500551036},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795500551461,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500551462,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500551566,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The command output is \"0\" and exit code is 1. The user said"}}
+
+data: {"id":"evt_fake0030","created":1795500551674,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" \"show me its output, nothing else\". The output is \"0\". The exit code 1 is from grep finding"}}
+
+data: {"id":"evt_fake0031","created":1795500551795,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" no matches (which is normal). I should show the output \""}}
+
+data: {"id":"evt_fake0032","created":1795500551811,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"0\"."}}
+
+data: {"id":"evt_fake0033","created":1795500551811,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795500551815,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The command output is \"0\" and exit code is 1. The user said \"show me its output, nothing else\". The output is \"0\". The exit code 1 is from grep finding no matches (which is normal). I should show the output \"0\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795500551816,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"0"}}
+
+data: {"id":"evt_fake0036","created":1795500551817,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"0"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500551818,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795500551820,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"stop","rawFinish":"stop","tokens":{"input":3456,"output":3,"reasoning":64,"cache":{"read":3008,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795500551821,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.24e-05,"tokens":{"input":7696,"output":19,"reasoning":118,"cache":{"read":5632,"write":0}}}}
+
+data: {"id":"evt_fake0040","created":1795500551823,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+

@@ -1,0 +1,49 @@
+{
+  "events": [
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "text": "The image is red, and the heading in notes.md is \"Garden Plan\"."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "text": "The image is red, and the heading in notes.md is \"Garden Plan\"."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 2352,
+      "outputTokens": 18,
+      "cacheReadTokens": 5120,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 2352,
+      "outputTokens": 18,
+      "cacheReadTokens": 5120,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/hy4-flash-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 2011,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

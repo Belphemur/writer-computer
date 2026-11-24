@@ -1,0 +1,206 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to use the question tool to ask which fruits they like, with multiple choice allowed",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ", options: apple, pear, plum. Then tell them exactly what they answered.\n\n",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Let me call the question tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "question",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to use the question tool to ask which fruits they like, with multiple choice allowed, options: apple, pear, plum. Then tell them exactly what they answered.\n\nLet me call the question tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "questions": [
+          {
+            "question": "Which fruits do you like?",
+            "header": "Fruits",
+            "options": [
+              {
+                "label": "apple",
+                "description": "Apple"
+              },
+              {
+                "label": "pear",
+                "description": "Pear"
+              },
+              {
+                "label": "plum",
+                "description": "Plum"
+              }
+            ],
+            "multiple": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "question-request",
+      "requestId": "frm_fake0001",
+      "toolCallId": "call-fake-0001",
+      "questions": [
+        {
+          "question": "Which fruits do you like?",
+          "header": "Fruits",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "apple",
+              "description": "Apple"
+            },
+            {
+              "label": "pear",
+              "description": "Pear"
+            },
+            {
+              "label": "plum",
+              "description": "Plum"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "question-resolved",
+      "requestId": "frm_fake0001",
+      "toolCallId": "call-fake-0001",
+      "resolution": "answered",
+      "answers": [
+        {
+          "question": "Which fruits do you like?",
+          "answers": [
+            "apple",
+            "plum"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "User has answered your questions: \"Which fruits do you like?\"=\"apple, plum\". You can now continue with the user's answers in mind.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3752,
+      "outputTokens": 129,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user answered \"apple, plum\". I need to tell them exactly what they answered.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user answered \"apple, plum\". I need to tell them exactly what they answered.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "You answered: apple, plum."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "You answered: apple, plum."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3538,
+      "outputTokens": 35,
+      "cacheReadTokens": 3008,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7290,
+      "outputTokens": 164,
+      "cacheReadTokens": 5632,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1738,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

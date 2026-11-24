@@ -1,0 +1,298 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to replace \"cat\" with \"dog\" in both places in notes.md using the edit tool,",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " then reply 'done'.\n\nLet me first read the file.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to replace \"cat\" with \"dog\" in both places in notes.md using the edit tool, then reply 'done'.\n\nLet me first read the file.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "path": "notes.md"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "Read file notes.md, lines 1-4\n1: # Pets\n2: \n3: I have a cat named Tom.\n4: The cat sleeps all day.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3419,
+      "outputTokens": 57,
+      "cacheReadTokens": 2944,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "There are two occurrences of \"cat\". I'll replace both. Since",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " edit requires unique match by",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " default, I can either do two edits or use replaceAll. The user said \"using your",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " edit tool\" (singular). Let me use replaceAll to replace all occurrences at once. Actually",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " \"replace the word cat with dog (both places)\". Using replaceAll=true with oldString \"cat\" newString \"dog\" would replace both",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ". That's one edit call. Good.\n\nBut careful: \"cat\" appears in \"cat",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " named\" and \"The cat sleeps\". Both",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " standalone word \"cat\". replaceAll works. Let me do it",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0003",
+      "tool": "edit",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "There are two occurrences of \"cat\". I'll replace both. Since edit requires unique match by default, I can either do two edits or use replaceAll. The user said \"using your edit tool\" (singular). Let me use replaceAll to replace all occurrences at once. Actually \"replace the word cat with dog (both places)\". Using replaceAll=true with oldString \"cat\" newString \"dog\" would replace both. That's one edit call. Good.\n\nBut careful: \"cat\" appears in \"cat named\" and \"The cat sleeps\". Both standalone word \"cat\". replaceAll works. Let me do it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "newString": "dog",
+        "oldString": "cat",
+        "path": "notes.md",
+        "replaceAll": true
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0002",
+      "tool": "edit",
+      "displayName": null,
+      "input": {
+        "newString": "dog",
+        "oldString": "cat",
+        "path": "notes.md",
+        "replaceAll": true
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "edit",
+              "ruleContent": "*"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        },
+        {
+          "type": "setMode",
+          "mode": "acceptEdits",
+          "destination": "session"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "allowed"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "Edited notes.md (2 replacements)",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 131,
+      "outputTokens": 170,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Both replaced. Reply 'done'.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Both replaced. Reply 'done'.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "done"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "text": "done"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 191,
+      "outputTokens": 18,
+      "cacheReadTokens": 6464,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 3741,
+      "outputTokens": 245,
+      "cacheReadTokens": 15744,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 3807,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

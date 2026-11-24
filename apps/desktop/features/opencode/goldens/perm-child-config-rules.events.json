@@ -1,0 +1,661 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to delegate to the kid-plain sub-agent. It should try to use",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " its edit tool to replace \"beta\" by \"delta\" in b.txt. Then report what it reported.\n\nLet me first check the file b.txt",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " exists.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "glob",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to delegate to the kid-plain sub-agent. It should try to use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then report what it reported.\n\nLet me first check the file b.txt exists.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "pattern": "b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "/vault-kid-plain/b.txt",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 4007,
+      "outputTokens": 73,
+      "cacheReadTokens": 1856,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Read b.txt to see its contents.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0003",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Read b.txt to see its contents.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "path": "b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "Read file b.txt, lines 1-1\n1: beta",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 195,
+      "outputTokens": 29,
+      "cacheReadTokens": 5824,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Now delegate to kid-plain subagent.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0003",
+      "messageId": "msg_fake0004",
+      "tool": "subagent",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Now delegate to kid-plain subagent.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0003",
+      "input": {
+        "agent": "kid-plain",
+        "description": "edit b.txt beta to delta",
+        "prompt": "Use your edit tool (you must try) to replace 'beta' by 'delta' in b.txt. Then report what happened."
+      }
+    },
+    {
+      "type": "subagent-status",
+      "toolCallId": "call-fake-0003",
+      "status": "running",
+      "report": null
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0003",
+      "output": "The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 57,
+      "outputTokens": 75,
+      "cacheReadTokens": 6016,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0007",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "subagent-model",
+      "toolCallId": "call-fake-0003",
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The subagent is working in the background. I should wait for the result. But the instructions say not",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to replace 'beta' with 'delta' in a file called b.txt. Let me first",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " find the file, then edit it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0004",
+      "messageId": "msg_fake0007",
+      "tool": "glob",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " to poll. I'll end response and wait for",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to replace 'beta' with 'delta' in a file called b.txt. Let me first find the file, then edit it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0004",
+      "input": {
+        "pattern": "**/b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0004",
+      "output": "/vault-kid-plain/b.txt",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " notification. Actually, I need to tell user what launched. Let me just wait for",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " background result.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "I've delegated to the kid-plain sub-agent to edit b.txt."
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The subagent is working in the background. I should wait for the result. But the instructions say not to poll. I'll end response and wait for notification. Actually, I need to tell user what launched. Let me just wait for background result.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": " Waiting for its report."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "I've delegated to the kid-plain sub-agent to edit b.txt. Waiting for its report."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 267,
+      "outputTokens": 81,
+      "cacheReadTokens": 6016,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 4526,
+      "outputTokens": 258,
+      "cacheReadTokens": 19712,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 3287,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0008",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Found b.txt. Let me read it first.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0005",
+      "messageId": "msg_fake0008",
+      "tool": "read",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0008",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Found b.txt. Let me read it first.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0005",
+      "input": {
+        "path": "/vault-kid-plain/b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0005",
+      "output": "Read file /vault-kid-plain/b.txt, lines 1-1\n1: beta",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0009",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0009",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0009",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains \"beta\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0009",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Now I'll replace it with \"delta\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0006",
+      "messageId": "msg_fake0009",
+      "tool": "edit",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0009",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains \"beta\". Now I'll replace it with \"delta\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0006",
+      "input": {
+        "newString": "delta",
+        "oldString": "beta",
+        "path": "/vault-kid-plain/b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0006",
+      "output": "Edited b.txt (1 replacement)",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "subagent-message",
+      "messageId": "msg_fake0010",
+      "parentToolCallId": "call-fake-0003"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The edit was successful. Now I'll report what happened.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \""
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The edit was successful. Now I'll report what happened.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "delta\"."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0010",
+      "blockIndex": 0,
+      "text": "I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \"delta\"."
+    },
+    {
+      "type": "subagent-status",
+      "toolCallId": "call-fake-0003",
+      "status": "completed",
+      "report": "I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \"delta\"."
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0012",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0012",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The kid-plain sub-agent reported it successfully replaced beta with delta. Let me verify.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0007",
+      "messageId": "msg_fake0012",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0012",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The kid-plain sub-agent reported it successfully replaced beta with delta. Let me verify.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0007",
+      "input": {
+        "path": "b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0007",
+      "output": "Read file b.txt, lines 1-1\n1: delta",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 173,
+      "outputTokens": 39,
+      "cacheReadTokens": 6272,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0013",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0013",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The edit worked. Report to user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0013",
+      "blockIndex": 0,
+      "text": "The kid-plain sub-agent reported: \"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0013",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The edit worked. Report to user.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0013",
+      "blockIndex": 0,
+      "text": " 'delta'.\" Verified — b.txt now contains \"delta\"."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0013",
+      "blockIndex": 0,
+      "text": "The kid-plain sub-agent reported: \"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains 'delta'.\" Verified — b.txt now contains \"delta\"."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 109,
+      "outputTokens": 63,
+      "cacheReadTokens": 6400,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 282,
+      "outputTokens": 102,
+      "cacheReadTokens": 12672,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1108,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": [
+    {
+      "task": "Started { task: \"ses_fake0002\", call: Some(\"call-fake-0003\"), background: true }"
+    },
+    {
+      "task": "Notified { task: \"ses_fake0002\", call: Some(\"call-fake-0003\"), status: Completed, report: Some(\"I successfully replaced 'beta' with 'delta' in `b.txt` (1 replacement). The file now contains \\\"delta\\\".\") }"
+    }
+  ]
+}

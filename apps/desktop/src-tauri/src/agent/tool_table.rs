@@ -44,6 +44,10 @@ pub enum Role {
     Launch,
     /// A sub-agent delivers its report.
     Handback,
+    /// Runs a script that calls other tools: the calls are rows of their own, under this one.
+    Codemode,
+    /// Asks the user a question and waits for the answer.
+    Question,
 }
 
 /// Input keys a tool's arguments go by.
@@ -199,6 +203,15 @@ impl ToolTable {
             .collect()
     }
 
+    /// The names of the tools of `kind`, in table order.
+    pub fn names_of_kind(&self, kind: Kind) -> Vec<&str> {
+        self.rows
+            .iter()
+            .filter(|r| r.kind == kind)
+            .map(|r| r.name.as_str())
+            .collect()
+    }
+
     /// The first tool with `role` (the one a prompt names), `None` when the backend has none.
     pub fn name_of(&self, role: Role) -> Option<&str> {
         self.rows
@@ -206,6 +219,42 @@ impl ToolTable {
             .find(|r| r.role == Some(role))
             .map(|r| r.name.as_str())
     }
+}
+
+/// What a Writer MCP command (`search`, `read`, `files`...) is, by the one list of classes every
+/// backend shares (`shared/agent-tools/writer-mcp.json`, the web reads it too): its kind, or
+/// `None` for a command no class names (a write, an app control: the fallback kind).
+pub fn writer_mcp_kind(command: &str) -> Option<Kind> {
+    #[derive(Deserialize)]
+    struct Class {
+        #[serde(rename = "match")]
+        pattern: String,
+        kind: Kind,
+    }
+    #[derive(Deserialize)]
+    struct File {
+        classes: Vec<Class>,
+    }
+    static CLASSES: std::sync::OnceLock<Vec<(regex_lite::Regex, Kind)>> =
+        std::sync::OnceLock::new();
+    let classes = CLASSES.get_or_init(|| {
+        let file: File =
+            serde_json::from_str(include_str!("../../../shared/agent-tools/writer-mcp.json"))
+                .expect("writer-mcp.json is valid");
+        file.classes
+            .into_iter()
+            .map(|c| {
+                (
+                    regex_lite::Regex::new(&c.pattern).expect("a class pattern is a regex"),
+                    c.kind,
+                )
+            })
+            .collect()
+    });
+    classes
+        .iter()
+        .find(|(re, _)| re.is_match(command))
+        .map(|(_, k)| *k)
 }
 
 #[cfg(test)]
@@ -296,6 +345,36 @@ mod tests {
         );
         assert_eq!(t.args("MultiEdit").unwrap().edits.as_deref(), Some("edits"));
         assert_eq!(t.args("Write").unwrap().content.as_deref(), Some("content"));
+    }
+
+    /// The one list of neutral kinds, `shared/agent-tools/kinds.json` (the web's `ToolKind` is held
+    /// to it by `agent-tool-table.test.ts`): each entry is a `Kind`, and each `Kind` is an entry.
+    #[test]
+    fn the_shared_kinds_list_is_the_kind_enum() {
+        // exhaustive: a new variant fails to compile here until it is named (and added below)
+        fn name(k: Kind) -> &'static str {
+            match k {
+                Kind::Execute => "execute",
+                Kind::Edit => "edit",
+                Kind::Read => "read",
+                Kind::Search => "search",
+                Kind::Fetch => "fetch",
+                Kind::Agent => "agent",
+                Kind::Other => "other",
+            }
+        }
+        let all = [
+            Kind::Execute,
+            Kind::Edit,
+            Kind::Read,
+            Kind::Search,
+            Kind::Fetch,
+            Kind::Agent,
+            Kind::Other,
+        ];
+        let list: Vec<String> =
+            serde_json::from_str(include_str!("../../../shared/agent-tools/kinds.json")).unwrap();
+        assert_eq!(list, all.map(name));
     }
 
     /// Every row of the shipped table, as the vectors the web side pins too

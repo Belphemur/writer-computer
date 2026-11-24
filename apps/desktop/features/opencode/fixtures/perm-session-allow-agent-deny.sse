@@ -1,0 +1,252 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500146711,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"happy-cabin","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","permissions":[{"action":"*","resource":"*","effect":"ask"},{"action":"edit","resource":"*","effect":"allow"},{"action":"read","resource":"*","effect":"allow"},{"action":"glob","resource":"*","effect":"allow"},{"action":"grep","resource":"*","effect":"allow"},{"action":"subagent","resource":"*","effect":"allow"}],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500148138,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Delegate to your writer-explorer sub-agent: have it use its edit tool (it must try) to replace beta by delta in b.txt. Then tell me what it reported."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500148140,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500148150,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500148151,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500148744,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500148159},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500148746,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500148748,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500148860,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to delegate to a writer-explorer sub-agent. The task is to have it use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then tell the user what it reported.\n\nLet me first explore"}}
+
+data: {"id":"evt_fake0011","created":1795500148919,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":471,"output":11,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0012","created":1795500148919,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Replace beta with delta in b.txt"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795500148966,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" the working"}}
+
+data: {"id":"evt_fake0014","created":1795500149081,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" directory to find b.txt. Actually, the user said \"delegate to your writer-explorer sub-agent\""}}
+
+data: {"id":"evt_fake0015","created":1795500149205,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" - so I should launch the subagent with the task. Let me do that directly.\n\nI need to know"}}
+
+data: {"id":"evt_fake0016","created":1795500149323,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" the file path. Let me first check the directory. Actually, the subagent can"}}
+
+data: {"id":"evt_fake0017","created":1795500149482,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" find it. But let me just delegate with instructions"}}
+
+data: {"id":"evt_fake0018","created":1795500149603,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":".\n\nLet me launch the subagent."}}
+
+data: {"id":"evt_fake0019","created":1795500149622,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"subagent"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795500150385,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to delegate to a writer-explorer sub-agent. The task is to have it use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then tell the user what it reported.\n\nLet me first explore the working directory to find b.txt. Actually, the user said \"delegate to your writer-explorer sub-agent\" - so I should launch the subagent with the task. Let me do that directly.\n\nI need to know the file path. Let me first check the directory. Actually, the subagent can find it. But let me just delegate with instructions.\n\nLet me launch the subagent.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795500150388,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"agent\": \"writer-explorer\", \"description\": \"Edit b.txt beta->delta\", \"prompt\": \"In the current working directory, find the file named b.txt. Use your edit tool to replace the text \\\"beta\\\" with \\\"delta\\\" in that file. You must try to use the edit tool. Report what happened (success or failure and any error message).\"}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795500150390,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"agent":"writer-explorer","description":"Edit b.txt beta->delta","prompt":"In the current working directory, find the file named b.txt. Use your edit tool to replace the text \"beta\" with \"delta\" in that file. You must try to use the edit tool. Report what happened (success or failure and any error message)."},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795500150392,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795500150397,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","slug":"hidden-panda","version":"2.4.0","projectID":"prj_fake0001","parentID":"ses_fake0001","location":{"directory":"/vault"},"subpath":"","title":"Edit b.txt beta->delta","agent":"writer-explorer","permissions":[{"action":"*","resource":"*","effect":"ask"},{"action":"edit","resource":"*","effect":"allow"},{"action":"read","resource":"*","effect":"allow"},{"action":"glob","resource":"*","effect":"allow"},{"action":"grep","resource":"*","effect":"allow"},{"action":"subagent","resource":"*","effect":"allow"}],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0002","seq":0,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795500150398,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"sessionID":"ses_fake0002","status":"running"}}}
+
+data: {"id":"evt_fake0026","created":1795500150399,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0003","sessionID":"ses_fake0002","item":{"type":"user","payload":{"text":"You are a subagent spawned by another session.\nIn the current working directory, find the file named b.txt. Use your edit tool to replace the text \"beta\" with \"delta\" in that file. You must try to use the edit tool. Report what happened (success or failure and any error message)."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0002","seq":1,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795500150400,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"running","title":"Edit b.txt beta->delta","time":{"started":1795500150400},"childSessionID":"ses_fake0002","agent":"writer-explorer","description":"Edit b.txt beta->delta"}}}
+
+data: {"id":"evt_fake0028","created":1795500150401,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."}],"metadata":{"sessionID":"ses_fake0002","status":"running","truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0029","created":1795500150402,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3798,"output":86,"reasoning":135,"cache":{"read":2752,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795500150403,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4269,"output":97,"reasoning":135,"cache":{"read":2752,"write":0}}}}
+
+data: {"id":"evt_fake0031","created":1795500150410,"type":"session.execution.started","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":2,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795500150413,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0002","seq":3,"version":2}}
+
+data: {"id":"evt_fake0033","created":1795500150413,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","inboxID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0002","seq":4,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795500150835,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795500150409},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795500150836,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0036","created":1795500150837,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500150939,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"The subagent is running. I should wait for the background result. The"}}
+
+data: {"id":"evt_fake0038","created":1795500150959,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"writer-explorer","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0005","started":1795500150416},"durable":{"aggregateID":"ses_fake0002","seq":5,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795500150961,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0002","seq":6,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795500150962,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":7,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795500151064,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","ordinal":0,"delta":"The user wants me to find a file named b.txt in the current working directory, then"}}
+
+data: {"id":"evt_fake0042","created":1795500151086,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":" instructions"}}
+
+data: {"id":"evt_fake0043","created":1795500151106,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":" say not to poll. I'll end my response briefly."}}
+
+data: {"id":"evt_fake0044","created":1795500151106,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795500151177,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" use the edit tool to replace \"beta\" with \"delta\" in that file. Let me first look for the file."}}
+
+data: {"id":"evt_fake0046","created":1795500151195,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","id":"call-fake-0002","name":"glob"},"durable":{"aggregateID":"ses_fake0002","seq":8,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795500151209,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"I've launched the writer"}}
+
+data: {"id":"evt_fake0048","created":1795500151236,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","ordinal":0,"text":"The user wants me to find a file named b.txt in the current working directory, then use the edit tool to replace \"beta\" with \"delta\" in that file. Let me first look for the file.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":9,"version":1}}
+
+data: {"id":"evt_fake0049","created":1795500151238,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","id":"call-fake-0002","text":"{\"pattern\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":10,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795500151239,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","id":"call-fake-0002","input":{"pattern":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":11,"version":1}}
+
+data: {"id":"evt_fake0051","created":1795500151240,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0002","seq":12,"version":1}}
+
+data: {"id":"evt_fake0052","created":1795500151252,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","id":"call-fake-0002","content":[{"type":"text","text":"/vault/b.txt"}],"metadata":{"count":1,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":13,"version":2}}
+
+data: {"id":"evt_fake0053","created":1795500151252,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0005","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":6235,"output":16,"reasoning":49,"cache":{"read":0,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":14,"version":1}}
+
+data: {"id":"evt_fake0054","created":1795500151253,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6235,"output":16,"reasoning":49,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0055","created":1795500151568,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"-explorer sub-agent to replace \""}}
+
+data: {"id":"evt_fake0056","created":1795500151651,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"The subagent is running. I should wait for the background result. The instructions say not to poll. I'll end my response briefly.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0057","created":1795500151654,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"beta\" with \"delta\" in b.txt using its edit tool. Waiting for its report."}}
+
+data: {"id":"evt_fake0058","created":1795500151654,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"I've launched the writer-explorer sub-agent to replace \"beta\" with \"delta\" in b.txt using its edit tool. Waiting for its report."},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0059","created":1795500151656,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0060","created":1795500151657,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"stop","rawFinish":"stop","tokens":{"input":379,"output":31,"reasoning":38,"cache":{"read":6528,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0061","created":1795500151658,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4648,"output":128,"reasoning":173,"cache":{"read":9280,"write":0}}}}
+
+data: {"id":"evt_fake0062","created":1795500151661,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+
+data: {"id":"evt_fake0063","created":1795500151715,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"writer-explorer","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795500151257},"durable":{"aggregateID":"ses_fake0002","seq":15,"version":1}}
+
+data: {"id":"evt_fake0064","created":1795500151717,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0002","seq":16,"version":1}}
+
+data: {"id":"evt_fake0065","created":1795500151718,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":17,"version":1}}
+
+data: {"id":"evt_fake0066","created":1795500151822,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"Found the file at /tmp/opencode"}}
+
+data: {"id":"evt_fake0067","created":1795500151935,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"riter-computer/60ac003b-646c-4962-af90-f449c6cb"}}
+
+data: {"id":"evt_fake0068","created":1795500152050,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"ef84/vault/b.txt. Now let me read it to confirm"}}
+
+data: {"id":"evt_fake0069","created":1795500152152,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" contents, then edit."}}
+
+data: {"id":"evt_fake0070","created":1795500152152,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","name":"read"},"durable":{"aggregateID":"ses_fake0002","seq":18,"version":1}}
+
+data: {"id":"evt_fake0071","created":1795500152392,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","ordinal":0,"text":"Found the file at /vault/b.txt. Now let me read it to confirm contents, then edit.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":19,"version":1}}
+
+data: {"id":"evt_fake0072","created":1795500152393,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","text":"{\"path\": \"/vault/b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":20,"version":1}}
+
+data: {"id":"evt_fake0073","created":1795500152393,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","input":{"path":"/vault/b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":21,"version":1}}
+
+data: {"id":"evt_fake0074","created":1795500152394,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0002","seq":22,"version":1}}
+
+data: {"id":"evt_fake0075","created":1795500152396,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","id":"call-fake-0003","content":[{"type":"text","text":"Read file /vault/b.txt, lines 1-1\n1: beta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":23,"version":2}}
+
+data: {"id":"evt_fake0076","created":1795500152396,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0006","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3628,"output":81,"reasoning":94,"cache":{"read":2752,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":24,"version":1}}
+
+data: {"id":"evt_fake0077","created":1795500152397,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":9863,"output":97,"reasoning":143,"cache":{"read":2752,"write":0}}}}
+
+data: {"id":"evt_fake0078","created":1795500152690,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"writer-explorer","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0007","started":1795500152402},"durable":{"aggregateID":"ses_fake0002","seq":25,"version":1}}
+
+data: {"id":"evt_fake0079","created":1795500152693,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":26,"version":1}}
+
+data: {"id":"evt_fake0080","created":1795500152694,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":27,"version":1}}
+
+data: {"id":"evt_fake0081","created":1795500152795,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":"The file contains \"beta\". Now use edit tool to replace \"beta\" with \"delta\"."}}
+
+data: {"id":"evt_fake0082","created":1795500152803,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","name":"edit"},"durable":{"aggregateID":"ses_fake0002","seq":28,"version":1}}
+
+data: {"id":"evt_fake0083","created":1795500153023,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"text":"The file contains \"beta\". Now use edit tool to replace \"beta\" with \"delta\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":29,"version":1}}
+
+data: {"id":"evt_fake0084","created":1795500153025,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","text":"{\"newString\": \"delta\", \"oldString\": \"beta\", \"path\": \"/vault/b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":30,"version":1}}
+
+data: {"id":"evt_fake0085","created":1795500153027,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","input":{"newString":"delta","oldString":"beta","path":"/vault/b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":31,"version":1}}
+
+data: {"id":"evt_fake0086","created":1795500153029,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":32,"version":1}}
+
+data: {"id":"evt_fake0087","created":1795500153034,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","content":[{"type":"text","text":"Edited b.txt (1 replacement)"}],"metadata":{"files":[{"file":"b.txt","patch":"Index: b.txt\n===================================================================\n--- b.txt\n+++ b.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-beta\n+delta\n","status":"modified","additions":1,"deletions":1}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":33,"version":2}}
+
+data: {"id":"evt_fake0088","created":1795500153036,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":440,"output":95,"reasoning":27,"cache":{"read":6208,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":34,"version":1}}
+
+data: {"id":"evt_fake0089","created":1795500153036,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":10303,"output":192,"reasoning":170,"cache":{"read":8960,"write":0}}}}
+
+data: {"id":"evt_fake0090","created":1795500153435,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","agent":"writer-explorer","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0008","started":1795500153045},"durable":{"aggregateID":"ses_fake0002","seq":35,"version":1}}
+
+data: {"id":"evt_fake0091","created":1795500153437,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":36,"version":1}}
+
+data: {"id":"evt_fake0092","created":1795500153438,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":37,"version":1}}
+
+data: {"id":"evt_fake0093","created":1795500153541,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"The edit succeeded. Report to"}}
+
+data: {"id":"evt_fake0094","created":1795500153562,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":" user."}}
+
+data: {"id":"evt_fake0095","created":1795500153562,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0},"durable":{"aggregateID":"ses_fake0002","seq":38,"version":1}}
+
+data: {"id":"evt_fake0096","created":1795500153665,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"Found `b.txt` at `/tmp/opencode"}}
+
+data: {"id":"evt_fake0097","created":1795500153772,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"-computer/vault"}}
+
+data: {"id":"evt_fake0098","created":1795500153895,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"2/b.txt`. It contained `beta`.\n\nUsed the edit tool to replace `"}}
+
+data: {"id":"evt_fake0099","created":1795500154013,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"beta` with `delta`. Result: **success** \u2014 \"Edited b.txt (1 replacement)\". No errors"}}
+
+data: {"id":"evt_fake0100","created":1795500154015,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"text":"The edit succeeded. Report to user.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":39,"version":1}}
+
+data: {"id":"evt_fake0101","created":1795500154016,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"."}}
+
+data: {"id":"evt_fake0102","created":1795500154016,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"text":"Found `b.txt` at `/vault/b.txt`. It contained `beta`.\n\nUsed the edit tool to replace `beta` with `delta`. Result: **success** \u2014 \"Edited b.txt (1 replacement)\". No errors."},"durable":{"aggregateID":"ses_fake0002","seq":40,"version":1}}
+
+data: {"id":"evt_fake0103","created":1795500154016,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":41,"version":1}}
+
+data: {"id":"evt_fake0104","created":1795500154017,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","finish":"stop","rawFinish":"stop","tokens":{"input":452,"output":114,"reasoning":16,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":42,"version":1}}
+
+data: {"id":"evt_fake0105","created":1795500154018,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":10755,"output":306,"reasoning":186,"cache":{"read":15296,"write":0}}}}
+
+data: {"id":"evt_fake0106","created":1795500154019,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":43,"version":1}}
+
+data: {"id":"evt_fake0107","created":1795500154020,"type":"session.inbox.enqueued","data":{"inboxID":"msg_fake0009","sessionID":"ses_fake0001","item":{"type":"synthetic","payload":{"text":"<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"completed\" description=\"Edit b.txt beta->delta\">\nFound `b.txt` at `/vault/b.txt`. It contained `beta`.\n\nUsed the edit tool to replace `beta` with `delta`. Result: **success** \u2014 \"Edited b.txt (1 replacement)\". No errors.\n</background-result>","description":"Edit b.txt beta->delta","metadata":{"source":"subagent","childID":"ses_fake0002","agent":"writer-explorer","state":"completed"}},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0108","created":1795500154021,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"completed","title":"Edit b.txt beta->delta","time":{"started":1795500150400,"completed":1795500154021},"childSessionID":"ses_fake0002","agent":"writer-explorer","description":"Edit b.txt beta->delta"}}}
+
+data: {"id":"evt_fake0109","created":1795500154021,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0110","created":1795500154023,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0009"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0111","created":1795500154586,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0010","started":1795500154026},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0112","created":1795500154587,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010"},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0113","created":1795500154587,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0114","created":1795500154690,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"The subagent reported success. I'll relay that"}}
+
+data: {"id":"evt_fake0115","created":1795500154703,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"."}}
+
+data: {"id":"evt_fake0116","created":1795500154703,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0117","created":1795500154806,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"The writer-explorer sub-agent reported success: it found `b.txt` at `/"}}
+
+data: {"id":"evt_fake0118","created":1795500154925,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"private/tmp/claude-502/-Users-user-repos-writer-computer/60ac003b-646c-4962-af90-f44"}}
+
+data: {"id":"evt_fake0119","created":1795500155046,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"9c6cbef84/vault/b.txt` (which contained `beta`), used the edit tool to replace `beta`"}}
+
+data: {"id":"evt_fake0120","created":1795500155112,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"text":"The subagent reported success. I'll relay that.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0121","created":1795500155113,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"delta":" with `delta`, and got the result \"Edited b.txt (1 replacement)\" with no errors."}}
+
+data: {"id":"evt_fake0122","created":1795500155113,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","ordinal":0,"text":"The writer-explorer sub-agent reported success: it found `b.txt` at `/vault/b.txt` (which contained `beta`), used the edit tool to replace `beta` with `delta`, and got the result \"Edited b.txt (1 replacement)\" with no errors."},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0123","created":1795500155113,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010"},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":1}}
+
+data: {"id":"evt_fake0124","created":1795500155114,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0010","finish":"stop","rawFinish":"stop","tokens":{"input":4392,"output":131,"reasoning":13,"cache":{"read":2752,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":36,"version":1}}
+
+data: {"id":"evt_fake0125","created":1795500155114,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":9040,"output":259,"reasoning":186,"cache":{"read":12032,"write":0}}}}
+
+data: {"id":"evt_fake0126","created":1795500155115,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":37,"version":1}}
+

@@ -1,0 +1,90 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795496085278,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"tidy-mountain","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795496085747,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Run `echo one` with your shell tool and `echo two` with your shell tool, both in the same step. Then say what happened."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795496085748,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795496085753,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795496085753,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795496086230,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795496085760},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795496086231,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795496086232,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795496086346,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to run two shell commands in the same step. I can make both calls"}}
+
+data: {"id":"evt_fake0011","created":1795496086347,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" in parallel."}}
+
+data: {"id":"evt_fake0012","created":1795496086347,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795496086384,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795496086392,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to run two shell commands in the same step. I can make both calls in parallel.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795496086393,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"command\": \"echo one\"}"},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795496086394,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"command":"echo one"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795496086394,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","text":"{\"command\": \"echo two\"}"},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795496086398,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","input":{"command":"echo two"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795496086399,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795496086400,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"shell","resources":["echo one"],"save":["echo *"],"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0001"}}}
+
+data: {"id":"evt_fake0021","created":1795496086401,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0002","sessionID":"ses_fake0001","action":"shell","resources":["echo two"],"save":["echo *"],"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0002"}}}
+
+data: {"id":"evt_fake0022","created":1795496086591,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.05e-05,"tokens":{"input":465,"output":8,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0023","created":1795496086592,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Shell echo commands"},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795496088687,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"reject"}}
+
+data: {"id":"evt_fake0025","created":1795496088689,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","error":{"type":"permission.rejected","message":"Writer says: ask the user in plain words first"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":2}}
+
+data: {"id":"evt_fake0026","created":1795496088690,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0002","reply":"reject"}}
+
+data: {"id":"evt_fake0027","created":1795496088691,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0002","error":{"type":"permission.rejected","message":"Writer says: ask the user in plain words first"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":2}}
+
+data: {"id":"evt_fake0028","created":1795496088691,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3432,"output":38,"reasoning":24,"cache":{"read":2944,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795496088692,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.05e-05,"tokens":{"input":3897,"output":46,"reasoning":24,"cache":{"read":2944,"write":0}}}}
+
+data: {"id":"evt_fake0030","created":1795496089103,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795496088701},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795496089104,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795496089105,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0033","created":1795496089212,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Both commands were rejected with \"permission.rejected\" and message"}}
+
+data: {"id":"evt_fake0034","created":1795496089315,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" \"Writer says: ask the user in plain words first\". This means I need to ask the user in plain words first before running shell commands. Let me just tell the user what happened and"}}
+
+data: {"id":"evt_fake0035","created":1795496089393,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" ask if they want me to proceed."}}
+
+data: {"id":"evt_fake0036","created":1795496089393,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795496089498,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Both shell commands were rejected with a permission error: \"Writer says: ask the user in plain words first.\" It appears the environment requires me to ask you in plain words"}}
+
+data: {"id":"evt_fake0038","created":1795496089630,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" before running shell commands.\n\nSo, to clarify: would you like me to run `echo one` and `echo two` using the shell tool? If so, I"}}
+
+data: {"id":"evt_fake0039","created":1795496089641,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Both commands were rejected with \"permission.rejected\" and message \"Writer says: ask the user in plain words first\". This means I need to ask the user in plain words first before running shell commands. Let me just tell the user what happened and ask if they want me to proceed.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795496089644,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"'ll retry both commands."}}
+
+data: {"id":"evt_fake0041","created":1795496089644,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Both shell commands were rejected with a permission error: \"Writer says: ask the user in plain words first.\" It appears the environment requires me to ask you in plain words before running shell commands.\n\nSo, to clarify: would you like me to run `echo one` and `echo two` using the shell tool? If so, I'll retry both commands."},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795496089646,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0043","created":1795496089648,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"stop","rawFinish":"stop","tokens":{"input":172,"output":74,"reasoning":67,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795496089650,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.05e-05,"tokens":{"input":4069,"output":120,"reasoning":91,"cache":{"read":9280,"write":0}}}}
+
+data: {"id":"evt_fake0045","created":1795496089652,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+

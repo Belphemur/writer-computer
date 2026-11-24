@@ -1,0 +1,96 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500167479,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"hidden-squid","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","agent":"w-ask","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500167482,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your edit tool to replace alpha by gamma in a.txt. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500167483,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500167489,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500167489,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500168133,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500167495},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500168136,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500168137,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500168240,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":452,"output":11,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0011","created":1795500168240,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Replace alpha with gamma in a.txt"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795500168241,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to replace \"alpha\" with \"gamma\" in a.txt"}}
+
+data: {"id":"evt_fake0013","created":1795500168328,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":". Let me first check the file exists and read it."}}
+
+data: {"id":"evt_fake0014","created":1795500168328,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795500168345,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to replace \"alpha\" with \"gamma\" in a.txt. Let me first check the file exists and read it.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500168346,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795500168347,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795500168348,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795500168351,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"Read file a.txt, lines 1-1\n1: alpha"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0020","created":1795500168352,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3673,"output":14,"reasoning":35,"cache":{"read":2688,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795500168353,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":4125,"output":25,"reasoning":35,"cache":{"read":2688,"write":0}}}}
+
+data: {"id":"evt_fake0022","created":1795500168681,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500168360},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795500168684,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795500168686,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795500168789,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\". I'll use edit"}}
+
+data: {"id":"evt_fake0026","created":1795500168832,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":" tool."}}
+
+data: {"id":"evt_fake0027","created":1795500168832,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","name":"edit"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500168880,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The file contains \"alpha\". I need to replace \"alpha\" with \"gamma\". I'll use edit tool.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500168883,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","text":"{\"newString\": \"gamma\", \"oldString\": \"alpha\", \"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795500168884,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","input":{"newString":"gamma","oldString":"alpha","path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795500168886,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795500168890,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"edit","resources":["a.txt"],"save":["*"],"metadata":{"files":[{"file":"a.txt","patch":"Index: a.txt\n===================================================================\n--- a.txt\n+++ a.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-alpha\n+gamma\n","status":"modified","additions":1,"deletions":1}]},"source":{"type":"tool","messageID":"msg_fake0003","id":"call-fake-0002"}}}
+
+data: {"id":"evt_fake0033","created":1795500169010,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"once"}}
+
+data: {"id":"evt_fake0034","created":1795500169012,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","content":[{"type":"text","text":"Edited a.txt (1 replacement)"}],"metadata":{"files":[{"file":"a.txt","patch":"Index: a.txt\n===================================================================\n--- a.txt\n+++ a.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-alpha\n+gamma\n","status":"modified","additions":1,"deletions":1}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":2}}
+
+data: {"id":"evt_fake0035","created":1795500169014,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":99,"output":28,"reasoning":31,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0036","created":1795500169015,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":4224,"output":53,"reasoning":66,"cache":{"read":9024,"write":0}}}}
+
+data: {"id":"evt_fake0037","created":1795500169656,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795500169022},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795500169660,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795500169661,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795500169670,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"Done."}}
+
+data: {"id":"evt_fake0041","created":1795500169670,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795500169671,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"Done.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0043","created":1795500169672,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"done."}}
+
+data: {"id":"evt_fake0044","created":1795500169672,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"done."},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795500169673,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0046","created":1795500169674,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"stop","rawFinish":"stop","tokens":{"input":112,"output":6,"reasoning":8,"cache":{"read":6400,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795500169675,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.07e-05,"tokens":{"input":4336,"output":59,"reasoning":74,"cache":{"read":15424,"write":0}}}}
+
+data: {"id":"evt_fake0048","created":1795500169677,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":1}}
+

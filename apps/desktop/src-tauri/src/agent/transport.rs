@@ -60,8 +60,9 @@ pub struct Phrases {
 /// How a message reaches the backend, and what it is to the running turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Delivery<'a> {
-    /// Starts a turn (the chat was idle); no receipt to track.
-    Start,
+    /// Starts a turn (the chat was idle); `receipt` is its id, kept by the `Session` through a
+    /// replay (a backend that tracks items by id uses it; Claude ignores it).
+    Start { receipt: &'a str },
     /// Cuts the running step and starts this message's turn; `receipt` is its tracking id.
     Steer { receipt: &'a str },
     /// Joins the running turn at the next boundary, or runs after it; `receipt` is its tracking id.
@@ -93,10 +94,16 @@ pub struct Receipt {
 /// The answer to a permission request.
 #[derive(Debug, Clone, Copy)]
 pub enum PermissionReply<'a> {
-    /// Run it: the call's own input, and what to persist (`permission_update::updated_permissions`).
+    /// Run it: the call's own input, and what the user chose to keep. `suggestions` are the
+    /// backend's own proposals for this request; each transport turns the neutral choice
+    /// (`persist`, the ticked `rules`) into its backend's persistence (Claude: the rebuilt
+    /// `updatedPermissions` of `permission_update::updated_permissions`; OpenCode: `always`, or
+    /// rules of the session).
     Allow {
         input: &'a Value,
-        updated: &'a [Value],
+        persist: Option<PermissionPersist>,
+        rules: Option<&'a [String]>,
+        suggestions: &'a [Value],
     },
     Deny {
         message: &'a str,

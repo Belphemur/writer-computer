@@ -22,6 +22,7 @@ use super::claude_adapter::ClaudeAdapter;
 use super::events::*;
 use super::files::{FileKind, FilePart};
 use super::mcp_wiring::{Launch, McpWiring, ToolsAdapter};
+use super::sub_tracker::subagent_step;
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -409,19 +410,12 @@ impl ClaudeStreamMapper {
         let Some(parent) = Self::parent_tool(v) else {
             return;
         };
-        out.events.push(AgentEvent::SubagentMessage {
-            message_id: message_id.to_string(),
-            parent_tool_call_id: parent.clone(),
-        });
-        let Some(model) = msg.and_then(message_model) else {
-            return;
-        };
-        if self.sub_models.get(&parent).map(String::as_str) != Some(model) {
-            self.sub_models.insert(parent.clone(), model.to_string());
-            out.events.push(AgentEvent::SubagentModel {
-                tool_call_id: parent,
-                model: model.to_string(),
-            });
+        let model = msg.and_then(message_model);
+        let mut last = self.sub_models.get(&parent).cloned();
+        out.events
+            .extend(subagent_step(message_id, &parent, model, &mut last));
+        if let Some(last) = last {
+            self.sub_models.insert(parent, last);
         }
     }
 
@@ -1455,15 +1449,7 @@ mod tests {
     }
 
     fn types(events: &[AgentEvent]) -> Vec<String> {
-        events
-            .iter()
-            .map(|e| {
-                serde_json::to_value(e).unwrap()["type"]
-                    .as_str()
-                    .unwrap()
-                    .to_string()
-            })
-            .collect()
+        crate::agent::golden_tests::kinds(events)
     }
 
     /// The golden files are what the TypeScript side reads (`features/agent/tests/agent-events.test.ts`).
@@ -1532,15 +1518,7 @@ mod tests {
         ] {
             let (events, _) = run(name);
             let actual = serde_json::to_string_pretty(&events).unwrap() + "\n";
-            let path = golden_dir().join(format!("{name}.events.json"));
-            if std::env::var_os("WRITER_UPDATE_GOLDEN").is_some() {
-                std::fs::create_dir_all(golden_dir()).unwrap();
-                std::fs::write(&path, &actual).unwrap();
-            }
-            let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-                panic!("{}: {e} (run with WRITER_UPDATE_GOLDEN=1)", path.display())
-            });
-            assert_eq!(actual, expected, "golden drift in {name}");
+            crate::agent::golden_tests::check(&golden_dir(), name, &actual);
         }
     }
 

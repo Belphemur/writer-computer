@@ -1,0 +1,247 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to run two shell commands in the same step. I can make both calls",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " in parallel.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to run two shell commands in the same step. I can make both calls in parallel.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "command": "echo one"
+      }
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "command": "echo two"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0001",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "echo one"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "echo *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0002",
+      "toolCallId": "call-fake-0002",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "echo two"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "echo *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "Writer says: ask the user in plain words first",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0002",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "Writer says: ask the user in plain words first",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3432,
+      "outputTokens": 62,
+      "cacheReadTokens": 2944,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Both commands were rejected with \"permission.rejected\" and message",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " \"Writer says: ask the user in plain words first\". This means I need to ask the user in plain words first before running shell commands. Let me just tell the user what happened and",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " ask if they want me to proceed.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "Both shell commands were rejected with a permission error: \"Writer says: ask the user in plain words first.\" It appears the environment requires me to ask you in plain words"
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": " before running shell commands.\n\nSo, to clarify: would you like me to run `echo one` and `echo two` using the shell tool? If so, I"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Both commands were rejected with \"permission.rejected\" and message \"Writer says: ask the user in plain words first\". This means I need to ask the user in plain words first before running shell commands. Let me just tell the user what happened and ask if they want me to proceed.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "'ll retry both commands."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "Both shell commands were rejected with a permission error: \"Writer says: ask the user in plain words first.\" It appears the environment requires me to ask you in plain words before running shell commands.\n\nSo, to clarify: would you like me to run `echo one` and `echo two` using the shell tool? If so, I'll retry both commands."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 172,
+      "outputTokens": 141,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 3604,
+      "outputTokens": 203,
+      "cacheReadTokens": 9280,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 3904,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

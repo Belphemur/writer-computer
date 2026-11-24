@@ -52,6 +52,32 @@ struct Launch {
     revived: bool,
 }
 
+/// What one step of a sub-agent says to the pane, whatever the backend: the message it belongs
+/// to under its launch call, then its model when that changed since the last step of the same
+/// run (`last_model` is that run's last reported one; the backend skips placeholder models before
+/// asking). One place for both mappers.
+pub fn subagent_step(
+    message_id: &str,
+    parent_tool_call_id: &str,
+    model: Option<&str>,
+    last_model: &mut Option<String>,
+) -> Vec<AgentEvent> {
+    let mut out = vec![AgentEvent::SubagentMessage {
+        message_id: message_id.to_string(),
+        parent_tool_call_id: parent_tool_call_id.to_string(),
+    }];
+    if let Some(model) = model {
+        if last_model.as_deref() != Some(model) {
+            *last_model = Some(model.to_string());
+            out.push(AgentEvent::SubagentModel {
+                tool_call_id: parent_tool_call_id.to_string(),
+                model: model.to_string(),
+            });
+        }
+    }
+    out
+}
+
 pub struct SubTracker {
     /// The chat's backend's tools: which call launches a sub-agent or hands a report back.
     tools: &'static ToolTable,

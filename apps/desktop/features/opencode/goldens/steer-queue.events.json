@@ -1,0 +1,183 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to run `sleep 6` and then reply with \"done\". Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to run `sleep 6` and then reply with \"done\". Let me do that.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "command": "sleep 6"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "(no output)",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3355,
+      "outputTokens": 46,
+      "cacheReadTokens": 3008,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to reply with \"done\" but in ALL CAPS. So",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " \"DONE\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to reply with \"done\" but in ALL CAPS. So \"DONE\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "DONE"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "text": "DONE"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3817,
+      "outputTokens": 31,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to say the word \"apple\" afterwards. But wait - the previous instruction said to write in ALL CAPS. Let me re-read.\n\n\"STEER: when you answer, write it in ALL CAPS.\" - This seems to be a steering instruction for when I answer.\n\n\"QUEUED-1: afterwards say the word apple.\" - This is a queued instruction to say the word apple afterwards.\n\nSo I should say \"APPLE\" (in all caps due to the steer instruction).",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to say the word \"apple\" afterwards. But wait - the previous instruction said to write in ALL CAPS. Let me re-read.\n\n\"STEER: when you answer, write it in ALL CAPS.\" - This seems to be a steering instruction for when I answer.\n\n\"QUEUED-1: afterwards say the word apple.\" - This is a queued instruction to say the word apple afterwards.\n\nSo I should say \"APPLE\" (in all caps due to the steer instruction).",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "text": "APPLE"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "text": "APPLE"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 89,
+      "outputTokens": 113,
+      "cacheReadTokens": 6400,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7261,
+      "outputTokens": 190,
+      "cacheReadTokens": 12032,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 8438,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

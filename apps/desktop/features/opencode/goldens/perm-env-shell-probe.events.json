@@ -1,0 +1,177 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to run exactly that command. Let me do it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to run exactly that command. Let me do it.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "command": "env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0001",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "env *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "grep *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "sed *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "sort *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "allowed"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "OPENCODE_CONFIG=<redacted>\nOPENCODE_DISABLE_AUTOUPDATE=<redacted>\nOPENCODE_DISABLE_CLAUDE_CODE=<redacted>\nOPENCODE_DISABLE_PROJECT_CONFIG=<redacted>\nOPENCODE_SERVER_PASSWORD=<redacted>\nOPENCODE_SESSION_ID=<redacted>\nOPENCODE_TERMINAL=<redacted>\nXDG_CONFIG_HOME=<redacted>\n",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3382,
+      "outputTokens": 64,
+      "cacheReadTokens": 3008,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user asked to show the output, nothing else.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "```\nOPENCODE_CONFIG=<redacted>\nOPENCODE_DISABLE_AUTOUPDATE=<redacted>\nOPENCODE_DISABLE_CLAUDE_CODE=<redacted>\nOPENCODE_DISABLE_PROJECT_CONFIG=<redacted>\nOPENCODE_SERVER_PASSWORD="
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user asked to show the output, nothing else.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "<redacted>\nOPENCODE_SESSION_ID=<redacted>\nOPENCODE_TERMINAL=<redacted>\nXDG_CONFIG_HOME=<redacted>\n```"
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "```\nOPENCODE_CONFIG=<redacted>\nOPENCODE_DISABLE_AUTOUPDATE=<redacted>\nOPENCODE_DISABLE_CLAUDE_CODE=<redacted>\nOPENCODE_DISABLE_PROJECT_CONFIG=<redacted>\nOPENCODE_SERVER_PASSWORD=<redacted>\nOPENCODE_SESSION_ID=<redacted>\nOPENCODE_TERMINAL=<redacted>\nXDG_CONFIG_HOME=<redacted>\n```"
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3909,
+      "outputTokens": 92,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7291,
+      "outputTokens": 156,
+      "cacheReadTokens": 5632,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1735,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

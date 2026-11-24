@@ -1,0 +1,124 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795496076401,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"quiet-cactus","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795496077583,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Delegate to your writer-broken sub-agent: have it read notes.md. Then tell me what happened."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795496077584,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795496077591,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795496077592,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795496078062,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795496077600},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795496078063,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795496078064,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795496078166,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to delegate to the \"writer-broken\" sub-agent to have it read notes.md, then"}}
+
+data: {"id":"evt_fake0011","created":1795496078217,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" tell them what happened.\n\nLet me use the subagent tool."}}
+
+data: {"id":"evt_fake0012","created":1795496078217,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"subagent"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795496078364,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to delegate to the \"writer-broken\" sub-agent to have it read notes.md, then tell them what happened.\n\nLet me use the subagent tool.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795496078366,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"agent\": \"writer-broken\", \"description\": \"Read notes.md file\", \"prompt\": \"Please read the notes.md file in the working directory.\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795496078368,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"agent":"writer-broken","description":"Read notes.md file","prompt":"Please read the notes.md file in the working directory."},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795496078369,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795496078373,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","slug":"witty-garden","version":"2.4.0","projectID":"prj_fake0001","parentID":"ses_fake0001","location":{"directory":"/vault"},"subpath":"","title":"Read notes.md file","agent":"writer-broken","model":{"id":"fake-model","providerID":"fake-provider"}},"durable":{"aggregateID":"ses_fake0002","seq":0,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795496078374,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"sessionID":"ses_fake0002","status":"running"}}}
+
+data: {"id":"evt_fake0019","created":1795496078375,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0003","sessionID":"ses_fake0002","item":{"type":"user","payload":{"text":"You are a subagent spawned by another session.\nPlease read the notes.md file in the working directory."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0002","seq":1,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795496078376,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"running","title":"Read notes.md file","time":{"started":1795496078375},"childSessionID":"ses_fake0002","agent":"writer-broken","description":"Read notes.md file"}}}
+
+data: {"id":"evt_fake0021","created":1795496078376,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."}],"metadata":{"sessionID":"ses_fake0002","status":"running","truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":2}}
+
+data: {"id":"evt_fake0022","created":1795496078377,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3757,"output":46,"reasoning":38,"cache":{"read":2624,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795496078378,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0,"tokens":{"input":3757,"output":46,"reasoning":38,"cache":{"read":2624,"write":0}}}}
+
+data: {"id":"evt_fake0024","created":1795496078384,"type":"session.execution.started","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":2,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795496078387,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0002","seq":3,"version":2}}
+
+data: {"id":"evt_fake0026","created":1795496078387,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0002","inboxID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0002","seq":4,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795496078389,"type":"session.execution.failed","data":{"sessionID":"ses_fake0002","error":{"type":"provider.no-route","message":"Model unavailable: fakeprovider/fakemodel"}},"durable":{"aggregateID":"ses_fake0002","seq":5,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795496078390,"type":"session.inbox.enqueued","data":{"inboxID":"msg_fake0004","sessionID":"ses_fake0001","item":{"type":"synthetic","payload":{"text":"<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"error\" description=\"Read notes.md file\">\nModel unavailable: fakeprovider/fakemodel\n</background-result>","description":"Read notes.md file","metadata":{"source":"subagent","childID":"ses_fake0002","agent":"writer-broken","state":"error"}},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795496078391,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"error","title":"Read notes.md file","time":{"started":1795496078375,"completed":1795496078391},"childSessionID":"ses_fake0002","agent":"writer-broken","description":"Read notes.md file"}}}
+
+data: {"id":"evt_fake0030","created":1795496078942,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0005","started":1795496078383},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795496078944,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795496078945,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0033","created":1795496079008,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.06e-05,"tokens":{"input":4213,"output":56,"reasoning":38,"cache":{"read":2624,"write":0}}}}
+
+data: {"id":"evt_fake0034","created":1795496079008,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Writer sub-agent notes.md task"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795496079048,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":"The subagent is running in the background. I should wait for it to complete and report back. The instructions"}}
+
+data: {"id":"evt_fake0036","created":1795496080003,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" say not to poll. I'll end"}}
+
+data: {"id":"evt_fake0037","created":1795496080100,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" my response here and wait for the background result."}}
+
+data: {"id":"evt_fake0038","created":1795496080100,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795496080204,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":"I've delegated the task to the `writer-broken` sub-agent ("}}
+
+data: {"id":"evt_fake0040","created":1795496080320,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":"session `ses_fake0002`). It's running in the background"}}
+
+data: {"id":"evt_fake0041","created":1795496080372,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"text":"The subagent is running in the background. I should wait for it to complete and report back. The instructions say not to poll. I'll end my response here and wait for the background result.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795496080373,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"delta":" to read `notes.md`. I'll let you know what happens once it reports back."}}
+
+data: {"id":"evt_fake0043","created":1795496080374,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","ordinal":0,"text":"I've delegated the task to the `writer-broken` sub-agent (session `ses_fake0002`). It's running in the background to read `notes.md`. I'll let you know what happens once it reports back."},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795496080375,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795496080375,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0005","finish":"stop","rawFinish":"stop","tokens":{"input":266,"output":66,"reasoning":48,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+
+data: {"id":"evt_fake0046","created":1795496080376,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.06e-05,"tokens":{"input":4479,"output":122,"reasoning":86,"cache":{"read":8960,"write":0}}}}
+
+data: {"id":"evt_fake0047","created":1795496080380,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0048","created":1795496080724,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795496080385},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0049","created":1795496080726,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795496080727,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0051","created":1795496080829,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"The subagent failed with \"Model unavailable: fakeprovider/fakemodel\". This is because the writer-broken sub-agent's model is not"}}
+
+data: {"id":"evt_fake0052","created":1795496080920,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" available. I should report this to the user."}}
+
+data: {"id":"evt_fake0053","created":1795496080920,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0054","created":1795496081023,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"The sub-agent failed. It couldn't run because its model isn't available: `"}}
+
+data: {"id":"evt_fake0055","created":1795496081144,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"fakeprovider/fakemodel` is unavailable. So `notes.md` was never actually"}}
+
+data: {"id":"evt_fake0056","created":1795496081233,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"The subagent failed with \"Model unavailable: fakeprovider/fakemodel\". This is because the writer-broken sub-agent's model is not available. I should report this to the user.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0057","created":1795496081234,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":" read.\n\nWould you like me to read `notes.md` myself instead, or try a different approach?"}}
+
+data: {"id":"evt_fake0058","created":1795496081234,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"The sub-agent failed. It couldn't run because its model isn't available: `fakeprovider/fakemodel` is unavailable. So `notes.md` was never actually read.\n\nWould you like me to read `notes.md` myself instead, or try a different approach?"},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0059","created":1795496081235,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0060","created":1795496081236,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","finish":"stop","rawFinish":"stop","tokens":{"input":188,"output":57,"reasoning":46,"cache":{"read":6592,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0061","created":1795496081236,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.06e-05,"tokens":{"input":4667,"output":179,"reasoning":132,"cache":{"read":15552,"write":0}}}}
+
+data: {"id":"evt_fake0062","created":1795496081238,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":1}}
+

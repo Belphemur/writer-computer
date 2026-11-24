@@ -1,0 +1,148 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795496080851
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795496080208,
+     "firstToken": 1795496080636,
+     "streamed": 1795496080847,
+     "completed": 1795496080848
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The tool returned an error: \"The user prefers not to answer\". Let me tell the user exactly what was returned.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496080637,
+       "completed": 1795496080844
+      }
+     },
+     {
+      "type": "text",
+      "text": "The question tool returned exactly this:\n\n```\n{\"error\":{\"type\":\"tool.execution\",\"message\":\"The user prefers not to answer\"},\"content\":[]}\n```"
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 3503,
+     "output": 33,
+     "reasoning": 32,
+     "cache": {
+      "read": 3008,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795496079301,
+     "firstToken": 1795496079733,
+     "streamed": 1795496080013,
+     "completed": 1795496080202
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to use the question tool to ask about tabs vs spaces, then tell them exactly what the tool returned. Let me do that.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496079734,
+       "completed": 1795496080011
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "question",
+      "executed": false,
+      "state": {
+       "status": "error",
+       "input": {
+        "questions": [
+         {
+          "question": "Should I use tabs or spaces for indentation?",
+          "header": "Indentation",
+          "options": [
+           {
+            "label": "tabs",
+            "description": "Use tab characters for indentation"
+           },
+           {
+            "label": "spaces",
+            "description": "Use space characters for indentation"
+           }
+          ]
+         }
+        ]
+       },
+       "error": {
+        "type": "tool.execution",
+        "message": "The user prefers not to answer"
+       }
+      },
+      "time": {
+       "created": 1795496079813,
+       "ran": 1795496080012,
+       "completed": 1795496080200
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3748,
+     "output": 72,
+     "reasoning": 36,
+     "cache": {
+      "read": 2624,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795496079296
+    },
+    "text": "Use your question tool to ask me whether to use tabs or spaces (options tabs, spaces). Then tell me exactly what the tool returned to you.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

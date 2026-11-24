@@ -1,0 +1,100 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795495739520,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"playful-garden","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795495739525,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your glob tool to list the markdown files, then your grep tool to find the word cat in them. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795495739526,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795495739529,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795495739530,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795495739961,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795495739536},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795495739964,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795495739966,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795495740068,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to use glob to list markdown files, then grep to find the word \"cat\" in them, then say done. Let me do"}}
+
+data: {"id":"evt_fake0011","created":1795495740170,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.11e-05,"tokens":{"input":461,"output":10,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0012","created":1795495740171,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Markdown files containing \u201ccat\u201d"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795495740179,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" this step by step.\n\nFirst, glob for markdown files. Then grep for \"cat\". Then say done.\n\nLet me start"}}
+
+data: {"id":"evt_fake0014","created":1795495740198,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" with glob."}}
+
+data: {"id":"evt_fake0015","created":1795495740198,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"glob"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795495740247,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to use glob to list markdown files, then grep to find the word \"cat\" in them, then say done. Let me do this step by step.\n\nFirst, glob for markdown files. Then grep for \"cat\". Then say done.\n\nLet me start with glob.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795495740249,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"pattern\": \"**/*.md\"}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795495740250,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"pattern":"**/*.md"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795495740252,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795495740255,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"glob","resources":["**/*.md"],"save":["*"],"metadata":{"root":"."},"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0001"}}}
+
+data: {"id":"evt_fake0021","created":1795495740444,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"once"}}
+
+data: {"id":"evt_fake0022","created":1795495740922,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"/vault/notes.md\n/vault/plan.md\n/vault/docs/todo.md"}],"metadata":{"count":3,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0023","created":1795495740923,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3740,"output":16,"reasoning":66,"cache":{"read":2624,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795495740924,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.11e-05,"tokens":{"input":4201,"output":26,"reasoning":66,"cache":{"read":2624,"write":0}}}}
+
+data: {"id":"evt_fake0025","created":1795495741264,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795495740932},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0026","created":1795495741266,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795495741266,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795495741341,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Now grep for \"cat\" in markdown files."}}
+
+data: {"id":"evt_fake0029","created":1795495741342,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","name":"grep"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795495741514,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Now grep for \"cat\" in markdown files.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795495741517,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","text":"{\"pattern\": \"cat\", \"path\": \"/vault\", \"include\": \"*.md\"}"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795495741519,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","input":{"pattern":"cat","path":"/vault","include":"*.md"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0033","created":1795495741521,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795495741524,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0002","sessionID":"ses_fake0001","action":"grep","resources":["cat"],"save":["*"],"metadata":{"root":".","path":"/vault","include":"*.md"},"source":{"type":"tool","messageID":"msg_fake0003","id":"call-fake-0002"}}}
+
+data: {"id":"evt_fake0035","created":1795495741663,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0002","reply":"once"}}
+
+data: {"id":"evt_fake0036","created":1795495741679,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","content":[{"type":"text","text":"Found 2 matches\n/vault/notes.md:\n  Line 3: I have a cat named Tom.\n\n\n/vault/docs/todo.md:\n  Line 1: - cat food\n"}],"metadata":{"matches":2,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":2}}
+
+data: {"id":"evt_fake0037","created":1795495741681,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":321,"output":89,"reasoning":17,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795495741681,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.11e-05,"tokens":{"input":4522,"output":115,"reasoning":83,"cache":{"read":8960,"write":0}}}}
+
+data: {"id":"evt_fake0039","created":1795495742060,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795495741689},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795495742064,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795495742065,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0042","created":1795495742066,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"Done."}}
+
+data: {"id":"evt_fake0043","created":1795495742066,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795495742067,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"Done.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795495742068,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"Done."}}
+
+data: {"id":"evt_fake0046","created":1795495742068,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"Done."},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795495742069,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0048","created":1795495742070,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"stop","rawFinish":"stop","tokens":{"input":278,"output":9,"reasoning":5,"cache":{"read":6656,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0049","created":1795495742070,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.11e-05,"tokens":{"input":4800,"output":124,"reasoning":88,"cache":{"read":15616,"write":0}}}}
+
+data: {"id":"evt_fake0050","created":1795495742072,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":1}}
+

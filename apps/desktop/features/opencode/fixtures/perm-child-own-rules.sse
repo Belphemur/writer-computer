@@ -1,0 +1,306 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500193429,"type":"session.created","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","slug":"happy-comet","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault-kid-ask"},"subpath":"","agent":"p-deny","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500194857,"type":"session.inbox.enqueued","location":{"directory":"/vault-kid-ask"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Delegate to your kid-ask sub-agent: have it use its edit tool (it must try) to replace beta by delta in b.txt. Then tell me what it reported."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500194859,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500194866,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500194866,"type":"session.inbox.delivered","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500195265,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500194874},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500195269,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500195270,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500195374,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to delegate to a kid-ask sub-agent. The task is to have it use its edit tool ("}}
+
+data: {"id":"evt_fake0011","created":1795500195479,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"it must try) to replace \"beta\" by \"delta\" in b.txt. Then tell what it reported.\n\nLet me first look at the environment to understand. Let me check files"}}
+
+data: {"id":"evt_fake0012","created":1795500195598,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":".\n\nActually, let me just spawn the subagent with instructions. But"}}
+
+data: {"id":"evt_fake0013","created":1795500195716,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" first maybe explore. The kid-ask subagent is described as \"child with its own ask\". Let me check what"}}
+
+data: {"id":"evt_fake0014","created":1795500195734,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":471,"output":11,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0015","created":1795500195734,"type":"session.renamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","title":"Replace beta with delta in b.txt"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500195836,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" tools it has. I don't know. Let me just delegate.\n\nLet"}}
+
+data: {"id":"evt_fake0017","created":1795500195855,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" me first find b.txt."}}
+
+data: {"id":"evt_fake0018","created":1795500195856,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"glob"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795500195907,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to delegate to a kid-ask sub-agent. The task is to have it use its edit tool (it must try) to replace \"beta\" by \"delta\" in b.txt. Then tell what it reported.\n\nLet me first look at the environment to understand. Let me check files.\n\nActually, let me just spawn the subagent with instructions. But first maybe explore. The kid-ask subagent is described as \"child with its own ask\". Let me check what tools it has. I don't know. Let me just delegate.\n\nLet me first find b.txt.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795500195909,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"pattern\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795500195910,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"pattern":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795500195911,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795500195931,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"/vault-kid-ask/b.txt"}],"metadata":{"count":1,"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0024","created":1795500195933,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":4007,"output":15,"reasoning":128,"cache":{"read":1856,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795500195934,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4478,"output":26,"reasoning":128,"cache":{"read":1856,"write":0}}}}
+
+data: {"id":"evt_fake0026","created":1795500196519,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500195940},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795500196520,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500196520,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500196553,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"Let me read b.txt."}}
+
+data: {"id":"evt_fake0030","created":1795500196553,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795500196587,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"Let me read b.txt.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795500196588,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","text":"{\"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0033","created":1795500196588,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","input":{"path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0034","created":1795500196589,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795500196590,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"call-fake-0002","content":[{"type":"text","text":"Read file b.txt, lines 1-1\n1: beta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":2}}
+
+data: {"id":"evt_fake0036","created":1795500196591,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":265,"output":14,"reasoning":13,"cache":{"read":5824,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":26,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500196592,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4743,"output":40,"reasoning":141,"cache":{"read":7680,"write":0}}}}
+
+data: {"id":"evt_fake0038","created":1795500197826,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0004","started":1795500196596},"durable":{"aggregateID":"ses_fake0001","seq":27,"version":1}}
+
+data: {"id":"evt_fake0039","created":1795500197827,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":28,"version":1}}
+
+data: {"id":"evt_fake0040","created":1795500197828,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":29,"version":1}}
+
+data: {"id":"evt_fake0041","created":1795500197872,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"delta":"Now delegate to kid-ask subagent. It must try edit tool to replace beta by delta in b.txt. Let me spawn."}}
+
+data: {"id":"evt_fake0042","created":1795500197872,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","name":"subagent"},"durable":{"aggregateID":"ses_fake0001","seq":30,"version":1}}
+
+data: {"id":"evt_fake0043","created":1795500198597,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","ordinal":0,"text":"Now delegate to kid-ask subagent. It must try edit tool to replace beta by delta in b.txt. Let me spawn.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":31,"version":1}}
+
+data: {"id":"evt_fake0044","created":1795500198598,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","text":"{\"agent\": \"kid-ask\", \"description\": \"edit b.txt beta->delta\", \"prompt\": \"In the current working directory, use your edit tool (you must try it) to replace \\\"beta\\\" with \\\"delta\\\" in the file b.txt. Report what happened.\"}"},"durable":{"aggregateID":"ses_fake0001","seq":32,"version":1}}
+
+data: {"id":"evt_fake0045","created":1795500198598,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","input":{"agent":"kid-ask","description":"edit b.txt beta->delta","prompt":"In the current working directory, use your edit tool (you must try it) to replace \"beta\" with \"delta\" in the file b.txt. Report what happened."},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":33,"version":1}}
+
+data: {"id":"evt_fake0046","created":1795500198599,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004"},"durable":{"aggregateID":"ses_fake0001","seq":34,"version":1}}
+
+data: {"id":"evt_fake0047","created":1795500198601,"type":"session.created","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","slug":"misty-harbor","version":"2.4.0","projectID":"prj_fake0001","parentID":"ses_fake0001","location":{"directory":"/vault-kid-ask"},"subpath":"","title":"edit b.txt beta->delta","agent":"kid-ask","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0002","seq":0,"version":1}}
+
+data: {"id":"evt_fake0048","created":1795500198601,"type":"session.tool.progress","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","metadata":{"sessionID":"ses_fake0002","status":"running"}}}
+
+data: {"id":"evt_fake0049","created":1795500198602,"type":"session.inbox.enqueued","location":{"directory":"/vault-kid-ask"},"data":{"inboxID":"msg_fake0005","sessionID":"ses_fake0002","item":{"type":"user","payload":{"text":"You are a subagent spawned by another session.\nIn the current working directory, use your edit tool (you must try it) to replace \"beta\" with \"delta\" in the file b.txt. Report what happened."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0002","seq":1,"version":1}}
+
+data: {"id":"evt_fake0050","created":1795500198603,"type":"experimental.job.updated","location":{"directory":"/vault-kid-ask"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"running","title":"edit b.txt beta->delta","time":{"started":1795500198602},"childSessionID":"ses_fake0002","agent":"kid-ask","description":"edit b.txt beta->delta"}}}
+
+data: {"id":"evt_fake0051","created":1795500198603,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","id":"call-fake-0003","content":[{"type":"text","text":"The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."}],"metadata":{"sessionID":"ses_fake0002","status":"running","truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":35,"version":2}}
+
+data: {"id":"evt_fake0052","created":1795500198603,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0004","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":61,"output":67,"reasoning":34,"cache":{"read":6080,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":36,"version":1}}
+
+data: {"id":"evt_fake0053","created":1795500198604,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":4804,"output":107,"reasoning":175,"cache":{"read":13760,"write":0}}}}
+
+data: {"id":"evt_fake0054","created":1795500198609,"type":"session.execution.started","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":2,"version":1}}
+
+data: {"id":"evt_fake0055","created":1795500198613,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","delta":{"core/codemode":"hash_fake0005","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0002","seq":3,"version":2}}
+
+data: {"id":"evt_fake0056","created":1795500198613,"type":"session.inbox.delivered","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","inboxID":"msg_fake0005"},"durable":{"aggregateID":"ses_fake0002","seq":4,"version":1}}
+
+data: {"id":"evt_fake0057","created":1795500198955,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0006","started":1795500198608},"durable":{"aggregateID":"ses_fake0001","seq":37,"version":1}}
+
+data: {"id":"evt_fake0058","created":1795500198956,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":38,"version":1}}
+
+data: {"id":"evt_fake0059","created":1795500198956,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":39,"version":1}}
+
+data: {"id":"evt_fake0060","created":1795500199058,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"I launched the subagent. Need to wait for result. I"}}
+
+data: {"id":"evt_fake0061","created":1795500199113,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"'ll end response briefly."}}
+
+data: {"id":"evt_fake0062","created":1795500199113,"type":"session.text.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":40,"version":1}}
+
+data: {"id":"evt_fake0063","created":1795500199187,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","agent":"kid-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0007","started":1795500198616},"durable":{"aggregateID":"ses_fake0002","seq":5,"version":1}}
+
+data: {"id":"evt_fake0064","created":1795500199187,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":6,"version":1}}
+
+data: {"id":"evt_fake0065","created":1795500199188,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":7,"version":1}}
+
+data: {"id":"evt_fake0066","created":1795500199214,"type":"session.text.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"I've launched the kid-ask subagent to edit b.txt (re"}}
+
+data: {"id":"evt_fake0067","created":1795500199290,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":"The user wants me to use the edit tool to replace \"beta\" with \"delta\" in the file b.txt"}}
+
+data: {"id":"evt_fake0068","created":1795500199309,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"I launched the subagent. Need to wait for result. I'll end response briefly.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":41,"version":1}}
+
+data: {"id":"evt_fake0069","created":1795500199309,"type":"session.text.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"delta":"placing \"beta\" with \"delta\") using its edit tool. I'll report back once it finishes."}}
+
+data: {"id":"evt_fake0070","created":1795500199309,"type":"session.text.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","ordinal":0,"text":"I've launched the kid-ask subagent to edit b.txt (replacing \"beta\" with \"delta\") using its edit tool. I'll report back once it finishes."},"durable":{"aggregateID":"ses_fake0001","seq":42,"version":1}}
+
+data: {"id":"evt_fake0071","created":1795500199310,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006"},"durable":{"aggregateID":"ses_fake0001","seq":43,"version":1}}
+
+data: {"id":"evt_fake0072","created":1795500199310,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0006","finish":"stop","rawFinish":"stop","tokens":{"input":298,"output":37,"reasoning":27,"cache":{"read":6080,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":44,"version":1}}
+
+data: {"id":"evt_fake0073","created":1795500199310,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":5102,"output":144,"reasoning":202,"cache":{"read":19840,"write":0}}}}
+
+data: {"id":"evt_fake0074","created":1795500199311,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":45,"version":1}}
+
+data: {"id":"evt_fake0075","created":1795500199376,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"delta":" in the current working directory. Let me first check the file, then do the edit."}}
+
+data: {"id":"evt_fake0076","created":1795500199376,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","name":"read"},"durable":{"aggregateID":"ses_fake0002","seq":8,"version":1}}
+
+data: {"id":"evt_fake0077","created":1795500199412,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","ordinal":0,"text":"The user wants me to use the edit tool to replace \"beta\" with \"delta\" in the file b.txt in the current working directory. Let me first check the file, then do the edit.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":9,"version":1}}
+
+data: {"id":"evt_fake0078","created":1795500199412,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","text":"{\"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":10,"version":1}}
+
+data: {"id":"evt_fake0079","created":1795500199413,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","input":{"path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":11,"version":1}}
+
+data: {"id":"evt_fake0080","created":1795500199413,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007"},"durable":{"aggregateID":"ses_fake0002","seq":12,"version":1}}
+
+data: {"id":"evt_fake0081","created":1795500199415,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","id":"call-fake-0004","content":[{"type":"text","text":"Read file b.txt, lines 1-1\n1: beta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":13,"version":2}}
+
+data: {"id":"evt_fake0082","created":1795500199416,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0007","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":6077,"output":15,"reasoning":47,"cache":{"read":0,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":14,"version":1}}
+
+data: {"id":"evt_fake0083","created":1795500199416,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6077,"output":15,"reasoning":47,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0084","created":1795500199744,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","agent":"kid-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0008","started":1795500199420},"durable":{"aggregateID":"ses_fake0002","seq":15,"version":1}}
+
+data: {"id":"evt_fake0085","created":1795500199745,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":16,"version":1}}
+
+data: {"id":"evt_fake0086","created":1795500199746,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":17,"version":1}}
+
+data: {"id":"evt_fake0087","created":1795500199848,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":"The file contains"}}
+
+data: {"id":"evt_fake0088","created":1795500199872,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"delta":" \"beta\". I need to replace \"beta\" with \"delta\" using the edit tool."}}
+
+data: {"id":"evt_fake0089","created":1795500199872,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","name":"edit"},"durable":{"aggregateID":"ses_fake0002","seq":18,"version":1}}
+
+data: {"id":"evt_fake0090","created":1795500199888,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","ordinal":0,"text":"The file contains \"beta\". I need to replace \"beta\" with \"delta\" using the edit tool.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":19,"version":1}}
+
+data: {"id":"evt_fake0091","created":1795500199889,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","text":"{\"newString\": \"delta\", \"oldString\": \"beta\", \"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":20,"version":1}}
+
+data: {"id":"evt_fake0092","created":1795500199889,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","input":{"newString":"delta","oldString":"beta","path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":21,"version":1}}
+
+data: {"id":"evt_fake0093","created":1795500199890,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008"},"durable":{"aggregateID":"ses_fake0002","seq":22,"version":1}}
+
+data: {"id":"evt_fake0094","created":1795500199891,"type":"permission.asked","location":{"directory":"/vault-kid-ask"},"data":{"id":"per_fake0001","sessionID":"ses_fake0002","action":"edit","resources":["b.txt"],"save":["*"],"metadata":{"files":[{"file":"b.txt","patch":"Index: b.txt\n===================================================================\n--- b.txt\n+++ b.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-beta\n+delta\n","status":"modified","additions":1,"deletions":1}]},"source":{"type":"tool","messageID":"msg_fake0008","id":"call-fake-0005"}}}
+
+data: {"id":"evt_fake0095","created":1795500201496,"type":"permission.replied","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","requestID":"per_fake0001","reply":"once"}}
+
+data: {"id":"evt_fake0096","created":1795500201497,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","id":"call-fake-0005","content":[{"type":"text","text":"Edited b.txt (1 replacement)"}],"metadata":{"files":[{"file":"b.txt","patch":"Index: b.txt\n===================================================================\n--- b.txt\n+++ b.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-beta\n+delta\n","status":"modified","additions":1,"deletions":1}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":23,"version":2}}
+
+data: {"id":"evt_fake0097","created":1795500201497,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0008","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":148,"output":29,"reasoning":29,"cache":{"read":6016,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":24,"version":1}}
+
+data: {"id":"evt_fake0098","created":1795500201498,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":6225,"output":44,"reasoning":76,"cache":{"read":6016,"write":0}}}}
+
+data: {"id":"evt_fake0099","created":1795500202228,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","agent":"kid-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0009","started":1795500201502},"durable":{"aggregateID":"ses_fake0002","seq":25,"version":1}}
+
+data: {"id":"evt_fake0100","created":1795500202229,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009"},"durable":{"aggregateID":"ses_fake0002","seq":26,"version":1}}
+
+data: {"id":"evt_fake0101","created":1795500202229,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":27,"version":1}}
+
+data: {"id":"evt_fake0102","created":1795500202338,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"delta":"The edit succeeded. I replaced \"beta\" with \"delta\" in b.txt. Let me verify"}}
+
+data: {"id":"evt_fake0103","created":1795500202382,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"delta":" by reading the file again."}}
+
+data: {"id":"evt_fake0104","created":1795500202382,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","name":"read"},"durable":{"aggregateID":"ses_fake0002","seq":28,"version":1}}
+
+data: {"id":"evt_fake0105","created":1795500202396,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","ordinal":0,"text":"The edit succeeded. I replaced \"beta\" with \"delta\" in b.txt. Let me verify by reading the file again.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":29,"version":1}}
+
+data: {"id":"evt_fake0106","created":1795500202397,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","text":"{\"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0002","seq":30,"version":1}}
+
+data: {"id":"evt_fake0107","created":1795500202397,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","input":{"path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":31,"version":1}}
+
+data: {"id":"evt_fake0108","created":1795500202397,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009"},"durable":{"aggregateID":"ses_fake0002","seq":32,"version":1}}
+
+data: {"id":"evt_fake0109","created":1795500202399,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","id":"call-fake-0006","content":[{"type":"text","text":"Read file b.txt, lines 1-1\n1: delta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0002","seq":33,"version":2}}
+
+data: {"id":"evt_fake0110","created":1795500202399,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0009","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":6240,"output":12,"reasoning":35,"cache":{"read":0,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":34,"version":1}}
+
+data: {"id":"evt_fake0111","created":1795500202400,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":12465,"output":56,"reasoning":111,"cache":{"read":6016,"write":0}}}}
+
+data: {"id":"evt_fake0112","created":1795500202815,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","agent":"kid-ask","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0010","started":1795500202404},"durable":{"aggregateID":"ses_fake0002","seq":35,"version":1}}
+
+data: {"id":"evt_fake0113","created":1795500202816,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010"},"durable":{"aggregateID":"ses_fake0002","seq":36,"version":1}}
+
+data: {"id":"evt_fake0114","created":1795500202817,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":37,"version":1}}
+
+data: {"id":"evt_fake0115","created":1795500202919,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"The edit was successful. The file b.txt now contains \"delta\""}}
+
+data: {"id":"evt_fake0116","created":1795500202928,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":" instead of \"beta\"."}}
+
+data: {"id":"evt_fake0117","created":1795500202928,"type":"session.text.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0},"durable":{"aggregateID":"ses_fake0002","seq":38,"version":1}}
+
+data: {"id":"evt_fake0118","created":1795500203030,"type":"session.text.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":"I successfully used the edit tool to replace \"beta\" with \"delta\" in `b.txt`. The file"}}
+
+data: {"id":"evt_fake0119","created":1795500203070,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"text":"The edit was successful. The file b.txt now contains \"delta\" instead of \"beta\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0002","seq":39,"version":1}}
+
+data: {"id":"evt_fake0120","created":1795500203071,"type":"session.text.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"delta":" now contains \"delta\" (confirmed by reading it back)."}}
+
+data: {"id":"evt_fake0121","created":1795500203071,"type":"session.text.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","ordinal":0,"text":"I successfully used the edit tool to replace \"beta\" with \"delta\" in `b.txt`. The file now contains \"delta\" (confirmed by reading it back)."},"durable":{"aggregateID":"ses_fake0002","seq":40,"version":1}}
+
+data: {"id":"evt_fake0122","created":1795500203071,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010"},"durable":{"aggregateID":"ses_fake0002","seq":41,"version":1}}
+
+data: {"id":"evt_fake0123","created":1795500203072,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0002","assistantMessageID":"msg_fake0010","finish":"stop","rawFinish":"stop","tokens":{"input":104,"output":39,"reasoning":24,"cache":{"read":6208,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0002","seq":42,"version":1}}
+
+data: {"id":"evt_fake0124","created":1795500203072,"type":"session.usage.updated","data":{"sessionID":"ses_fake0002","cost":0,"tokens":{"input":12569,"output":95,"reasoning":135,"cache":{"read":12224,"write":0}}}}
+
+data: {"id":"evt_fake0125","created":1795500203074,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0002"},"durable":{"aggregateID":"ses_fake0002","seq":43,"version":1}}
+
+data: {"id":"evt_fake0126","created":1795500203075,"type":"session.inbox.enqueued","data":{"inboxID":"msg_fake0011","sessionID":"ses_fake0001","item":{"type":"synthetic","payload":{"text":"<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"completed\" description=\"edit b.txt beta->delta\">\nI successfully used the edit tool to replace \"beta\" with \"delta\" in `b.txt`. The file now contains \"delta\" (confirmed by reading it back).\n</background-result>","description":"edit b.txt beta->delta","metadata":{"source":"subagent","childID":"ses_fake0002","agent":"kid-ask","state":"completed"}},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":46,"version":1}}
+
+data: {"id":"evt_fake0127","created":1795500203076,"type":"experimental.job.updated","location":{"directory":"/vault-kid-ask"},"data":{"info":{"kind":"subagent","id":"ses_fake0002","sessionID":"ses_fake0001","status":"completed","title":"edit b.txt beta->delta","time":{"started":1795500198602,"completed":1795500203076},"childSessionID":"ses_fake0002","agent":"kid-ask","description":"edit b.txt beta->delta"}}}
+
+data: {"id":"evt_fake0128","created":1795500203076,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":47,"version":1}}
+
+data: {"id":"evt_fake0129","created":1795500203078,"type":"session.inbox.delivered","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0011"},"durable":{"aggregateID":"ses_fake0001","seq":48,"version":1}}
+
+data: {"id":"evt_fake0130","created":1795500203445,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0012","started":1795500203081},"durable":{"aggregateID":"ses_fake0001","seq":49,"version":1}}
+
+data: {"id":"evt_fake0131","created":1795500203446,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012"},"durable":{"aggregateID":"ses_fake0001","seq":50,"version":1}}
+
+data: {"id":"evt_fake0132","created":1795500203446,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":51,"version":1}}
+
+data: {"id":"evt_fake0133","created":1795500203518,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","ordinal":0,"delta":"The subagent reported success. Let me verify."}}
+
+data: {"id":"evt_fake0134","created":1795500203518,"type":"session.tool.input.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":52,"version":1}}
+
+data: {"id":"evt_fake0135","created":1795500203545,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","ordinal":0,"text":"The subagent reported success. Let me verify.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":53,"version":1}}
+
+data: {"id":"evt_fake0136","created":1795500203546,"type":"session.tool.input.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","text":"{\"path\": \"b.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":54,"version":1}}
+
+data: {"id":"evt_fake0137","created":1795500203546,"type":"session.tool.called","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","input":{"path":"b.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":55,"version":1}}
+
+data: {"id":"evt_fake0138","created":1795500203546,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012"},"durable":{"aggregateID":"ses_fake0001","seq":56,"version":1}}
+
+data: {"id":"evt_fake0139","created":1795500203548,"type":"session.tool.success","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","id":"call-fake-0007","content":[{"type":"text","text":"Read file b.txt, lines 1-1\n1: delta"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":57,"version":2}}
+
+data: {"id":"evt_fake0140","created":1795500203548,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0012","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":196,"output":14,"reasoning":17,"cache":{"read":6336,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":58,"version":1}}
+
+data: {"id":"evt_fake0141","created":1795500203548,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":5298,"output":158,"reasoning":219,"cache":{"read":26176,"write":0}}}}
+
+data: {"id":"evt_fake0142","created":1795500203889,"type":"session.step.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","agent":"p-deny","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0013","started":1795500203552},"durable":{"aggregateID":"ses_fake0001","seq":59,"version":1}}
+
+data: {"id":"evt_fake0143","created":1795500203890,"type":"session.step.first-token","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013"},"durable":{"aggregateID":"ses_fake0001","seq":60,"version":1}}
+
+data: {"id":"evt_fake0144","created":1795500203891,"type":"session.reasoning.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":61,"version":1}}
+
+data: {"id":"evt_fake0145","created":1795500203891,"type":"session.reasoning.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"delta":"Confirmed. Report."}}
+
+data: {"id":"evt_fake0146","created":1795500203891,"type":"session.text.started","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":62,"version":1}}
+
+data: {"id":"evt_fake0147","created":1795500203953,"type":"session.reasoning.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"text":"Confirmed. Report.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":63,"version":1}}
+
+data: {"id":"evt_fake0148","created":1795500203954,"type":"session.text.delta","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"delta":"The kid-ask subagent reported it successfully used its edit tool to replace \"beta\" with \"delta\" in b.txt, and confirmed the file now contains \"delta\" (verified)."}}
+
+data: {"id":"evt_fake0149","created":1795500203954,"type":"session.text.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","ordinal":0,"text":"The kid-ask subagent reported it successfully used its edit tool to replace \"beta\" with \"delta\" in b.txt, and confirmed the file now contains \"delta\" (verified)."},"durable":{"aggregateID":"ses_fake0001","seq":64,"version":1}}
+
+data: {"id":"evt_fake0150","created":1795500203954,"type":"session.step.streamed","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013"},"durable":{"aggregateID":"ses_fake0001","seq":65,"version":1}}
+
+data: {"id":"evt_fake0151","created":1795500203955,"type":"session.step.ended","location":{"directory":"/vault-kid-ask"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0013","finish":"stop","rawFinish":"stop","tokens":{"input":60,"output":46,"reasoning":6,"cache":{"read":6528,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":66,"version":1}}
+
+data: {"id":"evt_fake0152","created":1795500203955,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.26e-05,"tokens":{"input":5358,"output":204,"reasoning":225,"cache":{"read":32704,"write":0}}}}
+
+data: {"id":"evt_fake0153","created":1795500203956,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":67,"version":1}}
+

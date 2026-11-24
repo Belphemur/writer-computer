@@ -1,0 +1,76 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795500448438,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"kind-star","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","permissions":[],"model":{"id":"beam-free","providerID":"opencode"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795500449857,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Run exactly this command with your shell tool and show me its output, nothing else: env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort"},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795500449859,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795500449866,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795500449866,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795500450375,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795500449874},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795500450379,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795500450381,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795500450484,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to run exactly that command. Let me do it."}}
+
+data: {"id":"evt_fake0011","created":1795500450484,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","name":"shell"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795500450543,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to run exactly that command. Let me do it.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795500450546,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","text":"{\"command\": \"env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795500450547,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","input":{"command":"env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795500450548,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795500450552,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"shell","resources":["env","grep -E '^(OPENCODE_|XDG_CONFIG_HOME)'","sed 's/=.*/=<redacted>/'","sort"],"save":["env *","grep *","sed *","sort *"],"source":{"type":"tool","messageID":"msg_fake0002","id":"call-fake-0001"}}}
+
+data: {"id":"evt_fake0017","created":1795500450686,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.23e-05,"tokens":{"input":483,"output":8,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0018","created":1795500450686,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Environment variable inspection"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795500450780,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"once"}}
+
+data: {"id":"evt_fake0020","created":1795500450896,"type":"shell.created","location":{"directory":"/vault"},"data":{"info":{"id":"sh_fake0001","status":"running","command":"env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort","cwd":"/vault","shell":"/bin/zsh","file":"/home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out","metadata":{"sessionID":"ses_fake0001"},"time":{"started":1795500450895},"pid":1}}}
+
+data: {"id":"evt_fake0021","created":1795500450897,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","metadata":{"shellID":"sh_fake0001"}}}
+
+data: {"id":"evt_fake0022","created":1795500450916,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"call-fake-0001","content":[{"type":"text","text":"OPENCODE_CONFIG=<redacted>\nOPENCODE_DISABLE_AUTOUPDATE=<redacted>\nOPENCODE_DISABLE_CLAUDE_CODE=<redacted>\nOPENCODE_DISABLE_PROJECT_CONFIG=<redacted>\nOPENCODE_SERVER_PASSWORD=<redacted>\nOPENCODE_SESSION_ID=<redacted>\nOPENCODE_TERMINAL=<redacted>\nXDG_CONFIG_HOME=<redacted>\n"}],"metadata":{"status":"completed","truncated":false,"exit":0},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0023","created":1795500450917,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":3382,"output":40,"reasoning":24,"cache":{"read":3008,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795500450918,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.23e-05,"tokens":{"input":3865,"output":48,"reasoning":24,"cache":{"read":3008,"write":0}}}}
+
+data: {"id":"evt_fake0025","created":1795500450920,"type":"experimental.job.updated","location":{"directory":"/vault"},"data":{"info":{"kind":"shell","id":"sh_fake0001","sessionID":"ses_fake0001","status":"completed","title":"env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort","time":{"started":1795500450897,"completed":1795500450916},"shellID":"sh_fake0001","command":"env | grep -E '^(OPENCODE_|XDG_CONFIG_HOME)' | sed 's/=.*/=<redacted>/' | sort"}}}
+
+data: {"id":"evt_fake0026","created":1795500451351,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"build","model":{"id":"beam-free","providerID":"opencode","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795500450923},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795500451354,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795500451355,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795500451423,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"The user asked to show the output, nothing else."}}
+
+data: {"id":"evt_fake0030","created":1795500451423,"type":"session.text.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795500451528,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"```\nOPENCODE_CONFIG=<redacted>\nOPENCODE_DISABLE_AUTOUPDATE=<redacted>\nOPENCODE_DISABLE_CLAUDE_CODE=<redacted>\nOPENCODE_DISABLE_PROJECT_CONFIG=<redacted>\nOPENCODE_SERVER_PASSWORD="}}
+
+data: {"id":"evt_fake0032","created":1795500451586,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"The user asked to show the output, nothing else.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+
+data: {"id":"evt_fake0033","created":1795500451589,"type":"session.text.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"delta":"<redacted>\nOPENCODE_SESSION_ID=<redacted>\nOPENCODE_TERMINAL=<redacted>\nXDG_CONFIG_HOME=<redacted>\n```"}}
+
+data: {"id":"evt_fake0034","created":1795500451589,"type":"session.text.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","ordinal":0,"text":"```\nOPENCODE_CONFIG=<redacted>\nOPENCODE_DISABLE_AUTOUPDATE=<redacted>\nOPENCODE_DISABLE_CLAUDE_CODE=<redacted>\nOPENCODE_DISABLE_PROJECT_CONFIG=<redacted>\nOPENCODE_SERVER_PASSWORD=<redacted>\nOPENCODE_SESSION_ID=<redacted>\nOPENCODE_TERMINAL=<redacted>\nXDG_CONFIG_HOME=<redacted>\n```"},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0035","created":1795500451590,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+
+data: {"id":"evt_fake0036","created":1795500451591,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","finish":"stop","rawFinish":"stop","tokens":{"input":3909,"output":78,"reasoning":14,"cache":{"read":2624,"write":0}},"cost":0},"durable":{"aggregateID":"ses_fake0001","seq":24,"version":1}}
+
+data: {"id":"evt_fake0037","created":1795500451592,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.23e-05,"tokens":{"input":7774,"output":126,"reasoning":38,"cache":{"read":5632,"write":0}}}}
+
+data: {"id":"evt_fake0038","created":1795500451594,"type":"session.execution.succeeded","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":25,"version":1}}
+

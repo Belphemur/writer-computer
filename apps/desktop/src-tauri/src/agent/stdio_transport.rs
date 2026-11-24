@@ -23,6 +23,7 @@ use super::claude_stream::{
 };
 use super::env;
 use super::events::*;
+use super::permission_update::updated_permissions;
 use super::transport::{
     Close, Delivery, Ended, Inbound, LaunchConfig, LiveChange, Mapped, Message, ModelChange,
     Outbound, PermissionReply, Phrases, Receipt, SpawnError, StartRequest, Transport,
@@ -553,7 +554,7 @@ impl Transport for StdioTransport {
 
     fn send(&self, msg: &Outbound<'_>) -> Receipt {
         let (line, id) = match msg.delivery {
-            Delivery::Start => (encode_user_message(msg.text, msg.files), String::new()),
+            Delivery::Start { .. } => (encode_user_message(msg.text, msg.files), String::new()),
             Delivery::Steer { receipt } => (
                 encode_steer_message(msg.text, msg.files, receipt),
                 receipt.to_string(),
@@ -602,8 +603,14 @@ impl Transport for StdioTransport {
 
     fn answer_permission(&self, request_id: &str, reply: PermissionReply<'_>) {
         let line = match reply {
-            PermissionReply::Allow { input, updated } => {
-                encode_permission_allow(request_id, input, updated)
+            PermissionReply::Allow {
+                input,
+                persist,
+                rules,
+                suggestions,
+            } => {
+                let updated = updated_permissions(suggestions, persist, rules);
+                encode_permission_allow(request_id, input, &updated)
             }
             PermissionReply::Deny { message } => encode_permission_deny(request_id, message),
         };

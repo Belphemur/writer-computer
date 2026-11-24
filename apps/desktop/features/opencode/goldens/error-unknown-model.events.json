@@ -1,0 +1,34 @@
+{
+  "events": [
+    {
+      "type": "error",
+      "kind": "api",
+      "message": "Model unavailable: opencode/no-such-model-xyz",
+      "retryable": false
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": null,
+      "contextWindow": null
+    },
+    {
+      "type": "turn-finished",
+      "reason": "error",
+      "durationMs": 8,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": true,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": [
+        "Model unavailable: opencode/no-such-model-xyz"
+      ]
+    }
+  ],
+  "signals": []
+}

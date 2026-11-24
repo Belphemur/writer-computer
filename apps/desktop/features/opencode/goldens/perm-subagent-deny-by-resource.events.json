@@ -1,0 +1,633 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to delegate a task to a subagent. They",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " mention \"kid-plain sub-agent\" — this likely means a subagent type. Let me check available",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " subagents: explore and general. There's no \"kid-plain\" agent listed. Hmm.\n\nWait, the user says \"kid-plain sub-agent",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "\". Maybe it's a model? Or maybe they want me to use the subagent tool",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " with agent \"general\"? Let me re-read: \"Delegate to your kid-plain sub-agent:",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " have it use its edit tool (it must try) to replace beta by delta in b.txt. Then tell me what it reported.\"\n\nSo there might be a subagent named \"kid-plain\"? The",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " available subagents listed are explore and general. But maybe there are more. Let me check.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Actually the tool description says \"Available subagents: explore, general\". Hmm.\n\nMaybe \"kid-plain\" is a model?",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " The user says \"your kid-plain sub-agent\". Could be a custom subagent. Let me search for it. Actually, maybe I",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " should just try calling subagent with agent \"kid-plain\"? But it's not listed. \n\nLet me think",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ". The task: have subagent use its edit tool to replace beta by delta in b.txt. There",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "'s a file b.txt presumably. Let me first look at the working directory.\n\nActually, the instruction is to delegate",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ". Let me check if b.txt exists. Let me also search for subagents or \"kid-plain\". Let me",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " look.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "glob",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to delegate a task to a subagent. They mention \"kid-plain sub-agent\" — this likely means a subagent type. Let me check available subagents: explore and general. There's no \"kid-plain\" agent listed. Hmm.\n\nWait, the user says \"kid-plain sub-agent\". Maybe it's a model? Or maybe they want me to use the subagent tool with agent \"general\"? Let me re-read: \"Delegate to your kid-plain sub-agent: have it use its edit tool (it must try) to replace beta by delta in b.txt. Then tell me what it reported.\"\n\nSo there might be a subagent named \"kid-plain\"? The available subagents listed are explore and general. But maybe there are more. Let me check. Actually the tool description says \"Available subagents: explore, general\". Hmm.\n\nMaybe \"kid-plain\" is a model? The user says \"your kid-plain sub-agent\". Could be a custom subagent. Let me search for it. Actually, maybe I should just try calling subagent with agent \"kid-plain\"? But it's not listed. \n\nLet me think. The task: have subagent use its edit tool to replace beta by delta in b.txt. There's a file b.txt presumably. Let me first look at the working directory.\n\nActually, the instruction is to delegate. Let me check if b.txt exists. Let me also search for subagents or \"kid-plain\". Let me look.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "pattern": "b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "/vault/b.txt",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3756,
+      "outputTokens": 333,
+      "cacheReadTokens": 2624,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Let me read b.txt.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0002",
+      "messageId": "msg_fake0003",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Let me read b.txt.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0002",
+      "input": {
+        "path": "b.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0002",
+      "output": "Read file b.txt, lines 1-1\n1: beta",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 456,
+      "outputTokens": 27,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains \"beta\". Now I need to delegate to \"kid-plain sub-agent\". Let me search for available",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " subagents or models. Let me search tools.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0003",
+      "messageId": "msg_fake0004",
+      "tool": "search",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0004",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains \"beta\". Now I need to delegate to \"kid-plain sub-agent\". Let me search for available subagents or models. Let me search tools.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0003",
+      "input": {
+        "query": "kid-plain"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0003",
+      "output": "No tool named \"search\" is currently available. Please use a tool from the available tool list.",
+      "isError": true,
+      "outcome": "error",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 60,
+      "outputTokens": 56,
+      "cacheReadTokens": 6784,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The search tool isn't available directly; it's a Code",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Mode function. Let me use the models tool maybe. Actually, I need to find subagent named kid",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "-plain. Let me look at opencode tools. Let me list available tools via... Actually the",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " subagent tool's agent enum is explore/general. But maybe I can pass a",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " model? The user says \"kid-plain sub-agent\" - maybe it's a model ID. Let me search models. There's no models tool in",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " the main list? Let me check. The tools available: edit, generate_image, generate",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, write.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Also execute. No models tool directly. But inside execute, there's op",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "encode tools? Let me check opencode namespace has models? The catalog showed opencode (9 tools, 6 shown). Let me search via",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " execute.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0004",
+      "messageId": "msg_fake0005",
+      "tool": "execute",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0005",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The search tool isn't available directly; it's a Code Mode function. Let me use the models tool maybe. Actually, I need to find subagent named kid-plain. Let me look at opencode tools. Let me list available tools via... Actually the subagent tool's agent enum is explore/general. But maybe I can pass a model? The user says \"kid-plain sub-agent\" - maybe it's a model ID. Let me search models. There's no models tool in the main list? Let me check. The tools available: edit, generate_image, generate_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, write. Also execute. No models tool directly. But inside execute, there's opencode tools? Let me check opencode namespace has models? The catalog showed opencode (9 tools, 6 shown). Let me search via execute.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0004",
+      "input": {
+        "code": "const r = await search({ query: \"models\" });\nreturn r;"
+      }
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0004:0",
+      "messageId": "msg_fake0005",
+      "tool": "search",
+      "parentToolCallId": "call-fake-0004"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0004:0",
+      "input": {
+        "query": "models"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0004:0",
+      "output": "",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0004",
+      "output": "{\"items\":[{\"path\":\"tools.opencode.models\",\"description\":\"Search the models available to use. Use this to turn a model name the user mentions into an exact reference for a tool that takes a model. Check your own provider first. Prefer the standard offering unless the user explicitly requests another tier. Use the listed pricing to compare costs when available; missing pricing does not mean free.\",\"signature\":\"tools.opencode.models({\\n  /** Text to search for in model names and IDs. */\\n  query?: string,\\n  /** Provider ID or name to filter by. Try your own provider first. */\\n  provider?: string,\\n  /**\\n   * Which kind of model to list. Defaults to \\\"chat\\\".\\n   * \\\"chat\\\": a language model (LLM). Powers sessions, agents and subagents, and can call tools.\\n   * \\\"image\\\": generates or edits images from a prompt. It can't chat or call tools.\\n   * \\\"video\\\": generates videos from a prompt. It can't chat or call tools.\\n   */\\n  type?: \\\"chat\\\" | \\\"image\\\" | \\\"video\\\",\\n  /** Include older versions of each model family. By default only the newest version is listed. */\\n  all?: boolean,\\n  /** Maximum number of models to return. Defaults to 20. @integer @minimum 1 @maximum 100 */\\n  limit?: number,\\n  /** Number of models to skip, for paging through results. @integer @minimum 0 */\\n  offset?: number,\\n}): Promise<{\\n  /** Number of matching models across all pages. @integer */\\n  total: number,\\n  /** Offset of the next page, or null on the last page. */\\n  next: number | null,\\n  /** Matching models grouped by provider. Your own provider comes first. */\\n  providers: Array<{\\n      id: string,\\n      name: string,\\n      /** Newest first. */\\n      models: Array<{\\n          /** providerID/modelID */\\n          id: string,\\n          name: string,\\n          /** Release date as a Unix timestamp in milliseconds, or 0 when unknown. */\\n          released: number,\\n          variants: Array<string>,\\n          /** Pricing in USD per million tokens. */\\n          cost: Array<{\\n              tier?: {\\n                type: \\\"context\\\",\\n                /** @integer */\\n                size: number,\\n              },\\n              input: number,\\n              output: number,\\n              cache: {\\n                read: number,\\n                write: number,\\n              },\\n            }>,\\n          status: \\\"alpha\\\" | \\\"beta\\\" | \\\"deprecated\\\" | \\\"active\\\",\\n        }>,\\n    }>,\\n}>\"},{\"path\":\"tools.opencode.session.move\",\"description\":\"Move a session to another directory, or omit sessionID to move the current session. The current session moves at the next safe boundary; do not run destination-dependent tools in the same execute call.\",\"signature\":\"tools.opencode.session.move({\\n  /** Omit to move the current session. @pattern ^ses */\\n  sessionID?: string,\\n  /** Destination directory, relative to the target session's directory or absolute. Supports ~. @minLength 1 */\\n  directory: string,\\n}): Promise<{\\n  /** @pattern ^ses */\\n  sessionID: string,\\n  directory: string,\\n}>\"},{\"path\":\"tools.opencode.session.rename\",\"description\":\"Rename a session, or omit sessionID to rename the current session. Use a short, specific title that summarizes the work being done.\",\"signature\":\"tools.opencode.session.rename({\\n  /** Omit to rename the current session. @pattern ^ses */\\n  sessionID?: string,\\n  /** New session title. @minLength 1 */\\n  title: string,\\n}): Promise<{\\n  /** @pattern ^ses */\\n  sessionID: string,\\n  title: string,\\n}>\"},{\"path\":\"tools.opencode.worktree_create\",\"description\":\"Create a named worktree. Returns its directory.\",\"signature\":\"tools.opencode.worktree_create({\\n  name: string,\\n}): Promise<{\\n  directory: string,\\n}>\"},{\"path\":\"tools.opencode.worktree_list\",\"description\":\"List a repository's worktrees.\",\"signature\":\"tools.opencode.worktree_list(): Promise<{\\n  worktrees: Array<{\\n      directory: string,\\n      strategy?: string,\\n    }>,\\n}>\"},{\"path\":\"tools.opencode.worktree_remove\",\"description\":\"Remove a worktree. The repository location selects configuration; directory identifies the worktree to remove.\",\"signature\":\"tools.opencode.worktree_remove({\\n  /** Absolute path of the worktree to remove. @minLength 1 */\\n  directory: string,\\n  /** Discard modified and untracked files. Only set this when the user has confirmed forced removal. */\\n  force?: boolean,\\n}): Promise<{\\n  directory: string,\\n  removed: boolean,\\n}>\"},{\"path\":\"tools.opencode.list_mcp_events\",\"description\":\"List the events an MCP server sends. Use one as an automation's event trigger.\",\"signature\":\"tools.opencode.list_mcp_events({\\n  /** MCP server name as configured */\\n  server: string,\\n}): Promise<{\\n  events: Array<{\\n      server: string,\\n      event: string,\\n      description?: string | null,\\n      args?: {} | null,\\n      data?: {} | null,\\n    }>,\\n}>\"},{\"path\":\"tools.opencode.list_mcp_resources\",\"description\":\"List documents, records, and other data exposed by MCP servers. Use this when the user refers to something that is not a local file, such as a URI with a custom scheme, then load a match with read_mcp_resource. Each entry names the server to read it from. Templates are resources addressed by a parameter such as a record ID; fill in the uriTemplate placeholders before reading.\",\"signature\":\"tools.opencode.list_mcp_resources({\\n  /** MCP server name as configured. Omit to list every server. */\\n  server?: string,\\n}): Promise<{\\n  resources: Array<{\\n      server: string,\\n      name: string,\\n      uri: string,\\n      description?: string,\\n      mimeType?: string,\\n    }>,\\n  templates: Array<{\\n      server: string,\\n      name: string,\\n      uriTemplate: string,\\n      description?: string,\\n      mimeType?: string,\\n    }>,\\n}>\"},{\"path\":\"tools.opencode.read_mcp_resource\",\"description\":\"Read one MCP resource by server and URI. Not for local files. Always return the full contents rather than slicing or filtering them; oversized output is truncated automatically and the full content is saved to a file you can read. Images and PDFs are shown to you directly.\",\"signature\":\"tools.opencode.read_mcp_resource({\\n  /** The server field of the discovered resource. */\\n  server: string,\\n  /** Exact resource URI from discovery, an expanded uriTemplate, or the user. */\\n  uri: string,\\n}): Promise<{\\n  server: string,\\n  uri: string,\\n  contents: Array<{\\n        type: \\\"text\\\",\\n        uri: string,\\n        text: string,\\n        mimeType?: string,\\n      } | {\\n        type: \\\"blob\\\",\\n        uri: string,\\n        blob: string,\\n        mimeType?: string,\\n      }>,\\n}>\"}],\"remaining\":0,\"next\":null}",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 3937,
+      "outputTokens": 224,
+      "cacheReadTokens": 3008,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "Let me search models for \"kid-plain\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0005",
+      "messageId": "msg_fake0006",
+      "tool": "execute",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0006",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "Let me search models for \"kid-plain\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0005",
+      "input": {
+        "code": "const r = await tools.opencode.models({ query: \"kid-plain\" });\nreturn r;"
+      }
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0005:0",
+      "messageId": "msg_fake0006",
+      "tool": "opencode_models",
+      "parentToolCallId": "call-fake-0005"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0005:0",
+      "input": {
+        "query": "kid-plain"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0005:0",
+      "output": "",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0005",
+      "output": "{\"total\":0,\"next\":null,\"providers\":[]}",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 1918,
+      "outputTokens": 50,
+      "cacheReadTokens": 6912,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "No model. Maybe \"kid-plain\" is a subagent defined somewhere",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ". Let me search filesystem for \"kid-plain\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0006",
+      "messageId": "msg_fake0007",
+      "tool": "shell",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0007",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "No model. Maybe \"kid-plain\" is a subagent defined somewhere. Let me search filesystem for \"kid-plain\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0006",
+      "input": {
+        "command": "grep -rl \"kid-plain\" / 2>/dev/null | head -50"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "call-fake-0006",
+      "tool": "shell",
+      "displayName": null,
+      "input": {
+        "command": "grep -rl \"kid-plain\" / 2>/dev/null | head -50"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "shell",
+              "ruleContent": "grep *"
+            },
+            {
+              "toolName": "shell",
+              "ruleContent": "head *"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0006",
+      "output": "The user declined this tool call",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 135,
+      "outputTokens": 65,
+      "cacheReadTokens": 8768,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 10262,
+      "outputTokens": 755,
+      "cacheReadTokens": 34432,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "interrupted",
+      "durationMs": 7063,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

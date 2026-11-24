@@ -6,10 +6,12 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 import claude from "@shared/agent-tools/claude.json";
+import kinds from "@shared/agent-tools/kinds.json";
 import {
   editPreview,
   permissionSummary,
   readsFile,
+  TOOL_KIND_KEYS,
   toolKind,
   toolLabel,
   toolNameOf,
@@ -115,5 +117,11 @@ describe("the Claude tool table", () => {
     expect(editPreview("Edit", { old_string: "a", new_string: "b" })).toBe("- a\n+ b");
     expect(editPreview("Bash", { command: "ls" })).toBeNull();
     expect(toolLabel("Bash", { command: "ls" }, false)).toBe("Ran ls");
+  });
+});
+
+describe("the neutral kinds", () => {
+  it("are the one shared list, the same as the ToolKind type", () => {
+    expect(Object.keys(TOOL_KIND_KEYS)).toEqual(kinds);
   });
 });

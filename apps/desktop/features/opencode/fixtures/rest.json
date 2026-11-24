@@ -4566,5 +4566,16 @@
    "_tag": "UnauthorizedError",
    "message": "Authentication required"
   }
+ },
+ "prompt-id-conflict": {
+  "method": "POST",
+  "path": "/api/session/ses_fake0002/prompt",
+  "status": 409,
+  "body": {
+   "_tag": "ConflictError",
+   "message": "Prompt message ID conflicts with an existing durable record: msg_fake0003",
+   "resource": "msg_fake0003"
+  },
+  "note": "s33: the same msg_ id posted into a second session; the first session's own re-post is a 200 with the first text (idempotent), the second session's inbox stays empty. Ids are global."
  }
 }

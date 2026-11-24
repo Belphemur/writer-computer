@@ -1,0 +1,159 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0005",
+    "time": {
+     "created": 1795496080433
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795496079959,
+     "firstToken": 1795496080315,
+     "streamed": 1795496080429,
+     "completed": 1795496080430
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user now wants me to just reply with \"pivot\" instead of \"done\". Let me do that.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496080316,
+       "completed": 1795496080427
+      }
+     },
+     {
+      "type": "text",
+      "text": "pivot"
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 251,
+     "output": 3,
+     "reasoning": 30,
+     "cache": {
+      "read": 6336,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795496079954
+    },
+    "text": "NEW INSTRUCTION: forget the command, just reply with the single word: pivot.",
+    "type": "user"
+   },
+   {
+    "id": "msg_fake0006",
+    "time": {
+     "created": 1795496079949
+    },
+    "type": "idle",
+    "outcome": "interrupted"
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795496078013,
+     "firstToken": 1795496078466,
+     "streamed": 1795496078740,
+     "completed": 1795496079947
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to run `sleep 20` with the shell tool, then reply with \"done\". Let me do that.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795496078466,
+       "completed": 1795496078737
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "shell",
+      "executed": false,
+      "state": {
+       "status": "error",
+       "input": {
+        "command": "sleep 20"
+       },
+       "error": {
+        "type": "tool.execution",
+        "message": "[no output; output file: /home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out]\n\nCommand interrupted by the user (shell ID: sh_fake0001)."
+       },
+       "metadata": {
+        "shellID": "sh_fake0001",
+        "interrupted": true,
+        "truncated": false,
+        "notice": "[no output; output file: /home/user/.local/share/opencode/shell/prj_fake0001/sh_fake0001.out]\n\nCommand interrupted by the user (shell ID: sh_fake0001)."
+       }
+      },
+      "time": {
+       "created": 1795496078705,
+       "ran": 1795496078740,
+       "completed": 1795496079945
+      }
+     }
+    ],
+    "finish": "error",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3426,
+     "output": 13,
+     "reasoning": 39,
+     "cache": {
+      "read": 2944,
+      "write": 0
+     }
+    },
+    "error": {
+     "type": "aborted",
+     "message": "Step interrupted"
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795496078002
+    },
+    "text": "Run the shell command `sleep 20` with your shell tool, then reply with the single word: done.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

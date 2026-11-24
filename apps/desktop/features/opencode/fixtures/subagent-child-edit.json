@@ -1,0 +1,625 @@
+{
+ "parent": {
+  "data": [
+   {
+    "id": "msg_fake0013",
+    "time": {
+     "created": 1795500242377
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0012",
+    "time": {
+     "created": 1795500241883,
+     "firstToken": 1795500242227,
+     "streamed": 1795500242373,
+     "completed": 1795500242374
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "Confirmed. Report to user.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500242227,
+       "completed": 1795500242371
+      }
+     },
+     {
+      "type": "text",
+      "text": "The writer-worker reported: **\"Done. The file now contains 'delta'.\"**\n\nI verified `b.txt` now reads `delta`."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 91,
+     "output": 30,
+     "reasoning": 15,
+     "cache": {
+      "read": 7296,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0011",
+    "time": {
+     "created": 1795500241214,
+     "firstToken": 1795500241654,
+     "streamed": 1795500241869,
+     "completed": 1795500241874
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The subagent reported: \"Done. The file now contains 'delta'.\" I should verify and tell the user. Let me read b.txt to confirm.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500241655,
+       "completed": 1795500241863
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0006",
+      "name": "read",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "path": "b.txt"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Read file b.txt, lines 1-1\n1: delta"
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795500241851,
+       "ran": 1795500241867,
+       "completed": 1795500241872
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 205,
+     "output": 15,
+     "reasoning": 38,
+     "cache": {
+      "read": 7104,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0010",
+    "metadata": {
+     "source": "subagent",
+     "childID": "ses_fake0002",
+     "agent": "writer-worker",
+     "state": "completed"
+    },
+    "time": {
+     "created": 1795500241209
+    },
+    "text": "<background-result kind=\"subagent\" sessionID=\"ses_fake0002\" state=\"completed\" description=\"Replace beta with delta in b.txt\">\nDone. The file now contains \"delta\".\n</background-result>",
+    "description": "Replace beta with delta in b.txt",
+    "type": "synthetic"
+   },
+   {
+    "id": "msg_fake0014",
+    "time": {
+     "created": 1795500239303
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0005",
+    "time": {
+     "created": 1795500238289,
+     "firstToken": 1795500238694,
+     "streamed": 1795500239298,
+     "completed": 1795500239299
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "I've launched the subagent. Now I need to wait for the background result. The instructions say not to poll. I'll end my response and wait for the notification. Actually, I should briefly tell the user what I launched. Let me just end.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500238695,
+       "completed": 1795500239294
+      }
+     },
+     {
+      "type": "text",
+      "text": "I've delegated the task to the writer-worker sub-agent (session `ses_fake0002`) to replace \"beta\" with \"delta\" in `b.txt` using its edit tool. I'll report back once it finishes."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 334,
+     "output": 64,
+     "reasoning": 61,
+     "cache": {
+      "read": 6784,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795500237118,
+     "firstToken": 1795500237496,
+     "streamed": 1795500238280,
+     "completed": 1795500238285
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The file contains \"beta\". Now I'll delegate to writer-worker to replace beta by delta in b.txt. It must try to use its edit tool.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500237497,
+       "completed": 1795500238278
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0002",
+      "name": "subagent",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "agent": "writer-worker",
+        "description": "Replace beta with delta in b.txt",
+        "prompt": "Use your edit tool (you must try) to replace \"beta\" by \"delta\" in b.txt. The file is at /vault/b.txt and currently contains the single line \"beta\". Replace the exact text \"beta\" with \"delta\"."
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "The subagent is working in the background (sessionID: ses_fake0002). You will receive a <background-result kind=\"subagent\"> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID."
+        }
+       ],
+       "metadata": {
+        "sessionID": "ses_fake0002",
+        "status": "running",
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795500237731,
+       "ran": 1795500238279,
+       "completed": 1795500238284
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 4045,
+     "output": 149,
+     "reasoning": 36,
+     "cache": {
+      "read": 2752,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795500235805,
+     "firstToken": 1795500236231,
+     "streamed": 1795500237109,
+     "completed": 1795500237112
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to delegate a task to the writer-worker sub-agent. The task is to have it use its edit tool to replace \"beta\" by \"delta\" in b.txt. Then report what it reported.\n\nLet me first check the current state of b.txt. Actually, I should just delegate. Let me look at the directory first to understand context.\n\nActually, the user says \"Delegate to your writer-worker sub-agent\". So I should spawn the subagent with the task. Let me first check if b.txt exists and its content, so I can give good context. But the instruction is to delegate. Let me just do it.\n\nLet me first read b.txt to understand, then delegate. Actually I can delegate directly. But providing context helps. Let me read it first quickly, then delegate. Actually I can do both in parallel? No, I need content before delegating maybe. Let me just read first.\n\nActually, the task is simple. Let me read b.txt first.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500236232,
+       "completed": 1795500237108
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0001",
+      "name": "read",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "path": "b.txt"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Read file b.txt, lines 1-1\n1: beta"
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795500237106,
+       "ran": 1795500237109,
+       "completed": 1795500237112
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 3798,
+     "output": 14,
+     "reasoning": 208,
+     "cache": {
+      "read": 2752,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795500235799
+    },
+    "text": "Delegate to your writer-worker sub-agent: have it use its edit tool (it must try) to replace beta by delta in b.txt. Then tell me what it reported.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAxMyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ },
+ "child": {
+  "data": [
+   {
+    "id": "msg_fake0015",
+    "time": {
+     "created": 1795500241201
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0009",
+    "time": {
+     "created": 1795500240627,
+     "firstToken": 1795500241039,
+     "streamed": 1795500241195,
+     "completed": 1795500241196
+    },
+    "type": "assistant",
+    "agent": "writer-worker",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The file now contains \"delta\" as requested. The task is complete.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500241040,
+       "completed": 1795500241191
+      }
+     },
+     {
+      "type": "text",
+      "text": "Done. The file now contains \"delta\"."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 0,
+    "tokens": {
+     "input": 242,
+     "output": 11,
+     "reasoning": 23,
+     "cache": {
+      "read": 6592,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0008",
+    "time": {
+     "created": 1795500239974,
+     "firstToken": 1795500240381,
+     "streamed": 1795500240615,
+     "completed": 1795500240619
+    },
+    "type": "assistant",
+    "agent": "writer-worker",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The edit succeeded. Now let me verify the file content.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500240382,
+       "completed": 1795500240611
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0005",
+      "name": "read",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "path": "/vault/b.txt"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Read file /vault/b.txt, lines 1-1\n1: delta"
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795500240453,
+       "ran": 1795500240614,
+       "completed": 1795500240618
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 179,
+     "output": 80,
+     "reasoning": 19,
+     "cache": {
+      "read": 6464,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0007",
+    "time": {
+     "created": 1795500239185,
+     "firstToken": 1795500239561,
+     "streamed": 1795500239958,
+     "completed": 1795500239965
+    },
+    "type": "assistant",
+    "agent": "writer-worker",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The file contains \"beta\". Now let me replace it with \"delta\".",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500239563,
+       "completed": 1795500239954
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0004",
+      "name": "edit",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "newString": "delta",
+        "oldString": "beta",
+        "path": "/vault/b.txt"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Edited b.txt (1 replacement)"
+        }
+       ],
+       "metadata": {
+        "files": [
+         {
+          "file": "b.txt",
+          "patch": "Index: b.txt\n===================================================================\n--- b.txt\n+++ b.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-beta\n+delta\n",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+         }
+        ],
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795500239672,
+       "ran": 1795500239957,
+       "completed": 1795500239963
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 236,
+     "output": 96,
+     "reasoning": 21,
+     "cache": {
+      "read": 6272,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0006",
+    "time": {
+     "created": 1795500238295,
+     "firstToken": 1795500238781,
+     "streamed": 1795500239174,
+     "completed": 1795500239178
+    },
+    "type": "assistant",
+    "agent": "writer-worker",
+    "model": {
+     "id": "beam-free",
+     "providerID": "opencode",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to replace \"beta\" with \"delta\" in b.txt. Let me first read the file to confirm its contents, then make the edit.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795500238781,
+       "completed": 1795500239170
+      }
+     },
+     {
+      "type": "tool",
+      "id": "call-fake-0003",
+      "name": "read",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {
+        "path": "/vault/b.txt"
+       },
+       "content": [
+        {
+         "type": "text",
+         "text": "Read file /vault/b.txt, lines 1-1\n1: beta"
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795500238979,
+       "ran": 1795500239173,
+       "completed": 1795500239177
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0,
+    "tokens": {
+     "input": 6296,
+     "output": 80,
+     "reasoning": 40,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795500238292
+    },
+    "text": "You are a subagent spawned by another session.\nUse your edit tool (you must try) to replace \"beta\" by \"delta\" in b.txt. The file is at /vault/b.txt and currently contains the single line \"beta\". Replace the exact text \"beta\" with \"delta\".",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAxNSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ }
+}

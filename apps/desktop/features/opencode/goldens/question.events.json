@@ -1,0 +1,180 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to use the question tool to ask which fruit they prefer: apple or pear, with both as options and one having a description. Then tell them what they answered.\n\nLet me call the question tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "call-fake-0001",
+      "messageId": "msg_fake0002",
+      "tool": "question",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to use the question tool to ask which fruit they prefer: apple or pear, with both as options and one having a description. Then tell them what they answered.\n\nLet me call the question tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "call-fake-0001",
+      "input": {
+        "questions": [
+          {
+            "question": "Which fruit do you prefer?",
+            "header": "Fruit preference",
+            "options": [
+              {
+                "label": "Apple",
+                "description": "A crisp, sweet fruit that comes in many varieties."
+              },
+              {
+                "label": "Pear",
+                "description": ""
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "question-request",
+      "requestId": "frm_fake0001",
+      "toolCallId": "call-fake-0001",
+      "questions": [
+        {
+          "question": "Which fruit do you prefer?",
+          "header": "Fruit preference",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "Apple",
+              "description": "A crisp, sweet fruit that comes in many varieties."
+            },
+            {
+              "label": "Pear",
+              "description": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "question-resolved",
+      "requestId": "frm_fake0001",
+      "toolCallId": "call-fake-0001",
+      "resolution": "answered",
+      "answers": [
+        {
+          "question": "Which fruit do you prefer?",
+          "answers": [
+            "pear"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "call-fake-0001",
+      "output": "User has answered your questions: \"Which fruit do you prefer?\"=\"pear\". You can now continue with the user's answers in mind.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 37,
+      "outputTokens": 121,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user answered \"pear\". I should tell them what they answered.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user answered \"pear\". I should tell them what they answered.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "You answered: **pear**."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "You answered: **pear**."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 197,
+      "outputTokens": 31,
+      "cacheReadTokens": 6336,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 234,
+      "outputTokens": 152,
+      "cacheReadTokens": 12672,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0,
+      "contextWindow": null,
+      "model": "opencode/beam-free"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 1801,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

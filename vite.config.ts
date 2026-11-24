@@ -11,6 +11,7 @@ export default defineConfig({
       "apps/website/src/routeTree.gen.ts",
       ".wrangler/**",
       "apps/desktop/shared/agent-golden/**",
+      "apps/desktop/features/opencode/goldens/**",
       "apps/desktop/features/*/web/bindings.ts",
       "apps/desktop/src-tauri/src/agent/fixtures/**",
       "apps/desktop/tests/fixtures/agent-chat-notes/**",
