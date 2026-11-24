@@ -295,6 +295,187 @@ fn a_commit_holds_only_the_paths_given() {
     }
 }
 
+fn set_mtime(path: &Path, t: std::time::SystemTime) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(t)
+        .unwrap();
+}
+
+/// A vault whose `a.md` and `b.md` were committed with mtime 30 seconds ago, the index as old as
+/// they are (their stat is racy against it), then both rewritten at the same size and the same
+/// mtime: only a content compare tells them from the committed ones. Times are forced, so none
+/// of this depends on timing.
+fn racy_pair() -> (tempfile::TempDir, Repo) {
+    use std::os::unix::fs::MetadataExt;
+    use std::time::{Duration, SystemTime};
+    for _ in 0..10 {
+        let dir = vault();
+        let root = dir.path();
+        let t0 = SystemTime::now() - Duration::from_secs(30);
+        let ctime = |rel: &str| std::fs::metadata(root.join(rel)).unwrap().ctime();
+        write(root, "a.md", "a1");
+        write(root, "b.md", "b1");
+        set_mtime(&root.join("a.md"), t0);
+        set_mtime(&root.join("b.md"), t0);
+        let committed = (ctime("a.md"), ctime("b.md"));
+        setup(root, SetupMode::LocalOnly, "d").unwrap();
+        set_mtime(&root.join(".git/index"), t0);
+        write(root, "a.md", "a2");
+        write(root, "b.md", "b2");
+        set_mtime(&root.join("a.md"), t0);
+        set_mtime(&root.join("b.md"), t0);
+        // the ctime second is part of the stat match: the case needs it unmoved (retried when
+        // the clock ticked between the two writes)
+        if committed != (ctime("a.md"), ctime("b.md")) {
+            continue;
+        }
+        let repo = Repo::open(root).unwrap().unwrap();
+        assert_eq!(repo.changes().unwrap(), vec![edit("a.md"), edit("b.md")]);
+        return (dir, repo);
+    }
+    panic!("the clock ticked in every attempt");
+}
+
+/// A same-size edit made in the same second as the stat an index entry holds must survive a
+/// commit of other paths: the commit rewrites the index later, and the entry must not then
+/// read as clean by stat alone (racy git).
+#[test]
+fn a_commit_keeps_a_same_stat_edit_pending() {
+    let (_dir, repo) = racy_pair();
+    let only_a = [edit("a.md")];
+    let msg = Message::user(&only_a, DEFAULT_TEMPLATE, &ctx(), "d");
+    repo.commit(&only_a, &msg).unwrap();
+    assert_eq!(repo.changes().unwrap(), vec![edit("b.md")]);
+}
+
+/// The same for the sync's `refresh_index`, which rewrites the index too.
+#[test]
+fn a_refresh_keeps_a_same_stat_edit_pending() {
+    let (dir, repo) = racy_pair();
+    // a sync writes the file HEAD holds, then refreshes its entry
+    write(dir.path(), "a.md", "a1");
+    repo.refresh_index(&["a.md".to_string()]).unwrap();
+    assert_eq!(repo.changes().unwrap(), vec![edit("b.md")]);
+}
+
+/// The entry a commit has just staged is smudged too: its file may be written again in the
+/// second it was stat'ed, with the same size and mtime, and the index is read later.
+#[test]
+fn a_staged_entry_written_again_in_the_same_second_stays_pending() {
+    use std::os::unix::fs::MetadataExt;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    let secs_now = || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    };
+    let dir = vault();
+    let root = dir.path();
+    write(root, "a.md", "a0");
+    setup(root, SetupMode::LocalOnly, "d").unwrap();
+    let repo = Repo::open(root).unwrap().unwrap();
+    let ctime = |rel: &str| std::fs::metadata(root.join(rel)).unwrap().ctime();
+    for i in 1..10 {
+        let t = secs_now();
+        let whole = UNIX_EPOCH + Duration::from_secs(t);
+        write(root, "a.md", &format!("a{i}"));
+        set_mtime(&root.join("a.md"), whole);
+        let staged_ctime = ctime("a.md");
+        let one = [edit("a.md")];
+        let msg = Message::user(&one, DEFAULT_TEMPLATE, &ctx(), "d");
+        repo.commit(&one, &msg).unwrap();
+        // a second later than the stat, the index is what status reads
+        set_mtime(&root.join(".git/index"), whole + Duration::from_secs(10));
+        write(root, "a.md", &format!("b{i}"));
+        set_mtime(&root.join("a.md"), whole);
+        // the case needs the clock to stay in one second (retried when it ticked)
+        if staged_ctime as u64 != t || ctime("a.md") as u64 != t || secs_now() != t {
+            continue;
+        }
+        assert_eq!(repo.changes().unwrap(), vec![edit("a.md")]);
+        return;
+    }
+    panic!("the clock ticked in every attempt");
+}
+
+/// A file committed in the second it was saved is smudged; once that second is past, the very
+/// next index rewrite gives its stat back, so status (and the LFS freshness check) stops rehashing it.
+#[test]
+fn a_smudged_entry_heals_once_its_second_has_passed() {
+    use std::time::{Duration, SystemTime};
+    let dir = vault();
+    let root = dir.path();
+    let future = SystemTime::now() + Duration::from_secs(5);
+    write(root, "x.md", "x1");
+    set_mtime(&root.join("x.md"), future);
+    setup(root, SetupMode::LocalOnly, "d").unwrap();
+    let mtime_of = |rel: &str| {
+        let index = gix::open(root).unwrap().index().unwrap();
+        let e = index
+            .entries()
+            .iter()
+            .find(|e| e.path(&index) == rel.as_bytes())
+            .unwrap();
+        e.stat.mtime.secs
+    };
+    assert_eq!(mtime_of("x.md"), 0, "committed in the second it was saved");
+    // that second passes: the file reads as saved earlier, the index as written after it
+    set_mtime(
+        &root.join("x.md"),
+        SystemTime::now() - Duration::from_secs(10),
+    );
+    set_mtime(
+        &root.join(".git/index"),
+        SystemTime::now() - Duration::from_secs(5),
+    );
+    write(root, "y.md", "y1");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let only_y = [add("y.md")];
+    let msg = Message::user(&only_y, DEFAULT_TEMPLATE, &ctx(), "d");
+    repo.commit(&only_y, &msg).unwrap();
+    assert_ne!(mtime_of("x.md"), 0, "healed");
+    assert_eq!(repo.changes().unwrap(), vec![]);
+    // an edited file is not healed into a clean one
+    write(root, "x.md", "x2");
+    assert_eq!(repo.changes().unwrap(), vec![edit("x.md")]);
+}
+
+/// A smudged entry whose file was edited (same size, an old mtime) is not healed into a clean one.
+#[test]
+fn a_smudged_entry_with_an_edited_file_is_not_healed() {
+    use std::time::{Duration, SystemTime};
+    let dir = vault();
+    let root = dir.path();
+    write(root, "x.md", "x1");
+    set_mtime(
+        &root.join("x.md"),
+        SystemTime::now() + Duration::from_secs(5),
+    );
+    setup(root, SetupMode::LocalOnly, "d").unwrap();
+    write(root, "x.md", "x2");
+    set_mtime(
+        &root.join("x.md"),
+        SystemTime::now() - Duration::from_secs(10),
+    );
+    write(root, "y.md", "y1");
+    let repo = Repo::open(root).unwrap().unwrap();
+    let only_y = [add("y.md")];
+    let msg = Message::user(&only_y, DEFAULT_TEMPLATE, &ctx(), "d");
+    repo.commit(&only_y, &msg).unwrap();
+    let index = gix::open(root).unwrap().index().unwrap();
+    let x = index
+        .entries()
+        .iter()
+        .find(|e| e.path(&index) == b"x.md")
+        .unwrap();
+    assert_eq!(x.stat.mtime.secs, 0);
+    assert_eq!(repo.changes().unwrap(), vec![edit("x.md")]);
+}
+
 #[test]
 fn deletes_and_moves_are_detected_and_committed() {
     let dir = vault();

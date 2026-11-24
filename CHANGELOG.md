@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Git: a same-size edit saved in the same second as a commit of other files could vanish from the changes list; the index now marks such entries for a content check.
+
 ## 0.9.0 - 2026-11-23
 
 The first release from [Belphemur/writer-computer](https://github.com/Belphemur/writer-computer), for macOS (Apple silicon) and Linux (x86_64). Installs of earlier builds from the original repository do not update to it: install 0.9.0 fresh.

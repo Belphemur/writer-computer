@@ -1012,40 +1012,46 @@ impl Repo {
             None => repo.empty_tree().id,
         };
         let mut editor = repo.edit_tree(base).map_err(git)?;
-        let mut index_file: gix::index::File = (**repo.index_or_empty().map_err(git)?).clone();
-        let index: &mut gix::index::State = &mut index_file;
-
-        let drop_from_index = |rel: &str, index: &mut gix::index::State| {
-            index.remove_entries(|_, path, _| path == rel.as_bytes());
-        };
-        let mut rules = self.lfs_rules()?;
-        // files that go into LFS and no rule covers yet: the managed block gets a line each
-        let mut lines: BTreeSet<String> = BTreeSet::new();
-        for change in changes {
-            let (rel, from) = match change {
-                Change::Delete(rel) => {
-                    editor.remove(rel.as_str()).map_err(git)?;
-                    drop_from_index(rel, index);
-                    continue;
-                }
-                Change::Move { from, to } => {
-                    editor.remove(from.as_str()).map_err(git)?;
-                    drop_from_index(from, index);
-                    (to, Some(from.as_str()))
-                }
-                Change::Add(rel) | Change::Edit(rel) => (rel, None),
+        let skip: Vec<&str> = changes
+            .iter()
+            .flat_map(|c| match c {
+                Change::Move { from, to } => [Some(from.as_str()), Some(to.as_str())],
+                other => [Some(other.path()), None],
+            })
+            .flatten()
+            .collect();
+        let mut index_file = self.staged_index(&skip, |index, rules| {
+            let drop_from_index = |rel: &str, index: &mut gix::index::State| {
+                index.remove_entries(|_, path, _| path == rel.as_bytes());
             };
-            if self.stage(&mut rules, &mut editor, index, rel, from)?
-                == (Via::Pointer { needs_line: true })
-            {
-                lines.insert(rel.clone());
+            // files that go into LFS and no rule covers yet: the managed block gets a line each
+            let mut lines: BTreeSet<String> = BTreeSet::new();
+            for change in changes {
+                let (rel, from) = match change {
+                    Change::Delete(rel) => {
+                        editor.remove(rel.as_str()).map_err(git)?;
+                        drop_from_index(rel, index);
+                        continue;
+                    }
+                    Change::Move { from, to } => {
+                        editor.remove(from.as_str()).map_err(git)?;
+                        drop_from_index(from, index);
+                        (to, Some(from.as_str()))
+                    }
+                    Change::Add(rel) | Change::Edit(rel) => (rel, None),
+                };
+                if self.stage(rules, &mut editor, index, rel, from)?
+                    == (Via::Pointer { needs_line: true })
+                {
+                    lines.insert(rel.clone());
+                }
             }
-        }
-        if !lines.is_empty() {
-            let included = changes.iter().any(|c| c.path() == ".gitattributes");
-            self.track_in_attributes(&mut editor, index, &lines, included)?;
-        }
-        index.sort_entries();
+            if !lines.is_empty() {
+                let included = changes.iter().any(|c| c.path() == ".gitattributes");
+                self.track_in_attributes(&mut editor, index, &lines, included)?;
+            }
+            Ok(())
+        })?;
         let tree = editor.write().map_err(git)?;
         let id = match signer {
             // git writes the signed commit object; the branch then moves only if nobody moved it
@@ -1837,36 +1843,107 @@ impl Repo {
         Ok(())
     }
 
+    /// The index to write: a clone of the loaded one with `edit` applied, its racy entries
+    /// smudged and its earlier smudges healed. The one path every index rewrite takes (`commit`,
+    /// `refresh_index`), so an entry it does not touch never turns clean by a stat that cannot be
+    /// trusted. `skip` are the paths `edit` replaces. The caller writes the file.
+    fn staged_index(
+        &self,
+        skip: &[&str],
+        edit: impl FnOnce(&mut gix::index::State, &mut Option<Rules<'_>>) -> Result<()>,
+    ) -> Result<gix::index::File> {
+        let started_at = gix::date::Time::now_utc().seconds;
+        let mut file: gix::index::File = (**self.repo.index_or_empty().map_err(git)?).clone();
+        let loaded_at = file.timestamp().unix_seconds();
+        let mut rules = self.lfs_rules()?;
+        // git's racy-clean rule: the file about to be written is newer than the stat of any
+        // entry it still trusts, so an entry that was racy against the index we loaded must
+        // not keep its stat (a same-size edit in the same second would read as unchanged)
+        smudge_racy(&mut file, loaded_at);
+        // a smudged entry whose second is over is trusted again on this very rewrite: its stat
+        // is taken before its content is checked, and a later write gets a second of at least
+        // `started_at`
+        self.heal_smudged(&mut file, started_at, skip, &mut rules);
+        edit(&mut file, &mut rules)?;
+        // the entries just staged were stat'ed during this call: a file written again in the
+        // same second may still match their stat
+        smudge_racy(&mut file, started_at);
+        file.sort_entries();
+        Ok(file)
+    }
+
+    /// Gives a smudged entry (mtime 0) its stat back once it can be trusted: its file's mtime
+    /// second is before `before` and its content is still the entry's. Without it a file
+    /// committed in the second it was saved is rehashed by every status, and an LFS file (whose
+    /// freshness check is its stat) is reread whole.
+    fn heal_smudged(
+        &self,
+        index: &mut gix::index::State,
+        before: i64,
+        skip: &[&str],
+        rules: &mut Option<Rules<'_>>,
+    ) {
+        let smudged: Vec<(usize, String, gix::ObjectId)> = index
+            .entries()
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                e.stat.mtime.secs == 0
+                    && e.mode.intersects(
+                        gix::index::entry::Mode::FILE | gix::index::entry::Mode::FILE_EXECUTABLE,
+                    )
+            })
+            .map(|(i, e)| (i, rel_of(e.path(index)), e.id))
+            .filter(|(_, rel, _)| !skip.contains(&rel.as_str()))
+            .collect();
+        for (i, rel, id) in smudged {
+            let path = self.root.join(&rel);
+            // stat first, then the bytes: a write in between leaves the stat older than the content
+            let Some(fresh) = gix::index::fs::Metadata::from_path_no_follow(&path)
+                .ok()
+                .and_then(|m| gix::index::entry::Stat::from_fs(&m).ok())
+            else {
+                continue;
+            };
+            if fresh.mtime.secs == 0 || i64::from(fresh.mtime.secs) >= before {
+                continue;
+            }
+            if !self.differs(rules, &rel, &path, u64::from(fresh.size), id) {
+                index.entries_mut()[i].stat = fresh;
+            }
+        }
+    }
+
     /// Re-stages `paths` from the working tree (their stat data too) or drops their entries when
     /// the file is gone, so the next status sees them as unchanged.
     pub fn refresh_index(&self, paths: &[String]) -> Result<()> {
-        let mut index_file: gix::index::File = (**self.repo.index_or_empty().map_err(git)?).clone();
-        let index: &mut gix::index::State = &mut index_file;
         let tree = self.repo.empty_tree();
         let mut editor = self.repo.edit_tree(tree.id).map_err(git)?;
-        let mut rules = self.lfs_rules()?;
         let head = self.head_tree();
-        for rel in paths {
-            let path = self.root.join(rel);
-            let Ok(meta) = gix::index::fs::Metadata::from_path_no_follow(&path) else {
-                index.remove_entries(|_, p, _| p == rel.as_bytes());
-                continue;
-            };
-            if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
-                index.remove_entries(|_, p, _| p == rel.as_bytes());
-                continue;
-            }
-            // a large file the sync just wrote from HEAD's pointer is that pointer: no hashing
-            match self.head_blob(head.as_ref(), rel) {
-                Some(id) if self.pointer_in(id).is_some() && !lfs::file_is_pointer(&path) => {
-                    self.push_entry(&mut editor, index, rel, id, &path, &meta)?;
+        let skip: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let mut index_file = self.staged_index(&skip, |index, rules| {
+            for rel in paths {
+                let path = self.root.join(rel);
+                let Ok(meta) = gix::index::fs::Metadata::from_path_no_follow(&path) else {
+                    index.remove_entries(|_, p, _| p == rel.as_bytes());
+                    continue;
+                };
+                if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+                    index.remove_entries(|_, p, _| p == rel.as_bytes());
+                    continue;
                 }
-                _ => {
-                    self.stage(&mut rules, &mut editor, index, rel, None)?;
+                // a large file the sync just wrote from HEAD's pointer is that pointer: no hashing
+                match self.head_blob(head.as_ref(), rel) {
+                    Some(id) if self.pointer_in(id).is_some() && !lfs::file_is_pointer(&path) => {
+                        self.push_entry(&mut editor, index, rel, id, &path, &meta)?;
+                    }
+                    _ => {
+                        self.stage(rules, &mut editor, index, rel, None)?;
+                    }
                 }
             }
-        }
-        index.sort_entries();
+            Ok(())
+        })?;
         index_file
             .write(gix::index::write::Options::default())
             .map_err(git)?;
@@ -1885,6 +1962,21 @@ pub(crate) fn read_after_stat(
     let meta = gix::index::fs::Metadata::from_path_no_follow(path)?;
     between();
     Ok((std::fs::read(path)?, meta))
+}
+
+/// Makes every entry whose mtime is at or after `since` (unix seconds, the second granularity
+/// the stat match works in) fail its next stat match, so `status` compares its content. Git
+/// does the same when it writes an index (`ce_smudge_racily_clean_entry`); it clears the size,
+/// here the mtime is reset to 0 instead, so an empty file (whose size never differs) is covered
+/// too. A smudged entry costs one content hash per status, and for an LFS file the freshness
+/// check in `scan` (its stat) rereads the whole file: `Repo::heal_smudged` gives the stat back
+/// once it is safe.
+fn smudge_racy(index: &mut gix::index::State, since: i64) {
+    for entry in index.entries_mut() {
+        if i64::from(entry.stat.mtime.secs) >= since {
+            entry.stat.mtime = gix::index::entry::stat::Time { secs: 0, nsecs: 0 };
+        }
+    }
 }
 
 fn commit_blob(commit: &gix::Commit<'_>, rel: &str) -> Option<gix::ObjectId> {
