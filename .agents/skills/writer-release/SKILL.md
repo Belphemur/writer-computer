@@ -32,7 +32,7 @@ The procedure and its rules live in [`docs/releasing.md`](../../../docs/releasin
    - the run URL;
    - that the draft needs their review and **Publish release** (§4, §5);
    - that macOS is ad-hoc signed until the Developer ID secrets exist.
-   Never publish it yourself.
+     Never publish it yourself.
 
 ## After
 
