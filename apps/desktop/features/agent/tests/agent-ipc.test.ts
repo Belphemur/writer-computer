@@ -58,6 +58,8 @@ const FULL: { [K in keyof AgentCommands]: AgentArgs<K> } = {
   agent_session_changes: { chatId: "c" },
   agent_revert_changes: { chatId: "c", turnId: "t", paths: [] },
   agent_list_skills: { projectPath: null },
+  agent_mcp_servers: { backend: null, refresh: false },
+  agent_mcp_apply: { backend: null },
   agent_memory_list: { projectPath: null },
   agent_memory_delete: { scope: "vault", projectPath: null, name: "n" },
   agent_memory_forget_all: { scope: "vault", projectPath: null },

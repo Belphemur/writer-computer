@@ -264,8 +264,8 @@ fn the_first_send_makes_the_session_announces_it_and_posts_the_prompt_with_a_sta
                     if session_id == SESSION
                         && slash_commands.contains(&"init".to_string())
                         && skills.len() == 4
-                        && mcp_servers.iter().any(|m| m.name == "writer" && m.status == "connected")
-                        && mcp_servers.iter().any(|m| m.status == "needs_auth")
+                        && mcp_servers.iter().any(|m| m.name == "writer" && m.status == McpState::Connected)
+                        && mcp_servers.iter().any(|m| m.status == McpState::NeedsAuth)
                         && cli_version.as_deref() == Some("2.4.0")
             ))))
     });

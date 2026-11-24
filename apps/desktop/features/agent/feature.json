@@ -29,6 +29,8 @@
       "agent_memory_import_claude",
       "agent_memory_list",
       "agent_load_chat",
+      "agent_mcp_apply",
+      "agent_mcp_servers",
       "agent_make_project",
       "agent_answer_question",
       "agent_permission",

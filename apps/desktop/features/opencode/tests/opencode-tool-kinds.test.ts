@@ -11,6 +11,7 @@ import { featureHost } from "@/lib/features/registry";
 import {
   buildSpecs,
   groupTitle,
+  mcpPrefix,
   readsFile,
   toolKind,
   toolLabel,
@@ -48,7 +49,7 @@ describe("OpenCode's tools in the web table", () => {
   });
 
   it("classify Writer's own tools through OpenCode's prefix", () => {
-    const prefix = opencode.mcp.prefix;
+    const prefix = mcpPrefix(opencode.mcp, "writer");
     expect(toolKind(`${prefix}search`)).not.toBe("other");
   });
 

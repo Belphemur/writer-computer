@@ -9,6 +9,7 @@ import claude from "@shared/agent-tools/claude.json";
 import kinds from "@shared/agent-tools/kinds.json";
 import {
   editPreview,
+  mcpPrefix,
   permissionSummary,
   readsFile,
   TOOL_KIND_KEYS,
@@ -91,7 +92,7 @@ describe("the Claude tool table", () => {
   });
 
   it("classifies Writer's own MCP tools by their command", () => {
-    const p = claude.mcp.prefix;
+    const p = mcpPrefix(claude.mcp, "writer");
     expect(toolKind(`${p}search`)).toBe("search");
     expect(toolKind(`${p}graph_backlinks`)).toBe("search");
     expect(toolKind(`${p}outline`)).toBe("read");

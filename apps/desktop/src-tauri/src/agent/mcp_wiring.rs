@@ -15,6 +15,22 @@ use super::tool_table::ToolTable;
 use crate::cli::mcp::{self, ToolSpec};
 use std::path::Path;
 
+/// The name every harness knows an MCP server by: each character outside `[A-Za-z0-9_-]` becomes
+/// `_` (captures K2 and C8: Claude and OpenCode alike, so `my.srv`, `my srv` and `my:srv` are one
+/// server to both, and the name in a tool's prefix). The one implementation: the adapters'
+/// `deny_server` and the MCP menu's rows use it; pinned by `shared/agent-mcp/vectors.json`.
+pub fn server_key(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 /// The server a chat is given: the launcher and its arguments, with no backend's config format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriterServer {
@@ -65,8 +81,26 @@ pub trait ToolsAdapter: std::fmt::Debug {
     /// The backend's own tools (shell, edits, sub-agent launch): the shared table of
     /// `shared/agent-tools/<backend>.json`, the one place shared code learns a tool name from.
     fn tool_table(&self) -> &'static ToolTable;
-    /// How the backend names a tool of the server to the model (Claude: `mcp__<server>__<tool>`).
-    fn tool_name(&self, tool: &ToolSpec) -> String;
+    /// How the backend names a tool of Writer's server to the model: the table's `serverPrefix`
+    /// for `writer` and the tool.
+    fn tool_name(&self, tool: &ToolSpec) -> String {
+        format!("{}{}", self.server_prefix(mcp::SERVER_NAME), tool.name)
+    }
+    /// The prefix every tool of `server` has, whatever the harness spelling of the server's name
+    /// (made a [`server_key`] here).
+    fn server_prefix(&self, server: &str) -> String {
+        self.tool_table()
+            .mcp
+            .as_ref()
+            .expect("the table names the MCP prefix")
+            .prefix_for(&server_key(server))
+    }
+    /// The rule that withholds every tool of `server` from the model (Claude's
+    /// `--disallowedTools` entry `mcp__<key>__*`; OpenCode's pattern `<key>_*`). The server may
+    /// still start: the rule is on the tools, not the process.
+    fn deny_server(&self, server: &str) -> String {
+        format!("{}*", self.server_prefix(server))
+    }
     /// How the backend is handed the server.
     fn launch(&self, server: &WriterServer) -> Launch;
     /// How the read tools skip the permission prompt, from the registry's tools (Claude:

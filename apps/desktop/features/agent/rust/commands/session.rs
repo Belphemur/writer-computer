@@ -16,7 +16,6 @@ use crate::agent::ports::InjectAgentsMd;
 use crate::agent::session::{Rejected, Sink, StartParams, StartedIds};
 use crate::commands::blocking;
 use crate::error::AppError;
-use crate::state::AppState;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -38,13 +37,8 @@ fn sink_for<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Sink {
 /// `agent.inject-agents-md`; the key is added to the schema by the settings lane, a missing key
 /// (or any unknown value) is `auto`.
 fn inject_setting<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> InjectAgentsMd {
-    let state = app.state::<AppState>().get_or_create(label);
-    let guard = state.settings.read();
     InjectAgentsMd::parse(
-        guard
-            .as_ref()
-            .and_then(|s| s.get("agent.inject-agents-md"))
-            .and_then(|v| v.as_str()),
+        crate::config::global_string(app, label, "agent.inject-agents-md").as_deref(),
     )
 }
 
@@ -66,14 +60,8 @@ pub async fn agent_detect_binary<R: Runtime>(
     webview: tauri::Webview<R>,
     app: tauri::AppHandle<R>,
 ) -> Result<AgentBinaryInfo, AppError> {
-    let override_path = binary_override.or_else(|| {
-        let state = app.state::<AppState>().get_or_create(webview.label());
-        let guard = state.settings.read();
-        guard
-            .as_ref()
-            .and_then(|s| s.get("agent.binary-path"))
-            .and_then(|v| v.as_str().map(str::to_string))
-    });
+    let override_path = binary_override
+        .or_else(|| crate::config::global_string(&app, webview.label(), "agent.binary-path"));
     let spawner = super::super::sessions(&app)?.spawner();
     blocking(move || Ok(binary::detect(&spawner, override_path.as_deref()))).await
 }

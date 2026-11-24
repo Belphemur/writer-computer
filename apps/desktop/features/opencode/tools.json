@@ -163,6 +163,6 @@
     }
   ],
   "mcp": {
-    "prefix": "writer_"
+    "serverPrefix": "{server}_"
   }
 }

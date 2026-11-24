@@ -119,6 +119,11 @@ export interface AgentCommands {
     { chatId: string; turnId: string; paths: string[] }
   >;
   agent_list_skills: Command<"agent_list_skills", { projectPath: string | null }>;
+  /** A backend's MCP servers menu (null: Claude). `refresh` reads the list now; without it only
+   *  what the chats and earlier reads have seen comes back. */
+  agent_mcp_servers: Command<"agent_mcp_servers", { backend: string | null; refresh: boolean }>;
+  /** A switch of the backend's setting changed: puts it in force and marks the chats stale. */
+  agent_mcp_apply: Command<"agent_mcp_apply", { backend: string | null }>;
   /** The vault memory and, with a project, that project's (`.writer/memory/`, `<project>/.memory/`). */
   agent_memory_list: Command<"agent_memory_list", { projectPath: string | null }>;
   agent_memory_delete: Command<

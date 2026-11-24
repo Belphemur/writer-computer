@@ -72,8 +72,12 @@ type TableRow = {
 type ToolTable = {
   fallback: TableRow;
   tools: TableRow[];
-  mcp?: { prefix: string };
+  mcp?: { serverPrefix: string };
 };
+
+/** The prefix of a server's tools in a table (`mcp__{server}__` for `writer` is `mcp__writer__`). */
+export const mcpPrefix = (mcp: { serverPrefix: string }, server: string): string =>
+  mcp.serverPrefix.replace("{server}", server);
 
 /** A row completed with the fallback's words. */
 function specOf(row: TableRow, fallback: TableRow): ToolSpec {
@@ -95,7 +99,7 @@ export function buildSpecs(table: ToolTable) {
     table.tools.map((row) => [row.name ?? "", specOf(row, table.fallback)]),
   );
   const mcp = table.mcp && {
-    prefix: table.mcp.prefix,
+    prefix: mcpPrefix(table.mcp, writerMcp.server),
     // what each command is does not depend on the backend: one shared file
     classes: (writerMcp.classes as unknown as (TableRow & { match: string })[]).map((c) => ({
       match: new RegExp(c.match),

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Agent: Settings > Agent has an MCP servers menu under each agent (search, a switch per server, its state, "Checked N min ago · Refresh"). For Claude, a server you switch off is hidden from the chat and its sub-agents (it still starts) and open chats restart to apply it. The Ready badge shows the program's version.
 - Git: a same-size edit saved in the same second as a commit of other files could vanish from the changes list; the index now marks such entries for a content check.
 - OpenCode (feature): a second agent backend. Pick it per chat when `opencode` 2.4 or newer is installed and signed in, with the default under Settings > Agent > Default agent. Writer runs OpenCode with its own config, so your global OpenCode config, plugins and MCP servers do not apply. [Use OpenCode in Writer](https://writer.computer/docs/use-opencode/).
 - OpenCode: Settings > Agent > OpenCode has a models table (a tab per provider, Enabled and Free chips, search, prices) where you switch models off, the tier models, and the saved permission rules of the vault's project. Reasoning effort shows in the chat's model chip.

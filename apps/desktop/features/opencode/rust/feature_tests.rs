@@ -61,9 +61,8 @@ fn on_it_answers_the_backends_point_for_its_own_id_and_no_other() {
     assert!(!backend
         .ops()
         .session_id_ok("3f1c4ee0-a111-4d52-8c36-6a2f41a29b7c"));
-    // no `opencode mcp list` runs for it: it would read the user's own config, which never applies
-    assert!(!backend.ops().mcp_cli_probe());
-    assert!(crate::agent::backend::claude().ops().mcp_cli_probe());
+    // no MCP switches until phase 2 (the menu is hidden for it)
+    assert!(backend.ops().mcp_switches().is_none());
     // the core's own backend is never asked for, and nobody answers for a name it does not know
     assert!(ask(&app, "claude").is_none());
     assert!(ask(&app, "codex").is_none());
@@ -500,6 +499,46 @@ fn closing_a_window_returns_at_once_and_the_process_is_stopped_later() {
     let began = Instant::now();
     r.servers.server("main", &two).unwrap();
     assert!(began.elapsed() < Duration::from_millis(100));
+}
+
+/// A19: OpenCode lists its MCP servers through its own server, never through a program's `mcp list`
+/// command: the probe port is never touched, and the neutral state words come out.
+#[test]
+fn opencode_lists_its_mcp_servers_through_its_server_and_never_runs_a_cli_list() {
+    use crate::agent::backend::HelperCtx;
+    use crate::agent::config_sync::{McpProbe, ProbeTarget};
+    use crate::agent::events::{McpServerStatus, McpState};
+    struct NeverRun;
+    impl McpProbe for NeverRun {
+        fn probe(
+            &self,
+            _: &ProbeTarget,
+            _: Duration,
+            _: &Spawner,
+        ) -> Result<Vec<McpServerStatus>, String> {
+            panic!("OpenCode must not run a CLI list");
+        }
+    }
+    let (_v, root) = vault();
+    let (backend, _launcher, _keep) = backend_on(rig());
+    let spawner = Spawner::detached();
+    let got = backend
+        .ops()
+        .mcp_list(
+            &HelperCtx {
+                spawner: &spawner,
+                program: Path::new("opencode"),
+                cwd: &root,
+                label: "main",
+                root: &root,
+            },
+            &NeverRun,
+        )
+        .expect("the server answers");
+    assert!(got
+        .iter()
+        .any(|s| s.name == "writer" && s.status == McpState::Connected));
+    assert!(got.iter().any(|s| s.status == McpState::NeedsAuth));
 }
 
 #[test]

@@ -77,15 +77,6 @@ impl ToolsAdapter for OpencodeAdapter {
         table()
     }
 
-    fn tool_name(&self, tool: &ToolSpec) -> String {
-        let prefix = &table()
-            .mcp
-            .as_ref()
-            .expect("the table names the MCP prefix")
-            .prefix;
-        format!("{prefix}{}", tool.name)
-    }
-
     fn launch(&self, server: &WriterServer) -> Launch {
         let command: Vec<&String> = std::iter::once(&server.command)
             .chain(&server.args)
@@ -221,7 +212,8 @@ mod tests {
 
     #[test]
     fn the_names_are_the_tables_and_the_servers_prefix() {
-        assert_eq!(table().mcp.as_ref().unwrap().prefix, "writer_");
+        assert_eq!(OpencodeAdapter.server_prefix("writer"), "writer_");
+        assert_eq!(OpencodeAdapter.deny_server("my.srv"), "my_srv_*");
         let tool = mcp::tools()
             .into_iter()
             .find(|t| t.name == "search")

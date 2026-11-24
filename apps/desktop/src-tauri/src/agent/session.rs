@@ -12,9 +12,10 @@
 use super::api::BACKENDS;
 use super::backend::{self, is_uuid, Backend};
 use super::changes::ChangeStore;
-use super::config_sync::{CliMcpProbe, McpProbe, Msg, Worker};
+use super::config_sync::{self, CliMcpProbe, McpProbe, Msg, Worker};
 use super::events::*;
 use super::files::{self, Outgoing};
+use super::mcp_menu::McpCache;
 use super::mcp_wiring;
 use super::memory;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
@@ -77,7 +78,7 @@ impl Default for Timing {
                 Duration::from_secs(120),
                 Duration::from_secs(300),
             ],
-            mcp_probe_timeout: Duration::from_secs(45),
+            mcp_probe_timeout: config_sync::MCP_LIST_TIMEOUT,
             steer_ack: Duration::from_secs(30),
             unqueue_ack: Duration::from_secs(5),
         }
@@ -218,6 +219,10 @@ pub(crate) struct Shared {
     /// The owned points of the agent (`api.rs`): the runner emits through it, so a test core and
     /// an app each have their own registry.
     pub points: Points,
+    /// The MCP servers every backend and vault last showed (`mcp_menu.rs`).
+    pub mcp: McpCache,
+    /// The program's own list command, as a port (`BackendOps::mcp_list` uses it).
+    pub probe: Arc<dyn McpProbe>,
 }
 
 impl Shared {
@@ -349,6 +354,8 @@ impl AgentSessions {
             config_tx: Mutex::new(config_tx.clone()),
             spawn: spawn.clone(),
             points,
+            mcp: McpCache::default(),
+            probe: Arc::clone(&probe),
         });
         let weak: Weak<Shared> = Arc::downgrade(&shared);
         let worker = Worker {
@@ -392,6 +399,24 @@ impl AgentSessions {
             paths,
             own,
             at: Instant::now(),
+        });
+    }
+
+    /// The port a backend's `mcp_list` runs its program's list command through.
+    pub fn probe(&self) -> Arc<dyn McpProbe> {
+        Arc::clone(&self.shared.probe)
+    }
+
+    /// The MCP servers last seen, per backend and vault: what the menu shows without a probe.
+    pub fn mcp(&self) -> &McpCache {
+        &self.shared.mcp
+    }
+
+    /// The MCP switches of `backend` changed (the setting is global, so in every window): its chats
+    /// are stale (they restart under `agent.auto-reload`, the one rule of `config_sync::decide`).
+    pub fn mcp_switched(&self, backend: &str) {
+        self.shared.send_config(Msg::Switched {
+            backend: backend.to_string(),
         });
     }
 

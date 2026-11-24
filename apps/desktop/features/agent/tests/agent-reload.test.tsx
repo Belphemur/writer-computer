@@ -27,7 +27,7 @@ import {
   RELOAD_NOT_STARTED_TEXT,
   reloadNoticeFor,
 } from "@features/agent/web/lib/session-reload";
-import type { AgentEvent } from "@features/agent/web/lib/events";
+import type { AgentEvent, McpServerStatus } from "@features/agent/web/lib/events";
 import { parseWriterCommand } from "@features/agent/web/lib/writer-commands";
 import {
   configureAgentRuntimeForTests,
@@ -38,7 +38,7 @@ import { goldens } from "@features/agent/tests/helpers/agent-goldens";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const started = (mcpServers: { name: string; status: string }[]): AgentEvent => ({
+const started = (mcpServers: McpServerStatus[]): AgentEvent => ({
   type: "session-started",
   sessionId: "s",
   model: null,
@@ -202,6 +202,21 @@ describe("the MCP status display", () => {
     act(() => container.querySelector<HTMLElement>("[data-agent-skills-chip]")!.click());
     const rows = [...container.querySelectorAll("[data-agent-mcp-row]")].map((r) => r.textContent);
     expect(rows).toEqual(["notesconnected", "webneeds sign-in"]);
+  });
+
+  it("reads a switched-off server as off and does not warn about it", async () => {
+    const chat = reduceEvent(
+      createChat("c"),
+      started([
+        { name: "notes", status: "connected" },
+        { name: "db", status: "disabled" },
+      ]),
+    );
+    await act(async () => root.render(<SkillsChip chat={chat} />));
+    expect(container.querySelector("[data-agent-skills-chip]")!.textContent).not.toContain("⚠");
+    act(() => container.querySelector<HTMLElement>("[data-agent-skills-chip]")!.click());
+    const rows = [...container.querySelectorAll("[data-agent-mcp-row]")].map((r) => r.textContent);
+    expect(rows).toEqual(["notesconnected", "dboff"]);
   });
 
   it("after a reload it says the status comes with the next message, then shows the new one", async () => {

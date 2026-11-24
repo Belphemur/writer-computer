@@ -12,12 +12,8 @@ import {
   type SlashItem,
 } from "@features/agent/web/lib/slash-commands";
 import type { McpServerStatus } from "@features/agent/web/lib/events";
+import { mcpNeedsAttention, mcpStatusLabel } from "@features/agent/web/lib/mcp-status";
 import { vaultLinkHandlers } from "./agent-links";
-
-/** The CLI's status word as a label ("needs-auth" reads "needs sign-in"). */
-export function mcpStatusLabel(status: string): string {
-  return status === "needs-auth" ? "needs sign-in" : status;
-}
 
 /** The MCP servers the chat's CLI reported with their state (`init.mcp_servers`). `null`: not
  *  reported since the start or the last reload (the CLI sends the list with the next message). */
@@ -41,7 +37,7 @@ export function McpSection({ servers }: { servers: McpServerStatus[] | null }) {
             >
               <span className="truncate">{s.name}</span>
               <span
-                className={`ml-auto shrink-0 text-[11px] ${s.status === "connected" ? "text-text-muted" : "text-[var(--status-warning,#b45309)]"}`}
+                className={`ml-auto shrink-0 text-[11px] ${mcpNeedsAttention(s.status) ? "text-[var(--status-warning,#b45309)]" : "text-text-muted"}`}
               >
                 {mcpStatusLabel(s.status)}
               </span>
@@ -91,7 +87,7 @@ export function SkillsChip({ chat }: { chat: Chat }) {
         className="rounded-md bg-[var(--surface-subtle)] px-2 py-0.5 text-[11.5px] text-text-secondary hover:bg-[var(--item-hover-bg)]"
       >
         Skills ({skills.length})
-        {chat.session?.mcpServers?.some((s) => s.status !== "connected") && (
+        {chat.session?.mcpServers?.some((s) => mcpNeedsAttention(s.status)) && (
           <span aria-label="An MCP server is not connected" title="An MCP server is not connected">
             {" "}
             ⚠

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { groupByProvider, matchesModelQuery } from "@/lib/features/agent-backends";
+import { groupByProvider, matchesQuery } from "@/lib/features/agent-backends";
 import { ChipMenuRadio } from "./chip-menu";
 import type { ModelChoice } from "@features/agent/web/lib/model-catalog";
 
@@ -23,7 +23,7 @@ export function ModelList({
 }) {
   const [query, setQuery] = useState("");
   const searchable = models.length > MODEL_SEARCH_THRESHOLD;
-  const shown = models.filter((m) => matchesModelQuery(m.provider, m.name ?? m.label, query));
+  const shown = models.filter((m) => matchesQuery(query, m.provider, m.name ?? m.label));
   const groups = groupByProvider(shown);
   const grouped = groupByProvider(models).length > 1;
   const loose = grouped ? shown.filter((m) => !m.provider) : shown;

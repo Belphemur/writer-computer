@@ -122,6 +122,24 @@ pub trait ChatPort: Send + Sync {
     }
 }
 
+/// The user's list settings, read when a chat's process is spawned (the MCP servers switched off
+/// reach the next start, a restart included, without the web re-sending them). The Tauri half
+/// answers from the window's settings (`config::global_list`); the core's default knows none.
+pub trait SettingsPort: Send + Sync {
+    /// The list setting `key` of window `label` (empty when unset).
+    fn list(&self, label: &str, key: &str) -> Vec<String>;
+}
+
+/// Default [`SettingsPort`]: every list is empty.
+#[derive(Debug, Default)]
+pub struct NoSettings;
+
+impl SettingsPort for NoSettings {
+    fn list(&self, _label: &str, _key: &str) -> Vec<String> {
+        Vec::new()
+    }
+}
+
 /// Default [`ProjectPort`]: confine the project folder inside the vault, append only what the UI
 /// sent. Lane 3 replaces it.
 #[derive(Debug, Default)]
@@ -168,6 +186,7 @@ impl ChatPort for NoChats {}
 pub struct AgentPorts {
     project: RwLock<Arc<dyn ProjectPort>>,
     chats: RwLock<Arc<dyn ChatPort>>,
+    settings: RwLock<Arc<dyn SettingsPort>>,
 }
 
 impl Default for AgentPorts {
@@ -175,6 +194,7 @@ impl Default for AgentPorts {
         Self {
             project: RwLock::new(Arc::new(DefaultProject)),
             chats: RwLock::new(Arc::new(NoChats)),
+            settings: RwLock::new(Arc::new(NoSettings)),
         }
     }
 }
@@ -186,6 +206,14 @@ impl AgentPorts {
 
     pub fn chats(&self) -> Arc<dyn ChatPort> {
         Arc::clone(&self.chats.read())
+    }
+
+    pub fn settings(&self) -> Arc<dyn SettingsPort> {
+        Arc::clone(&self.settings.read())
+    }
+
+    pub fn set_settings(&self, port: Arc<dyn SettingsPort>) {
+        *self.settings.write() = port;
     }
 
     pub fn set_project(&self, port: Arc<dyn ProjectPort>) {

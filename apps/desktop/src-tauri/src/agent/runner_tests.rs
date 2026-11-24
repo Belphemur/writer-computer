@@ -3127,6 +3127,49 @@ fn the_system_block_claims_writer_only_when_the_launcher_is_on_the_path() {
     assert_eq!(*seen.0.lock(), vec![false, true]);
 }
 
+/// The MCP servers switched off: a `SettingsPort` whose one list a test changes between spawns.
+struct SwitchedOff(Mutex<Vec<String>>);
+
+impl super::ports::SettingsPort for SwitchedOff {
+    fn list(&self, label: &str, key: &str) -> Vec<String> {
+        assert_eq!(label, "w");
+        assert_eq!(key, "agent.claude.disabled-mcp-servers");
+        self.0.lock().clone()
+    }
+}
+
+#[test]
+fn switched_off_mcp_servers_are_denied_at_each_spawn_and_an_empty_list_changes_nothing() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    let port = Arc::new(SwitchedOff(Mutex::new(vec![])));
+    h.sessions.ports().set_settings(port.clone());
+    h.start(CHAT);
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    // nothing switched off: no deny flag at all (the argv of every golden)
+    assert!(!h.lines("argv.log")[0].contains("--disallowedTools"));
+    // switched off now (raw names, Writer's own server never denied): the restart reads it again
+    *port.0.lock() = vec![
+        "claude.ai Atlassian".into(),
+        "my.srv".into(),
+        "writer".into(),
+    ];
+    assert_eq!(
+        h.sessions.reload("w", CHAT).unwrap(),
+        ReloadOutcome::Started
+    );
+    h.next(CHAT, "session-reloaded", is_reloaded);
+    h.wait_until("the new process started", || h.lines("argv.log").len() == 2);
+    let argv = h.lines("argv.log");
+    // the user's own rules come first, then the keys the CLI names the servers by
+    assert!(
+        argv[1].contains("--disallowedTools mcp__claude_ai_Atlassian__* mcp__my_srv__*"),
+        "{}",
+        argv[1]
+    );
+    assert!(!argv[1].contains("mcp__writer__*"), "{}", argv[1]);
+}
+
 fn is_reloaded(e: &AgentEvent) -> bool {
     matches!(e, AgentEvent::SessionReloaded { .. })
 }
@@ -3309,6 +3352,72 @@ fn first_turn(h: &mut Harness) {
     h.start(CHAT);
     h.send(CHAT, "x");
     h.turn_finished(CHAT);
+}
+
+#[test]
+fn an_mcp_switch_restarts_an_idle_chat_of_that_backend_and_not_one_of_another() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    first_turn(&mut h);
+    // another backend's switch does not concern this chat. The worker takes messages in order and
+    // a stale reason is first-come: had it marked the chat, the skill change after it would
+    // restart the chat with the MCP reason
+    h.sessions.mcp_switched("other");
+    skill_change(&h);
+    assert_eq!(reason(&mut h).as_deref(), Some("skill new changed"));
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+}
+
+#[test]
+fn an_mcp_switch_restarts_an_idle_chat_with_its_reason() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    first_turn(&mut h);
+    h.sessions.mcp_switched("claude");
+    assert_eq!(reason(&mut h).as_deref(), Some("MCP servers switched"));
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+}
+
+#[test]
+fn an_mcp_switch_reaches_the_chats_of_every_window() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn", "ok-turn", "ok-turn"], "normal");
+    h.sessions.start(h.params(CHAT, "w", None)).unwrap();
+    h.sessions.start(h.params(OTHER_CHAT, "w2", None)).unwrap();
+    for (label, chat) in [("w", CHAT), ("w2", OTHER_CHAT)] {
+        h.sessions.send(label, chat, "x".into(), &[]).unwrap();
+        h.next(chat, "turn-finished", |e| {
+            matches!(e, AgentEvent::TurnFinished { .. })
+        });
+    }
+    h.sessions.mcp_switched("claude");
+    for chat in [CHAT, OTHER_CHAT] {
+        h.cursor = 0; // the cursor is shared: the other chat's reload may already be behind it
+        let got = h.next(chat, "session-reloaded", is_reloaded);
+        assert!(
+            matches!(&got, AgentEvent::SessionReloaded { reason } if reason.as_deref() == Some("MCP servers switched")),
+            "{chat}: {got:?}"
+        );
+    }
+}
+
+#[test]
+fn an_mcp_switch_during_a_turn_waits_for_it_and_keeps_its_reason() {
+    // a debounce no test outlasts: only the end of the turn can restart the chat
+    let mut t = test_timing();
+    t.config_debounce = Duration::from_secs(300);
+    let mut h = Harness::with_timing(&["interrupt", "ok-turn"], "normal", t);
+    h.start(CHAT);
+    h.send(CHAT, "do something");
+    h.next(CHAT, "request", |e| {
+        matches!(e, AgentEvent::PermissionRequest { .. })
+    });
+    h.sessions.mcp_switched("claude");
+    let session = h.sessions.get("w", CHAT).unwrap();
+    h.wait_until("the chat is stale", || session.stale_reason().is_some());
+    assert_eq!(h.lines("pids.log").len(), 1, "not during the turn");
+    h.sessions.cancel("w", CHAT).unwrap();
+    h.turn_finished(CHAT);
+    assert_eq!(reason(&mut h).as_deref(), Some("MCP servers switched"));
+    h.wait_until("new process", || h.lines("argv.log").len() == 2);
+    assert!(h.lines("argv.log")[1].contains("--resume"));
 }
 
 #[test]
@@ -3618,7 +3727,7 @@ impl McpProbe for FakeProbe {
         Ok(a.into_iter()
             .map(|(name, status)| McpServerStatus {
                 name: name.into(),
-                status: status.into(),
+                status: McpState::parse(status),
             })
             .collect())
     }
@@ -3626,6 +3735,93 @@ impl McpProbe for FakeProbe {
 
 fn mcp_harness(turns: &[&str], probe: Arc<FakeProbe>) -> Harness {
     Harness::with_probe(turns, "normal", test_timing(), probe)
+}
+
+/// A backend that lists its servers itself (OpenCode's `GET /api/mcp`): its chats run on the same
+/// transport as Claude's here, but its `mcp_list` is its own and counts the calls.
+struct ListingOps(Arc<std::sync::atomic::AtomicUsize>);
+
+impl super::backend::BackendOps for ListingOps {
+    fn binary_setting(&self) -> &'static str {
+        "agent.listing.binary-path"
+    }
+    fn find(&self, o: Option<&str>) -> Option<PathBuf> {
+        super::binary::find(o)
+    }
+    fn detect(
+        &self,
+        s: &crate::features::scope::Spawner,
+        o: Option<&str>,
+    ) -> super::binary::AgentBinaryInfo {
+        super::binary::detect(s, o)
+    }
+    fn skills_installed(&self, _: &Path) -> bool {
+        false
+    }
+    fn session_id_ok(&self, id: &str) -> bool {
+        super::backend::is_uuid(id)
+    }
+    fn mcp_switches(&self) -> Option<super::mcp_menu::SwitchSpec> {
+        None
+    }
+    fn mcp_list(
+        &self,
+        _: &super::backend::HelperCtx<'_>,
+        _: &dyn McpProbe,
+    ) -> Result<Vec<McpServerStatus>, String> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(vec![McpServerStatus {
+            name: "notes".into(),
+            status: McpState::Connected,
+        }])
+    }
+    fn connect(
+        &self,
+        init: super::transport::TransportInit,
+    ) -> Result<Arc<dyn super::transport::Transport>, String> {
+        super::stdio_transport::connect(init)
+    }
+    fn titler<'a>(
+        &self,
+        _: &super::backend::HelperCtx<'a>,
+    ) -> Option<Box<dyn super::title::TitleAsker + 'a>> {
+        None
+    }
+}
+
+#[test]
+fn a_failing_server_of_a_backend_that_lists_itself_is_rechecked_through_its_own_list_never_a_cli_one(
+) {
+    let probe = FakeProbe::new(vec![]);
+    let mut h = mcp_harness(&["mcp-failing", "ok-turn"], probe.clone());
+    let lists = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = Arc::clone(&lists);
+    h.sessions
+        .points()
+        .provide_raw(&crate::agent::api::BACKENDS, "listing-feature", move |id| {
+            (id == "listing").then(|| {
+                Arc::new(super::backend::Backend::new(
+                    "listing",
+                    &super::claude_adapter::ClaudeAdapter,
+                    Arc::new(ListingOps(Arc::clone(&counter))),
+                ))
+            })
+        });
+    let mut p = h.params(CHAT, "w", None);
+    p.request.backend = Some("listing".into());
+    h.sessions.start(p).unwrap();
+    h.send(CHAT, "x");
+    h.turn_finished(CHAT);
+    // the init has a failing server: the watch asks the backend's own list, and the program's
+    // `mcp list` command (the port) never runs
+    h.wait_until("the backend's list was asked", || {
+        lists.load(std::sync::atomic::Ordering::SeqCst) >= 1
+    });
+    assert_eq!(
+        probe.count(),
+        0,
+        "no CLI list for a backend that lists itself"
+    );
 }
 
 #[test]
@@ -3839,6 +4035,16 @@ impl super::backend::BackendOps for FakeBackendOps {
     }
     fn session_id_ok(&self, id: &str) -> bool {
         id.starts_with("fake_")
+    }
+    fn mcp_switches(&self) -> Option<super::mcp_menu::SwitchSpec> {
+        Some(super::backend::FAKE_SWITCHES)
+    }
+    fn mcp_list(
+        &self,
+        _: &super::backend::HelperCtx<'_>,
+        _: &dyn McpProbe,
+    ) -> Result<Vec<McpServerStatus>, String> {
+        Ok(vec![])
     }
     fn connect(
         &self,

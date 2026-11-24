@@ -27,6 +27,7 @@ import {
 } from "@features/agent/web/stores/backend-usability";
 import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { AgentConfigureDialog, locateBinary } from "./agent-configure";
+import { AgentMcp } from "./agent-mcp";
 import { AgentMemory } from "./agent-memory";
 import { AgentModels } from "./agent-models";
 import { ROW, SELECT, SelectRow } from "@/components/settings-panel/select-row";
@@ -131,7 +132,7 @@ function StatusBadge({ status }: { status: BackendStatus }) {
           data-agent-status="ready"
           className={`${base} bg-[var(--success-soft)] text-[var(--success)]`}
         >
-          ✓ Ready
+          ✓ Ready{status.version ? ` · ${status.version}` : ""}
         </span>
       );
     case "checking":
@@ -179,7 +180,7 @@ function StatusBadge({ status }: { status: BackendStatus }) {
 function statusDetail(status: BackendStatus, backend: AgentBackendDescriptor): string {
   switch (status.kind) {
     case "ready":
-      return `${status.path}${status.version ? `  ${status.version}` : ""}`;
+      return status.path;
     case "not-found":
       return `${backend.product} was not found on this computer.`;
     case "needs-sign-in":
@@ -373,6 +374,7 @@ export function AgentSection() {
             />
           </>
         )}
+        <AgentMcp backendId={backend.id} />
       </div>
 
       {panel ? (

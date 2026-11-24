@@ -2,23 +2,17 @@ import { useRef, useState } from "react";
 import { FilterChip } from "@/components/filter-chip";
 import { useRovingTablist } from "@/hooks/use-roving-tablist";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import {
-  Brain01Icon,
-  Image01Icon,
-  Pdf01Icon,
-  Search01Icon,
-  ToolsIcon,
-} from "@hugeicons/core-free-icons";
+import { Brain01Icon, Image01Icon, Pdf01Icon, ToolsIcon } from "@hugeicons/core-free-icons";
 import { isModelEnabled, type BackendModel } from "@/lib/features/agent-backends";
+import { switchedAfter } from "@/lib/switches";
 import { BooleanControl } from "@/components/settings-panel/setting-control";
-import { INPUT } from "@/components/settings-panel/select-row";
+import { SearchField } from "@/components/settings-panel/search-field";
 import {
   filterModels,
   formatContext,
   formatCost,
   providerTabs,
   resolveProvider,
-  withEnabled,
 } from "./lib/models";
 
 /** Rows drawn before "Show more": the list is long (hundreds), one page scroll holds it. */
@@ -80,7 +74,7 @@ function Row({
         label={`Enable ${model.label} (${model.provider})`}
         value={on}
         disabled={!model.available}
-        onChange={(next) => onChange(withEnabled(disabled, model.id, next))}
+        onChange={(next) => onChange(switchedAfter(disabled, model.id, next, true))}
       />
     </li>
   );
@@ -167,19 +161,11 @@ export function ModelsTable({
             </FilterChip>
           ))}
         </div>
-        <label className="relative block min-w-[140px] flex-1">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-icon-muted)]">
-            <HugeiconsIcon icon={Search01Icon} size={14} strokeWidth={1.75} aria-hidden="true" />
-          </span>
-          <input
-            type="search"
-            aria-label="Search models"
-            placeholder="Search"
-            value={query}
-            onChange={(e) => narrow(() => setQuery(e.target.value))}
-            className={`${INPUT} pl-8`}
-          />
-        </label>
+        <SearchField
+          label="Search models"
+          value={query}
+          onChange={(q) => narrow(() => setQuery(q))}
+        />
       </div>
       <ul>
         {rows.slice(0, shown).map((m) => (

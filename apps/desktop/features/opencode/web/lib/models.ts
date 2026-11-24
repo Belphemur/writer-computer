@@ -1,12 +1,13 @@
 /**
- * The pure side of the models table: provider tabs, the Enabled and Free chips, search and the number formats. The enabled rule is the
- * shared `isModelEnabled`: a model is enabled unless its slug is in `agent.opencode.disabled-models`,
- * the server's own switch (`available`) first.
+ * The pure side of the models table: provider tabs, the Enabled and Free chips, search and the number
+ * formats. The enabled rule is the shared `isModelEnabled`: a model is enabled unless its slug is in
+ * `agent.opencode.disabled-models` (`switchedAfter` writes it), the server's own switch
+ * (`available`) first.
  */
 import {
   groupByProvider,
   isModelEnabled,
-  matchesModelQuery,
+  matchesQuery,
   type BackendModel,
 } from "@/lib/features/agent-backends";
 import type { OpencodeModel } from "../ipc";
@@ -40,12 +41,6 @@ export const toBackendModel = (m: OpencodeModel): BackendModel => ({
   reasoning: m.reasoning,
 });
 
-/** The `disabled-models` list after switching `id` on or off (no duplicates, order kept). */
-export function withEnabled(disabled: readonly string[], id: string, on: boolean): string[] {
-  const rest = disabled.filter((x) => x !== id);
-  return on ? rest : [...rest, id];
-}
-
 /** The rows of the table: the provider tab (`null` is All), the Enabled and Free chips and the
  *  search all narrow together. */
 export function filterModels(
@@ -62,7 +57,7 @@ export function filterModels(
     if (opts.provider !== null && m.provider !== opts.provider) return false;
     if (opts.enabled && !isModelEnabled(m, opts.disabled)) return false;
     if (opts.free && !m.free) return false;
-    return matchesModelQuery(m.provider, m.label, opts.query);
+    return matchesQuery(opts.query, m.provider, m.label);
   });
 }
 

@@ -16,10 +16,10 @@ use super::api;
 use super::backend::Backend;
 use super::changes::{ChangeStore, ClosedTurn};
 use super::chat_store;
-use super::config_sync::{self, Decision, McpWatch, Msg, ProbeTarget, Reason, StaleView};
-use super::env;
+use super::config_sync::{self, Decision, McpWatch, Msg, Reason, StaleView};
 use super::events::*;
 use super::files::Outgoing;
+use super::mcp_menu::Switches;
 use super::permission_update::updated_permissions;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
@@ -351,6 +351,15 @@ impl Drop for StateGuard<'_> {
     }
 }
 
+/// Where a re-check of a chat's MCP servers runs (`Session::probe_target`).
+pub(crate) struct RecheckTarget {
+    pub backend: Arc<Backend>,
+    pub program: PathBuf,
+    pub cwd: PathBuf,
+    pub root: PathBuf,
+    pub label: String,
+}
+
 pub struct Session {
     pub(crate) chat_id: String,
     pub(crate) label: String,
@@ -640,11 +649,12 @@ impl Session {
             g.stale = None;
             gen
         };
+        let launch = self.with_mcp_denies(launch, &shared);
         let res = self.transport.start(&StartRequest {
             gen,
             session_id,
             resume: used_resume,
-            launch,
+            launch: &launch,
         });
         let mut g = self.inner.lock();
         match res {
@@ -681,6 +691,29 @@ impl Session {
                 Err(e)
             }
         }
+    }
+
+    /// `launch` with the MCP servers the user switched off denied: read from the settings at each
+    /// spawn (a restart included), appended after the user's own `agent.disallowed-tools`. Nothing
+    /// is added while the list is empty, so the argv stays what it was.
+    fn with_mcp_denies<'a>(
+        &self,
+        launch: &'a LaunchConfig,
+        shared: &Shared,
+    ) -> std::borrow::Cow<'a, LaunchConfig> {
+        let Some(spec) = self.backend.ops().mcp_switches() else {
+            return std::borrow::Cow::Borrowed(launch);
+        };
+        let switched = shared.ports.settings().list(&self.label, spec.setting);
+        let denied = Switches::new(&spec, switched).denied();
+        if denied.is_empty() {
+            return std::borrow::Cow::Borrowed(launch);
+        }
+        let mut with = launch.clone();
+        with.settings
+            .disallowed_tools
+            .extend(denied.iter().map(|k| self.backend.mcp().deny_server(k)));
+        std::borrow::Cow::Owned(with)
     }
 
     // ------------------------------------------------------------ inbound
@@ -1050,10 +1083,9 @@ impl Session {
             } => {
                 g.mcp_failing = config_sync::failing(mcp_servers);
                 // watch a failing server only when a recovery could restart this chat
-                let watch = !g.mcp_failing.is_empty()
-                    && self.restarts_on_config(g)
-                    && self.backend.ops().mcp_cli_probe();
+                let watch = !g.mcp_failing.is_empty() && self.restarts_on_config(g);
                 if let Some(shared) = self.shared.upgrade() {
+                    shared.mcp.observe(self.backend.id, &self.root, mcp_servers);
                     shared.send_config(Msg::Mcp {
                         chat_id: self.chat_id.clone(),
                         failing: watch,
@@ -1914,6 +1946,12 @@ impl Session {
         true
     }
 
+    /// The reason the chat is stale for, if it is (tests wait on it instead of on the clock).
+    #[cfg(test)]
+    pub(crate) fn stale_reason(&self) -> Option<Reason> {
+        self.inner.lock().stale.clone()
+    }
+
     /// The change burst is over: apply [`config_sync::decide`]. Busy chats are left stale; the
     /// end of the turn restarts them (`apply`, `TurnFinished`).
     pub(crate) fn settle(&self) {
@@ -1932,24 +1970,22 @@ impl Session {
         }
     }
 
-    /// What the MCP re-check runs, `None` when there is no process (or the chat ended). The
-    /// environment is built outside the lock (it may run the login shell).
-    pub(crate) fn probe_target(&self) -> Option<ProbeTarget> {
-        let (program, cli_dir, memory) = {
+    /// What the MCP re-check asks, `None` when there is no process (or the chat ended): the chat's
+    /// backend lists its own servers (`BackendOps::mcp_list`), in the chat's own folder.
+    pub(crate) fn probe_target(&self) -> Option<RecheckTarget> {
+        let program = {
             let g = self.inner.lock();
             if g.terminal || g.live_gen.is_none() {
                 return None;
             }
-            (
-                g.launch.program.clone()?,
-                g.launch.cli_dir.clone(),
-                g.launch.settings.memory,
-            )
+            g.launch.program.clone()?
         };
-        Some(ProbeTarget {
+        Some(RecheckTarget {
+            backend: Arc::clone(&self.backend),
             program,
             cwd: self.cwd.clone(),
-            env: env::with_memory_mode(env::current(cli_dir.as_deref()), memory),
+            root: self.root.clone(),
+            label: self.label.clone(),
         })
     }
 
@@ -1959,6 +1995,9 @@ impl Session {
         let mut g = self.inner.lock();
         if g.terminal || g.live_gen.is_none() || !self.restarts_on_config(&g) {
             return McpWatch::Stop;
+        }
+        if let Some(shared) = self.shared.upgrade() {
+            shared.mcp.observe(self.backend.id, &self.root, probed);
         }
         let check = config_sync::check(&g.mcp_failing, probed);
         g.mcp_failing = check.still_failing;

@@ -51,7 +51,10 @@ fn names() -> Names {
     tools.extend(list("protocolOnly"));
     Names {
         tools,
-        prefix: table["mcp"]["prefix"].as_str().unwrap().to_string(),
+        prefix: table["mcp"]["serverPrefix"]
+            .as_str()
+            .unwrap()
+            .replace("{server}", crate::cli::mcp::SERVER_NAME),
     }
 }
 

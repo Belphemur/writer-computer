@@ -142,6 +142,7 @@
 
 ## Up Next
 
+- [ ] MCP servers menu, phase 2: OpenCode ([ADR](docs/decisions/2026-11-24-show-one-mcp-servers-menu-for-every-agent-backend-and-load-the-global-opencode-config-with-its-servers-off.md), proposed; phase 1 landed: the neutral menu, Claude's lever and the web menu, [`SPECs/native-agent-spec.md`](SPECs/native-agent-spec.md) 7.1). Load the user's global OpenCode config with its servers off (`mcp_apply`, the `policies` lever plus per-server placeholders, `POST /api/location/reload`), the start gate on `GET /api/mcp` and the resolved permissions, global agents disabled, the provider switches (`agent.opencode.disabled-providers`), then supersede U1. Gated on the captures C1, C2, C5 and C7 holding in the real app. Until then the OpenCode menu is hidden (`mcp_switches()` is `None`); phase 2 answers it. To confirm: the prefix rule under `defaultOn: false` (the list holds the servers switched on; an entry `a` also covers `a__b`, so switching `a__b` off removes `a`).
 - [ ] A shared `type-into` test helper (set an input's value through the native setter and dispatch `input`), now hand-written in `features/opencode/tests/opencode-settings.test.tsx`, `features/agent/tests/agent-model-menu.test.tsx` and others.
 - [ ] Move `skills-chip`, `context-ring` and the project switcher onto the shared menu hook (`useMenuKeyboard`, `src/hooks/use-menu-keyboard.ts`) and the `ChipMenu` shell.
 - [ ] The model menu's search inside `role=menu` is not the ARIA pattern for a filterable list: rewrite it as a combobox with a listbox.

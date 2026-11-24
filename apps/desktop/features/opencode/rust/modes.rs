@@ -56,7 +56,7 @@ pub fn plan_rules(table: &ToolTable, mcp_tools: &[ToolSpec]) -> Vec<Value> {
             mcp_tools
                 .iter()
                 .filter(|t| is_writer_read_tool(t))
-                .map(|t| format!("{}{}", mcp.prefix, t.name)),
+                .map(|t| format!("{}{}", mcp.prefix_for(mcp::SERVER_NAME), t.name)),
         );
     }
     let mut rules = vec![config::rule("*", "deny")];
@@ -446,7 +446,7 @@ mod tests {
         let r = capture("plan-codemode")["plan_codemode"].clone();
         let t = table();
         let execute = t.name_of(Role::Codemode).expect("a codemode row");
-        let prefix = &t.mcp.as_ref().unwrap().prefix;
+        let prefix = &t.mcp.as_ref().unwrap().prefix_for(mcp::SERVER_NAME);
         assert_eq!(r["end"], "session.execution.succeeded");
         assert_eq!(r["asked"], json!([]));
         assert_eq!(r["tools_started"], json!(["writer_note_count"]));

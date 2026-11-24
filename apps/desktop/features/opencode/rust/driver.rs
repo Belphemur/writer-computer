@@ -12,6 +12,9 @@ use super::servers::{delete_session, Servers, PROGRAM};
 use super::transport::OpencodeTransport;
 use crate::agent::backend::{Backend, BackendOps, ForgetCtx, HelperCtx};
 use crate::agent::binary::{self, AgentBinaryInfo};
+use crate::agent::config_sync::McpProbe;
+use crate::agent::events::McpServerStatus;
+use crate::agent::mcp_menu::SwitchSpec;
 use crate::agent::title::{sanitize_title, TitleAsker};
 use crate::agent::transport::{Transport, TransportInit};
 use crate::features::scope::Spawner;
@@ -26,6 +29,8 @@ use tauri::Runtime;
 pub const ID: &str = "opencode";
 /// The setting with the slugs of the models switched off in Settings.
 const DISABLED_MODELS_SETTING: &str = "agent.opencode.disabled-models";
+/// How long the list of MCP servers may take.
+const MCP_LIST_WAIT: Duration = Duration::from_secs(20);
 /// How long a title call may take, in all (a session made, asked and deleted).
 const TITLE_WAIT: Duration = Duration::from_secs(45);
 
@@ -72,18 +77,38 @@ impl<R: Runtime> BackendOps for Driver<R> {
         session_id_ok(id)
     }
 
-    /// The server reports its MCP servers itself (`GET /api/mcp`, `mcp.status.changed`); the
-    /// program's own `mcp list` would read the user's own OpenCode config, which does not apply.
-    fn mcp_cli_probe(&self) -> bool {
-        false
+    /// No switches in phase 1 of the MCP menu (ADR 2026-11-24): the config stays Writer's file
+    /// alone (U1), so no switch could be put in force and the menu is not shown. Phase 2 answers
+    /// with `agent.opencode.enabled-mcp-servers`, off unless listed.
+    fn mcp_switches(&self) -> Option<SwitchSpec> {
+        None
+    }
+
+    /// What the server itself reports (`GET /api/mcp`), the one mapper of `SessionStarted`.
+    fn mcp_list(
+        &self,
+        ctx: &HelperCtx<'_>,
+        _probe: &dyn McpProbe,
+    ) -> Result<Vec<McpServerStatus>, String> {
+        let server = self.servers.ensure_up(ctx.label, ctx.root)?;
+        let client = server.connection().ok_or("OpenCode is not running")?.client;
+        server
+            .io()
+            .call(
+                async move { client.get(&api::MCP, &[]).await },
+                MCP_LIST_WAIT,
+            )
+            .ok_or("OpenCode did not answer")?
+            .map(api::mcp_statuses)
+            .map_err(|_| "OpenCode could not list its MCP servers".to_string())
     }
 
     fn connect(&self, init: TransportInit) -> Result<Arc<dyn Transport>, String> {
         let server = self.servers.server(&init.label, &init.root)?;
         // the models the user switched off, read at each start of the chat
-        let (servers, label) = (Arc::clone(&self.servers), init.label.clone());
+        let (app, label) = (self.servers.app().clone(), init.label.clone());
         let disabled: Disabled =
-            Arc::new(move || servers.setting_list(&label, DISABLED_MODELS_SETTING));
+            Arc::new(move || crate::config::global_list(&app, &label, DISABLED_MODELS_SETTING));
         let policy = ModePolicy::new(adapter::table())
             .with_disabled(disabled)
             .for_vault(init.root.clone());

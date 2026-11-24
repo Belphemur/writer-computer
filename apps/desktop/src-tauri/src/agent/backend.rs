@@ -13,6 +13,10 @@
 use super::api::BACKEND_CLAUDE;
 use super::binary::{self, AgentBinaryInfo};
 use super::claude_adapter::ClaudeAdapter;
+use super::config_sync::{McpProbe, ProbeTarget, MCP_LIST_TIMEOUT};
+use super::env;
+use super::events::McpServerStatus;
+use super::mcp_menu::{Applies, SwitchSpec};
 use super::mcp_wiring::ToolsAdapter;
 use super::roles::RoleAdapter;
 use super::title::{ClaudeAsker, TitleAsker};
@@ -58,11 +62,28 @@ pub trait BackendOps: Send + Sync {
     /// name the `writer` command.
     fn skills_installed(&self, root: &Path) -> bool;
 
-    /// Whether the program has a `mcp list` command that tells which MCP servers connect, which
-    /// the config watch runs again after a server failed (Claude). A backend that reports the
-    /// health of its servers by itself says `false`: nothing is run for it.
-    fn mcp_cli_probe(&self) -> bool {
-        true
+    /// The MCP servers menu's switches for this backend: the list setting that holds them (in
+    /// the backend's own fragment, `agent.<id>.*-mcp-servers`), whether servers are on unless
+    /// listed, and when a switch takes effect. A contract test holds each answer to its fragment.
+    /// `None`: the backend has no switches yet, and neither the menu nor the commands exist for it.
+    fn mcp_switches(&self) -> Option<SwitchSpec>;
+
+    /// The MCP servers this backend knows, with their states (names and states only). Blocking,
+    /// and may start servers: the menu asks it on a click, never on a timer.
+    /// `probe` is the port a backend that runs its program's own list command uses (the one the
+    /// tests replace); a backend that asks its server ignores it. The one list source of the menu
+    /// and of the config watch's re-check: no backend runs a CLI list unless this does.
+    fn mcp_list(
+        &self,
+        ctx: &HelperCtx<'_>,
+        probe: &dyn McpProbe,
+    ) -> Result<Vec<McpServerStatus>, String>;
+
+    /// Put the switches in force beyond the next start of a chat (a backend whose lever is a
+    /// config it owns rewrites it here). Blocking. Nothing to do by default: Claude's switch is an
+    /// argument of each spawn, read from the settings then.
+    fn mcp_apply(&self, _ctx: &HelperCtx<'_>) -> Result<(), String> {
+        Ok(())
     }
 
     /// Whether `id` can be this backend's session id (a resumed chat passes the one it stored).
@@ -122,6 +143,15 @@ impl Backend {
     }
 }
 
+/// The switches of a backend a test brings (no setting of the schema: tests that read the list
+/// through `SettingsPort` give it).
+#[cfg(test)]
+pub(crate) const FAKE_SWITCHES: SwitchSpec = SwitchSpec {
+    setting: "agent.fake.mcp",
+    default_on: true,
+    applies: Applies::NextStart,
+};
+
 struct ClaudeOps;
 
 impl BackendOps for ClaudeOps {
@@ -143,6 +173,33 @@ impl BackendOps for ClaudeOps {
 
     fn session_id_ok(&self, id: &str) -> bool {
         is_uuid(id)
+    }
+
+    /// Servers are on unless listed (the CLI starts them all); a listed one is denied through
+    /// `--disallowedTools` at each spawn, so a switch applies when the chat's session restarts.
+    fn mcp_switches(&self) -> Option<SwitchSpec> {
+        Some(SwitchSpec {
+            setting: "agent.claude.disabled-mcp-servers",
+            default_on: true,
+            applies: Applies::NextStart,
+        })
+    }
+
+    /// The CLI's own `claude mcp list` in the vault (it reads its config, Writer reads none).
+    fn mcp_list(
+        &self,
+        ctx: &HelperCtx<'_>,
+        probe: &dyn McpProbe,
+    ) -> Result<Vec<McpServerStatus>, String> {
+        probe.probe(
+            &ProbeTarget {
+                program: ctx.program.to_path_buf(),
+                cwd: ctx.cwd.to_path_buf(),
+                env: env::current(None),
+            },
+            MCP_LIST_TIMEOUT,
+            ctx.spawner,
+        )
     }
 
     fn connect(&self, init: TransportInit) -> Result<Arc<dyn Transport>, String> {
@@ -185,4 +242,71 @@ pub fn claude() -> &'static Backend {
 /// The core's own backend as a shared handle (a `Session` holds its backend by `Arc`).
 pub fn claude_shared() -> Arc<Backend> {
     Arc::clone(claude_arc())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::events::McpState;
+
+    #[test]
+    fn claude_keeps_its_mcp_switches_in_the_agent_fragment_and_servers_start_on() {
+        let ops = ClaudeOps;
+        crate::agent::mcp_menu::assert_switch_contract(
+            BACKEND_CLAUDE,
+            &ops.mcp_switches().unwrap(),
+            include_str!("../../../features/agent/settings.schema.json"),
+        );
+        assert!(ops.mcp_switches().unwrap().default_on);
+    }
+
+    /// Claude's list is the CLI's own `mcp list` in the vault: names with a space, a dot and a
+    /// colon survive (capture K1), only names and states are kept, and the program is run in the
+    /// given folder with no argument but `mcp list`.
+    #[test]
+    fn claude_lists_its_servers_through_mcp_list_in_the_vault() {
+        use std::os::unix::fs::PermissionsExt;
+        std::env::set_var("SHELL", "/bin/sh");
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("claude");
+        std::fs::write(
+            &program,
+            "#!/bin/sh\n[ \"$1 $2\" = \"mcp list\" ] || exit 9\npwd > \"$(dirname \"$0\")/cwd.txt\"\n\
+             echo 'Checking MCP server health...'\n\
+             echo 'claude.ai Atlassian: https://secret.example/mcp (HTTP) - ! Needs authentication'\n\
+             echo 'my:srv: /bin/node /secret/server.js - \u{2714} Connected'\n\
+             echo 'broken: /bin/x - \u{2717} Failed to connect'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let vault = tempfile::tempdir().unwrap();
+        let spawner = Spawner::detached();
+        let got = ClaudeOps
+            .mcp_list(
+                &HelperCtx {
+                    spawner: &spawner,
+                    program: &program,
+                    cwd: vault.path(),
+                    label: "w",
+                    root: vault.path(),
+                },
+                &crate::agent::config_sync::CliMcpProbe,
+            )
+            .unwrap();
+        let pairs: Vec<_> = got.iter().map(|s| (s.name.as_str(), s.status)).collect();
+        assert_eq!(
+            pairs,
+            [
+                ("claude.ai Atlassian", McpState::NeedsAuth),
+                ("my:srv", McpState::Connected),
+                ("broken", McpState::Failed),
+            ]
+        );
+        assert!(!format!("{got:?}").contains("secret"), "no target is kept");
+        let cwd = std::fs::read_to_string(dir.path().join("cwd.txt")).unwrap();
+        assert_eq!(
+            std::fs::canonicalize(cwd.trim()).unwrap(),
+            vault.path().canonicalize().unwrap()
+        );
+    }
 }

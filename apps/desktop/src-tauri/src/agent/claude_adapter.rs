@@ -73,15 +73,6 @@ impl ToolsAdapter for ClaudeAdapter {
         table()
     }
 
-    fn tool_name(&self, tool: &ToolSpec) -> String {
-        let prefix = &table()
-            .mcp
-            .as_ref()
-            .expect("the table names the MCP prefix")
-            .prefix;
-        format!("{prefix}{}", tool.name)
-    }
-
     fn launch(&self, server: &WriterServer) -> Launch {
         let config = json!({
             "mcpServers": {
@@ -177,8 +168,14 @@ mod tests {
     /// names must not drift apart.
     #[test]
     fn the_tables_mcp_prefix_is_the_servers_name_in_the_clis_form() {
-        let prefix = &table().mcp.as_ref().unwrap().prefix;
-        assert_eq!(*prefix, format!("mcp__{}__", mcp::SERVER_NAME));
+        assert_eq!(
+            ClaudeAdapter.server_prefix(mcp::SERVER_NAME),
+            format!("mcp__{}__", mcp::SERVER_NAME)
+        );
+        assert_eq!(
+            ClaudeAdapter.deny_server("claude.ai Atlassian"),
+            "mcp__claude_ai_Atlassian__*"
+        );
     }
 
     /// The role capabilities, read off the table's roles, are the lists the adapter used to spell.

@@ -68,3 +68,7 @@ Chosen option: **A**.
 - [ ] `cargo test` is green, with no golden or argv change.
 - [ ] A test-only adapter changes every tool name in the prompt and roles.
 - [ ] `grep -rn "mcp__writer__" src-tauri/src` finds it only in the Claude adapter and tests.
+
+## Amendment 2026-11-24
+
+Amended 2026-11-24 ([ADR 2026-11-24](2026-11-24-show-one-mcp-servers-menu-for-every-agent-backend-and-load-the-global-opencode-config-with-its-servers-off.md), proposed, phase 1 landed): `ToolsAdapter` gained `deny_server(server)`, the rule that withholds every tool of a server (Claude `mcp__<key>__*` for `--disallowedTools`, OpenCode `<key>_*`), where the key is `mcp_wiring::server_key` (every character outside `[A-Za-z0-9_-]` becomes `_`, the same for both harnesses). The tool tables' `mcp.prefix` became the template `mcp.serverPrefix` (`mcp__{server}__`, `{server}_`); Writer's prefix is the template with `writer`, and `tool_name`, `server_prefix` and `deny_server` are default methods over it, so no adapter spells a prefix. The decision above is unchanged.

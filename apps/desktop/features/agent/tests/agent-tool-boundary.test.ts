@@ -9,6 +9,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
 import table from "@shared/agent-tools/claude.json";
+import { mcpPrefix } from "../web/lib/tool-kinds";
 
 const WEB = fileURLToPath(new URL("../web", import.meta.url));
 
@@ -28,7 +29,7 @@ const alternatives = NAMES.join("|");
  * not tool names, and are not looked at: the Rust twin scans prose too, because the prompt there
  * is what a model reads.
  */
-const TOOL_NAME = new RegExp(`^(${alternatives})(\\(.*)?$|${table.mcp.prefix}`);
+const TOOL_NAME = new RegExp(`^(${alternatives})(\\(.*)?$|${mcpPrefix(table.mcp, "writer")}`);
 
 /** The files with generated or fixture content: the bindings are specta's, the mock is a fake. */
 const SKIPPED = new Set(["bindings.ts"]);
@@ -151,7 +152,7 @@ describe("tool names stay in the table", () => {
       expect(TOOL_NAME.test(name)).toBe(true);
       expect(TOOL_KEY.test(bare(`const t = { ${name}: 1 };`))).toBe(true);
     }
-    expect(TOOL_NAME.test(`${table.mcp.prefix}search`)).toBe(true);
+    expect(TOOL_NAME.test(`${mcpPrefix(table.mcp, "writer")}search`)).toBe(true);
     expect(TOOL_NAME.test("Bashful")).toBe(false);
   });
 

@@ -20,9 +20,7 @@ use super::server::{
 use crate::agent::binary::{self, Program};
 use crate::agent::pending_delete::PendingDeletes;
 use crate::agent::{cli_launcher, env};
-use crate::config::ConfigValue;
 use crate::features::scope::Spawner;
-use crate::state::AppState;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -109,27 +107,12 @@ impl<R: Runtime> Servers<R> {
 
     /// A global setting of the window as a string (`None` when unset or blank).
     pub fn setting(&self, label: &str, key: &str) -> Option<String> {
-        let state = self.app.state::<AppState>().get_or_create(label);
-        let guard = state.settings.read();
-        guard
-            .as_ref()
-            .and_then(|s| s.get(key))
-            .and_then(|v| v.as_str().map(|s| s.trim().to_string()))
-            .filter(|s| !s.is_empty())
+        crate::config::global_nonblank(&self.app, label, key)
     }
 
-    /// A global setting of the window that is a list of strings (empty when unset).
-    pub fn setting_list(&self, label: &str, key: &str) -> Vec<String> {
-        let state = self.app.state::<AppState>().get_or_create(label);
-        let guard = state.settings.read();
-        guard
-            .as_ref()
-            .and_then(|s| s.get(key))
-            .and_then(|v| match v {
-                ConfigValue::List(l) => Some(l.clone()),
-                _ => None,
-            })
-            .unwrap_or_default()
+    /// The app, for the one reader of the list settings ([`crate::config::global_list`]).
+    pub fn app(&self) -> &AppHandle<R> {
+        &self.app
     }
 
     /// The program: the user's own path, else the usual search. Blocking (login shell).

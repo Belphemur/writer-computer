@@ -95,10 +95,25 @@ struct Raw {
     mcp: Option<Mcp>,
 }
 
-/// Writer's own MCP tools are named `prefix` + the command name.
+/// How a backend names the tools of an MCP server: `serverPrefix` is a template with one
+/// `{server}` (Claude `mcp__{server}__`, OpenCode `{server}_`), and a tool is the prefix of its
+/// server plus the tool's name. Writer's own tools are the prefix of `writer`
+/// ([`Mcp::prefix_for`] with the server's name); denying a whole server is the prefix and `*`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Mcp {
-    pub prefix: String,
+    #[serde(rename = "serverPrefix")]
+    pub server_prefix: String,
+}
+
+/// The placeholder of [`Mcp::server_prefix`].
+const SERVER_SLOT: &str = "{server}";
+
+impl Mcp {
+    /// The prefix of `server`'s tools; `server` is already in the backend's form (the key of
+    /// `mcp_wiring::server_key`).
+    pub fn prefix_for(&self, server: &str) -> String {
+        self.server_prefix.replace(SERVER_SLOT, server)
+    }
 }
 
 #[derive(Debug)]
@@ -116,6 +131,11 @@ impl ToolTable {
         for r in &raw.tools {
             if r.name.is_empty() || !seen.insert(r.name.as_str()) {
                 return Err(format!("tool table: bad or repeated name {:?}", r.name));
+            }
+        }
+        if let Some(m) = &raw.mcp {
+            if m.server_prefix.matches(SERVER_SLOT).count() != 1 {
+                return Err("tool table: mcp.serverPrefix needs one {server}".into());
             }
         }
         // every launch tool names its arguments alike: `launch_args` is the first one's
@@ -278,6 +298,27 @@ mod tests {
         "tools":[{"name":"sh","kind":"execute","role":"shell"},
                  {"name":"ed","kind":"edit","role":"replace","args":{"primary":["path"],"old":"o"}}]}"#;
 
+    /// The web builds Writer's prefix from the file's `server`; it is the server's real name.
+    #[test]
+    fn the_shared_writer_server_name_is_the_registry_servers() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/agent-tools/writer-mcp.json"))
+                .unwrap();
+        assert_eq!(v["server"], crate::cli::mcp::SERVER_NAME);
+    }
+
+    #[test]
+    fn the_server_prefix_template_has_one_slot_and_names_a_server() {
+        let ok = r#"{"tools": [], "mcp": {"serverPrefix": "mcp__{server}__"}}"#;
+        let t = ToolTable::parse(ok).unwrap();
+        let m = t.mcp.unwrap();
+        assert_eq!(m.prefix_for("my_srv"), "mcp__my_srv__");
+        for bad in ["mcp__", "{server}{server}"] {
+            let json = format!(r#"{{"tools": [], "mcp": {{"serverPrefix": "{bad}"}}}}"#);
+            assert!(ToolTable::parse(&json).is_err(), "{bad}");
+        }
+    }
+
     #[test]
     fn roles_and_kinds_are_read_from_the_rows() {
         let t = ToolTable::parse(MINI).unwrap();
@@ -329,7 +370,10 @@ mod tests {
         assert_eq!(t.names_of(Role::Replace), ["Edit"]);
         assert_eq!(t.names_of(Role::MultiReplace), ["MultiEdit"]);
         assert_eq!(t.names_of(Role::Create), ["Write"]);
-        assert_eq!(t.mcp.as_ref().unwrap().prefix, "mcp__writer__");
+        assert_eq!(
+            t.mcp.as_ref().unwrap().prefix_for("writer"),
+            "mcp__writer__"
+        );
         assert_eq!(t.names_of(Role::Shell), ["Bash"]);
         assert_eq!(t.names_of(Role::Launch), ["Agent", "Task"]);
         assert_eq!(t.names_of(Role::Handback), ["SubagentHandback"]);

@@ -415,12 +415,54 @@ impl SubagentRunStatus {
     }
 }
 
-/// One entry of `init.mcp_servers`: the server name and the CLI's own status word (`connected`,
-/// `failed`, `pending`, `needs-auth`, ... passed through, never interpreted here).
+/// The connection state of an MCP server, one vocabulary for every backend (the status words of
+/// Claude's `init.mcp_servers` and `claude mcp list`, and of OpenCode's `GET /api/mcp`, both
+/// mapped by [`McpState::parse`]). Kebab-case on the wire (`needs-auth`); a state this build does
+/// not know is `Unknown`, never an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpState {
+    Connected,
+    Pending,
+    Failed,
+    NeedsAuth,
+    Disconnected,
+    /// Switched off by the harness's own config (OpenCode's `disabled`).
+    Disabled,
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+impl McpState {
+    /// The state a backend's status word or line names. Case-insensitive and by substring, so one
+    /// rule reads Claude's `init` words (`needs-auth`), the lines of `claude mcp list` (`✗ Failed
+    /// to connect`, `⚠ Needs authentication`, `⏸ Pending approval`) and OpenCode's (`needs_auth`).
+    pub fn parse(word: &str) -> Self {
+        let s = word.to_ascii_lowercase();
+        if s.contains("fail") {
+            Self::Failed
+        } else if s.contains("needs") && s.contains("auth") {
+            Self::NeedsAuth
+        } else if s.contains("pending") {
+            Self::Pending
+        } else if s.contains("disabled") {
+            Self::Disabled
+        } else if s.contains("disconnect") {
+            Self::Disconnected
+        } else if s.contains("connected") {
+            Self::Connected
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+/// One entry of `init.mcp_servers` (or of a backend's own list): the server name and its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct McpServerStatus {
     pub name: String,
-    pub status: String,
+    pub status: McpState,
 }
 
 /// What `agent_reload` did: `Started` (the process is being replaced, or there was none to
@@ -974,7 +1016,7 @@ mod tests {
                 skills: vec!["s".into()],
                 mcp_servers: vec![McpServerStatus {
                     name: "m".into(),
-                    status: "connected".into(),
+                    status: McpState::Connected,
                 }],
                 cli_version: Some("2.1.325".into()),
             },

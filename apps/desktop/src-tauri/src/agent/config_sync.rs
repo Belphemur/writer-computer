@@ -18,7 +18,8 @@
 //!
 //! What the runner does with a stale chat is in `runner.rs` (`Session::config_changed`, `settle`).
 
-use super::events::McpServerStatus;
+use super::backend::HelperCtx;
+use super::events::{McpServerStatus, McpState};
 use super::session::{Shared, Timing};
 use crate::features::scope::Spawner;
 use std::collections::{BTreeSet, HashMap};
@@ -44,6 +45,8 @@ pub enum Reason {
     Instructions(String),
     /// A server that was failing connects now.
     McpServer(String),
+    /// The user switched an MCP server on or off in the menu (`mcp_menu`).
+    McpSwitches,
 }
 
 impl Reason {
@@ -54,6 +57,7 @@ impl Reason {
             Self::Settings => "Claude settings changed".into(),
             Self::Instructions(file) => format!("{file} changed"),
             Self::McpServer(name) => format!("MCP server {name} connected"),
+            Self::McpSwitches => "MCP servers switched".into(),
         }
     }
 }
@@ -163,9 +167,10 @@ pub fn decide(v: StaleView) -> Decision {
 
 // ------------------------------------------------------------------------------------ MCP
 
-/// Statuses the CLI reports for a healthy server.
-pub fn is_connected(status: &str) -> bool {
-    status.eq_ignore_ascii_case("connected")
+/// A server that needs no attention: connected, or switched off on purpose (`disabled`: a
+/// harness's own off switch is not a failure to recover from).
+fn is_settled(status: McpState) -> bool {
+    matches!(status, McpState::Connected | McpState::Disabled)
 }
 
 /// Wait before the `attempt`-th (0-based) MCP re-check: the schedule, then its last entry for
@@ -182,7 +187,7 @@ pub fn backoff(schedule: &[Duration], attempt: usize) -> Duration {
 pub fn failing(servers: &[McpServerStatus]) -> BTreeSet<String> {
     servers
         .iter()
-        .filter(|s| !is_connected(&s.status))
+        .filter(|s| !is_settled(s.status))
         .map(|s| s.name.clone())
         .collect()
 }
@@ -203,7 +208,7 @@ pub fn check(was_failing: &BTreeSet<String>, probed: &[McpServerStatus]) -> McpC
         .filter(|n| {
             probed
                 .iter()
-                .any(|s| &s.name == *n && is_connected(&s.status))
+                .any(|s| &s.name == *n && s.status == McpState::Connected)
         })
         .cloned()
         .collect();
@@ -219,9 +224,11 @@ pub fn check(was_failing: &BTreeSet<String>, probed: &[McpServerStatus]) -> McpC
 
 /// `claude mcp list` output to names and statuses. A line is `<name>: <target> - <status>`
 /// (a status such as `✓ Connected`, `✗ Failed to connect`, `⚠ Needs authentication`,
-/// `⏸ Pending approval`); anything else (the "Checking..." banner, blanks) is skipped. The name is
-/// the text before the first `": "` (plugin servers are `plugin:a:b`, no space after the colon);
-/// the target (a URL or a command line) is dropped here and never kept.
+/// `⏸ Pending approval`, read by [`McpState::parse`]); anything else (the "Checking..." banner,
+/// blanks) is skipped. The name is the text before the first `": "` and may hold spaces, dots and
+/// colons (a connector is `claude.ai Atlassian`, a plugin's `plugin:a:b`: capture K1); the one
+/// ambiguity is a name that itself holds `": "`. The target (a URL or a command line) is dropped
+/// here and never kept.
 pub fn parse_mcp_list(stdout: &str) -> Vec<McpServerStatus> {
     stdout
         .lines()
@@ -229,26 +236,9 @@ pub fn parse_mcp_list(stdout: &str) -> Vec<McpServerStatus> {
             let (head, status) = line.rsplit_once(" - ")?;
             let (name, _target) = head.split_once(": ")?;
             let name = name.trim();
-            if name.is_empty() || name.contains(char::is_whitespace) {
-                return None;
-            }
-            let s = status.to_ascii_lowercase();
-            let word = if s.contains("fail") {
-                "failed"
-            } else if s.contains("needs auth") {
-                "needs-auth"
-            } else if s.contains("pending") {
-                "pending"
-            } else if s.contains("disconnect") {
-                "disconnected"
-            } else if s.contains("connected") {
-                "connected"
-            } else {
-                "unknown"
-            };
-            Some(McpServerStatus {
+            (!name.is_empty()).then(|| McpServerStatus {
                 name: name.to_string(),
-                status: word.to_string(),
+                status: McpState::parse(status),
             })
         })
         .collect()
@@ -273,6 +263,9 @@ pub trait McpProbe: Send + Sync {
         spawner: &Spawner,
     ) -> Result<Vec<McpServerStatus>, String>;
 }
+
+/// How long `<program> mcp list` may take: it starts every server the user has.
+pub const MCP_LIST_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// `<program> mcp list` as a child process with a timeout; its output never reaches a log.
 pub struct CliMcpProbe;
@@ -345,6 +338,8 @@ pub(crate) enum Msg {
         own: Vec<PathBuf>,
         at: Instant,
     },
+    /// The MCP switches of a backend changed (`AgentSessions::mcp_switched`).
+    Switched { backend: String },
     /// An `init` reported servers: `true` when some are not connected (start or keep the
     /// re-check), `false` to stop it.
     Mcp { chat_id: String, failing: bool },
@@ -421,6 +416,17 @@ impl Worker {
                         }
                     }
                 }
+                Ok(Msg::Switched { backend }) => {
+                    // the setting is global: every window's chats of the backend are stale
+                    for s in shared.all() {
+                        if s.backend().id == backend && s.config_changed(Reason::McpSwitches) {
+                            debounce.insert(
+                                s.chat_id.clone(),
+                                Instant::now() + self.timing.config_debounce,
+                            );
+                        }
+                    }
+                }
                 Ok(Msg::Mcp { chat_id, failing }) => {
                     if failing {
                         let t = mcp.entry(chat_id).or_default();
@@ -494,15 +500,21 @@ impl Worker {
                 };
                 t.due = None;
                 t.probing = true;
-                let (probe, tx, timeout, id) = (
-                    Arc::clone(&self.probe),
-                    self.tx.clone(),
-                    self.timing.mcp_probe_timeout,
-                    chat_id.clone(),
-                );
+                let (probe, tx, id) = (Arc::clone(&self.probe), self.tx.clone(), chat_id.clone());
                 let sp = self.spawner.clone();
                 let started = self.spawner.spawn("agent-mcp-probe", move |_| {
-                    let result = probe.probe(&target, timeout, &sp);
+                    // the chat's backend lists its own servers: a CLI list runs only where that
+                    // backend's `mcp_list` says so
+                    let result = target.backend.ops().mcp_list(
+                        &HelperCtx {
+                            spawner: &sp,
+                            program: &target.program,
+                            cwd: &target.cwd,
+                            label: &target.label,
+                            root: &target.root,
+                        },
+                        &*probe,
+                    );
                     let _ = tx.send(Msg::Probed {
                         chat_id: id,
                         result,
@@ -748,10 +760,21 @@ mod tests {
         assert_eq!(backoff(&[], 0), m(5), "an empty schedule still waits");
     }
 
+    /// The settled states, read by the web twin (`mcpNeedsAttention`) from the same vectors.
+    #[test]
+    fn the_settled_states_are_the_shared_vectors() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../../../shared/agent-mcp/vectors.json")).unwrap();
+        for c in v["settled"].as_array().unwrap() {
+            let state: McpState = serde_json::from_value(c["state"].clone()).unwrap();
+            assert_eq!(is_settled(state), c["settled"].as_bool().unwrap(), "{c}");
+        }
+    }
+
     fn st(name: &str, status: &str) -> McpServerStatus {
         McpServerStatus {
             name: name.into(),
-            status: status.into(),
+            status: McpState::parse(status),
         }
     }
 
@@ -787,18 +810,15 @@ mod tests {
             odd: cmd - something else\n\
             not a server line\n";
         let got = parse_mcp_list(out);
-        let pairs: Vec<_> = got
-            .iter()
-            .map(|s| (s.name.as_str(), s.status.as_str()))
-            .collect();
+        let pairs: Vec<_> = got.iter().map(|s| (s.name.as_str(), s.status)).collect();
         assert_eq!(
             pairs,
             [
-                ("notes", "connected"),
-                ("web", "failed"),
-                ("plugin:github:github", "needs-auth"),
-                ("lazy", "pending"),
-                ("odd", "unknown"),
+                ("notes", McpState::Connected),
+                ("web", McpState::Failed),
+                ("plugin:github:github", McpState::NeedsAuth),
+                ("lazy", McpState::Pending),
+                ("odd", McpState::Unknown),
             ]
         );
         assert!(
@@ -807,8 +827,41 @@ mod tests {
         );
     }
 
+    /// Capture K1 (`fixtures/k-k01-mcp-list.json`, claude 2.1.330): names with a dot, a space and a
+    /// colon list normally and are kept whole; a name holding `": "` splits at the first one.
+    #[test]
+    fn the_captured_list_keeps_names_with_spaces_dots_and_colons() {
+        let k1: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/k-k01-mcp-list.json")).unwrap();
+        let lines = k1["hand_written_names"]["stdout_lines"].as_array().unwrap();
+        let out: String = lines
+            .iter()
+            .map(|l| format!("{}\n", l.as_str().unwrap()))
+            .collect();
+        let names: Vec<_> = parse_mcp_list(&out).into_iter().map(|s| s.name).collect();
+        assert_eq!(
+            names,
+            ["plain", "my.srv", "my srv", "my:srv", "UPPER_case-1", "a"]
+        );
+        let pending = k1["project_mcp_json"]["stdout_lines"].as_array().unwrap();
+        let out: String = pending
+            .iter()
+            .map(|l| format!("{}\n", l.as_str().unwrap()))
+            .collect();
+        assert!(parse_mcp_list(&out)
+            .iter()
+            .all(|s| s.status == McpState::Pending));
+    }
+
+    #[test]
+    fn a_switched_off_server_is_not_failing() {
+        let servers = [st("a", "connected"), st("b", "disabled"), st("c", "failed")];
+        assert_eq!(failing(&servers), ["c"].map(String::from).into());
+    }
+
     #[test]
     fn describe_names_the_cause() {
+        assert_eq!(Reason::McpSwitches.describe(), "MCP servers switched");
         assert_eq!(
             Reason::Skill("writer-graph".into()).describe(),
             "skill writer-graph changed"

@@ -4,6 +4,7 @@
 // Entries exist while the contributing feature is on; Claude is the pane's own built-in entry.
 import type { ComponentType } from "react";
 import { OwnedRegistry } from "@/lib/owned-registry";
+import { isSwitchOn } from "@/lib/switches";
 
 /** What a backend's program detection says (the agent's `AgentBinaryInfo` has these fields too). */
 export interface DetectedProgram {
@@ -72,15 +73,19 @@ export function groupByProvider<T extends { provider?: string }>(
     .map(([provider, list]) => ({ provider, items: list }));
 }
 
-/** Does the model match what was typed in a model search? Provider and name, case-insensitive,
- *  blank matches all. The one rule of the models table and the model menu. */
-export const matchesModelQuery = (
-  provider: string | undefined,
-  name: string,
-  query: string,
-): boolean => {
+/** Does a row match what was typed in a search? The row's words (a model's provider and name, an
+ *  MCP server's name and raw names), case-insensitive, blank matches all. The one rule of the
+ *  models table, the model menu and the MCP servers menu. */
+export const matchesQuery = (query: string, ...words: (string | undefined)[]): boolean => {
   const q = query.trim().toLowerCase();
-  return !q || `${provider ?? ""} ${name}`.toLowerCase().includes(q);
+  return (
+    !q ||
+    words
+      .map((w) => w ?? "")
+      .join(" ")
+      .toLowerCase()
+      .includes(q)
+  );
 };
 
 /** A list setting as strings (a value that is not a list is empty). One reader for every place a
@@ -88,11 +93,12 @@ export const matchesModelQuery = (
 export const stringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : [];
 
-/** The one enabled rule: the backend has the model on and the user has not switched it off. */
+/** The one enabled rule: the backend has the model on and the user has not switched it off (the
+ *  models are on unless listed, `src/lib/switches.ts`). */
 export const isModelEnabled = (
   m: { id: string; available: boolean },
   disabled: readonly string[],
-): boolean => m.available && !disabled.includes(m.id);
+): boolean => m.available && isSwitchOn(disabled, m.id, true);
 
 /** The one model resolver (Settings, the chip and the start): an explicit `model` is itself (null
  *  when the list does not know it); blank is the first model of the list that is enabled. */

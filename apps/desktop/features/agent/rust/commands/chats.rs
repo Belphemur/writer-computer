@@ -16,7 +16,6 @@ use crate::agent::title;
 use crate::commands::blocking;
 use crate::error::AppError;
 use crate::features;
-use crate::state::AppState;
 use crate::vault_ops::VaultOpError;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime};
@@ -312,14 +311,8 @@ pub async fn agent_regenerate_title<R: Runtime>(
         let Ok(backend) = sessions.backend_for(note_backend.as_deref()) else {
             return refused(RegenerateRefusal::Unavailable);
         };
-        let override_path = {
-            let state = app.state::<AppState>().get_or_create(&label);
-            let guard = state.settings.read();
-            guard
-                .as_ref()
-                .and_then(|s| s.get(backend.ops().binary_setting()))
-                .and_then(|v| v.as_str().map(str::to_string))
-        };
+        let override_path =
+            crate::config::global_string(&app, &label, backend.ops().binary_setting());
         let Some(program) = backend.ops().find(override_path.as_deref()) else {
             return refused(RegenerateRefusal::NoBinary);
         };
@@ -473,6 +466,7 @@ mod tests {
     use crate::agent::backend::{Backend, BackendOps};
     use crate::agent::binary::AgentBinaryInfo;
     use crate::agent::claude_adapter::ClaudeAdapter;
+    use crate::agent::events::McpServerStatus;
     use crate::agent::session::{AgentSessions, Timing};
     use crate::agent::title::TitleAsker;
     use crate::agent::transport::{Transport, TransportInit};
@@ -502,6 +496,16 @@ mod tests {
         }
         fn session_id_ok(&self, _: &str) -> bool {
             true
+        }
+        fn mcp_switches(&self) -> Option<crate::agent::mcp_menu::SwitchSpec> {
+            Some(crate::agent::backend::FAKE_SWITCHES)
+        }
+        fn mcp_list(
+            &self,
+            _: &HelperCtx<'_>,
+            _: &dyn crate::agent::config_sync::McpProbe,
+        ) -> Result<Vec<McpServerStatus>, String> {
+            Ok(vec![])
         }
         fn connect(&self, _: TransportInit) -> Result<Arc<dyn Transport>, String> {
             Err("not used".into())

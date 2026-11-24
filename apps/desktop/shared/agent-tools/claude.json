@@ -193,6 +193,6 @@
     }
   ],
   "mcp": {
-    "prefix": "mcp__writer__"
+    "serverPrefix": "mcp__{server}__"
   }
 }

@@ -149,12 +149,7 @@ pub async fn agent_archive_project<R: Runtime>(
 
 /// `agent.projects-archive-folder` as the window's settings hold it (blank: the default).
 fn archive_folder_setting<R: Runtime>(app: &tauri::AppHandle<R>, label: &str) -> Option<String> {
-    let state = app.state::<AppState>().get_or_create(label);
-    let guard = state.settings.read();
-    guard
-        .as_ref()
-        .and_then(|s| s.get(project::SETTING_ARCHIVE_FOLDER))
-        .and_then(|v| v.as_str().map(str::to_string))
+    crate::config::global_string(app, label, project::SETTING_ARCHIVE_FOLDER)
 }
 
 /// What "Make project" would do to a folder, for the dialog's convert mode.

@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { memoryOverview } from "@features/agent/tests/memory-fixture";
+import { mcpMenu } from "@features/agent/tests/mcp-fixture";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const openMock = vi.hoisted(() => vi.fn());
@@ -54,6 +55,7 @@ describe("a contributed backend inside Settings > Agent", () => {
       if (cmd === "plugin:agent|agent_detect_binary")
         return { found: true, path: "/synthetic/bin/claude", version: "2.1.325", source: "path" };
       if (cmd === "plugin:agent|agent_memory_list") return memoryOverview({ vaultFiles: [] });
+      if (cmd === "plugin:agent|agent_mcp_servers") return mcpMenu();
       return [];
     });
     useSettingsStore.setState({

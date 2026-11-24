@@ -26,6 +26,7 @@ mod bindings;
 mod cli;
 mod commands;
 
+use crate::agent::ports::SettingsPort;
 use crate::agent::project_context::ProjectLibrary;
 use crate::agent::session::{AgentSessions, Timing};
 use crate::cli::registry::CommandSpec;
@@ -37,6 +38,15 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
 
 pub struct Agent;
+
+/// [`SettingsPort`] over the app's per-window settings.
+struct WindowSettings<R: Runtime>(AppHandle<R>);
+
+impl<R: Runtime> SettingsPort for WindowSettings<R> {
+    fn list(&self, label: &str, key: &str) -> Vec<String> {
+        crate::config::global_list(&self.0, label, key)
+    }
+}
 
 /// The sessions of the started agent, `None` while the feature is off.
 pub(crate) fn sessions_if_started<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<AgentSessions>> {
@@ -73,6 +83,10 @@ impl<R: Runtime> Feature<R> for Agent {
         let points = app.state::<Points>().inner().clone();
         let state = AgentSessions::with_spawner(Timing::default(), scope.spawner(), points)?;
         state.ports().set_project(Arc::new(ProjectLibrary));
+        // the MCP servers switched off are read from the window's settings at each spawn
+        state
+            .ports()
+            .set_settings(Arc::new(WindowSettings(app.clone())));
         let sessions = scope.manage(state);
         // What the scope counts, stops and reports, without keeping the state alive past its stop.
         let weak = Arc::downgrade(&sessions);

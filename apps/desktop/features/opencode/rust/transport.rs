@@ -937,20 +937,10 @@ impl TInner {
         };
         let skills = names(client.get(&api::SKILLS, &[]).await);
         let commands = names(client.get(&api::COMMANDS, &[]).await);
-        let mcp: Vec<McpServerStatus> = client
+        let mcp = client
             .get(&api::MCP, &[])
             .await
-            .ok()
-            .and_then(|v| serde_json::from_value::<Data<Vec<McpState>>>(v).ok())
-            .map(|d| {
-                d.data
-                    .into_iter()
-                    .map(|m| McpServerStatus {
-                        name: m.name,
-                        status: m.status.status,
-                    })
-                    .collect()
-            })
+            .map(api::mcp_statuses)
             .unwrap_or_default();
         let (model, mode, version) = {
             let mut st = self.st.lock();

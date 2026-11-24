@@ -1,5 +1,6 @@
 {
-  "$comment": "The classes of Writer's own MCP tools by command name (`search`, `files`, `read`...), the same for every backend: a table's `mcp.prefix` says how the backend spells the tool name, these say what each command is. Read by the web (`tool-kinds.ts`) for every table.",
+  "$comment": "The classes of Writer's own MCP tools by command name (`search`, `files`, `read`...), the same for every backend: a table's `mcp.serverPrefix` says how the backend spells a tool name (`{server}` is `server` below for Writer's own), these say what each command is. Read by the web (`tool-kinds.ts`) for every table.",
+  "server": "writer",
   "classes": [
     {
       "match": "^(search|search_context|files|folders|tags?|tasks|graph_.+|bases?(_.+)?|dql|properties|property_read)$",

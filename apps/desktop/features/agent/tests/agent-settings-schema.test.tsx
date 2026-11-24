@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { memoryOverview } from "@features/agent/tests/memory-fixture";
+import { mcpMenu } from "@features/agent/tests/mcp-fixture";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -54,6 +55,7 @@ describe("agent.* settings contract", () => {
       "agent.permission-mode": "manual",
       "agent.allowed-tools": DEFAULT_ALLOWED,
       "agent.disallowed-tools": [],
+      "agent.claude.disabled-mcp-servers": [],
       "agent.attach-active-note": true,
       "agent.share-open-tabs": true,
       "agent.show-turn-changes": true,
@@ -202,6 +204,7 @@ describe("Settings > Agent", { timeout: 30_000 }, () => {
     invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
       if (cmd === "plugin:agent|agent_detect_binary") return detect;
       if (cmd === "plugin:agent|agent_memory_list") return memoryOverview({ vaultFiles: [] });
+      if (cmd === "plugin:agent|agent_mcp_servers") return mcpMenu();
       if (cmd === "plugin:agent|agent_permission_rules")
         return { allow: ["Bash(ls)"], deny: ["Bash(rm)"] };
       if (cmd === "set_setting") {
@@ -239,11 +242,11 @@ describe("Settings > Agent", { timeout: 30_000 }, () => {
     }
   });
 
-  it("header: Ready with the detected path and version", async () => {
+  it("header: Ready with the version in the badge and the detected path below", async () => {
     await mount();
     expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("ready");
-    expect(q("[data-agent-binary-status]")?.textContent).toContain("/synthetic/bin/claude");
-    expect(q("[data-agent-binary-status]")?.textContent).toContain("2.1.325");
+    expect(q("[data-agent-status]")?.textContent).toBe("✓ Ready · 2.1.325");
+    expect(q("[data-agent-binary-status]")?.textContent).toBe("/synthetic/bin/claude");
   });
 
   it("header: not found offers Install instructions and Locate", async () => {

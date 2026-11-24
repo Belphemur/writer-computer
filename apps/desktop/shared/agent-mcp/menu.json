@@ -1,0 +1,264 @@
+{
+  "$comment": "Golden of the MCP servers menu: each case's inputs (the backend's default and what its switches apply to, the stored list, the listed servers, the time and error of the last read) and the `menu` agent_mcp_servers answers. Read by src-tauri/src/agent/mcp_menu.rs (rewrite with WRITER_UPDATE_GOLDEN=1 cargo test mcp_menu) and by the agent-mcp component test.",
+  "cases": [
+    {
+      "name": "claude, on unless listed",
+      "defaultOn": true,
+      "applies": "next-start",
+      "switched": ["notes"],
+      "listed": [
+        {
+          "name": "notes",
+          "status": "connected"
+        },
+        {
+          "name": "web",
+          "status": "needs-auth"
+        },
+        {
+          "name": "my.srv",
+          "status": "connected"
+        },
+        {
+          "name": "my srv",
+          "status": "failed"
+        }
+      ],
+      "checkedAtMs": 1700000000000,
+      "error": null,
+      "menu": {
+        "backend": "test",
+        "setting": "agent.test.mcp",
+        "defaultOn": true,
+        "servers": [
+          {
+            "name": "writer",
+            "names": ["writer"],
+            "status": "unknown",
+            "ownedByWriter": true,
+            "enabled": true
+          },
+          {
+            "name": "my_srv",
+            "names": ["my srv", "my.srv"],
+            "status": "failed",
+            "ownedByWriter": false,
+            "enabled": true
+          },
+          {
+            "name": "notes",
+            "names": ["notes"],
+            "status": "connected",
+            "ownedByWriter": false,
+            "enabled": false
+          },
+          {
+            "name": "web",
+            "names": ["web"],
+            "status": "needs-auth",
+            "ownedByWriter": false,
+            "enabled": true
+          }
+        ],
+        "checkedAtMs": 1700000000000,
+        "error": null,
+        "applies": "next-start"
+      }
+    },
+    {
+      "name": "never read",
+      "defaultOn": true,
+      "applies": "next-start",
+      "switched": [],
+      "listed": [],
+      "checkedAtMs": null,
+      "error": null,
+      "menu": {
+        "backend": "test",
+        "setting": "agent.test.mcp",
+        "defaultOn": true,
+        "servers": [
+          {
+            "name": "writer",
+            "names": ["writer"],
+            "status": "unknown",
+            "ownedByWriter": true,
+            "enabled": true
+          }
+        ],
+        "checkedAtMs": null,
+        "error": null,
+        "applies": "next-start"
+      }
+    },
+    {
+      "name": "off unless listed, with a stale switch",
+      "defaultOn": false,
+      "applies": "live",
+      "switched": ["db", "gone"],
+      "listed": [
+        {
+          "name": "writer",
+          "status": "connected"
+        },
+        {
+          "name": "db",
+          "status": "pending"
+        },
+        {
+          "name": "other",
+          "status": "disabled"
+        }
+      ],
+      "checkedAtMs": 1700000060000,
+      "error": null,
+      "menu": {
+        "backend": "test",
+        "setting": "agent.test.mcp",
+        "defaultOn": false,
+        "servers": [
+          {
+            "name": "writer",
+            "names": ["writer"],
+            "status": "connected",
+            "ownedByWriter": true,
+            "enabled": true
+          },
+          {
+            "name": "db",
+            "names": ["db"],
+            "status": "pending",
+            "ownedByWriter": false,
+            "enabled": true
+          },
+          {
+            "name": "gone",
+            "names": ["gone"],
+            "status": "unknown",
+            "ownedByWriter": false,
+            "enabled": true
+          },
+          {
+            "name": "other",
+            "names": ["other"],
+            "status": "disabled",
+            "ownedByWriter": false,
+            "enabled": false
+          }
+        ],
+        "checkedAtMs": 1700000060000,
+        "error": null,
+        "applies": "live"
+      }
+    },
+    {
+      "name": "the last read failed",
+      "defaultOn": true,
+      "applies": "next-start",
+      "switched": [],
+      "listed": [
+        {
+          "name": "notes",
+          "status": "connected"
+        }
+      ],
+      "checkedAtMs": 1700000000000,
+      "error": "mcp list timed out",
+      "menu": {
+        "backend": "test",
+        "setting": "agent.test.mcp",
+        "defaultOn": true,
+        "servers": [
+          {
+            "name": "writer",
+            "names": ["writer"],
+            "status": "unknown",
+            "ownedByWriter": true,
+            "enabled": true
+          },
+          {
+            "name": "notes",
+            "names": ["notes"],
+            "status": "connected",
+            "ownedByWriter": false,
+            "enabled": true
+          }
+        ],
+        "checkedAtMs": 1700000000000,
+        "error": "mcp list timed out",
+        "applies": "next-start"
+      }
+    },
+    {
+      "name": "a switched-off server covers the servers its glob covers",
+      "defaultOn": true,
+      "applies": "next-start",
+      "switched": ["a", "my.srv"],
+      "listed": [
+        {
+          "name": "a",
+          "status": "connected"
+        },
+        {
+          "name": "a__b",
+          "status": "connected"
+        },
+        {
+          "name": "ab",
+          "status": "connected"
+        },
+        {
+          "name": "my.srv",
+          "status": "connected"
+        }
+      ],
+      "checkedAtMs": 1700000000000,
+      "error": null,
+      "menu": {
+        "backend": "test",
+        "setting": "agent.test.mcp",
+        "defaultOn": true,
+        "servers": [
+          {
+            "name": "writer",
+            "names": ["writer"],
+            "status": "unknown",
+            "ownedByWriter": true,
+            "enabled": true
+          },
+          {
+            "name": "a",
+            "names": ["a"],
+            "status": "connected",
+            "ownedByWriter": false,
+            "enabled": false
+          },
+          {
+            "name": "a__b",
+            "names": ["a__b"],
+            "status": "connected",
+            "ownedByWriter": false,
+            "enabled": false
+          },
+          {
+            "name": "ab",
+            "names": ["ab"],
+            "status": "connected",
+            "ownedByWriter": false,
+            "enabled": true
+          },
+          {
+            "name": "my_srv",
+            "names": ["my.srv"],
+            "status": "connected",
+            "ownedByWriter": false,
+            "enabled": false
+          }
+        ],
+        "checkedAtMs": 1700000000000,
+        "error": null,
+        "applies": "next-start"
+      }
+    }
+  ]
+}

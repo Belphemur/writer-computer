@@ -1,14 +1,14 @@
 // The pure side of the models table and the model chip's list for a live backend.
 import { describe, expect, it } from "vite-plus/test";
 import { liveModelChoices } from "@features/agent/web/lib/live-models";
-import { isModelEnabled, matchesModelQuery, resolveModel } from "@/lib/features/agent-backends";
+import { isModelEnabled, matchesQuery } from "@/lib/features/agent-backends";
+import { switchedAfter } from "@/lib/switches";
 import {
   filterModels,
   formatContext,
   formatCost,
   providerTabs,
   resolveProvider,
-  withEnabled,
 } from "../web/lib/models";
 import { BACKEND_MODELS as MODELS } from "./fixtures";
 
@@ -52,17 +52,19 @@ describe("models table rules", () => {
   });
 
   it("one query rule: provider and name, case-insensitive, blank matches all", () => {
-    expect(matchesModelQuery("Acme AI", "Big One", " ACME ")).toBe(true);
-    expect(matchesModelQuery("Acme AI", "Big One", "one")).toBe(true);
-    expect(matchesModelQuery(undefined, "Big One", "acme")).toBe(false);
-    expect(matchesModelQuery("Acme AI", "Big One", "  ")).toBe(true);
-    expect(matchesModelQuery("Acme AI", "Big One", "zed")).toBe(false);
+    expect(matchesQuery(" ACME ", "Acme AI", "Big One")).toBe(true);
+    expect(matchesQuery("one", "Acme AI", "Big One")).toBe(true);
+    expect(matchesQuery("acme", undefined, "Big One")).toBe(false);
+    expect(matchesQuery("  ", "Acme AI", "Big One")).toBe(true);
+    expect(matchesQuery("zed", "Acme AI", "Big One")).toBe(false);
+    // any number of words: an MCP server's name and its raw names
+    expect(matchesQuery("my.srv", "my_srv", "my srv", "my.srv")).toBe(true);
   });
 
-  it("switching a model writes the list without duplicates", () => {
-    expect(withEnabled([], "a/b", false)).toEqual(["a/b"]);
-    expect(withEnabled(["a/b"], "a/b", false)).toEqual(["a/b"]);
-    expect(withEnabled(["a/b", "c/d"], "a/b", true)).toEqual(["c/d"]);
+  it("switching a model writes the list without duplicates (the shared switch rule)", () => {
+    expect(switchedAfter([], "a/b", false, true)).toEqual(["a/b"]);
+    expect(switchedAfter(["a/b"], "a/b", false, true)).toEqual(["a/b"]);
+    expect(switchedAfter(["a/b", "c/d"], "a/b", true, true)).toEqual(["c/d"]);
   });
 
   it("formats prices and the window", () => {

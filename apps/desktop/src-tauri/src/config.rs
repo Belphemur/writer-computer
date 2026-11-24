@@ -323,6 +323,51 @@ pub fn read_global_value(global_config_dir: &Path, key: &str) -> Option<ConfigVa
     parse_config_with_defaults(&raw, None).remove(key)
 }
 
+/// A list setting of window `label` as the app holds it now (empty when the window has no
+/// settings yet, the key is unset or its value is not a list). The one reader of the list
+/// settings the agent features keep (the MCP servers switched, the models switched off): they read
+/// it when they start a chat or answer the menu, so a change in Settings needs no restart of the app.
+pub fn global_list<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+    key: &str,
+) -> Vec<String> {
+    use tauri::Manager;
+    let state = app.state::<crate::state::AppState>().get_or_create(label);
+    let guard = state.settings.read();
+    match guard.as_ref().and_then(|s| s.get(key)) {
+        Some(ConfigValue::List(l)) => l.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// A string setting of window `label` as the app holds it now (`None` when unset or not a
+/// string): what a command needs to find a backend's program from its `binary_setting`.
+pub fn global_string<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+    key: &str,
+) -> Option<String> {
+    use tauri::Manager;
+    let state = app.state::<crate::state::AppState>().get_or_create(label);
+    let guard = state.settings.read();
+    guard
+        .as_ref()
+        .and_then(|s| s.get(key))
+        .and_then(|v| v.as_str().map(str::to_string))
+}
+
+/// [`global_string`], trimmed, and `None` when blank: a path-like setting where blank means unset.
+pub fn global_nonblank<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+    key: &str,
+) -> Option<String> {
+    global_string(app, label, key)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// Manages the three-layer settings: defaults → global → workspace.
 pub struct Settings {
     defaults: HashMap<String, ConfigValue>,

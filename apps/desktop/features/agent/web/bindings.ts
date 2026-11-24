@@ -74,6 +74,18 @@ export const commands = {
 	 *  counts only.
 	 */
 	agentListSkills: (projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<DiskSkill[]>("plugin:agent|agent_list_skills", { projectPath }, options),
+	/**
+	 *  The menu: the backend's rows over what is known (`refresh`: read the list now, one read at a
+	 *  time per backend and vault; otherwise only what the chats and earlier reads have seen). `None`
+	 *  for a backend with no switches (no menu).
+	 */
+	agentMcpServers: (backend: string | null, refresh: boolean, options?: InvokeOptions) => __TAURI_INVOKE<McpMenu | null>("plugin:agent|agent_mcp_servers", { backend, refresh }, options),
+	/**
+	 *  A switch changed (the web wrote the backend's setting first): the backend puts it in force
+	 *  where it must, then the backend's chats are marked stale, so they restart under
+	 *  `agent.auto-reload`.
+	 */
+	agentMcpApply: (backend: string | null, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:agent|agent_mcp_apply", { backend }, options),
 	/**  The vault memory and, with `project_path` (vault-relative), that project's. */
 	agentMemoryList: (projectPath: string | null, options?: InvokeOptions) => __TAURI_INVOKE<MemoryOverview>("plugin:agent|agent_memory_list", { projectPath }, options),
 	/**  Deletes one memory file (a name, not a path) of the vault or the project memory. */
@@ -326,6 +338,13 @@ export type AgentSettings = {
 	tierModels?: { [key in string]: string | null },
 };
 
+/**  When a switch takes effect for a chat, said by the backend (the menu's one "applies" line). */
+export type Applies = 
+/**  The next time a chat's session starts (a running one restarts under `agent.auto-reload`). */
+"next-start" | 
+/**  At once, in running chats too. */
+"live";
+
 export type BinarySource = "override" | "path" | "login-path" | "known-dir";
 
 /**  How a changed file got on the card, i.e. how far its "before" can be trusted. */
@@ -545,14 +564,47 @@ export type ManifestPreview = {
 	text: string,
 };
 
-/**
- *  One entry of `init.mcp_servers`: the server name and the CLI's own status word (`connected`,
- *  `failed`, `pending`, `needs-auth`, ... passed through, never interpreted here).
- */
+/**  What `agent_mcp_servers` answers: the rows and what the pane says around them. */
+export type McpMenu = {
+	backend: string,
+	/**  The setting the switches are written to. */
+	setting: string,
+	defaultOn: boolean,
+	servers: McpServer[],
+	/**  When the list was last read (ms since the epoch), null before the first read. */
+	checkedAtMs: number | null,
+	/**  Why the last read failed (a short phrase, never output of the program). */
+	error: string | null,
+	applies: Applies,
+};
+
+/**  One row of the menu. */
+export type McpServer = {
+	/**  The key every harness knows the server by: what the switch is stored under and what its tools are prefixed with. */
+	name: string,
+	/**  The raw names that share the key, sorted (one entry unless names collided). */
+	names: string[],
+	status: McpState,
+	/**  Writer's own server: always on, not a switch. */
+	ownedByWriter: boolean,
+	enabled: boolean,
+};
+
+/**  One entry of `init.mcp_servers` (or of a backend's own list): the server name and its state. */
 export type McpServerStatus = {
 	name: string,
-	status: string,
+	status: McpState,
 };
+
+/**
+ *  The connection state of an MCP server, one vocabulary for every backend (the status words of
+ *  Claude's `init.mcp_servers` and `claude mcp list`, and of OpenCode's `GET /api/mcp`, both
+ *  mapped by [`McpState::parse`]). Kebab-case on the wire (`needs-auth`); a state this build does
+ *  not know is `Unknown`, never an error.
+ */
+export type McpState = "connected" | "pending" | "failed" | "needs-auth" | "disconnected" | 
+/**  Switched off by the harness's own config (OpenCode's `disabled`). */
+"disabled" | string;
 
 /**  One file of a memory folder. */
 export type MemoryFile = {

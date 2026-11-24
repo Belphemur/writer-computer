@@ -250,7 +250,8 @@ impl ClaudeStreamMapper {
                         .filter_map(|x| {
                             Some(McpServerStatus {
                                 name: str_of(x, "name")?.to_string(),
-                                status: str_of(x, "status").unwrap_or("unknown").to_string(),
+                                status: str_of(x, "status")
+                                    .map_or(McpState::Unknown, McpState::parse),
                             })
                         })
                         .collect()
@@ -2174,14 +2175,14 @@ mod tests {
             [AgentEvent::SessionStarted { mcp_servers, .. }] => {
                 let got: Vec<_> = mcp_servers
                     .iter()
-                    .map(|s| (s.name.as_str(), s.status.as_str()))
+                    .map(|s| (s.name.as_str(), s.status))
                     .collect();
                 assert_eq!(
                     got,
                     [
-                        ("notes", "connected"),
-                        ("web", "failed"),
-                        ("bare", "unknown")
+                        ("notes", McpState::Connected),
+                        ("web", McpState::Failed),
+                        ("bare", McpState::Unknown)
                     ]
                 );
             }

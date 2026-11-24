@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { memoryOverview } from "@features/agent/tests/memory-fixture";
+import { mcpMenu } from "@features/agent/tests/mcp-fixture";
 import { MODELS, STATUS_READY } from "./fixtures";
 
 const invokeMock = vi.hoisted(() => vi.fn());
@@ -96,6 +97,7 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
       if (cmd === "plugin:agent|agent_detect_binary")
         return { found: true, path: "/synthetic/bin/claude", version: "2.1.325", source: "path" };
       if (cmd === "plugin:agent|agent_memory_list") return memoryOverview({ vaultFiles: [] });
+      if (cmd === "plugin:agent|agent_mcp_servers") return mcpMenu();
       if (cmd === "plugin:opencode|opencode_status") {
         if (status instanceof Error) throw status;
         return status;
@@ -154,11 +156,11 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
   });
 
   describe("status card", () => {
-    it("Ready: path and version", async () => {
+    it("Ready: the version in the badge, the path below", async () => {
       await openTab();
       expect(q("[data-agent-status]")?.dataset.agentStatus).toBe("ready");
+      expect(q("[data-agent-status]")?.textContent).toBe("✓ Ready · 2.4.0");
       expect(q("[data-agent-binary-status]")?.textContent).toContain("/synthetic/bin/opencode");
-      expect(q("[data-agent-binary-status]")?.textContent).toContain("2.4.0");
     });
 
     it("Not found: Install instructions and Locate, in OpenCode's own words", async () => {

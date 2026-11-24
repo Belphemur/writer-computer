@@ -19,6 +19,7 @@
 // (a send-now `PATCH`, the runtime MCP routes): they are the wire, not dead code.
 #![allow(non_snake_case, dead_code)]
 
+use crate::agent::events::{McpServerStatus, McpState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -524,8 +525,10 @@ pub struct SessionInfo {
     pub id: String,
 }
 
+/// One server of `GET /api/mcp` (`Mcp.Server`): only its name and state word are read; its
+/// `error`, `title` and `integrationID` are never kept.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct McpState {
+pub struct McpEntry {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -536,6 +539,23 @@ pub struct McpState {
 pub struct McpStatus {
     #[serde(default)]
     pub status: String,
+}
+
+/// The servers of a `GET /api/mcp` reply, as the neutral list: the one mapper of `SessionStarted`
+/// and the menu (`McpState::parse` spells `needs_auth` as it spells Claude's `needs-auth`). A
+/// reply that is not the envelope is no servers.
+pub fn mcp_statuses(reply: Value) -> Vec<McpServerStatus> {
+    serde_json::from_value::<Data<Vec<McpEntry>>>(reply)
+        .map(|d| {
+            d.data
+                .into_iter()
+                .map(|m| McpServerStatus {
+                    name: m.name,
+                    status: McpState::parse(&m.status.status),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -714,6 +734,59 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// `GET /api/mcp` (`Mcp.Server`): every status of the contract maps to the neutral state
+    /// (`needs_auth` included, which used to pass through raw), and an `error` text, a title or
+    /// any other field is never kept.
+    #[test]
+    fn the_mcp_reply_maps_every_status_of_the_contract_and_keeps_names_and_states_only() {
+        let reply = json!({"data": [
+            {"name": "a", "status": {"status": "connected"}},
+            {"name": "b", "status": {"status": "pending"}},
+            {"name": "c", "status": {"status": "disabled"}},
+            {"name": "d", "status": {"status": "failed", "error": "spawn ENOENT /secret/path"}, "title": "T"},
+            {"name": "e", "status": {"status": "needs_auth", "error": "x"}},
+            {"name": "my.srv", "status": {"status": "something new"}},
+        ]});
+        let got = mcp_statuses(reply);
+        let states: Vec<_> = got.iter().map(|s| (s.name.as_str(), s.status)).collect();
+        assert_eq!(
+            states,
+            [
+                ("a", McpState::Connected),
+                ("b", McpState::Pending),
+                ("c", McpState::Disabled),
+                ("d", McpState::Failed),
+                ("e", McpState::NeedsAuth),
+                ("my.srv", McpState::Unknown),
+            ]
+        );
+        assert!(!format!("{got:?}").contains("secret"));
+        assert!(mcp_statuses(json!({"nope": 1})).is_empty());
+        // the statuses of the contract are exactly the ones the mapper knows
+        let contract = contract();
+        let server =
+            &contract["components"]["schemas"]["Mcp.Server"]["properties"]["status"]["anyOf"];
+        let words: Vec<String> = server
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                let name = r["$ref"].as_str().unwrap().rsplit('/').next().unwrap();
+                contract["components"]["schemas"][name]["properties"]["status"]["enum"][0]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(
+            words,
+            ["connected", "pending", "disabled", "failed", "needs_auth"]
+        );
+        for w in &words {
+            assert_ne!(McpState::parse(w), McpState::Unknown, "{w}");
         }
     }
 

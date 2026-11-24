@@ -42,6 +42,15 @@
       "default": []
     },
     {
+      "key": "agent.opencode.enabled-mcp-servers",
+      "label": "MCP servers switched on",
+      "description": "MCP servers OpenCode offers in Writer's chats, by name (every character outside letters, digits, _ and - is _). Off unless listed; Writer's own server is always on. Switched in Settings > Agent > OpenCode.",
+      "category": "Agent",
+      "type": "list",
+      "scope": "global",
+      "default": []
+    },
+    {
       "key": "agent.opencode.model-cheap",
       "label": "Cheap tier model",
       "description": "Model for the cheap tier: the read-only writer-explorer sub-agent and automatic chat titles, as provider/model. Blank: the chat's own model.",

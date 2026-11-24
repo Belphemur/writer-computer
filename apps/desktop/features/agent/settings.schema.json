@@ -81,6 +81,15 @@
       "default": []
     },
     {
+      "key": "agent.claude.disabled-mcp-servers",
+      "label": "MCP servers switched off",
+      "description": "MCP servers Claude does not offer in Writer's chats, by name (every character outside letters, digits, _ and - is _). Switched in Settings > Agent > Claude. Their tools are withheld through --disallowedTools; the server still starts.",
+      "category": "Agent",
+      "type": "list",
+      "scope": "global",
+      "default": []
+    },
+    {
       "key": "agent.attach-active-note",
       "label": "Attach the open note",
       "description": "Attach the note open in the editor to each message by default (as a path; the agent reads it itself). You can remove the chip per message.",
