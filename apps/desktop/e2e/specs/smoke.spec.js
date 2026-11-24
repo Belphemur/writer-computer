@@ -1,5 +1,5 @@
 import { strictEqual } from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,8 +61,27 @@ describe("Writer app", function () {
       // Verify on the host filesystem that the IPC actually wrote the bytes.
       strictEqual(readFileSync(filePath, "utf-8"), expectedContent);
     } finally {
-      // Opening the workspace starts the managed-skills sync in the background (`.claude/skills`,
-      // `.agents/skills`), so the folder can still be filling while we delete it: retry ENOTEMPTY.
+      // Opening the workspace starts the managed-skills sync on its own thread (`.claude/skills`,
+      // `.agents/skills`), which can outlast the test on a slow runner. Wait until a check-only
+      // sync has nothing left to write (at most 60 s), then close the workspace and delete it.
+      await browser.executeAsync((root, done) => {
+        void (async () => {
+          const { invoke } = window.__TAURI_INTERNALS__;
+          const writes = new Set(["installed", "updated", "restored", "removed"]);
+          const deadline = Date.now() + 60_000;
+          while (Date.now() < deadline) {
+            try {
+              const report = await invoke("sync_managed_skills", { check: true });
+              if (!report.outcomes.some((o) => writes.has(o.action))) break;
+            } catch {
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 250));
+          }
+          await invoke("close_workspace", { root }).catch(() => {});
+          done(null);
+        })();
+      }, realpathSync(workspace));
       rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   });
