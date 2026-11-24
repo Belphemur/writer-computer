@@ -18,9 +18,10 @@
 //! The mapper never keeps or logs content; it only keeps ids.
 
 use super::bash_rules;
+use super::claude_adapter::ClaudeAdapter;
 use super::events::*;
 use super::files::{FileKind, FilePart};
-use super::mcp_wiring::{Launch, McpWiring};
+use super::mcp_wiring::{Launch, McpWiring, ToolsAdapter};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -53,49 +54,6 @@ pub struct MapOutput {
     /// message and will run it, which can be long before the echo (a steer waits for the running
     /// sub-agents' tool calls to end, `steer-now-subagents`). Not a UI event.
     pub command_queued: Option<String>,
-}
-
-/// A task line of the stream, by the CLI's task id. Facts only: what they mean for a sub-agent's
-/// life is decided in one place, `sub_tracker.rs`. `call` is the launch call the task belongs to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TaskSignal {
-    /// `task_started`; `background` is the CLI's `is_backgrounded`.
-    Started {
-        task: String,
-        call: Option<String>,
-        background: bool,
-    },
-    /// `task_updated` with a final `patch.status`.
-    Updated {
-        task: String,
-        call: Option<String>,
-        status: SubagentRunStatus,
-    },
-    /// `task_notification`: the completion signal. `report` is the sub-agent's own final report
-    /// when the CLI carries it (`handback_report.text`); its `summary` sentence is CLI text and
-    /// never a report.
-    Notified {
-        task: String,
-        call: Option<String>,
-        status: SubagentRunStatus,
-        report: Option<String>,
-    },
-    /// The launch call's result says the run went to the background (`tool_use_result.status`
-    /// `async_launched`, which the CLI also answers for a run it moved to the background by
-    /// itself). The result's text is CLI-internal and is not emitted.
-    AsyncLaunched { call: String },
-}
-
-impl TaskSignal {
-    /// The task id, for the signals that are about a task (not a launch result).
-    pub fn task(&self) -> Option<&str> {
-        match self {
-            Self::Started { task, .. }
-            | Self::Updated { task, .. }
-            | Self::Notified { task, .. } => Some(task),
-            Self::AsyncLaunched { .. } => None,
-        }
-    }
 }
 
 #[derive(Default)]
@@ -739,7 +697,12 @@ impl ClaudeStreamMapper {
         out.events.push(AgentEvent::PermissionRequest {
             request_id: request_id.to_string(),
             tool_call_id: str_of(req, "tool_use_id").map(String::from),
-            suggestions: bash_rules::with_proposals(&tool, &input, suggestions),
+            suggestions: bash_rules::with_proposals(
+                ClaudeAdapter.tool_table(),
+                &tool,
+                &input,
+                suggestions,
+            ),
             tool,
             display_name: str_of(req, "display_name").map(String::from),
             input,
@@ -1026,72 +989,6 @@ pub fn encode_control_error(request_id: &str, error: &str) -> String {
         .to_string()
 }
 
-/// What the CLI is told to persist for an "Always allow" choice, rebuilt from the suggestions of
-/// the request (the CLI's, or Writer's proposal, `bash_rules`), never from UI input: `rules`, the
-/// `ruleContent`s the user kept ticked, only selects among the rules those suggestions already
-/// carry (`None` keeps all). `project` writes `<cwd>/.claude/settings.local.json` (verified).
-pub fn updated_permissions(
-    suggestions: &[Value],
-    persist: Option<PermissionPersist>,
-    rules: Option<&[String]>,
-) -> Vec<Value> {
-    let Some(persist) = persist else {
-        return Vec::new();
-    };
-    suggestions
-        .iter()
-        .filter_map(|s| {
-            let kind = s.get("type").and_then(Value::as_str)?;
-            match (persist, kind) {
-                (PermissionPersist::Project, "addRules") => {
-                    chosen_rules(s, rules).and_then(|s| with_destination(&s, "localSettings"))
-                }
-                (PermissionPersist::Session, "addRules") => {
-                    chosen_rules(s, rules).and_then(|s| with_destination(&s, "session"))
-                }
-                (PermissionPersist::AcceptEdits, "setMode")
-                    if s.get("mode").and_then(Value::as_str) == Some("acceptEdits") =>
-                {
-                    with_destination(s, "session")
-                }
-                _ => None,
-            }
-        })
-        .collect()
-}
-
-/// The suggestion narrowed to the ticked rules (`None` when none of them is in it), without
-/// Writer's own `proposal` marker, which the CLI does not know.
-fn chosen_rules(s: &Value, rules: Option<&[String]>) -> Option<Value> {
-    let mut v = s.clone();
-    let obj = v.as_object_mut()?;
-    obj.remove("proposal");
-    if let Some(keep) = rules {
-        let kept: Vec<Value> = obj
-            .get("rules")
-            .and_then(Value::as_array)?
-            .iter()
-            .filter(|r| {
-                r.get("ruleContent")
-                    .and_then(Value::as_str)
-                    .is_some_and(|c| keep.iter().any(|k| k == c))
-            })
-            .cloned()
-            .collect();
-        if kept.is_empty() {
-            return None;
-        }
-        obj.insert("rules".into(), Value::Array(kept));
-    }
-    Some(v)
-}
-
-fn with_destination(s: &Value, dest: &str) -> Option<Value> {
-    let mut v = s.clone();
-    v.as_object_mut()?.insert("destination".into(), json!(dest));
-    Some(v)
-}
-
 // -------------------------------------------------------------------------------------------
 // Argument vector
 
@@ -1308,6 +1205,7 @@ pub fn build_args(spawn: &ClaudeSpawn) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::permission_update::updated_permissions;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -2767,7 +2665,7 @@ mod tests {
     #[test]
     fn ticked_rules_narrow_the_proposal_and_each_destination_is_forced() {
         let input = json!({"command":"git status && git diff"});
-        let sug = bash_rules::with_proposals("Bash", &input, vec![]);
+        let sug = bash_rules::with_proposals(ClaudeAdapter.tool_table(), "Bash", &input, vec![]);
         let ticked = vec!["git diff:*".to_string()];
         for (persist, dest) in [
             (PermissionPersist::Project, "localSettings"),
@@ -3077,7 +2975,7 @@ mod tests {
         let mut s = settings();
         s.allowed_tools = vec!["Bash(git status)".into()];
         let wiring = crate::agent::mcp_wiring::wiring(
-            &crate::agent::subagents::ClaudeAdapter,
+            &crate::agent::claude_adapter::ClaudeAdapter,
             Path::new("/data/bin/writer"),
             Path::new("/Users/me/Notes"),
         )

@@ -230,7 +230,7 @@ impl ConsentRequest {
             "plugin spawn consent requested: plugin={} program={:?} args={:?} cwd={:?} env_names={:?} inherit_env={}",
             self.plugin_id,
             self.program,
-            crate::agent::runner::redact_prompt(&self.args),
+            crate::agent::stdio_transport::redact_prompt(&self.args),
             self.cwd,
             self.env_keys,
             self.inherit_env

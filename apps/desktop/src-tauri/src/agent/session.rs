@@ -9,6 +9,7 @@
 //! - sessions die with their window, vault, trust and the app (`kill_window`, `kill_root`,
 //!   `kill_all`) and after 30 idle minutes (resumed on the next message).
 
+use super::backend::{self, Backend};
 use super::binary;
 use super::changes::ChangeStore;
 use super::config_sync::{CliMcpProbe, McpProbe, Msg, Worker};
@@ -17,9 +18,9 @@ use super::files::{self, Outgoing};
 use super::mcp_wiring;
 use super::memory;
 use super::ports::{AgentPorts, InjectAgentsMd, SpawnContext};
-use super::roles::{Flags, RenderInput, RoleAdapter};
-use super::runner::{LaunchConfig, Session, SessionInit, SpawnError};
-use super::subagents::ClaudeAdapter;
+use super::roles::{Flags, RenderInput};
+use super::runner::{Session, SessionInit};
+use super::transport::{LaunchConfig, SpawnError};
 use super::writer_prompt::MemoryNote;
 use crate::features::points::Points;
 use crate::features::scope::Spawner;
@@ -432,6 +433,7 @@ impl AgentSessions {
 
     fn config_for(
         &self,
+        backend: &'static Backend,
         p: &StartParams,
         cwd: &Path,
     ) -> Result<(LaunchConfig, Option<SpawnError>), String> {
@@ -448,8 +450,7 @@ impl AgentSessions {
             }
         }
         // The chat's backend: its adapter names the tools, takes the MCP server and renders the
-        // roles (`claude` is the only one today).
-        let backend = ClaudeAdapter;
+        // roles.
         let add_dirs = if cwd != p.root {
             vec![p.root.to_string_lossy().into_owned()]
         } else {
@@ -457,12 +458,11 @@ impl AgentSessions {
         };
         // Named only when the command is really there: the skills are installed for the spawned
         // CLI AND the launcher directory is on its PATH (spec "Writer CLI for the agent").
-        let writer_cli =
-            p.cli_dir.is_some() && crate::managed_skills::claude_skills_installed(&p.root);
-        // The roles the Claude adapter produces for this session: the `--agents` JSON and, from
-        // the same output, the orchestration line of the system block.
+        let writer_cli = p.cli_dir.is_some() && backend.writer_skills_installed(&p.root);
+        // The roles the backend's adapter produces for this session (Claude: the `--agents` JSON)
+        // and, from the same output, the orchestration line of the system block.
         let rendered = settings.orchestrate.then(|| {
-            backend.render(&RenderInput {
+            backend.roles().render(&RenderInput {
                 writer_cli,
                 tier_models: &settings.tier_models,
                 flags: &Flags::current(),
@@ -502,13 +502,13 @@ impl AgentSessions {
             writer_cli,
             orchestration: rendered.as_ref(),
             memory: memory_note,
-            tools: &backend,
+            tools: backend.mcp(),
         })?;
         let agents = rendered.and_then(|r| r.config);
         // Writer's own MCP server (the search and vault tools), when the launcher exists.
         let mcp = p.cli_dir.as_ref().and_then(|dir| {
             mcp_wiring::wiring(
-                &backend,
+                backend.mcp(),
                 &dir.join(super::cli_launcher::LAUNCHER_NAME),
                 &p.root,
             )
@@ -526,10 +526,58 @@ impl AgentSessions {
                 memory_dir,
                 mcp,
                 settings,
-                restart_on_config_change: backend.restart_on_config_change(),
+                restart_on_config_change: backend.roles().restart_on_config_change(),
             },
             missing,
         ))
+    }
+
+    /// A chat on a transport the caller builds, to test the state machine without a process.
+    #[cfg(test)]
+    pub(crate) fn open_on(
+        &self,
+        label: &str,
+        root: &Path,
+        chat_id: &str,
+        sink: Sink,
+        settings: AgentSettings,
+        make: impl FnOnce(
+            super::transport::TransportInit,
+        ) -> Result<Arc<dyn super::transport::Transport>, String>,
+    ) -> Result<Arc<Session>, String> {
+        let config = LaunchConfig {
+            program: Some(PathBuf::from("fake")),
+            cli_version: None,
+            system_prompt: None,
+            add_dirs: Vec::new(),
+            agents: None,
+            cli_dir: None,
+            memory_dir: None,
+            mcp: None,
+            settings,
+            restart_on_config_change: false,
+        };
+        let session = Session::with_transport(
+            SessionInit {
+                chat_id: chat_id.into(),
+                label: label.into(),
+                root: root.to_path_buf(),
+                cwd: root.to_path_buf(),
+                project_path: None,
+                session_id: chat_id.into(),
+                resume: false,
+                shared: Arc::downgrade(&self.shared),
+                sink,
+                backend: backend::claude(),
+            },
+            config,
+            make,
+        )?;
+        self.shared
+            .sessions
+            .lock()
+            .insert(chat_id.into(), Arc::clone(&session));
+        Ok(session)
     }
 
     /// Create (or find) the chat's session and make sure its process runs. Blocking: login
@@ -561,13 +609,17 @@ impl AgentSessions {
             }
         }
         let existing = existing.filter(|s| !s.is_terminal());
+        // a chat keeps its backend; a new one gets the one new chats use
+        let backend = existing
+            .as_ref()
+            .map_or_else(backend::for_new_chat, |s| s.backend());
 
-        let (config, missing) = match self.config_for(&p, &cwd) {
+        let (config, missing) = match self.config_for(backend, &p, &cwd) {
             Ok(c) => c,
             Err(e) => {
                 log::warn!(target: "agent", "agent: could not prepare the project context");
                 // surface it on the chat; no process starts without its instructions
-                let session = self.session_for(&p, &cwd, existing, None)?;
+                let session = self.session_for(backend, &p, &cwd, existing, None)?;
                 session.fail(&SpawnError::Invalid(format!(
                     "Could not prepare the project context: {e}"
                 )));
@@ -577,7 +629,7 @@ impl AgentSessions {
                 });
             }
         };
-        let session = self.session_for(&p, &cwd, existing, Some(config))?;
+        let session = self.session_for(backend, &p, &cwd, existing, Some(config))?;
         if let Some(err) = missing {
             session.fail(&err);
         } else if let Err(err) = session.ensure_process() {
@@ -591,6 +643,7 @@ impl AgentSessions {
 
     fn session_for(
         &self,
+        backend: &'static Backend,
         p: &StartParams,
         cwd: &Path,
         existing: Option<Arc<Session>>,
@@ -629,6 +682,7 @@ impl AgentSessions {
                 resume: req.resume_session_id.is_some(),
                 shared: Arc::downgrade(&self.shared),
                 sink: Arc::clone(&p.sink),
+                backend,
             },
             config,
         )

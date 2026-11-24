@@ -1,12 +1,25 @@
 /**
  * One registry for how a tool is named, grouped and summarised (docs/consolidation.md): the
- * permission card's "Type" line, the timeline row label and the group header all read it.
+ * permission card's "Type" line, the timeline row label and the group header all read it. The
+ * tools themselves are data, a backend's table (`shared/agent-tools/<backend>.json`, spec
+ * `SPECs/opencode-backend-spec.md` A11) that the Rust side reads too: this file spells no tool name.
  */
+import claudeTable from "@shared/agent-tools/claude.json";
 import { roleLabelOf } from "./agent-roles";
 import type { PermissionPersist, PermissionSuggestion } from "./events";
 import type { PermissionView } from "./transcript";
 
 export type ToolKind = "execute" | "edit" | "read" | "search" | "fetch" | "agent" | "other";
+
+/** What shared code asks of a tool beyond its kind (the Rust `Role`). */
+export type ToolRole =
+  | "read"
+  | "shell"
+  | "replace"
+  | "multi-replace"
+  | "create"
+  | "launch"
+  | "handback";
 
 type ToolSpec = {
   kind: ToolKind;
@@ -19,162 +32,77 @@ type ToolSpec = {
   noun: [singular: string, plural: string];
   /** The call opens one file (counted as a file read on a sub-agent card; a search is not). */
   readsFile?: boolean;
+  role?: ToolRole;
+  /** The input keys of an edit (`old`, `new`, `content`), when the table names them. */
+  args?: { old?: string; new?: string; content?: string };
 };
 
-const SPECS: Record<string, ToolSpec> = {
-  Bash: {
-    kind: "execute",
-    past: "Ran",
-    present: "Running",
-    primary: ["command"],
-    noun: ["command", "commands"],
-  },
-  BashOutput: {
-    kind: "execute",
-    past: "Read output of",
-    present: "Reading output of",
-    primary: ["bash_id"],
-    noun: ["command", "commands"],
-  },
-  KillShell: {
-    kind: "execute",
-    past: "Stopped",
-    present: "Stopping",
-    primary: ["shell_id"],
-    noun: ["command", "commands"],
-  },
-  Read: {
-    kind: "read",
-    past: "Read",
-    present: "Reading",
-    primary: ["file_path", "path"],
-    noun: ["note", "notes"],
-    readsFile: true,
-  },
-  // Glob and Grep: the installed CLI no longer has them, old chats still hold their rows
-  Grep: {
-    kind: "search",
-    past: "Searched",
-    present: "Searching",
-    primary: ["pattern"],
-    noun: ["search", "searches"],
-  },
-  Glob: {
-    kind: "search",
-    past: "Listed",
-    present: "Listing",
-    primary: ["pattern"],
-    noun: ["search", "searches"],
-  },
-  LS: {
-    kind: "read",
-    past: "Listed",
-    present: "Listing",
-    primary: ["path"],
-    noun: ["folder", "folders"],
-  },
-  Write: {
-    kind: "edit",
-    past: "Wrote",
-    present: "Writing",
-    primary: ["file_path", "path"],
-    noun: ["note", "notes"],
-  },
-  Edit: {
-    kind: "edit",
-    past: "Edited",
-    present: "Editing",
-    primary: ["file_path", "path"],
-    noun: ["note", "notes"],
-  },
-  MultiEdit: {
-    kind: "edit",
-    past: "Edited",
-    present: "Editing",
-    primary: ["file_path", "path"],
-    noun: ["note", "notes"],
-  },
-  NotebookEdit: {
-    kind: "edit",
-    past: "Edited",
-    present: "Editing",
-    primary: ["notebook_path"],
-    noun: ["note", "notes"],
-  },
-  WebFetch: {
-    kind: "fetch",
-    past: "Fetched",
-    present: "Fetching",
-    primary: ["url"],
-    noun: ["page", "pages"],
-  },
-  WebSearch: {
-    kind: "fetch",
-    past: "Searched the web for",
-    present: "Searching the web for",
-    primary: ["query"],
-    noun: ["search", "searches"],
-  },
-  Task: {
-    kind: "agent",
-    past: "Ran subagent",
-    present: "Running subagent",
-    primary: ["description"],
-    noun: ["subagent", "subagents"],
-  },
-  Agent: {
-    kind: "agent",
-    past: "Ran subagent",
-    present: "Running subagent",
-    primary: ["description"],
-    noun: ["subagent", "subagents"],
-  },
+/** A row of a table: the fields a row may leave to the table's `fallback`. */
+type TableRow = {
+  name?: string;
+  kind: ToolKind;
+  role?: ToolRole;
+  past?: string;
+  present?: string;
+  noun?: [string, string];
+  readsFile?: boolean;
+  args?: { primary?: string[]; old?: string; new?: string; content?: string };
 };
 
-/** Writer's own MCP tools (`writer mcp`, tools reach the model as `mcp__writer__<command>`). */
-const WRITER_TOOL_PREFIX = "mcp__writer__";
-/** The commands that look things up in the vault (the explorer's and the main agent's search). */
-const WRITER_SEARCH =
-  /^(search|search_context|files|folders|tags?|tasks|graph_.+|bases?(_.+)?|dql|properties|property_read)$/;
-/** The commands that read one note or one fact about the vault. */
-const WRITER_READ = /^(read|file|folder|outline|wordcount|active|status|vaults?)$/;
-
-const WRITER_SEARCH_SPEC: ToolSpec = {
-  kind: "search",
-  past: "Searched",
-  present: "Searching",
-  primary: ["query", "file", "path", "name", "tag", "format"],
-  noun: ["search", "searches"],
-};
-const WRITER_READ_SPEC: ToolSpec = {
-  kind: "read",
-  past: "Read",
-  present: "Reading",
-  primary: ["file", "path"],
-  noun: ["note", "notes"],
-  readsFile: true,
+type ToolTable = {
+  fallback: TableRow;
+  tools: TableRow[];
+  mcp?: { prefix: string; classes: (TableRow & { match: string })[] };
 };
 
-/** The spec of a `mcp__writer__*` tool by its command; the generic fallback for the others. */
-function writerToolSpec(tool: string): ToolSpec | undefined {
-  if (!tool.startsWith(WRITER_TOOL_PREFIX)) return undefined;
-  const command = tool.slice(WRITER_TOOL_PREFIX.length);
-  if (WRITER_SEARCH.test(command)) return WRITER_SEARCH_SPEC;
-  if (WRITER_READ.test(command)) return WRITER_READ_SPEC;
-  return undefined;
+/** A row completed with the fallback's words. */
+function specOf(row: TableRow, fallback: TableRow): ToolSpec {
+  return {
+    kind: row.kind,
+    past: row.past ?? fallback.past ?? "",
+    present: row.present ?? fallback.present ?? "",
+    primary: row.args?.primary ?? fallback.args?.primary ?? [],
+    noun: row.noun ?? fallback.noun ?? ["tool", "tools"],
+    ...(row.readsFile ? { readsFile: true } : {}),
+    ...(row.role ? { role: row.role } : {}),
+    ...(row.args ? { args: row.args } : {}),
+  };
 }
 
-const FALLBACK: ToolSpec = {
-  kind: "other",
-  past: "Used",
-  present: "Using",
-  primary: ["description", "query", "path", "file_path", "command", "url"],
-  noun: ["tool", "tools"],
-};
+/** The tools of a table by name, and the classes of Writer's own MCP tools. */
+export function buildSpecs(table: ToolTable) {
+  const specs = new Map<string, ToolSpec>(
+    table.tools.map((row) => [row.name ?? "", specOf(row, table.fallback)]),
+  );
+  const mcp = table.mcp && {
+    prefix: table.mcp.prefix,
+    classes: table.mcp.classes.map((c) => ({
+      match: new RegExp(c.match),
+      spec: specOf(c, table.fallback),
+    })),
+  };
+  return { specs, mcp, fallback: specOf(table.fallback, table.fallback), table };
+}
 
-export const toolSpec = (tool: string): ToolSpec => SPECS[tool] ?? writerToolSpec(tool) ?? FALLBACK;
+const TABLE = buildSpecs(claudeTable as unknown as ToolTable);
+
+/** The spec of a Writer MCP tool by its command; undefined for the others. */
+function mcpToolSpec(tool: string): ToolSpec | undefined {
+  const mcp = TABLE.mcp;
+  if (!mcp?.prefix || !tool.startsWith(mcp.prefix)) return undefined;
+  const command = tool.slice(mcp.prefix.length);
+  return mcp.classes.find((c) => c.match.test(command))?.spec;
+}
+
+export const toolSpec = (tool: string): ToolSpec =>
+  TABLE.specs.get(tool) ?? mcpToolSpec(tool) ?? TABLE.fallback;
 export const toolKind = (tool: string): ToolKind => toolSpec(tool).kind;
 export const readsFile = (tool: string): boolean => toolSpec(tool).readsFile === true;
+/** The role of a tool, when it has one (`shell`, `create`, `launch` ...). */
+export const toolRole = (tool: string): ToolRole | undefined => toolSpec(tool).role;
+/** The name of the first tool with `role` in the table (the one a rule is written for). */
+export const toolNameOf = (role: ToolRole): string | undefined =>
+  TABLE.table.tools.find((t) => t.role === role)?.name;
 
 export const KIND_LABEL: Record<ToolKind, string> = {
   execute: "Run a command",
@@ -248,7 +176,7 @@ export function groupTitle(tools: readonly string[], running: boolean): string {
 export type PermissionChoice = {
   persist: PermissionPersist;
   label: string;
-  /** The rule text, when the choice adds one ("Bash(python3 -c 'print(1)')"). */
+  /** The rule text, when the choice adds one (the shell tool and its prefix: `<shell>(ls:*)`). */
   rule: string | null;
   /** The `ruleContent`s the answer keeps; absent keeps every rule offered. */
   rules?: string[];
@@ -299,7 +227,9 @@ export function permissionChoices(
     const chips = ruleChips(suggestions);
     const rules = chips.length > 0 ? [...(ticked ?? chips)] : undefined;
     const rule = rules
-      ? rules.map((r) => `${primary.rules?.[0]?.toolName ?? "Bash"}(${r})`).join(", ")
+      ? rules
+          .map((r) => `${primary.rules?.[0]?.toolName ?? toolNameOf("shell") ?? ""}(${r})`)
+          .join(", ")
       : ruleText(primary).join(", ") || null;
     out.push({ persist: "project", label: "In this project", rule, rules });
     out.push({ persist: "session", label: "For this chat", rule, rules });
@@ -337,7 +267,7 @@ export function permissionSummary(req: PermissionView): string {
     case "execute":
       return `${who} wants to run ${name}${arg ? `: ${truncate(arg, 140)}` : ""}`;
     case "edit": {
-      const verb = req.tool === "Write" ? "write" : "edit";
+      const verb = toolRole(req.tool) === "create" ? "write" : "edit";
       return `${who} wants to ${verb}${arg ? ` ${truncate(arg, 140)}` : ` with ${name}`}`;
     }
     default:
@@ -345,7 +275,7 @@ export function permissionSummary(req: PermissionView): string {
   }
 }
 
-/** Content preview for Edit/Write in "Show details", capped at 200 lines. */
+/** Content preview for an edit in "Show details" (a replacement or a new file), capped at 200 lines. */
 export function editPreview(tool: string, input: unknown): string | null {
   const rec = asRecord(input);
   if (!rec) return null;
@@ -355,11 +285,13 @@ export function editPreview(tool: string, input: unknown): string | null {
       ? `${lines.slice(0, 200).join("\n")}\n… ${lines.length - 200} more lines`
       : s;
   };
-  if (tool === "Write" && typeof rec.content === "string") return cap(rec.content);
-  if (typeof rec.old_string === "string" && typeof rec.new_string === "string")
-    return cap(
-      `- ${rec.old_string.split("\n").join("\n- ")}\n+ ${rec.new_string.split("\n").join("\n+ ")}`,
-    );
+  const keys = toolSpec(tool).args;
+  const content = keys?.content && rec[keys.content];
+  if (toolRole(tool) === "create" && typeof content === "string") return cap(content);
+  const from = keys?.old && rec[keys.old];
+  const to = keys?.new && rec[keys.new];
+  if (typeof from === "string" && typeof to === "string")
+    return cap(`- ${from.split("\n").join("\n- ")}\n+ ${to.split("\n").join("\n+ ")}`);
   return null;
 }
 

@@ -5,6 +5,7 @@
 use desktop_lib::agent::chat_store::is_session_missing;
 use desktop_lib::agent::claude_stream::*;
 use desktop_lib::agent::events::*;
+use desktop_lib::agent::permission_update::updated_permissions;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -424,7 +425,7 @@ fn a_chat_searches_through_the_writer_mcp_server() {
     )
     .unwrap();
     let wiring = mcp_wiring::wiring(
-        &desktop_lib::agent::subagents::ClaudeAdapter,
+        &desktop_lib::agent::claude_adapter::ClaudeAdapter,
         &bin.join(cli_launcher::LAUNCHER_NAME),
         &vault_root,
     )

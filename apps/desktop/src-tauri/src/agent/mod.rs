@@ -10,10 +10,14 @@
 //! "Implementation plan") and add their own sibling modules here.
 
 pub mod api;
+pub mod backend;
 pub mod bash_rules;
 pub mod binary;
+#[cfg(test)]
+mod boundary_tests;
 pub mod changes;
 pub mod chat_store;
+pub mod claude_adapter;
 pub mod claude_stream;
 pub mod cli_launcher;
 pub mod command_windows;
@@ -25,6 +29,7 @@ pub mod files;
 pub mod mcp_wiring;
 pub mod memory;
 pub mod permission_rules;
+pub mod permission_update;
 pub mod ports;
 pub mod project;
 pub mod project_context;
@@ -34,7 +39,12 @@ pub mod runner;
 mod runner_tests;
 pub mod session;
 pub mod skills;
+pub mod stdio_transport;
 pub mod sub_tracker;
 pub mod subagents;
 pub mod title;
+pub mod tool_table;
+pub mod transport;
+#[cfg(test)]
+mod transport_tests;
 pub mod writer_prompt;

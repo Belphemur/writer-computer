@@ -1,7 +1,8 @@
-//! Prefix rules Writer proposes for a Bash call the CLI offered no "Always allow" rule for
+//! Prefix rules Writer proposes for a shell call the CLI offered no "Always allow" rule for
 //! (ADR 2026-11-17 addendum "Writer proposes prefix rules when the CLI sends none", spec 6.2).
 //! Pure and Tauri-free: [`propose`] reads the command text only, [`with_proposals`] is the one
-//! seam the stream mapper calls.
+//! seam the stream mapper calls. The shell tool is the one the backend's table gives the
+//! `shell` role (`tool_table.rs`); its rules are named by that tool.
 //!
 //! The command is split on `;`, `&&`, `||`, `|`, `&` and newlines, outside quotes. Each segment
 //! becomes `<program> <subcommand>:*` (the program as written, absolute path included, because
@@ -21,6 +22,7 @@
 //!   arguments (shells, `eval`, `sudo`, `rm`, `exec`, `xargs`, `env`, `find`, interpreters, shell
 //!   keywords): a prefix on those would allow far more than the user saw.
 
+use super::tool_table::ToolTable;
 use serde_json::{json, Value};
 
 /// Read-only pipe filters: no rule, never a refusal.
@@ -363,37 +365,44 @@ fn is_allow_add_rules(s: &Value) -> bool {
         && s.get("behavior").and_then(Value::as_str) != Some("deny")
 }
 
-fn add_rules(contents: &[String], proposal: &str) -> Value {
+fn add_rules(tool: &str, contents: &[String], proposal: &str) -> Value {
     json!({
         "type": "addRules",
         "behavior": "allow",
         "rules": contents.iter()
-            .map(|c| json!({"toolName": "Bash", "ruleContent": c}))
+            .map(|c| json!({"toolName": tool, "ruleContent": c}))
             .collect::<Vec<_>>(),
         // Writer's own, not the CLI's: the card labels it, `updated_permissions` strips it
         "proposal": proposal,
     })
 }
 
-/// The suggestions of a permission request: the CLI's own, unchanged, when it sent an `addRules`
-/// one (or the tool is not Bash); otherwise those plus Writer's proposal (`proposal: "prefix"`
-/// for the prefix rules when there are any, `proposal: "exact"` for the whole command).
-pub fn with_proposals(tool: &str, input: &Value, mut suggestions: Vec<Value>) -> Vec<Value> {
-    if tool != "Bash" || suggestions.iter().any(is_allow_add_rules) {
+/// The suggestions of a permission request: the backend's own, unchanged, when it sent an
+/// `addRules` one (or the tool is not the shell of `tools`); otherwise those plus Writer's
+/// proposal (`proposal: "prefix"` for the prefix rules when there are any, `proposal: "exact"` for
+/// the whole command). The command is the shell tool's primary argument.
+pub fn with_proposals(
+    tools: &ToolTable,
+    tool: &str,
+    input: &Value,
+    mut suggestions: Vec<Value>,
+) -> Vec<Value> {
+    if !tools.is_shell(tool) || suggestions.iter().any(is_allow_add_rules) {
         return suggestions;
     }
-    let Some(command) = input
-        .get("command")
-        .and_then(Value::as_str)
+    let Some(command) = tools
+        .primary_keys(tool)
+        .iter()
+        .find_map(|k| input.get(k.as_str()).and_then(Value::as_str))
         .filter(|c| !c.trim().is_empty())
     else {
         return suggestions;
     };
     let p = propose(command);
     if !p.prefixes.is_empty() {
-        suggestions.push(add_rules(&p.prefixes, "prefix"));
+        suggestions.push(add_rules(tool, &p.prefixes, "prefix"));
     }
-    suggestions.push(add_rules(&[p.exact], "exact"));
+    suggestions.push(add_rules(tool, &[p.exact], "exact"));
     suggestions
 }
 
@@ -578,6 +587,16 @@ mod tests {
 
     fn input(c: &str) -> Value {
         json!({"command": c})
+    }
+
+    /// Claude's shell: the proposal tests below are about it.
+    fn with_proposals(tool: &str, input: &Value, suggestions: Vec<Value>) -> Vec<Value> {
+        super::with_proposals(
+            crate::agent::backend::claude().tools(),
+            tool,
+            input,
+            suggestions,
+        )
     }
 
     #[test]

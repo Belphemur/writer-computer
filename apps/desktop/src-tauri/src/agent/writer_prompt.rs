@@ -11,6 +11,7 @@
 use super::mcp_wiring::ToolsAdapter;
 use super::memory;
 use super::roles::Rendered;
+use super::tool_table::{Role, ToolTable};
 use crate::cli::mcp;
 
 /// The block's size budget in characters (about 775 tokens at 4 characters per token; it was 2000
@@ -29,19 +30,17 @@ const NAME_MAX: usize = 60;
 
 /// Lines that hold with or without the `writer` CLI.
 const INTRO: &str = "The working directory is the vault (it may hold code and skill files too). The user reviews your edits as a changes card; do not paste diffs.";
-const READ_EDIT: &str =
-    "Read notes before editing. Make minimal, targeted Edit changes; Write only to create files.";
+const READ_EDIT: &str = "Read notes before editing. Make minimal, targeted {edit} changes; {write} only to create files.";
 const FRONTMATTER: &str = "Preserve YAML frontmatter: keys, order, quoting, comments.";
 const LINKS: &str = "Wikilinks resolve by file name, not title. Attached `@` references are authoritative paths; read them first.";
 const FORBIDDEN: &str = "Never touch .obsidian/, .git/, other .writer/ files or secrets. If a path is outside the vault, say so, never work around it.";
 
 /// Without the CLI the generic rule stands alone.
-const BASH_PLAIN: &str = "Use Bash only when no dedicated tool fits.";
-const MOVE_PLAIN: &str =
-    "Never mv or rename notes via Bash (links would break); ask the user to rename them in Writer.";
+const BASH_PLAIN: &str = "Use {shell} only when no dedicated tool fits.";
+const MOVE_PLAIN: &str = "Never mv or rename notes via {shell} (links would break); ask the user to rename them in Writer.";
 
 /// With the CLI.
-const BASH_CLI: &str = "Use Bash only when no dedicated tool or `writer` command fits.";
+const BASH_CLI: &str = "Use {shell} only when no dedicated tool or `writer` command fits.";
 const MOVE_CLI: &str =
     "Rename or move notes only with `writer move` (it rewrites links); never mv.";
 const PROPERTIES_CLI: &str = "Change properties with `writer property:set`, not by editing YAML.";
@@ -60,6 +59,30 @@ const SEARCH_COMMANDS: [&str; 7] = [
 /// Read a note's structure without reading its text.
 const OUTLINE_COMMAND: &str = "outline";
 
+/// The names a backend gives the tools the rules speak of (`{shell}`, `{edit}`, `{write}` in the
+/// lines above), from its tool table: the prompt names no tool of its own.
+struct Names<'a> {
+    shell: &'a str,
+    edit: &'a str,
+    write: &'a str,
+}
+
+impl<'a> Names<'a> {
+    fn of(tools: &'a ToolTable) -> Self {
+        Self {
+            shell: tools.name_of(Role::Shell).unwrap_or("the shell"),
+            edit: tools.name_of(Role::Replace).unwrap_or("edit"),
+            write: tools.name_of(Role::Create).unwrap_or("write"),
+        }
+    }
+
+    fn fill(&self, line: &str) -> String {
+        line.replace("{shell}", self.shell)
+            .replace("{edit}", self.edit)
+            .replace("{write}", self.write)
+    }
+}
+
 /// The one line that tells an agent how to search the vault with the `writer` tools, named the
 /// way `tools`' backend names them. The main block adds [`BASH_AFTER_SEARCH`]; the read-only
 /// sub-agents (`roles::role_prompt`, which have no Bash) take it as it is.
@@ -71,7 +94,8 @@ pub fn search_line(tools: &dyn ToolsAdapter) -> String {
         .map(|c| format!("`{}`", mcp::tool_name_of(c)))
         .collect();
     format!(
-        "Search the vault with the `writer` tools, not Bash grep or find: `{}` first, also {}, and `{}` for a note's headings.",
+        "Search the vault with the `writer` tools, not {} grep or find: `{}` first, also {}, and `{}` for a note's headings.",
+        Names::of(tools.tool_table()).shell,
         name(first),
         rest.join(", "),
         mcp::tool_name_of(OUTLINE_COMMAND),
@@ -79,7 +103,7 @@ pub fn search_line(tools: &dyn ToolsAdapter) -> String {
 }
 
 /// Follows [`search_line`] in the main block.
-const BASH_AFTER_SEARCH: &str = "Bash only for what the index does not hold.";
+const BASH_AFTER_SEARCH: &str = "{shell} only for what the index does not hold.";
 
 /// Orchestration (setting `agent.orchestrate`): the line is rendered from the roles the backend
 /// adapter actually produced for the session (`roles.rs`, `subagents.rs`). The fixed sentences are
@@ -191,26 +215,27 @@ pub fn render(input: &PromptInput<'_>) -> String {
         place,
         tools,
     } = *input;
-    let search = format!("{} {BASH_AFTER_SEARCH}", search_line(tools));
-    let mut lines = vec![INTRO, READ_EDIT, FRONTMATTER];
+    let names = Names::of(tools.tool_table());
+    let mut lines: Vec<String> = [INTRO, READ_EDIT, FRONTMATTER]
+        .iter()
+        .map(|l| names.fill(l))
+        .collect();
     if writer_cli {
-        lines.push(PROPERTIES_CLI);
+        lines.push(PROPERTIES_CLI.to_string());
     }
-    lines.push(LINKS);
-    lines.push(if writer_cli { MOVE_CLI } else { MOVE_PLAIN });
-    lines.push(FORBIDDEN);
+    lines.push(LINKS.to_string());
+    lines.push(names.fill(if writer_cli { MOVE_CLI } else { MOVE_PLAIN }));
+    lines.push(FORBIDDEN.to_string());
     if writer_cli {
-        lines.push(&search);
+        lines.push(format!(
+            "{} {}",
+            search_line(tools),
+            names.fill(BASH_AFTER_SEARCH)
+        ));
     }
-    lines.push(if writer_cli { BASH_CLI } else { BASH_PLAIN });
-    let orchestrate_line = orchestration.and_then(orchestration_line);
-    if let Some(line) = &orchestrate_line {
-        lines.push(line);
-    }
-    let memory_text = memory.map(memory_line);
-    if let Some(line) = &memory_text {
-        lines.push(line);
-    }
+    lines.push(names.fill(if writer_cli { BASH_CLI } else { BASH_PLAIN }));
+    lines.extend(orchestration.and_then(orchestration_line));
+    lines.extend(memory.map(memory_line));
     let mut out = String::from(HEADER);
     out.push('\n');
     out.push_str(SOUL.trim());
@@ -228,9 +253,9 @@ pub fn render(input: &PromptInput<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::claude_adapter::ClaudeAdapter;
     use crate::agent::mcp_wiring::FakeAdapter;
     use crate::agent::roles::{Flags, RenderInput, RoleAdapter};
-    use crate::agent::subagents::ClaudeAdapter;
     use crate::cli::registry;
     use crate::managed_skills::all_skills;
 

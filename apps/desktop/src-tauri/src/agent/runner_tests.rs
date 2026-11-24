@@ -10,7 +10,9 @@
 //! the middle of the turn (a steer taken at a tool boundary); the `uuid` of the line it was given
 //! replaces `__STEER_UUID__` in the lines that follow, the way the real CLI echoes it. A
 //! `{"type":"fake_cancel"}` line makes it read one stdin line (a `cancel_async_message` request)
-//! and answer `cancelled:true` (or what the file `cancel-answer` holds). Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
+//! and answer `cancelled:true` (or what the file `cancel-answer` holds). A
+//! `{"type":"fake_refuse"}` line makes it read one stdin line (a `set_permission_mode` request) and
+//! refuse it. Fixtures named `subagent-*` are synthetic, built from the shapes of a real claude
 //! 2.1.326 run that delegated to a sub-agent (`system` `task_*` lines, `parent_tool_use_id`).
 //!
 //! Modes (read from `mode.txt` at every stdin line, and once at launch): `normal`,
@@ -64,6 +66,10 @@ play() { # fixture, max lines
         rid=$(printf '%s' "$req" | sed -E 's/.*"request_id":"([^"]*)".*/\1/')
         ans=$(cat "$D/cancel-answer" 2>/dev/null || echo true)
         printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"cancelled":%s}}}\n' "$rid" "$ans";;
+      *'"type":"fake_refuse"'*)
+        read -r req <&3 || exit 0; echo "$req" >> "$D/stdin.log"
+        rid=$(printf '%s' "$req" | sed -E 's/.*"request_id":"([^"]*)".*/\1/')
+        printf '{"type":"control_response","response":{"subtype":"error","request_id":"%s","error":"nope"}}\n' "$rid";;
       *'"type":"fake_pause"'*) while [ ! -e "$D/go" ]; do sleep 0.05; done; rm -f "$D/go";;
     esac
   done
@@ -946,6 +952,45 @@ fn a_waiting_plain_line_can_be_taken_back_and_is_never_run() {
         .lines("stdin.log")
         .iter()
         .any(|l| l.contains("cancel_async_message") && l.contains(STEER_ID)));
+}
+
+#[test]
+fn a_restart_asked_during_a_turn_still_happens_when_taking_a_line_back_ends_the_hold() {
+    let mut h = Harness::new(&["ok-turn", "ok-turn"], "normal");
+    use_steer_turns(
+        &h,
+        "steer-injected",
+        "fake_pause,fake_take_stdin,fake_refuse,fake_cancel",
+        None,
+    );
+    h.start(CHAT);
+    h.send(CHAT, "first");
+    started(&mut h);
+    let pid: i32 = h.lines("pids.log")[0].parse().unwrap();
+    queue(&h, "never mind");
+    // the CLI refuses the live change: the restart waits for the turn to end
+    h.sessions
+        .set_permission_mode("w", CHAT, AgentPermissionMode::Plan)
+        .unwrap();
+    let session = h.sessions.get("w", CHAT).unwrap();
+    let removal = std::thread::spawn(move || session.unqueue(STEER_ID));
+    h.go();
+    assert!(removal.join().unwrap().unwrap());
+    // the answer and the turn's end come back to back: the end of the turn is the same either way
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    h.wait_until("old process restarted away", || !alive(pid));
+    // the new process plays a plain turn
+    std::fs::write(
+        h.fdir.join("turns.txt"),
+        format!("{}\n", fixture("ok-turn").display()),
+    )
+    .unwrap();
+    h.send(CHAT, "after the switch");
+    assert_eq!(h.turn_finished(CHAT), TurnFinishReason::Completed);
+    let argv = h.lines("argv.log");
+    assert_eq!(argv.len(), 2);
+    assert!(argv[1].contains("--permission-mode plan"), "{}", argv[1]);
+    assert!(argv[1].contains(&format!("--resume {CHAT}")), "{}", argv[1]);
 }
 
 #[test]

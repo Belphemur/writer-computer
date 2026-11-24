@@ -6,11 +6,12 @@
 //! - [`WriterServer`]: the `writer` launcher on the chat's vault (`vault=<root> mcp`).
 //! - [`ToolsAdapter`]: how a backend names the tools, takes the server and lets the read tools
 //!   run without a prompt. One implementation per backend, next to its `RoleAdapter` (Claude:
-//!   `subagents::ClaudeAdapter`).
+//!   `claude_adapter::ClaudeAdapter`).
 //!
 //! The server is one more for the backend to start, added next to whatever the user's own
 //! settings define; no config file of the user is read or written.
 
+use super::tool_table::ToolTable;
 use crate::cli::mcp::{self, ToolSpec};
 use std::path::Path;
 
@@ -61,6 +62,9 @@ pub enum Launch {
 /// One backend's translation of Writer's server. Pure: no IO, no Tauri. Small on purpose: a
 /// backend implements only what it uses (the roles are `RoleAdapter`).
 pub trait ToolsAdapter: std::fmt::Debug {
+    /// The backend's own tools (shell, edits, sub-agent launch): the shared table of
+    /// `shared/agent-tools/<backend>.json`, the one place shared code learns a tool name from.
+    fn tool_table(&self) -> &'static ToolTable;
     /// How the backend names a tool of the server to the model (Claude: `mcp__<server>__<tool>`).
     fn tool_name(&self, tool: &ToolSpec) -> String;
     /// How the backend is handed the server.
@@ -95,6 +99,10 @@ pub(crate) struct FakeAdapter;
 
 #[cfg(test)]
 impl ToolsAdapter for FakeAdapter {
+    fn tool_table(&self) -> &'static ToolTable {
+        crate::agent::backend::claude().tools()
+    }
+
     fn tool_name(&self, tool: &ToolSpec) -> String {
         format!("{}.{}", mcp::SERVER_NAME, tool.name)
     }
@@ -118,7 +126,7 @@ impl crate::agent::roles::RoleAdapter for FakeAdapter {
         use crate::agent::roles::{leak_read_tools, CapabilitySupport};
         match capability {
             "writer-cli-read" => CapabilitySupport::Tools(leak_read_tools(self)),
-            other => crate::agent::subagents::ClaudeAdapter.capability(other),
+            other => crate::agent::claude_adapter::ClaudeAdapter.capability(other),
         }
     }
 
@@ -166,7 +174,9 @@ mod tests {
         let literal = ["mcp__", "writer__"].concat();
         let offenders: Vec<_> = sources
             .iter()
-            .filter(|(path, code)| !path.ends_with("agent/subagents.rs") && code.contains(&literal))
+            .filter(|(path, code)| {
+                !path.ends_with("agent/claude_adapter.rs") && code.contains(&literal)
+            })
             .map(|(path, _)| path.display().to_string())
             .collect();
         assert!(offenders.is_empty(), "{offenders:?}");

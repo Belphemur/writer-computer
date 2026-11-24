@@ -500,6 +500,7 @@ fn a_sub_agent_edit_counts_and_the_first_author_is_kept() {
         CHAT,
         &root,
         &root,
+        crate::agent::backend::claude().tools(),
         "Write",
         &json!({ "file_path": path(&root, "a.md") }),
         Some(&worker),

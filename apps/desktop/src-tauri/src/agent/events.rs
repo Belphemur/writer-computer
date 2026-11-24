@@ -872,6 +872,51 @@ pub struct NewProjectRequest {
     pub instructions: String,
 }
 
+/// A fact about a sub-agent task, backend-neutral: a backend's mapper turns what its protocol says
+/// (Claude: the `system` `task_*` lines of its stream, by the CLI's task id) into these, and what
+/// they mean for a sub-agent's life is decided in one place, `sub_tracker.rs`; no mapper emits a
+/// `Subagent*` event itself. `call` is the launch call the task belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskSignal {
+    /// `task_started`; `background` is the CLI's `is_backgrounded`.
+    Started {
+        task: String,
+        call: Option<String>,
+        background: bool,
+    },
+    /// `task_updated` with a final `patch.status`.
+    Updated {
+        task: String,
+        call: Option<String>,
+        status: SubagentRunStatus,
+    },
+    /// `task_notification`: the completion signal. `report` is the sub-agent's own final report
+    /// when the CLI carries it (`handback_report.text`); its `summary` sentence is CLI text and
+    /// never a report.
+    Notified {
+        task: String,
+        call: Option<String>,
+        status: SubagentRunStatus,
+        report: Option<String>,
+    },
+    /// The launch call's result says the run went to the background (`tool_use_result.status`
+    /// `async_launched`, which the CLI also answers for a run it moved to the background by
+    /// itself). The result's text is CLI-internal and is not emitted.
+    AsyncLaunched { call: String },
+}
+
+impl TaskSignal {
+    /// The task id, for the signals that are about a task (not a launch result).
+    pub fn task(&self) -> Option<&str> {
+        match self {
+            Self::Started { task, .. }
+            | Self::Updated { task, .. }
+            | Self::Notified { task, .. } => Some(task),
+            Self::AsyncLaunched { .. } => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

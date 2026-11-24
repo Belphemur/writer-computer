@@ -18,9 +18,9 @@
 //!   with its launch result, which is its report. A final state is never overwritten; a
 //!   notification can still add the report to a state `task_updated` already settled.
 
-use super::claude_stream::TaskSignal;
-use super::events::{AgentEvent, SubagentRunStatus, ToolOutcome, TurnFinishReason};
-use super::subagents::{is_launch_tool, launch_label};
+use super::events::{AgentEvent, SubagentRunStatus, TaskSignal, ToolOutcome, TurnFinishReason};
+use super::subagents::launch_label;
+use super::tool_table::ToolTable;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -52,8 +52,9 @@ struct Launch {
     revived: bool,
 }
 
-#[derive(Default)]
 pub struct SubTracker {
+    /// The chat's backend's tools: which call launches a sub-agent or hands a report back.
+    tools: &'static ToolTable,
     /// Parent call id by call id, for the calls a sub-agent made.
     parents: HashMap<String, String>,
     launches: HashMap<String, Launch>,
@@ -65,9 +66,6 @@ pub struct SubTracker {
     /// The `SubagentHandback` calls (a sub-agent delivering its report), by call id.
     handbacks: HashSet<String>,
 }
-
-/// The sub-agent's last tool: it delivers the run's report, so the run is over when it returns.
-const HANDBACK_TOOL: &str = "SubagentHandback";
 
 /// What the tracker decided about one event, by where it goes: a resume (`running` after an end)
 /// is sent before the child event that caused it, so the UI knows where in the run's calls it
@@ -96,6 +94,17 @@ impl Decided {
 }
 
 impl SubTracker {
+    pub fn new(tools: &'static ToolTable) -> Self {
+        Self {
+            tools,
+            parents: HashMap::new(),
+            launches: HashMap::new(),
+            tasks: HashSet::new(),
+            task_launch: HashMap::new(),
+            handbacks: HashSet::new(),
+        }
+    }
+
     /// Feeds one mapped event; returns the `subagent-status` events it decides.
     pub fn observe(&mut self, ev: &AgentEvent) -> Decided {
         match ev {
@@ -105,14 +114,16 @@ impl SubTracker {
                 parent_tool_call_id,
                 ..
             } => {
-                if is_launch_tool(tool) {
+                if self.tools.is_launch(tool) {
                     self.launches.entry(tool_call_id.clone()).or_default();
                 }
                 let Some(p) = parent_tool_call_id else {
                     return Decided::default();
                 };
                 self.parents.insert(tool_call_id.clone(), p.clone());
-                if tool == HANDBACK_TOOL {
+                // the sub-agent's last tool: it delivers the run's report, so the run is over when
+                // it returns
+                if self.tools.is_handback(tool) {
                     self.handbacks.insert(tool_call_id.clone());
                     self.resumed(p, Child::Handback)
                 } else {
@@ -128,8 +139,12 @@ impl SubTracker {
                 input,
             } => {
                 if let Some(launch) = self.launches.get_mut(tool_call_id) {
-                    launch.label = launch_label(input);
-                    launch.background |= input.get("run_in_background") == Some(&Value::Bool(true));
+                    launch.label = launch_label(self.tools, input);
+                    launch.background |= self
+                        .tools
+                        .launch_args()
+                        .and_then(|a| a.background.as_deref())
+                        .is_some_and(|k| input.get(k) == Some(&Value::Bool(true)));
                 }
                 Decided::default()
             }
@@ -397,7 +412,7 @@ impl SubTracker {
     }
 
     pub fn clear(&mut self) {
-        *self = Self::default();
+        *self = Self::new(self.tools);
     }
 }
 
@@ -417,6 +432,14 @@ fn status_event(call: &str, status: SubagentRunStatus, report: Option<String>) -
         tool_call_id: call.to_string(),
         status,
         report,
+    }
+}
+
+/// A tracker on Claude's table (tests).
+#[cfg(test)]
+impl Default for SubTracker {
+    fn default() -> Self {
+        Self::new(crate::agent::backend::claude().tools())
     }
 }
 

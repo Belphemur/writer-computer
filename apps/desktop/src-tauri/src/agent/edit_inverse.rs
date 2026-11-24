@@ -3,7 +3,10 @@
 //! Pure functions over the call's input and the captured text; `changes.rs` calls [`settle`]
 //! right after the read. Tauri-free. Spec: `SPECs/native-agent-spec.md` "Turn changes".
 //!
-//! - `Edit` / `MultiEdit`: the captured text `T` is judged against the edits (`old_string` ->
+//! The tools and the input keys come from the backend's tool table (`tool_table.rs`), by role:
+//! `replace` and `multi-replace` (Claude: `Edit`, `MultiEdit`), `create` (`Write`).
+//!
+//! - A replace / multi-replace: the captured text `T` is judged against the edits (`old_string` ->
 //!   `new_string`, `replace_all`, in order). The tool "could still run on `T`" when applying the
 //!   edits forward succeeds (every `old_string` found, unique unless `replace_all`). The tool "may
 //!   have run" when undoing them from the end (every `new_string` swapped back to its
@@ -12,10 +15,11 @@
 //!   text is the pre-image. Both: ambiguous. Neither: the edit failed or changed nothing, unless
 //!   it deletes text or all its new strings are in `T` (then a run cannot be ruled out). Every
 //!   ambiguous case is [`Settled::Unknown`]; nothing is guessed.
-//! - `Write`: a captured text equal to the written content means the write may already have
+//! - A create: a captured text equal to the written content means the write may already have
 //!   happened (or rewrote the same content): [`Settled::Unknown`], never dropped.
 //! - Anything else: the capture stands.
 
+use super::tool_table::{Role, ToolTable};
 use serde_json::Value;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -34,22 +38,27 @@ struct Step {
     all: bool,
 }
 
-/// The edits of an `Edit` or `MultiEdit` call; `None` for another tool or an input of another shape.
-fn steps(tool: &str, input: &Value) -> Option<Vec<Step>> {
+/// The edits of a replace or multi-replace call; `None` for another tool or an input of another
+/// shape.
+fn steps(tools: &ToolTable, tool: &str, input: &Value) -> Option<Vec<Step>> {
+    let args = tools.args(tool)?;
+    let (old, new) = (args.old.as_deref()?, args.new.as_deref()?);
     let one = |v: &Value| -> Option<Step> {
         Some(Step {
-            old: v.get("old_string")?.as_str()?.to_string(),
-            new: v.get("new_string")?.as_str()?.to_string(),
-            all: v
-                .get("replace_all")
+            old: v.get(old)?.as_str()?.to_string(),
+            new: v.get(new)?.as_str()?.to_string(),
+            all: args
+                .all
+                .as_deref()
+                .and_then(|k| v.get(k))
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         })
     };
-    match tool {
-        "Edit" => Some(vec![one(input)?]),
-        "MultiEdit" => input
-            .get("edits")?
+    match tools.role(tool)? {
+        Role::Replace => Some(vec![one(input)?]),
+        Role::MultiReplace => input
+            .get(args.edits.as_deref()?)?
             .as_array()?
             .iter()
             .map(one)
@@ -85,14 +94,19 @@ fn inverse(text: &str, steps: &[Step]) -> Option<String> {
         .try_fold(text.to_string(), |t, s| swap(&t, &s.new, &s.old, s.all))
 }
 
-pub fn settle(tool: &str, input: &Value, captured: &str) -> Settled {
-    if tool == "Write" {
-        return match input.get("content").and_then(Value::as_str) {
+pub fn settle(tools: &ToolTable, tool: &str, input: &Value, captured: &str) -> Settled {
+    if tools.role(tool) == Some(Role::Create) {
+        let content = tools
+            .args(tool)
+            .and_then(|a| a.content.as_deref())
+            .and_then(|k| input.get(k))
+            .and_then(Value::as_str);
+        return match content {
             Some(content) if content == captured => Settled::Unknown,
             _ => Settled::AsCaptured,
         };
     }
-    let Some(steps) = steps(tool, input) else {
+    let Some(steps) = steps(tools, tool, input) else {
         return Settled::AsCaptured;
     };
     let can_run = forward(captured, &steps).is_some();
@@ -118,6 +132,16 @@ pub fn settle(tool: &str, input: &Value, captured: &str) -> Settled {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Claude's table: the tests below are about its tools.
+    fn settle(tool: &str, input: &Value, captured: &str) -> Settled {
+        super::settle(
+            crate::agent::backend::claude().tools(),
+            tool,
+            input,
+            captured,
+        )
+    }
 
     fn edit(old: &str, new: &str, all: bool) -> Value {
         json!({"file_path": "a.md", "old_string": old, "new_string": new, "replace_all": all})

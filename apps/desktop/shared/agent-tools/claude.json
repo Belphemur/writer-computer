@@ -1,0 +1,221 @@
+{
+  "$comment": "Claude's tools, defined once (spec SPECs/opencode-backend-spec.md, A11): tool name -> neutral kind, role, argument names and label words. Read by src-tauri/src/agent/tool_table.rs (include_str!) and features/agent/web/lib/tool-kinds.ts (JSON import); a vectors test on each side pins the rows. The only file besides claude_stream.rs and the Claude adapter that spells a Claude tool name (a boundary test says so). Kinds are the web's: execute, edit, read, search, fetch, agent, other. `role` is what shared code needs beyond the kind: read (one file's content: a role's `read` capability), shell (the shell tool: its window blames file changes, its prefix rules), replace / multi-replace / create (how an edit's input reads: edit_inverse.rs), launch (starts a sub-agent: `agentType` and `background` name its arguments), handback (a sub-agent delivers its report). `args.primary` are the input keys tried, in order, for the one-line label (the web's); `args.paths` are the input keys an edit's file path is read from (Rust's capture); the other args name the input keys of an edit (`old`, `new`, `all`, `edits`, `content`). A row without `past`, `present`, `noun` or `primary` takes the `fallback`'s. `readsFile`: the call opens one file. `protocolOnly` are Claude tool names the protocol knows that have no row (the boundary tests scan for them too). `mcp` classifies Writer's own MCP tools by their name after `prefix`.",
+  "backend": "claude",
+  "protocolOnly": ["AskUserQuestion", "SendMessage", "TodoWrite"],
+  "fallback": {
+    "kind": "other",
+    "past": "Used",
+    "present": "Using",
+    "noun": ["tool", "tools"],
+    "args": {
+      "primary": ["description", "query", "path", "file_path", "command", "url"]
+    }
+  },
+  "tools": [
+    {
+      "name": "Bash",
+      "kind": "execute",
+      "role": "shell",
+      "past": "Ran",
+      "present": "Running",
+      "noun": ["command", "commands"],
+      "args": {
+        "primary": ["command"]
+      }
+    },
+    {
+      "name": "BashOutput",
+      "kind": "execute",
+      "past": "Read output of",
+      "present": "Reading output of",
+      "noun": ["command", "commands"],
+      "args": {
+        "primary": ["bash_id"]
+      }
+    },
+    {
+      "name": "KillShell",
+      "kind": "execute",
+      "past": "Stopped",
+      "present": "Stopping",
+      "noun": ["command", "commands"],
+      "args": {
+        "primary": ["shell_id"]
+      }
+    },
+    {
+      "name": "Read",
+      "kind": "read",
+      "role": "read",
+      "past": "Read",
+      "present": "Reading",
+      "noun": ["note", "notes"],
+      "readsFile": true,
+      "args": {
+        "primary": ["file_path", "path"]
+      }
+    },
+    {
+      "name": "Grep",
+      "kind": "search",
+      "past": "Searched",
+      "present": "Searching",
+      "noun": ["search", "searches"],
+      "args": {
+        "primary": ["pattern"]
+      }
+    },
+    {
+      "name": "Glob",
+      "kind": "search",
+      "past": "Listed",
+      "present": "Listing",
+      "noun": ["search", "searches"],
+      "args": {
+        "primary": ["pattern"]
+      }
+    },
+    {
+      "name": "LS",
+      "kind": "read",
+      "past": "Listed",
+      "present": "Listing",
+      "noun": ["folder", "folders"],
+      "args": {
+        "primary": ["path"]
+      }
+    },
+    {
+      "name": "Edit",
+      "kind": "edit",
+      "role": "replace",
+      "past": "Edited",
+      "present": "Editing",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["file_path", "path"],
+        "paths": ["file_path", "notebook_path", "path"],
+        "old": "old_string",
+        "new": "new_string",
+        "all": "replace_all"
+      }
+    },
+    {
+      "name": "MultiEdit",
+      "kind": "edit",
+      "role": "multi-replace",
+      "past": "Edited",
+      "present": "Editing",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["file_path", "path"],
+        "paths": ["file_path", "notebook_path", "path"],
+        "edits": "edits",
+        "old": "old_string",
+        "new": "new_string",
+        "all": "replace_all"
+      }
+    },
+    {
+      "name": "Write",
+      "kind": "edit",
+      "role": "create",
+      "past": "Wrote",
+      "present": "Writing",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["file_path", "path"],
+        "paths": ["file_path", "notebook_path", "path"],
+        "content": "content"
+      }
+    },
+    {
+      "name": "NotebookEdit",
+      "kind": "edit",
+      "past": "Edited",
+      "present": "Editing",
+      "noun": ["note", "notes"],
+      "args": {
+        "primary": ["notebook_path"],
+        "paths": ["file_path", "notebook_path", "path"]
+      }
+    },
+    {
+      "name": "WebFetch",
+      "kind": "fetch",
+      "past": "Fetched",
+      "present": "Fetching",
+      "noun": ["page", "pages"],
+      "args": {
+        "primary": ["url"]
+      }
+    },
+    {
+      "name": "WebSearch",
+      "kind": "fetch",
+      "past": "Searched the web for",
+      "present": "Searching the web for",
+      "noun": ["search", "searches"],
+      "args": {
+        "primary": ["query"]
+      }
+    },
+    {
+      "name": "Agent",
+      "kind": "agent",
+      "role": "launch",
+      "past": "Ran subagent",
+      "present": "Running subagent",
+      "noun": ["subagent", "subagents"],
+      "args": {
+        "primary": ["description"],
+        "agentType": "subagent_type",
+        "background": "run_in_background"
+      }
+    },
+    {
+      "name": "Task",
+      "kind": "agent",
+      "role": "launch",
+      "past": "Ran subagent",
+      "present": "Running subagent",
+      "noun": ["subagent", "subagents"],
+      "args": {
+        "primary": ["description"],
+        "agentType": "subagent_type",
+        "background": "run_in_background"
+      }
+    },
+    {
+      "name": "SubagentHandback",
+      "kind": "other",
+      "role": "handback"
+    }
+  ],
+  "mcp": {
+    "prefix": "mcp__writer__",
+    "classes": [
+      {
+        "match": "^(search|search_context|files|folders|tags?|tasks|graph_.+|bases?(_.+)?|dql|properties|property_read)$",
+        "kind": "search",
+        "past": "Searched",
+        "present": "Searching",
+        "noun": ["search", "searches"],
+        "args": {
+          "primary": ["query", "file", "path", "name", "tag", "format"]
+        }
+      },
+      {
+        "match": "^(read|file|folder|outline|wordcount|active|status|vaults?)$",
+        "kind": "read",
+        "past": "Read",
+        "present": "Reading",
+        "noun": ["note", "notes"],
+        "readsFile": true,
+        "args": {
+          "primary": ["file", "path"]
+        }
+      }
+    ]
+  }
+}

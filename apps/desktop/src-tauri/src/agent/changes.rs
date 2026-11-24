@@ -53,6 +53,7 @@ use super::edit_inverse::{settle, Settled};
 use super::events::*;
 use super::memory;
 use super::sub_tracker::Author;
+use super::tool_table::ToolTable;
 use crate::text_diff::{self, TextDiff};
 use crate::vault_ops;
 use parking_lot::Mutex;
@@ -66,23 +67,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 pub const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 
-/// Tools that edit a file, with the input keys that hold its path. Twin of the `edit` kind in
-/// `features/agent/web/lib/tool-kinds.ts` (the TS side only renders; this side must know the paths).
-const EDIT_TOOLS: [&str; 4] = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
-const PATH_KEYS: [&str; 3] = ["file_path", "notebook_path", "path"];
-const SHELL_TOOL: &str = "Bash";
 /// A file modified this recently when its pre-image was read may already hold the tool's edit.
 pub const RACE_WINDOW: Duration = Duration::from_secs(5);
-
-/// Whether `tool` edits a file (its end is when the session's counts change).
-pub fn is_edit_tool(tool: &str) -> bool {
-    EDIT_TOOLS.contains(&tool)
-}
-
-/// Whether `tool` is a shell command (its window is when watcher changes are blamed on it).
-pub fn is_shell_tool(tool: &str) -> bool {
-    tool == SHELL_TOOL
-}
 
 /// Why a file has no usable "before" although it was changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,14 +120,14 @@ fn modified_recently(abs: &Path) -> bool {
 }
 
 /// The pre-image of `tool`'s call on `abs`, from the text read just now.
-fn settled_pre(tool: &str, input: &Value, abs: &Path, snap: Snap) -> Snap {
+fn settled_pre(tools: &ToolTable, tool: &str, input: &Value, abs: &Path, snap: Snap) -> Snap {
     let Snap::Text(Some(text)) = &snap else {
         return snap;
     };
     if !modified_recently(abs) {
         return snap;
     }
-    match settle(tool, input, text) {
+    match settle(tools, tool, input, text) {
         Settled::AsCaptured => snap,
         Settled::Reconstructed(before) => Snap::Text(Some(before)),
         Settled::Unknown => Snap::Unknown(Unknown::Race),
@@ -522,26 +508,33 @@ impl ChangeStore {
         }
     }
 
+    /// [`ChangeStore::capture_by`] for the main agent, on Claude's table (tests).
+    #[cfg(test)]
+    pub fn capture(&self, chat_id: &str, root: &Path, cwd: &Path, tool: &str, input: &Value) {
+        let tools = crate::agent::backend::claude().tools();
+        self.capture_by(chat_id, root, cwd, tools, tool, input, None);
+    }
+
     /// Records the pre-image of the files a tool call is about to change (or notes that a shell
     /// command ran). Call it as soon as the call's input is complete. Idempotent per file and
     /// turn: the first snapshot wins, so a permission request after the input changes nothing.
-    pub fn capture(&self, chat_id: &str, root: &Path, cwd: &Path, tool: &str, input: &Value) {
-        self.capture_by(chat_id, root, cwd, tool, input, None);
-    }
-
-    /// [`ChangeStore::capture`] for a call made by a sub-agent: `by` is its role label and run, kept on
-    /// the file's record (the first snapshot wins, so the first author does too).
+    /// `tools` is the table of the backend the chat runs on: it says which tools edit a file, which
+    /// one is the shell and the input keys that hold a path. `by` is the role label and run of a
+    /// sub-agent's call, kept on the file's record (the first snapshot wins, so the first author
+    /// does too).
+    #[allow(clippy::too_many_arguments)]
     pub fn capture_by(
         &self,
         chat_id: &str,
         root: &Path,
         cwd: &Path,
+        tools: &ToolTable,
         tool: &str,
         input: &Value,
         by: Option<&Author>,
     ) {
-        let shell = tool == SHELL_TOOL;
-        if !shell && !EDIT_TOOLS.contains(&tool) {
+        let shell = tools.is_shell(tool);
+        if !shell && !tools.is_edit(tool) {
             return;
         }
         let Ok(root) = root.canonicalize() else {
@@ -550,8 +543,8 @@ impl ChangeStore {
         let mut targets: Vec<vault_ops::Confined> = Vec::new();
         if !shell {
             let Some(rec) = input.as_object() else { return };
-            for key in PATH_KEYS {
-                let Some(p) = rec.get(key).and_then(Value::as_str) else {
+            for key in tools.path_keys(tool) {
+                let Some(p) = rec.get(key.as_str()).and_then(Value::as_str) else {
                     continue;
                 };
                 let joined = if Path::new(p).is_absolute() {
@@ -583,7 +576,7 @@ impl ChangeStore {
             .into_iter()
             .map(|c| {
                 let snap = read_snap(&c.abs, true);
-                (c, settled_pre(tool, input, &c.abs, snap))
+                (c, settled_pre(tools, tool, input, &c.abs, snap))
             })
             .collect();
         let mut g = self.inner.lock();

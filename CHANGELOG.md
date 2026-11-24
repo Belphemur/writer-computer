@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Git: a same-size edit saved in the same second as a commit of other files could vanish from the changes list; the index now marks such entries for a content check.
+- A missing `claude` program now shows a clear "not found" message in the agent pane.
 
 ## 0.9.0 - 2026-11-23
 

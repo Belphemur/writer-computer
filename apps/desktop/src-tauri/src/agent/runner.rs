@@ -1,48 +1,42 @@
-//! One chat's `claude` process: spawn (never a bypass flag, `build_args` is the only argv
-//! builder), the stdin writer thread, the stdout line reader feeding `ClaudeStreamMapper`, the
-//! state machine, the permission round trip, interrupt, queue, crash handling and `--resume`.
-//! Spec: `SPECs/native-agent-spec.md` sections 2, 6, 8, 11, 13 (lane 1).
+//! One chat's state machine: the queue, steer and cancel, busy, restarts, sub-agents, changes and
+//! the title, the permission round trip, crash handling and resume. Spec:
+//! `SPECs/native-agent-spec.md` sections 2, 6, 8, 11, 13 (lane 1).
 //!
-//! Threading. `ProcManager` (shared with the plugin host, a separate instance) owns the process,
-//! its process group and its pipes and calls our `Emit` closure from its reader/waiter threads.
-//! Everything that mutates a chat goes through `Session::inner` (one lock). Lines for the CLI
-//! go through one channel to one writer thread so JSON lines never interleave and a slow pipe
-//! never blocks the reader. Events go to the [`EventLog`], which numbers, rings and emits them.
-//! No lock of `inner` is ever held across a call into a port, the login shell or
-//! `ProcManager::spawn`.
+//! The backend it runs on is a [`Transport`] (`transport.rs`; Claude: `stdio_transport.rs`, the
+//! spawn, the pipes, the stream-json protocol): the `Session` calls it and reads what it says from
+//! one inbound channel in a single event loop thread, so everything that mutates a chat goes
+//! through `Session::inner` (one lock) in the order the backend said it. Events go to the
+//! [`EventLog`], which numbers, rings and emits them. No lock of `inner` is ever held across a
+//! call into a port, the login shell or `Transport::start`.
 //!
 //! Never logged: user text, assistant text, tool input/output, note paths, the system prompt,
 //! environment values (spec section 8).
 
 use super::api;
-use super::binary::is_older_than_verified;
-use super::changes::{is_edit_tool, is_shell_tool, ChangeStore, ClosedTurn};
+use super::backend::Backend;
+use super::changes::{ChangeStore, ClosedTurn};
 use super::chat_store;
-use super::claude_stream::{
-    build_args, encode_cancel_queued, encode_control_error, encode_interrupt,
-    encode_permission_allow, encode_permission_deny, encode_queued_message, encode_set_model,
-    encode_set_permission_mode, encode_steer_message, encode_user_message,
-    parse_cancel_queued_response, updated_permissions, ClaudeSpawn, ClaudeStreamMapper, SessionRef,
-};
 use super::config_sync::{self, Decision, McpWatch, Msg, ProbeTarget, Reason, StaleView};
 use super::env;
 use super::events::*;
 use super::files::Outgoing;
-use super::mcp_wiring::McpWiring;
+use super::permission_update::updated_permissions;
 use super::ports::{AgentPorts, ChatSessionInfo};
 use super::session::{EventLog, Shared, Sink, Timing};
 use super::sub_tracker::{Author, Decided, SubTracker};
-use super::subagents::{is_launch_tool, resolve_launch};
+use super::subagents::resolve_launch;
+use super::transport::{
+    Close, Delivery, Ended, Inbound, LaunchConfig, LiveChange, Mapped, Message, ModelChange,
+    Outbound, PermissionReply, Phrases, SpawnError, StartRequest, Transport, TransportInit,
+};
 use crate::features::points::Points;
 use crate::features::scope::{CancelToken, Spawner};
-use crate::plugin_proc::{Emit, Prepared, ProcEvent, ProcManager, Sig};
-use base64::Engine as _;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -50,28 +44,15 @@ use std::time::{Duration, Instant};
 pub const MAX_LIVE_PER_WINDOW: usize = 4;
 /// Respawns after an unexpected exit, reset by the next finished turn.
 const MAX_RESPAWNS: u8 = 2;
-/// A stdout line over this size is dropped with a content-free protocol error.
-const MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
-const STDERR_KEEP: usize = 2048;
 const DENY_MESSAGE: &str = "The user denied this action";
 
-/// Why a process could not be started. All of them become an `error` event for the chat
-/// (the pane's error cards), none of them an IPC rejection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SpawnError {
-    NotFound,
-    /// The window already has `MAX_LIVE_PER_WINDOW` live processes.
-    Busy,
-    Invalid(String),
-    Ended,
-}
-
 impl SpawnError {
-    pub fn to_event(&self) -> AgentEvent {
+    /// The `error` event a failed start becomes, in the words of the chat's transport.
+    pub fn to_event(&self, phrases: &Phrases) -> AgentEvent {
         let (kind, message, retryable) = match self {
             Self::NotFound => (
                 AgentErrorKind::BinaryNotFound,
-                "The claude program was not found".to_string(),
+                phrases.not_found.to_string(),
                 false,
             ),
             Self::Busy => (
@@ -82,6 +63,11 @@ impl SpawnError {
                 true,
             ),
             Self::Invalid(m) => (AgentErrorKind::SpawnFailed, m.clone(), false),
+            Self::Failed {
+                kind,
+                message,
+                retryable,
+            } => (*kind, message.clone(), *retryable),
             Self::Ended => (
                 AgentErrorKind::Unknown,
                 "This chat was closed".to_string(),
@@ -96,26 +82,6 @@ impl SpawnError {
     }
 }
 
-/// Settings of the next spawn, refreshed by every `agent_start`.
-pub(crate) struct LaunchConfig {
-    pub program: Option<PathBuf>,
-    pub cli_version: Option<String>,
-    pub system_prompt: Option<String>,
-    pub add_dirs: Vec<String>,
-    /// The `--agents` JSON (`subagents::agents_json`), `None` when orchestration is off.
-    pub agents: Option<String>,
-    /// Directory holding the `writer` launcher, put first on the child's PATH (`cli_launcher`);
-    /// `None` when there is none.
-    pub cli_dir: Option<PathBuf>,
-    /// The memory folder of this chat (`agent.memory` = `vault`), created already.
-    pub memory_dir: Option<PathBuf>,
-    /// Writer's own MCP server for the chat (`mcp_wiring`), `None` without a launcher.
-    pub mcp: Option<McpWiring>,
-    pub settings: AgentSettings,
-    /// The backend's `RoleAdapter::restart_on_config_change`.
-    pub restart_on_config_change: bool,
-}
-
 pub(crate) struct SessionInit {
     pub chat_id: String,
     pub label: String,
@@ -127,6 +93,8 @@ pub(crate) struct SessionInit {
     pub resume: bool,
     pub shared: Weak<Shared>,
     pub sink: Sink,
+    /// The agent this chat runs on.
+    pub backend: &'static Backend,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,13 +150,6 @@ struct Unechoed {
     /// steer waits for the running sub-agents' tool calls to end, so the echo can be far later
     /// than `Timing::steer_ack`: an accepted line is never reported undelivered by the watchdog.
     accepted: bool,
-}
-
-/// A `cancel_async_message` request in flight: the line it takes back and who waits for the
-/// answer (`Session::unqueue`).
-struct CancelWait {
-    uuid: String,
-    answer: Sender<bool>,
 }
 
 /// The receipt id of a message: its id when that is a uuid (the id the UI keys the card by), else
@@ -259,17 +220,8 @@ struct QuestionPending {
 }
 
 struct Inner {
-    // refreshed by `configure`
-    program: Option<PathBuf>,
-    cli_version: Option<String>,
-    system_prompt: Option<String>,
-    add_dirs: Vec<String>,
-    agents: Option<String>,
-    cli_dir: Option<PathBuf>,
-    memory_dir: Option<PathBuf>,
-    mcp: Option<McpWiring>,
-    settings: AgentSettings,
-    restart_on_config_change: bool,
+    /// What the next start is given, refreshed by `configure`.
+    launch: LaunchConfig,
     /// A file the running process read at start changed (first cause kept); cleared when the next
     /// process starts. See `config_sync.rs`.
     stale: Option<Reason>,
@@ -293,11 +245,9 @@ struct Inner {
     spawning: bool,
     used_resume: bool,
     init_seen: bool,
-    stderr: Vec<u8>,
     pid: Option<u32>,
 
     state: AgentSessionState,
-    mapper: ClaudeStreamMapper,
     /// Tool name by call id for the current turn: `tool-call-input` carries only the id.
     tool_names: HashMap<String, String>,
     /// Who made each call and which sub-agents are still working (see `sub_tracker.rs`).
@@ -341,21 +291,59 @@ struct Inner {
     unechoed: Vec<Unechoed>,
     /// The first turn ended while a message was unacknowledged: `turn_active` is held for it.
     echo_hold: bool,
-    /// `cancel_async_message` requests waiting for their answer, by request id.
-    cancel_waits: HashMap<String, CancelWait>,
     seed: Option<String>,
     respawns: u8,
     fallback_used: bool,
     cancel_token: u64,
-    counter: u64,
-    mode_request: Option<(String, AgentPermissionMode)>,
-    /// (request id, the model asked for)
-    model_request: Option<(String, Option<String>)>,
     restart_after_turn: bool,
     /// The process is being stopped to be replaced: the restart that follows respawns although no
     /// message waits, then reports `session-reloaded`.
     reload_pending: Option<ReloadWhy>,
     last_activity: Instant,
+}
+
+/// The chat's state lock. Test builds also count, per thread, the guards the thread holds
+/// (`Session::lock_is_held`).
+struct StateLock(Mutex<Inner>);
+
+struct StateGuard<'a>(parking_lot::MutexGuard<'a, Inner>);
+
+#[cfg(test)]
+thread_local! {
+    static HELD: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+impl StateLock {
+    fn new(inner: Inner) -> Self {
+        Self(Mutex::new(inner))
+    }
+
+    fn lock(&self) -> StateGuard<'_> {
+        let guard = self.0.lock();
+        #[cfg(test)]
+        HELD.with(|h| h.set(h.get() + 1));
+        StateGuard(guard)
+    }
+}
+
+impl std::ops::Deref for StateGuard<'_> {
+    type Target = Inner;
+    fn deref(&self) -> &Inner {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for StateGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Inner {
+        &mut self.0
+    }
+}
+
+#[cfg(test)]
+impl Drop for StateGuard<'_> {
+    fn drop(&mut self) {
+        HELD.with(|h| h.set(h.get() - 1));
+    }
 }
 
 pub struct Session {
@@ -366,9 +354,13 @@ pub struct Session {
     pub(crate) project_path: Option<String>,
     me: Weak<Session>,
     shared: Weak<Shared>,
+    /// The agent this chat runs on: its tool table, adapters and transport.
+    backend: &'static Backend,
+    /// How the backend carries the chat (`transport.rs`): called outside `inner`'s critical
+    /// sections where it can block, and the only way anything reaches the backend.
+    transport: Arc<dyn Transport>,
     /// The host's threads: the helper threads below run on it and end with it.
     spawner: Spawner,
-    procs: Arc<ProcManager>,
     ports: Arc<AgentPorts>,
     changes: Arc<ChangeStore>,
     /// The agent's owned points (`api.rs`): `turn-started` and `turn-finished` go through it.
@@ -377,10 +369,7 @@ pub struct Session {
     pub(crate) log: Arc<EventLog>,
     /// Counted toward the per-window cap (set under `Shared::gate`).
     live: AtomicBool,
-    /// `ProcManager` id of the current process, 0 for none; read by the writer thread.
-    proc_cell: Arc<AtomicU64>,
-    write_tx: Sender<String>,
-    inner: Mutex<Inner>,
+    inner: StateLock,
 }
 
 impl Drop for Session {
@@ -389,120 +378,55 @@ impl Drop for Session {
     }
 }
 
-fn writer_thread(
-    rx: Receiver<String>,
-    procs: Arc<ProcManager>,
-    label: String,
-    cell: Arc<AtomicU64>,
-    token: CancelToken,
-) {
+/// The chat's single event loop: what the transport says, one message at a time, in order. Ends
+/// with the host, the chat or the transport.
+fn inbound_loop(rx: Receiver<Inbound>, session: Weak<Session>, token: CancelToken) {
     loop {
-        let line = match rx.recv_timeout(Duration::from_millis(250)) {
-            Ok(line) => line,
-            Err(RecvTimeoutError::Timeout) if !token.is_cancelled() => continue,
+        match rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(message) => {
+                let Some(s) = session.upgrade() else {
+                    return;
+                };
+                s.on_inbound(message);
+            }
+            Err(RecvTimeoutError::Timeout) if !token.is_cancelled() => {
+                if session.strong_count() == 0 {
+                    return;
+                }
+            }
             Err(_) => return,
-        };
-        let id = cell.load(Ordering::SeqCst);
-        if id == 0 {
-            log::warn!(target: "agent", "agent: dropped a stdin line (no process)");
-            continue;
-        }
-        let mut data = line.into_bytes();
-        data.push(b'\n');
-        if let Err(e) = procs.write(&label, id, &data) {
-            // the error text names no content
-            log::warn!(target: "agent", "agent: stdin write failed: {e}");
         }
     }
-}
-
-enum LineItem {
-    Line(String),
-    TooLong,
-}
-
-#[derive(Default)]
-struct LineBuf {
-    buf: Vec<u8>,
-    discarding: bool,
-}
-
-impl LineBuf {
-    fn push(&mut self, data: &[u8]) -> Vec<LineItem> {
-        let mut out = Vec::new();
-        for chunk in data.split_inclusive(|b| *b == b'\n') {
-            let ends = chunk.ends_with(b"\n");
-            if self.discarding {
-                if ends {
-                    self.discarding = false;
-                    out.push(LineItem::TooLong);
-                }
-                continue;
-            }
-            self.buf.extend_from_slice(chunk);
-            if self.buf.len() > MAX_LINE_BYTES {
-                self.buf = Vec::new();
-                if ends {
-                    out.push(LineItem::TooLong);
-                } else {
-                    self.discarding = true;
-                }
-                continue;
-            }
-            if ends {
-                let line = String::from_utf8_lossy(&self.buf).trim().to_string();
-                self.buf.clear();
-                if !line.is_empty() {
-                    out.push(LineItem::Line(line));
-                }
-            }
-        }
-        out
-    }
-
-    fn rest(&mut self) -> Option<String> {
-        let line = String::from_utf8_lossy(&self.buf).trim().to_string();
-        self.buf.clear();
-        (!line.is_empty()).then_some(line)
-    }
-}
-
-pub(crate) fn redact_prompt(args: &[String]) -> Vec<String> {
-    let mut out = Vec::with_capacity(args.len());
-    let mut redact = false;
-    for a in args {
-        if redact {
-            out.push(format!("<{} bytes>", a.len()));
-            redact = false;
-        } else {
-            // the prompt, the memory folder's path and the vault path of the MCP config stay out of
-            // the log (spec section 8)
-            redact = a == "--append-system-prompt" || a == "--settings" || a == "--mcp-config";
-            out.push(a.clone());
-        }
-    }
-    out
 }
 
 impl Session {
     /// An `Err` is a thread the host refused (the feature is stopping): the chat is not created.
     pub(crate) fn new(init: SessionInit, config: LaunchConfig) -> Result<Arc<Session>, String> {
+        let backend = init.backend;
+        Self::with_transport(init, config, |t| backend.connect(t))
+    }
+
+    /// [`Session::new`] on the transport `make` builds (tests bring their own).
+    pub(crate) fn with_transport(
+        init: SessionInit,
+        config: LaunchConfig,
+        make: impl FnOnce(TransportInit) -> Result<Arc<dyn Transport>, String>,
+    ) -> Result<Arc<Session>, String> {
         let shared = init.shared.upgrade().ok_or("the agent has stopped")?;
         let spawner = shared.spawn.clone();
-        let (tx, rx) = channel();
-        let cell = Arc::new(AtomicU64::new(0));
-        let procs = Arc::clone(&shared.procs);
-        {
-            let (p, l, c) = (Arc::clone(&procs), init.label.clone(), Arc::clone(&cell));
-            spawner
-                .spawn("agent-stdin", move |token| {
-                    writer_thread(rx, p, l, c, token)
-                })
-                .map_err(|e| e.to_string())?;
-        }
+        let (inbound_tx, inbound_rx) = channel();
+        let transport = make(TransportInit {
+            procs: Arc::clone(&shared.procs),
+            label: init.label.clone(),
+            root: init.root.clone(),
+            cwd: init.cwd.clone(),
+            project_path: init.project_path.clone(),
+            spawner: spawner.clone(),
+            inbound: inbound_tx,
+        })?;
         let log =
             EventLog::new(init.chat_id.clone(), init.sink, &spawner).map_err(|e| e.to_string())?;
-        Ok(Arc::new_cyclic(|me| Session {
+        let session = Arc::new_cyclic(|me| Session {
             me: me.clone(),
             chat_id: init.chat_id,
             label: init.label,
@@ -510,27 +434,17 @@ impl Session {
             cwd: init.cwd,
             project_path: init.project_path,
             shared: init.shared,
-            spawner,
-            procs,
+            backend: init.backend,
+            transport,
+            spawner: spawner.clone(),
             ports: Arc::clone(&shared.ports),
             changes: Arc::clone(&shared.changes),
             points: shared.points.clone(),
             timing: shared.timing,
             log,
             live: AtomicBool::new(false),
-            proc_cell: cell,
-            write_tx: tx,
-            inner: Mutex::new(Inner {
-                program: config.program,
-                cli_version: config.cli_version,
-                system_prompt: config.system_prompt,
-                add_dirs: config.add_dirs,
-                agents: config.agents,
-                cli_dir: config.cli_dir,
-                memory_dir: config.memory_dir,
-                mcp: config.mcp,
-                settings: config.settings,
-                restart_on_config_change: config.restart_on_config_change,
+            inner: StateLock::new(Inner {
+                launch: config,
                 agent_tiers: BTreeMap::new(),
                 session_model: None,
                 stale: None,
@@ -546,12 +460,10 @@ impl Session {
                 spawning: false,
                 used_resume: false,
                 init_seen: false,
-                stderr: Vec::new(),
                 pid: None,
                 state: AgentSessionState::Idle,
-                mapper: ClaudeStreamMapper::new(),
                 tool_names: HashMap::new(),
-                subs: SubTracker::default(),
+                subs: SubTracker::new(init.backend.tools()),
                 background_open: false,
                 last_session: None,
                 pending: HashMap::new(),
@@ -564,19 +476,22 @@ impl Session {
                 inflight: Vec::new(),
                 unechoed: Vec::new(),
                 echo_hold: false,
-                cancel_waits: HashMap::new(),
                 seed: None,
                 respawns: 0,
                 fallback_used: false,
                 cancel_token: 0,
-                counter: 0,
-                mode_request: None,
-                model_request: None,
                 restart_after_turn: false,
                 reload_pending: None,
                 last_activity: Instant::now(),
             }),
-        }))
+        });
+        let weak = Arc::downgrade(&session);
+        spawner
+            .spawn("agent-inbound", move |token| {
+                inbound_loop(inbound_rx, weak, token)
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(session)
     }
 
     /// A helper thread of this chat (a watchdog, the respawn) on the host's scope: it gets the
@@ -590,6 +505,10 @@ impl Session {
 
     // ---------------------------------------------------------------- queries
 
+    pub(crate) fn backend(&self) -> &'static Backend {
+        self.backend
+    }
+
     pub fn is_live(&self) -> bool {
         self.live.load(Ordering::SeqCst)
     }
@@ -600,6 +519,14 @@ impl Session {
 
     pub fn session_id(&self) -> String {
         self.inner.lock().session_id.clone()
+    }
+
+    /// Whether the calling thread holds a chat's state lock; `transport_tests` uses it to prove
+    /// the `Session` calls `start` and `unqueue` without the lock (another thread holding it, the
+    /// reaper or the inbound loop, is no business of the transport).
+    #[cfg(test)]
+    pub(crate) fn lock_is_held(&self) -> bool {
+        HELD.with(|h| h.get() > 0)
     }
 
     pub fn is_terminal(&self) -> bool {
@@ -617,7 +544,7 @@ impl Session {
         if g.terminal {
             return None;
         }
-        Some((g.program.clone()?, self.cwd.clone()))
+        Some((g.launch.program.clone()?, self.cwd.clone()))
     }
 
     // ---------------------------------------------------------------- start
@@ -626,20 +553,12 @@ impl Session {
     pub(crate) fn configure(&self, config: LaunchConfig) {
         let mut g = self.inner.lock();
         // read live by the config watch: a running chat follows the setting too
-        g.settings.auto_reload = config.settings.auto_reload;
-        g.restart_on_config_change = config.restart_on_config_change;
+        g.launch.settings.auto_reload = config.settings.auto_reload;
+        g.launch.restart_on_config_change = config.restart_on_config_change;
         if g.live_gen.is_some() || g.spawning {
             return;
         }
-        g.program = config.program;
-        g.cli_version = config.cli_version;
-        g.system_prompt = config.system_prompt;
-        g.add_dirs = config.add_dirs;
-        g.agents = config.agents;
-        g.cli_dir = config.cli_dir;
-        g.memory_dir = config.memory_dir;
-        g.mcp = config.mcp;
-        g.settings = config.settings;
+        g.launch = config;
     }
 
     /// Report a failure that happened before any process existed.
@@ -648,7 +567,7 @@ impl Session {
         if !g.terminal {
             g.state = AgentSessionState::Error;
         }
-        self.log.push(err.to_event());
+        self.log.push(err.to_event(self.transport.phrases()));
     }
 
     /// Make sure a process is running. Starting `claude` needs no per-vault question: turning the
@@ -664,7 +583,7 @@ impl Session {
     }
 
     fn ensure_inner(self: &Arc<Self>) -> Result<(), SpawnError> {
-        let (program, args, used_resume, cli_dir, memory_mode) = {
+        let (launch, session_id, used_resume) = {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
@@ -672,52 +591,20 @@ impl Session {
             if g.live_gen.is_some() || g.spawning {
                 return Ok(());
             }
-            let program = g.program.clone().ok_or(SpawnError::NotFound)?;
-            let used_resume = g.resume_next;
-            let session = if used_resume {
-                SessionRef::Resume(g.session_id.clone())
-            } else {
-                SessionRef::New(g.session_id.clone())
-            };
-            // `--thinking-display` is newer than the verified CLI: an older one would refuse
-            // the unknown option and the chat could not start, so it only gets the default.
-            let mut settings = g.settings.clone();
-            settings.show_thinking &= !is_older_than_verified(g.cli_version.as_deref());
-            let args = build_args(&ClaudeSpawn {
-                session,
-                settings: &settings,
-                append_system_prompt: g.system_prompt.as_deref(),
-                add_dirs: &g.add_dirs,
-                agents: g.agents.as_deref(),
-                memory_dir: g.memory_dir.as_deref(),
-                mcp: g.mcp.as_ref(),
-            })
-            .map_err(SpawnError::Invalid)?;
-            g.agent_tiers = g.settings.tier_models.clone();
+            g.agent_tiers = g.launch.settings.tier_models.clone();
             g.spawning = true;
             if g.state != AgentSessionState::Reconnecting {
                 g.state = AgentSessionState::Starting;
             }
-            (
-                program,
-                args,
-                used_resume,
-                g.cli_dir.clone(),
-                g.settings.memory,
-            )
+            (g.launch.clone(), g.session_id.clone(), g.resume_next)
         };
-
-        let env = env::with_memory_mode(env::current(cli_dir.as_deref()), memory_mode);
-        let display = redact_prompt(&args);
-        self.launch(program, args, display, env, used_resume)
+        self.launch(&launch, &session_id, used_resume)
     }
 
     fn launch(
         self: &Arc<Self>,
-        program: PathBuf,
-        args: Vec<String>,
-        display: Vec<String>,
-        env: Vec<(String, String)>,
+        launch: &LaunchConfig,
+        session_id: &str,
         used_resume: bool,
     ) -> Result<(), SpawnError> {
         let shared = self.shared.upgrade().ok_or(SpawnError::Ended)?;
@@ -741,44 +628,37 @@ impl Session {
             g.ready = false;
             g.used_resume = used_resume;
             g.init_seen = false;
-            g.stderr.clear();
             g.pid = None;
-            g.mapper = ClaudeStreamMapper::new();
             g.last_activity = Instant::now();
             // the new process reads everything fresh
             g.stale = None;
             gen
         };
-        let prepared = Prepared {
-            program: program.clone(),
-            args,
-            cwd: self.cwd.clone(),
-            env,
-            stdin_pipe: true,
-            inherit_env: false,
-        };
-        log::info!(
-            target: "agent",
-            "agent: spawn {} {} (cwd: {}, resume: {used_resume})",
-            program.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-            display.join(" "),
-            self.project_path.as_deref().unwrap_or("."),
-        );
-        let emit = self.make_emit(gen);
-        let res = self
-            .procs
-            .spawn(&self.label, &self.root, "agent", &prepared, emit);
+        let res = self.transport.start(&StartRequest {
+            gen,
+            session_id,
+            resume: used_resume,
+            launch,
+        });
         let mut g = self.inner.lock();
         match res {
-            Ok(id) => {
-                // an exec failure already cleared `live_gen` through `on_spawn_error`
-                if g.live_gen == Some(gen) {
-                    self.proc_cell.store(id, Ordering::SeqCst);
-                    g.ready = true;
-                    g.spawning = false;
-                    self.flush_queue(&mut g);
+            Ok(()) => {
+                // a failure to run the program is `Err`; `Ok` means a process (or connection) is
+                // there, or that a later `StartFailed` will say it is not
+                g.spawning = false;
+                if g.live_gen != Some(gen) {
+                    return Ok(());
+                }
+                if let Some(closing) = g.closing {
+                    // a stop that landed while `start` ran found nothing to signal: apply it now
+                    match closing {
+                        Closing::Shutdown | Closing::Killed => self.signal(&g, Close::Kill),
+                        Closing::Restart | Closing::Idle => self.terminate(&g),
+                        Closing::Closed => self.signal(&g, Close::Graceful),
+                    }
                 } else {
-                    g.spawning = false;
+                    g.ready = true;
+                    self.flush_queue(&mut g);
                 }
                 Ok(())
             }
@@ -786,71 +666,54 @@ impl Session {
                 g.live_gen = None;
                 g.spawning = false;
                 self.live.store(false, Ordering::SeqCst);
-                if e.starts_with("EBUSY") {
-                    Err(SpawnError::Busy)
-                } else {
-                    Err(SpawnError::Invalid(e))
-                }
+                Err(e)
             }
         }
     }
 
-    fn make_emit(self: &Arc<Self>, gen: u64) -> Emit {
-        let weak = Arc::downgrade(self);
-        let lines = Mutex::new(LineBuf::default());
-        Arc::new(move |ev| {
-            let Some(s) = weak.upgrade() else {
-                return false;
-            };
-            match ev {
-                ProcEvent::Spawn { pid } => s.on_spawn(gen, pid),
-                ProcEvent::Stdout { data_base64 } => {
-                    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data_base64)
-                    else {
-                        return true;
-                    };
-                    let items = lines.lock().push(&bytes);
-                    for item in items {
-                        s.on_item(gen, item);
-                    }
+    // ------------------------------------------------------------ inbound
+
+    /// One thing the transport said, on the chat's event loop.
+    fn on_inbound(self: &Arc<Self>, inbound: Inbound) {
+        let gen = inbound.gen;
+        match inbound.message {
+            Message::Started { pid } => self.on_spawn(gen, pid),
+            Message::Mapped(out) => self.on_mapped(gen, out),
+            Message::Refused => {
+                let mut g = self.inner.lock();
+                if g.live_gen == Some(gen) {
+                    self.restart_when_idle(&mut g);
                 }
-                ProcEvent::Stderr { data_base64 } => {
-                    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data_base64)
-                    {
-                        s.on_stderr(gen, &bytes);
-                    }
-                }
-                ProcEvent::Exit { code, signal } => {
-                    if let Some(rest) = lines.lock().rest() {
-                        s.on_item(gen, LineItem::Line(rest));
-                    }
-                    s.on_exit(gen, code, signal);
-                }
-                ProcEvent::Error { code, message } => s.on_spawn_error(gen, &code, &message),
             }
-            true
-        })
+            Message::Unqueued { receipt } => {
+                let mut g = self.inner.lock();
+                if g.live_gen == Some(gen) {
+                    g.unechoed.retain(|u| u.uuid != receipt);
+                    g.inflight
+                        .retain(|o| o.receipt.as_deref() != Some(receipt.as_str()));
+                    self.release_hold(&mut g);
+                }
+            }
+            Message::StartFailed {
+                kind,
+                message,
+                retryable,
+            } => self.on_spawn_error(gen, kind, message, retryable),
+            Message::Ended(ended) => self.on_exit(gen, ended),
+        }
     }
 
-    // ------------------------------------------------------------ process events
-
-    fn on_spawn(&self, gen: u64, pid: u32) {
+    fn on_spawn(&self, gen: u64, pid: Option<u32>) {
         let mut g = self.inner.lock();
         if g.live_gen == Some(gen) {
-            g.pid = Some(pid);
-            log::info!(target: "agent", "agent: started pid {pid}");
+            g.pid = pid;
+            if let Some(pid) = pid {
+                log::info!(target: "agent", "agent: started pid {pid}");
+            }
         }
     }
 
-    fn on_stderr(&self, gen: u64, bytes: &[u8]) {
-        let mut g = self.inner.lock();
-        if g.live_gen == Some(gen) && g.stderr.len() < STDERR_KEEP {
-            let room = STDERR_KEEP - g.stderr.len();
-            g.stderr.extend_from_slice(&bytes[..bytes.len().min(room)]);
-        }
-    }
-
-    fn on_spawn_error(&self, gen: u64, code: &str, message: &str) {
+    fn on_spawn_error(&self, gen: u64, kind: AgentErrorKind, message: String, retryable: bool) {
         let mut g = self.inner.lock();
         if g.live_gen != Some(gen) {
             return;
@@ -862,37 +725,17 @@ impl Session {
         g.queue.clear();
         g.inflight.clear();
         self.live.store(false, Ordering::SeqCst);
-        self.proc_cell.store(0, Ordering::SeqCst);
         g.state = AgentSessionState::Error;
-        log::warn!(target: "agent", "agent: could not start the program ({code})");
-        let (kind, retryable) = match code {
-            "ENOENT" => (AgentErrorKind::BinaryNotFound, false),
-            _ => (AgentErrorKind::SpawnFailed, true),
-        };
+        log::warn!(target: "agent", "agent: could not start the program");
         self.log.push(AgentEvent::Error {
             kind,
-            message: message.to_string(),
+            message,
             retryable,
         });
     }
 
-    fn on_item(self: &Arc<Self>, gen: u64, item: LineItem) {
-        match item {
-            LineItem::Line(l) => self.on_line(gen, &l),
-            LineItem::TooLong => {
-                let g = self.inner.lock();
-                if g.live_gen == Some(gen) {
-                    self.log.push(AgentEvent::Error {
-                        kind: AgentErrorKind::Protocol,
-                        message: "claude sent a line over the size limit".into(),
-                        retryable: false,
-                    });
-                }
-            }
-        }
-    }
-
-    fn on_line(self: &Arc<Self>, gen: u64, line: &str) {
+    fn on_mapped(self: &Arc<Self>, gen: u64, out: Mapped) {
+        let tools = self.backend.tools();
         let mut started: Option<ChatSessionInfo> = None;
         // snapshots to take and the turn to finish happen after the lock is released (file IO)
         let mut captures: Vec<(String, Value, Option<Author>)> = Vec::new();
@@ -907,16 +750,12 @@ impl Session {
                 return;
             }
             g.last_activity = Instant::now();
-            if line.contains("\"control_response\"") {
-                self.on_control_response(&mut g, line);
-            }
-            let out = g.mapper.map_line(line);
-            if let Some(uuid) = &out.command_queued {
+            if let Some(uuid) = &out.accepted {
                 if let Some(u) = g.unechoed.iter_mut().find(|u| u.uuid == *uuid) {
                     u.accepted = true;
                 }
             }
-            if let Some(uuid) = &out.user_echo {
+            if let Some(uuid) = &out.taken {
                 // the receipt: the CLI took the message (at a tool boundary or as its next turn)
                 if let Some(i) = g.unechoed.iter().position(|u| u.uuid == *uuid) {
                     if g.unechoed.remove(i).kind == LineKind::Queued {
@@ -925,11 +764,6 @@ impl Session {
                         });
                     }
                 }
-            }
-            if let Some(id) = out.unsupported_control_request {
-                // never leave the CLI waiting
-                log::info!(target: "agent", "agent: answered an unsupported control request with an error");
-                self.write(encode_control_error(&id, "unsupported"));
             }
             // the lifecycle of the sub-agents, decided by the tracker alone
             let task_events: Vec<AgentEvent> =
@@ -950,7 +784,7 @@ impl Session {
                             .pending
                             .values()
                             .any(|p| p.command_call.as_deref() == Some(tool_call_id));
-                        if is_shell_tool(tool) && !waiting {
+                        if tools.is_shell(tool) && !waiting {
                             let by = g.subs.author_of(Some(tool_call_id));
                             self.changes.command_started(
                                 &self.chat_id,
@@ -966,11 +800,15 @@ impl Session {
                     } => {
                         if g.tool_names
                             .get(tool_call_id)
-                            .is_some_and(|t| is_launch_tool(t))
+                            .is_some_and(|t| tools.is_launch(t))
                         {
                             let inherited =
-                                g.session_model.as_deref().or(g.settings.model.as_deref());
-                            if let Some(launch) = resolve_launch(input, &g.agent_tiers, inherited) {
+                                g.session_model
+                                    .as_deref()
+                                    .or(g.launch.settings.model.as_deref());
+                            if let Some(launch) =
+                                resolve_launch(tools, input, &g.agent_tiers, inherited)
+                            {
                                 if let Some(m) = launch.model.as_ref() {
                                     g.sub_models.tier(tool_call_id, m);
                                 }
@@ -993,7 +831,7 @@ impl Session {
                         edit_ended |= g
                             .tool_names
                             .get(tool_call_id)
-                            .is_some_and(|t| is_edit_tool(t));
+                            .is_some_and(|t| tools.is_edit(t));
                     }
                     // the permission request may come first: the tool has not run yet either
                     AgentEvent::PermissionRequest {
@@ -1004,7 +842,7 @@ impl Session {
                     } => {
                         let by = g.subs.author_of(tool_call_id.as_deref());
                         captures.push((tool.clone(), input.clone(), by));
-                        if let Some(call) = tool_call_id.as_deref().filter(|_| is_shell_tool(tool))
+                        if let Some(call) = tool_call_id.as_deref().filter(|_| tools.is_shell(tool))
                         {
                             self.changes
                                 .command_finished(&self.chat_id, call, Instant::now());
@@ -1072,6 +910,7 @@ impl Session {
                 &self.chat_id,
                 &self.root,
                 &self.cwd,
+                tools,
                 &tool,
                 &input,
                 by.as_ref(),
@@ -1164,7 +1003,7 @@ impl Session {
                 chat_id: self.chat_id.clone(),
                 turn_id: summary.map(|s| s.turn_id.clone()),
                 title,
-                backend: api::BACKEND_CLAUDE.to_string(),
+                backend: self.backend.id.to_string(),
                 models,
                 files,
             },
@@ -1213,13 +1052,13 @@ impl Session {
                     g.session_id = session_id.clone();
                 }
                 if cli_version.is_some() {
-                    g.cli_version = cli_version.clone();
+                    g.launch.cli_version = cli_version.clone();
                 }
                 self.mark_running(g);
                 *started = Some(ChatSessionInfo {
                     chat_id: self.chat_id.clone(),
                     session_id: g.session_id.clone(),
-                    cli_version: g.cli_version.clone(),
+                    cli_version: g.launch.cli_version.clone(),
                     model: model.clone(),
                     project_path: self.project_path.clone(),
                 });
@@ -1244,7 +1083,9 @@ impl Session {
                     PendingPerm {
                         input: input.clone(),
                         suggestions: suggestions.clone(),
-                        command_call: tool_call_id.clone().filter(|_| is_shell_tool(tool)),
+                        command_call: tool_call_id
+                            .clone()
+                            .filter(|_| self.backend.tools().is_shell(tool)),
                         question: None,
                     },
                 );
@@ -1299,35 +1140,15 @@ impl Session {
                     self.log.push(ev);
                     return;
                 }
-                g.echo_hold = false;
-                g.turn_active = false;
-                g.inflight.clear();
-                g.respawns = 0;
-                g.cancel_token += 1;
-                g.state = AgentSessionState::Idle;
-                self.log.push(ev);
-                // stale: restart right after the turn (a waiting message is sent after it)
-                // (not while a background sub-agent runs or its report turn is still to come)
-                let stale_restart = g.stale.is_some()
-                    && config_sync::decide(self.stale_view(g, g.background_open))
-                        == Decision::RestartNow;
-                if stale_restart {
-                    g.restart_after_turn = false;
-                    let why = self.config_why(g);
-                    self.begin_reload(g, why);
-                } else if g.restart_after_turn && !g.background_open {
-                    g.restart_after_turn = false;
-                    g.closing = Some(Closing::Restart);
-                    self.terminate(g);
-                } else {
-                    self.flush_queue(g);
-                }
+                self.end_turn(g, Some(ev));
                 return;
             }
             AgentEvent::Error {
                 kind: AgentErrorKind::Auth,
                 ..
             } => g.state = AgentSessionState::Error,
+            // The backend kept (or fell back to) another model: never pass the refused one again.
+            AgentEvent::ModelRefused { using, .. } => g.launch.settings.model = using.clone(),
             _ => {}
         }
         self.log.push(ev);
@@ -1344,69 +1165,6 @@ impl Session {
         }
     }
 
-    /// The CLI's answers to our own control requests. Only `set_permission_mode` matters.
-    fn on_control_response(&self, g: &mut Inner, line: &str) {
-        let Ok(v) = serde_json::from_str::<Value>(line) else {
-            return;
-        };
-        if let Some((request, cancelled)) = parse_cancel_queued_response(line) {
-            if let Some(wait) = g.cancel_waits.remove(&request) {
-                if cancelled {
-                    g.unechoed.retain(|u| u.uuid != wait.uuid);
-                    g.inflight
-                        .retain(|o| o.receipt.as_deref() != Some(wait.uuid.as_str()));
-                    self.release_hold(g);
-                }
-                let _ = wait.answer.send(cancelled);
-                return;
-            }
-        }
-        let resp = v.get("response");
-        let id = resp
-            .and_then(|r| r.get("request_id"))
-            .and_then(Value::as_str);
-        let ok = resp.and_then(|r| r.get("subtype")).and_then(Value::as_str) == Some("success");
-        if id.is_some() && g.model_request.as_ref().map(|(r, _)| r.as_str()) == id {
-            let (_, requested) = g.model_request.take().unwrap();
-            if ok {
-                log::info!(target: "agent", "agent: model changed in the running process");
-            } else if resp
-                .and_then(|r| r.get("error_code"))
-                .and_then(Value::as_str)
-                == Some("restricted_by_org")
-            {
-                // The CLI kept (or fell back to) another model: never pass the refused one again.
-                let using = resp
-                    .and_then(|r| r.get("model"))
-                    .and_then(Value::as_str)
-                    .map(String::from);
-                log::info!(target: "agent", "agent: model refused by the organization policy");
-                g.settings.model = using.clone();
-                self.log.push(AgentEvent::ModelRefused { requested, using });
-            } else {
-                // The model change keeps the new setting for the next spawn (spec 6.1).
-                log::info!(target: "agent", "agent: set_model refused, restarting with --resume");
-                self.restart_when_idle(g);
-            }
-            return;
-        }
-        let Some((want, mode)) = g.mode_request.clone() else {
-            return;
-        };
-        if id != Some(want.as_str()) {
-            return;
-        }
-        g.mode_request = None;
-        g.settings.permission_mode = mode;
-        if ok {
-            log::info!(target: "agent", "agent: permission mode changed in the running process");
-            return;
-        }
-        // The CLI refused: restart with --resume and the new --permission-mode (spec 6.1).
-        log::info!(target: "agent", "agent: set_permission_mode refused, restarting with --resume");
-        self.restart_when_idle(g);
-    }
-
     /// Restart with `--resume` now, or once the running turn (and any background sub-agent and
     /// the turn that reports it) has finished.
     fn restart_when_idle(&self, g: &mut Inner) {
@@ -1418,7 +1176,12 @@ impl Session {
         }
     }
 
-    fn on_exit(self: &Arc<Self>, gen: u64, code: Option<i32>, signal: Option<String>) {
+    fn on_exit(self: &Arc<Self>, gen: u64, ended: Ended) {
+        let Ended {
+            code,
+            signal,
+            session_unknown,
+        } = ended;
         let mut respawn: Option<(Vec<Outgoing>, Option<String>)> = None;
         let mut closed: Option<ClosedTurn> = None;
         let reloaded: Option<ReloadWhy>;
@@ -1447,10 +1210,8 @@ impl Session {
             g.pid = None;
             // written, never acknowledged: a planned restart sends them again (below)
             let unacked = std::mem::take(&mut g.unechoed);
-            g.cancel_waits.clear();
             g.echo_hold = false;
             self.live.store(false, Ordering::SeqCst);
-            self.proc_cell.store(0, Ordering::SeqCst);
             let closing = g.closing.take();
             // Anything but a planned restart forgets a queued line: the chip learns it is gone.
             let replayable = matches!(closing, Some(Closing::Restart) | Some(Closing::Idle));
@@ -1463,13 +1224,9 @@ impl Session {
             }
             let mid_turn = g.turn_active || !g.pending.is_empty();
             let init_seen = g.init_seen;
-            let stderr = String::from_utf8_lossy(&g.stderr).to_ascii_lowercase();
-            g.mode_request = None;
-            g.model_request = None;
             g.restart_after_turn = false;
             reloaded = g.reload_pending.take();
             self.drop_pending(&mut g);
-            g.mapper = ClaudeStreamMapper::new();
             let clean = code == Some(0) && signal.is_none();
             log::info!(
                 target: "agent",
@@ -1511,7 +1268,7 @@ impl Session {
                     let resume_missing = !init_seen
                         && g.used_resume
                         && !g.fallback_used
-                        && (stderr.contains("no conversation found") || !clean);
+                        && (session_unknown || !clean);
                     if resume_missing {
                         // The CLI does not know this conversation: continue in a NEW session
                         // seeded from the chat note (spec 9).
@@ -1529,9 +1286,7 @@ impl Session {
                         if !clean {
                             self.log.push(AgentEvent::Error {
                                 kind: AgentErrorKind::ProcessExited,
-                                message:
-                                    "claude exited while idle; it restarts on the next message"
-                                        .into(),
+                                message: self.transport.phrases().exited_idle.into(),
                                 retryable: true,
                             });
                         }
@@ -1551,7 +1306,7 @@ impl Session {
                             g.state = AgentSessionState::Reconnecting;
                             self.log.push(AgentEvent::Error {
                                 kind: AgentErrorKind::ProcessExited,
-                                message: "Connection to claude lost, resuming".into(),
+                                message: self.transport.phrases().connection_lost.into(),
                                 retryable: true,
                             });
                             if init_seen {
@@ -1564,7 +1319,7 @@ impl Session {
                                     is_error: true,
                                     result: None,
                                     session_id: Some(g.session_id.clone()),
-                                    errors: vec!["claude exited during the turn".into()],
+                                    errors: vec![self.transport.phrases().ended_in_turn.into()],
                                 });
                             }
                             respawn = Some((replay, None));
@@ -1573,7 +1328,7 @@ impl Session {
                             g.queue.clear();
                             self.log.push(AgentEvent::Error {
                                 kind: AgentErrorKind::ProcessExited,
-                                message: "claude keeps exiting; send a message to try again".into(),
+                                message: self.transport.phrases().keeps_exiting.into(),
                                 retryable: true,
                             });
                             self.log.push(AgentEvent::SessionEnded {
@@ -1645,7 +1400,7 @@ impl Session {
                 g.queue.clear();
                 g.inflight.clear();
                 g.state = AgentSessionState::Error;
-                self.log.push(e.to_event());
+                self.log.push(e.to_event(self.transport.phrases()));
             }
         }
     }
@@ -1653,7 +1408,6 @@ impl Session {
     fn drop_pending(&self, g: &mut Inner) {
         let all: Vec<(String, PendingPerm)> = g.pending.drain().collect();
         for (id, p) in all {
-            g.mapper.permission_answered(&id);
             self.log.push(match p.question {
                 Some(q) => AgentEvent::QuestionResolved {
                     request_id: id,
@@ -1692,13 +1446,9 @@ impl Session {
         }
     }
 
-    // ----------------------------------------------------------------- stdin
+    // ---------------------------------------------------------------- outbound
 
-    fn write(&self, line: String) {
-        let _ = self.write_tx.send(line);
-    }
-
-    /// Write the next queued user message when the CLI is ready and no turn is running.
+    /// Hand the next queued user message to the backend when it is ready and no turn is running.
     fn flush_queue(&self, g: &mut Inner) {
         // a process that is being stopped gets nothing: the respawn sends the queue
         if !g.ready || g.turn_active || g.terminal || g.closing.is_some() {
@@ -1737,9 +1487,19 @@ impl Session {
                     accepted: false,
                 });
                 self.watch_receipt(g.live_gen, uuid);
-                self.write(encode_queued_message(&sent, &out.files, uuid));
+                self.transport.send(&Outbound {
+                    text: &sent,
+                    files: &out.files,
+                    delivery: Delivery::Queued { receipt: uuid },
+                });
             }
-            None => self.write(encode_user_message(&sent, &out.files)),
+            None => {
+                self.transport.send(&Outbound {
+                    text: &sent,
+                    files: &out.files,
+                    delivery: Delivery::Start,
+                });
+            }
         }
     }
 
@@ -1802,7 +1562,7 @@ impl Session {
                 let mut g = self.inner.lock();
                 g.queue.clear();
                 g.state = AgentSessionState::Error;
-                self.log.push(e.to_event());
+                self.log.push(e.to_event(self.transport.phrases()));
                 drop(g);
                 if starts_turn {
                     self.emit_turn_finished(None, Vec::new());
@@ -1873,13 +1633,9 @@ impl Session {
             return Ok(None);
         }
         let uuid = receipt_id(message_id);
-        let line = match kind {
-            LineKind::Steer => encode_steer_message(&out.text, &out.files, &uuid),
-            LineKind::Queued => {
-                out.receipt = Some(uuid.clone());
-                encode_queued_message(&out.text, &out.files, &uuid)
-            }
-        };
+        if kind == LineKind::Queued {
+            out.receipt = Some(uuid.clone());
+        }
         g.unechoed.push(Unechoed {
             uuid: uuid.clone(),
             out: out.clone(),
@@ -1887,19 +1643,26 @@ impl Session {
             watching: kind == LineKind::Steer,
             accepted: false,
         });
-        g.inflight.push(out);
+        g.inflight.push(out.clone());
         g.last_activity = Instant::now();
-        self.write(line);
+        self.transport.send(&Outbound {
+            text: &out.text,
+            files: &out.files,
+            delivery: match kind {
+                LineKind::Steer => Delivery::Steer { receipt: &uuid },
+                LineKind::Queued => Delivery::Queued { receipt: &uuid },
+            },
+        });
         Ok(Some((g.live_gen, uuid)))
     }
 
-    /// Takes a queued line back before the CLI took it (the `cancel_async_message` control
-    /// request): `true` when it was still waiting and is gone (the CLI never runs it), `false`
-    /// when the CLI already took it (its echo is coming or came). Blocks for the CLI's answer.
-    /// An error means no answer came; the line stays tracked.
+    /// Takes a queued line back before the backend took it: `true` when it was still waiting and
+    /// is gone (the backend never runs it), `false` when it already took it (its receipt is
+    /// coming or came). Blocks for the backend's answer. An error means no answer came; the line
+    /// stays tracked.
     pub(crate) fn unqueue(&self, message_id: &str) -> Result<bool, SpawnError> {
         let uuid = message_id.to_string();
-        let (request, answer) = {
+        {
             let mut g = self.inner.lock();
             if g.terminal {
                 return Err(SpawnError::Ended);
@@ -1920,26 +1683,13 @@ impl Session {
             if !waiting || !g.ready {
                 return Ok(false);
             }
-            g.counter += 1;
-            let request = format!("req_cq_{}", g.counter);
-            let (tx, rx) = channel();
-            g.cancel_waits.insert(
-                request.clone(),
-                CancelWait {
-                    uuid: uuid.clone(),
-                    answer: tx,
-                },
-            );
-            self.write(encode_cancel_queued(&request, &uuid));
-            (request, rx)
-        };
-        match answer.recv_timeout(self.timing.unqueue_ack) {
+        }
+        match self.transport.unqueue(&uuid, self.timing.unqueue_ack) {
+            // a confirmed cancel was already forgotten, in order, through `Message::Unqueued`
             Ok(cancelled) => Ok(cancelled),
-            Err(_) => {
-                self.inner.lock().cancel_waits.remove(&request);
-                log::warn!(target: "agent", "agent: no answer to a cancel of a queued line");
-                Err(SpawnError::Invalid("the CLI did not answer".into()))
-            }
+            Err(_) => Err(SpawnError::Invalid(
+                self.transport.phrases().no_answer.into(),
+            )),
         }
     }
 
@@ -1952,9 +1702,7 @@ impl Session {
                 continue;
             }
             if g.ready {
-                g.counter += 1;
-                let request = format!("req_cq_{}", g.counter);
-                self.write(encode_cancel_queued(&request, &u.uuid));
+                self.transport.discard(&u.uuid);
             }
             self.log
                 .push(AgentEvent::SteerUndelivered { message_id: u.uuid });
@@ -2001,12 +1749,10 @@ impl Session {
             return;
         }
         let late = g.unechoed.remove(i);
-        log::warn!(target: "agent", "agent: a message written to claude was not acknowledged");
+        log::warn!(target: "agent", "agent: a message was not acknowledged by the backend");
         if late.kind == LineKind::Queued && g.ready {
             // it must not run later, behind the chip that is about to send it again
-            g.counter += 1;
-            let request = format!("req_cq_{}", g.counter);
-            self.write(encode_cancel_queued(&request, &late.uuid));
+            self.transport.discard(&late.uuid);
         }
         self.log.push(AgentEvent::SteerUndelivered {
             message_id: uuid.to_string(),
@@ -2017,10 +1763,36 @@ impl Session {
     /// Nothing written is waiting for an echo any more: a turn that was held for it is over.
     fn release_hold(&self, g: &mut Inner) {
         if g.unechoed.is_empty() && g.echo_hold {
-            g.echo_hold = false;
-            g.turn_active = false;
-            g.inflight.clear();
-            g.state = AgentSessionState::Idle;
+            self.end_turn(g, None);
+        }
+    }
+
+    /// The one tail of a turn (its `turn-finished`, or the release of one held for an echo):
+    /// idle again, then whatever waited for this moment, a restart first and else the queue.
+    /// `finished` is the event to log between the two (none when it was logged at the hold).
+    fn end_turn(&self, g: &mut Inner, finished: Option<AgentEvent>) {
+        g.echo_hold = false;
+        g.turn_active = false;
+        g.inflight.clear();
+        g.respawns = 0;
+        g.cancel_token += 1;
+        g.state = AgentSessionState::Idle;
+        if let Some(ev) = finished {
+            self.log.push(ev);
+        }
+        // stale: restart right after the turn (a waiting message is sent after it)
+        // (not while a background sub-agent runs or its report turn is still to come)
+        let stale_restart = g.stale.is_some()
+            && config_sync::decide(self.stale_view(g, g.background_open)) == Decision::RestartNow;
+        if stale_restart {
+            g.restart_after_turn = false;
+            let why = self.config_why(g);
+            self.begin_reload(g, why);
+        } else if g.restart_after_turn && !g.background_open {
+            g.restart_after_turn = false;
+            g.closing = Some(Closing::Restart);
+            self.terminate(g);
+        } else {
             self.flush_queue(g);
         }
     }
@@ -2072,13 +1844,13 @@ impl Session {
 
     /// The setting is on and the backend needs the restart (`RoleAdapter::restart_on_config_change`).
     fn restarts_on_config(&self, g: &Inner) -> bool {
-        g.settings.auto_reload && g.restart_on_config_change
+        g.launch.settings.auto_reload && g.launch.restart_on_config_change
     }
 
     fn stale_view(&self, g: &Inner, busy: bool) -> StaleView {
         StaleView {
-            auto_reload: g.settings.auto_reload,
-            backend_restarts: g.restart_on_config_change,
+            auto_reload: g.launch.settings.auto_reload,
+            backend_restarts: g.launch.restart_on_config_change,
             live: g.live_gen.is_some(),
             busy,
         }
@@ -2090,16 +1862,16 @@ impl Session {
             .map_or(ReloadWhy::Manual, |r| ReloadWhy::Config(r.describe()))
     }
 
-    /// Stops the process so that the restart path respawns it (`--resume`, same argv).
+    /// Stops the connection so that the restart path starts a fresh one (`--resume`, same argv).
     fn begin_reload(&self, g: &mut Inner, why: ReloadWhy) {
         g.reload_pending = Some(why);
         g.closing = Some(Closing::Restart);
-        self.terminate(g);
+        self.stop(g, |t| t.reload());
     }
 
     #[cfg(test)]
     pub(crate) fn set_restart_on_config_change_for_test(&self, on: bool) {
-        self.inner.lock().restart_on_config_change = on;
+        self.inner.lock().launch.restart_on_config_change = on;
     }
 
     /// A watched file changed: `true` when this chat's process is now stale (the worker then
@@ -2142,7 +1914,11 @@ impl Session {
             if g.terminal || g.live_gen.is_none() {
                 return None;
             }
-            (g.program.clone()?, g.cli_dir.clone(), g.settings.memory)
+            (
+                g.launch.program.clone()?,
+                g.launch.cli_dir.clone(),
+                g.launch.settings.memory,
+            )
         };
         Some(ProbeTarget {
             program,
@@ -2189,10 +1965,8 @@ impl Session {
         if !g.turn_active && g.pending.is_empty() {
             return;
         }
-        g.counter += 1;
-        let id = format!("req_int_{}", g.counter);
         g.state = AgentSessionState::Cancelling;
-        self.write(encode_interrupt(&id));
+        self.transport.interrupt();
         let (token, gen) = (g.cancel_token, g.live_gen);
         drop(g);
         let me = Arc::clone(self);
@@ -2205,7 +1979,7 @@ impl Session {
             if g.live_gen == gen && g.cancel_token == token && g.turn_active {
                 log::warn!(target: "agent", "agent: no turn-finished after the interrupt, killing the process");
                 g.closing = Some(Closing::Killed);
-                me.signal(&g, Sig::Kill);
+                me.signal(&g, Close::Kill);
             }
         });
     }
@@ -2237,24 +2011,25 @@ impl Session {
             return Err("none of the chosen rules was offered for this request".into());
         }
         let p = g.pending.remove(request_id).expect("checked above");
-        let (line, resolution) = match decision {
+        let (reply, resolution) = match decision {
             PermissionDecision::Allow => (
-                encode_permission_allow(request_id, &p.input, &perms),
+                PermissionReply::Allow {
+                    input: &p.input,
+                    updated: &perms,
+                },
                 PermissionResolution::Allowed,
             ),
             PermissionDecision::Deny => (
-                encode_permission_deny(
-                    request_id,
-                    message
+                PermissionReply::Deny {
+                    message: message
                         .as_deref()
                         .map(str::trim)
                         .filter(|m| !m.is_empty())
                         .unwrap_or(DENY_MESSAGE),
-                ),
+                },
                 PermissionResolution::Denied,
             ),
         };
-        g.mapper.permission_answered(request_id);
         g.last_activity = Instant::now();
         if let (PermissionResolution::Allowed, Some(call)) = (resolution, &p.command_call) {
             // the command runs from now
@@ -2262,7 +2037,7 @@ impl Session {
             self.changes
                 .command_started(&self.chat_id, call, by.as_ref(), Instant::now());
         }
-        self.write(line);
+        self.transport.answer_permission(request_id, reply);
         self.log.push(AgentEvent::PermissionResolved {
             request_id: request_id.to_string(),
             resolution,
@@ -2273,8 +2048,8 @@ impl Session {
         Ok(())
     }
 
-    /// Answers an open question card: `answers` `None` declines it. The control response is the
-    /// mapper's (the CLI's shape), the card's end is the `question-resolved` event.
+    /// Answers an open question card: `answers` `None` declines it. The reply is the transport's
+    /// (the backend's shape), the card's end is the `question-resolved` event.
     pub(crate) fn answer_question(
         &self,
         request_id: &str,
@@ -2292,15 +2067,14 @@ impl Session {
         else {
             return Err("unknown or already resolved question".into());
         };
-        let Some(line) = g
-            .mapper
-            .encode_question_answer(request_id, answers.as_deref())
-        else {
+        if !self
+            .transport
+            .answer_question(request_id, answers.as_deref())
+        {
             return Err("unknown or already resolved question".into());
-        };
+        }
         g.pending.remove(request_id);
         g.last_activity = Instant::now();
-        self.write(line);
         let skipped = answers.is_none();
         self.log.push(AgentEvent::QuestionResolved {
             request_id: request_id.to_string(),
@@ -2320,36 +2094,34 @@ impl Session {
 
     pub(crate) fn set_permission_mode(&self, mode: AgentPermissionMode) {
         let mut g = self.inner.lock();
+        // a refusal restarts with the new mode (`Message::Refused`)
+        g.launch.settings.permission_mode = mode;
         if g.live_gen.is_none() || !g.ready {
             // takes effect at the next spawn
-            g.settings.permission_mode = mode;
             return;
         }
-        g.counter += 1;
-        let id = format!("req_mode_{}", g.counter);
-        g.mode_request = Some((id.clone(), mode));
-        self.write(encode_set_permission_mode(&id, mode));
+        self.transport.set_permission_mode(mode);
     }
 
-    /// Live model switch: a `set_model` control request. A changed effort is a spawn flag, so it
-    /// (or a refused or impossible request) restarts with `--resume` at the next idle moment.
+    /// Live model switch where the backend can do it. A changed effort is a spawn flag for the
+    /// CLI, so it (or a refused or impossible request) restarts with `--resume` at the next idle
+    /// moment.
     pub(crate) fn set_model(&self, model: Option<String>, effort: Option<Effort>) {
         let mut g = self.inner.lock();
         let model = model.filter(|m| !m.is_empty());
-        let effort_changed = g.settings.effort != effort;
-        let model_changed = g.settings.model != model;
-        g.settings.model = model.clone();
-        g.settings.effort = effort;
+        let change = ModelChange {
+            model_changed: g.launch.settings.model != model,
+            effort_changed: g.launch.settings.effort != effort,
+            model: model.clone(),
+            effort,
+        };
+        g.launch.settings.model = model;
+        g.launch.settings.effort = effort;
         if g.live_gen.is_none() || !g.ready {
             return; // takes effect at the next spawn
         }
-        if effort_changed {
+        if self.transport.set_model(&change) == LiveChange::Restart {
             self.restart_when_idle(&mut g);
-        } else if model_changed {
-            g.counter += 1;
-            let id = format!("req_model_{}", g.counter);
-            g.model_request = Some((id.clone(), model.clone()));
-            self.write(encode_set_model(&id, model.as_deref()));
         }
     }
 
@@ -2392,7 +2164,7 @@ impl Session {
         !g.terminal && self.is_busy(&g)
     }
 
-    fn close_locked(self: &Arc<Self>, mut g: parking_lot::MutexGuard<'_, Inner>) {
+    fn close_locked(self: &Arc<Self>, mut g: StateGuard<'_>) {
         if g.terminal {
             return;
         }
@@ -2400,10 +2172,7 @@ impl Session {
         g.queue.clear();
         if let Some(gen) = g.live_gen {
             g.closing = Some(Closing::Closed);
-            let id = self.proc_cell.load(Ordering::SeqCst);
-            if id != 0 {
-                let _ = self.procs.close_stdin(&self.label, id);
-            }
+            self.transport.close(Close::Graceful);
             drop(g);
             let me = Arc::clone(self);
             let grace = self.timing.close_grace;
@@ -2431,7 +2200,7 @@ impl Session {
         g.queue.clear();
         if g.live_gen.is_some() {
             g.closing = Some(Closing::Shutdown);
-            self.signal(&g, Sig::Kill);
+            self.signal(&g, Close::Kill);
         } else {
             self.finish_terminal(&mut g, SessionEndReason::VaultSwitched, None, None);
         }
@@ -2455,16 +2224,23 @@ impl Session {
         }
     }
 
-    fn signal(&self, g: &Inner, sig: Sig) {
-        let id = self.proc_cell.load(Ordering::SeqCst);
-        if g.live_gen.is_some() && id != 0 {
-            let _ = self.procs.kill(&self.label, id, sig, true);
+    fn signal(&self, g: &Inner, how: Close) {
+        if g.live_gen.is_some() {
+            self.transport.close(how);
         }
     }
 
     /// SIGTERM to the group, SIGKILL after the escalation delay when it is still there.
     fn terminate(&self, g: &Inner) {
-        self.signal(g, Sig::Term);
+        self.stop(g, |t| t.close(Close::Terminate));
+    }
+
+    /// Asks the connection to stop (`first`), then stops it for good after the escalation delay if
+    /// it is still there.
+    fn stop(&self, g: &Inner, first: impl FnOnce(&dyn Transport)) {
+        if g.live_gen.is_some() {
+            first(&*self.transport);
+        }
         let Some(gen) = g.live_gen else {
             return;
         };
@@ -2477,7 +2253,7 @@ impl Session {
             if let Some(s) = me.upgrade() {
                 let g = s.inner.lock();
                 if g.live_gen == Some(gen) {
-                    s.signal(&g, Sig::Kill);
+                    s.signal(&g, Close::Kill);
                 }
             }
         });
@@ -2486,82 +2262,6 @@ impl Session {
     pub(crate) fn snapshot(&self, after_seq: u64) -> (AgentSessionState, Vec<AgentEventEnvelope>) {
         let state = self.inner.lock().state;
         (state, self.log.snapshot(after_seq))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn line_buffer_splits_across_chunks_and_caps() {
-        let mut lb = LineBuf::default();
-        let lines = |items: Vec<LineItem>| -> Vec<String> {
-            items
-                .into_iter()
-                .filter_map(|i| match i {
-                    LineItem::Line(l) => Some(l),
-                    LineItem::TooLong => None,
-                })
-                .collect()
-        };
-        assert!(lines(lb.push(b"{\"a\":")).is_empty());
-        assert_eq!(
-            lines(lb.push(b"1}\n{\"b\":2}\n{\"c\"")),
-            vec!["{\"a\":1}", "{\"b\":2}"]
-        );
-        assert_eq!(lb.rest().as_deref(), Some("{\"c\""));
-        assert_eq!(lines(lb.push(b"\n\n  \n")), Vec::<String>::new());
-        // multibyte split across chunks stays intact
-        let s = "é\n".as_bytes();
-        assert!(lines(lb.push(&s[..1])).is_empty());
-        assert_eq!(lines(lb.push(&s[1..])), vec!["é"]);
-    }
-
-    #[test]
-    fn system_prompt_is_redacted_in_logs_and_dialogs() {
-        let args: Vec<String> = [
-            "-p",
-            "--append-system-prompt",
-            "secret note text",
-            "--model",
-            "x",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        let r = redact_prompt(&args);
-        assert_eq!(r[2], "<16 bytes>");
-        assert!(!r.join(" ").contains("secret"));
-        assert_eq!(r[4], "x");
-    }
-
-    /// The memory folder is a vault path: it stays out of the spawn log like the prompt.
-    #[test]
-    fn the_settings_value_is_redacted_in_logs() {
-        let json = r#"{"autoMemoryDirectory":"/Users/me/Vault/.writer/memory"}"#;
-        let args: Vec<String> = ["-p", "--settings", json, "--model", "x"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let r = redact_prompt(&args);
-        assert_eq!(r[2], format!("<{} bytes>", json.len()));
-        assert!(!r.join(" ").contains("/Users"));
-        assert_eq!(r[4], "x");
-    }
-
-    /// The MCP config names the launcher and the vault: a path, so it stays out of the log too.
-    #[test]
-    fn the_mcp_config_value_is_redacted_in_logs() {
-        let json = r#"{"mcpServers":{"writer":{"command":"/Users/me/bin/writer","args":["vault=/Users/me/Vault","mcp"]}}}"#;
-        let args: Vec<String> = ["-p", "--mcp-config", json, "--model", "x"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let r = redact_prompt(&args);
-        assert_eq!(r[2], format!("<{} bytes>", json.len()));
-        assert!(!r.join(" ").contains("/Users"));
-        assert_eq!(r[4], "x");
     }
 }
 

@@ -312,7 +312,7 @@ pub fn offered_roles<'a>(flags: &'a Flags) -> impl Iterator<Item = &'static Role
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::subagents::ClaudeAdapter;
+    use crate::agent::claude_adapter::ClaudeAdapter;
 
     const TOOL_NAMES: &[&str] = &[
         "Read",

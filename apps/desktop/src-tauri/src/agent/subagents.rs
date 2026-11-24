@@ -1,6 +1,8 @@
-//! The Claude adapter of the agent roles (ADR "Define agent roles once and map them to each agent
-//! backend through adapters"; spec `SPECs/agent-roles-spec.md`, "Backend adapters"): the registry
-//! `shared/agent-roles.json` to the value of the CLI's `--agents` flag. Tauri-free, pure.
+//! The parts of the agent roles every backend shares (ADR "Define agent roles once and map them to
+//! each agent backend through adapters"; spec `SPECs/agent-roles-spec.md`, "Backend adapters"):
+//! the tier to model setting and what a sub-agent launch call resolves to. The Claude adapter that
+//! renders the registry `shared/agent-roles.json` to the CLI's `--agents` flag is
+//! `claude_adapter.rs`. Tauri-free, pure.
 //!
 //! The sub-agents run inside the chat's CLI process, so every tool call they make goes through the
 //! same permission prompt and allow rules as the main agent's: a role narrows the tool list, it
@@ -13,13 +15,9 @@
 //! key": the sub-agent uses the chat's own model.
 
 use super::claude_stream::is_safe_value;
-use super::mcp_wiring::{Launch, ToolsAdapter, WriterServer};
-use super::roles::{
-    backend_name, delegation_sentence, leak_read_tools, offered_roles, role_prompt, role_tools,
-    CapabilitySupport, RenderInput, Rendered, RenderedRole, RoleAdapter,
-};
-use crate::cli::mcp::{self, ToolSpec};
-use serde_json::{json, Map, Value};
+use super::roles::backend_name;
+use super::tool_table::ToolTable;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -59,7 +57,7 @@ pub fn tier_model(tier: &str, setting: Option<&str>) -> Option<String> {
 }
 
 /// The `model` of a role's `--agents` entry (`None`: inherit the chat's), from its tier setting.
-fn role_model(
+pub(super) fn role_model(
     role: &super::roles::Role,
     tier_models: &std::collections::BTreeMap<String, Option<String>>,
 ) -> Option<String> {
@@ -67,20 +65,16 @@ fn role_model(
     tier_model(&role.tier, setting)
 }
 
-/// The tools that launch a sub-agent (`Task` in older CLIs, `Agent` now) and the input key that
-/// names the sub-agent type.
-const LAUNCH_TOOLS: [&str; 2] = ["Agent", "Task"];
-const SUBAGENT_TYPE_KEY: &str = "subagent_type";
-
-/// Whether `tool` launches a sub-agent.
-pub fn is_launch_tool(tool: &str) -> bool {
-    LAUNCH_TOOLS.contains(&tool)
+/// The input key that names the sub-agent type of a launch call, from the backend's tool table.
+fn agent_type<'a>(tools: &ToolTable, input: &'a Value) -> Option<&'a str> {
+    input
+        .get(tools.launch_args()?.agent_type.as_deref()?)?
+        .as_str()
 }
 
 /// The role label of a launch call's input (`writer-worker` -> `worker`), if it names a type.
-pub fn launch_label(input: &Value) -> Option<String> {
-    let name = input.get(SUBAGENT_TYPE_KEY)?.as_str()?;
-    Some(super::roles::role_label(name))
+pub fn launch_label(tools: &ToolTable, input: &Value) -> Option<String> {
+    Some(super::roles::role_label(agent_type(tools, input)?))
 }
 
 /// Who a launch call starts and the model it runs (the `subagent-started` event).
@@ -93,16 +87,17 @@ pub struct LaunchInfo {
     pub model: Option<String>,
 }
 
-/// The launch call's role and model, resolved the way [`ClaudeAdapter::render`] resolved them
+/// The launch call's role and model, resolved the way the adapter's `render` resolved them
 /// when the process started: the role's tier through `tier_models`; a tier that inherits gets
 /// `inherited` (the chat's model). A type that is not a Writer role keeps `model: None` (its own
 /// definition decides, and Writer does not know it). `None` when the input names no type.
 pub fn resolve_launch(
+    tools: &ToolTable,
     input: &Value,
     tier_models: &std::collections::BTreeMap<String, Option<String>>,
     inherited: Option<&str>,
 ) -> Option<LaunchInfo> {
-    let name = input.get(SUBAGENT_TYPE_KEY)?.as_str()?.to_string();
+    let name = agent_type(tools, input)?.to_string();
     let role = super::roles::registry()
         .roles
         .iter()
@@ -116,118 +111,37 @@ pub fn resolve_launch(
     })
 }
 
-/// The adapter for the `claude` CLI.
-#[derive(Debug)]
-pub struct ClaudeAdapter;
-
-/// Writer's MCP server for the CLI (ADR 2026-11-19 "Hand Writer's MCP server to every agent
-/// backend through its adapter"): the CLI names a server's tool `mcp__<server>__<tool>`, takes
-/// the server as `--mcp-config` JSON (added to the servers of the user's own settings, the argv
-/// never carries `--strict-mcp-config`, no config file of the user is touched) and lets a tool
-/// run without a prompt through an `--allowedTools` rule of that same name. The one place of
-/// the app that knows these formats.
-impl ToolsAdapter for ClaudeAdapter {
-    fn tool_name(&self, tool: &ToolSpec) -> String {
-        format!("mcp__{}__{}", mcp::SERVER_NAME, tool.name)
-    }
-
-    fn launch(&self, server: &WriterServer) -> Launch {
-        let config = json!({
-            "mcpServers": {
-                mcp::SERVER_NAME: {
-                    "type": "stdio",
-                    "command": server.command,
-                    "args": server.args,
-                }
-            }
-        });
-        Launch::Argv(vec!["--mcp-config".into(), config.to_string()])
-    }
-
-    fn read_rules(&self, tools: &[ToolSpec]) -> Vec<String> {
-        tools
-            .iter()
-            .filter(|t| !t.writes)
-            .map(|t| self.tool_name(t))
-            .collect()
-    }
-}
-
-/// The `mcp__writer__*` names of every command the registry marks as a read (the same rules that
-/// let the main agent call them without a prompt, [`ToolsAdapter::read_rules`]). Made once.
-fn writer_read_tools() -> &'static [&'static str] {
-    static TOOLS: OnceLock<&'static [&'static str]> = OnceLock::new();
-    TOOLS.get_or_init(|| leak_read_tools(&ClaudeAdapter))
-}
-
-impl RoleAdapter for ClaudeAdapter {
-    /// The CLI reads all of them once, at start.
-    fn restart_on_config_change(&self) -> bool {
-        true
-    }
-
-    fn capability(&self, capability: &str) -> CapabilitySupport {
-        match capability {
-            "read" => CapabilitySupport::Tools(&["Read"]),
-            // The installed CLI has no Glob or Grep: searching is Writer's own MCP server
-            // (`cli::mcp`, ADR 2026-11-19), every tool of the registry that reads.
-            "writer-cli-read" => CapabilitySupport::Tools(writer_read_tools()),
-            "edit" => CapabilitySupport::Tools(&["Edit", "MultiEdit"]),
-            "write" => CapabilitySupport::Tools(&["Write"]),
-            "bash-limited" => CapabilitySupport::Tools(&["Bash"]),
-            // not a tool: the spawn's `--settings` JSON (`claude_stream::memory_settings_json`)
-            "memory-directory" => CapabilitySupport::Setting("autoMemoryDirectory"),
-            _ => CapabilitySupport::Unsupported {
-                fallback: "not granted: the role prompt and the permission rules apply",
-            },
-        }
-    }
-
-    fn render(&self, input: &RenderInput<'_>) -> Rendered {
-        let mut agents = Map::new();
-        let mut roles = Vec::new();
-        for role in offered_roles(input.flags) {
-            let mut def = Map::new();
-            def.insert("description".into(), json!(role.purpose));
-            def.insert(
-                "prompt".into(),
-                json!(role_prompt(self, role, input.writer_cli)),
-            );
-            def.insert(
-                "tools".into(),
-                json!(role_tools(self, role, input.writer_cli)),
-            );
-            if let Some(model) = role_model(role, input.tier_models) {
-                def.insert("model".into(), json!(model));
-            }
-            agents.insert(backend_name(&role.id), Value::Object(def));
-            roles.push(RenderedRole {
-                id: role.id.clone(),
-                name: backend_name(&role.id),
-                delegation: delegation_sentence(role, input.writer_cli),
-            });
-        }
-        if roles.is_empty() {
-            return Rendered::none();
-        }
-        Rendered {
-            config: Some(Value::Object(agents).to_string()),
-            launch: "Agent/Task calls",
-            roles,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::mcp_wiring::{wiring, FakeAdapter};
-    use crate::agent::roles::{registry, Flags};
+    use crate::agent::claude_adapter::ClaudeAdapter;
+    use crate::agent::mcp_wiring::{wiring, FakeAdapter, Launch, ToolsAdapter};
+    use crate::agent::roles::{registry, Flags, RenderInput, Rendered, RoleAdapter};
+    use crate::cli::mcp::{self, ToolSpec};
+    use serde_json::json;
     use std::collections::BTreeMap;
     use std::path::Path;
 
     /// What the Claude CLI puts in front of a tool of the server.
     const PREFIX: &str = "mcp__writer__";
+
+    /// Claude's tools: the launch tests below are about them.
+    fn claude() -> &'static ToolTable {
+        crate::agent::backend::claude().tools()
+    }
+    fn is_launch_tool(tool: &str) -> bool {
+        claude().is_launch(tool)
+    }
+    fn launch_label(input: &Value) -> Option<String> {
+        super::launch_label(claude(), input)
+    }
+    fn resolve_launch(
+        input: &Value,
+        tiers: &BTreeMap<String, Option<String>>,
+        inherited: Option<&str>,
+    ) -> Option<LaunchInfo> {
+        super::resolve_launch(claude(), input, tiers, inherited)
+    }
 
     fn models(pairs: &[(&str, &str)]) -> BTreeMap<String, Option<String>> {
         pairs

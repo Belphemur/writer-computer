@@ -798,9 +798,9 @@ impl ProjectPort for ProjectLibrary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::claude_adapter::ClaudeAdapter;
     use crate::agent::events::NewProjectRequest;
     use crate::agent::project::{self, ProjectUpdate};
-    use crate::agent::subagents::ClaudeAdapter;
     use std::collections::HashMap;
     use tempfile::TempDir;
 
