@@ -29,9 +29,32 @@ export const commands = {
 	 *  refused: Settings only lists what it may remove.
 	 */
 	opencodeRemoveSavedRule: (id: string, options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:opencode|opencode_remove_saved_rule", { id }, options),
+	/**
+	 *  The provider tabs: `GET /api/provider` together with the names in
+	 *  `agent.opencode.disabled-providers`. Starts the window's server. Names only.
+	 */
+	opencodeProviders: (options?: InvokeOptions) => __TAURI_INVOKE<ProviderRow[]>("plugin:opencode|opencode_providers", undefined, options),
+	/**
+	 *  A setting that changes what the server offers (a provider switch) was written: the server's
+	 *  configuration is rendered again and read again when no turn runs.
+	 */
+	opencodeReconfigure: (options?: InvokeOptions) => __TAURI_INVOKE<null>("plugin:opencode|opencode_reconfigure", undefined, options),
 };
 
 /* Types */
+/**
+ *  Whether the user's own OpenCode config (its MCP servers, agents, providers) is loaded in a
+ *  server. One neutral line for the UI, never the config.
+ */
+export type GlobalConfig = 
+/**  Loaded, with its MCP servers held off unless switched on. */
+"loaded" | 
+/**
+ *  Not loaded: the user's config sets an `mcp.use` policy, which Writer cannot hold off before
+ *  a server may start once, so this server runs on Writer's configuration alone.
+ */
+"skipped-mcp-policy";
+
 /**
  *  One row of the table. Prices are USD per million tokens, the first price tier (the one a short
  *  context pays).
@@ -70,6 +93,21 @@ export type OpencodeStatus = {
 	supported: boolean,
 	/**  The oldest version Writer supports. */
 	minVersion: string,
+	/**
+	 *  Whether the user's own OpenCode config is loaded in this window's server (`None`: no server
+	 *  is up, so nothing is known yet).
+	 */
+	globalConfig: GlobalConfig | null,
+};
+
+/**
+ *  One provider tab of Settings: what the server lists, and the ones the user switched off (an
+ *  off provider is not listed by the server, so its tab is kept from the setting).
+ */
+export type ProviderRow = {
+	id: string,
+	name: string,
+	off: boolean,
 };
 
 /**  A saved "always" rule of OpenCode (`psv_`): what the user allowed for good. */

@@ -435,6 +435,12 @@ pub enum McpState {
 }
 
 impl McpState {
+    /// The server's process is up or coming up, so its tools can be offered: `connected` or
+    /// `pending`. `needs_auth`, `failed`, `disabled`, `disconnected` and `unknown` expose none.
+    pub fn is_running(self) -> bool {
+        matches!(self, Self::Connected | Self::Pending)
+    }
+
     /// The state a backend's status word or line names. Case-insensitive and by substring, so one
     /// rule reads Claude's `init` words (`needs-auth`), the lines of `claude mcp list` (`✗ Failed
     /// to connect`, `⚠ Needs authentication`, `⏸ Pending approval`) and OpenCode's (`needs_auth`).

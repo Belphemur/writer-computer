@@ -28,6 +28,11 @@
       "description": "Writer's agent for the notes of a vault",
       "permissions": [
         {
+          "action": "*",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
           "action": "read",
           "resource": "*",
           "effect": "allow"

@@ -54,6 +54,13 @@ pub(super) struct Shared {
     /// Path fragments whose answer is held for this long.
     pub delays: Mutex<Vec<(String, Duration)>>,
     pub unknown_session: AtomicBool,
+    /// The config file the server was launched with (`OPENCODE_CONFIG`): the agent and MCP lists
+    /// follow what Writer wrote in it, as the real server's do.
+    pub config_path: Mutex<Option<std::path::PathBuf>>,
+    /// The `GET /api/config` answer: the config documents of the user's own OpenCode setup.
+    pub config_reply: Mutex<Option<Value>>,
+    /// A fixed `GET /api/mcp` answer (the recorded one), instead of the one the config gives.
+    pub mcp_reply: Mutex<Option<Value>>,
     /// The inbox answers a cancel with no event (a server that is slow to say).
     pub silent_inbox: AtomicBool,
     /// The event stream answers 401 (a server that is no longer ours).
@@ -240,7 +247,10 @@ fn serve(conn: TcpStream, s: &Arc<Shared>) {
         std::thread::sleep(d);
     }
     let scripted = s.handler.lock().as_ref().and_then(|h| h(&req));
-    let (status, body) = scripted.unwrap_or_else(|| default_route(&req, s));
+    let (status, mut body) = scripted.unwrap_or_else(|| default_route(&req, s));
+    if req.method == "GET" && req.path == "/api/agent" {
+        fill_permissions(&mut body, s);
+    }
     reply(&mut out, status, &body);
 }
 
@@ -376,6 +386,18 @@ fn default_route(req: &Req, s: &Arc<Shared>) -> (u16, Value) {
         ),
         ("GET", ["api", "session", _, "message"]) => (200, s.messages.lock().clone()),
         // Writer's agents, as the server lists them once Writer's config is in force
+        ("GET", ["api", "agent"]) if configured(s).is_some() => {
+            let doc = configured(s).unwrap();
+            (200, json!({"data": agents_of(&doc)}))
+        }
+        ("GET", ["api", "config"]) => (200, s.config_reply.lock().clone().unwrap_or(json!([]))),
+        ("GET", ["api", "mcp"]) if s.mcp_reply.lock().is_some() => {
+            (200, s.mcp_reply.lock().clone().unwrap())
+        }
+        ("GET", ["api", "mcp"]) if configured(s).is_some() => {
+            let doc = configured(s).unwrap();
+            (200, json!({"data": mcp_of(&doc)}))
+        }
         ("GET", ["api", "agent"]) => (
             200,
             json!({"data": [
@@ -403,6 +425,81 @@ fn default_route(req: &Req, s: &Arc<Shared>) -> (u16, Value) {
         }
         _ => (204, Value::Null),
     }
+}
+
+/// The document Writer wrote, as far as the server was launched with one.
+fn configured(s: &Shared) -> Option<Value> {
+    let path = s.config_path.lock().clone()?;
+    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+}
+
+/// A scripted agent list names the agents; the real server resolves each one's permissions, so an
+/// entry that has none gets what the server would resolve from the document it loaded.
+fn fill_permissions(body: &mut Value, s: &Shared) {
+    let Some(doc) = configured(s) else { return };
+    let resolved = agents_of(&doc);
+    for entry in body["data"].as_array_mut().into_iter().flatten() {
+        if entry.get("permissions").is_none() {
+            if let Some(r) = resolved.iter().find(|r| r["id"] == entry["id"]) {
+                entry["permissions"] = r["permissions"].clone();
+            }
+        }
+    }
+}
+
+/// `GET /api/agent` of a server that loaded `doc`: the agents it defines and are not disabled,
+/// each with the resolved permissions (the top level's, its own, then OpenCode's own denies), and
+/// OpenCode's hidden system agents.
+fn agents_of(doc: &Value) -> Vec<Value> {
+    let top = doc["permissions"].as_array().cloned().unwrap_or_default();
+    let tail = [
+        json!({"action": "browser", "resource": "*", "effect": "deny"}),
+        json!({"action": "skill:browser", "resource": "*", "effect": "deny"}),
+    ];
+    let mut out: Vec<Value> = doc["agents"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, d)| d["disabled"] != true)
+        .map(|(id, d)| {
+            let own = d["permissions"].as_array().cloned().unwrap_or_default();
+            let resolved = [top.clone(), own, tail.to_vec()].concat();
+            json!({
+                "id": id,
+                "mode": d["mode"].as_str().unwrap_or("subagent"),
+                "hidden": false,
+                "permissions": resolved,
+            })
+        })
+        .collect();
+    out.push(json!({"id": "compaction", "mode": "primary", "hidden": true, "permissions": []}));
+    out.push(json!({"id": "summary", "mode": "primary", "hidden": true, "permissions": []}));
+    out
+}
+
+/// `GET /api/mcp` of a server that loaded `doc`: the servers the policies allow are connected, a
+/// placeholder is listed `disabled`, a denied one is not listed.
+fn mcp_of(doc: &Value) -> Vec<Value> {
+    let policies = doc["policies"].as_array().cloned().unwrap_or_default();
+    let allowed = |name: &str| {
+        policies
+            .iter()
+            .filter(|p| p["action"] == "mcp.use")
+            .rfind(|p| p["resource"] == "*" || p["resource"] == name)
+            .is_none_or(|p| p["effect"] == "allow")
+    };
+    doc["mcp"]["servers"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, d)| {
+            if d["disabled"] == true {
+                Some(json!({"name": name, "status": {"status": "disabled"}}))
+            } else {
+                allowed(name).then(|| json!({"name": name, "status": {"status": "connected"}}))
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -462,6 +559,15 @@ pub(super) struct FakeLauncher {
     pub unknown_session: AtomicBool,
     /// The message list the next process serves.
     pub messages: Mutex<Option<Value>>,
+    /// The `GET /api/mcp` answer of the next process, when a test needs a fixed one.
+    pub mcp_reply: Mutex<Option<Value>>,
+    /// The `GET /api/config` answer of the next process: the user's config documents.
+    pub config_reply: Mutex<Option<Value>>,
+    /// Path fragments whose answer the next process holds for this long.
+    pub delays: Mutex<Vec<(String, Duration)>>,
+    /// The config file as it was at each launch (`None`: there was none): the deny-all policies
+    /// must be on disk before the process can start anything.
+    pub config_at_launch: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeLauncher {
@@ -498,6 +604,20 @@ impl Launcher for FakeLauncher {
         if let Some(m) = self.messages.lock().clone() {
             *server.shared.messages.lock() = m;
         }
+        *server.shared.delays.lock() = self.delays.lock().clone();
+        *server.shared.mcp_reply.lock() = self.mcp_reply.lock().clone();
+        *server.shared.config_reply.lock() = self.config_reply.lock().clone();
+        self.config_at_launch.lock().push(
+            spec.env
+                .iter()
+                .find(|(k, _)| k == "OPENCODE_CONFIG")
+                .and_then(|(_, v)| std::fs::read_to_string(v).ok()),
+        );
+        *server.shared.config_path.lock() = spec
+            .env
+            .iter()
+            .find(|(k, _)| k == "OPENCODE_CONFIG")
+            .map(|(_, v)| v.into());
         server.shared.unknown_session.store(
             self.unknown_session.load(Ordering::SeqCst),
             Ordering::SeqCst,

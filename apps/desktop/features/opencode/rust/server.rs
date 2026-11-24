@@ -6,9 +6,16 @@
 //!
 //! Flows:
 //!
-//! - **Start** ([`OpencodeServer::ensure_started`], blocking, once at a time): launch with the
-//!   isolated environment ([`isolated_env`]), `GET /api/info` and refuse a version older than
-//!   [`MIN_VERSION`], open the stream and wait for `server.connected`.
+//! - **Start** ([`OpencodeServer::ensure_started`], blocking, once at a time), fail closed: the
+//!   config file with the deny-all MCP policies is on disk first, then launch with the isolated
+//!   environment ([`isolated_env`]), `GET /api/info` and refuse a version older than
+//!   [`MIN_VERSION`], the names step (`GET /api/config`, the keys of the user's MCP servers; a
+//!   changed document is written and read again), then open the stream and wait for
+//!   `server.connected`. Nothing of the user's config starts before the first location-scoped
+//!   call, so the lever is in force before any server can (captures C1, C2).
+//! - **Fallback**: a user config that sets an `mcp.use` policy is applied after Writer's and can
+//!   start a server once before Writer can stop it, so that start is stopped and the server
+//!   runs on Writer's configuration alone ([`GlobalConfig::SkippedMcpPolicy`]).
 //! - **Fan-out**: a chat [`register`](OpencodeServer::register)s one sink and
 //!   [`own`](OpencodeServer::own)s its session ids; a `session.created` whose parent is owned
 //!   makes the new session owned by the same chat (transitively, a grandchild too). An event of a
@@ -22,7 +29,10 @@
 //! Never logged: the password, the port, paths, any event content.
 
 use super::client::{Client, Endpoint, Io, LONG, SHORT};
+use super::config::{self, Overrides};
+use super::in_force::Expectation;
 use super::opencode_api::{self as api, Info, SseParser, WireEvent, MIN_VERSION};
+use crate::agent::mcp_menu::Switches;
 use crate::features::scope::Spawner;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -32,6 +42,18 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
+
+/// Whether the user's own OpenCode config (its MCP servers, agents, providers) is loaded in a
+/// server. One neutral line for the UI, never the config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum GlobalConfig {
+    /// Loaded, with its MCP servers held off unless switched on.
+    Loaded,
+    /// Not loaded: the user's config sets an `mcp.use` policy, which Writer cannot hold off before
+    /// a server may start once, so this server runs on Writer's configuration alone.
+    SkippedMcpPolicy,
+}
 
 /// What a chat is told.
 #[derive(Debug, Clone)]
@@ -53,6 +75,17 @@ pub struct ExitInfo {
 
 /// Where a chat's events are delivered. Called from the stream task: it must not block.
 pub type Sink = Arc<dyn Fn(ChatInput) + Send + Sync>;
+
+/// What the user's switches are, read when the config is rendered: the stored MCP list (the
+/// servers switched on) and the providers switched off. Names only.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Stored {
+    pub mcp_on: Vec<String>,
+    pub providers_off: Vec<String>,
+}
+
+/// Where the current switches come from (the settings, for the window of the server).
+pub type SwitchSource = Arc<dyn Fn() -> Stored + Send + Sync>;
 
 /// One running server process, as far as the owner needs it.
 pub trait Process: Send + Sync {
@@ -120,8 +153,10 @@ pub struct ServerSettings {
     /// The vault root: the server's working directory.
     pub root: PathBuf,
     pub config_file: PathBuf,
-    /// Writer's own empty `XDG_CONFIG_HOME`: `<app data>/opencode/xdg-config`, recreated on every
-    /// start (see [`ServerSettings::config_home_is_ours`]).
+    /// Writer's own empty `XDG_CONFIG_HOME`: `<app data>/opencode/xdg-config`. Only the fallback
+    /// ([`GlobalConfig::SkippedMcpPolicy`]) runs on it (recreated empty for that start); any other
+    /// start removes it, which also clears the one the first version kept
+    /// (see [`ServerSettings::config_home_is_ours`]).
     pub config_home: PathBuf,
     /// The `SHELL` of the server, so the commands the agent runs do not see the server's own
     /// settings (see [`shell_wrapper`]): `<app data>/opencode/writer-shell`.
@@ -158,13 +193,12 @@ pub const SHELL_WRAPPER_NAME: &str = "writer-shell";
 /// What Writer sets for the server and no command the agent runs has any business seeing: the
 /// password, Writer's config, the switches and the config home. [`isolated_env`] sets exactly
 /// these (a test says so) and [`shell_wrapper`] unsets exactly these.
-const SERVER_VARS: [&str; 6] = [
+const SERVER_VARS: [&str; 5] = [
     "OPENCODE_SERVER_PASSWORD",
     "OPENCODE_CONFIG",
     "OPENCODE_DISABLE_PROJECT_CONFIG",
     "OPENCODE_DISABLE_CLAUDE_CODE",
     "OPENCODE_DISABLE_AUTOUPDATE",
-    "XDG_CONFIG_HOME",
 ];
 /// Also unset by the wrapper: the name OpenCode reads before `OPENCODE_SERVER_PASSWORD`, which
 /// Writer never sets.
@@ -176,16 +210,21 @@ const USER_XDG_VAR: &str = "WRITER_USER_XDG_CONFIG_HOME";
 /// The environment of the server (spec section 8, "Isolation"): the inherited one with every
 /// `OPENCODE_*` variable removed first (a stray `OPENCODE_CONFIG_CONTENT` would bring the user's
 /// own setup back), then Writer's: the password, Writer's config file, the vault's own
-/// `opencode.json` and `.opencode/` switched off, an empty config home, no Claude Code compatibility
-/// and no self-update. The real `HOME` stays: the user's logins live in OpenCode's data directory.
+/// `opencode.json` and `.opencode/` switched off, no Claude Code compatibility and no self-update.
+/// The real `HOME` and `XDG_CONFIG_HOME` stay: the user's own OpenCode config loads, held off by
+/// Writer's file (`config::overrides`), and their logins live in OpenCode's data directory.
+/// Only for [`GlobalConfig::SkippedMcpPolicy`] the config home is Writer's empty one.
 ///
-/// `SHELL` is Writer's wrapper ([`shell_wrapper`]); the shell the user had and their own
-/// `XDG_CONFIG_HOME` go to the wrapper under `WRITER_USER_*`, which gives them back.
+/// `SHELL` is Writer's wrapper ([`shell_wrapper`]); the shell the user had goes to the wrapper
+/// under `WRITER_USER_SHELL`, which gives it back (and the user's `XDG_CONFIG_HOME` under
+/// `WRITER_USER_XDG_CONFIG_HOME` in the fallback, where the server's own is replaced).
 pub fn isolated_env(
     inherited: impl IntoIterator<Item = (String, String)>,
     password: &str,
     settings: &ServerSettings,
+    global: GlobalConfig,
 ) -> Vec<(String, String)> {
+    let skipped = global == GlobalConfig::SkippedMcpPolicy;
     let mut user_shell = None;
     let mut user_xdg = None;
     let mut env: Vec<(String, String)> = inherited
@@ -197,7 +236,7 @@ pub fn isolated_env(
                 user_shell = (Path::new(v) != settings.shell_wrapper).then(|| v.clone());
                 false
             }
-            "XDG_CONFIG_HOME" => {
+            "XDG_CONFIG_HOME" if skipped => {
                 user_xdg = Some(v.clone());
                 false
             }
@@ -211,12 +250,15 @@ pub fn isolated_env(
         (SERVER_VARS[2], "1".to_string()),
         (SERVER_VARS[3], "1".to_string()),
         (SERVER_VARS[4], "1".to_string()),
-        (SERVER_VARS[5], path(&settings.config_home)),
     ];
     env.extend(ours.map(|(k, v)| (k.to_string(), v)));
     env.push(("SHELL".into(), path(&settings.shell_wrapper)));
     env.extend(user_shell.map(|v| (USER_SHELL_VAR.to_string(), v)));
-    env.extend(user_xdg.map(|v| (USER_XDG_VAR.to_string(), v)));
+    if skipped {
+        env.push(("XDG_CONFIG_HOME".into(), path(&settings.config_home)));
+        // set (empty when the user has none) so the wrapper knows to give theirs back or unset it
+        env.push((USER_XDG_VAR.to_string(), user_xdg.unwrap_or_default()));
+    }
     env
 }
 
@@ -240,7 +282,9 @@ pub fn shell_wrapper() -> String {
         "#!/bin/sh\n\
          # Writer: the settings the OpenCode server was started with are not for the commands it runs.\n\
          unset {unset}\n\
-         if [ -n \"${{{USER_XDG_VAR}-}}\" ]; then XDG_CONFIG_HOME=${USER_XDG_VAR}; export XDG_CONFIG_HOME; fi\n\
+         if [ \"${{{USER_XDG_VAR}+x}}\" = x ]; then\n\
+         \x20 if [ -n \"${USER_XDG_VAR}\" ]; then XDG_CONFIG_HOME=${USER_XDG_VAR}; export XDG_CONFIG_HOME; else unset XDG_CONFIG_HOME; fi\n\
+         fi\n\
          SHELL=${{{USER_SHELL_VAR}-}}\n\
          [ -x \"$SHELL\" ] || SHELL=/bin/sh\n\
          export SHELL\n\
@@ -361,11 +405,28 @@ struct Inner {
     closed: AtomicBool,
     /// The text of the config file as last written and (for a live server) loaded.
     written: Mutex<Option<String>>,
+    /// The document the callers built (the config of the adapter and the vault): the overrides
+    /// go on top of it at every write, so a switch can be put in force without rebuilding it.
+    base: Mutex<Option<Value>>,
+    /// The switches, read at every write.
+    switches: Mutex<Option<SwitchSource>>,
+    /// What the server found of the user's config: server names and the agents that must go.
+    learned: Mutex<Learned>,
+    /// The text of the config file the process was launched with, then read again at: what it
+    /// runs. A switch written between the launch and the end of the start is read again.
+    loaded: Mutex<Option<String>>,
+    /// What the file written says must hold (the gate checks it).
+    expect: Mutex<Expectation>,
+    /// A user config with an `mcp.use` policy was found: every start from now runs on Writer's
+    /// configuration alone.
+    skip_global: AtomicBool,
+    /// How the server that is up was started.
+    global: Mutex<Option<GlobalConfig>>,
     /// The sessions that are executing a turn, and a reload that waits for the last of them.
     gate: Mutex<Gate>,
     reload_deadline_ms: AtomicU64,
-    /// The epoch of the server start whose agent list was found to be Writer's own (0: none).
-    agents_ok: AtomicU64,
+    /// The epoch of the server start whose configuration was found in force (0: none).
+    in_force: AtomicU64,
     /// Sessions of Writer's own helper calls (a title): not a chat's turn, so they are not
     /// counted by the gate that holds a reload or by what turning the feature off waits for.
     untracked: Mutex<std::collections::HashSet<String>>,
@@ -378,6 +439,12 @@ struct Inner {
 
 /// What runs when a start succeeded, with the server's client.
 pub type UpHook = Box<dyn Fn(&Client) + Send + Sync>;
+
+#[derive(Default)]
+struct Learned {
+    mcp: std::collections::BTreeSet<String>,
+    agents: std::collections::BTreeSet<String>,
+}
 
 #[derive(Default)]
 struct Gate {
@@ -401,6 +468,15 @@ impl Gate {
 /// How long a reload waits for running turns before it is made anyway: an end event that was
 /// never seen must not hold the server's configuration for ever.
 const RELOAD_DEADLINE: Duration = Duration::from_secs(600);
+
+/// What a write of the config does about a server that is up.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reload {
+    /// Nothing: the caller does it (a start, the gate).
+    None,
+    /// The server reads the file when no session is executing a turn.
+    WhenIdle,
+}
 
 pub struct OpencodeServer {
     inner: Arc<Inner>,
@@ -427,9 +503,16 @@ impl OpencodeServer {
                 starts: AtomicU64::new(0),
                 closed: AtomicBool::new(false),
                 written: Mutex::new(None),
+                base: Mutex::new(None),
+                switches: Mutex::new(None),
+                learned: Mutex::new(Learned::default()),
+                loaded: Mutex::new(None),
+                expect: Mutex::new(Expectation::default()),
+                skip_global: AtomicBool::new(false),
+                global: Mutex::new(None),
                 gate: Mutex::new(Gate::default()),
                 reload_deadline_ms: AtomicU64::new(RELOAD_DEADLINE.as_millis() as u64),
-                agents_ok: AtomicU64::new(0),
+                in_force: AtomicU64::new(0),
                 untracked: Mutex::new(Default::default()),
                 on_up: Mutex::new(None),
                 on_models: Mutex::new(None),
@@ -482,28 +565,45 @@ impl OpencodeServer {
     }
 
     fn start(&self) -> Result<Connection, ServerError> {
+        let mode = if self.inner.skip_global.load(Ordering::SeqCst) {
+            GlobalConfig::SkippedMcpPolicy
+        } else {
+            GlobalConfig::Loaded
+        };
+        self.start_in(mode)
+    }
+
+    /// One start, fail closed (see the module doc). `mode` says whether the user's config is the
+    /// server's own or Writer's empty home stands in for it.
+    fn start_in(&self, mode: GlobalConfig) -> Result<Connection, ServerError> {
         let inner = &self.inner;
         let password = format!(
             "{}{}",
             uuid::Uuid::new_v4().simple(),
             uuid::Uuid::new_v4().simple()
         );
-        // the config home is recreated empty on every start (U1); never a folder that is not
-        // Writer's own
+        // the config home is Writer's, empty, for the fallback alone; any other start removes it
+        // (the first version kept one for every start). Never a folder that is not Writer's own
         if !inner.settings.config_home_is_ours() {
             return Err(ServerError::Failed(
                 "OpenCode's config folder is not Writer's".into(),
             ));
         }
         let _ = std::fs::remove_dir_all(&inner.settings.config_home);
-        std::fs::create_dir_all(&inner.settings.config_home).map_err(|_| {
-            ServerError::Failed("OpenCode's config folder could not be made".into())
-        })?;
+        if mode == GlobalConfig::SkippedMcpPolicy {
+            std::fs::create_dir_all(&inner.settings.config_home).map_err(|_| {
+                ServerError::Failed("OpenCode's config folder could not be made".into())
+            })?;
+        }
         write_shell_wrapper(&inner.settings)?;
+        // the deny-all policies are on disk before the first call that boots the location, which
+        // is what starts the user's servers (capture C1)
+        self.write_config(Reload::None)?;
+        *inner.loaded.lock() = inner.written.lock().clone();
         let spec = LaunchSpec {
             program: inner.settings.program.clone(),
             root: inner.settings.root.clone(),
-            env: isolated_env((inner.inherited)(), &password, &inner.settings),
+            env: isolated_env((inner.inherited)(), &password, &inner.settings, mode),
             password,
         };
         let process = inner.launcher.launch(&spec).map_err(|e| match e {
@@ -540,6 +640,20 @@ impl OpencodeServer {
         if !version_ok(&info.version) {
             return Err(refuse(ServerError::Unsupported(info.version), &process));
         }
+        if mode == GlobalConfig::Loaded {
+            match self.names_step(&client) {
+                Ok(false) => {}
+                // the user's own `mcp.use` policy is applied after Writer's and can have started a
+                // server already: that process goes, and the start runs without the user's config
+                Ok(true) => {
+                    process.stop();
+                    log::info!(target: "opencode", "opencode: the user's config sets an MCP policy, so it is not loaded");
+                    inner.skip_global.store(true, Ordering::SeqCst);
+                    return self.start_in(GlobalConfig::SkippedMcpPolicy);
+                }
+                Err(e) => return Err(refuse(e, &process)),
+            }
+        }
         let epoch = inner.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         let (tx, rx) = channel();
         let task = stream_task(
@@ -560,6 +674,13 @@ impl OpencodeServer {
             }
         }
         let version = info.version.clone();
+        // a switch written while the start ran (the file changed, nothing was up to read it)
+        if mode == GlobalConfig::Loaded {
+            if let Err(e) = self.sync_loaded(&client) {
+                return Err(refuse(e, &process));
+            }
+        }
+        *inner.global.lock() = Some(mode);
         *inner.live.lock() = Some(Live {
             epoch,
             process,
@@ -574,6 +695,53 @@ impl OpencodeServer {
             epoch,
             version,
         })
+    }
+
+    /// Has the process read the file as it is now: when what was written differs from what it
+    /// loaded (names learned, or a switch written since the launch), it reads it again.
+    fn sync_loaded(&self, client: &Client) -> Result<(), ServerError> {
+        let now = self.inner.written.lock().clone();
+        if now == *self.inner.loaded.lock() {
+            return Ok(());
+        }
+        let c = client.clone();
+        let reloaded = self.inner.io.call(
+            async move { c.request(&api::RELOAD, &[], &[], None, LONG).await },
+            LONG,
+        );
+        if !matches!(reloaded, Some(Ok(_))) {
+            return Err(ServerError::Failed(
+                "OpenCode did not read its new configuration".into(),
+            ));
+        }
+        *self.inner.loaded.lock() = now;
+        Ok(())
+    }
+
+    /// The names step: `GET /api/config` as the first location-scoped call (under the deny-all
+    /// policies it starts nothing but Writer's server) gives the names of the user's MCP servers,
+    /// keys only. New names change the document (a placeholder for each that is off, an allow for
+    /// each that is on), which is written and read again before the stream opens. `true`: a
+    /// document of the user's sets an `mcp.use` policy.
+    fn names_step(&self, client: &Client) -> Result<bool, ServerError> {
+        let c = client.clone();
+        let reply = self.inner.io.call(
+            async move { c.request(&api::CONFIG, &[], &[], None, LONG).await },
+            LONG,
+        );
+        let reply = match reply {
+            Some(Ok(v)) => v,
+            Some(Err(e)) => return Err(ServerError::Failed(e.to_string())),
+            None => return Err(ServerError::Failed("OpenCode did not answer".into())),
+        };
+        let names = config::config_names(&reply, &self.inner.settings.config_file);
+        if names.foreign_mcp_policy {
+            return Ok(true);
+        }
+        self.learn_mcp(names.mcp);
+        self.write_config(Reload::None)?;
+        self.sync_loaded(client)?;
+        Ok(false)
     }
 
     /// What to do each time the server came up (set once by its owner, before the first start).
@@ -592,16 +760,73 @@ impl OpencodeServer {
         self.inner.untracked.lock().insert(session.to_string());
     }
 
-    /// Writes Writer's config file (spec section 8) when `text` differs from what was written
-    /// before, and has a running server read it again (`POST /api/location/reload`: the roles
-    /// and the MCP server change under it, nothing restarts) at its next idle moment: at once when
-    /// no session is executing a turn, else when the last one ends. Call it before
+    /// Where the user's switches come from (set once by the owner, before the first write).
+    pub fn on_switches(&self, source: SwitchSource) {
+        *self.inner.switches.lock() = Some(source);
+    }
+
+    /// The one write path of Writer's config file (spec section 8): `base` is the document of
+    /// the adapter and the vault, the overrides ([`config::overrides`]) go on top of it, and the
+    /// file is written when the result differs from what was written before. A running server
+    /// reads it again (`POST /api/location/reload`) at its next idle moment: at once when no
+    /// session is executing a turn, else when the last one ends. Call it before
     /// [`OpencodeServer::ensure_started`]: a server that starts reads the file as it is. Blocks.
-    pub fn apply_config(&self, text: &str) -> Result<(), ServerError> {
+    pub fn apply_config(&self, base: &str) -> Result<(), ServerError> {
+        let doc: Value = serde_json::from_str(base)
+            .ok()
+            .filter(Value::is_object)
+            .ok_or_else(|| ServerError::Failed("OpenCode's config was not a document".into()))?;
+        *self.inner.base.lock() = Some(doc);
+        self.write_config(Reload::WhenIdle).map(|_| ())
+    }
+
+    /// Renders the config again from the document of the last [`apply_config`] and the switches
+    /// as they are now (a switch changed), and has a running server read it. Nothing before the
+    /// first `apply_config`: the next start renders it. Blocks.
+    pub fn reapply(&self) -> Result<(), ServerError> {
+        if self.inner.base.lock().is_none() {
+            return Ok(());
+        }
+        self.write_config(Reload::WhenIdle).map(|_| ())
+    }
+
+    /// The overrides now: the user's switches over what the server found.
+    fn overrides(&self) -> Overrides {
+        let stored = self
+            .inner
+            .switches
+            .lock()
+            .clone()
+            .map(|f| f())
+            .unwrap_or_default();
+        let sw = Switches::new(&config::MCP_SWITCHES, stored.mcp_on);
+        let learned = self.inner.learned.lock();
+        let known: Vec<String> = learned.mcp.iter().cloned().collect();
+        // the known servers that are on, and the switched-on keys the server has not named (yet)
+        let mut mcp_on: Vec<String> = known.iter().filter(|n| sw.on(n)).cloned().collect();
+        mcp_on.extend(sw.switched.iter().cloned());
+        Overrides {
+            mcp_on,
+            mcp_known: known,
+            foreign_agents: learned.agents.iter().cloned().collect(),
+            providers_off: stored.providers_off,
+        }
+    }
+
+    /// Renders the document, writes the file when it changed and reloads as `reload` says.
+    /// `true`: the file changed.
+    fn write_config(&self, reload: Reload) -> Result<bool, ServerError> {
         let inner = &self.inner;
         let mut written = inner.written.lock();
-        if written.as_deref() == Some(text) {
-            return Ok(());
+        let base = inner
+            .base
+            .lock()
+            .clone()
+            .unwrap_or_else(|| Value::Object(Default::default()));
+        let doc = config::overrides(base, &self.overrides());
+        let text = serde_json::to_string_pretty(&doc).expect("a JSON value is text") + "\n";
+        if written.as_deref() == Some(text.as_str()) {
+            return Ok(false);
         }
         let settings = &inner.settings;
         let file = &settings.config_file;
@@ -619,8 +844,9 @@ impl OpencodeServer {
         })?;
         crate::plugins::write_atomic_private(dir, name, text.as_bytes(), 0o600)
             .map_err(|_| ServerError::Failed("OpenCode's config could not be written".into()))?;
+        *inner.expect.lock() = Expectation::of(&doc);
         // a server that is up has read the old file
-        if self.connection().is_some() {
+        if reload == Reload::WhenIdle && self.connection().is_some() {
             let me = Arc::clone(inner);
             let done = inner
                 .io
@@ -631,8 +857,60 @@ impl OpencodeServer {
                 ));
             }
         }
-        *written = Some(text.to_string());
-        Ok(())
+        *written = Some(text);
+        Ok(true)
+    }
+
+    /// Server names the config documents or the server's own list gave (raw): placeholders and
+    /// allows follow at the next write.
+    pub fn learn_mcp(&self, names: impl IntoIterator<Item = String>) {
+        self.inner.learned.lock().mcp.extend(
+            names
+                .into_iter()
+                .filter(|n| n != crate::cli::mcp::SERVER_NAME),
+        );
+    }
+
+    /// Agents that are not Writer's and are enabled: disabled by name at the next write.
+    pub fn learn_agents(&self, ids: impl IntoIterator<Item = String>) {
+        self.inner.learned.lock().agents.extend(ids);
+    }
+
+    /// Every MCP server name known to the server: the user's config and what it listed.
+    pub fn mcp_known(&self) -> Vec<String> {
+        self.inner.learned.lock().mcp.iter().cloned().collect()
+    }
+
+    /// What the file Writer wrote says must hold of the running server.
+    pub fn expectation(&self) -> Expectation {
+        self.inner.expect.lock().clone()
+    }
+
+    /// Writes the file again when what was learned changed it. `true`: it did, and the server
+    /// must read it (see [`OpencodeServer::reload_now`]); the gate does that, nothing runs yet.
+    pub fn rewrite(&self) -> Result<bool, ServerError> {
+        self.write_config(Reload::None)
+    }
+
+    /// Has the server read its config again, now (the gate: no turn of this start has begun). A
+    /// failure does not stop the process: the gate's caller does, after its card.
+    pub async fn reload_now(&self) -> Result<(), super::client::ApiError> {
+        reload(&self.inner, false).await
+    }
+
+    /// Whether the user's config is loaded in the server that is up.
+    pub fn global_config(&self) -> Option<GlobalConfig> {
+        self.connection()?;
+        *self.inner.global.lock()
+    }
+
+    /// Stops the process without closing the server: the next start is a new one. For a server
+    /// the gate found running what Writer did not switch on.
+    pub fn stop_process(&self) {
+        let _one = self.inner.start_lock.lock();
+        if let Some(live) = self.inner.live.lock().take() {
+            live.process.stop();
+        }
     }
 
     /// Has the server read its config again, now when no session is executing a turn, else when
@@ -641,13 +919,14 @@ impl OpencodeServer {
         reload_when_idle(&self.inner).await
     }
 
-    /// Whether this start of the server was found to run Writer's agents and no others.
-    pub fn agents_verified(&self, epoch: u64) -> bool {
-        self.inner.agents_ok.load(Ordering::SeqCst) == epoch
+    /// Whether this start of the server was found to run the configuration Writer wrote (the
+    /// gate of the transport, once per start).
+    pub fn in_force(&self, epoch: u64) -> bool {
+        self.inner.in_force.load(Ordering::SeqCst) == epoch
     }
 
-    pub fn verify_agents(&self, epoch: u64) {
-        self.inner.agents_ok.store(epoch, Ordering::SeqCst);
+    pub fn mark_in_force(&self, epoch: u64) {
+        self.inner.in_force.store(epoch, Ordering::SeqCst);
     }
 
     /// How long a waiting reload waits for running turns (tests shorten it).
@@ -882,12 +1161,43 @@ async fn rebuild_running(inner: &Arc<Inner>, client: &Client) {
     }
 }
 
+/// The server reads its config again. A reload that fails leaves the process on the old file; with
+/// `stop_on_failure` it is stopped (only the process that failed, never a newer one) so the next
+/// start reads the file. The gate passes `false`: its caller sends the refusal card first and
+/// stops after it.
 async fn reload_now(inner: &Arc<Inner>) -> Result<(), super::client::ApiError> {
-    let live = inner.live.lock().as_ref().map(|l| l.client.clone());
-    let Some(client) = live else {
+    reload(inner, true).await
+}
+
+async fn reload(inner: &Arc<Inner>, stop_on_failure: bool) -> Result<(), super::client::ApiError> {
+    let live = inner
+        .live
+        .lock()
+        .as_ref()
+        .map(|l| (l.client.clone(), Arc::clone(&l.process)));
+    let Some((client, process)) = live else {
         return Ok(());
     };
-    client.request(&api::RELOAD, &[], &[], None, LONG).await?;
+    if let Err(e) = client.request(&api::RELOAD, &[], &[], None, LONG).await {
+        log::warn!(target: "opencode", "opencode: the server did not read its configuration again");
+        if stop_on_failure {
+            // the file on disk is not what the process runs: the one lever is to stop it
+            // (stopping waits for the process: never on the runtime's thread)
+            let me = Arc::clone(inner);
+            drop(tokio::task::spawn_blocking(move || {
+                let mut live = me.live.lock();
+                if live
+                    .as_ref()
+                    .is_some_and(|l| Arc::ptr_eq(&l.process, &process))
+                {
+                    live.take();
+                    drop(live);
+                    process.stop();
+                }
+            }));
+        }
+        return Err(e);
+    }
     inner.broadcast(&ChatInput::Reloaded);
     Ok(())
 }

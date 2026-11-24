@@ -13,6 +13,8 @@
   "rust": {
     "commands": [
       "opencode_models",
+      "opencode_providers",
+      "opencode_reconfigure",
       "opencode_remove_saved_rule",
       "opencode_saved_rules",
       "opencode_status"

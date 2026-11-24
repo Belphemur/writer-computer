@@ -36,6 +36,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const DISABLED_KEY = "agent.opencode.disabled-models";
+const PROVIDERS_KEY = "agent.opencode.disabled-providers";
 
 describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
   let container: HTMLElement;
@@ -45,6 +46,8 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
   let rules: { id: string; action: string; resource: string }[];
   let projectScoped: boolean;
   let removeError: Error | null;
+  let providers: { id: string; name: string; off: boolean }[];
+  let reconfigureError: Error | null;
   const writes: [string, unknown][] = [];
   const calls: [string, unknown][] = [];
   const q = (sel: string) => container.querySelector<HTMLElement>(sel);
@@ -91,6 +94,11 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
     rules = [{ id: "psv_fake1", action: "bash", resource: "git status" }];
     projectScoped = true;
     removeError = null;
+    reconfigureError = null;
+    providers = [
+      { id: "acme", name: "Acme AI", off: false },
+      { id: "zed", name: "Zed Labs", off: false },
+    ];
     invokeMock.mockReset();
     invokeMock.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
       calls.push([cmd, args]);
@@ -103,6 +111,11 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
         return status;
       }
       if (cmd === "plugin:opencode|opencode_models") return models();
+      if (cmd === "plugin:opencode|opencode_providers") return providers;
+      if (cmd === "plugin:opencode|opencode_reconfigure") {
+        if (reconfigureError) throw reconfigureError;
+        return null;
+      }
       if (cmd === "plugin:opencode|opencode_saved_rules") return { rules, projectScoped };
       if (cmd === "plugin:opencode|opencode_remove_saved_rule") {
         if (removeError) throw removeError;
@@ -150,8 +163,21 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
       },
       { timeout: 20_000 },
     );
-    expect(q("[data-opencode-panel]")?.textContent).toContain(
-      "Your own OpenCode config does not apply.",
+    const note = q("[data-opencode-panel]")?.textContent ?? "";
+    expect(note).toContain("Your global OpenCode config, plugins and instructions apply.");
+    expect(note).toContain("MCP servers stay off until you switch them on below");
+    expect(note).toContain("Global permission allows do not apply");
+    expect(note).not.toContain("does not apply.");
+    expect(q("[data-opencode-config-skipped]")).toBeNull();
+  });
+
+  it("says why the global config is not loaded when the server reports an MCP policy", async () => {
+    status = { ...STATUS_READY, globalConfig: "skipped-mcp-policy" };
+    await openTab();
+    await vi.waitFor(() =>
+      expect(q("[data-opencode-config-skipped]")?.textContent).toBe(
+        "Your OpenCode config sets an MCP policy, so Writer uses its own config only.",
+      ),
     );
   });
 
@@ -325,6 +351,7 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
       await act(async () => tab("provider:Zed Labs").click());
       expect(rows()).toEqual(["zed/free-1", "zed/retired-1"]);
       models = async () => MODELS.filter((m) => m.providerId === "acme");
+      providers = providers.filter((p) => p.id === "acme");
       await act(async () => {
         invalidateBackendModels("opencode");
       });
@@ -366,6 +393,95 @@ describe("Settings > Agent > OpenCode", { timeout: 30_000 }, () => {
       expect(rows()).toHaveLength(50);
       await act(async () => q("[data-opencode-more]")!.click());
       expect(rows()).toHaveLength(100);
+    });
+  });
+
+  describe("provider switches", () => {
+    const tab = (name: string) => q(`[data-opencode-tab='${name}']`) as HTMLButtonElement;
+    const sw = (id: string) =>
+      q(`[data-opencode-provider='${id}'] button[role=switch]`) as HTMLButtonElement | null;
+    const count = (cmd: string) => calls.filter(([c]) => c === cmd).length;
+
+    it("offers one switch on a provider's tab, none on All", async () => {
+      await openTab();
+      expect(q("[data-opencode-provider]")).toBeNull();
+      await act(async () => tab("provider:Zed Labs").click());
+      expect(sw("zed")?.getAttribute("aria-checked")).toBe("true");
+      expect(sw("acme")).toBeNull();
+      expect(sw("zed")?.getAttribute("aria-label")).toBe("Enable provider Zed Labs");
+    });
+
+    it("a switch writes the list through the shared rule, then reconfigures the server", async () => {
+      useSettingsStore.setState((s) => ({
+        settings: { ...s.settings, [PROVIDERS_KEY]: ["other"] },
+      }));
+      await openTab();
+      await act(async () => tab("provider:Zed Labs").click());
+      const before = count("plugin:opencode|opencode_reconfigure");
+      await act(async () => sw("zed")!.click());
+      await flush();
+      expect(writes).toContainEqual([PROVIDERS_KEY, ["other", "zed"]]);
+      expect(count("plugin:opencode|opencode_reconfigure")).toBe(before + 1);
+      // the write came first
+      const order = calls.map(([c]) => c);
+      expect(order.lastIndexOf("set_setting")).toBeLessThan(
+        order.lastIndexOf("plugin:opencode|opencode_reconfigure"),
+      );
+      expect(sw("zed")?.getAttribute("aria-checked")).toBe("false");
+      // and back on removes only its own entry
+      await act(async () => sw("zed")!.click());
+      await flush();
+      expect(writes.at(-1)).toEqual([PROVIDERS_KEY, ["other"]]);
+    });
+
+    it("an off provider keeps its tab; the server lists no models for it, so the tab says so", async () => {
+      useSettingsStore.setState((s) => ({
+        settings: { ...s.settings, [PROVIDERS_KEY]: ["zed"] },
+      }));
+      // as the real command answers after a restart: the id stands in for the name
+      models = async () => MODELS.filter((m) => m.providerId === "acme");
+      providers = [
+        { id: "acme", name: "Acme AI", off: false },
+        { id: "zed", name: "zed", off: true },
+      ];
+      await openTab();
+      expect(qa("[data-opencode-tab]").map((t) => t.textContent)).toEqual([
+        "All",
+        "Acme AI",
+        "zed",
+      ]);
+      expect(tab("provider:zed").dataset.off).toBe("true");
+      await act(async () => tab("provider:zed").click());
+      expect(rows()).toEqual([]);
+      expect(sw("zed")?.getAttribute("aria-checked")).toBe("false");
+      expect(q("[data-opencode-models]")?.textContent).toContain("Provider off");
+    });
+
+    it("the tab stays selected after its switch, and the models and providers are read once", async () => {
+      await openTab();
+      await act(async () => tab("provider:Zed Labs").click());
+      const read = (cmd: string) => count(`plugin:opencode|opencode_${cmd}`);
+      const [p0, m0] = [read("providers"), read("models")];
+      models = async () => MODELS.filter((m) => m.providerId === "acme");
+      providers = [
+        { id: "acme", name: "Acme AI", off: false },
+        { id: "zed", name: "Zed Labs", off: true },
+      ];
+      await act(async () => sw("zed")!.click());
+      await flush();
+      expect(tab("provider:Zed Labs").getAttribute("aria-selected")).toBe("true");
+      expect(sw("zed")?.getAttribute("aria-checked")).toBe("false");
+      expect(read("providers") - p0).toBe(1);
+      expect(read("models") - m0).toBe(1);
+    });
+
+    it("shows the reason when the server cannot apply the switch", async () => {
+      reconfigureError = new Error("server did not reload");
+      await openTab();
+      await act(async () => tab("provider:Acme AI").click());
+      await act(async () => sw("acme")!.click());
+      await flush();
+      expect(q("[data-opencode-provider-error]")?.textContent).toContain("server did not reload");
     });
   });
 

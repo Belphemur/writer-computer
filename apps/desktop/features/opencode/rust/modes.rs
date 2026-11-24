@@ -147,6 +147,10 @@ pub struct ModePolicy {
     /// The models the user switched off (read when a chat starts, so a change applies to the next
     /// start of a running chat too).
     disabled: Disabled,
+    /// The providers the user switched off (`agent.opencode.disabled-providers`), asked at each
+    /// start: a turn on one fails in the server with a code, so the chat is refused earlier with
+    /// the reason.
+    providers_off: Disabled,
     table: &'static ToolTable,
     /// The permission action of an edit (the table's replace tool: `write` asks for it as well).
     edit_action: Option<String>,
@@ -159,6 +163,7 @@ impl ModePolicy {
         Self {
             plan: plan_rules(table, &mcp::tools()),
             disabled: Arc::new(Vec::new),
+            providers_off: Arc::new(Vec::new),
             table,
             edit_action: table.name_of(Role::Replace).map(String::from),
             root: None,
@@ -168,6 +173,13 @@ impl ModePolicy {
     /// The models switched off in Settings (`agent.opencode.disabled-models`), asked at each start.
     pub fn with_disabled(mut self, disabled: Disabled) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// The providers switched off in Settings (`agent.opencode.disabled-providers`), asked at each
+    /// start.
+    pub fn with_providers_off(mut self, off: Disabled) -> Self {
+        self.providers_off = off;
         self
     }
 
@@ -194,8 +206,20 @@ impl Policy for ModePolicy {
         Some(config::AGENT.into())
     }
 
+    fn refuse_provider(&self, model: &ModelRef) -> Option<String> {
+        (self.providers_off)().contains(&model.providerID).then(|| {
+            format!(
+                "The provider of {} is switched off in Settings > Agent > OpenCode",
+                model.slug()
+            )
+        })
+    }
+
     fn refuse_model(&self, model: &ModelRef) -> Option<String> {
         let slug = model.slug();
+        if let Some(why) = self.refuse_provider(model) {
+            return Some(why);
+        }
         (self.disabled)()
             .contains(&slug)
             .then(|| format!("The model {slug} is switched off in Settings > Agent > OpenCode"))

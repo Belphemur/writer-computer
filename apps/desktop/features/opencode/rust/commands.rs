@@ -5,7 +5,7 @@
 //! headers, settings or a secret: the rows are `models.rs`'s.
 
 use super::client::SHORT;
-use super::models::{self, OpencodeModel, SavedRules};
+use super::models::{self, OpencodeModel, ProviderRow, SavedRules};
 use super::opencode_api as api;
 use super::servers::Servers;
 use crate::commands::blocking;
@@ -30,6 +30,9 @@ pub struct OpencodeStatus {
     pub supported: bool,
     /// The oldest version Writer supports.
     pub min_version: String,
+    /// Whether the user's own OpenCode config is loaded in this window's server (`None`: no server
+    /// is up, so nothing is known yet).
+    pub global_config: Option<super::server::GlobalConfig>,
 }
 
 fn servers<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Arc<Servers<R>>, AppError> {
@@ -69,6 +72,7 @@ pub async fn opencode_status<R: Runtime>(
             path: info.path,
             version: info.version,
             min_version: info.min_version.unwrap_or_default(),
+            global_config: servers.global_config(&label),
         })
     })
     .await
@@ -242,4 +246,31 @@ pub(super) async fn remove_rule(
         Err(e) if e.is_not_found() => Ok(()),
         Err(_) => Err(AppError::Io("OpenCode refused the request".into())),
     }
+}
+
+/// The provider tabs: `GET /api/provider` together with the names in
+/// `agent.opencode.disabled-providers`. Starts the window's server. Names only.
+#[tauri::command]
+#[specta::specta]
+pub async fn opencode_providers<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<Vec<ProviderRow>, AppError> {
+    let servers = servers(&app)?;
+    let label = webview.label().to_string();
+    let root = root_of(&app, &webview)?;
+    blocking(move || servers.providers(&label, &root).map_err(AppError::Io)).await
+}
+
+/// A setting that changes what the server offers (a provider switch) was written: the server's
+/// configuration is rendered again and read again when no turn runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn opencode_reconfigure<R: Runtime>(
+    webview: tauri::Webview<R>,
+    app: tauri::AppHandle<R>,
+) -> Result<(), AppError> {
+    let servers = servers(&app)?;
+    let label = webview.label().to_string();
+    blocking(move || servers.reapply(&label).map_err(AppError::Io)).await
 }

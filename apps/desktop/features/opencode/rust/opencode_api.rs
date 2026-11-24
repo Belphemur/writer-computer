@@ -176,6 +176,8 @@ routes! {
     MODELS = Get "/api/model";
     PROVIDERS = Get "/api/provider";
     MCP = Get "/api/mcp";
+    /// The config documents (the user's, Writer's), each with its parsed `info`: the names step.
+    CONFIG = Get "/api/config";
     SKILLS = Get "/api/skill";
     COMMANDS = Get "/api/command";
     AGENTS = Get "/api/agent";

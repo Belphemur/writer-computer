@@ -67,16 +67,20 @@ impl Switches {
         }
     }
 
-    /// Whether the server called `name` (raw or key) is listed: a stored key is it, or a prefix
-    /// of it followed by `__` (the tool glob `mcp__a__*` of `a` also covers `a__b`). Written once
-    /// for the menu to say what the lever does; the web twin is `isMcpSwitchOn` (`switches.ts`).
+    /// Whether the server called `name` (raw or key) is listed. A list of switched-off servers
+    /// (`default_on`) is the tool globs of the harness that denies by prefix (`mcp__a__*` also
+    /// covers `a__b`), so a stored key is the name or a prefix of it followed by `__`. A list of
+    /// switched-on servers is an allow-list: an entry is exactly its own key, never `a__b` for
+    /// `a`, or one entry would switch on servers nobody named. Written once; the web twin is
+    /// `isMcpSwitchOn` (`switches.ts`), both pinned by `shared/agent-mcp/vectors.json`.
     fn listed(&self, name: &str) -> bool {
         let key = server_key(name);
         self.switched.iter().any(|s| {
             key == *s
-                || key
-                    .strip_prefix(s.as_str())
-                    .is_some_and(|r| r.starts_with("__"))
+                || (self.default_on
+                    && key
+                        .strip_prefix(s.as_str())
+                        .is_some_and(|r| r.starts_with("__")))
         })
     }
 

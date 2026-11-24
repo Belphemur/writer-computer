@@ -6,8 +6,8 @@
 //! What it holds:
 //!
 //! - `permissions`: the base rule `*: ask`, the shape captured with 2.4.0, and `default_agent`;
-//! - `agents`: the one primary agent `writer` (the session's agent, spec 10.9; only allows: the
-//!   base ask comes from the top level), the roles as sub-agents (the adapter renders them, each
+//! - `agents`: the one primary agent `writer` (the session's agent, spec 10.9; a head `*: ask`
+//!   and then allows), the roles as sub-agents (the adapter renders them, each
 //!   with its own rules), the built-in agents switched off so a model cannot launch one of them
 //!   past Writer's rules, and OpenCode's own title agent switched off (the one title trigger is
 //!   `title.rs`, A5). Within one list no action is named twice: a rule never depends on which of
@@ -16,17 +16,26 @@
 //! - `instructions` and `skills` as absolute paths: with the project's own config off the vault's
 //!   `AGENTS.md`, `CLAUDE.md` and skill folders load only when listed (spec 4.12).
 //!
+//! On top of that document the server's one write path ([`overrides`], applied by
+//! `OpencodeServer::apply_config`) adds what keeps the user's own OpenCode config, now loaded,
+//! from running anything Writer did not switch on: the deny-all MCP policies and a placeholder
+//! for every known server that is off, the agents of that config disabled by name, the providers
+//! the user switched off, and the scalars Writer pins (`share`, `default_agent`, `automations`).
+//!
 //! The permission modes are not in this file: only Plan has rules of the session (`modes.rs`), and
 //! Writer's own `once` replies are not rules at all. Pure except [`discover`].
 
-use crate::agent::mcp_wiring::{Launch, McpWiring};
+use crate::agent::mcp_menu::{Applies, SwitchSpec};
+use crate::agent::mcp_wiring::{server_key, Launch, McpWiring};
 use crate::agent::permission_update::rule_json;
 use crate::agent::project::{AGENTS_FILE, CLAUDE_FILE};
 use crate::agent::skills::SKILL_DIRS;
 use crate::agent::tool_table::{Kind, Role, ToolTable};
+use crate::cli::mcp::SERVER_NAME;
 use crate::fs_entry::{self, LinkTarget};
 use crate::vault_ops;
 use serde_json::{json, Map, Value};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// The one primary agent of Writer's configuration; the session runs as it.
@@ -67,11 +76,16 @@ pub fn read_allows(table: &ToolTable, mcp_reads: &[String]) -> Vec<String> {
     names
 }
 
-/// The ruleset of the primary agent: allows only. The base `*: ask` is the top level's.
+/// The ruleset of the primary agent: a head `*: ask`, then the allows. Rules are concatenated and
+/// the last match wins, so with the user's own config loaded a global agent called `writer` could
+/// otherwise out-rank the top level's ask (capture C5 V2); the head closes that (V6).
 pub fn writer_rules(table: &ToolTable, mcp_reads: &[String]) -> Vec<Value> {
-    read_allows(table, mcp_reads)
-        .iter()
-        .map(|n| rule(n, "allow"))
+    std::iter::once(rule("*", "ask"))
+        .chain(
+            read_allows(table, mcp_reads)
+                .iter()
+                .map(|n| rule(n, "allow")),
+        )
         .collect()
 }
 
@@ -192,6 +206,182 @@ pub fn discover(root: &Path) -> Discovered {
                 clean
             })
             .collect(),
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The overrides: Writer's file over the user's own config
+
+/// The MCP switches of this backend: off unless listed, in force at once (a reload).
+pub const MCP_SWITCHES: SwitchSpec = SwitchSpec {
+    setting: "agent.opencode.enabled-mcp-servers",
+    default_on: false,
+    applies: Applies::Live,
+};
+/// The providers the user switched off, by id.
+pub const PROVIDERS_OFF_SETTING: &str = "agent.opencode.disabled-providers";
+
+/// What the server knows about the user's config and the user's switches, rendered over Writer's
+/// document by [`overrides`]. Names only: no target, URL, environment or header of the user's
+/// servers is ever held.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Overrides {
+    /// The names allowed to start: the known servers that are switched on, and the switched-on
+    /// keys not (yet) known. Writer's own server is always allowed and not listed here.
+    pub mcp_on: Vec<String>,
+    /// Every server name seen in the user's config or listed by the server. Each one that is not
+    /// on gets a placeholder (a global `allow` policy of the user cannot start it).
+    pub mcp_known: Vec<String>,
+    /// Agents of the user's config (found by the server): disabled by name, as the built-in ones
+    /// are ([`BUILT_IN_AGENTS`] is the seed of the set).
+    pub foreign_agents: Vec<String>,
+    /// Provider ids switched off.
+    pub providers_off: Vec<String>,
+}
+
+/// The one list of the agents [`overrides`] disables: the built-in ones, OpenCode's title agent
+/// and the ones the user's config adds.
+fn disabled_agents(o: &Overrides) -> BTreeSet<String> {
+    BUILT_IN_AGENTS
+        .iter()
+        .chain([&TITLE_AGENT])
+        .map(|s| s.to_string())
+        .chain(o.foreign_agents.iter().cloned())
+        .collect()
+}
+
+/// A placeholder that is never run: `type` and `command` make the entry a full definition (a
+/// partial `{disabled: true}` is ignored by 2.4.0, capture L1a), `disabled` keeps it off.
+fn placeholder() -> Value {
+    json!({"type": "local", "command": ["true"], "disabled": true})
+}
+
+fn policy(action: &str, resource: &str, effect: &str) -> Value {
+    json!({"action": action, "resource": resource, "effect": effect})
+}
+
+/// The policies: deny every MCP server, then allow Writer's own and each one switched on (order
+/// matters: the last match wins, so the deny comes first), then one deny per provider switched
+/// off.
+pub fn policies(o: &Overrides) -> Vec<Value> {
+    let mut out = vec![
+        policy("mcp.use", "*", "deny"),
+        policy("mcp.use", SERVER_NAME, "allow"),
+    ];
+    let mut on: Vec<&String> = o.mcp_on.iter().filter(|n| *n != SERVER_NAME).collect();
+    on.sort();
+    on.dedup();
+    out.extend(on.into_iter().map(|n| policy("mcp.use", n, "allow")));
+    let mut off: Vec<&String> = o.providers_off.iter().collect();
+    off.sort();
+    off.dedup();
+    out.extend(off.into_iter().map(|p| policy("provider.use", p, "deny")));
+    out
+}
+
+/// Writer's document with the overrides on top. Both levers for MCP (capture C2): the policies
+/// stop any server from starting, the placeholders beat a policy of the user's own, which is
+/// applied after Writer's and wins over it. Agents Writer defines itself are never disabled.
+/// Pure and deterministic: the same input is the same document.
+pub fn overrides(mut doc: Value, o: &Overrides) -> Value {
+    let Some(root) = doc.as_object_mut() else {
+        return doc;
+    };
+    root.insert("policies".into(), Value::Array(policies(o)));
+    // pinned: nothing the user's config sets for these applies in Writer (capture C6)
+    root.insert("default_agent".into(), json!(AGENT));
+    root.insert("automations".into(), json!(false));
+    root.insert("share".into(), json!("disabled"));
+    root.insert("update".into(), json!("disable"));
+    let agents = root
+        .entry("agents")
+        .or_insert_with(|| json!({}))
+        .as_object_mut();
+    if let Some(agents) = agents {
+        for id in disabled_agents(o) {
+            agents
+                .entry(id)
+                .or_insert_with(|| json!({"disabled": true}));
+        }
+    }
+    let on: BTreeSet<String> = o.mcp_on.iter().map(|n| server_key(n)).collect();
+    let mcp = root.entry("mcp").or_insert_with(|| json!({}));
+    if let Some(servers) = mcp
+        .as_object_mut()
+        .map(|m| m.entry("servers").or_insert_with(|| json!({})))
+        .and_then(Value::as_object_mut)
+    {
+        for name in &o.mcp_known {
+            if name != SERVER_NAME && !on.contains(&server_key(name)) {
+                servers.entry(name.clone()).or_insert_with(placeholder);
+            }
+        }
+    }
+    doc
+}
+
+/// The agents of the server's list that Writer did not configure and that could run: enabled, of
+/// a mode a model or the user can pick, and not one of OpenCode's own hidden system agents.
+pub fn foreign_agents(agents: &[Value], ours: &[String]) -> Vec<String> {
+    agents
+        .iter()
+        .filter_map(|a| {
+            let id = a["id"].as_str()?;
+            let runs = a["disabled"] != true
+                && matches!(a["mode"].as_str(), Some("subagent" | "primary" | "all"));
+            let ok = ours.iter().any(|o| o == id)
+                || (a["hidden"] == true && SYSTEM_AGENTS.contains(&id));
+            (runs && !ok).then(|| id.to_string())
+        })
+        .collect()
+}
+
+/// OpenCode's own internal agents: hidden, never offered to the user, run by the server itself
+/// (the context summary, its compaction). The contract (2.4.0) says only that an agent has a
+/// `hidden` flag, not whether a model may launch a hidden sub-agent, so a hidden agent is trusted
+/// by these names alone and any other one is as foreign as a visible one. (`title` is switched
+/// off in Writer's config; it is listed in case a server shows it anyway.)
+pub const SYSTEM_AGENTS: [&str; 3] = ["compaction", "summary", "title"];
+
+/// The names Writer takes from the list of config documents (`GET /api/config`): the keys of
+/// `info.mcp.servers` and whether a document sets an `mcp.use` policy that Writer did not write.
+/// Keys and policy actions only: the same documents hold the servers' environment and headers,
+/// which are never read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ConfigNames {
+    pub mcp: Vec<String>,
+    /// A document other than Writer's sets an `mcp.use` policy (`own` is what Writer wrote).
+    pub foreign_mcp_policy: bool,
+}
+
+/// Reads [`ConfigNames`] from the reply (a bare array of documents, or `{data: [...]}`). Writer's
+/// own document is the one whose `path` is `own` (`settings.config_file`); an `mcp.use` policy in
+/// any other document is the user's, whatever it says.
+pub fn config_names(reply: &Value, own: &Path) -> ConfigNames {
+    let same = |p: &str| {
+        let (a, b) = (Path::new(p), own);
+        a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
+    };
+    let docs = reply.get("data").unwrap_or(reply).as_array();
+    let mut names = BTreeSet::new();
+    let mut foreign = false;
+    for doc in docs.into_iter().flatten() {
+        let info = &doc["info"];
+        if let Some(servers) = info["mcp"]["servers"].as_object() {
+            names.extend(servers.keys().cloned());
+        }
+        let writers = doc["path"].as_str().is_some_and(same);
+        foreign |= !writers
+            && info["policies"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|p| p["action"] == "mcp.use");
+    }
+    names.remove(SERVER_NAME);
+    ConfigNames {
+        mcp: names.into_iter().collect(),
+        foreign_mcp_policy: foreign,
     }
 }
 
@@ -342,17 +532,22 @@ mod tests {
         );
     }
 
-    /// The captured shape: the base ask is the top level's, the primary agent adds allows, and the
-    /// lists of the agents never name an action twice (so no rule needs the last match to win).
+    /// The captured shape: the base ask is the top level's and the primary agent's list repeats it
+    /// as its head (a global agent called `writer` of the user's could out-rank the top level's,
+    /// capture C5 V2), then allows; the lists of the agents never name an action twice (so no rule
+    /// needs the last match to win).
     #[test]
     fn the_base_ask_is_the_top_levels_and_no_action_is_named_twice_in_a_list() {
         let doc = fixture_doc();
         assert_eq!(doc["permissions"], json!([rule("*", "ask")]));
         assert_eq!(doc["default_agent"], AGENT);
-        let writer = &doc["agents"][AGENT]["permissions"];
-        assert!(writer
-            .as_array()
-            .unwrap()
+        let writer = doc["agents"][AGENT]["permissions"].as_array().unwrap();
+        assert_eq!(
+            writer[0],
+            rule("*", "ask"),
+            "the head closes a global agent's allow"
+        );
+        assert!(writer[1..]
             .iter()
             .all(|r| r["action"] != "*" && r["effect"] == "allow"));
         for (name, def) in defined(&doc) {
@@ -512,6 +707,334 @@ mod tests {
             assert!(!text.contains(word), "{word}");
         }
         assert!(!text.contains("acceptedits"));
+    }
+
+    fn sample_overrides() -> Overrides {
+        Overrides {
+            mcp_on: vec!["g-a".into(), "my_srv".into(), "writer".into()],
+            mcp_known: vec!["g-a".into(), "g-b".into(), "my.srv".into(), "writer".into()],
+            foreign_agents: vec!["g-prim".into(), "build".into(), "writer".into()],
+            providers_off: vec!["fake-b".into()],
+        }
+    }
+
+    /// The fixture document with a fixed set of overrides, as the golden pins it.
+    fn overridden_doc() -> Value {
+        overrides(fixture_doc(), &sample_overrides())
+    }
+
+    #[test]
+    fn the_overridden_document_is_pinned() {
+        let actual = serde_json::to_string_pretty(&overridden_doc()).unwrap() + "\n";
+        crate::agent::golden_tests::check_file(
+            &crate::features::opencode::events_tests::feature_dir().join("goldens/config"),
+            "overrides.json",
+            &actual,
+        );
+    }
+
+    /// Both levers of capture C2: the deny-all policies (deny first, the last match wins), the
+    /// allows, and a placeholder for every known name that is off.
+    #[test]
+    fn mcp_is_denied_by_policy_and_by_a_placeholder_for_every_known_name_that_is_off() {
+        let doc = overridden_doc();
+        let pols: Vec<String> = doc["policies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| format!("{} {} {}", p["action"], p["resource"], p["effect"]))
+            .collect();
+        assert_eq!(
+            pols,
+            [
+                "\"mcp.use\" \"*\" \"deny\"",
+                "\"mcp.use\" \"writer\" \"allow\"",
+                "\"mcp.use\" \"g-a\" \"allow\"",
+                "\"mcp.use\" \"my_srv\" \"allow\"",
+                "\"provider.use\" \"fake-b\" \"deny\"",
+            ]
+        );
+        let servers = doc["mcp"]["servers"].as_object().unwrap();
+        // off and known: a full definition that is disabled (a partial one is ignored)
+        assert_eq!(
+            servers["g-b"],
+            json!({"type": "local", "command": ["true"], "disabled": true})
+        );
+        // `my.srv` is on under its key `my_srv`; `g-a` is on; Writer's own is never a placeholder
+        assert!(servers.get("g-a").is_none() && servers.get("my.srv").is_none());
+        assert_eq!(servers["writer"]["command"][0], "/app/bin/writer");
+    }
+
+    #[test]
+    fn the_users_agents_are_disabled_by_name_and_writers_own_never_are() {
+        let doc = overridden_doc();
+        assert_eq!(doc["agents"]["g-prim"], json!({"disabled": true}));
+        assert_eq!(doc["agents"]["build"], json!({"disabled": true}));
+        // an agent Writer defines is never disabled, even when the server listed its name
+        assert_ne!(doc["agents"][AGENT]["disabled"], true);
+        assert_eq!(doc["agents"][AGENT]["mode"], "primary");
+        // every built-in and the title agent are in the set whatever was learned
+        let bare = overrides(fixture_doc(), &Overrides::default());
+        for n in BUILT_IN_AGENTS.iter().chain([&TITLE_AGENT]) {
+            assert_eq!(bare["agents"][n], json!({"disabled": true}), "{n}");
+        }
+    }
+
+    /// Writer wins for these whatever the user's config says (capture C6).
+    #[test]
+    fn the_pinned_scalars_are_writers() {
+        let doc = overridden_doc();
+        assert_eq!(doc["default_agent"], AGENT);
+        assert_eq!(doc["automations"], false);
+        assert_eq!(doc["share"], "disabled");
+        assert_eq!(doc["update"], "disable");
+        // nothing the overrides add is a model, an instruction or a skill: those are the user's
+        // and Writer's together
+        assert!(doc.get("model").is_none());
+        assert_eq!(doc["instructions"], fixture_doc()["instructions"]);
+    }
+
+    #[test]
+    fn the_overrides_are_deterministic_and_idempotent() {
+        let a = serde_json::to_string(&overridden_doc()).unwrap();
+        assert_eq!(a, serde_json::to_string(&overridden_doc()).unwrap());
+        assert_eq!(
+            overrides(overridden_doc(), &sample_overrides()),
+            overridden_doc(),
+            "a document that already has them is unchanged"
+        );
+        // with nothing known the document still denies every server but Writer's
+        let bare = overrides(json!({}), &Overrides::default());
+        assert_eq!(bare["policies"].as_array().unwrap().len(), 2);
+        assert!(bare["mcp"]["servers"].as_object().unwrap().is_empty());
+    }
+
+    /// A minimal check of a document against the pinned `Config.InfoEncoded`: unknown keys of an
+    /// object that closes its properties, enum values, required keys and the types the rendered
+    /// parts use. `$ref` and `anyOf` are followed (an `anyOf` holds when one member does).
+    fn conforms(doc: &Value, schema: &Value, value: &Value, path: &str) -> Result<(), String> {
+        if let Some(r) = schema.get("$ref").and_then(Value::as_str) {
+            let name = r.rsplit('/').next().unwrap();
+            return conforms(doc, &doc["components"]["schemas"][name], value, path);
+        }
+        if let Some(any) = schema.get("anyOf").and_then(Value::as_array) {
+            let tries: Vec<_> = any.iter().map(|m| conforms(doc, m, value, path)).collect();
+            return if tries.iter().any(Result::is_ok) {
+                Ok(())
+            } else {
+                Err(format!("{path}: no member of anyOf holds: {tries:?}"))
+            };
+        }
+        if let Some(allowed) = schema.get("enum").and_then(Value::as_array) {
+            if !allowed.contains(value) {
+                return Err(format!("{path}: {value} is not one of {allowed:?}"));
+            }
+        }
+        match schema.get("type").and_then(Value::as_str) {
+            Some("object") => {
+                let obj = value.as_object().ok_or(format!("{path}: not an object"))?;
+                let props = schema.get("properties").and_then(Value::as_object);
+                for req in schema
+                    .get("required")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let k = req.as_str().unwrap();
+                    if !obj.contains_key(k) {
+                        return Err(format!("{path}: missing {k}"));
+                    }
+                }
+                for (k, v) in obj {
+                    let sub = props.and_then(|p| p.get(k));
+                    match (sub, schema.get("additionalProperties")) {
+                        (Some(sub), _) => conforms(doc, sub, v, &format!("{path}.{k}"))?,
+                        (None, Some(extra)) if extra.is_object() => {
+                            conforms(doc, extra, v, &format!("{path}.{k}"))?
+                        }
+                        (None, Some(Value::Bool(false))) => {
+                            return Err(format!("{path}: unknown key {k}"))
+                        }
+                        (None, _) => {}
+                    }
+                }
+                Ok(())
+            }
+            Some("array") => {
+                let items = value.as_array().ok_or(format!("{path}: not an array"))?;
+                match schema.get("items") {
+                    Some(item) => items
+                        .iter()
+                        .enumerate()
+                        .try_for_each(|(i, v)| conforms(doc, item, v, &format!("{path}[{i}]"))),
+                    None => Ok(()),
+                }
+            }
+            Some("string") if !value.is_string() => Err(format!("{path}: not a string")),
+            Some("boolean") if !value.is_boolean() => Err(format!("{path}: not a boolean")),
+            _ => Ok(()),
+        }
+    }
+
+    /// The whole rendered document, overrides included, holds against the contract of the server
+    /// it is pinned to: no key it would ignore or refuse.
+    #[test]
+    fn the_rendered_document_conforms_to_the_pinned_config_schema() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../contract/openapi-2.4.0.json")).unwrap();
+        let schema = contract["components"]["schemas"]["Config.InfoEncoded"].clone();
+        for (name, doc) in [
+            ("fixture", fixture_doc()),
+            ("overridden", overridden_doc()),
+            ("bare", overrides(json!({}), &Overrides::default())),
+        ] {
+            conforms(&contract, &schema, &doc, name).unwrap();
+        }
+        // and the checker does reject what it should
+        let bad = json!({"policies": [{"action": "mcp.use", "resource": "x", "effect": "maybe"}]});
+        assert!(conforms(&contract, &schema, &bad, "bad").is_err());
+        let extra = json!({"not_a_key": 1});
+        assert!(conforms(&contract, &schema, &extra, "extra").is_err());
+    }
+
+    const WRITERS: &str = "/app/opencode/vault.json";
+
+    fn doc_at(path: &str, info: Value) -> Value {
+        json!({"type": "file", "path": path, "info": info})
+    }
+
+    fn doc_entry(info: Value) -> Value {
+        doc_at("/never/read", info)
+    }
+
+    /// `GET /api/config`: keys and the actions of the policies only; the servers' environment and
+    /// headers are in the same documents and are never taken.
+    #[test]
+    fn the_names_are_the_keys_and_nothing_else_of_the_documents() {
+        let own = Path::new(WRITERS);
+        let reply = json!([
+            doc_entry(json!({"mcp": {"servers": {
+                "g-a": {"type": "local", "command": ["x"], "environment": {"TOKEN": "s3cret"}},
+                "g-r": {"type": "remote", "url": "https://x", "headers": {"authorization": "s3cret"}},
+                "writer": {"type": "local", "command": ["w"]},
+            }}})),
+            doc_at(
+                WRITERS,
+                json!({"policies": policies(&Overrides::default()), "mcp": {"servers": {"g-b": {}}}}),
+            ),
+        ]);
+        let names = config_names(&reply, own);
+        assert_eq!(
+            names.mcp,
+            ["g-a", "g-b", "g-r"],
+            "sorted, Writer's own left out"
+        );
+        assert!(
+            !names.foreign_mcp_policy,
+            "Writer's own document is found by its path"
+        );
+        assert!(!format!("{names:?}").contains("s3cret"));
+        // `{data: [...]}` reads the same
+        assert_eq!(config_names(&json!({"data": reply}), own), names);
+        assert_eq!(config_names(&json!(null), own), ConfigNames::default());
+    }
+
+    #[test]
+    fn a_users_mcp_policy_is_seen_but_other_policies_are_not_one() {
+        let own = Path::new(WRITERS);
+        let allow_x = json!({"action": "mcp.use", "resource": "x", "effect": "allow"});
+        let reply = json!([doc_entry(json!({"policies": [allow_x]}))]);
+        assert!(config_names(&reply, own).foreign_mcp_policy);
+        let provider = json!({"action": "provider.use", "resource": "x", "effect": "deny"});
+        let reply = json!([doc_entry(json!({"policies": [provider]}))]);
+        assert!(!config_names(&reply, own).foreign_mcp_policy);
+        // Writer's own document, found by its path, is not the user's
+        let mine = policies(&Overrides::default());
+        let reply = json!([doc_at(WRITERS, json!({"policies": mine}))]);
+        assert!(!config_names(&reply, own).foreign_mcp_policy);
+        // a user document that holds exactly Writer's policies, at another path, is the user's
+        let reply = json!([doc_entry(json!({"policies": mine}))]);
+        assert!(config_names(&reply, own).foreign_mcp_policy);
+    }
+
+    /// The names step over the shape the real 2.4.0 gave (`fixtures/global-c2-levers.json`, N1:
+    /// the user's document, its folder entry, Writer's, in that order; `global-c1-timing.json`:
+    /// every entry has `type`, `path` and `info`). The capture scrubbed the path values, so they
+    /// are synthetic here; what is pinned is that Writer's document is the one at its path.
+    #[test]
+    fn the_captured_documents_give_the_names_and_find_writers_by_its_path() {
+        let dir = crate::features::opencode::events_tests::fixtures_dir();
+        let read = |f: &str| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap()
+        };
+        let c1 = read("global-c1-timing.json");
+        let keys: Vec<&str> = c1["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|s| s["result"]["top_level_keys"].as_array())
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        assert!(keys.contains(&"path") && keys.contains(&"info") && keys.contains(&"type"));
+        let c2 = read("global-c2-levers.json");
+        let n1 = c2["variants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["variant"].as_str().is_some_and(|n| n.starts_with("N1")))
+            .unwrap()["config_documents"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let docs = |writer_path: &str| -> Value {
+            Value::Array(
+                n1.iter()
+                    .enumerate()
+                    .map(|(i, d)| {
+                        let servers: Map<String, Value> = d["mcp_server_names"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|n| (n.as_str().unwrap().to_string(), json!({})))
+                            .collect();
+                        let path = if i == n1.len() - 1 {
+                            writer_path.to_string()
+                        } else {
+                            format!("/user/{i}")
+                        };
+                        let mut info = json!({"mcp": {"servers": servers}});
+                        if !d["policies"].is_null() {
+                            info["policies"] = d["policies"].clone();
+                        }
+                        doc_at(&path, info)
+                    })
+                    .collect(),
+            )
+        };
+        let names = config_names(&docs(WRITERS), Path::new(WRITERS));
+        assert_eq!(names.mcp, ["g-a", "g-b", "g-r"]);
+        assert!(
+            !names.foreign_mcp_policy,
+            "Writer's own policies are found by path"
+        );
+        // the capture does not show the path as the server spells it: when none matches, Writer's
+        // own policies read as the user's, which falls back to Writer's config alone (closed)
+        assert!(config_names(&docs("/elsewhere.json"), Path::new(WRITERS)).foreign_mcp_policy);
+    }
+
+    #[test]
+    fn the_foreign_agents_are_the_enabled_ones_that_could_run_and_are_not_writers_or_systems() {
+        let ours = vec!["writer".to_string()];
+        let list = [
+            json!({"id": "writer", "mode": "primary"}),
+            json!({"id": "g-prim", "mode": "primary"}),
+            json!({"id": "g-sub", "mode": "subagent", "disabled": false}),
+            json!({"id": "off", "mode": "all", "disabled": true}),
+            json!({"id": "tool", "mode": "tool"}),
+            json!({"id": "summary", "mode": "primary", "hidden": true}),
+        ];
+        assert_eq!(foreign_agents(&list, &ours), ["g-prim", "g-sub"]);
     }
 
     #[test]

@@ -7,6 +7,8 @@ import {
   filterModels,
   formatContext,
   formatCost,
+  isModelOn,
+  offProviderNames,
   providerTabs,
   resolveProvider,
 } from "../web/lib/models";
@@ -23,6 +25,24 @@ describe("models table rules", () => {
     expect(providerTabs(MODELS)).toEqual(["Acme AI", "Zed Labs"]);
     expect(providerTabs([])).toEqual([]);
     expect(providerTabs([...MODELS].reverse())).toEqual(["Acme AI", "Zed Labs"]);
+  });
+
+  it("keeps the tab of a provider the server no longer lists (switched off)", () => {
+    const zed = { id: "zed", name: "Zed Labs" };
+    const gone = { id: "old", name: "Old Co" };
+    expect(providerTabs(MODELS, [zed, gone])).toEqual(["Acme AI", "Old Co", "Zed Labs"]);
+    expect(offProviderNames([zed, gone], ["old"])).toEqual(["Old Co"]);
+    expect(offProviderNames([zed, gone], [])).toEqual([]);
+  });
+
+  it("a model of a provider switched off is off, and the Enabled chip leaves it out", () => {
+    expect(isModelOn(MODELS[0]!, [], [])).toBe(true);
+    expect(isModelOn(MODELS[0]!, [], ["Acme AI"])).toBe(false);
+    expect(isModelOn(MODELS[0]!, ["acme/big-1"], [])).toBe(false);
+    const opts = { provider: null, enabled: true, free: false, query: "", disabled: [] };
+    expect(filterModels(MODELS, { ...opts, offProviders: ["Acme AI"] }).map((m) => m.id)).toEqual([
+      "zed/free-1",
+    ]);
   });
 
   it("falls back to All when the selected provider is gone", () => {

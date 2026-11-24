@@ -5,6 +5,7 @@
 
 use super::adapter::{self, OpencodeAdapter};
 use super::client::{Client, SHORT};
+use super::config;
 use super::modes::{Disabled, ModePolicy};
 use super::opencode_api::{self as api, CreateSessionBody, GenerateBody, Location, ModelRef};
 use super::server::{version_ok, OpencodeServer};
@@ -13,7 +14,7 @@ use super::transport::OpencodeTransport;
 use crate::agent::backend::{Backend, BackendOps, ForgetCtx, HelperCtx};
 use crate::agent::binary::{self, AgentBinaryInfo};
 use crate::agent::config_sync::McpProbe;
-use crate::agent::events::McpServerStatus;
+use crate::agent::events::{McpServerStatus, McpState};
 use crate::agent::mcp_menu::SwitchSpec;
 use crate::agent::title::{sanitize_title, TitleAsker};
 use crate::agent::transport::{Transport, TransportInit};
@@ -77,14 +78,17 @@ impl<R: Runtime> BackendOps for Driver<R> {
         session_id_ok(id)
     }
 
-    /// No switches in phase 1 of the MCP menu (ADR 2026-11-24): the config stays Writer's file
-    /// alone (U1), so no switch could be put in force and the menu is not shown. Phase 2 answers
-    /// with `agent.opencode.enabled-mcp-servers`, off unless listed.
+    /// The MCP switches (ADR 2026-11-24): `agent.opencode.enabled-mcp-servers`, off unless listed.
+    /// They are in force at once: Writer's config file renders them as policies and placeholders
+    /// and the server reads it again (`mcp_apply`).
     fn mcp_switches(&self) -> Option<SwitchSpec> {
-        None
+        Some(config::MCP_SWITCHES)
     }
 
-    /// What the server itself reports (`GET /api/mcp`), the one mapper of `SessionStarted`.
+    /// What the server reports (`GET /api/mcp`, the one mapper of `SessionStarted`) together with
+    /// the names it found in the user's config: a server held off by the deny-all policies is not
+    /// listed by the server, so it is a `disabled` row. What the server listed is kept as known,
+    /// so it can be switched (a built-in server too).
     fn mcp_list(
         &self,
         ctx: &HelperCtx<'_>,
@@ -92,7 +96,7 @@ impl<R: Runtime> BackendOps for Driver<R> {
     ) -> Result<Vec<McpServerStatus>, String> {
         let server = self.servers.ensure_up(ctx.label, ctx.root)?;
         let client = server.connection().ok_or("OpenCode is not running")?.client;
-        server
+        let mut rows = server
             .io()
             .call(
                 async move { client.get(&api::MCP, &[]).await },
@@ -100,7 +104,24 @@ impl<R: Runtime> BackendOps for Driver<R> {
             )
             .ok_or("OpenCode did not answer")?
             .map(api::mcp_statuses)
-            .map_err(|_| "OpenCode could not list its MCP servers".to_string())
+            .map_err(|_| "OpenCode could not list its MCP servers".to_string())?;
+        server.learn_mcp(rows.iter().map(|s| s.name.clone()));
+        let held_off: Vec<McpServerStatus> = server
+            .mcp_known()
+            .into_iter()
+            .filter(|n| !rows.iter().any(|s| &s.name == n))
+            .map(|name| McpServerStatus {
+                name,
+                status: McpState::Disabled,
+            })
+            .collect();
+        rows.extend(held_off);
+        Ok(rows)
+    }
+
+    /// A switch changed: the config is rendered again and read again when no turn runs.
+    fn mcp_apply(&self, ctx: &HelperCtx<'_>) -> Result<(), String> {
+        self.servers.reapply(ctx.label)
     }
 
     fn connect(&self, init: TransportInit) -> Result<Arc<dyn Transport>, String> {
@@ -109,8 +130,13 @@ impl<R: Runtime> BackendOps for Driver<R> {
         let (app, label) = (self.servers.app().clone(), init.label.clone());
         let disabled: Disabled =
             Arc::new(move || crate::config::global_list(&app, &label, DISABLED_MODELS_SETTING));
+        let (app, label) = (self.servers.app().clone(), init.label.clone());
+        let providers_off: Disabled = Arc::new(move || {
+            crate::config::global_list(&app, &label, config::PROVIDERS_OFF_SETTING)
+        });
         let policy = ModePolicy::new(adapter::table())
             .with_disabled(disabled)
+            .with_providers_off(providers_off)
             .for_vault(init.root.clone());
         Ok(Arc::new(OpencodeTransport::new(
             init,

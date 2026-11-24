@@ -175,9 +175,10 @@ pub fn locate_program(
     (Some((hit, source)), vec![])
 }
 
-/// `2.1.325 (Claude Code)` -> `2.1.325`.
+/// `2.1.325 (Claude Code)` -> `2.1.325`; `othercli v2.4.0` -> `2.4.0` (a leading `v` is dropped).
 pub fn parse_version(out: &str) -> Option<String> {
     out.split_whitespace()
+        .map(|t| t.strip_prefix('v').unwrap_or(t))
         .find(|t| {
             !t.is_empty()
                 && t.split('.').count() >= 2
@@ -409,6 +410,8 @@ mod tests {
             parse_version("2.1.325 (Claude Code)\n").as_deref(),
             Some("2.1.325")
         );
+        assert_eq!(parse_version("othercli v2.4.0\n").as_deref(), Some("2.4.0"));
+        assert_eq!(parse_version("v"), None);
         assert_eq!(parse_version("nonsense"), None);
         assert!(is_older_than_verified(Some("2.1.324")));
         assert!(is_older_than_verified(Some("1.9.999")));

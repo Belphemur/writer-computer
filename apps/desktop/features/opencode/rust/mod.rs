@@ -33,6 +33,7 @@ pub mod client;
 mod commands;
 pub mod config;
 pub mod driver;
+pub mod in_force;
 pub mod models;
 pub mod modes;
 pub mod opencode_api;

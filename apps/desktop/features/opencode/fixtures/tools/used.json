@@ -6,6 +6,7 @@
     "GET /api/model",
     "GET /api/provider",
     "GET /api/mcp",
+    "GET /api/config",
     "GET /api/skill",
     "GET /api/command",
     "GET /api/agent",

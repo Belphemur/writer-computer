@@ -227,6 +227,36 @@ describe("Settings > Agent > MCP servers", () => {
     expect(calls.some(([c]) => c === "set_setting")).toBe(false);
   });
 
+  it("where the list holds the servers switched on, an entry covers only its own server", async () => {
+    const server = (name: string, enabled: boolean) => ({
+      name,
+      names: [name],
+      status: "connected" as const,
+      ownedByWriter: false,
+      enabled,
+    });
+    useSettingsStore.setState({
+      settings: { ...useSettingsStore.getState().settings, "agent.test.mcp": ["a"] },
+    });
+    answer = {
+      ...menuOf("off unless listed, with a stale switch"),
+      setting: "agent.test.mcp",
+      defaultOn: false,
+      servers: [{ ...answer.servers[0]! }, server("a", true), server("a__b", false)],
+    };
+    await mount("other");
+    const child = q("[data-agent-mcp-server=a__b] [role=switch]") as HTMLButtonElement;
+    // `a` on does not switch `a__b` on, and `a__b` is its own switch (not locked, not "Off with")
+    expect(child.getAttribute("aria-checked")).toBe("false");
+    expect(child.disabled).toBe(false);
+    expect(q("[data-agent-mcp-covered]")).toBeNull();
+    await click(child);
+    await flush();
+    expect(calls.filter(([c]) => c === "set_setting").map(([, a]) => a.value)).toEqual([
+      ["a", "a__b"],
+    ]);
+  });
+
   it("a refresh that a newer read replaced still ends its own Checking", async () => {
     await mount();
     let release!: (menu: McpMenu) => void;

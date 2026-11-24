@@ -215,7 +215,16 @@ fn count(events: &[AgentEvent], f: impl Fn(&AgentEvent) -> bool) -> usize {
 
 #[test]
 fn the_first_send_makes_the_session_announces_it_and_posts_the_prompt_with_a_stable_id() {
-    let r = Rig::new("2.4.0");
+    // the recorded list, `opencode_console` needs_auth included: a server that is not running
+    // offers no tools, so it passes the gate
+    let r = Rig::with("2.4.0", |l| {
+        let all: Value = serde_json::from_str(
+            &std::fs::read_to_string(super::events_tests::fixtures_dir().join("rest.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        *l.mcp_reply.lock() = Some(all["mcp"]["body"].clone());
+    });
     r.start(1, false, "chat").unwrap();
     let id = new_id();
     let receipt = r.t.send(&Outbound {
@@ -2055,6 +2064,186 @@ fn the_agent_list_is_read_once_per_start_and_before_the_session_is_given_its_age
         "the list is read once"
     );
     assert!(at("GET", "/api/agent").unwrap() < at("POST", "/agent").unwrap());
+    // the one gate also asks for the MCP servers, once per start and before the first prompt
+    let first_patch = at("PATCH", "/api/session").unwrap();
+    let gate_reads = calls[..first_patch]
+        .iter()
+        .filter(|q| q.method == "GET" && q.path == "/api/mcp")
+        .count();
+    assert_eq!(
+        gate_reads, 1,
+        "the servers are read once, before the rules are set"
+    );
+}
+
+/// The text of the first card that says something went wrong.
+fn error_texts(r: &Rig) -> Vec<String> {
+    r.events()
+        .into_iter()
+        .filter_map(|e| match e {
+            AgentEvent::Error { message, .. } => Some(message),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A scripted `GET /api/mcp` that answers `bad` while no reload has happened and the rig's own
+/// list (nothing running but Writer's) after it, like a server that obeys the rewritten file.
+fn mcp_until_reload(shared: Arc<super::fake_server_tests::Shared>, bad: Value) -> Handler {
+    Box::new(move |q: &Req| {
+        if !(q.method == "GET" && q.path == "/api/mcp") {
+            return None;
+        }
+        let reloaded = shared
+            .requests
+            .lock()
+            .iter()
+            .any(|r| r.path == "/api/location/reload");
+        (!reloaded).then(|| (200, bad.clone()))
+    })
+}
+
+/// (b) A server that runs and was not switched on is put under the lever by name (a placeholder,
+/// the file rewritten and read again, once); when the reload obeys, the start goes on.
+#[test]
+fn an_mcp_server_that_runs_unasked_is_held_off_by_name_and_the_start_goes_on() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    let shared = Arc::clone(&r.fake().shared);
+    *shared.handler.lock() = Some(mcp_until_reload(
+        Arc::clone(&shared),
+        json!({"data": [
+            {"name": "writer", "status": {"status": "connected"}},
+            {"name": "opencode_console", "status": {"status": "connected"}},
+        ]}),
+    ));
+    send_first(&r);
+    wait_for("the prompt", 10, || {
+        !r.fake().find("POST", "/prompt").is_empty()
+    });
+    assert_eq!(
+        r.fake().find("POST", "/api/location/reload").len(),
+        1,
+        "read again once"
+    );
+    let doc: Value = serde_json::from_str(
+        &std::fs::read_to_string(r.h.dir.path().join("opencode/opencode.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(doc["mcp"]["servers"]["opencode_console"]["disabled"], true);
+    assert!(r
+        .h
+        .server
+        .mcp_known()
+        .contains(&"opencode_console".to_string()));
+}
+
+/// (b) One that still runs after that stops the server and refuses, with a neutral message and
+/// no prompt; the next start is a new process.
+#[test]
+fn an_mcp_server_that_still_runs_after_the_rewrite_stops_the_server_and_refuses_the_chat() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    *r.fake().shared.mcp_reply.lock() = Some(json!({"data": [
+        {"name": "writer", "status": {"status": "connected"}},
+        {"name": "g-x", "status": {"status": "connected"}},
+    ]}));
+    send_first(&r);
+    r.until("the refusal", |l| {
+        l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("not switched on")))))
+    });
+    assert!(r.fake().find("POST", "/prompt").is_empty());
+    wait_for("the process to stop", 10, || {
+        r.h.launcher.current().exited().is_some()
+    });
+    assert_eq!(
+        r.fake().find("POST", "/api/location/reload").len(),
+        1,
+        "one rewrite, then refused"
+    );
+    let said = error_texts(&r).join("\n");
+    assert!(!said.contains("g-x"), "the card names no server: {said}");
+}
+
+/// (b) A server that is switched on may run; a `disabled` one that is not is fine.
+#[test]
+fn a_switched_on_server_and_a_disabled_one_pass_the_gate() {
+    let r = Rig::new("2.4.0");
+    r.h.server.on_switches(Arc::new(|| super::server::Stored {
+        mcp_on: vec!["g-a".to_string()],
+        providers_off: Vec::new(),
+    }));
+    r.start(1, false, "chat").unwrap();
+    *r.fake().shared.mcp_reply.lock() = Some(json!({"data": [
+        {"name": "writer", "status": {"status": "connected"}},
+        {"name": "g-a", "status": {"status": "failed", "error": "x"}},
+        {"name": "g-b", "status": {"status": "disabled"}},
+    ]}));
+    send_first(&r);
+    wait_for("the prompt", 10, || {
+        !r.fake().find("POST", "/prompt").is_empty()
+    });
+}
+
+/// (a) An agent of the user's is disabled by name (rewrite, reload, recheck) and the start goes on.
+#[test]
+fn a_foreign_agent_is_disabled_by_name_and_the_start_goes_on() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    let shared = Arc::clone(&r.fake().shared);
+    let seen = Arc::clone(&shared);
+    *shared.handler.lock() = Some(Box::new(move |q: &Req| {
+        if !(q.method == "GET" && q.path == "/api/agent") {
+            return None;
+        }
+        let reloaded = seen
+            .requests
+            .lock()
+            .iter()
+            .any(|r| r.path == "/api/location/reload");
+        let mut list = vec![json!({"id": "writer", "mode": "primary"})];
+        if !reloaded {
+            list.push(json!({"id": "g-prim", "mode": "primary"}));
+        }
+        Some((200, json!({"data": list})))
+    }));
+    send_first(&r);
+    wait_for("the prompt", 10, || {
+        !r.fake().find("POST", "/prompt").is_empty()
+    });
+    let doc: Value = serde_json::from_str(
+        &std::fs::read_to_string(r.h.dir.path().join("opencode/opencode.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(doc["agents"]["g-prim"], json!({"disabled": true}));
+}
+
+/// (c) Writer's agent resolves to more than Writer wrote (a later allow): refused at once, no
+/// reload, no prompt.
+#[test]
+fn permissions_that_are_looser_than_writers_refuse_the_start() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    *r.fake().shared.handler.lock() = Some(Box::new(|q: &Req| {
+        (q.method == "GET" && q.path == "/api/agent").then(|| {
+            (
+                200,
+                json!({"data": [{"id": "writer", "mode": "primary", "permissions": [
+                    {"action": "*", "resource": "*", "effect": "ask"},
+                    {"action": "edit", "resource": "*", "effect": "allow"},
+                ]}]}),
+            )
+        })
+    }));
+    send_first(&r);
+    r.until("the refusal", |l| {
+        l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("permissions")))))
+    });
+    assert!(r.fake().find("POST", "/prompt").is_empty());
+    assert!(
+        r.fake().find("POST", "/api/location/reload").is_empty(),
+        "nothing to rewrite"
+    );
 }
 
 /// A hidden agent is trusted by OpenCode's own names only; whether a model may launch any other
@@ -2072,24 +2261,22 @@ fn a_hidden_agent_of_another_name_is_foreign_and_opencodes_own_are_not() {
         v
     };
     assert_eq!(
-        super::transport::foreign_agent(
+        super::config::foreign_agents(
             &list(json!({"id": "helper", "mode": "subagent", "hidden": true})),
             &ours
         ),
-        Some("helper")
+        ["helper"]
     );
     // a visible agent that borrows a system name is foreign: the name is trusted only when hidden
     assert_eq!(
-        super::transport::foreign_agent(&[json!({"id": "summary", "mode": "all"})], &ours),
-        Some("summary")
+        super::config::foreign_agents(&[json!({"id": "summary", "mode": "all"})], &ours),
+        ["summary"]
     );
-    assert_eq!(
-        super::transport::foreign_agent(
-            &list(json!({"id": "x", "mode": "all", "disabled": true})),
-            &ours
-        ),
-        None
-    );
+    assert!(super::config::foreign_agents(
+        &list(json!({"id": "x", "mode": "all", "disabled": true})),
+        &ours
+    )
+    .is_empty());
 }
 
 /// The real 2.4.0 lists (`fixtures/config-load.json`, s35): the built-in list is foreign, Writer's
@@ -2110,12 +2297,9 @@ fn the_captured_agent_lists_decide_as_the_check_needs() {
             .collect()
     };
     let ours = ModePolicy::new(super::events_tests::table()).known_agents();
-    assert!(super::transport::foreign_agent(&list("immediately"), &ours).is_some());
-    assert_eq!(super::transport::foreign_agent(&list("later"), &ours), None);
-    assert_eq!(
-        super::transport::foreign_agent(&list("after_reload"), &ours),
-        None
-    );
+    assert!(!super::config::foreign_agents(&list("immediately"), &ours).is_empty());
+    assert!(super::config::foreign_agents(&list("later"), &ours).is_empty());
+    assert!(super::config::foreign_agents(&list("after_reload"), &ours).is_empty());
     assert_eq!(cap["session_survives_reload"], true);
 }
 
@@ -2253,6 +2437,28 @@ fn a_switched_off_model_is_refused_with_its_variant_too() {
         .is_none());
 }
 
+/// A turn on a provider the user switched off would fail in the server with a bare code: the chat
+/// is refused before it starts, with the reason.
+#[test]
+fn a_switched_off_provider_refuses_a_model_of_it_before_the_start() {
+    let policy = ModePolicy::new(super::events_tests::table())
+        .with_providers_off(Arc::new(|| vec!["fake-b".to_string()]));
+    let why = policy
+        .refuse_model(&ModelRef::parse("fake-b/any#high").unwrap())
+        .expect("refused");
+    assert!(
+        why.contains("provider") && why.contains("fake-b/any"),
+        "{why}"
+    );
+    assert!(policy
+        .refuse_model(&ModelRef::parse("fake-a/any").unwrap())
+        .is_none());
+    // no switches: nothing is refused
+    assert!(ModePolicy::new(super::events_tests::table())
+        .refuse_model(&ModelRef::parse("fake-b/any").unwrap())
+        .is_none());
+}
+
 #[test]
 fn a_chat_on_a_stopped_server_is_gone_for_good_and_not_a_failed_start() {
     // the feature went off and on again: the chat still holds the old server, which never starts
@@ -2262,4 +2468,58 @@ fn a_chat_on_a_stopped_server_is_gone_for_good_and_not_a_failed_start() {
     r.h.server.shutdown();
     let err = r.start(2, false, "s").unwrap_err();
     assert_eq!(err, SpawnError::Gone);
+}
+
+/// (a) A foreign agent whose first reload the server refuses: the process is stopped with the
+/// card, and the next send, on a new process that reads the rewritten file, passes the gate.
+#[test]
+fn a_gate_reload_that_fails_stops_the_server_and_the_next_send_passes() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    let shared = Arc::clone(&r.fake().shared);
+    let seen = Arc::clone(&shared);
+    *shared.handler.lock() = Some(Box::new(move |q: &Req| {
+        if q.path == "/api/location/reload" {
+            return Some((500, json!({"_tag": "Boom"})));
+        }
+        if !(q.method == "GET" && q.path == "/api/agent") {
+            return None;
+        }
+        let _ = &seen;
+        Some((
+            200,
+            json!({"data": [
+                {"id": "writer", "mode": "primary"},
+                {"id": "g-prim", "mode": "primary"},
+            ]}),
+        ))
+    }));
+    send_first(&r);
+    wait_for("the first process to stop", 10, || {
+        r.h.launcher.current().exited().is_some()
+    });
+    assert!(r.fake().find("POST", "/prompt").is_empty());
+    // the next start: a new process, whose file has the agent disabled
+    r.start(2, false, "chat").unwrap();
+    send_first(&r);
+    wait_for("the prompt", 10, || {
+        !r.fake().find("POST", "/prompt").is_empty()
+    });
+    assert_eq!(r.h.launcher.launches(), 2);
+}
+
+/// Any refusal that follows a rewrite stops the process, not only an MCP one.
+#[test]
+fn a_refusal_after_a_rewrite_stops_the_process() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    // the foreign agent stays listed after the rewrite and its reload
+    *r.fake().shared.handler.lock() = Some(agent_list(
+        json!([{"id": "writer", "mode": "primary"}, {"id": "g-prim", "mode": "primary"}]),
+    ));
+    send_first(&r);
+    r.until("the refusal", |l| refusals(l) == 1);
+    wait_for("the process to stop", 10, || {
+        r.h.launcher.current().exited().is_some()
+    });
 }

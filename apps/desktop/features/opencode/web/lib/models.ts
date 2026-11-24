@@ -10,12 +10,28 @@ import {
   matchesQuery,
   type BackendModel,
 } from "@/lib/features/agent-backends";
-import type { OpencodeModel } from "../ipc";
+import type { OpencodeModel, ProviderRow } from "../ipc";
 
-/** The providers present in the list, by the name the server reports, in alphabetical order
+/** The providers present in the list or known to the server (an off one keeps its tab), by the name the server reports, in alphabetical order
  *  (the tab row of the table; the first tab, All, is not one of them). */
-export const providerTabs = (models: readonly BackendModel[]): string[] =>
-  groupByProvider(models).map((g) => g.provider);
+export const providerTabs = (
+  models: readonly BackendModel[],
+  providers: readonly ProviderEntry[] = [],
+): string[] =>
+  groupByProvider<{ provider?: string }>([
+    ...models,
+    ...providers.map((p) => ({ provider: p.name })),
+  ]).map((g) => g.provider);
+
+/** A provider of the server (`opencode_providers`): its id is what
+ *  `agent.opencode.disabled-providers` stores, its name is the tab. */
+export type ProviderEntry = Pick<ProviderRow, "id" | "name">;
+
+/** The ids switched off, as the models see them: by provider name (a model carries the name). */
+export const offProviderNames = (
+  providers: readonly ProviderEntry[],
+  disabled: readonly string[],
+): string[] => providers.filter((p) => disabled.includes(p.id)).map((p) => p.name);
 
 /** The selected provider when the list still has it, else `null` (All): a refreshed list that lost
  *  the provider falls back to All. */
@@ -41,6 +57,13 @@ export const toBackendModel = (m: OpencodeModel): BackendModel => ({
   reasoning: m.reasoning,
 });
 
+/** Whether a model is on in the table: enabled by the shared rule and its provider not switched off. */
+export const isModelOn = (
+  model: BackendModel,
+  disabled: readonly string[],
+  offProviders: readonly string[],
+): boolean => isModelEnabled(model, disabled) && !offProviders.includes(model.provider ?? "");
+
 /** The rows of the table: the provider tab (`null` is All), the Enabled and Free chips and the
  *  search all narrow together. */
 export function filterModels(
@@ -51,11 +74,13 @@ export function filterModels(
     free: boolean;
     query: string;
     disabled: readonly string[];
+    /** Provider names switched off: their models are off whatever the model list says. */
+    offProviders?: readonly string[];
   },
 ): BackendModel[] {
   return models.filter((m) => {
     if (opts.provider !== null && m.provider !== opts.provider) return false;
-    if (opts.enabled && !isModelEnabled(m, opts.disabled)) return false;
+    if (opts.enabled && !isModelOn(m, opts.disabled, opts.offProviders ?? [])) return false;
     if (opts.free && !m.free) return false;
     return matchesQuery(opts.query, m.provider, m.label);
   });

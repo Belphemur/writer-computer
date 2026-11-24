@@ -14,6 +14,8 @@ pub fn builder<R: Runtime>() -> Builder<R> {
             commands::opencode_models::<Wry>,
             commands::opencode_saved_rules::<Wry>,
             commands::opencode_remove_saved_rule::<Wry>,
+            commands::opencode_providers::<Wry>,
+            commands::opencode_reconfigure::<Wry>,
         ])
 }
 

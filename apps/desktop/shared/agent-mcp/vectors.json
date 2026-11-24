@@ -1,5 +1,5 @@
 {
-  "$comment": "The MCP servers menu's two rules, read by Rust (src-tauri/src/agent/mcp_menu.rs, mcp_wiring.rs) and TypeScript (src/lib/switches.ts): `keys` is the one name every harness knows a server by (each character outside [A-Za-z0-9_-] becomes `_`, captures K2 and C8 in SPECs/native-agent-spec.md 7.1); `on` is the switch rule over the stored list (`defaultOn`: the list holds the servers switched off; else the ones switched on); `after` is the list after switching `name` on or off; `mcpOn` and `mcpAfter` are the same for MCP servers, whose stored names may be raw (`my.srv`) and whose switch also covers the servers its tool glob covers (`a` covers `a__b`). `settled` says which wire states need no attention (config_sync::is_settled, mcpNeedsAttention in features/agent/web/lib/mcp-status.ts): connected, or switched off on purpose.",
+  "$comment": "The MCP servers menu's two rules, read by Rust (src-tauri/src/agent/mcp_menu.rs, mcp_wiring.rs) and TypeScript (src/lib/switches.ts): `keys` is the one name every harness knows a server by (each character outside [A-Za-z0-9_-] becomes `_`, captures K2 and C8 in SPECs/native-agent-spec.md 7.1); `on` is the switch rule over the stored list (`defaultOn`: the list holds the servers switched off; else the ones switched on); `after` is the list after switching `name` on or off; `mcpOn` and `mcpAfter` are the same for MCP servers, whose stored names may be raw (`my.srv`) and whose switch also covers the servers its tool glob covers (`a` covers `a__b`) when the list holds the servers switched OFF (`defaultOn` true: Claude's `mcp__a__*` glob); when the list holds the servers switched ON (`defaultOn` false) an entry covers only its own key, so `a` never switches `a__b` on. `settled` says which wire states need no attention (config_sync::is_settled, mcpNeedsAttention in features/agent/web/lib/mcp-status.ts): connected, or switched off on purpose.",
   "keys": [
     {
       "raw": "plain",
@@ -180,7 +180,19 @@
       "defaultOn": false,
       "list": ["a"],
       "name": "a__b",
+      "on": false
+    },
+    {
+      "defaultOn": false,
+      "list": ["a", "a__b"],
+      "name": "a__b",
       "on": true
+    },
+    {
+      "defaultOn": false,
+      "list": ["a__b"],
+      "name": "a",
+      "on": false
     },
     {
       "defaultOn": false,
@@ -231,6 +243,27 @@
       "name": "my_srv",
       "on": false,
       "result": ["x"]
+    },
+    {
+      "defaultOn": false,
+      "list": ["a"],
+      "name": "a__b",
+      "on": true,
+      "result": ["a", "a__b"]
+    },
+    {
+      "defaultOn": false,
+      "list": ["a", "a__b"],
+      "name": "a__b",
+      "on": false,
+      "result": ["a"]
+    },
+    {
+      "defaultOn": false,
+      "list": ["a"],
+      "name": "a__b",
+      "on": false,
+      "result": ["a"]
     }
   ],
   "settled": [

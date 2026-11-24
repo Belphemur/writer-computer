@@ -15,9 +15,16 @@ With OpenCode missing or switched off, Writer looks and works as before.
 
 With two agents usable, the pane's empty state lets you pick one for the new chat. Settings > Agent > **Default agent** sets the one a new chat starts on. A chat keeps its agent.
 
-## Writer's own OpenCode config
+## Your OpenCode config
 
-Writer runs its own OpenCode server with its own config. Your global OpenCode config, plugins, agents and MCP servers do not apply, and neither does a `opencode.json` or `.opencode/` folder in the vault. Writer adds its own tools (the note tools) and roles (an explorer and a worker). Your logins still work.
+Your global OpenCode config applies: providers and logins, instructions, skills and plugins. Writer adds its own tools (the note tools) and roles (an explorer and a worker) on top, and ignores an `opencode.json` or `.opencode/` folder in the vault.
+
+- MCP servers: off until you switch them on in Settings > Agent > OpenCode (MCP servers). `writer` is always on. A switch applies at once and restarts the servers.
+- Agents: your global OpenCode agents are disabled in Writer.
+- Permissions: global allows do not apply; Writer asks as in its permission modes.
+- Plugins run with your account rights and are not sandboxed.
+- If your config sets an MCP policy (`mcp.use`), Writer uses its own config only and Settings says so.
+- Providers: a switch per provider in the models table turns it off for Writer.
 
 ## Models
 

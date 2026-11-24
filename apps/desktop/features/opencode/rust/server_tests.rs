@@ -68,6 +68,11 @@ fn kinds(seen: &Seen) -> Vec<String> {
         .collect()
 }
 
+/// The config file as the server wrote it: Writer's document with the overrides on top.
+fn written_doc(file: &std::path::Path) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
+}
+
 fn ev(kind: &str, data: serde_json::Value) -> String {
     json!({"id": "evt_fake", "created": 1, "type": kind, "data": data}).to_string()
 }
@@ -95,6 +100,7 @@ fn the_environment_drops_every_inherited_opencode_variable_and_keeps_the_home() 
         .map(|(k, v)| (k.to_string(), v.to_string())),
         "pw",
         &s,
+        GlobalConfig::Loaded,
     );
     let get = |k: &str| -> Vec<&str> {
         env.iter()
@@ -110,11 +116,33 @@ fn the_environment_drops_every_inherited_opencode_variable_and_keeps_the_home() 
     assert_eq!(get("OPENCODE_DISABLE_PROJECT_CONFIG"), ["1"]);
     assert_eq!(get("OPENCODE_DISABLE_CLAUDE_CODE"), ["1"]);
     assert_eq!(get("OPENCODE_DISABLE_AUTOUPDATE"), ["1"]);
-    assert_eq!(get("XDG_CONFIG_HOME"), ["/w/opencode/xdg-config"]);
+    // the user's own config home stays: their OpenCode config loads, held off by Writer's file
+    assert_eq!(get("XDG_CONFIG_HOME"), ["/home/fake/.config"]);
+    assert!(get("WRITER_USER_XDG_CONFIG_HOME").is_empty());
     // the shell the user had goes to the wrapper, which is the server's `SHELL`; nothing spoofs it
     assert_eq!(get("SHELL"), ["/w/opencode/writer-shell"]);
     assert_eq!(get("WRITER_USER_SHELL"), ["/bin/fish"]);
+    // the fallback (the user's config sets an MCP policy) runs on Writer's empty home instead and
+    // hands the user's own to the wrapper
+    let env = isolated_env(
+        [
+            ("XDG_CONFIG_HOME", "/home/fake/.config"),
+            ("HOME", "/home/fake"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+        "pw",
+        &s,
+        GlobalConfig::SkippedMcpPolicy,
+    );
+    let get = |k: &str| -> Vec<&str> {
+        env.iter()
+            .filter(|(n, _)| n == k)
+            .map(|(_, v)| v.as_str())
+            .collect()
+    };
+    assert_eq!(get("XDG_CONFIG_HOME"), ["/w/opencode/xdg-config"]);
     assert_eq!(get("WRITER_USER_XDG_CONFIG_HOME"), ["/home/fake/.config"]);
+    assert_eq!(get("HOME"), ["/home/fake"]);
 }
 
 fn settings_in(dir: &std::path::Path) -> ServerSettings {
@@ -132,7 +160,12 @@ fn settings_in(dir: &std::path::Path) -> ServerSettings {
 /// the one name OpenCode reads before its password variable): one list, two uses.
 #[test]
 fn the_wrapper_unsets_what_the_environment_sets_and_nothing_else() {
-    let env = isolated_env(Vec::new(), "pw", &settings_in(std::path::Path::new("/w")));
+    let env = isolated_env(
+        Vec::new(),
+        "pw",
+        &settings_in(std::path::Path::new("/w")),
+        GlobalConfig::Loaded,
+    );
     let mut set: Vec<&str> = env
         .iter()
         .map(|(k, _)| k.as_str())
@@ -173,6 +206,7 @@ fn the_wrapper_hides_the_servers_settings_from_the_commands_it_runs() {
         .map(|(k, v)| (k.to_string(), v.to_string())),
         "the-password",
         &s,
+        GlobalConfig::Loaded,
     );
     let run = |env: &[(String, String)]| {
         let out = std::process::Command::new(&path)
@@ -198,6 +232,7 @@ fn the_wrapper_hides_the_servers_settings_from_the_commands_it_runs() {
         [("PATH", "/usr/bin:/bin")].map(|(k, v)| (k.to_string(), v.to_string())),
         "pw",
         &s,
+        GlobalConfig::Loaded,
     );
     let seen = run(&env);
     assert!(!seen.contains("XDG_CONFIG_HOME"), "{seen}");
@@ -250,7 +285,13 @@ fn the_config_is_written_private_once_and_a_change_reloads_a_running_server_once
     let file = h.dir.path().join("opencode/opencode.json");
     // before any server: written, nothing to reload
     h.server.apply_config("{\"a\":1}\n").unwrap();
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"a\":1}\n");
+    let first = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(written_doc(&file)["a"], 1);
+    assert_eq!(
+        written_doc(&file)["policies"][0],
+        json!({"action": "mcp.use", "resource": "*", "effect": "deny"}),
+        "the overrides are in the one write path"
+    );
     assert_eq!(
         std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
         0o600
@@ -263,9 +304,10 @@ fn the_config_is_written_private_once_and_a_change_reloads_a_running_server_once
     h.server.apply_config("{\"a\":1}\n").unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "touched");
     assert!(fake.find("POST", "/api/location/reload").is_empty());
+    assert_ne!(first, "touched");
     // a change: written and the running server reads it again, once
     h.server.apply_config("{\"a\":2}\n").unwrap();
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"a\":2}\n");
+    assert_eq!(written_doc(&file)["a"], 2);
     assert_eq!(fake.find("POST", "/api/location/reload").len(), 1);
     h.server.apply_config("{\"a\":2}\n").unwrap();
     assert_eq!(fake.find("POST", "/api/location/reload").len(), 1);
@@ -690,7 +732,7 @@ fn a_changed_config_is_read_when_the_last_running_turn_ends_and_every_chat_is_to
     wait_for("the events", 5, || h.server.dropped() == 2);
     h.server.apply_config("{\"v\":2}\n").unwrap();
     let file = h.dir.path().join("opencode/opencode.json");
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"v\":2}\n");
+    assert_eq!(written_doc(&file)["v"], 2);
     assert_eq!(reloads(), 1, "written, but a turn is running");
     fake.emit(&exec_event("session.execution.succeeded", "ses_a"));
     fake.emit(&exec_event("session.execution.interrupted", "ses_x"));
@@ -880,6 +922,7 @@ fn a_shell_that_is_the_wrapper_itself_falls_back_to_sh() {
         .map(|(k, v)| (k.to_string(), v.to_string())),
         "pw",
         &s,
+        GlobalConfig::Loaded,
     );
     assert!(env.iter().all(|(k, _)| k != "WRITER_USER_SHELL"));
     std::fs::create_dir_all(s.shell_wrapper.parent().unwrap()).unwrap();
@@ -892,4 +935,393 @@ fn a_shell_that_is_the_wrapper_itself_falls_back_to_sh() {
         .output()
         .unwrap();
     assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), "ran /bin/sh");
+}
+
+// ---------------------------------------------------------------------------------------------
+// The user's own config, held off (ADR 2026-11-24)
+
+fn user_doc(servers: serde_json::Value, policies: serde_json::Value) -> serde_json::Value {
+    json!([{"type": "file", "path": "/never/read", "info": {
+        "mcp": {"servers": servers}, "policies": policies}}])
+}
+
+fn on_switches(h: &Harness, mcp_on: &[&str], providers_off: &[&str]) {
+    let (mcp_on, providers_off): (Vec<String>, Vec<String>) = (
+        mcp_on.iter().map(|s| s.to_string()).collect(),
+        providers_off.iter().map(|s| s.to_string()).collect(),
+    );
+    h.server.on_switches(Arc::new(move || Stored {
+        mcp_on: mcp_on.clone(),
+        providers_off: providers_off.clone(),
+    }));
+}
+
+fn policy_resources(doc: &serde_json::Value, action: &str) -> Vec<String> {
+    doc["policies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["action"] == action)
+        .map(|p| {
+            format!(
+                "{} {}",
+                p["effect"].as_str().unwrap(),
+                p["resource"].as_str().unwrap()
+            )
+        })
+        .collect()
+}
+
+/// Fail closed, in order: the deny-all file is on disk at launch, `/api/info` is the first call,
+/// the names step (`GET /api/config`) is the first location-scoped one, a document that changed
+/// is read again, and only then the event stream opens.
+#[test]
+fn a_start_has_the_deny_all_file_on_disk_names_the_servers_then_reloads_before_the_stream() {
+    let h = harness("2.4.0");
+    *h.launcher.config_reply.lock() = Some(user_doc(
+        json!({"g-a": {"type": "local", "command": ["x"], "environment": {"K": "secret"}},
+               "g-b": {"type": "remote", "url": "https://x", "headers": {"authorization": "secret"}}}),
+        json!([]),
+    ));
+    on_switches(&h, &["g-a"], &[]);
+    h.server.apply_config("{}").unwrap();
+    h.server.ensure_started().unwrap();
+    // the first launch found the lever on disk: deny all, Writer's, and the stored switch, with
+    // no placeholder yet (no name of the user's is known before the names step)
+    let at_launch: serde_json::Value =
+        serde_json::from_str(h.launcher.config_at_launch.lock()[0].as_ref().unwrap()).unwrap();
+    assert_eq!(
+        policy_resources(&at_launch, "mcp.use"),
+        ["deny *", "allow writer", "allow g-a"]
+    );
+    assert!(at_launch["mcp"]["servers"].as_object().unwrap().is_empty());
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let calls: Vec<String> = fake
+        .requests()
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.path))
+        .collect();
+    let at = |needle: &str| calls.iter().position(|c| c == needle).unwrap();
+    assert_eq!(at("GET /api/info"), 0, "the one safe first call");
+    assert!(at("GET /api/info") < at("GET /api/config"));
+    assert!(at("GET /api/config") < at("POST /api/location/reload"));
+    assert!(
+        at("POST /api/location/reload") < at("GET /api/event"),
+        "{calls:?}"
+    );
+    // the names are kept, off ones get a placeholder, the one switched on is allowed
+    assert_eq!(h.server.mcp_known(), ["g-a", "g-b"]);
+    let doc = written_doc(&h.dir.path().join("opencode/opencode.json"));
+    assert_eq!(
+        policy_resources(&doc, "mcp.use"),
+        ["deny *", "allow writer", "allow g-a"]
+    );
+    assert_eq!(doc["mcp"]["servers"]["g-b"]["disabled"], true);
+    assert!(doc["mcp"]["servers"].get("g-a").is_none());
+    // none of the user's secrets reached the file
+    assert!(
+        !std::fs::read_to_string(h.dir.path().join("opencode/opencode.json"))
+            .unwrap()
+            .contains("secret")
+    );
+    assert_eq!(h.server.global_config(), Some(GlobalConfig::Loaded));
+    h.server.shutdown();
+}
+
+/// Nothing new to say after the names step: no reload (a reload restarts every server).
+#[test]
+fn a_start_with_no_new_names_reloads_nothing() {
+    let h = harness("2.4.0");
+    h.server.apply_config("{}").unwrap();
+    h.server.ensure_started().unwrap();
+    assert!(h
+        .launcher
+        .current()
+        .server
+        .find("POST", "/api/location/reload")
+        .is_empty());
+    h.server.shutdown();
+}
+
+/// A document of the user's with an `mcp.use` policy is applied after Writer's, so a server can
+/// start once before Writer stops it: that process goes and the start runs on Writer's empty
+/// config home, now and at every later start.
+#[test]
+fn a_users_mcp_policy_makes_the_start_run_without_their_config_and_say_so() {
+    let dir_xdg = tempfile::tempdir().unwrap();
+    let h = harness("2.4.0");
+    *h.launcher.config_reply.lock() = Some(user_doc(
+        json!({"g-a": {"type": "local", "command": ["x"]}}),
+        json!([{"action": "mcp.use", "resource": "g-a", "effect": "allow"}]),
+    ));
+    h.server.apply_config("{}").unwrap();
+    h.server.ensure_started().unwrap();
+    assert_eq!(h.launcher.launches(), 2, "the first process is replaced");
+    assert!(
+        h.launcher.processes.lock()[0].exited().is_some(),
+        "and stopped"
+    );
+    assert_eq!(
+        h.server.global_config(),
+        Some(GlobalConfig::SkippedMcpPolicy)
+    );
+    let spec = h.launcher.specs.lock()[1].clone();
+    let get = |k: &str| -> Vec<String> {
+        spec.env
+            .iter()
+            .filter(|(n, _)| n == k)
+            .map(|(_, v)| v.clone())
+            .collect()
+    };
+    assert_eq!(
+        get("XDG_CONFIG_HOME"),
+        [h.dir.path().join("opencode/xdg-config").to_string_lossy()]
+    );
+    assert_eq!(get("WRITER_USER_XDG_CONFIG_HOME"), ["/home/fake/.config"]);
+    assert!(
+        h.dir.path().join("opencode/xdg-config").is_dir(),
+        "empty, Writer's own"
+    );
+    assert_eq!(
+        std::fs::read_dir(h.dir.path().join("opencode/xdg-config"))
+            .unwrap()
+            .count(),
+        0
+    );
+    // the names step did not run on the second process: nothing of the user's is known
+    assert!(h.server.mcp_known().is_empty());
+    assert!(h
+        .launcher
+        .current()
+        .server
+        .find("GET", "/api/config")
+        .is_empty());
+    // a crash and a restart: straight to the fallback, no second leak
+    h.launcher.current().crash(1);
+    wait_for("the crash", 5, || h.server.connection().is_none());
+    h.server.ensure_started().unwrap();
+    assert_eq!(h.launcher.launches(), 3);
+    assert!(h
+        .launcher
+        .current()
+        .server
+        .find("GET", "/api/config")
+        .is_empty());
+    h.server.shutdown();
+    drop(dir_xdg);
+}
+
+/// The user's own home and config home are inherited as they are and nothing is written under
+/// them: Writer's files live in its own app data folder.
+#[test]
+fn the_users_home_and_config_home_are_inherited_and_never_written() {
+    let home = tempfile::tempdir().unwrap();
+    let xdg = tempfile::tempdir().unwrap();
+    let mut h = harness("2.4.0");
+    let (hp, xp) = (
+        home.path().to_string_lossy().into_owned(),
+        xdg.path().to_string_lossy().into_owned(),
+    );
+    let spawner = Spawner::detached();
+    let io = Io::start(&spawner).unwrap();
+    h.server = OpencodeServer::new(
+        io,
+        h.launcher.clone(),
+        settings_in(h.dir.path()),
+        Box::new(move || {
+            vec![
+                ("HOME".to_string(), hp.clone()),
+                ("XDG_CONFIG_HOME".to_string(), xp.clone()),
+                ("PATH".to_string(), "/usr/bin".to_string()),
+            ]
+        }),
+    );
+    h.server.apply_config("{}").unwrap();
+    h.server.ensure_started().unwrap();
+    h.server.reapply().unwrap();
+    let spec = h.launcher.specs.lock()[0].clone();
+    let get = |k: &str| {
+        spec.env
+            .iter()
+            .find(|(n, _)| n == k)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(get("HOME").as_deref(), Some(home.path().to_str().unwrap()));
+    assert_eq!(
+        get("XDG_CONFIG_HOME").as_deref(),
+        Some(xdg.path().to_str().unwrap())
+    );
+    assert_eq!(get("OPENCODE_DISABLE_PROJECT_CONFIG").as_deref(), Some("1"));
+    assert_eq!(get("OPENCODE_DISABLE_CLAUDE_CODE").as_deref(), Some("1"));
+    assert_eq!(get("OPENCODE_DISABLE_AUTOUPDATE").as_deref(), Some("1"));
+    h.server.shutdown();
+    for dir in [home.path(), xdg.path()] {
+        assert_eq!(
+            std::fs::read_dir(dir).unwrap().count(),
+            0,
+            "{dir:?} is untouched"
+        );
+    }
+}
+
+/// The folder the first version kept for every start goes at the first start that does not need it.
+#[test]
+fn the_old_empty_config_home_is_removed_by_a_normal_start() {
+    let h = harness("2.4.0");
+    let old = h.dir.path().join("opencode/xdg-config");
+    std::fs::create_dir_all(&old).unwrap();
+    h.server.ensure_started().unwrap();
+    assert!(!old.exists());
+    h.server.shutdown();
+}
+
+/// A switch changed: the file is rendered again from the same document and the running server
+/// reads it again, once (a reload restarts every server).
+#[test]
+fn a_switch_renders_the_config_again_and_the_server_reads_it_once() {
+    let h = harness("2.4.0");
+    let on: Arc<Mutex<Vec<String>>> = Arc::default();
+    let source = Arc::clone(&on);
+    h.server.on_switches(Arc::new(move || Stored {
+        mcp_on: source.lock().clone(),
+        providers_off: Vec::new(),
+    }));
+    *h.launcher.config_reply.lock() = Some(user_doc(json!({"g-a": {}, "g-b": {}}), json!([])));
+    h.server.apply_config("{\"v\":1}").unwrap();
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    let file = h.dir.path().join("opencode/opencode.json");
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    let after_start = reloads();
+    // nothing changed: nothing is written or read
+    h.server.reapply().unwrap();
+    assert_eq!(reloads(), after_start);
+    *on.lock() = vec!["g-b".to_string()];
+    h.server.reapply().unwrap();
+    assert_eq!(reloads(), after_start + 1);
+    let doc = written_doc(&file);
+    assert_eq!(doc["v"], 1, "the document the callers built is kept");
+    assert_eq!(
+        policy_resources(&doc, "mcp.use"),
+        ["deny *", "allow writer", "allow g-b"]
+    );
+    assert!(doc["mcp"]["servers"].get("g-b").is_none());
+    assert_eq!(doc["mcp"]["servers"]["g-a"]["disabled"], true);
+    // a provider switch is the same path
+    h.server.on_switches(Arc::new(|| Stored {
+        mcp_on: vec!["g-b".to_string()],
+        providers_off: vec!["fake-b".to_string()],
+    }));
+    h.server.reapply().unwrap();
+    assert_eq!(
+        policy_resources(&written_doc(&file), "provider.use"),
+        ["deny fake-b"]
+    );
+    h.server.shutdown();
+}
+
+/// Before the first `apply_config` there is nothing to render again: the next start does.
+#[test]
+fn a_reapply_before_any_config_does_nothing() {
+    let h = harness("2.4.0");
+    h.server.reapply().unwrap();
+    assert!(!h.dir.path().join("opencode/opencode.json").exists());
+}
+
+fn reload_answers_500(fake: &FakeServer) {
+    *fake.shared.handler.lock() = Some(Box::new(|q: &Req| {
+        (q.path == "/api/location/reload").then(|| (500, json!({"_tag": "Boom"})))
+    }));
+}
+
+/// A switch written after the process was launched but before its start ended is read: the
+/// process loaded the file as it was at launch, and nothing else would tell it.
+#[test]
+fn a_switch_written_between_the_launch_and_the_names_step_still_applies() {
+    let h = harness("2.4.0");
+    *h.launcher.delays.lock() = vec![("/api/config".into(), Duration::from_millis(600))];
+    let on: Arc<Mutex<Vec<String>>> = Arc::default();
+    let source = Arc::clone(&on);
+    h.server.on_switches(Arc::new(move || Stored {
+        mcp_on: source.lock().clone(),
+        providers_off: Vec::new(),
+    }));
+    h.server.apply_config("{}").unwrap();
+    let server = Arc::clone(&h.server);
+    let start = std::thread::spawn(move || server.ensure_started().map(|_| ()));
+    wait_for("the launch", 5, || h.launcher.launches() == 1);
+    std::thread::sleep(Duration::from_millis(150));
+    *on.lock() = vec!["g-a".to_string()];
+    h.server.reapply().unwrap();
+    start.join().unwrap().unwrap();
+    let fake = h.launcher.current().server.clone();
+    assert!(
+        !fake.find("POST", "/api/location/reload").is_empty(),
+        "read again"
+    );
+    let doc = written_doc(&h.dir.path().join("opencode/opencode.json"));
+    assert_eq!(
+        policy_resources(&doc, "mcp.use"),
+        ["deny *", "allow writer", "allow g-a"]
+    );
+    h.server.shutdown();
+}
+
+/// A switch made while a turn runs waits for the turn and is read when it ends.
+#[test]
+fn a_switch_during_a_running_turn_applies_after_the_turn() {
+    let h = harness("2.4.0");
+    let on: Arc<Mutex<Vec<String>>> = Arc::default();
+    let source = Arc::clone(&on);
+    h.server.on_switches(Arc::new(move || Stored {
+        mcp_on: source.lock().clone(),
+        providers_off: Vec::new(),
+    }));
+    h.server.apply_config("{}").unwrap();
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    let before = reloads();
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    wait_for("the event", 5, || h.server.running_turns() == 1);
+    *on.lock() = vec!["g-a".to_string()];
+    h.server.reapply().unwrap();
+    let file = h.dir.path().join("opencode/opencode.json");
+    assert!(policy_resources(&written_doc(&file), "mcp.use").contains(&"allow g-a".to_string()));
+    assert_eq!(reloads(), before, "the turn is not cut");
+    fake.emit(&exec_event("session.execution.succeeded", "ses_a"));
+    wait_for("the reload", 5, || reloads() == before + 1);
+    h.server.shutdown();
+}
+
+/// A reload that a turn held and that the server then refuses leaves the process on the old file:
+/// it is stopped, so the next start reads the file.
+#[test]
+fn a_reload_the_server_refuses_stops_it_so_the_next_start_reads_the_file() {
+    let h = harness("2.4.0");
+    h.server.apply_config("{\"v\":1}").unwrap();
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    reload_answers_500(&fake);
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    wait_for("the event", 5, || h.server.running_turns() == 1);
+    h.server.apply_config("{\"v\":2}").unwrap();
+    fake.emit(&exec_event("session.execution.succeeded", "ses_a"));
+    wait_for("the process to stop", 10, || {
+        h.launcher.current().exited().is_some()
+    });
+    assert!(h.server.connection().is_none());
+    h.server.ensure_started().unwrap();
+    assert_eq!(h.launcher.launches(), 2);
+    assert_eq!(
+        h.launcher.config_at_launch.lock()[1]
+            .as_ref()
+            .map(|t| serde_json::from_str::<serde_json::Value>(t).unwrap()["v"].clone()),
+        Some(json!(2)),
+        "the new process reads the file as it is"
+    );
+    h.server.shutdown();
 }

@@ -270,3 +270,12 @@ The accepted text and the earlier amendments stand; where they differ, this sect
 3. **One model menu for every backend.** A search field above about 8 models, provider headers only when the models come from more than one provider (Claude's short list is unchanged), the Default row, the effort levels and the hiding of switched-off models kept; typing filters, arrows move, Enter picks, Esc closes.
 4. **Permission modes (A1).** `auto` is accept-edits (confined vault edits answered, a worker's included; shell and web ask) and `dontAsk` stays manual. This replaces the gap listed in item 9 of the first 2026-11-24 amendment.
 5. **Confirmed unchanged by the user.** Deleting a chat deletes its OpenCode session even though the note goes to the Trash (A18); Settings starts a server to list models (A17); a skill folder with a link out of the vault is skipped whole. The other auto-mode review items (A2 as replaced, A5, A11 to A16, A19 to A23, "Choose binary…") are kept as decided.
+
+## Amended 2026-11-24 (MCP servers menu, phase 2)
+
+Decided with the user; see [ADR 2026-11-24](2026-11-24-show-one-mcp-servers-menu-for-every-agent-backend-and-load-the-global-opencode-config-with-its-servers-off.md). Where it differs from the text above, this wins.
+
+- **"Config: Writer's file only" is superseded.** The server inherits the user's `XDG_CONFIG_HOME`: the global config (providers, instructions, skills, plugins) applies with Writer's file on top. The global MCP servers are off unless switched on in the Settings menu, the global agents are disabled, and a start gate checks the facts before the first prompt. The vault's own config stays ignored.
+- A global `mcp.use` policy makes that start use Writer's config alone, with one line saying why (the lead's decision in auto mode).
+- Providers get a switch each in Settings > Agent > OpenCode (`agent.opencode.disabled-providers`).
+- Risk: plugins run with the user's rights; whether one can auto-answer a permission ask is unproven (capture C10 inconclusive).

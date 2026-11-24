@@ -5,8 +5,8 @@
 //! `SPECs/opencode-backend-spec.md` section 5, "Start").
 //!
 //! The one owner of the Tauri-facing facts the pure server needs: where the program is (the
-//! user's own path, else the usual search), the app data folder (config file, empty config home,
-//! shell wrapper), the environment (the login shell's `PATH` with the `writer` launcher folder
+//! user's own path, else the usual search), the app data folder (config file, the empty config
+//! home of the fallback, shell wrapper), the environment (the login shell's `PATH` with the `writer` launcher folder
 //! first, and the user's `SHELL`, which the server hands to its wrapper). Everything it starts
 //! lives in the feature's scope: the runtime threads and the child through the scope's
 //! `Spawner`, the state itself through `scope.manage`.
@@ -15,7 +15,8 @@ use super::client::{Client, Io, SHORT};
 use super::config::{self, ConfigInput};
 use super::opencode_api as api;
 use super::server::{
-    Launcher, OpencodeServer, ProcessLauncher, ServerSettings, CONFIG_HOME_NAME, SHELL_WRAPPER_NAME,
+    Launcher, OpencodeServer, ProcessLauncher, ServerSettings, Stored, CONFIG_HOME_NAME,
+    SHELL_WRAPPER_NAME,
 };
 use crate::agent::binary::{self, Program};
 use crate::agent::pending_delete::PendingDeletes;
@@ -59,6 +60,9 @@ pub struct Servers<R: Runtime> {
     env: Env,
     entries: Mutex<HashMap<String, Entry>>,
     stopped: AtomicBool,
+    /// The names of the providers each window's server listed, so one that is switched off (and no
+    /// longer listed) keeps its tab under the name it had.
+    provider_names: Arc<Mutex<HashMap<String, std::collections::BTreeMap<String, String>>>>,
     /// The sessions owed a delete (see `pending.rs`); `None` with no app data folder.
     pending: Option<Arc<PendingDeletes>>,
 }
@@ -93,6 +97,7 @@ impl<R: Runtime> Servers<R> {
             launcher,
             env,
             entries: Mutex::new(HashMap::new()),
+            provider_names: Arc::default(),
             stopped: AtomicBool::new(false),
             pending: app_data
                 .as_ref()
@@ -158,7 +163,7 @@ impl<R: Runtime> Servers<R> {
             }
         }
         let old = entries.remove(label);
-        let server = self.make(&program, root)?;
+        let server = self.make(label, &program, root)?;
         entries.insert(
             label.to_string(),
             Entry {
@@ -189,7 +194,12 @@ impl<R: Runtime> Servers<R> {
         }
     }
 
-    fn make(&self, program: &Path, root: &Path) -> Result<Arc<OpencodeServer>, String> {
+    fn make(
+        &self,
+        label: &str,
+        program: &Path,
+        root: &Path,
+    ) -> Result<Arc<OpencodeServer>, String> {
         let app_data = self
             .app_data
             .clone()
@@ -216,6 +226,12 @@ impl<R: Runtime> Servers<R> {
             settings,
             Box::new(move || inherit(launcher.as_deref())),
         );
+        // the user's switches, read at every write of the config (a switch applies at the next one)
+        let (app, label) = (self.app.clone(), label.to_string());
+        server.on_switches(Arc::new(move || Stored {
+            mcp_on: crate::config::global_list(&app, &label, config::MCP_SWITCHES.setting),
+            providers_off: crate::config::global_list(&app, &label, config::PROVIDERS_OFF_SETTING),
+        }));
         // the settings page reads the models again when the server says they changed
         let app = self.app.clone();
         server.on_models_changed(Box::new(move || {
@@ -300,6 +316,66 @@ impl<R: Runtime> Servers<R> {
             server.ensure_started().map_err(|e| e.to_string())?;
         }
         Ok(server)
+    }
+
+    /// Whether the window's server loaded the user's config; `None` while it has no server up.
+    pub fn global_config(&self, label: &str) -> Option<super::server::GlobalConfig> {
+        self.entries.lock().get(label)?.server.global_config()
+    }
+
+    /// The provider tabs of the window's server: its providers and the ones switched off.
+    /// Starts it. Blocking.
+    pub fn providers(
+        &self,
+        label: &str,
+        root: &Path,
+    ) -> Result<Vec<super::models::ProviderRow>, String> {
+        let server = self.ensure_up(label, root)?;
+        let client = server.connection().ok_or("OpenCode is not running")?.client;
+        let off = crate::config::global_list(&self.app, label, config::PROVIDERS_OFF_SETTING);
+        let asked = off.clone();
+        let (names, key) = (Arc::clone(&self.provider_names), label.to_string());
+        server
+            .io()
+            .call(
+                async move {
+                    // the first answer after a start can be empty (the providers settle a moment later)
+                    let mut rows = Vec::new();
+                    for attempt in 0..8 {
+                        if attempt > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        }
+                        let reply = client.get(&api::PROVIDERS, &[]).await?;
+                        rows = super::models::provider_rows(
+                            &reply,
+                            &asked,
+                            names.lock().entry(key.clone()).or_default(),
+                        );
+                        if rows.iter().any(|r| !r.off) {
+                            break;
+                        }
+                    }
+                    Ok::<_, super::client::ApiError>(rows)
+                },
+                std::time::Duration::from_secs(12),
+            )
+            .ok_or("OpenCode did not answer")?
+            .map_err(|_| "OpenCode could not list its providers".to_string())
+    }
+
+    /// A switch changed: the window's configuration is rendered again and the server reads it when
+    /// no turn runs. Nothing is started for it (a server that is not up renders it at its start).
+    /// Blocking.
+    pub fn reapply(&self, label: &str) -> Result<(), String> {
+        let server = self
+            .entries
+            .lock()
+            .get(label)
+            .map(|e| Arc::clone(&e.server));
+        match server {
+            Some(s) => s.reapply().map_err(|e| e.to_string()),
+            None => Ok(()),
+        }
     }
 
     /// The window closed or left its vault: its server and every chat on it go. Returns at once;

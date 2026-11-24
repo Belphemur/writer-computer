@@ -12,6 +12,7 @@ export const OPENCODE_KEYS = {
   model: `${NS}.model`,
   effort: `${NS}.effort`,
   disabledModels: `${NS}.disabled-models`,
+  disabledProviders: `${NS}.disabled-providers`,
   tiers: {
     cheap: `${NS}.model-cheap`,
     standard: `${NS}.model-standard`,

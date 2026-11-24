@@ -37,6 +37,16 @@ pub struct OpencodeModel {
     pub available: bool,
 }
 
+/// One provider tab of Settings: what the server lists, and the ones the user switched off (an
+/// off provider is not listed by the server, so its tab is kept from the setting).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderRow {
+    pub id: String,
+    pub name: String,
+    pub off: bool,
+}
+
 fn provider_names(providers: &Value) -> HashMap<String, String> {
     rows(providers)
         .filter_map(|p| {
@@ -56,6 +66,49 @@ fn rows(reply: &Value) -> impl Iterator<Item = &Value> {
         .as_array()
         .into_iter()
         .flatten()
+}
+
+/// The provider tabs: the providers `GET /api/provider` lists, then the ones in `off` that it does
+/// not (a provider under a `provider.use` deny vanishes from the server's lists), with `off` set
+/// for every one in `off`. `seen` is the names of the providers listed so far (kept by the caller
+/// per window): an off provider keeps its last known name. Sorted by name. Ids and names only: a provider's headers and settings
+/// are never read.
+pub fn provider_rows(
+    providers: &Value,
+    off: &[String],
+    seen: &mut std::collections::BTreeMap<String, String>,
+) -> Vec<ProviderRow> {
+    let mut out: Vec<ProviderRow> = rows(providers)
+        .filter_map(|p| {
+            let id = p["id"].as_str()?;
+            let name = p["name"].as_str().unwrap_or(id).to_string();
+            seen.insert(id.to_string(), name.clone());
+            Some(ProviderRow {
+                id: id.to_string(),
+                name,
+                off: off.iter().any(|o| o == id),
+            })
+        })
+        .collect();
+    let listed: Vec<String> = out.iter().map(|r| r.id.clone()).collect();
+    out.extend(
+        off.iter()
+            .filter(|id| !listed.contains(id))
+            .map(|id| ProviderRow {
+                id: id.clone(),
+                // the name the server gave while it still listed it
+                name: seen.get(id).cloned().unwrap_or_else(|| id.clone()),
+                off: true,
+            }),
+    );
+    out.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then(a.id.cmp(&b.id))
+    });
+    out.dedup_by(|a, b| a.id == b.id);
+    out
 }
 
 /// The models of `GET /api/model` with the provider names of `GET /api/provider`, sorted by
@@ -192,6 +245,41 @@ pub fn project_of(reply: &Value, root: &std::path::Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_tabs_are_the_listed_providers_and_the_switched_off_ones_the_server_no_longer_lists()
+    {
+        let reply = serde_json::json!({"data": [
+            {"id": "openai", "name": "OpenAI", "headers": {"authorization": "secret"}},
+            {"id": "local"},
+            {"id": "anthropic", "name": "Anthropic"},
+        ]});
+        let mut seen = std::collections::BTreeMap::new();
+        let rows = super::provider_rows(
+            &reply,
+            &["local".into(), "gone".into(), "gone".into()],
+            &mut seen,
+        );
+        let got: Vec<(&str, &str, bool)> = rows
+            .iter()
+            .map(|r| (r.id.as_str(), r.name.as_str(), r.off))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("anthropic", "Anthropic", false),
+                ("gone", "gone", true),
+                ("local", "local", true),
+                ("openai", "OpenAI", false),
+            ]
+        );
+        assert!(!format!("{rows:?}").contains("secret"));
+        // once the server stops listing `openai` (switched off) its last known name stays
+        let after = serde_json::json!({"data": []});
+        let rows = super::provider_rows(&after, &["openai".into()], &mut seen);
+        assert_eq!((rows[0].name.as_str(), rows[0].off), ("OpenAI", true));
+        assert!(super::provider_rows(&after, &[], &mut Default::default()).is_empty());
+    }
+
     use super::*;
     use serde_json::json;
 

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-11-24
 decision-makers: Writer maintainers
 ---
@@ -45,7 +45,7 @@ Sub-options settled by the captures:
 
 ## Decision Outcome
 
-Chosen option: **A**, with the OpenCode half (loading the global config) **gated on the fail-closed conditions below**; E is the fallback when they do not hold.
+Chosen option: **A**, accepted 2026-11-24 with phase 2 built. The OpenCode half (loading the global config) holds only under the fail-closed conditions below; E is the fallback for a start whose global config sets an `mcp.use` policy.
 
 1. **Neutral shape.** `agent/mcp_menu.rs` (Tauri-free): `Switches {default_on, switched}` with `on(name)` (`writer` always on), `McpServer`, `McpMenu`, `assemble`, a cache keyed by backend and vault with a single-flight probe. `McpServerStatus.status` becomes the enum `McpState`. `BackendOps` gains `mcp_switches`, `mcp_list`, `mcp_apply`; the duplicated `mcp_cli_probe` goes. `ToolsAdapter::deny_server` and the table key `mcp.serverPrefix` replace `mcp.prefix`.
 2. **Settings (per backend, in the owner's fragment).** `agent.claude.disabled-mcp-servers` (default on), `agent.opencode.enabled-mcp-servers` (default off), `agent.opencode.disabled-providers`.
@@ -59,8 +59,8 @@ Chosen option: **A**, with the OpenCode half (loading the global config) **gated
    - Permissions: Writer's agent list starts with `*: ask`; the resolved list is concatenated, last match wins; a global deny does not hold in Writer's chat, a global allow does not widen it.
    - Pinned scalars: Writer wins for `default_agent`, `model`, `automations`; `instructions` and `skills` arrays concatenate, so global instructions, global skills and plugins apply.
    - Providers: `policies [provider.use <id> deny]` (the provider disappears from the lists and a turn on it fails before any request); the menu lists providers from the API united with the stored switched-off names.
-5. **The start gate (fail closed, per epoch, before the first prompt).** On the facts, not the file: foreign agents disabled; `GET /api/mcp` lists only `writer` and the switched-on names (any other listed name, built-in ones included, stops the server and refuses the chat); the resolved permissions of Writer's agent end as Writer wrote them. A global `mcp.use` policy seen in `GET /api/config` makes Writer refuse with one line, because that server can start once during the names step before Writer can stop it.
-6. **U1 is superseded only if** the gate passes in the real app on `opencode 2.4.0` (phase 2) and the user accepts the refusal for global `mcp.use` policies. Otherwise U1 stands and the menu shows `writer` and OpenCode's own servers (option E).
+5. **The start gate (fail closed, per epoch, before the first prompt).** On the facts, not the file: foreign agents disabled; `GET /api/mcp` shows nothing running but `writer` and the switched-on names (only a server that is running (`connected` or `pending`, `McpState::is_running`) and not expected is a violation (`needs_auth`, `failed` and `disabled` pass); such a server is first put under the lever by name, then the location is reloaded, and the chat is refused only if it still runs. A failed reload, or a refusal after a rewrite, stops the server so the next start reads the file); the resolved permissions of Writer's agent end as Writer wrote them. A global `mcp.use` policy seen in `GET /api/config` makes that start fall back to Writer's config alone (option E for that start), with one neutral line saying why, because such a server can start once during the names step before Writer can stop it. This replaces the refusal the draft proposed: the lead decided it in auto mode on 2026-11-24, so a user with such a policy still gets a working chat; the user can reverse it.
+6. **U1 is superseded** by this decision. The real-app check on `opencode 2.4.0` is still the maintainer's to run (Verification below); if the gate fails there, the fallback of point 4 is the only OpenCode mode until it is fixed.
 7. The OpenCode version (`opencode --version`, `opencode v2.4.0`, or `GET /api/info`) shows next to Ready.
 
 ### Consequences
@@ -71,6 +71,7 @@ Chosen option: **A**, with the OpenCode half (loading the global config) **gated
 - Bad, because a disallowed Claude server still starts (and costs its start) and Claude's list probe starts every server.
 - Bad, because a switch on OpenCode restarts every server, `writer` included, which interrupts a running MCP call.
 - Bad, because plugins run in the server process with the user's rights, so the gate cannot vouch for them; and global permission denies and allows do not apply in Writer's chat.
+- Bad, because a user whose global config sets an `mcp.use` policy gets Writer's config alone (their providers, instructions and plugins do not apply for that start).
 - Bad, because Writer parses `GET /api/config`, a document that carries secrets, to read names and policies.
 - Neutral, because the `mcp.prefix` to `mcp.serverPrefix` table change touches the tool tables and their readers once.
 
@@ -82,7 +83,8 @@ Chosen option: **A**, with the OpenCode half (loading the global config) **gated
 - **Patterns to avoid**: a per-backend menu; any harness config file read or written by Writer; parsing `GET /api/config` beyond names and policies; a polling or persisted names cache.
 - **Configuration**: the three keys above; contract test: key in the owner's fragment, default `[]`, default-on or off matches the backend.
 - **Migration steps**: phase 1 core, the menu and Claude; phase 2 OpenCode (after this ADR is accepted); phase 3 docs and the amendments listed under More Information.
-- **Phase 1 landed (2026-11-24, uncommitted until the lead's review; the ADR stays proposed).** The neutral core `agent/mcp_menu.rs` (`Switches`, `McpServer`, `McpMenu`, `assemble`, `McpCache` with a single-flight probe); `McpState` in `events.rs` (one `McpState::parse` for Claude's and OpenCode's words, which also fixes OpenCode's raw `needs_auth`); the shared vectors and golden `shared/agent-mcp/`; `mcp.serverPrefix` in the tool tables with `ToolsAdapter::deny_server` and `server_prefix` as default methods, and one `mcp_wiring::server_key` (the captures show both harnesses normalise alike); the `config_sync` fixes (`parse_mcp_list` keeps names with spaces, dots and colons, `failing` ignores `disabled`, `Reason::McpSwitches`); `config::global_list` and `global_string`, replacing OpenCode's `Servers::setting_list`; `BackendOps::mcp_switches`, `mcp_list`, `mcp_apply` with `mcp_cli_probe` removed (Claude: `claude mcp list`, switches as `--disallowedTools` entries read at each spawn through the `SettingsPort`; OpenCode: `mcp_switches` is `None`, so its menu is hidden until phase 2, and `mcp_list` through `GET /api/mcp` is in place; its config and XDG untouched, `mcp_apply` the default); the commands `agent_mcp_servers` and `agent_mcp_apply`; the web `switches.ts` (the models' `isModelEnabled` is built on it, `withEnabled` is gone), `SearchField`, `matchesQuery` (the generalised `matchesModelQuery`) and `agent-mcp.tsx`; the version in the Ready badge. **Phase 2 stays gated** on C1, C2, C5 and C7 in the real app: until then OpenCode's menu is hidden.
+- **Phase 1 landed (2026-11-24).** The neutral core `agent/mcp_menu.rs` (`Switches`, `McpServer`, `McpMenu`, `assemble`, `McpCache` with a single-flight probe); `McpState` in `events.rs` (one `McpState::parse` for Claude's and OpenCode's words, which also fixes OpenCode's raw `needs_auth`); the shared vectors and golden `shared/agent-mcp/`; `mcp.serverPrefix` in the tool tables with `ToolsAdapter::deny_server` and `server_prefix` as default methods, and one `mcp_wiring::server_key` (the captures show both harnesses normalise alike); the `config_sync` fixes (`parse_mcp_list` keeps names with spaces, dots and colons, `failing` ignores `disabled`, `Reason::McpSwitches`); `config::global_list` and `global_string`, replacing OpenCode's `Servers::setting_list`; `BackendOps::mcp_switches`, `mcp_list`, `mcp_apply` with `mcp_cli_probe` removed (Claude: `claude mcp list`, switches as `--disallowedTools` entries read at each spawn through the `SettingsPort`; OpenCode: `mcp_switches` is `None`, so its menu is hidden until phase 2, and `mcp_list` through `GET /api/mcp` is in place; its config and XDG untouched, `mcp_apply` the default); the commands `agent_mcp_servers` and `agent_mcp_apply`; the web `switches.ts` (the models' `isModelEnabled` is built on it, `withEnabled` is gone), `SearchField`, `matchesQuery` (the generalised `matchesModelQuery`) and `agent-mcp.tsx`; the version in the Ready badge. **Phase 2 stays gated** on C1, C2, C5 and C7 in the real app: until then OpenCode's menu is hidden.
+- **Phase 2 landed (2026-11-24).** OpenCode's menu is visible (`mcp_switches()` is `Some`, default off, applies live); the global config loads with Writer's file on top and every foreign MCP server and agent off; `mcp_apply` rewrites the file and reloads the location; the start gate checks `GET /api/mcp`, the disabled agents and Writer's resolved permissions before the first prompt; `agent.opencode.disabled-providers` and one switch per provider in Settings > Agent > OpenCode (the provider keeps its tab, with no models while off; the switch writes the setting through `useSetSetting` and calls `opencode_reconfigure`); the Settings line says what applies and shows the neutral reason when the start fell back to Writer's config alone. The `switches.ts` twin follows the Rust prefix rule for `defaultOn: false` over the shared vectors. Spec: `opencode-backend-spec.md` 8 "Global config", `native-agent-spec.md` 7.1. **Plugin risk, stated plainly:** capture C10 was inconclusive, so a plugin's approval hook auto-answering an ask is neither shown nor excluded; plugins run in the server process with the user's rights and the gate does not vouch for them.
 - **Phase 1 review fixes (2026-11-24).** Stored names are normalised once, in `Switches::new` (keys, deduplicated), and an entry also covers its glob (`a` covers `a__b`), with a TypeScript twin over shared vectors; a switch is global and marks the backend's chats stale in every window (no window label); `mcp_list` is the one list source of the menu and the watch; the settled states are one set shared by Rust and the web.
 
 ### Verification
@@ -91,7 +93,7 @@ Chosen option: **A**, with the OpenCode half (loading the global config) **gated
 - [ ] `--disallowedTools` argv and the goldens are unchanged when the lists are empty.
 - [ ] Nothing under the user's XDG config or `~/.claude` is read or written by a test; the captures' temp `HOME` pattern is used.
 - [ ] The vectors and `menu.json` tests are green; `vp check`, `vp test`, `cargo test`, `cargo clippy`, `cargo fmt --check` pass.
-- [ ] The gate refuses a start whose `GET /api/mcp` lists an unexpected name, and a chat with a global `mcp.use` policy.
+- [ ] The gate refuses a start whose `GET /api/mcp` lists an unexpected name; a global `mcp.use` policy makes the start use Writer's config alone and Settings shows why.
 
 ## Pros and Cons of the Options
 
@@ -119,7 +121,7 @@ Chosen option: **A**, with the OpenCode half (loading the global config) **gated
 
 ## More Information
 
-- Supersedes U1 of `SPECs/opencode-backend-spec.md` (section 2) and the 2026-11-23 amendment "Config: Writer's file only" of the OpenCode ADR, only on acceptance.
+- Supersedes U1 of `SPECs/opencode-backend-spec.md` (section 2) and the 2026-11-23 amendment "Config: Writer's file only" of the OpenCode ADR (accepted 2026-11-24).
 - Amends A19 (`mcp_cli_probe` becomes `mcp_list`, the re-check gated by `restart_on_config_change`), the 2026-11-19 ADR "Hand Writer's MCP server to every agent backend through its adapter" (`deny_server`, `serverPrefix`), risk 10.1, `native-agent-spec.md` 8.1 item 6, and `opencode-backend-spec.md` 9.10 and 9.11.
 - Evidence: `SPECs/opencode-backend-spec.md` 4.13, `SPECs/native-agent-spec.md` 7.1, fixtures `features/opencode/fixtures/global-c*.json` and `src-tauri/src/agent/fixtures/k-k0*.json`.
 - Revisit when OpenCode changes its policy order or `GET /api/config`, or Claude defers or names MCP tools differently.

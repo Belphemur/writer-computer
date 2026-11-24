@@ -19,6 +19,8 @@
 //! Never logged: text, ids of files, paths, error bodies.
 
 use super::client::{ApiError, Client, LONG, SHORT};
+use super::config;
+use super::in_force;
 use super::opencode_api::{self as api, *};
 use super::opencode_events::MapState;
 use super::server::{ChatInput, Connection, OpencodeServer, ServerError};
@@ -63,6 +65,12 @@ pub trait Policy: Send + Sync {
     /// Why the chat may not start on `model`, `None` when it may (a model the user switched off).
     /// A chat that names none runs on the server's own default: Writer resolves a blank model
     /// before the start (one resolver, the web's), never here.
+    /// Why a model of this provider may not run (the user switched the provider off), for the
+    /// models of the roles and tiers as well as the chat's own.
+    fn refuse_provider(&self, _model: &ModelRef) -> Option<String> {
+        None
+    }
+
     fn refuse_model(&self, _model: &ModelRef) -> Option<String> {
         None
     }
@@ -104,24 +112,12 @@ pub struct Ask<'a> {
     pub memory: Option<&'a Path>,
 }
 
-/// OpenCode's own internal agents: hidden, never offered to the user, run by the server itself
-/// (the context summary, its compaction). The contract (2.4.0) says only that an agent has a
-/// `hidden` flag, not whether a model may launch a hidden sub-agent, so a hidden agent is trusted
-/// by these names alone and any other one is as foreign as a visible one. (`title` is switched
-/// off in Writer's config; it is listed in case a server shows it anyway.)
-const SYSTEM_AGENTS: [&str; 3] = ["compaction", "summary", "title"];
-
-/// The first agent of the server's list that Writer did not configure and that could run: enabled,
-/// of a mode a model or the user can pick, and not one of OpenCode's own system agents.
-pub(super) fn foreign_agent<'a>(agents: &'a [Value], ours: &[String]) -> Option<&'a str> {
-    agents.iter().find_map(|a| {
-        let id = a["id"].as_str()?;
-        let runs = a["disabled"] != true
-            && matches!(a["mode"].as_str(), Some("subagent" | "primary" | "all"));
-        let ok =
-            ours.iter().any(|o| o == id) || (a["hidden"] == true && SYSTEM_AGENTS.contains(&id));
-        (runs && !ok).then_some(id)
-    })
+/// What the gate found wrong.
+#[derive(Clone, Copy)]
+enum Problem {
+    Agents,
+    Mcp,
+    Permissions,
 }
 
 /// How long the server may take to put Writer's configuration in force (about a second in the
@@ -215,6 +211,9 @@ struct TState {
     /// The session's rules of the current mode are not known to be set (the last attempt failed,
     /// or the mode changed while the server was away): no prompt goes before they are.
     rules_pending: bool,
+    /// The gate found what runs is not what Writer switched on: the server of this start is
+    /// stopped once the card that says so was sent (stopping first would end the chat unexplained).
+    stop_after_refusal: bool,
     /// Message ids the server already holds (inbox and message list), read when a chat is
     /// resumed: a re-send of one of them is not posted again (spec A8).
     held: Option<HashSet<String>>,
@@ -348,6 +347,21 @@ impl Transport for OpencodeTransport {
             self.inner.server.apply_config(&text).map_err(failed)?;
         }
         if let Some(why) = requested_model(req).and_then(|m| self.inner.policy.refuse_model(&m)) {
+            return Err(SpawnError::Invalid(why));
+        }
+        // the models of the roles (their tiers) run on the same providers
+        if let Some(why) = req
+            .launch
+            .agents
+            .as_deref()
+            .and_then(|a| serde_json::from_str::<Value>(a).ok())
+            .and_then(|roles| {
+                roles.as_object()?.values().find_map(|d| {
+                    let m = ModelRef::parse(d["model"].as_str()?)?;
+                    self.inner.policy.refuse_provider(&m)
+                })
+            })
+        {
             return Err(SpawnError::Invalid(why));
         }
         let _conn: Connection = self.inner.server.ensure_started().map_err(failed)?;
@@ -664,6 +678,13 @@ impl TInner {
             });
         }
         self.events(gen, events);
+        if std::mem::take(&mut self.st.lock().stop_after_refusal) {
+            let server = Arc::clone(&self.server);
+            self.server.io().spawn(async move {
+                // the process takes a while to end: never on the runtime's own thread
+                let _ = tokio::task::spawn_blocking(move || server.stop_process()).await;
+            });
+        }
     }
 
     fn client(&self) -> Option<Client> {
@@ -775,7 +796,7 @@ impl TInner {
         let mode = self.st.lock().mode.unwrap_or(AgentPermissionMode::Manual);
         self.st.lock().rules_pending = true;
         // the agent list is Writer's own before any session is given an agent of it
-        self.ensure_agents(client).await?;
+        self.ensure_in_force(client).await?;
         client
             .request(
                 &api::SESSION_PATCH,
@@ -821,32 +842,61 @@ impl TInner {
         Ok(())
     }
 
-    /// The server runs Writer's configuration and nothing else: once the location is up (the
-    /// list is the built-in one until it boots, which takes a moment) its agents must be Writer's
-    /// own, OpenCode's hidden system agents (`SYSTEM_AGENTS`) aside. Any other enabled agent
-    /// would run with rules Writer did not write, so the start is refused. One deadline covers
-    /// the whole wait, each request included.
-    async fn ensure_agents(&self, client: &Client) -> Result<(), ApiError> {
+    /// The server runs Writer's configuration and nothing else: the one "config in force" gate,
+    /// once per start of the server (a refusal leaves it shut for the next send). The user's own
+    /// OpenCode config is loaded, so the file Writer wrote is not proof; the server is asked:
+    ///
+    /// - (a) its agents are Writer's own, OpenCode's hidden system agents aside; the others are
+    ///   disabled by name (the file is rewritten and read again, once);
+    /// - (b) `GET /api/mcp` lists only Writer's server and the ones switched on; any other that is
+    ///   not `disabled` is put under the lever by name (once), and one that still runs stops the
+    ///   server and refuses the start;
+    /// - (c) the resolved permissions of Writer's agents are Writer's lists, followed by nothing
+    ///   but denies (`in_force.rs`).
+    ///
+    /// Any other enabled agent or server would run with rules Writer did not write, so the start
+    /// is refused. One deadline covers the whole wait, each request included: the location boots
+    /// a moment after the server is up and a reload takes a moment to settle.
+    async fn ensure_in_force(&self, client: &Client) -> Result<(), ApiError> {
         let Some(conn) = self.server.connection() else {
             return Err(ApiError::Refused("OpenCode is not running".into()));
         };
-        // once per start of the server: a refusal leaves the gate shut for the next send
-        if self.server.agents_verified(conn.epoch) {
+        if self.server.in_force(conn.epoch) {
             return Ok(());
         }
-        self.check_agents(client).await?;
-        self.server.verify_agents(conn.epoch);
+        self.check_in_force(client).await?;
+        self.server.mark_in_force(conn.epoch);
         Ok(())
     }
 
-    async fn check_agents(&self, client: &Client) -> Result<(), ApiError> {
-        let ours = self.policy.known_agents();
-        if ours.is_empty() {
-            return Ok(());
+    /// The file written again with what was learned, and read again. `true`: it changed (the
+    /// answers of the server are about to), so the next look polls instead of refusing.
+    async fn rewrite_and_reload(&self) -> Result<bool, ApiError> {
+        match self.server.rewrite() {
+            Ok(true) => {
+                if let Err(e) = self.server.reload_now().await {
+                    // the process still runs the old file: stopped once the card is out (`failed`)
+                    self.st.lock().stop_after_refusal = true;
+                    return Err(e);
+                }
+                Ok(true)
+            }
+            Ok(false) => Ok(false),
+            Err(e) => Err(ApiError::Refused(e.to_string())),
         }
+    }
+
+    async fn check_in_force(&self, client: &Client) -> Result<(), ApiError> {
+        let ours = self.policy.known_agents();
         let mode = self.st.lock().mode.unwrap_or(AgentPermissionMode::Manual);
         let sentinel = self.policy.agent(mode);
         let until = tokio::time::Instant::now() + AGENT_DEADLINE;
+        // what is wrong now, for the refusal when the deadline comes, and whether a reload is
+        // settling (then the answer may still change)
+        let mut problem: Option<Problem> = None;
+        let (mut learned_agents, mut learned_mcp, mut settling) = (false, false, false);
+        // a rewrite was made: the process may still run the old file, so a refusal stops it
+        let mut rewrote = false;
         while tokio::time::Instant::now() < until {
             let list = tokio::time::timeout_at(until, client.get(&api::AGENTS, &[]))
                 .await
@@ -855,20 +905,74 @@ impl TInner {
             let loaded = sentinel
                 .as_deref()
                 .is_none_or(|s| agents.iter().any(|a| a["id"] == s));
-            if loaded {
-                return if foreign_agent(&agents, &ours).is_some() {
-                    Err(ApiError::Refused(
-                        "OpenCode has agents Writer did not configure; Writer will not run a chat with them".into(),
-                    ))
-                } else {
-                    Ok(())
-                };
+            if !loaded {
+                tokio::time::sleep(AGENT_POLL).await;
+                continue;
             }
-            tokio::time::sleep(AGENT_POLL).await;
+            // (a) needs Writer's agent names; (b) and (c) never wait on them
+            let foreign = if ours.is_empty() {
+                Vec::new()
+            } else {
+                config::foreign_agents(&agents, &ours)
+            };
+            if !foreign.is_empty() {
+                problem = Some(Problem::Agents);
+                if !learned_agents {
+                    learned_agents = true;
+                    self.server.learn_agents(foreign);
+                    settling = self.rewrite_and_reload().await?;
+                    rewrote |= settling;
+                }
+                if !settling {
+                    break;
+                }
+                tokio::time::sleep(AGENT_POLL).await;
+                continue;
+            }
+            let mcp = tokio::time::timeout_at(until, client.get(&api::MCP, &[]))
+                .await
+                .map_err(|_| ApiError::Timeout)??;
+            let expect = self.server.expectation();
+            let running = in_force::mcp_violations(&mcp, &expect.mcp_allowed);
+            if !running.is_empty() {
+                problem = Some(Problem::Mcp);
+                if !learned_mcp {
+                    learned_mcp = true;
+                    self.server.learn_mcp(running);
+                    settling = self.rewrite_and_reload().await?;
+                    rewrote |= settling;
+                }
+                if !settling {
+                    break;
+                }
+                tokio::time::sleep(AGENT_POLL).await;
+                continue;
+            }
+            if in_force::permissions_in_force(&agents, &expect).is_some() {
+                problem = Some(Problem::Permissions);
+                if !settling {
+                    break;
+                }
+                tokio::time::sleep(AGENT_POLL).await;
+                continue;
+            }
+            return Ok(());
         }
-        Err(ApiError::Refused(
-            "OpenCode did not load Writer's configuration".into(),
-        ))
+        if rewrote {
+            // what runs may not be what the file says: no process of this start is kept, once the
+            // card is out (`failed`), so the next start reads the file
+            self.st.lock().stop_after_refusal = true;
+        }
+        Err(ApiError::Refused(match problem {
+            Some(Problem::Agents) => "OpenCode has agents Writer did not configure; Writer will not run a chat with them".into(),
+            Some(Problem::Mcp) => {
+                // what runs is not what the user switched on: no server of this start is kept
+                self.st.lock().stop_after_refusal = true;
+                "OpenCode started MCP servers that are not switched on; Writer will not run a chat with them".into()
+            }
+            Some(Problem::Permissions) => "OpenCode's permissions for Writer's agents are not the ones Writer wrote; Writer will not run a chat with them".into(),
+            None => "OpenCode did not load Writer's configuration".into(),
+        }))
     }
 
     /// Puts Writer's instructions on the session. `false`: the server is gone (the chat is told);

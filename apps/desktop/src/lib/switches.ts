@@ -24,11 +24,13 @@ export function switchedAfter(
  *  becomes `_`. Rust twin: `mcp_wiring::server_key`. */
 export const serverKey = (raw: string): string => raw.replace(/[^A-Za-z0-9_-]/gu, "_");
 
-/** Whether the stored `list` names the server `name`: by key (`my.srv` is `my_srv`), or by the tool
- *  glob a name stands for (`a` covers `a__b`). Rust twin: `Switches::listed`. */
-function mcpListed(list: readonly string[], name: string): boolean {
+/** Whether the stored `list` names the server `name`: by key (`my.srv` is `my_srv`), or, where the
+ *  list holds the servers switched off (`defaultOn`), by the tool glob a name stands for (`a` covers
+ *  `a__b`). A list of servers switched on covers only its own keys: `a` on never turns `a__b` on.
+ *  Rust twin: `Switches::listed`. */
+function mcpListed(list: readonly string[], name: string, defaultOn: boolean): boolean {
   const key = serverKey(name);
-  return list.some((entry) => key === serverKey(entry) || coveringKey(entry, key));
+  return list.some((entry) => key === serverKey(entry) || (defaultOn && coveringKey(entry, key)));
 }
 
 /** Whether the stored `entry` is a glob that covers the server `key` (`a` covers `a__b`). */
@@ -53,7 +55,7 @@ export function mcpCoveredBy(
 
 /** [`isSwitchOn`] for MCP servers, whose stored names may be raw and may be globs. */
 export const isMcpSwitchOn = (list: readonly string[], name: string, defaultOn: boolean): boolean =>
-  defaultOn !== mcpListed(list, name);
+  defaultOn !== mcpListed(list, name, defaultOn);
 
 /** [`switchedAfter`] for MCP servers: unchanged when already as asked, else the name added or every
  *  entry that names it removed. */
@@ -66,5 +68,5 @@ export function mcpSwitchedAfter(
   if (isMcpSwitchOn(list, name, defaultOn) === on) return [...list];
   if (on !== defaultOn) return [...list, name];
   const key = serverKey(name);
-  return list.filter((entry) => !mcpListed([entry], key));
+  return list.filter((entry) => !mcpListed([entry], key, defaultOn));
 }

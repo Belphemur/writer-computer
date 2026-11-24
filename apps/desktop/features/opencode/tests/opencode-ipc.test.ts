@@ -15,6 +15,8 @@ describeFeatureIpc({
       args: { binaryOverride: "/p/opencode" },
     },
     opencode_models: { call: () => ipc.models(), args: {} },
+    opencode_providers: { call: () => ipc.providers(), args: {} },
+    opencode_reconfigure: { call: () => ipc.reconfigure(), args: {} },
     opencode_saved_rules: { call: () => ipc.savedRules(), args: {} },
     opencode_remove_saved_rule: {
       call: () => ipc.removeSavedRule("psv_fake1"),

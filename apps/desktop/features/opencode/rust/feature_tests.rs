@@ -61,8 +61,18 @@ fn on_it_answers_the_backends_point_for_its_own_id_and_no_other() {
     assert!(!backend
         .ops()
         .session_id_ok("3f1c4ee0-a111-4d52-8c36-6a2f41a29b7c"));
-    // no MCP switches until phase 2 (the menu is hidden for it)
-    assert!(backend.ops().mcp_switches().is_none());
+    // the MCP menu: off unless listed, in force at once
+    let switches = backend
+        .ops()
+        .mcp_switches()
+        .expect("OpenCode has MCP switches");
+    assert!(!switches.default_on);
+    assert_eq!(switches.applies, crate::agent::mcp_menu::Applies::Live);
+    crate::agent::mcp_menu::assert_switch_contract(
+        "opencode",
+        &switches,
+        include_str!("../settings.schema.json"),
+    );
     // the core's own backend is never asked for, and nobody answers for a name it does not know
     assert!(ask(&app, "claude").is_none());
     assert!(ask(&app, "codex").is_none());
@@ -520,7 +530,14 @@ fn opencode_lists_its_mcp_servers_through_its_server_and_never_runs_a_cli_list()
         }
     }
     let (_v, root) = vault();
-    let (backend, _launcher, _keep) = backend_on(rig());
+    let r = rig();
+    // the server's own answer, as recorded
+    let all: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(super::events_tests::fixtures_dir().join("rest.json")).unwrap(),
+    )
+    .unwrap();
+    *r.launcher.mcp_reply.lock() = Some(all["mcp"]["body"].clone());
+    let (backend, _launcher, _keep) = backend_on(r);
     let spawner = Spawner::detached();
     let got = backend
         .ops()
@@ -915,4 +932,213 @@ fn the_servers_models_changing_is_told_to_whoever_listens() {
     wait_for("the hook", 5, || {
         told.load(std::sync::atomic::Ordering::SeqCst) == 1
     });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The MCP menu and the provider tabs over the user's own config (ADR 2026-11-24)
+
+/// The window's settings with these global lists set (what Settings wrote).
+fn set_lists(r: &Rig, lists: &[(&str, &[&str])]) -> tempfile::TempDir {
+    let (dir, mut s) = settings(None);
+    for (key, values) in lists {
+        s.set_global(
+            key,
+            ConfigValue::List(values.iter().map(|v| v.to_string()).collect()),
+        )
+        .unwrap();
+    }
+    *r.app
+        .state::<AppState>()
+        .get_or_create("main")
+        .settings
+        .write() = Some(s);
+    dir
+}
+
+fn user_config(servers: serde_json::Value) -> serde_json::Value {
+    serde_json::json!([{"type": "file", "path": "/never/read", "info": {"mcp": {"servers": servers}}}])
+}
+
+/// The menu lists what the server runs and the servers its deny-all policies hold off, which the
+/// server does not list: those are `disabled` rows, and the switches come from the setting.
+#[test]
+fn the_mcp_list_holds_the_servers_the_policies_keep_off_as_disabled_rows() {
+    use crate::agent::backend::HelperCtx;
+    use crate::agent::config_sync::{McpProbe, ProbeTarget};
+    use crate::agent::events::{McpServerStatus, McpState};
+    struct NeverRun;
+    impl McpProbe for NeverRun {
+        fn probe(
+            &self,
+            _: &ProbeTarget,
+            _: Duration,
+            _: &Spawner,
+        ) -> Result<Vec<McpServerStatus>, String> {
+            panic!("OpenCode must not run a CLI list");
+        }
+    }
+    let (_v, root) = vault();
+    let r = rig();
+    let _settings = set_lists(&r, &[("agent.opencode.enabled-mcp-servers", &["g-a"])]);
+    *r.launcher.config_reply.lock() = Some(user_config(serde_json::json!({"g-a": {}, "g-b": {}})));
+    *r.launcher.mcp_reply.lock() = Some(serde_json::json!({"data": [
+        {"name": "writer", "status": {"status": "connected"}},
+        {"name": "g-a", "status": {"status": "connected"}},
+    ]}));
+    let (backend, launcher, servers, _keep) = backend_and_servers(r);
+    let spawner = Spawner::detached();
+    let ctx = HelperCtx {
+        spawner: &spawner,
+        program: Path::new("opencode"),
+        cwd: &root,
+        label: "main",
+        root: &root,
+    };
+    let got = backend
+        .ops()
+        .mcp_list(&ctx, &NeverRun)
+        .expect("the server answers");
+    let rows: Vec<(String, McpState)> = got.into_iter().map(|s| (s.name, s.status)).collect();
+    assert_eq!(
+        rows,
+        [
+            ("writer".to_string(), McpState::Connected),
+            ("g-a".to_string(), McpState::Connected),
+            ("g-b".to_string(), McpState::Disabled),
+        ]
+    );
+    // the switch is on for g-a only: the file holds its allow and g-b's placeholder
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(servers_file(&launcher)).unwrap()).unwrap();
+    let allows: Vec<_> = doc["policies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["effect"] == "allow")
+        .map(|p| p["resource"].as_str().unwrap())
+        .collect();
+    assert_eq!(allows, ["writer", "g-a"]);
+    assert_eq!(doc["mcp"]["servers"]["g-b"]["disabled"], true);
+    assert_eq!(
+        servers.global_config("main"),
+        Some(super::server::GlobalConfig::Loaded)
+    );
+    assert_eq!(servers.global_config("other"), None);
+}
+
+/// The config file the first launch was given (`OPENCODE_CONFIG`).
+fn servers_file(launcher: &FakeLauncher) -> String {
+    launcher.specs.lock()[0]
+        .env
+        .iter()
+        .find(|(k, _)| k == "OPENCODE_CONFIG")
+        .map(|(_, v)| v.clone())
+        .unwrap()
+}
+
+/// A switch written in Settings: `mcp_apply` renders the file again and the server reads it again.
+#[test]
+fn applying_a_switch_renders_the_config_again_and_reloads_once() {
+    use crate::agent::backend::HelperCtx;
+    let (_v, root) = vault();
+    let r = rig();
+    let _settings = set_lists(&r, &[]);
+    *r.launcher.config_reply.lock() = Some(user_config(serde_json::json!({"g-a": {}})));
+    let (backend, launcher, servers, _keep) = backend_and_servers(r);
+    // no server yet: nothing to apply, nothing is started for it
+    servers.reapply("main").unwrap();
+    assert_eq!(launcher.launches(), 0);
+    servers.ensure_up("main", &root).unwrap();
+    let fake = launcher.current().server.clone();
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    let before = reloads();
+    // the user switches g-a on
+    *servers
+        .app()
+        .state::<AppState>()
+        .get_or_create("main")
+        .settings
+        .write() = Some({
+        let (_d, mut s) = settings(None);
+        s.set_global(
+            "agent.opencode.enabled-mcp-servers",
+            ConfigValue::List(vec!["g-a".into()]),
+        )
+        .unwrap();
+        std::mem::forget(_d);
+        s
+    });
+    let spawner = Spawner::detached();
+    backend
+        .ops()
+        .mcp_apply(&HelperCtx {
+            spawner: &spawner,
+            program: Path::new("opencode"),
+            cwd: &root,
+            label: "main",
+            root: &root,
+        })
+        .unwrap();
+    assert_eq!(reloads(), before + 1);
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(servers_file(&launcher)).unwrap()).unwrap();
+    assert!(doc["policies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["resource"] == "g-a" && p["effect"] == "allow"));
+    assert!(
+        doc["mcp"]["servers"].get("g-a").is_none(),
+        "no placeholder for a server that is on"
+    );
+    // the same again changes nothing
+    servers.reapply("main").unwrap();
+    assert_eq!(reloads(), before + 1);
+}
+
+/// The provider tabs are the server's providers together with the ones switched off, which the
+/// server stops listing; names only, never a provider's headers.
+#[test]
+fn the_provider_tabs_keep_a_switched_off_provider_the_server_no_longer_lists() {
+    let (_v, root) = vault();
+    let r = rig();
+    let _settings = set_lists(&r, &[("agent.opencode.disabled-providers", &["fake-b"])]);
+    let servers = Arc::new(r.servers);
+    let _keep = (r.app, r.data);
+    servers.ensure_up("main", &root).unwrap();
+    *r.launcher.current().server.shared.handler.lock() =
+        Some(Box::new(|q: &super::fake_server_tests::Req| {
+            (q.method == "GET" && q.path == "/api/provider").then(|| {
+                (
+                    200,
+                    serde_json::json!({"data": [
+                        {"id": "fake-a", "name": "Fake A", "headers": {"authorization": "secret"}},
+                    ]}),
+                )
+            })
+        }));
+    let rows = servers.providers("main", &root).unwrap();
+    let got: Vec<(&str, &str, bool)> = rows
+        .iter()
+        .map(|r| (r.id.as_str(), r.name.as_str(), r.off))
+        .collect();
+    assert_eq!(
+        got,
+        [("fake-a", "Fake A", false), ("fake-b", "fake-b", true)]
+    );
+    assert!(!format!("{rows:?}").contains("secret"));
+}
+
+/// The provider switch is in the file the server loads.
+#[test]
+fn a_provider_switch_is_a_policy_in_the_file() {
+    let (_v, root) = vault();
+    let r = rig();
+    let _settings = set_lists(&r, &[("agent.opencode.disabled-providers", &["fake-b"])]);
+    r.servers.ensure_up("main", &root).unwrap();
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(servers_file(&r.launcher)).unwrap()).unwrap();
+    assert!(doc["policies"].as_array().unwrap().iter().any(|p| {
+        p["action"] == "provider.use" && p["resource"] == "fake-b" && p["effect"] == "deny"
+    }));
 }

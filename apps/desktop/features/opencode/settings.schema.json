@@ -51,6 +51,15 @@
       "default": []
     },
     {
+      "key": "agent.opencode.disabled-providers",
+      "label": "Providers switched off",
+      "description": "OpenCode providers (by id) that Writer's chats never use: their models are not offered and a chat on one is refused. On unless listed. Switched in Settings > Agent > OpenCode.",
+      "category": "Agent",
+      "type": "list",
+      "scope": "global",
+      "default": []
+    },
+    {
       "key": "agent.opencode.model-cheap",
       "label": "Cheap tier model",
       "description": "Model for the cheap tier: the read-only writer-explorer sub-agent and automatic chat titles, as provider/model. Blank: the chat's own model.",

@@ -1,4 +1,7 @@
+import { useCallback, useEffect, useState } from "react";
 import { useAllSettings, useSetSetting } from "@/hooks/use-settings";
+import { useSettingsStore } from "@/stores/settings-store";
+import { switchedAfter } from "@/lib/switches";
 import { SELECT, SelectRow } from "@/components/settings-panel/select-row";
 import {
   agentBackendContributions,
@@ -13,11 +16,20 @@ import { SETTINGS_SCHEMA } from "@/lib/settings-schema";
 import { useBackendModels } from "@/hooks/use-backend-models";
 import { useRegistryItems } from "@/hooks/use-registry-items";
 import { OPENCODE_BACKEND_ID, OPENCODE_KEYS } from "./keys";
+import {
+  providers as loadProviders,
+  reconfigure,
+  status,
+  type GlobalConfig,
+  type ProviderRow,
+} from "./ipc";
 import { ModelsTable } from "./models-table";
 import { SavedRules } from "./saved-rules";
 
 const BUTTON =
   "shrink-0 rounded-lg border border-[var(--line-subtle)] px-3 py-1.5 text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-subtle-strong)] disabled:opacity-50";
+
+const describe = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const labelOf = (key: string, fallback: string) =>
@@ -60,8 +72,9 @@ function ModelSelect({
   );
 }
 
-/** The body of Settings > Agent > OpenCode: the default model and effort, the tier models, the
- *  models table and the saved permission rules. The status card above it is the pane's own. */
+/** The body of Settings > Agent > OpenCode: what applies of the user's own config, the default model
+ *  and effort, the tier models, the models table (with a switch per provider) and the saved
+ *  permission rules. The status card above it is the pane's own. */
 export function OpencodeSettingsPanel() {
   const settings = useAllSettings();
   const setSetting = useSetSetting();
@@ -74,6 +87,58 @@ export function OpencodeSettingsPanel() {
   const model = text(settings[OPENCODE_KEYS.model]);
   const effort = text(settings[OPENCODE_KEYS.effort]) || "default";
   const models = state.status === "ready" ? state.models : [];
+  const disabledProviders = stringList(settings[OPENCODE_KEYS.disabledProviders]);
+  const binaryPath = text(settings[OPENCODE_KEYS.binaryPath]);
+  const [providers, setProviders] = useState<readonly ProviderRow[]>([]);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig | null>(null);
+  const ready = state.status === "ready";
+  // the tabs come from the server (its providers plus the switched-off ones); the server is up once
+  // the models loaded, which is also when its config state is known
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    loadProviders().then(
+      (rows) => !cancelled && setProviders(rows),
+      (e: unknown) => !cancelled && setProviderError(describe(e)),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, state]);
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    status(binaryPath || null).then(
+      (s) => !cancelled && setGlobalConfig(s.globalConfig),
+      () => {}, // the status card above already says why a program is unusable
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, binaryPath]);
+  const switchProvider = useCallback(
+    async (id: string, on: boolean) => {
+      // read at the click: two quick clicks each start from the list the other left
+      const list = stringList(
+        useSettingsStore.getState().settings[OPENCODE_KEYS.disabledProviders],
+      );
+      setProviderError(null);
+      try {
+        await setSetting(OPENCODE_KEYS.disabledProviders, switchedAfter(list, id, on, true));
+        await reconfigure();
+        reload(); // the models come or go; the new list is read again, and the providers with it
+      } catch (e) {
+        setProviderError(describe(e));
+        try {
+          setProviders(await loadProviders()); // nothing reloaded: show what is in force
+        } catch (e2) {
+          setProviderError(describe(e2));
+        }
+      }
+    },
+    [setSetting, reload],
+  );
   // blank means the first enabled model of the list
   const effective = resolveModel(models, disabled, model || null);
   const levels = selectableEfforts(effective?.variants ?? []);
@@ -81,8 +146,14 @@ export function OpencodeSettingsPanel() {
   return (
     <div data-opencode-panel>
       <p className="border-t border-[var(--line-subtler)] px-4 py-3 text-[13px] text-[var(--text-muted)]">
-        Your own OpenCode config does not apply.
+        Your global OpenCode config, plugins and instructions apply. Its MCP servers stay off until
+        you switch them on below. Global permission allows do not apply here.
       </p>
+      {globalConfig === "skipped-mcp-policy" && (
+        <p data-opencode-config-skipped className="px-4 pb-3 text-[13px] text-[var(--text-muted)]">
+          Your OpenCode config sets an MCP policy, so Writer uses its own config only.
+        </p>
+      )}
       {state.status === "loading" && (
         <p
           role="status"
@@ -146,7 +217,11 @@ export function OpencodeSettingsPanel() {
         <ModelsTable
           models={state.models}
           disabled={disabled}
+          providers={providers}
+          disabledProviders={disabledProviders}
+          providerError={providerError}
           onChange={(next) => void setSetting(OPENCODE_KEYS.disabledModels, next)}
+          onProvider={(id, on) => void switchProvider(id, on)}
         />
       )}
       <SavedRules />
