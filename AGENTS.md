@@ -52,6 +52,7 @@ All docs except CLAUDE.md, AGENTS.md, TODOS.md, and CHANGELOG.md live in `./docs
 - [docs/workflows/agent-review.md](./docs/workflows/agent-review.md) — review personas, findings format, quality checklist, escalation rules
 - [docs/workflows/worktrees.md](./docs/workflows/worktrees.md) — creating and managing parallel worktrees
 - [docs/workflows/subagents.md](./docs/workflows/subagents.md) — the lead orchestrates, the `writer-engineer` sub-agent (`.claude/agents/writer-engineer.md`) implements: decide with the user and write the ADR first, brief fully, parallel lanes in worktrees, lead validates, commits, builds
+- [.agents/skills/writer-decisions/SKILL.md](./.agents/skills/writer-decisions/SKILL.md) — how the maintainer answers design and UX questions: use it to recommend an option before asking, and to decide in auto mode, with the hard limits that always wait for them
 - [docs/soul.md](./docs/soul.md) — the character every agent brings: care for the user's work, privacy, truth over comfort, one source of truth, quiet interfaces
 
 **Guidelines**

@@ -46,4 +46,5 @@ SPECs/Agent/qa-typing-pass-2026-10-04/videos/
 .agents/skills/*
 !.agents/skills/engineering-philosophy/
 !.agents/skills/writer-feature/
+!.agents/skills/writer-decisions/
 .claude/skills/*
