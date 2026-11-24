@@ -2523,3 +2523,22 @@ fn a_refusal_after_a_rewrite_stops_the_process() {
         r.h.launcher.current().exited().is_some()
     });
 }
+
+/// The gate's own deadline is a refusal with a card, however late it falls: when it hits a request
+/// in flight it must not surface as a timeout, which reads as a dead server and ends the chat
+/// with no card (the cause of a refusal that sometimes never arrived).
+#[test]
+fn the_gates_deadline_is_a_card_and_never_a_silent_end() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    r.fake()
+        .shared
+        .delays
+        .lock()
+        .push(("/api/agent".into(), Duration::from_secs(2)));
+    send_first(&r);
+    r.until("the refusal", |l| {
+        l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("did not load")))))
+    });
+    assert!(r.fake().find("POST", "/prompt").is_empty());
+}

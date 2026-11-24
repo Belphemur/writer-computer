@@ -898,9 +898,13 @@ impl TInner {
         // a rewrite was made: the process may still run the old file, so a refusal stops it
         let mut rewrote = false;
         while tokio::time::Instant::now() < until {
-            let list = tokio::time::timeout_at(until, client.get(&api::AGENTS, &[]))
-                .await
-                .map_err(|_| ApiError::Timeout)??;
+            // the gate's own deadline is a refusal with the reason, never `ApiError::Timeout`: that
+            // reads as "the server is down" and ends the chat with no card
+            let Ok(list) = tokio::time::timeout_at(until, client.get(&api::AGENTS, &[])).await
+            else {
+                break;
+            };
+            let list = list?;
             let agents = list["data"].as_array().cloned().unwrap_or_default();
             let loaded = sentinel
                 .as_deref()
@@ -929,9 +933,10 @@ impl TInner {
                 tokio::time::sleep(AGENT_POLL).await;
                 continue;
             }
-            let mcp = tokio::time::timeout_at(until, client.get(&api::MCP, &[]))
-                .await
-                .map_err(|_| ApiError::Timeout)??;
+            let Ok(mcp) = tokio::time::timeout_at(until, client.get(&api::MCP, &[])).await else {
+                break;
+            };
+            let mcp = mcp?;
             let expect = self.server.expectation();
             let running = in_force::mcp_violations(&mcp, &expect.mcp_allowed);
             if !running.is_empty() {
