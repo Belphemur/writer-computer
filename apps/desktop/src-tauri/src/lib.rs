@@ -62,7 +62,9 @@ use error::AppError;
 use open_target::resolve_path;
 pub use open_target::PendingOpenPayload;
 use state::AppState;
-use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::path::Path;
+use std::path::PathBuf;
 #[cfg(unix)]
 use tauri::menu::MenuItem;
 #[cfg(target_os = "macos")]

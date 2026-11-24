@@ -194,6 +194,8 @@ impl WorkspaceState {
         *self.startup_open.lock() = Some(payload);
     }
 
+    // The macOS dock-drop handler (`RunEvent::Opened`) is the only caller outside tests.
+    #[cfg(any(target_os = "macos", test))]
     pub fn try_set_startup_open(
         &self,
         payload: PendingOpenPayload,
