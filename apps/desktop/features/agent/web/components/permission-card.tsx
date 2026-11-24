@@ -12,9 +12,13 @@ import {
   permissionSummary,
   ruleChips,
   toolKind,
+  toolRole,
 } from "@features/agent/web/lib/tool-kinds";
 import { Ico } from "./agent-icon";
 import { CodeBlock } from "./tool-row";
+
+/** What approving any shell command means, whichever backend runs it. */
+const SHELL_WARNING = "Runs with your full account rights.";
 
 /**
  * "Permission required", pinned above the composer, one request at a time (spec 6.2).
@@ -24,7 +28,16 @@ import { CodeBlock } from "./tool-row";
  * the composer when the card appears; the card precedes the composer in DOM order so Tab from
  * the composer's start reaches it.
  */
-export function PermissionCard({ request, more }: { request: PermissionView; more: number }) {
+export function PermissionCard({
+  request,
+  more,
+  shellNote,
+}: {
+  request: PermissionView;
+  more: number;
+  /** The chat's backend's own sentence for a shell request (its descriptor). */
+  shellNote?: string;
+}) {
   const [details, setDetails] = useState(false);
   const [menu, setMenu] = useState(false);
   const detailsId = useId();
@@ -92,6 +105,12 @@ export function PermissionCard({ request, more }: { request: PermissionView; mor
         {permissionSummary(request)}
       </p>
       <p className="mt-0.5 text-[11.5px] text-text-muted">Type: {KIND_LABEL[kind]}</p>
+      {toolRole(request.tool) === "shell" && (
+        <p className="mt-0.5 text-[11.5px] text-text-muted" data-agent-permission-shell-warning>
+          {SHELL_WARNING}
+          {shellNote && ` ${shellNote}`}
+        </p>
+      )}
 
       {chips.length > 0 && (
         <div role="group" aria-label="Rules to allow" className="mt-2 flex flex-wrap gap-1.5">

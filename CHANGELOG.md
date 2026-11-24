@@ -6,6 +6,7 @@
 - OpenCode (feature): a second agent backend. Pick it per chat when `opencode` 2.4 or newer is installed and signed in, with the default under Settings > Agent > Default agent. Writer runs OpenCode with its own config, so your global OpenCode config, plugins and MCP servers do not apply. [Use OpenCode in Writer](https://writer.computer/docs/use-opencode/).
 - OpenCode: Settings > Agent > OpenCode has a models table (All, Enabled, Free, search, prices) where you switch models off, the tier models, and the saved permission rules of the vault's project. Reasoning effort shows in the chat's model chip.
 - OpenCode: Ask before edit, Auto-edit files and Plan only. Plan only is read-only: it can look things up on the web and ask questions, and it writes and runs nothing. A switch to Auto or Don't ask asks like Ask before edit.
+- OpenCode: in Auto-edit files, a worker sub-agent's edits to files inside the vault go through without a card, as with Claude. The shell approval card now says a command runs with your full account rights (and, for OpenCode, can reach its local server).
 - OpenCode: questions show in the question card, and sub-agents show as cards and in the tray, as with Claude.
 - OpenCode: deleting a chat deletes its OpenCode session; archiving keeps it.
 - "Choose binary…" on the agent pane's not-found card now remembers the program you pick (for the chat's own agent).

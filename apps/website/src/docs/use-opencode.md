@@ -37,8 +37,8 @@ Three tier models set what sub-agents and automatic chat titles use. Blank means
 
 ## Limits
 
-- A sub-agent's edits always ask, even in Auto-edit files.
-- Approving a shell command approves anything your account can do: the agent's shell can read the server's password. Read each command.
+- A sub-agent's edits ask in Ask before edit. In Auto-edit files only a worker's edits inside the vault go through; any other request asks.
+- A shell command you approve runs with your full account rights and can reach OpenCode's local server and its password. Read each command.
 - Rejecting a request ends the turn.
 - Your own `agent.allowed-tools` and `agent.disallowed-tools` apply to Claude only.
 - Effort levels none and minimal can't be picked.

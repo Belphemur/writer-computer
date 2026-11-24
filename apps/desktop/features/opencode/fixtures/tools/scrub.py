@@ -70,6 +70,7 @@ FIXTURES = {
     "memory-base-no-git": ("s37-1-no-git-dir-is-root", {"results": "s37-results.json"}, "s371-no-git-dir-is-root"),
     "memory-base-git-dir-below": ("s37-2-git-dir-below", {}, "s372-git-dir-below"),
     "memory-base-git-dir-is-root": ("s37-3-git-dir-is-root", {}, "s373-git-dir-is-root"),
+    "plan-codemode": ("s34-plan-codemode", {"messages": "s34-plan-codemode.messages.json", "results": "s34-results.json"}, "s34b"),
     "steer-now": ("s20-steer-now", {"messages": "s20-steer-now.messages.json"}, "s20"),
     "reject-message": ("s21-reject", {"messages": "s21-reject.messages.json"}, "s21"),
     "codemode-failures": ("s22-codemode-failures", {"messages": "s22-codemode-failures.messages.json"}, "s22"),

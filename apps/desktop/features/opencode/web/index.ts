@@ -55,6 +55,7 @@ export default defineFeature({
           command: "opencode auth login",
         },
         keys: OPENCODE_KEYS,
+        shellNote: "It can reach OpenCode's local server.",
         detect,
         models,
         settingsPanel: () => import("./settings-panel").then((m) => m.OpencodeSettingsPanel),

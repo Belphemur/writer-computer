@@ -251,3 +251,12 @@ The accepted text and the 2026-11-23 amendment stay as decided. This section rec
 7. **Where OpenCode lives:** in the feature `opencode`, behind the `agent.backends` point (A14). The backend is chosen per chat and the default is `agent.default-backend` (A20); settings are `agent.opencode.*` (A15). One server runs per window and vault, started by use (A17). Titles go through a throwaway session and `POST .../generate` (A16).
 8. **Saved rules** listed in Settings are the vault's project's (A21), and a blank model means the first model not switched off, resolved by one function (A22).
 9. **Gaps, accepted for now:** `auto` and `dontAsk` ask like `manual`; `agent.allowed-tools` and `agent.disallowed-tools` are not converted; the effort variants `none` and `minimal` are not selectable. Phase 5 still has to check the real app with a real OpenCode.
+
+## Amended 2026-11-24 (decided with the user, later the same day)
+
+Four review items of the auto-mode amendment above were decided; where they differ, this section wins. Details in [SPECs/opencode-backend-spec.md](../../SPECs/opencode-backend-spec.md) section 2 (D1 to D4) and 10.9.
+
+1. **Worker edits under Accept edits are answered by Writer**, as Claude's are, replacing "a sub-agent's edit still asks". Only a sub-agent session of this chat (the child registry) once its launch call is linked, only a writing role, only the edit action, only for files inside the vault with no link on the way (`vault_ops::confine_with`, as for memory) and none under `.obsidian` or `.git` (those always show a card). Never in Plan, manual, `auto` or `dontAsk`, never for an explorer or another chat's session. It is still Writer's own `once` reply, never a session rule (spec D3).
+2. **The password risk is accepted** and said on the shell approval card (a neutral line for every backend and a sentence from the backend's descriptor), replacing "the card should say ... (open)".
+3. **Plan keeps web fetch and search.**
+4. **`execute` stays denied in Plan.** The capture (`s34` part b, run as the `build` agent) shows the model did not call `execute`; it called the allowed read directly and was not asked. It does not show whether `execute` was offered or whether its inner calls are gated per tool.

@@ -142,11 +142,9 @@
 
 ## Up Next
 
-- [ ] Review (decided in auto mode, 2026-11-23/24), OpenCode: confirm or change each. Spec `SPECs/opencode-backend-spec.md` §2 and §10.9, ADR amendments.
+- [ ] Review (decided in auto mode, 2026-11-23/24), OpenCode: confirm or change each. Four items were decided with the user on 2026-11-24 and are out of this list (spec section 2, D1 to D4: the password risk accepted and said on the shell card, Plan keeps web fetch and search, a worker's confined edits answered in accept-edits, `execute` stays denied in Plan after the capture). Spec `SPECs/opencode-backend-spec.md` §2 and §10.9, ADR amendments.
   - [ ] A1 `auto` is accept-edits plus read tools; `auto` and `dontAsk` ask like `manual`.
   - [ ] A2 (replaced), the §10.9 permission model: empty session rules outside Plan, roles with their own agent rules, accept-edits and "this chat" answered by Writer.
-  - [ ] Plan scope: web fetch and web search are allowed in Plan, with questions and read-only Writer tools; the codemode `execute` tool stays denied.
-  - [ ] A worker's edits always ask, even in accept-edits.
   - [ ] Skill folders with a link out of the vault are left out whole.
   - [ ] A5 titles through `title.rs`; A16 a throwaway session and `/generate`; A23 title sessions are not chat turns.
   - [ ] A11 tool tables as shared JSON; A12 OpenCode writes the shared `.writer/memory/` with its own tools; A13 one producer of sub-agent state.
@@ -155,11 +153,8 @@
   - [ ] A21 saved rules are the vault's project's ("All projects", read-only, when none holds the vault); A22 one model resolver.
   - [ ] "Choose binary…" saves the path for the chat's own agent.
 - [ ] OpenCode open risks:
-  - [ ] The server's password is visible to shell commands through `ps -E` (the wrapper hides only the environment).
-  - [ ] Codemode under Plan: the capture was blocked by the free-model limit; rerun `s34` part b.
   - [ ] The `/api/location` query encoding is unverified.
   - [ ] Flaky `ipc::tests::unix::every_launch_gets_a_new_token`.
-  - [ ] Shell approval card: say that approving a shell command approves everything the account can do (the password is readable by the agent's shell, spec §10); on the card, not in Settings.
   - [ ] A real window with a real OpenCode: the picker, the models table, a title, a delete, a sub-agent.
 - [ ] Git signing follow-ups (2026-11-23): `setup`, `auto_setup` and the merge resolve still sign through a detached `Exec`, so a signer prompt there is not killed when the feature stops; give them the scope's `Exec`. Verify with a real 1Password `op-ssh-sign` and a real forge's signed-commit rejection text.
 - [ ] Website download (2026-11-23): Chrome's reduced user agent says `x86_64` on every Linux machine and Chromebook, so ARM visitors get the x86_64 AppImage or `.deb`. Read `navigator.userAgentData.getHighEntropyValues(["architecture"])` in `useDownloadOs` when it exists, and fall back to the user agent (`apps/website/src/download.ts`).

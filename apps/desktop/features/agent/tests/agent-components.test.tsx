@@ -24,6 +24,9 @@ vi.mock("@/lib/tauri", () => ({
 
 import { AgentPane } from "@features/agent/web/components/agent-pane";
 import { PermissionCard } from "@features/agent/web/components/permission-card";
+import { PinnedStack } from "@features/agent/web/components/pinned-stack";
+import type { Chat } from "@features/agent/web/hooks/use-agent";
+import { FIXTURE_ID, registerFixtureBackend } from "@features/agent/tests/helpers/fixture-backend";
 import { createMockAgentClient, type Goldens } from "@features/agent/web/lib/mock-client";
 import {
   configureAgentRuntimeForTests,
@@ -504,6 +507,38 @@ describe("PermissionCard", () => {
     expect(button("Allow once")).toBeDefined();
     expect(button("Always allow")).toBeDefined();
     expect(button("Deny")).toBeDefined();
+  });
+
+  it("a shell request says what approving it means; the backend adds its own sentence", async () => {
+    await mount();
+    const warning = () => $("[data-agent-permission-shell-warning]")?.textContent;
+    expect(warning()).toBe("Runs with your full account rights.");
+    await act(async () =>
+      root.render(<PermissionCard request={REQ} more={0} shellNote="It reaches the server." />),
+    );
+    expect(warning()).toBe("Runs with your full account rights. It reaches the server.");
+    // not a shell command (a read, or stopping one: the same kind, another role): no warning
+    await mount({ ...REQ, tool: "Read", input: { file_path: "a.md" } });
+    expect(warning()).toBeUndefined();
+    await mount({ ...REQ, tool: "KillShell", input: { shell_id: "s1" } });
+    expect(warning()).toBeUndefined();
+  });
+
+  it("the card of a chat takes the sentence of that chat's backend, and Claude's has none", async () => {
+    const unregister = registerFixtureBackend({ shellNote: "It reaches the fixture server." });
+    try {
+      const chat = (backendId: string) =>
+        ({ pendingPermissions: [REQ], backendId }) as unknown as Chat;
+      const warning = () => $("[data-agent-permission-shell-warning]")?.textContent;
+      await act(async () =>
+        root.render(<PinnedStack chat={chat(FIXTURE_ID)} queued={undefined} />),
+      );
+      expect(warning()).toBe("Runs with your full account rights. It reaches the fixture server.");
+      await act(async () => root.render(<PinnedStack chat={chat("claude")} queued={undefined} />));
+      expect(warning()).toBe("Runs with your full account rights.");
+    } finally {
+      unregister();
+    }
   });
 
   it("buttons answer: allow once, always (project), deny", async () => {

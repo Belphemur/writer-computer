@@ -1,0 +1,145 @@
+{
+ "messages": {
+  "data": [
+   {
+    "id": "msg_fake0004",
+    "time": {
+     "created": 1795523423901
+    },
+    "type": "idle",
+    "outcome": "succeeded"
+   },
+   {
+    "id": "msg_fake0003",
+    "time": {
+     "created": 1795523420940,
+     "firstToken": 1795523423892,
+     "streamed": 1795523423898,
+     "completed": 1795523423898
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake-provider",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "text",
+      "text": "The fake vault holds **42** notes."
+     }
+    ],
+    "finish": "stop",
+    "rawFinish": "stop",
+    "cost": 4.258e-05,
+    "tokens": {
+     "input": 132,
+     "output": 11,
+     "reasoning": 0,
+     "cache": {
+      "read": 576,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0002",
+    "time": {
+     "created": 1795523416626,
+     "firstToken": 1795523420483,
+     "streamed": 1795523420927,
+     "completed": 1795523420932
+    },
+    "type": "assistant",
+    "agent": "build",
+    "model": {
+     "id": "fake-model",
+     "providerID": "fake-provider",
+     "variant": "default"
+    },
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "The user wants me to call the `writer_note_count` tool, which is available as a direct function. Despite the mention of a \"code execution call,\" the tool is accessible in my standard function-calling interface, so I'll invoke it directly and then report the number it returns.",
+      "native": {
+       "reasoningField": "reasoning_content"
+      },
+      "time": {
+       "created": 1795523420485,
+       "completed": 1795523420920
+      }
+     },
+     {
+      "type": "tool",
+      "id": "chatcmpl-tool-9213ed8c291acae9",
+      "name": "writer_note_count",
+      "executed": false,
+      "state": {
+       "status": "completed",
+       "input": {},
+       "content": [
+        {
+         "type": "text",
+         "text": "The fake vault holds 42 notes."
+        }
+       ],
+       "metadata": {
+        "truncated": false
+       }
+      },
+      "time": {
+       "created": 1795523420892,
+       "ran": 1795523420926,
+       "completed": 1795523420931
+      }
+     }
+    ],
+    "finish": "tool-calls",
+    "rawFinish": "tool_calls",
+    "cost": 0.00012715,
+    "tokens": {
+     "input": 631,
+     "output": 7,
+     "reasoning": 58,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    }
+   },
+   {
+    "id": "msg_fake0001",
+    "time": {
+     "created": 1795523416614
+    },
+    "text": "In ONE code execution call, call tools.writer.note_count() from the writer MCP server and return its number. Then tell me the number.",
+    "type": "user"
+   }
+  ],
+  "cursor": {
+   "previous": "eyJpZCI6Im1zZ19mYWtlMDAwNCIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+   "next": "eyJpZCI6Im1zZ19mYWtlMDAwMSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+  }
+ },
+ "results": {
+  "port0": {
+   "accepted": true,
+   "info_status": 200,
+   "port_is_nonzero": true
+  },
+  "plan_codemode": {
+   "end": "session.execution.succeeded",
+   "tools_started": [
+    "writer_note_count"
+   ],
+   "asked": [],
+   "results": [
+    [
+     "writer_note_count",
+     "ok"
+    ]
+   ]
+  }
+ }
+}

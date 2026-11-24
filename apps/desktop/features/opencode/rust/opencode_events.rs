@@ -42,6 +42,8 @@ struct Row {
 struct Child {
     /// The session that launched it.
     parent: String,
+    /// The agent the server named at creation (the role's backend name).
+    agent: Option<String>,
     /// The launch call, once `tool.progress` named it.
     link: Option<String>,
     /// Events that arrived before the link.
@@ -191,6 +193,17 @@ impl MapState {
         self.children.keys().map(String::as_str)
     }
 
+    /// The agent a sub-agent session of this chat was created with: `None` when the session is not
+    /// one of this chat's sub-agents **or its launch call is not linked yet** (its events are
+    /// held, so the Changes capture of its tools would come after they ran), `Some(None)` when the
+    /// server named no agent.
+    pub fn child_agent(&self, session: &str) -> Option<Option<&str>> {
+        self.children
+            .get(session)
+            .filter(|c| c.link.is_some())
+            .map(|c| c.agent.as_deref())
+    }
+
     /// Maps one event of the chat's session or of one of its sub-agents.
     pub fn map(&mut self, ev: &WireEvent) -> Mapped {
         let mut out = Mapped::default();
@@ -231,6 +244,7 @@ impl MapState {
             c.sessionID.clone(),
             Child {
                 parent: parent.to_string(),
+                agent: c.agent.clone(),
                 ..Child::default()
             },
         );

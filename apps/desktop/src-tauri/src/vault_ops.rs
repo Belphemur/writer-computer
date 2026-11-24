@@ -37,10 +37,14 @@ impl From<std::io::Error> for VaultOpError {
 /// Directories nothing may be read or written through these helpers.
 const PROTECTED: [&str; 2] = [".obsidian", ".git"];
 
-/// Does one path component name a `.git` folder on some file system: any case (APFS, NTFS), with
-/// the code points HFS+ ignores, trailing dots or spaces (NTFS) or as the 8.3 short name `git~1`?
-/// git refuses all of these spellings for the same reason (`is_hfs_dotgit`, `is_ntfs_dotgit`).
-pub fn names_dot_git(component: &str) -> bool {
+/// Does one path component name the folder `name` (lowercase, like `.obsidian`) on some file
+/// system: any case (APFS, NTFS), with the code points HFS+ ignores, trailing dots or spaces
+/// (NTFS)? The one folding every protected folder goes through.
+pub fn names_protected(component: &str, name: &str) -> bool {
+    fold_component(component) == name
+}
+
+fn fold_component(component: &str) -> String {
     let folded: String = component
         .chars()
         .filter(|c| {
@@ -51,14 +55,20 @@ pub fn names_dot_git(component: &str) -> bool {
         })
         .collect::<String>()
         .to_lowercase();
-    let trimmed = folded.trim_end_matches(['.', ' ']);
-    trimmed == ".git" || trimmed == "git~1"
+    folded.trim_end_matches(['.', ' ']).to_string()
+}
+
+/// Does one path component name a `.git` folder: [`names_protected`], or as the 8.3 short name
+/// `git~1`? git refuses all of these spellings for the same reason (`is_hfs_dotgit`,
+/// `is_ntfs_dotgit`).
+pub fn names_dot_git(component: &str) -> bool {
+    names_protected(component, ".git") || fold_component(component) == "git~1"
 }
 
 /// Is a vault-relative path inside a folder nothing reads or writes (`.obsidian`, `.git`)?
 pub fn is_protected_rel(rel: &str) -> bool {
     rel.split('/')
-        .any(|c| names_dot_git(c) || c.eq_ignore_ascii_case(".obsidian"))
+        .any(|c| names_dot_git(c) || names_protected(c, ".obsidian"))
 }
 
 /// A path accepted by [`confine`]: the resolved absolute path and the
@@ -115,7 +125,12 @@ struct Rules<'a> {
 impl Rules<'_> {
     fn refusal(&self, parts: &[&str]) -> Option<String> {
         for name in parts {
-            if names_dot_git(name) || self.anywhere.iter().any(|a| name.eq_ignore_ascii_case(a)) {
+            if names_dot_git(name)
+                || self
+                    .anywhere
+                    .iter()
+                    .any(|a| names_protected(name, &a.to_lowercase()))
+            {
                 return Some((*name).to_string());
             }
         }
@@ -435,6 +450,28 @@ mod tests {
         }
         for name in [".github", ".gitignore", "git", ".gitx"] {
             assert!(!names_dot_git(name), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn every_spelling_of_obsidian_is_protected_in_a_path_and_in_confine() {
+        for rel in [
+            ".obsidian/x.json",
+            ".OBSIDIAN/x.json",
+            ".obsidian\u{200C}/x.json",
+            ".obsidian./x",
+            ".obsidian /x",
+            "a/.Obsidian/x",
+            "a/.git/x",
+        ] {
+            assert!(is_protected_rel(rel), "{rel:?}");
+        }
+        for rel in [".obsidianx/x", "obsidian/x", "a/.obsidian-old/x"] {
+            assert!(!is_protected_rel(rel), "{rel:?}");
+        }
+        let (_d, r) = root();
+        for bad in [".obsidian\u{200C}/x.json", ".obsidian./x"] {
+            assert!(confine(&r, bad).is_err(), "{bad:?}");
         }
     }
 

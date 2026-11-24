@@ -2,6 +2,7 @@ import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { removeQueuedMessage, sendAgentNow } from "@features/agent/web/hooks/agent-api";
 import type { Chat, QueuedMessage } from "@features/agent/web/hooks/use-agent";
 import { Ico } from "./agent-icon";
+import { backendOrDefault } from "@features/agent/web/lib/backends";
 import { PermissionCard } from "./permission-card";
 
 /** Between the transcript and the composer: the permission card (first request, "+N more"),
@@ -11,7 +12,14 @@ export function PinnedStack({ chat, queued }: { chat: Chat; queued: QueuedMessag
   if (!first && !queued) return null;
   return (
     <div data-agent-pinned className="space-y-2 px-3 pt-2">
-      {first && <PermissionCard key={first.requestId} request={first} more={rest.length} />}
+      {first && (
+        <PermissionCard
+          key={first.requestId}
+          request={first}
+          more={rest.length}
+          shellNote={backendOrDefault(chat.backendId).shellNote}
+        />
+      )}
       {queued && (
         <div
           data-agent-queued

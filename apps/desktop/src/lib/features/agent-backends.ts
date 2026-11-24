@@ -105,6 +105,9 @@ export interface AgentBackendContribution {
   keys: BackendSettingKeys;
   /** What the "sign in required" card says and the command it copies. */
   signIn: { hint: string; command: string };
+  /** One short sentence added to the shell approval card, for what a shell command can reach
+   *  through this backend (the card's own line is neutral and shared by every backend). */
+  shellNote?: string;
   detect(binaryOverride: string | null): Promise<DetectedProgram>;
   /** The live list for the model chip and the models table; rejects when the backend cannot say. */
   models(): Promise<BackendModel[]>;

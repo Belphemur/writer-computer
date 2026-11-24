@@ -40,6 +40,8 @@ export type AgentBackendDescriptor = {
   keys: BackendSettingKeys;
   /** What the "sign in required" card says and the command it copies. */
   signIn: { hint: string; command: string };
+  /** Added to the shell approval card after its neutral line. */
+  shellNote?: string;
   /** Where its model list comes from: Claude's cannot be discovered (a static catalog). */
   modelsSource: "static-catalog" | "live" | "none";
   /** Is the chat id also the backend's session id (Claude's `--session-id`)? Else the id is the
@@ -107,6 +109,7 @@ const fromContribution = (c: OwnedAgentBackend): AgentBackendDescriptor => ({
   minVersion: null,
   keys: c.keys,
   signIn: c.signIn,
+  shellNote: c.shellNote,
   modelsSource: "live",
   chatIdIsSession: false,
   effortRestarts: false,

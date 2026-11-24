@@ -6,12 +6,13 @@
 //! - **Plan** is an allow-list at session level: deny everything, then allow the read tools of the
 //!   tool table. A sub-agent inherits it (and is given it again on creation, and on a mode change);
 //! - accepting edits, and the chat's own writes to its memory folder, are Writer's own `once`
-//!   reply to the chat's own requests, never a rule (A12): a sub-agent never gets either, and in
-//!   Plan the server denies the edit before anyone is asked.
+//!   reply, never a rule (A12): the memory folder is the chat's own only, and in Plan the server
+//!   denies the edit before anyone is asked. Under accept-edits a **worker** sub-agent of the chat
+//!   is answered too, for an edit confined to the vault (decided with the user, 2026-11-24).
 
 use super::config::{self, ConfigInput};
 use super::opencode_api::ModelRef;
-use super::transport::{Ask, Policy};
+use super::transport::{Ask, Asker, Policy};
 use crate::agent::events::AgentPermissionMode;
 use crate::agent::roles::{backend_name, registry};
 use crate::agent::tool_table::{is_writer_read_tool, Kind, Role, ToolTable};
@@ -80,8 +81,14 @@ pub fn writes_only_memory(edit_action: &str, ask: &Ask<'_>) -> bool {
 }
 
 fn in_memory(ask: &Ask<'_>, memory: &Path, resource: &str) -> bool {
+    vault_file(ask, resource).is_some_and(|abs| abs != memory && abs.starts_with(memory))
+}
+
+/// The file a resource names, when it is one file inside the vault that no link leads out of: no
+/// pattern, `vault_ops::confine_with` for the rest (the one confinement, memory's and a worker's).
+fn vault_file(ask: &Ask<'_>, resource: &str) -> Option<PathBuf> {
     if resource.is_empty() || resource.contains(['*', '?', '[', '{', '\0']) {
-        return false;
+        return None;
     }
     let path = Path::new(resource);
     let abs = if path.is_absolute() {
@@ -89,18 +96,29 @@ fn in_memory(ask: &Ask<'_>, memory: &Path, resource: &str) -> bool {
     } else {
         ask.cwd.join(path)
     };
-    let Some(rel) = abs
+    let rel = abs
         .strip_prefix(ask.root)
         .ok()
         .and_then(Path::to_str)
-        .filter(|r| !r.is_empty())
-    else {
-        return false;
-    };
-    match vault_ops::confine_with(ask.root, rel, &[]) {
-        Ok(c) => c.abs != memory && c.abs.starts_with(memory),
-        Err(_) => false,
+        .filter(|r| !r.is_empty())?;
+    // `.obsidian` and `.git` are never written unasked (the list is `vault_ops`'s own)
+    if vault_ops::is_protected_rel(rel) {
+        return None;
     }
+    vault_ops::confine_with(ask.root, rel, &[])
+        .ok()
+        .map(|c| c.abs)
+}
+
+/// Whether `agent` is a role of Writer's that may write (the worker): a role of the registry, not
+/// read-only. A name nobody knows, or none, is not.
+fn may_write(agent: Option<&str>) -> bool {
+    agent.is_some_and(|a| {
+        registry()
+            .roles
+            .iter()
+            .any(|r| !r.read_only && backend_name(&r.id) == a)
+    })
 }
 
 pub struct ModePolicy {
@@ -168,17 +186,28 @@ impl Policy for ModePolicy {
             .collect()
     }
 
+    /// The one place the rule lives. Own session: any edit under accept-edits, the chat's memory
+    /// folder in the other modes (Plan and `dontAsk` nothing). A sub-agent of the chat, only under
+    /// accept-edits: a writing role's edit whose every resource is one file inside the vault
+    /// (never a link, never an explorer, never in Plan or manual).
     fn auto_allow(&self, ask: &Ask<'_>) -> bool {
         let Some(edit) = self.edit_action.as_deref() else {
             return false;
         };
-        match ask.mode {
-            AgentPermissionMode::AcceptEdits => ask.action == edit,
+        match (ask.mode, ask.from) {
+            (AgentPermissionMode::AcceptEdits, Asker::Own) => ask.action == edit,
+            (AgentPermissionMode::AcceptEdits, Asker::SubAgent(agent)) => {
+                ask.action == edit
+                    && may_write(agent)
+                    && !ask.resources.is_empty()
+                    && ask.resources.iter().all(|r| vault_file(ask, r).is_some())
+            }
             // nothing is written in Plan, and in `dontAsk` nobody is asked
-            AgentPermissionMode::Plan | AgentPermissionMode::DontAsk => false,
-            AgentPermissionMode::Manual | AgentPermissionMode::Auto => {
+            (AgentPermissionMode::Plan | AgentPermissionMode::DontAsk, _) => false,
+            (AgentPermissionMode::Manual | AgentPermissionMode::Auto, Asker::Own) => {
                 writes_only_memory(edit, ask)
             }
+            (AgentPermissionMode::Manual | AgentPermissionMode::Auto, Asker::SubAgent(_)) => false,
         }
     }
 
@@ -318,7 +347,10 @@ mod tests {
         AgentPermissionMode::DontAsk,
     ];
 
+    /// A request as the policy sees it: `root` is the vault, `from` whose it is.
     fn ask<'a>(
+        root: &'a Path,
+        from: Asker<'a>,
         mode: AgentPermissionMode,
         action: &'a str,
         resources: &'a [String],
@@ -326,10 +358,11 @@ mod tests {
         memory: Option<&'a Path>,
     ) -> Ask<'a> {
         Ask {
+            from,
             mode,
             action,
             resources,
-            root: Path::new("/vault"),
+            root,
             cwd,
             memory,
         }
@@ -338,6 +371,8 @@ mod tests {
     fn allows(p: &ModePolicy, mode: AgentPermissionMode, action: &str, resource: &str) -> bool {
         let r = [resource.to_string()];
         p.auto_allow(&ask(
+            Path::new("/vault"),
+            Asker::Own,
             mode,
             action,
             &r,
@@ -373,6 +408,8 @@ mod tests {
             );
             let res = [r[label][0][1][0].as_str().unwrap().to_string()];
             let a = ask(
+                Path::new("/vault"),
+                Asker::Own,
                 AgentPermissionMode::AcceptEdits,
                 "edit",
                 &res,
@@ -382,6 +419,28 @@ mod tests {
             // from a directory below the root the same words name another file: not memory
             assert_eq!(writes_only_memory("edit", &a), cwd == "/vault", "{label}");
         }
+    }
+
+    /// s34 part b (`fixtures/plan-codemode`, `opencode-go/glm-5.3-flash`, run as the `build` agent,
+    /// one prompt): under Plan's shape of rules (`*: deny` and one allowed `writer_` read) the model
+    /// did not call `execute`; it called the allowed read directly, and nobody was asked. Whether
+    /// `execute` was offered to it is not shown, nor whether an `execute`'s inner calls are gated
+    /// per tool, so Plan keeps it denied.
+    #[test]
+    fn captured_plan_run_did_not_call_execute_and_the_allowed_read_ran_directly() {
+        let r = capture("plan-codemode")["plan_codemode"].clone();
+        let t = table();
+        let execute = t.name_of(Role::Codemode).expect("a codemode row");
+        let prefix = &t.mcp.as_ref().unwrap().prefix;
+        assert_eq!(r["end"], "session.execution.succeeded");
+        assert_eq!(r["asked"], json!([]));
+        assert_eq!(r["tools_started"], json!(["writer_note_count"]));
+        assert_eq!(r["results"], json!([["writer_note_count", "ok"]]));
+        assert!(r["tools_started"][0].as_str().unwrap().starts_with(prefix));
+        // the rules Writer sends: the same shape, `execute` never allowed, the reads by that spelling
+        let names = allowed(&plan_rules(t, &mcp::tools()));
+        assert!(!names.contains(&execute.to_string()));
+        assert!(names.contains(&format!("{prefix}search")));
     }
 
     /// s36 (`fixtures/config-rule-order-*`): a read-allowing primary agent under the top-level ask
@@ -514,6 +573,8 @@ mod tests {
         }
         let r = [".writer/memory/x.md".to_string()];
         assert!(!p.auto_allow(&ask(
+            Path::new("/vault"),
+            Asker::Own,
             AgentPermissionMode::Manual,
             "edit",
             &r,
@@ -523,6 +584,8 @@ mod tests {
         // one resource out of two is a card
         let two = [".writer/memory/a.md".to_string(), "notes.md".to_string()];
         assert!(!p.auto_allow(&ask(
+            Path::new("/vault"),
+            Asker::Own,
             AgentPermissionMode::Manual,
             "edit",
             &two,
@@ -530,6 +593,8 @@ mod tests {
             Some(Path::new("/vault/.writer/memory")),
         )));
         assert!(!p.auto_allow(&ask(
+            Path::new("/vault"),
+            Asker::Own,
             AgentPermissionMode::Manual,
             "edit",
             &[],
@@ -546,6 +611,8 @@ mod tests {
         let check = |r: &str| {
             let r = [r.to_string()];
             p.auto_allow(&ask(
+                Path::new("/vault"),
+                Asker::Own,
                 AgentPermissionMode::Manual,
                 "edit",
                 &r,
@@ -584,14 +651,15 @@ mod tests {
         let p = ModePolicy::new(table());
         let check = |cwd: &Path, r: &str| {
             let r = [r.to_string()];
-            p.auto_allow(&Ask {
-                mode: AgentPermissionMode::Manual,
-                action: "edit",
-                resources: &r,
-                root: &root,
+            p.auto_allow(&ask(
+                &root,
+                Asker::Own,
+                AgentPermissionMode::Manual,
+                "edit",
+                &r,
                 cwd,
-                memory: Some(&memory),
-            })
+                Some(&memory),
+            ))
         };
         let abs = |rel: &str| memory.join(rel).to_string_lossy().into_owned();
         assert!(check(&root, ".writer/memory/plain.md"));
@@ -605,14 +673,15 @@ mod tests {
         std::fs::create_dir_all(root.join("p/.memory")).unwrap();
         let below = |r: &str| {
             let r = [r.to_string()];
-            p.auto_allow(&Ask {
-                mode: AgentPermissionMode::Manual,
-                action: "edit",
-                resources: &r,
-                root: &root,
-                cwd: &root.join("p"),
-                memory: Some(&root.join("p/.memory")),
-            })
+            p.auto_allow(&ask(
+                &root,
+                Asker::Own,
+                AgentPermissionMode::Manual,
+                "edit",
+                &r,
+                &root.join("p"),
+                Some(&root.join("p/.memory")),
+            ))
         };
         assert!(below(".memory/a.md"));
         assert!(!below(".writer/memory/plain.md"));
@@ -630,6 +699,88 @@ mod tests {
         for other in ["shell", "webfetch", "read"] {
             assert!(!allows(&p, m, other, "x"), "{other}");
         }
+    }
+
+    /// A real vault with a link out of it: what a worker may edit unasked, in every mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_workers_confined_edit_is_answered_under_accept_edits_and_nothing_else_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().canonicalize().unwrap();
+        let root = outer.join("vault");
+        std::fs::create_dir_all(root.join("notes")).unwrap();
+        std::fs::write(root.join("notes/a.md"), "x").unwrap();
+        let elsewhere = outer.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("f.md"), "x").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root.join("dir-out")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("f.md"), root.join("file-out.md")).unwrap();
+        let p = ModePolicy::new(table());
+        let check = |mode, from, action: &str, resources: &[&str]| {
+            let r: Vec<String> = resources.iter().map(|s| s.to_string()).collect();
+            p.auto_allow(&ask(&root, from, mode, action, &r, &root, None))
+        };
+        let worker = Asker::SubAgent(Some("writer-worker"));
+        let accept = AgentPermissionMode::AcceptEdits;
+        // inside the vault: an existing note, a new one, an absolute path
+        assert!(check(accept, worker, "edit", &["notes/a.md"]));
+        assert!(check(accept, worker, "edit", &["notes/new.md"]));
+        assert!(check(
+            accept,
+            worker,
+            "edit",
+            &[root.join("notes/a.md").to_str().unwrap()]
+        ));
+        // outside, through a link (folder or file), a pattern, one of two, none
+        for bad in [
+            "../elsewhere/f.md",
+            "/etc/hosts",
+            "dir-out/f.md",
+            "dir-out/new.md",
+            "file-out.md",
+            "notes/*.md",
+            ".git/config",
+            "notes/.git/config",
+            ".obsidian/app.json",
+            ".Obsidian/plugins/p/data.json",
+            "notes/.obsidian/x.md",
+            ".obsidian\u{200C}/x.json",
+            ".obsidian./x",
+            "",
+        ] {
+            assert!(!check(accept, worker, "edit", &[bad]), "{bad}");
+        }
+        assert!(!check(accept, worker, "edit", &["notes/a.md", "../x.md"]));
+        assert!(!check(accept, worker, "edit", &[]));
+        // only the edit action
+        for other in ["shell", "webfetch", "read"] {
+            assert!(!check(accept, worker, other, &["notes/a.md"]), "{other}");
+        }
+        // a role that may not write, one nobody knows, one the server did not name
+        for from in [
+            Asker::SubAgent(Some("writer-explorer")),
+            Asker::SubAgent(Some("general")),
+            Asker::SubAgent(None),
+        ] {
+            assert!(!check(accept, from, "edit", &["notes/a.md"]), "{from:?}");
+        }
+        // never outside accept-edits, whatever the agent
+        for mode in MODES.into_iter().filter(|m| *m != accept) {
+            for from in [worker, Asker::SubAgent(Some("writer-explorer"))] {
+                assert!(!check(mode, from, "edit", &["notes/a.md"]), "{mode:?}");
+            }
+        }
+        // a sub-agent never writes the chat's memory unasked either
+        let r = [".writer/memory/MEMORY.md".to_string()];
+        assert!(!p.auto_allow(&ask(
+            &root,
+            worker,
+            AgentPermissionMode::Manual,
+            "edit",
+            &r,
+            &root,
+            Some(&root.join(".writer/memory")),
+        )));
     }
 
     #[test]

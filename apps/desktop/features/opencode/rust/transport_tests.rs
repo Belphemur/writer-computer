@@ -613,6 +613,154 @@ fn under_accept_edits_writer_answers_the_chats_own_edits_and_nothing_else() {
     assert!(fake.find("POST", "/permission/per_fake_s/reply").is_empty());
 }
 
+/// A chat in `mode`, its stream open and the mode on the session.
+fn chat_in(mode: AgentPermissionMode) -> (Rig, Arc<FakeServer>) {
+    let r = Rig::new("2.4.0");
+    r.first_message();
+    let fake = r.fake();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    r.t.set_permission_mode(mode);
+    wait_for("the mode", 10, || {
+        fake.find("PATCH", "/api/session/ses_fake0001").len() == 2
+    });
+    (r, fake)
+}
+
+/// A sub-agent session of the chat, named `agent`; `link` is the launch call that names it (its
+/// events are held until then).
+fn emit_sub(fake: &FakeServer, session: &str, agent: &str, link: Option<&str>) {
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.created",
+            "data": {"sessionID": session, "parentID": SESSION, "agent": agent}})
+        .to_string(),
+    );
+    if let Some(call) = link {
+        fake.emit(
+            &json!({"id": "e", "created": 1, "type": "session.tool.progress",
+                "data": {"sessionID": SESSION, "id": call, "metadata": {"sessionID": session}}})
+            .to_string(),
+        );
+    }
+}
+
+/// Is there a card for request `id` in the log (for `Rig::until`, which holds the log's lock)?
+fn carded(log: &[Inbound], id: &str) -> bool {
+    log.iter().any(|i| {
+        matches!(&i.message, Message::Mapped(m) if m.events.iter().any(
+        |e| matches!(e, AgentEvent::PermissionRequest { request_id, .. } if request_id == id)))
+    })
+}
+
+fn has_card(r: &Rig, id: &str) -> bool {
+    r.pull();
+    carded(&r.log.lock(), id)
+}
+
+/// Everything emitted so far went through the chat's task: the chat's own shell request (a card
+/// in every mode) comes back mapped, and the replies posted for what came before are in.
+fn settle(r: &Rig, fake: &FakeServer) {
+    fake.emit(&asked_event("per_marker", SESSION, "shell", "ls"));
+    r.until("the marker", |l| carded(l, "per_marker"));
+    r.t.interrupt();
+    wait_for("the marker's round trip", 10, || {
+        !fake.find("POST", "/interrupt").is_empty()
+    });
+}
+
+fn replied(fake: &FakeServer, id: &str) -> bool {
+    !fake
+        .find("POST", &format!("/permission/{id}/reply"))
+        .is_empty()
+}
+
+/// A chat in `mode` with a worker and an explorer of its own, and edit requests from them and from
+/// a session the chat does not know. Returns the ids that got a reply.
+fn sub_agent_edits(mode: AgentPermissionMode) -> Vec<&'static str> {
+    let (r, fake) = chat_in(mode);
+    emit_sub(&fake, "ses_worker", "writer-worker", Some("call_w"));
+    emit_sub(&fake, "ses_explorer", "writer-explorer", Some("call_x"));
+    let asks = [
+        ("per_inside", "ses_worker", "a.md"),
+        ("per_protected", "ses_worker", ".obsidian/app.json"),
+        ("per_outside", "ses_worker", "../../outside.md"),
+        ("per_explorer", "ses_explorer", "a.md"),
+        // a session the chat does not know: another chat's, the server routes it elsewhere
+        ("per_foreign", "ses_other_chat", "a.md"),
+    ];
+    for (id, session, resource) in asks {
+        fake.emit(&asked_event(id, session, "edit", resource));
+    }
+    settle(&r, &fake);
+    asks.iter()
+        .map(|a| a.0)
+        .filter(|id| replied(&fake, id))
+        .collect()
+}
+
+#[test]
+fn under_accept_edits_a_workers_confined_edit_is_answered_once_and_no_other_sub_agent_request() {
+    // inside the vault: answered; outside it, an explorer's, another chat's: left to a card
+    assert_eq!(
+        sub_agent_edits(AgentPermissionMode::AcceptEdits),
+        vec!["per_inside"]
+    );
+}
+
+/// The Changes capture reads the file when the runner sees the edit's tool call (its input or its
+/// request), so an answered request must not skip that: the worker's tool events are mapped, as
+/// the worker's (`parent_tool_call_id`), before the reply is posted (the runner captures on
+/// `ToolCallInput`).
+#[test]
+fn a_workers_answered_edit_still_reaches_the_changes_capture_before_the_reply() {
+    let (r, fake) = chat_in(AgentPermissionMode::AcceptEdits);
+    emit_sub(&fake, "ses_worker", "writer-worker", Some("call_w"));
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.tool.input.started",
+            "data": {"sessionID": "ses_worker", "assistantMessageID": "msg_w", "id": "call_edit", "name": "edit"}})
+        .to_string(),
+    );
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.tool.called",
+            "data": {"sessionID": "ses_worker", "id": "call_edit",
+                "input": {"filePath": "a.md", "oldString": "x", "newString": "y"}}})
+        .to_string(),
+    );
+    fake.emit(&asked_event("per_w", "ses_worker", "edit", "a.md"));
+    wait_for("the edit answered", 10, || replied(&fake, "per_w"));
+    // the reply is posted after the earlier events were pushed to the chat: they are all there
+    let events = r.events();
+    assert!(events.iter().any(|e| matches!(e,
+        AgentEvent::ToolCallStarted { tool_call_id, parent_tool_call_id: Some(parent), .. }
+            if tool_call_id == "call_edit" && parent == "call_w")));
+    assert!(events.iter().any(
+        |e| matches!(e, AgentEvent::ToolCallInput { tool_call_id, .. } if tool_call_id == "call_edit")
+    ));
+}
+
+#[test]
+fn a_worker_not_yet_linked_to_its_launch_call_is_left_to_the_card() {
+    let (r, fake) = chat_in(AgentPermissionMode::AcceptEdits);
+    emit_sub(&fake, "ses_worker", "writer-worker", None);
+    fake.emit(&asked_event("per_w", "ses_worker", "edit", "a.md"));
+    settle(&r, &fake);
+    assert!(!replied(&fake, "per_w") && !has_card(&r, "per_w"), "held");
+    // the link releases the request: it is a card then, and still not answered
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.tool.progress",
+            "data": {"sessionID": SESSION, "id": "call_w", "metadata": {"sessionID": "ses_worker"}}})
+        .to_string(),
+    );
+    r.until("the card", |l| carded(l, "per_w"));
+    assert!(!replied(&fake, "per_w"));
+}
+
+#[test]
+fn in_manual_and_plan_a_sub_agents_edit_is_never_answered() {
+    for mode in [AgentPermissionMode::Manual, AgentPermissionMode::Plan] {
+        assert!(sub_agent_edits(mode).is_empty(), "{mode:?}");
+    }
+}
+
 #[test]
 fn the_glob_of_a_kept_rule_matches_like_a_prefix_pattern() {
     use super::transport::glob;

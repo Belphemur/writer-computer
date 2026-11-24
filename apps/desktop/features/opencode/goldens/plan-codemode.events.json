@@ -1,0 +1,127 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to call the `writer_note_count` tool,",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " which is available as a direct function. Despite the mention of a \"code execution call",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": ",\" the tool is accessible in my standard function-calling interface, so I'll",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " invoke it directly and then report the number it returns.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "chatcmpl-tool-9213ed8c291acae9",
+      "messageId": "msg_fake0002",
+      "tool": "writer_note_count",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to call the `writer_note_count` tool, which is available as a direct function. Despite the mention of a \"code execution call,\" the tool is accessible in my standard function-calling interface, so I'll invoke it directly and then report the number it returns.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "chatcmpl-tool-9213ed8c291acae9",
+      "input": {}
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "chatcmpl-tool-9213ed8c291acae9",
+      "output": "The fake vault holds 42 notes.",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 631,
+      "outputTokens": 65,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.00012715,
+      "contextWindow": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The fake vault holds **42** notes."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The fake vault holds **42** notes."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 132,
+      "outputTokens": 11,
+      "cacheReadTokens": 576,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.00004258,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 763,
+      "outputTokens": 76,
+      "cacheReadTokens": 576,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.00016973,
+      "contextWindow": null,
+      "model": "fake-provider/fake-model"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 7295,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

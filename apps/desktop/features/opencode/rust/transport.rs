@@ -66,10 +66,10 @@ pub trait Policy: Send + Sync {
     fn refuse_model(&self, _model: &ModelRef) -> Option<String> {
         None
     }
-    /// Writer answers this request of the chat's own session `once` itself, no card (the mode
-    /// accepts it: edits under accept-edits; the chat's own memory folder). Never for a
-    /// sub-agent's session, and never as an OpenCode session rule: a session-level allow beats a
-    /// role's own deny (spec 10.9).
+    /// Writer answers this request `once` itself, no card (the mode accepts it: edits under
+    /// accept-edits; the chat's own memory folder). A sub-agent's request only when the policy says
+    /// so for that agent (a worker's confined edit under accept-edits), never as an OpenCode
+    /// session rule: a session-level allow beats a role's own deny (spec 10.9).
     fn auto_allow(&self, ask: &Ask<'_>) -> bool;
     /// The text of Writer's OpenCode config file for this launch (spec section 8), `Ok(None)`
     /// when the policy does not own the file (the transport then leaves it as it is). Written
@@ -80,8 +80,18 @@ pub trait Policy: Send + Sync {
     }
 }
 
-/// One request of the chat's own session, as a [`Policy`] decides on it.
+/// Whose request it is: the chat's own session, or a sub-agent session the chat launched (known
+/// to the child registry, so never another chat's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Asker<'a> {
+    Own,
+    /// The agent name the server gave the session at creation (`None` when it named none).
+    SubAgent(Option<&'a str>),
+}
+
+/// One request of the chat's own session or of one of its sub-agents, as a [`Policy`] decides on it.
 pub struct Ask<'a> {
+    pub from: Asker<'a>,
     pub mode: AgentPermissionMode,
     /// OpenCode's permission action (`edit`, `shell`, ...).
     pub action: &'a str,
@@ -1437,7 +1447,9 @@ impl TInner {
         }
     }
 
-    /// The id of a request of the chat's own session that Writer answers `once` itself.
+    /// The id of a request that Writer answers `once` itself: the chat's own session's, or a linked
+    /// sub-agent's of this chat that the policy accepts (never another chat's, never one whose
+    /// launch call is not linked yet).
     fn auto_reply(&self, ev: &WireEvent) -> Option<String> {
         let d = &ev.data;
         let (id, action) = (d["id"].as_str()?, d["action"].as_str()?);
@@ -1450,16 +1462,23 @@ impl TInner {
             })
             .unwrap_or_default();
         let st = self.st.lock();
-        if d["sessionID"].as_str()? != st.session.as_deref()? {
-            return None;
-        }
-        let kept = st.kept.iter().any(|r| {
-            r.action == action
-                && !resources.is_empty()
-                && resources.iter().all(|x| glob(&r.resource, x))
-        });
+        let session = d["sessionID"].as_str()?;
+        // the chat's own session, or one of its sub-agents; any other session is not this chat's
+        let from = if Some(session) == st.session.as_deref() {
+            Asker::Own
+        } else {
+            Asker::SubAgent(st.map.as_ref()?.child_agent(session)?)
+        };
+        // "allow for this chat" is the chat's own rule: it never reaches a sub-agent
+        let kept = from == Asker::Own
+            && st.kept.iter().any(|r| {
+                r.action == action
+                    && !resources.is_empty()
+                    && resources.iter().all(|x| glob(&r.resource, x))
+            });
         let mode = st.mode.unwrap_or(AgentPermissionMode::Manual);
         let ask = Ask {
+            from,
             mode,
             action,
             resources: &resources,
