@@ -1,0 +1,40 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795507676868,"type":"session.created","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","slug":"nimble-wolf","version":"2.4.0","projectID":"global","location":{"directory":"/vault-git-dir-below/sub/dir"},"subpath":"sub/dir","agent":"w","permissions":[],"model":{"id":"fake-model","providerID":"fake-provider"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795507678325,"type":"session.inbox.enqueued","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your write tool to create the file .memory/note.md containing the word hello. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795507678327,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795507678334,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795507678335,"type":"session.inbox.delivered","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795507679229,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.17e-05,"tokens":{"input":457,"output":12,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0008","created":1795507679230,"type":"session.renamed","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","title":"Create .memory/note.md word hello"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795507679405,"type":"session.step.started","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","agent":"w","model":{"id":"fake-model","providerID":"fake-provider","variant":"default"},"assistantMessageID":"msg_fake0002","snapshot":"prj_fake0001","started":1795507678343},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795507679409,"type":"session.step.first-token","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0011","created":1795507679412,"type":"session.tool.input.started","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-861da7f3bddcc640","name":"write"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795507679421,"type":"session.tool.input.ended","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-861da7f3bddcc640","text":"{\"path\": \".memory/note.md\", \"content\": \"hello\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795507679422,"type":"session.tool.called","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-861da7f3bddcc640","input":{"path":".memory/note.md","content":"hello"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795507679424,"type":"session.step.streamed","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795507679426,"type":"permission.asked","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"edit","resources":[".memory/note.md"],"save":["*"],"metadata":{"files":[{"file":".memory/note.md","patch":"Index: .memory/note.md\n===================================================================\n--- .memory/note.md\n+++ .memory/note.md\n\u0040\u0040 -0,0 +1,1 \u0040\u0040\n+hello\n\\ No newline at end of file\n","status":"added","additions":1,"deletions":0}]},"source":{"type":"tool","messageID":"msg_fake0002","id":"chatcmpl-tool-861da7f3bddcc640"}}}
+
+data: {"id":"evt_fake0016","created":1795507679562,"type":"permission.replied","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"reject"}}
+
+data: {"id":"evt_fake0017","created":1795507679563,"type":"session.tool.failed","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-861da7f3bddcc640","error":{"type":"aborted","message":"The user declined this tool call"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":2}}
+
+data: {"id":"evt_fake0018","created":1795507679583,"type":"session.step.failed","location":{"directory":"/vault-git-dir-below/sub/dir"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":7384,"output":20,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0.0011176,"snapshot":"prj_fake0001","files":[]},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795507679584,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0.0011693,"tokens":{"input":7841,"output":32,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0020","created":1795507679585,"type":"session.execution.interrupted","data":{"sessionID":"ses_fake0001","reason":"shutdown"},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+

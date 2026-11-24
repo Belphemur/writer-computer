@@ -24,11 +24,12 @@ use super::opencode_events::MapState;
 use super::server::{ChatInput, Connection, OpencodeServer, ServerError};
 use crate::agent::events::*;
 use crate::agent::files::{FileKind, FilePart};
+use crate::agent::permission_update::{allow_rules, updated_permissions, AllowRule};
 use crate::agent::transport::*;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -54,14 +55,65 @@ pub trait Policy: Send + Sync {
     fn child_rules(&self, mode: AgentPermissionMode) -> Option<Vec<Value>>;
     /// The agent that carries `mode`.
     fn agent(&self, mode: AgentPermissionMode) -> Option<String>;
+    /// The agents that are Writer's: the server may run these and no other (the transport checks
+    /// the server's list once the session exists). Empty: nothing is checked.
+    fn known_agents(&self) -> Vec<String> {
+        Vec::new()
+    }
     /// The model when the chat names none.
     fn default_model(&self) -> Option<ModelRef>;
     /// Writer answers this request of the chat's own session `once` itself, no card (the mode
-    /// accepts it: edits under accept-edits). Never for a sub-agent's session, and never as an
-    /// OpenCode session rule: a session-level allow beats a role's own deny (spec 10.9).
-    fn auto_allow(&self, mode: AgentPermissionMode, action: &str, resources: &[String]) -> bool;
+    /// accepts it: edits under accept-edits; the chat's own memory folder). Never for a
+    /// sub-agent's session, and never as an OpenCode session rule: a session-level allow beats a
+    /// role's own deny (spec 10.9).
+    fn auto_allow(&self, ask: &Ask<'_>) -> bool;
+    /// The text of Writer's OpenCode config file for this launch (spec section 8), `Ok(None)`
+    /// when the policy does not own the file (the transport then leaves it as it is). Written
+    /// before the server starts and again at every start: a change is a location reload. An
+    /// error (a policy that cannot say what Writer's agents are) fails the start, at once.
+    fn config(&self, _launch: &LaunchConfig) -> Result<Option<String>, String> {
+        Ok(None)
+    }
 }
 
+/// One request of the chat's own session, as a [`Policy`] decides on it.
+pub struct Ask<'a> {
+    pub mode: AgentPermissionMode,
+    /// OpenCode's permission action (`edit`, `shell`, ...).
+    pub action: &'a str,
+    pub resources: &'a [String],
+    /// The vault root (canonical).
+    pub root: &'a Path,
+    /// The session's working directory: a relative resource is relative to it, as far as known.
+    pub cwd: &'a Path,
+    /// The chat's memory folder (setting `agent.memory` = `vault`), absolute.
+    pub memory: Option<&'a Path>,
+}
+
+/// OpenCode's own internal agents: hidden, never offered to the user, run by the server itself
+/// (the context summary, its compaction). The contract (2.4.0) says only that an agent has a
+/// `hidden` flag, not whether a model may launch a hidden sub-agent, so a hidden agent is trusted
+/// by these names alone and any other one is as foreign as a visible one. (`title` is switched
+/// off in Writer's config; it is listed in case a server shows it anyway.)
+const SYSTEM_AGENTS: [&str; 3] = ["compaction", "summary", "title"];
+
+/// The first agent of the server's list that Writer did not configure and that could run: enabled,
+/// of a mode a model or the user can pick, and not one of OpenCode's own system agents.
+pub(super) fn foreign_agent<'a>(agents: &'a [Value], ours: &[String]) -> Option<&'a str> {
+    agents.iter().find_map(|a| {
+        let id = a["id"].as_str()?;
+        let runs = a["disabled"] != true
+            && matches!(a["mode"].as_str(), Some("subagent" | "primary" | "all"));
+        let ok =
+            ours.iter().any(|o| o == id) || (a["hidden"] == true && SYSTEM_AGENTS.contains(&id));
+        (runs && !ok).then_some(id)
+    })
+}
+
+/// How long the server may take to put Writer's configuration in force (about a second in the
+/// spike), in all: the agent list is looked at, a quarter of a second apart, until then.
+const AGENT_DEADLINE: Duration = Duration::from_millis(if cfg!(test) { 300 } else { 20_000 });
+const AGENT_POLL: Duration = Duration::from_millis(if cfg!(test) { 10 } else { 250 });
 /// The name of Writer's own instruction entry of a session.
 pub const INSTRUCTION_KEY: &str = "writer";
 /// What a skipped question tells the model.
@@ -83,7 +135,7 @@ enum Cmd {
         decision: &'static str,
         message: Option<String>,
         /// Rules the user asked to keep for this session only.
-        session_rules: Vec<Value>,
+        session_rules: Vec<AllowRule>,
         /// "Accept edits from now on": the chat's mode changes.
         accept_edits: bool,
     },
@@ -135,9 +187,10 @@ struct TState {
     mode: Option<AgentPermissionMode>,
     model: Option<ModelRef>,
     system_prompt: Option<String>,
+    memory: Option<PathBuf>,
     /// What the user allowed for this chat only (`{action, resource}`): Writer answers a matching
     /// request of the chat's own session itself.
-    kept: Vec<Value>,
+    kept: Vec<AllowRule>,
     /// Ids are global on the server: a message id another session holds is a 409. The receipt a
     /// message was re-sent under then (a fresh one), by the receipt it was first given.
     alias: HashMap<String, String>,
@@ -164,6 +217,7 @@ struct Waiter {
 struct TInner {
     server: Arc<OpencodeServer>,
     inbound: Sender<Inbound>,
+    root: PathBuf,
     cwd: PathBuf,
     policy: Arc<dyn Policy>,
     cmd: UnboundedSender<Cmd>,
@@ -189,6 +243,7 @@ impl OpencodeTransport {
         let inner = Arc::new(TInner {
             server: Arc::clone(&server),
             inbound: init.inbound,
+            root: init.root,
             cwd: init.cwd,
             policy,
             cmd,
@@ -241,7 +296,7 @@ impl Transport for OpencodeTransport {
     }
 
     fn start(&self, req: &StartRequest<'_>) -> Result<(), SpawnError> {
-        let _conn: Connection = self.inner.server.ensure_started().map_err(|e| match e {
+        let failed = |e: ServerError| match e {
             ServerError::NotFound => SpawnError::NotFound,
             ServerError::Unsupported(_) => SpawnError::Failed {
                 kind: AgentErrorKind::SpawnFailed,
@@ -253,7 +308,22 @@ impl Transport for OpencodeTransport {
                 message: m,
                 retryable: true,
             },
-        })?;
+        };
+        // the config file first: a server that starts reads it, one that is up reads it again
+        // when it changed (a role, the MCP server, a new instruction file)
+        let config =
+            self.inner
+                .policy
+                .config(req.launch)
+                .map_err(|message| SpawnError::Failed {
+                    kind: AgentErrorKind::SpawnFailed,
+                    message,
+                    retryable: false,
+                })?;
+        if let Some(text) = config {
+            self.inner.server.apply_config(&text).map_err(failed)?;
+        }
+        let _conn: Connection = self.inner.server.ensure_started().map_err(failed)?;
         {
             let mut st = self.inner.st.lock();
             st.gen = req.gen;
@@ -261,6 +331,7 @@ impl Transport for OpencodeTransport {
             let s = &req.launch.settings;
             st.mode = Some(s.permission_mode);
             st.system_prompt = req.launch.system_prompt.clone();
+            st.memory = req.launch.memory_dir.clone();
             if let Some(m) = s.model.as_deref().and_then(ModelRef::parse) {
                 st.model = Some(ModelRef {
                     variant: s
@@ -468,21 +539,15 @@ impl Transport for OpencodeTransport {
     }
 }
 
-/// The rules Writer keeps for a chat: the ticked rules (`None`: all) of the request's own
-/// `addRules` suggestions, as `{action, resource}` pairs. Nothing the card sends but the choice
-/// among them.
-fn kept_rules(suggestions: &[Value], ticked: Option<&[String]>) -> Vec<Value> {
-    suggestions
-        .iter()
-        .filter(|s| s["type"] == "addRules")
-        .flat_map(|s| s["rules"].as_array().into_iter().flatten())
-        .filter_map(|r| {
-            let (action, resource) = (r["toolName"].as_str()?, r["ruleContent"].as_str()?);
-            ticked
-                .is_none_or(|t| t.iter().any(|k| k == resource))
-                .then(|| json!({"action": action, "resource": resource}))
-        })
-        .collect()
+/// The rules Writer keeps for a chat: what the card's "this chat" choice selects among the
+/// request's own suggestions, read through the one conversion every backend shares
+/// (`permission_update`), never from anything the card sends but the ticked rules.
+pub(super) fn kept_rules(suggestions: &[Value], ticked: Option<&[String]>) -> Vec<AllowRule> {
+    allow_rules(&updated_permissions(
+        suggestions,
+        Some(PermissionPersist::Session),
+        ticked,
+    ))
 }
 
 impl TInner {
@@ -637,11 +702,10 @@ impl TInner {
                 }
             }
             Cmd::Reload { gen } => {
-                if let Some(client) = self.client() {
-                    if let Err(e) = client.request(&api::RELOAD, &[], &[], None, LONG).await {
-                        if e.is_down() {
-                            return self.gone(gen);
-                        }
+                // read again at the server's idle moment (another chat may be mid-turn)
+                if let Err(e) = self.server.reload_when_idle().await {
+                    if e.is_down() {
+                        return self.gone(gen);
                     }
                 }
                 // the chat starts again and opens its session: the server re-read its config
@@ -683,6 +747,8 @@ impl TInner {
     async fn apply_mode(&self, client: &Client, session: &str) -> Result<(), ApiError> {
         let mode = self.st.lock().mode.unwrap_or(AgentPermissionMode::Manual);
         self.st.lock().rules_pending = true;
+        // the agent list is Writer's own before any session is given an agent of it
+        self.ensure_agents(client).await?;
         client
             .request(
                 &api::SESSION_PATCH,
@@ -710,8 +776,9 @@ impl TInner {
     }
 
     /// The session exists: own it, start its mapper, set its rules, tell the pane. An error means
-    /// the rules are not set: the caller refuses the turn (`rules_pending` stays, so a later send
-    /// tries again before it prompts, and announces the session then).
+    /// the rules are not set or the agents are not Writer's: the caller refuses the turn
+    /// (`rules_pending` stays, so a later send tries again before it prompts, and announces the
+    /// session then; the agent check is made again too, it is a gate every prompt passes).
     async fn ready(&self, gen: u64, client: &Client, session: &str) -> Result<(), ApiError> {
         let key = {
             let mut st = self.st.lock();
@@ -727,6 +794,92 @@ impl TInner {
         Ok(())
     }
 
+    /// The server runs Writer's configuration and nothing else: once the location is up (the
+    /// list is the built-in one until it boots, which takes a moment) its agents must be Writer's
+    /// own, OpenCode's hidden system agents (`SYSTEM_AGENTS`) aside. Any other enabled agent
+    /// would run with rules Writer did not write, so the start is refused. One deadline covers
+    /// the whole wait, each request included.
+    async fn ensure_agents(&self, client: &Client) -> Result<(), ApiError> {
+        let Some(conn) = self.server.connection() else {
+            return Err(ApiError::Refused("OpenCode is not running".into()));
+        };
+        // once per start of the server: a refusal leaves the gate shut for the next send
+        if self.server.agents_verified(conn.epoch) {
+            return Ok(());
+        }
+        self.check_agents(client).await?;
+        self.server.verify_agents(conn.epoch);
+        Ok(())
+    }
+
+    async fn check_agents(&self, client: &Client) -> Result<(), ApiError> {
+        let ours = self.policy.known_agents();
+        if ours.is_empty() {
+            return Ok(());
+        }
+        let mode = self.st.lock().mode.unwrap_or(AgentPermissionMode::Manual);
+        let sentinel = self.policy.agent(mode);
+        let until = tokio::time::Instant::now() + AGENT_DEADLINE;
+        while tokio::time::Instant::now() < until {
+            let list = tokio::time::timeout_at(until, client.get(&api::AGENTS, &[]))
+                .await
+                .map_err(|_| ApiError::Timeout)??;
+            let agents = list["data"].as_array().cloned().unwrap_or_default();
+            let loaded = sentinel
+                .as_deref()
+                .is_none_or(|s| agents.iter().any(|a| a["id"] == s));
+            if loaded {
+                return if foreign_agent(&agents, &ours).is_some() {
+                    Err(ApiError::Refused(
+                        "OpenCode has agents Writer did not configure; Writer will not run a chat with them".into(),
+                    ))
+                } else {
+                    Ok(())
+                };
+            }
+            tokio::time::sleep(AGENT_POLL).await;
+        }
+        Err(ApiError::Refused(
+            "OpenCode did not load Writer's configuration".into(),
+        ))
+    }
+
+    /// Puts Writer's instructions on the session. `false`: the server is gone (the chat is told);
+    /// any other failure is an error card and the chat goes on without them.
+    async fn put_instructions(
+        &self,
+        gen: u64,
+        client: &Client,
+        session: &str,
+        prompt: String,
+    ) -> bool {
+        let body = InstructionBody { value: prompt };
+        let put = client
+            .send(
+                &api::INSTRUCTION_PUT,
+                &[("sessionID", session), ("key", INSTRUCTION_KEY)],
+                &body,
+                SHORT,
+            )
+            .await;
+        if let Err(e) = put {
+            // the agent would run without Writer's instructions: say so
+            if e.is_down() {
+                self.gone(gen);
+                return false;
+            }
+            self.events(
+                gen,
+                vec![AgentEvent::Error {
+                    kind: AgentErrorKind::Api,
+                    message: "Writer's instructions could not be set for this chat".into(),
+                    retryable: false,
+                }],
+            );
+        }
+        true
+    }
+
     /// Writer's instructions on the session, then `SessionStarted`: once per generation, as soon
     /// as the rules are in place (the first `ready`, or the send that retried them).
     async fn announce(&self, gen: u64, client: &Client, session: &str) {
@@ -739,28 +892,8 @@ impl TInner {
             st.system_prompt.clone()
         };
         if let Some(prompt) = prompt {
-            let body = InstructionBody { value: prompt };
-            let put = client
-                .send(
-                    &api::INSTRUCTION_PUT,
-                    &[("sessionID", session), ("key", INSTRUCTION_KEY)],
-                    &body,
-                    SHORT,
-                )
-                .await;
-            if let Err(e) = put {
-                // the agent would run without Writer's instructions: say so
-                if e.is_down() {
-                    return self.gone(gen);
-                }
-                self.events(
-                    gen,
-                    vec![AgentEvent::Error {
-                        kind: AgentErrorKind::Api,
-                        message: "Writer's instructions could not be set for this chat".into(),
-                        retryable: false,
-                    }],
-                );
+            if !self.put_instructions(gen, client, session, prompt).await {
+                return;
             }
         }
         let limits = self.limits(client).await;
@@ -1029,7 +1162,7 @@ impl TInner {
         id: String,
         decision: &'static str,
         message: Option<String>,
-        session_rules: Vec<Value>,
+        session_rules: Vec<AllowRule>,
         accept_edits: bool,
     ) {
         let (session, gen) = {
@@ -1304,14 +1437,20 @@ impl TInner {
             return None;
         }
         let kept = st.kept.iter().any(|r| {
-            r["action"] == action
+            r.action == action
                 && !resources.is_empty()
-                && resources
-                    .iter()
-                    .all(|x| glob(r["resource"].as_str().unwrap_or(""), x))
+                && resources.iter().all(|x| glob(&r.resource, x))
         });
         let mode = st.mode.unwrap_or(AgentPermissionMode::Manual);
-        (kept || self.policy.auto_allow(mode, action, &resources)).then(|| id.to_string())
+        let ask = Ask {
+            mode,
+            action,
+            resources: &resources,
+            root: &self.root,
+            cwd: &self.cwd,
+            memory: st.memory.as_deref(),
+        };
+        (kept || self.policy.auto_allow(&ask)).then(|| id.to_string())
     }
 
     /// One thing the server said, for this chat.
@@ -1448,6 +1587,19 @@ async fn events(inner: Arc<TInner>, mut rx: UnboundedReceiver<ChatInput>) {
             ChatInput::Resync => {
                 let gen = inner.st.lock().gen;
                 inner.resync(gen).await;
+            }
+            // the server read its config again: what lives in the session's instruction entries
+            // is put back, whatever the reload did to it
+            ChatInput::Reloaded => {
+                let (gen, session, prompt) = {
+                    let st = inner.st.lock();
+                    (st.gen, st.session.clone(), st.system_prompt.clone())
+                };
+                if let (Some(session), Some(prompt), Some(client)) =
+                    (session, prompt, inner.client())
+                {
+                    inner.put_instructions(gen, &client, &session, prompt).await;
+                }
             }
             ChatInput::Down(exit) => {
                 let gen = inner.st.lock().gen;

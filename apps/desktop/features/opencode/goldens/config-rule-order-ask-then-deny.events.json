@@ -1,0 +1,245 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " user asks me to use an \"edit tool\" to replace \"alpha\" with",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " \"gamma\" in a.txt. I don't have an edit tool in my available",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " tools list. Let me check what tools I have: generate_image, generate_video,",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " glob, grep, question, read, shell, skill, subagent, webfetch,",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " websearch, execute.\n\nThere's no \"edit\" tool. The user says \"",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "try it\". I should check if a.txt exists and then do the edit with",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " the best available means (shell sed), while explaining there's no dedicated edit tool.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " Maybe I could search the Code Mode catalog for an edit tool. Let me try",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " search to see if there's an edit tool in Code Mode. Actually the catalog",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " instructions say to use search for tools not listed. Let me search for \"edit",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " file\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "chatcmpl-tool-ae1ba9b143969ff1",
+      "messageId": "msg_fake0002",
+      "tool": "glob",
+      "parentToolCallId": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "chatcmpl-tool-824cb5601c04c76d",
+      "messageId": "msg_fake0002",
+      "tool": "execute",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user asks me to use an \"edit tool\" to replace \"alpha\" with \"gamma\" in a.txt. I don't have an edit tool in my available tools list. Let me check what tools I have: generate_image, generate_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, execute.\n\nThere's no \"edit\" tool. The user says \"try it\". I should check if a.txt exists and then do the edit with the best available means (shell sed), while explaining there's no dedicated edit tool. Maybe I could search the Code Mode catalog for an edit tool. Let me try search to see if there's an edit tool in Code Mode. Actually the catalog instructions say to use search for tools not listed. Let me search for \"edit file\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "chatcmpl-tool-ae1ba9b143969ff1",
+      "input": {
+        "pattern": "a.txt"
+      }
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "chatcmpl-tool-824cb5601c04c76d",
+      "input": {
+        "code": "await tools.search({ query: \"edit file replace text\" })"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "chatcmpl-tool-ae1ba9b143969ff1",
+      "tool": "glob",
+      "displayName": null,
+      "input": {
+        "pattern": "a.txt"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "glob",
+              "ruleContent": "*"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        }
+      ]
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "chatcmpl-tool-824cb5601c04c76d:0",
+      "messageId": "msg_fake0002",
+      "tool": "search",
+      "parentToolCallId": "chatcmpl-tool-824cb5601c04c76d"
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "chatcmpl-tool-824cb5601c04c76d:0",
+      "input": {
+        "query": "edit file replace text"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "chatcmpl-tool-824cb5601c04c76d:0",
+      "output": "",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "chatcmpl-tool-824cb5601c04c76d",
+      "output": "{\"items\":[{\"path\":\"tools.opencode.read_mcp_resource\",\"description\":\"Read one MCP resource by server and URI. Not for local files. Always return the full contents rather than slicing or filtering them; oversized output is truncated automatically and the full content is saved to a file you can read. Images and PDFs are shown to you directly.\",\"signature\":\"tools.opencode.read_mcp_resource({\\n  /** The server field of the discovered resource. */\\n  server: string,\\n  /** Exact resource URI from discovery, an expanded uriTemplate, or the user. */\\n  uri: string,\\n}): Promise<{\\n  server: string,\\n  uri: string,\\n  contents: Array<{\\n        type: \\\"text\\\",\\n        uri: string,\\n        text: string,\\n        mimeType?: string,\\n      } | {\\n        type: \\\"blob\\\",\\n        uri: string,\\n        blob: string,\\n        mimeType?: string,\\n      }>,\\n}>\"},{\"path\":\"tools.opencode.list_mcp_resources\",\"description\":\"List documents, records, and other data exposed by MCP servers. Use this when the user refers to something that is not a local file, such as a URI with a custom scheme, then load a match with read_mcp_resource. Each entry names the server to read it from. Templates are resources addressed by a parameter such as a record ID; fill in the uriTemplate placeholders before reading.\",\"signature\":\"tools.opencode.list_mcp_resources({\\n  /** MCP server name as configured. Omit to list every server. */\\n  server?: string,\\n}): Promise<{\\n  resources: Array<{\\n      server: string,\\n      name: string,\\n      uri: string,\\n      description?: string,\\n      mimeType?: string,\\n    }>,\\n  templates: Array<{\\n      server: string,\\n      name: string,\\n      uriTemplate: string,\\n      description?: string,\\n      mimeType?: string,\\n    }>,\\n}>\"}],\"remaining\":0,\"next\":null}",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "chatcmpl-tool-ae1ba9b143969ff1",
+      "output": "The user declined this tool call",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 6714,
+      "outputTokens": 202,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0011081,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 6714,
+      "outputTokens": 202,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0011081,
+      "contextWindow": null,
+      "model": "fake-provider/fake-model"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "interrupted",
+      "durationMs": 4912,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

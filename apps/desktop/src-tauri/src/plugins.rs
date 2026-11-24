@@ -232,27 +232,33 @@ pub fn set_trusted(trust_file: &Path, root: &Path, trusted: bool) -> Result<(), 
 /// symlink at `name` is replaced, never followed. `dir` must be confined by
 /// the caller.
 pub fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
-    write_atomic_with(dir, name, bytes, false)
+    write_atomic_with(dir, name, bytes, None)
 }
 
-/// [`write_atomic`] for a file only its owner may read (`0600` on Unix, from creation, so there
-/// is no moment with wider permissions): the IPC token.
-pub fn write_atomic_private(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), String> {
-    write_atomic_with(dir, name, bytes, true)
+/// [`write_atomic`] for a file only its owner may use: `mode` (`0o600` for a secret such as the IPC
+/// token, `0o700` for a script) is given at creation on Unix, so there is no moment with wider
+/// permissions and none before the rename that puts the file in place.
+pub fn write_atomic_private(dir: &Path, name: &str, bytes: &[u8], mode: u32) -> Result<(), String> {
+    write_atomic_with(dir, name, bytes, Some(mode))
 }
 
-fn write_atomic_with(dir: &Path, name: &str, bytes: &[u8], private: bool) -> Result<(), String> {
+fn write_atomic_with(
+    dir: &Path,
+    name: &str,
+    bytes: &[u8],
+    mode: Option<u32>,
+) -> Result<(), String> {
     let tmp = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4()));
     let res = (|| -> std::io::Result<()> {
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
-        if private {
+        if let Some(mode) = mode {
             use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
+            options.mode(mode);
         }
         #[cfg(not(unix))]
-        let _ = private; // the Windows profile folder is already per-user
+        let _ = mode; // the Windows profile folder is already per-user
         let mut f = options.open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;

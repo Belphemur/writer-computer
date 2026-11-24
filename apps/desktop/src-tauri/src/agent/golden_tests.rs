@@ -6,7 +6,13 @@ use std::path::Path;
 
 /// Compares `actual` with the golden `name` in `dir` (writing it first when asked to).
 pub(crate) fn check(dir: &Path, name: &str, actual: &str) {
-    let path = dir.join(format!("{name}.events.json"));
+    check_file(dir, &format!("{name}.events.json"), actual);
+}
+
+/// [`check`] for a golden of any name (`file`, with its extension).
+pub(crate) fn check_file(dir: &Path, file: &str, actual: &str) {
+    let name = file;
+    let path = dir.join(file);
     if std::env::var_os("WRITER_UPDATE_GOLDEN").is_some() {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(&path, actual).unwrap();

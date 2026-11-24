@@ -63,6 +63,8 @@ pub enum ApiError {
     Transport(String),
     /// No answer in time.
     Timeout,
+    /// Writer refused to go on, for a reason it states itself (never a server's words).
+    Refused(String),
 }
 
 impl ApiError {
@@ -91,14 +93,16 @@ impl std::fmt::Display for ApiError {
             ApiError::Status { status, tag } => write!(f, "OpenCode answered {status} {tag}"),
             ApiError::Transport(_) => write!(f, "OpenCode could not be reached"),
             ApiError::Timeout => write!(f, "OpenCode did not answer in time"),
+            ApiError::Refused(why) => write!(f, "{why}"),
         }
     }
 }
 
 /// How long a request may take. A prompt boots the session's location on its first call (1.7 s in
 /// the spike, minutes with a large user config): it gets the long one.
-pub const SHORT: Duration = Duration::from_secs(30);
-pub const LONG: Duration = Duration::from_secs(180);
+/// Tests have a few seconds, so a stuck call fails the test instead of holding the suite.
+pub const SHORT: Duration = Duration::from_secs(if cfg!(test) { 5 } else { 30 });
+pub const LONG: Duration = Duration::from_secs(if cfg!(test) { 8 } else { 180 });
 
 /// The runtime every request and every stream of one server owner runs on.
 pub struct Io {

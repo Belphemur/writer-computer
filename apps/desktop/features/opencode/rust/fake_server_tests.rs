@@ -49,6 +49,8 @@ pub(super) struct Shared {
     /// Permission ids that are gone (a reject settled them): replying is a 404.
     pub gone: Mutex<HashSet<String>>,
     pub messages: Mutex<Value>,
+    /// The sessions `GET /api/session/active` lists (a turn is running in each).
+    pub active: Mutex<Vec<String>>,
     /// Path fragments whose answer is held for this long.
     pub delays: Mutex<Vec<(String, Duration)>>,
     pub unknown_session: AtomicBool,
@@ -318,6 +320,10 @@ fn default_route(req: &Req, s: &Arc<Shared>) -> (u16, Value) {
             (200, info)
         }
         ("POST", ["api", "session"]) => (200, recorded("session-create")),
+        ("GET", ["api", "session", "active"]) => (
+            200,
+            json!({"data": s.active.lock().iter().map(|id| (id.clone(), json!({}))).collect::<serde_json::Map<_, _>>()}),
+        ),
         ("GET", ["api", "session", id]) => {
             if s.unknown_session.load(Ordering::SeqCst) {
                 (404, recorded("session-get-404"))
@@ -368,6 +374,17 @@ fn default_route(req: &Req, s: &Arc<Shared>) -> (u16, Value) {
             json!({"data": s.items.lock().iter().map(|i| json!({"id": i})).collect::<Vec<_>>()}),
         ),
         ("GET", ["api", "session", _, "message"]) => (200, s.messages.lock().clone()),
+        // Writer's agents, as the server lists them once Writer's config is in force
+        ("GET", ["api", "agent"]) => (
+            200,
+            json!({"data": [
+                {"id": "writer", "mode": "primary", "hidden": false},
+                {"id": "writer-explorer", "mode": "subagent", "hidden": false},
+                {"id": "writer-worker", "mode": "subagent", "hidden": false},
+                {"id": "compaction", "mode": "primary", "hidden": true},
+                {"id": "summary", "mode": "primary", "hidden": true},
+            ]}),
+        ),
         ("GET", ["api", "model"]) => (200, recorded("models")),
         ("GET", ["api", "skill"]) => (200, recorded("skills")),
         ("GET", ["api", "command"]) => (200, recorded("commands")),

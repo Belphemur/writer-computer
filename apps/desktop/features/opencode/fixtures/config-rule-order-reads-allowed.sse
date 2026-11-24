@@ -1,0 +1,58 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795507648937,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"mighty-cabin","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","agent":"w","permissions":[],"model":{"id":"fake-model","providerID":"fake-provider"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795507650323,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"First read a.txt with your read tool, then use your edit tool to replace alpha by gamma in a.txt. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795507650325,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795507650331,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795507650332,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795507651833,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.17e-05,"tokens":{"input":462,"output":11,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0008","created":1795507651834,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Replace alpha with gamma in a.txt"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795507652546,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w","model":{"id":"fake-model","providerID":"fake-provider","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795507650341},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795507652550,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0011","created":1795507652552,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-a1b236f2a7459fb2","name":"read"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795507652556,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-a1b236f2a7459fb2","text":"{\"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795507652557,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-a1b236f2a7459fb2","input":{"path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0014","created":1795507652559,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795507652562,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-a1b236f2a7459fb2","content":[{"type":"text","text":"Read file a.txt, lines 1-1\n1: alpha"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":2}}
+
+data: {"id":"evt_fake0016","created":1795507652563,"type":"session.step.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","finish":"tool-calls","rawFinish":"tool_calls","tokens":{"input":7377,"output":12,"reasoning":0,"cache":{"read":0,"write":0}},"cost":0.00111255},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795507652564,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0.00116425,"tokens":{"input":7839,"output":23,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0018","created":1795507654853,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w","model":{"id":"fake-model","providerID":"fake-provider","variant":"default"},"assistantMessageID":"msg_fake0003","started":1795507652570},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795507654857,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0020","created":1795507654858,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"chatcmpl-tool-9825d2e1ffd743fc","name":"edit"},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0021","created":1795507654931,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"chatcmpl-tool-9825d2e1ffd743fc","text":"{\"newString\": \"gamma\", \"oldString\": \"alpha\", \"path\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":1}}
+
+data: {"id":"evt_fake0022","created":1795507654934,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"chatcmpl-tool-9825d2e1ffd743fc","input":{"newString":"gamma","oldString":"alpha","path":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795507654935,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003"},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0024","created":1795507654940,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"edit","resources":["a.txt"],"save":["*"],"metadata":{"files":[{"file":"a.txt","patch":"Index: a.txt\n===================================================================\n--- a.txt\n+++ a.txt\n\u0040\u0040 -1,1 +1,1 \u0040\u0040\n-alpha\n+gamma\n","status":"modified","additions":1,"deletions":1}]},"source":{"type":"tool","messageID":"msg_fake0003","id":"chatcmpl-tool-9825d2e1ffd743fc"}}}
+
+data: {"id":"evt_fake0025","created":1795507655237,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"reject"}}
+
+data: {"id":"evt_fake0026","created":1795507655238,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","id":"chatcmpl-tool-9825d2e1ffd743fc","error":{"type":"aborted","message":"The user declined this tool call"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":2}}
+
+data: {"id":"evt_fake0027","created":1795507655240,"type":"session.step.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0003","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":879,"output":26,"reasoning":0,"cache":{"read":6528,"write":0}},"cost":0.00034069},"durable":{"aggregateID":"ses_fake0001","seq":22,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795507655242,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0.00150494,"tokens":{"input":8718,"output":49,"reasoning":0,"cache":{"read":6528,"write":0}}}}
+
+data: {"id":"evt_fake0029","created":1795507655242,"type":"session.execution.interrupted","data":{"sessionID":"ses_fake0001","reason":"shutdown"},"durable":{"aggregateID":"ses_fake0001","seq":23,"version":1}}
+

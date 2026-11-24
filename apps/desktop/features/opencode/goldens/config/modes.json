@@ -1,0 +1,589 @@
+{
+  "manual": {
+    "agent": "writer",
+    "sessionRules": [],
+    "childRules": null,
+    "requests": [
+      {
+        "action": "edit",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/MEMORY.md",
+        "writerAnswersOnce": true
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/../../notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "shell",
+        "resource": "ls",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "webfetch",
+        "resource": "https://example.com",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "read",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      }
+    ]
+  },
+  "acceptEdits": {
+    "agent": "writer",
+    "sessionRules": [],
+    "childRules": null,
+    "requests": [
+      {
+        "action": "edit",
+        "resource": "notes.md",
+        "writerAnswersOnce": true
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/MEMORY.md",
+        "writerAnswersOnce": true
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/../../notes.md",
+        "writerAnswersOnce": true
+      },
+      {
+        "action": "shell",
+        "resource": "ls",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "webfetch",
+        "resource": "https://example.com",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "read",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      }
+    ]
+  },
+  "plan": {
+    "agent": "writer",
+    "sessionRules": [
+      {
+        "action": "*",
+        "resource": "*",
+        "effect": "deny"
+      },
+      {
+        "action": "read",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "glob",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "grep",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "webfetch",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "websearch",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "subagent",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "question",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_vault",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_vaults",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_files",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_file",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_folders",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_folder",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_read",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_search",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_search_context",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_properties",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_property_read",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_tags",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_tag",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_tasks",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_neighbors",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_path",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_relationships",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_backlinks",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_related",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_hubs",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_components",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_orphans",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_deadends",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_unresolved",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_outline",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_wordcount",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_status",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_active",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_bases",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_base_views",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_base_query",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_dql",
+        "resource": "*",
+        "effect": "allow"
+      }
+    ],
+    "childRules": [
+      {
+        "action": "*",
+        "resource": "*",
+        "effect": "deny"
+      },
+      {
+        "action": "read",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "glob",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "grep",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "webfetch",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "websearch",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "subagent",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "question",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_vault",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_vaults",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_files",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_file",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_folders",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_folder",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_read",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_search",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_search_context",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_properties",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_property_read",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_tags",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_tag",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_tasks",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_neighbors",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_path",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_relationships",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_backlinks",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_related",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_hubs",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_components",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_orphans",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_deadends",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_graph_unresolved",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_outline",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_wordcount",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_status",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_active",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_bases",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_base_views",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_base_query",
+        "resource": "*",
+        "effect": "allow"
+      },
+      {
+        "action": "writer_dql",
+        "resource": "*",
+        "effect": "allow"
+      }
+    ],
+    "requests": [
+      {
+        "action": "edit",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/MEMORY.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/../../notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "shell",
+        "resource": "ls",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "webfetch",
+        "resource": "https://example.com",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "read",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      }
+    ]
+  },
+  "auto": {
+    "agent": "writer",
+    "sessionRules": [],
+    "childRules": null,
+    "requests": [
+      {
+        "action": "edit",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/MEMORY.md",
+        "writerAnswersOnce": true
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/../../notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "shell",
+        "resource": "ls",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "webfetch",
+        "resource": "https://example.com",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "read",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      }
+    ]
+  },
+  "dontAsk": {
+    "agent": "writer",
+    "sessionRules": [],
+    "childRules": null,
+    "requests": [
+      {
+        "action": "edit",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/MEMORY.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "edit",
+        "resource": ".writer/memory/../../notes.md",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "shell",
+        "resource": "ls",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "webfetch",
+        "resource": "https://example.com",
+        "writerAnswersOnce": false
+      },
+      {
+        "action": "read",
+        "resource": "notes.md",
+        "writerAnswersOnce": false
+      }
+    ]
+  }
+}

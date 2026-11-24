@@ -109,7 +109,7 @@ pub fn bind_unix(dir: &Path) -> Result<(std::os::unix::net::UnixListener, String
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
         let token = new_token();
-        crate::plugins::write_atomic_private(&ipc, TOKEN_FILE, token.as_bytes())
+        crate::plugins::write_atomic_private(&ipc, TOKEN_FILE, token.as_bytes(), 0o600)
             .map_err(EndpointError::Io)?;
         Ok(token)
     };

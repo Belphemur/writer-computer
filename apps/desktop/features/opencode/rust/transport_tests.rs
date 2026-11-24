@@ -17,11 +17,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// The real policy of the proposal (spec 10.9), over the real tool table.
-fn policy() -> Arc<ModePolicy> {
-    Arc::new(ModePolicy::new(
-        super::events_tests::table(),
-        ModelRef::parse("fake/fake-model"),
-    ))
+fn policy(root: &std::path::Path) -> Arc<ModePolicy> {
+    Arc::new(
+        ModePolicy::new(
+            super::events_tests::table(),
+            ModelRef::parse("fake/fake-model"),
+        )
+        .for_vault(root.to_path_buf()),
+    )
 }
 
 fn settings(mode: AgentPermissionMode) -> AgentSettings {
@@ -40,7 +43,7 @@ fn settings(mode: AgentPermissionMode) -> AgentSettings {
     }
 }
 
-fn launch(mode: AgentPermissionMode) -> LaunchConfig {
+pub(super) fn launch(mode: AgentPermissionMode) -> LaunchConfig {
     LaunchConfig {
         program: None,
         cli_version: None,
@@ -70,22 +73,32 @@ impl Rig {
 
     /// `setup` configures the fake launcher before any process exists: nothing is raced.
     fn with(version: &str, setup: impl FnOnce(&FakeLauncher)) -> Rig {
+        Rig::build(version, setup, policy)
+    }
+
+    fn build(
+        version: &str,
+        setup: impl FnOnce(&FakeLauncher),
+        policy: impl FnOnce(&std::path::Path) -> Arc<ModePolicy>,
+    ) -> Rig {
         let h = harness(version);
         setup(&h.launcher);
+        let policy = policy(&h.dir.path().canonicalize().unwrap());
         let (tx, rx) = channel();
-        let cwd = h.dir.path().join("project");
+        let root = h.dir.path().canonicalize().unwrap();
+        let cwd = root.join("project");
         let t = OpencodeTransport::new(
             TransportInit {
                 procs: Arc::default(),
                 label: "t".into(),
-                root: h.dir.path().to_path_buf(),
+                root: root.clone(),
                 cwd: cwd.clone(),
                 project_path: None,
                 spawner: crate::features::scope::Spawner::detached(),
                 inbound: tx,
             },
             Arc::clone(&h.server),
-            policy(),
+            policy,
         );
         Rig {
             h,
@@ -1649,4 +1662,397 @@ fn two_queued_sends_of_one_receipt_never_both_post_the_original_id() {
     let original = message_id_for(&id);
     assert_eq!(ids.iter().filter(|i| **i == original).count(), 1, "{ids:?}");
     assert_eq!(ids[2], ids[3], "both under the fresh id");
+}
+
+#[test]
+fn a_start_writes_the_config_first_and_a_changed_one_reloads_the_running_server_once() {
+    let r = Rig::new("2.4.0");
+    let file = r.h.dir.path().join("opencode/opencode.json");
+    assert!(!file.exists());
+    r.start(1, false, "chat").unwrap();
+    // the file is there before the server answered anything, and the server started once
+    let text = std::fs::read_to_string(&file).unwrap();
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["agents"]["writer"]["mode"], "primary");
+    assert_eq!(v["agents"]["title"], json!({"disabled": true}));
+    assert!(v.get("instructions").is_none());
+    assert_eq!(r.h.launcher.launches(), 1);
+    let fake = r.fake();
+    assert!(fake.find("POST", "/api/location/reload").is_empty());
+    // the same start again changes nothing
+    r.start(2, false, "chat").unwrap();
+    assert!(fake.find("POST", "/api/location/reload").is_empty());
+    // an instruction file appeared: the next start writes it in and the server reads it again
+    std::fs::write(r.h.dir.path().join("AGENTS.md"), "rules").unwrap();
+    r.start(3, false, "chat").unwrap();
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(v["instructions"].as_array().unwrap().len(), 1);
+    assert_eq!(fake.find("POST", "/api/location/reload").len(), 1);
+    assert_eq!(r.h.launcher.launches(), 1, "no restart for a config change");
+}
+
+#[test]
+fn the_chats_own_memory_is_written_without_a_card_and_a_sub_agents_never() {
+    let r = Rig::new("2.4.0");
+    let mut l = launch(AgentPermissionMode::Manual);
+    l.memory_dir = Some(r.cwd.join(".memory"));
+    r.t.start(&StartRequest {
+        gen: 1,
+        session_id: "chat",
+        resume: false,
+        launch: &l,
+    })
+    .unwrap();
+    r.t.send(&Outbound {
+        text: "hello",
+        files: &[],
+        delivery: Delivery::Start { receipt: &new_id() },
+    });
+    let fake = r.fake();
+    wait_for("the stream", 10, || fake.streams() == 1);
+    wait_for("the prompt", 10, || {
+        !fake.find("POST", "/prompt").is_empty()
+    });
+    // a sub-agent of the chat, owned by it as soon as it exists
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.created",
+            "data": {"sessionID": "ses_child", "parentID": SESSION}})
+        .to_string(),
+    );
+    // in this order: by the time the note's card is there, the sub-agent's request was seen
+    let note = r
+        .cwd
+        .join(".memory/MEMORY.md")
+        .to_string_lossy()
+        .into_owned();
+    fake.emit(&asked_event("per_fake_k", "ses_child", "edit", &note));
+    fake.emit(&asked_event("per_fake_m", SESSION, "edit", &note));
+    fake.emit(&asked_event("per_fake_n", SESSION, "edit", "notes.md"));
+    wait_for("the memory write answered", 10, || {
+        fake.find("POST", "/permission/per_fake_m/reply").len() == 1
+    });
+    assert_eq!(
+        fake.find("POST", "/permission/per_fake_m/reply")[0].body["decision"],
+        "once"
+    );
+    // a note is a card; the sub-agent's request (it names no launch call yet) is not answered
+    r.until("the card", |l| {
+        let cards: Vec<String> = l
+            .iter()
+            .filter_map(|i| match &i.message {
+                Message::Mapped(m) => Some(m.events.iter().filter_map(|e| match e {
+                    AgentEvent::PermissionRequest { request_id, .. } => Some(request_id.clone()),
+                    _ => None,
+                })),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        cards.contains(&"per_fake_n".to_string())
+    });
+    assert!(fake.find("POST", "/permission/per_fake_n/reply").is_empty());
+    assert!(fake.find("POST", "/permission/per_fake_k/reply").is_empty());
+}
+
+#[test]
+fn memory_is_not_written_unasked_in_plan() {
+    let r = Rig::new("2.4.0");
+    let mut l = launch(AgentPermissionMode::Plan);
+    l.memory_dir = Some(r.cwd.join(".memory"));
+    r.t.start(&StartRequest {
+        gen: 1,
+        session_id: "chat",
+        resume: false,
+        launch: &l,
+    })
+    .unwrap();
+    r.t.send(&Outbound {
+        text: "hello",
+        files: &[],
+        delivery: Delivery::Start { receipt: &new_id() },
+    });
+    let fake = r.fake();
+    wait_for("the stream", 10, || fake.streams() == 1);
+    wait_for("the prompt", 10, || {
+        !fake.find("POST", "/prompt").is_empty()
+    });
+    // the server denies an edit in Plan before anyone is asked; if it ever asked, it is a card
+    let note = r
+        .cwd
+        .join(".memory/MEMORY.md")
+        .to_string_lossy()
+        .into_owned();
+    fake.emit(&asked_event("per_fake_p", SESSION, "edit", &note));
+    r.until("the card", |l| {
+        l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::PermissionRequest { request_id, .. } if request_id == "per_fake_p"))))
+    });
+    assert!(fake.find("POST", "/permission/per_fake_p/reply").is_empty());
+}
+
+#[test]
+fn what_the_card_keeps_for_this_chat_is_what_the_shared_conversion_reads_of_the_suggestions() {
+    let suggestions = vec![
+        json!({"type": "addRules", "behavior": "allow", "destination": "localSettings",
+            "proposal": true,
+            "rules": [{"toolName": "shell", "ruleContent": "echo *"},
+                      {"toolName": "shell", "ruleContent": "ls *"}]}),
+        json!({"type": "setMode", "mode": "acceptEdits", "destination": "session"}),
+    ];
+    // all of them, or the ticked ones; a rule that is in no suggestion is never kept
+    let all = super::transport::kept_rules(&suggestions, None);
+    assert_eq!(all.len(), 2);
+    let ticked = super::transport::kept_rules(
+        &suggestions,
+        Some(&["ls *".to_string(), "rm -rf *".to_string()]),
+    );
+    assert_eq!(ticked.len(), 1);
+    assert_eq!(ticked[0].action, "shell");
+    assert_eq!(ticked[0].resource, "ls *");
+    assert_eq!(
+        ticked[0].to_json(),
+        json!({"action": "shell", "resource": "ls *", "effect": "allow"})
+    );
+}
+
+fn agent_list(entries: Value) -> Handler {
+    Box::new(move |q: &Req| {
+        (q.method == "GET" && q.path == "/api/agent").then(|| (200, json!({"data": entries})))
+    })
+}
+
+fn send_first(r: &Rig) {
+    r.t.send(&Outbound {
+        text: "hello",
+        files: &[],
+        delivery: Delivery::Start { receipt: &new_id() },
+    });
+}
+
+#[test]
+fn an_enabled_agent_that_is_not_writers_refuses_the_start_with_a_card_and_no_prompt() {
+    for list in [
+        // a built-in that was not switched off
+        json!([{"id": "writer", "mode": "primary"}, {"id": "build", "mode": "primary"}]),
+        json!([{"id": "writer", "mode": "primary"}, {"id": "mine", "mode": "all"}]),
+        json!([{"id": "writer", "mode": "primary"}, {"id": "general", "mode": "subagent"}]),
+    ] {
+        let r = Rig::new("2.4.0");
+        r.start(1, false, "chat").unwrap();
+        *r.fake().shared.handler.lock() = Some(agent_list(list));
+        send_first(&r);
+        r.until("the refusal", |l| {
+            l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::TurnFinished { is_error: true, .. }))))
+        });
+        let events = r.events();
+        assert!(events.iter().any(
+            |e| matches!(e, AgentEvent::Error { message, .. } if message.contains("did not configure"))
+        ));
+        assert!(
+            r.fake().find("POST", "/prompt").is_empty(),
+            "no prompt went"
+        );
+    }
+}
+
+fn refusals(l: &[Inbound]) -> usize {
+    l.iter()
+        .filter(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("did not configure")))))
+        .count()
+}
+
+/// A refused agent check stays refused: sending again does not get past it (the rules were set
+/// and the session announced the first time, which must not be taken for a passed check).
+#[test]
+fn a_refused_agent_check_is_refused_again_on_the_next_send_and_no_prompt_ever_goes() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    *r.fake().shared.handler.lock() = Some(agent_list(
+        json!([{"id": "writer", "mode": "primary"}, {"id": "build", "mode": "primary"}]),
+    ));
+    send_first(&r);
+    r.until("the first refusal", |l| refusals(l) == 1);
+    send_first(&r);
+    r.until("the second refusal", |l| refusals(l) == 2);
+    assert!(
+        r.fake().find("POST", "/prompt").is_empty(),
+        "no prompt went"
+    );
+    // the server is fixed (the config reloaded): the next send passes the gate for good
+    *r.fake().shared.handler.lock() =
+        Some(agent_list(json!([{"id": "writer", "mode": "primary"}])));
+    send_first(&r);
+    wait_for("the prompt", 10, || {
+        !r.fake().find("POST", "/prompt").is_empty()
+    });
+}
+
+/// The list is polled once per start of the server, before a session is given an agent of it.
+#[test]
+fn the_agent_list_is_read_once_per_start_and_before_the_session_is_given_its_agent() {
+    let r = Rig::new("2.4.0");
+    r.first_message();
+    send_first(&r);
+    let fake = r.fake();
+    wait_for("the second prompt", 10, || {
+        fake.find("POST", "/prompt").len() == 2
+    });
+    let calls = fake.requests();
+    let at = |m: &str, frag: &str| {
+        calls
+            .iter()
+            .position(|q| q.method == m && q.path.contains(frag))
+    };
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|q| q.method == "GET" && q.path == "/api/agent")
+            .count(),
+        1,
+        "the list is read once"
+    );
+    assert!(at("GET", "/api/agent").unwrap() < at("POST", "/agent").unwrap());
+}
+
+/// A hidden agent is trusted by OpenCode's own names only; whether a model may launch any other
+/// hidden one is not in the contract, so it is refused like a visible one.
+#[test]
+fn a_hidden_agent_of_another_name_is_foreign_and_opencodes_own_are_not() {
+    let ours = vec!["writer".to_string()];
+    let list = |extra: Value| -> Vec<Value> {
+        let mut v = vec![
+            json!({"id": "writer", "mode": "primary"}),
+            json!({"id": "compaction", "mode": "primary", "hidden": true}),
+            json!({"id": "summary", "mode": "primary", "hidden": true}),
+        ];
+        v.push(extra);
+        v
+    };
+    assert_eq!(
+        super::transport::foreign_agent(
+            &list(json!({"id": "helper", "mode": "subagent", "hidden": true})),
+            &ours
+        ),
+        Some("helper")
+    );
+    // a visible agent that borrows a system name is foreign: the name is trusted only when hidden
+    assert_eq!(
+        super::transport::foreign_agent(&[json!({"id": "summary", "mode": "all"})], &ours),
+        Some("summary")
+    );
+    assert_eq!(
+        super::transport::foreign_agent(
+            &list(json!({"id": "x", "mode": "all", "disabled": true})),
+            &ours
+        ),
+        None
+    );
+}
+
+/// The real 2.4.0 lists (`fixtures/config-load.json`, s35): the built-in list is foreign, Writer's
+/// own once the config is loaded is not (OpenCode's hidden compaction and summary stay).
+#[test]
+fn the_captured_agent_lists_decide_as_the_check_needs() {
+    let cap: Value = serde_json::from_str(
+        &std::fs::read_to_string(super::events_tests::fixtures_dir().join("config-load.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let list = |key: &str| -> Vec<Value> {
+        cap[key][0]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(id, v)| json!({"id": id, "mode": v[0], "hidden": v[1], "disabled": v[2]}))
+            .collect()
+    };
+    let ours = ModePolicy::new(super::events_tests::table(), None).known_agents();
+    assert!(super::transport::foreign_agent(&list("immediately"), &ours).is_some());
+    assert_eq!(super::transport::foreign_agent(&list("later"), &ours), None);
+    assert_eq!(
+        super::transport::foreign_agent(&list("after_reload"), &ours),
+        None
+    );
+    assert_eq!(cap["session_survives_reload"], true);
+}
+
+/// A policy that cannot write the config fails the start at once, with a clear error.
+#[test]
+fn a_policy_with_no_vault_fails_the_start_and_names_why() {
+    let r = Rig::build(
+        "2.4.0",
+        |_| {},
+        |_| Arc::new(ModePolicy::new(super::events_tests::table(), None)),
+    );
+    match r.start(1, false, "chat") {
+        Err(SpawnError::Failed {
+            message, retryable, ..
+        }) => {
+            assert!(message.contains("no vault"), "{message}");
+            assert!(!retryable);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(r.h.launcher.launches() == 0, "no server was started");
+}
+
+#[test]
+fn hidden_disabled_and_writers_own_agents_are_fine() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    *r.fake().shared.handler.lock() = Some(agent_list(json!([
+        {"id": "writer", "mode": "primary"},
+        {"id": "writer-worker", "mode": "subagent"},
+        {"id": "compaction", "mode": "primary", "hidden": true},
+        {"id": "title", "mode": "primary", "disabled": true},
+        {"id": "tool-helper", "mode": "tool"},
+    ])));
+    send_first(&r);
+    wait_for("the prompt", 10, || {
+        !r.fake().find("POST", "/prompt").is_empty()
+    });
+}
+
+#[test]
+fn a_server_that_never_shows_writers_agent_is_refused_too() {
+    let r = Rig::new("2.4.0");
+    r.start(1, false, "chat").unwrap();
+    // only the built-in list: the config did not load
+    *r.fake().shared.handler.lock() = Some(agent_list(json!([{"id": "build", "mode": "primary"}])));
+    send_first(&r);
+    r.until("the refusal", |l| {
+        l.iter().any(|i| matches!(&i.message, Message::Mapped(m) if m.events.iter().any(|e| matches!(e, AgentEvent::Error { message, .. } if message.contains("did not load")))))
+    });
+    assert!(r.fake().find("POST", "/prompt").is_empty());
+}
+
+/// After the server read its config again, each live chat puts its instruction entry back.
+#[test]
+fn a_reload_puts_the_instruction_entry_of_every_live_chat_back_once() {
+    let r = Rig::new("2.4.0");
+    r.first_message();
+    let fake = r.fake();
+    wait_for("the stream", 10, || fake.streams() == 1);
+    let puts = || fake.find("PUT", "/instructions/entries/writer").len();
+    wait_for("the first put", 10, || puts() == 1);
+    // a turn is running: the reload waits
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.execution.started",
+            "data": {"sessionID": SESSION}})
+        .to_string(),
+    );
+    r.h.server.apply_config("{\"v\":1}\n").unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(fake.find("POST", "/api/location/reload").is_empty());
+    assert_eq!(puts(), 1);
+    fake.emit(
+        &json!({"id": "e", "created": 1, "type": "session.execution.succeeded",
+            "data": {"sessionID": SESSION}})
+        .to_string(),
+    );
+    wait_for("the reload", 10, || {
+        fake.find("POST", "/api/location/reload").len() == 1
+    });
+    wait_for("the entry put back", 10, || puts() == 2);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(puts(), 2);
 }

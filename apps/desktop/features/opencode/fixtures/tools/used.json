@@ -9,6 +9,7 @@
     "GET /api/skill",
     "GET /api/command",
     "GET /api/agent",
+    "GET /api/session/active",
     "POST /api/session",
     "GET /api/session/{sessionID}",
     "DELETE /api/session/{sessionID}",

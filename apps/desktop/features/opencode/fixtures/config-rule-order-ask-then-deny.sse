@@ -1,0 +1,78 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795507657570,"type":"session.created","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","slug":"stellar-tiger","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault"},"subpath":"","agent":"w-order","permissions":[],"model":{"id":"fake-model","providerID":"fake-provider"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795507657576,"type":"session.inbox.enqueued","location":{"directory":"/vault"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your edit tool (try it) to replace alpha by gamma in a.txt. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795507657577,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795507657585,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795507657585,"type":"session.inbox.delivered","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795507658639,"type":"session.step.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","agent":"w-order","model":{"id":"fake-model","providerID":"fake-provider","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795507657592},"durable":{"aggregateID":"ses_fake0001","seq":5,"version":1}}
+
+data: {"id":"evt_fake0008","created":1795507658643,"type":"session.step.first-token","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795507658644,"type":"session.reasoning.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795507658748,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The"}}
+
+data: {"id":"evt_fake0011","created":1795507658934,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.06e-05,"tokens":{"input":456,"output":10,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0012","created":1795507658935,"type":"session.renamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","title":"Replace alpha in a.txt"},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0013","created":1795507659082,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" user asks me to use an \"edit tool\" to replace \"alpha\" with"}}
+
+data: {"id":"evt_fake0014","created":1795507659329,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" \"gamma\" in a.txt. I don't have an edit tool in my available"}}
+
+data: {"id":"evt_fake0015","created":1795507659507,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" tools list. Let me check what tools I have: generate_image, generate_video,"}}
+
+data: {"id":"evt_fake0016","created":1795507660012,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" glob, grep, question, read, shell, skill, subagent, webfetch,"}}
+
+data: {"id":"evt_fake0017","created":1795507660426,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" websearch, execute.\n\nThere's no \"edit\" tool. The user says \""}}
+
+data: {"id":"evt_fake0018","created":1795507660584,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"try it\". I should check if a.txt exists and then do the edit with"}}
+
+data: {"id":"evt_fake0019","created":1795507660913,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" the best available means (shell sed), while explaining there's no dedicated edit tool."}}
+
+data: {"id":"evt_fake0020","created":1795507661240,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" Maybe I could search the Code Mode catalog for an edit tool. Let me try"}}
+
+data: {"id":"evt_fake0021","created":1795507661745,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" search to see if there's an edit tool in Code Mode. Actually the catalog"}}
+
+data: {"id":"evt_fake0022","created":1795507661988,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" instructions say to use search for tools not listed. Let me search for \"edit"}}
+
+data: {"id":"evt_fake0023","created":1795507662079,"type":"session.reasoning.delta","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" file\"."}}
+
+data: {"id":"evt_fake0024","created":1795507662079,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-ae1ba9b143969ff1","name":"glob"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0025","created":1795507662083,"type":"session.tool.input.started","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-824cb5601c04c76d","name":"execute"},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0026","created":1795507662333,"type":"session.reasoning.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user asks me to use an \"edit tool\" to replace \"alpha\" with \"gamma\" in a.txt. I don't have an edit tool in my available tools list. Let me check what tools I have: generate_image, generate_video, glob, grep, question, read, shell, skill, subagent, webfetch, websearch, execute.\n\nThere's no \"edit\" tool. The user says \"try it\". I should check if a.txt exists and then do the edit with the best available means (shell sed), while explaining there's no dedicated edit tool. Maybe I could search the Code Mode catalog for an edit tool. Let me try search to see if there's an edit tool in Code Mode. Actually the catalog instructions say to use search for tools not listed. Let me search for \"edit file\".","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0027","created":1795507662336,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-ae1ba9b143969ff1","text":"{\"pattern\": \"a.txt\"}"},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0028","created":1795507662338,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-ae1ba9b143969ff1","input":{"pattern":"a.txt"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0029","created":1795507662339,"type":"session.tool.input.ended","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-824cb5601c04c76d","text":"{\"code\": \"await tools.search({ query: \\\"edit file replace text\\\" })\"}"},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":1}}
+
+data: {"id":"evt_fake0030","created":1795507662340,"type":"session.tool.called","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-824cb5601c04c76d","input":{"code":"await tools.search({ query: \"edit file replace text\" })"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0031","created":1795507662341,"type":"session.step.streamed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+
+data: {"id":"evt_fake0032","created":1795507662343,"type":"permission.asked","location":{"directory":"/vault"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"glob","resources":["a.txt"],"save":["*"],"metadata":{"root":"."},"source":{"type":"tool","messageID":"msg_fake0002","id":"chatcmpl-tool-ae1ba9b143969ff1"}}}
+
+data: {"id":"evt_fake0033","created":1795507662358,"type":"session.tool.progress","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-824cb5601c04c76d","metadata":{"toolCalls":[{"tool":"search","status":"running","input":{"query":"edit file replace text"}}]}}}
+
+data: {"id":"evt_fake0034","created":1795507662360,"type":"session.tool.success","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-824cb5601c04c76d","content":[{"type":"text","text":"{\"items\":[{\"path\":\"tools.opencode.read_mcp_resource\",\"description\":\"Read one MCP resource by server and URI. Not for local files. Always return the full contents rather than slicing or filtering them; oversized output is truncated automatically and the full content is saved to a file you can read. Images and PDFs are shown to you directly.\",\"signature\":\"tools.opencode.read_mcp_resource({\\n  /** The server field of the discovered resource. */\\n  server: string,\\n  /** Exact resource URI from discovery, an expanded uriTemplate, or the user. */\\n  uri: string,\\n}): Promise<{\\n  server: string,\\n  uri: string,\\n  contents: Array<{\\n        type: \\\"text\\\",\\n        uri: string,\\n        text: string,\\n        mimeType?: string,\\n      } | {\\n        type: \\\"blob\\\",\\n        uri: string,\\n        blob: string,\\n        mimeType?: string,\\n      }>,\\n}>\"},{\"path\":\"tools.opencode.list_mcp_resources\",\"description\":\"List documents, records, and other data exposed by MCP servers. Use this when the user refers to something that is not a local file, such as a URI with a custom scheme, then load a match with read_mcp_resource. Each entry names the server to read it from. Templates are resources addressed by a parameter such as a record ID; fill in the uriTemplate placeholders before reading.\",\"signature\":\"tools.opencode.list_mcp_resources({\\n  /** MCP server name as configured. Omit to list every server. */\\n  server?: string,\\n}): Promise<{\\n  resources: Array<{\\n      server: string,\\n      name: string,\\n      uri: string,\\n      description?: string,\\n      mimeType?: string,\\n    }>,\\n  templates: Array<{\\n      server: string,\\n      name: string,\\n      uriTemplate: string,\\n      description?: string,\\n      mimeType?: string,\\n    }>,\\n}>\"}],\"remaining\":0,\"next\":null}"}],"metadata":{"toolCalls":[{"tool":"search","status":"completed","input":{"query":"edit file replace text"}}],"truncated":false},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":18,"version":2}}
+
+data: {"id":"evt_fake0035","created":1795507662486,"type":"permission.replied","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"reject"}}
+
+data: {"id":"evt_fake0036","created":1795507662486,"type":"session.tool.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-ae1ba9b143969ff1","error":{"type":"aborted","message":"The user declined this tool call"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":19,"version":2}}
+
+data: {"id":"evt_fake0037","created":1795507662488,"type":"session.step.failed","location":{"directory":"/vault"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":6714,"output":33,"reasoning":169,"cache":{"read":0,"write":0}},"cost":0.0011081},"durable":{"aggregateID":"ses_fake0001","seq":20,"version":1}}
+
+data: {"id":"evt_fake0038","created":1795507662489,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0.0011587000000000001,"tokens":{"input":7170,"output":43,"reasoning":169,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0039","created":1795507662489,"type":"session.execution.interrupted","data":{"sessionID":"ses_fake0001","reason":"shutdown"},"durable":{"aggregateID":"ses_fake0001","seq":21,"version":1}}
+

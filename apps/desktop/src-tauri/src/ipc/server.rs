@@ -362,7 +362,7 @@ pub fn start(
     let ipc = endpoint::ipc_dir(dir);
     std::fs::create_dir_all(&ipc)?;
     let _ = std::fs::remove_file(endpoint::token_path(dir));
-    crate::plugins::write_atomic_private(&ipc, endpoint::TOKEN_FILE, token.as_bytes())
+    crate::plugins::write_atomic_private(&ipc, endpoint::TOKEN_FILE, token.as_bytes(), 0o600)
         .map_err(endpoint::EndpointError::Io)?;
     let shared = Arc::new(Shared::new(registry, host, token));
     let shutdown = Arc::new(Notify::new());

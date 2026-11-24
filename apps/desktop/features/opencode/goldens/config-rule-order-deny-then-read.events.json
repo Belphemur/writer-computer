@@ -1,0 +1,143 @@
+{
+  "events": [
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The user wants me to read a.txt and report its contents. It should be in the working directory, so I'll read",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": " it directly.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-started",
+      "toolCallId": "chatcmpl-tool-a0918770f674c747",
+      "messageId": "msg_fake0002",
+      "tool": "read",
+      "parentToolCallId": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0002",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The user wants me to read a.txt and report its contents. It should be in the working directory, so I'll read it directly.",
+      "estimatedTokens": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "chatcmpl-tool-a0918770f674c747",
+      "input": {
+        "path": "a.txt"
+      }
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "chatcmpl-tool-a0918770f674c747",
+      "output": "Read file a.txt, lines 1-1\n1: alpha",
+      "isError": false,
+      "outcome": "ok",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 891,
+      "outputTokens": 40,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.00015365,
+      "contextWindow": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "start",
+      "text": "",
+      "estimatedTokens": null
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "delta",
+      "text": "The file contains a single line: \"alpha\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The file `a.txt` contains a single line:\n\n```\nalpha\n```\n\nThat's all there is"
+    },
+    {
+      "type": "thinking",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "phase": "end",
+      "text": "The file contains a single line: \"alpha\".",
+      "estimatedTokens": null
+    },
+    {
+      "type": "text-delta",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": " to it — just the word \"alpha\"."
+    },
+    {
+      "type": "text",
+      "messageId": "msg_fake0003",
+      "blockIndex": 0,
+      "text": "The file `a.txt` contains a single line:\n\n```\nalpha\n```\n\nThat's all there is to it — just the word \"alpha\"."
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 117,
+      "outputTokens": 43,
+      "cacheReadTokens": 832,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.00006401,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 1008,
+      "outputTokens": 83,
+      "cacheReadTokens": 832,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.00021766,
+      "contextWindow": null,
+      "model": "fake-provider/fake-model"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "completed",
+      "durationMs": 2075,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

@@ -63,6 +63,13 @@ FIXTURES = {
     "perm-plan-deny-vs-saved": ("s32g", {}, "s32g"),
     "perm-session-deny-vs-child-allow": ("s32h", {}, "s32h"),
     "perm-subagent-deny-by-resource": ("s30g", {}, "s30g"),
+    # phase 3 captures (config load, rule shape and order, the base of a relative memory path)
+    "config-rule-order-reads-allowed": ("s36-w", {"results": "s36-results.json"}, "s36"),
+    "config-rule-order-ask-then-deny": ("s36-w-order", {}, "s36"),
+    "config-rule-order-deny-then-read": ("s36-w-role", {}, "s36"),
+    "memory-base-no-git": ("s37-1-no-git-dir-is-root", {"results": "s37-results.json"}, "s371-no-git-dir-is-root"),
+    "memory-base-git-dir-below": ("s37-2-git-dir-below", {}, "s372-git-dir-below"),
+    "memory-base-git-dir-is-root": ("s37-3-git-dir-is-root", {}, "s373-git-dir-is-root"),
     "steer-now": ("s20-steer-now", {"messages": "s20-steer-now.messages.json"}, "s20"),
     "reject-message": ("s21-reject", {"messages": "s21-reject.messages.json"}, "s21"),
     "codemode-failures": ("s22-codemode-failures", {"messages": "s22-codemode-failures.messages.json"}, "s22"),
@@ -174,6 +181,7 @@ def scrub(raw, out, only=()):
             bundle[key] = sc.text(open(p).read()) if rf.endswith(".sse") else sc.value(json.load(open(p)))
         with open(os.path.join(out, name + ".json"), "w") as f:
             f.write(dumps(bundle, indent=1) + "\n")
+    scrub_results(raw, out, only)
     rest = {}
     for fn in ("s12-rest.json", "s13-rest.json", "s14-rest.json"):  # reply collections recorded without a scenario
         if os.path.exists(os.path.join(raw, fn)):
@@ -181,6 +189,18 @@ def scrub(raw, out, only=()):
     if rest and not only:
         with open(os.path.join(out, "rest.json"), "w") as f:
             f.write(dumps(Scrubber().value(rest), indent=1) + "\n")
+
+
+# fixtures that are one captured reply, no event stream: name -> raw file
+RESULTS_ONLY = {"config-load": "s35-results.json"}
+
+
+def scrub_results(raw, out, only=()):
+    for name, rf in RESULTS_ONLY.items():
+        if only and name not in only:
+            continue
+        with open(os.path.join(out, name + ".json"), "w") as f:
+            f.write(dumps(Scrubber().value(json.load(open(os.path.join(raw, rf)))), indent=1) + "\n")
 
 
 def check(root, deny):

@@ -1,0 +1,96 @@
+{
+  "events": [
+    {
+      "type": "tool-call-started",
+      "toolCallId": "chatcmpl-tool-861da7f3bddcc640",
+      "messageId": "msg_fake0002",
+      "tool": "write",
+      "parentToolCallId": null
+    },
+    {
+      "type": "tool-call-input",
+      "toolCallId": "chatcmpl-tool-861da7f3bddcc640",
+      "input": {
+        "path": ".memory/note.md",
+        "content": "hello"
+      }
+    },
+    {
+      "type": "permission-request",
+      "requestId": "per_fake0001",
+      "toolCallId": "chatcmpl-tool-861da7f3bddcc640",
+      "tool": "write",
+      "displayName": null,
+      "input": {
+        "path": ".memory/note.md",
+        "content": "hello"
+      },
+      "description": null,
+      "decisionReason": null,
+      "suggestions": [
+        {
+          "type": "addRules",
+          "rules": [
+            {
+              "toolName": "edit",
+              "ruleContent": "*"
+            }
+          ],
+          "behavior": "allow",
+          "destination": "localSettings"
+        },
+        {
+          "type": "setMode",
+          "mode": "acceptEdits",
+          "destination": "session"
+        }
+      ]
+    },
+    {
+      "type": "permission-resolved",
+      "requestId": "per_fake0001",
+      "resolution": "denied"
+    },
+    {
+      "type": "tool-call-finished",
+      "toolCallId": "chatcmpl-tool-861da7f3bddcc640",
+      "output": "The user declined this tool call",
+      "isError": true,
+      "outcome": "rejected",
+      "truncated": false
+    },
+    {
+      "type": "usage",
+      "scope": "message",
+      "inputTokens": 7384,
+      "outputTokens": 20,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0011176,
+      "contextWindow": null
+    },
+    {
+      "type": "usage",
+      "scope": "turn",
+      "inputTokens": 7384,
+      "outputTokens": 20,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "costUsd": 0.0011176,
+      "contextWindow": null,
+      "model": "fake-provider/fake-model"
+    },
+    {
+      "type": "turn-finished",
+      "reason": "interrupted",
+      "durationMs": 1258,
+      "apiDurationMs": null,
+      "numTurns": null,
+      "isError": false,
+      "result": null,
+      "sessionId": "ses_fake0001",
+      "errors": []
+    }
+  ],
+  "signals": []
+}

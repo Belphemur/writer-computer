@@ -1,0 +1,57 @@
+{
+ "results": {
+  "w": {
+   "asked": [
+    [
+     "402l",
+     "edit"
+    ]
+   ],
+   "tools": [
+    [
+     "402l",
+     "read",
+     "ok"
+    ],
+    [
+     "402l",
+     "edit",
+     "failed:aborted"
+    ]
+   ],
+   "a.txt": "alpha"
+  },
+  "w-order": {
+   "asked": [
+    [
+     "zUvq",
+     "glob"
+    ]
+   ],
+   "tools": [
+    [
+     "zUvq",
+     "execute",
+     "ok"
+    ],
+    [
+     "zUvq",
+     "glob",
+     "failed:aborted"
+    ]
+   ],
+   "a.txt": "alpha"
+  },
+  "w-role": {
+   "asked": [],
+   "tools": [
+    [
+     "QLmg",
+     "read",
+     "ok"
+    ]
+   ],
+   "a.txt": "alpha"
+  }
+ }
+}

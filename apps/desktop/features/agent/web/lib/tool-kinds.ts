@@ -36,7 +36,9 @@ export type ToolRole =
   | "launch"
   | "handback"
   | "codemode"
-  | "question";
+  | "question"
+  | "skill"
+  | "todo";
 
 type ToolSpec = {
   kind: ToolKind;

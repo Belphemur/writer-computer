@@ -48,6 +48,10 @@ pub enum Role {
     Codemode,
     /// Asks the user a question and waits for the answer.
     Question,
+    /// Loads a skill's instructions into the context (nothing is written or run by it).
+    Skill,
+    /// Keeps the agent's own task list (nothing outside the chat changes).
+    Todo,
 }
 
 /// Input keys a tool's arguments go by.
@@ -255,6 +259,14 @@ pub fn writer_mcp_kind(command: &str) -> Option<Kind> {
         .iter()
         .find(|(re, _)| re.is_match(command))
         .map(|(_, k)| *k)
+}
+
+/// Whether a command of Writer's MCP server only reads: the registry does not mark it as writing
+/// AND its class in `writer-mcp.json` is read or search. The one predicate of every rule that
+/// lets Writer's tools run without a prompt (an agent's allows, Plan's), so none of them can
+/// drift from the others.
+pub fn is_writer_read_tool(tool: &crate::cli::mcp::ToolSpec) -> bool {
+    !tool.writes && matches!(writer_mcp_kind(&tool.name), Some(Kind::Read | Kind::Search))
 }
 
 #[cfg(test)]

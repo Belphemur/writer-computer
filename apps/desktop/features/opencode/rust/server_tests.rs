@@ -25,8 +25,9 @@ pub(super) fn harness(version: &str) -> Harness {
     let settings = ServerSettings {
         program: "opencode".into(),
         root: dir.path().to_path_buf(),
-        config_file: dir.path().join("opencode.json"),
+        config_file: dir.path().join("opencode/opencode.json"),
         config_home: dir.path().join("opencode/xdg-config"),
+        shell_wrapper: dir.path().join("opencode/writer-shell"),
         app_data: dir.path().to_path_buf(),
     };
     let inherited: Box<dyn Fn() -> Vec<(String, String)> + Send + Sync> = Box::new(|| {
@@ -61,6 +62,7 @@ fn kinds(seen: &Seen) -> Vec<String> {
         .map(|i| match i {
             ChatInput::Event(e) => e.kind.clone(),
             ChatInput::Resync => "resync".into(),
+            ChatInput::Reloaded => "reloaded".into(),
             ChatInput::Down(_) => "down".into(),
         })
         .collect()
@@ -77,6 +79,7 @@ fn the_environment_drops_every_inherited_opencode_variable_and_keeps_the_home() 
         root: "/v".into(),
         config_file: "/w/opencode.json".into(),
         config_home: "/w/opencode/xdg-config".into(),
+        shell_wrapper: "/w/opencode/writer-shell".into(),
         app_data: "/w".into(),
     };
     let env = isolated_env(
@@ -86,6 +89,8 @@ fn the_environment_drops_every_inherited_opencode_variable_and_keeps_the_home() 
             ("OPENCODE_CONFIG_CONTENT", "{}"),
             ("OPENCODE_SERVER_PASSWORD", "old"),
             ("XDG_CONFIG_HOME", "/home/fake/.config"),
+            ("SHELL", "/bin/fish"),
+            ("WRITER_USER_SHELL", "/tmp/spoofed"),
         ]
         .map(|(k, v)| (k.to_string(), v.to_string())),
         "pw",
@@ -106,6 +111,165 @@ fn the_environment_drops_every_inherited_opencode_variable_and_keeps_the_home() 
     assert_eq!(get("OPENCODE_DISABLE_CLAUDE_CODE"), ["1"]);
     assert_eq!(get("OPENCODE_DISABLE_AUTOUPDATE"), ["1"]);
     assert_eq!(get("XDG_CONFIG_HOME"), ["/w/opencode/xdg-config"]);
+    // the shell the user had goes to the wrapper, which is the server's `SHELL`; nothing spoofs it
+    assert_eq!(get("SHELL"), ["/w/opencode/writer-shell"]);
+    assert_eq!(get("WRITER_USER_SHELL"), ["/bin/fish"]);
+    assert_eq!(get("WRITER_USER_XDG_CONFIG_HOME"), ["/home/fake/.config"]);
+}
+
+fn settings_in(dir: &std::path::Path) -> ServerSettings {
+    ServerSettings {
+        program: "opencode".into(),
+        root: dir.to_path_buf(),
+        config_file: dir.join("opencode/vault.json"),
+        config_home: dir.join("opencode/xdg-config"),
+        shell_wrapper: dir.join("opencode/writer-shell"),
+        app_data: dir.to_path_buf(),
+    }
+}
+
+/// The names the wrapper unsets are exactly the ones the environment sets for the server (and
+/// the one name OpenCode reads before its password variable): one list, two uses.
+#[test]
+fn the_wrapper_unsets_what_the_environment_sets_and_nothing_else() {
+    let env = isolated_env(Vec::new(), "pw", &settings_in(std::path::Path::new("/w")));
+    let mut set: Vec<&str> = env
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .filter(|k| k.starts_with("OPENCODE_") || *k == "XDG_CONFIG_HOME")
+        .collect();
+    set.push("OPENCODE_PASSWORD");
+    set.sort();
+    let text = shell_wrapper();
+    let unset_line = text
+        .lines()
+        .find(|l| l.starts_with("unset OPENCODE"))
+        .unwrap();
+    let mut unset: Vec<&str> = unset_line.split_whitespace().skip(1).collect();
+    unset.sort();
+    assert_eq!(set, unset);
+    // it ends by running the shell the user had, with the arguments it was given
+    assert!(text.ends_with("exec \"$SHELL\" \"$@\"\n"));
+    assert!(text.starts_with("#!/bin/sh\n"));
+}
+
+/// Runs the wrapper for real: the command the agent's shell would run sees none of the server's
+/// settings, the user's own shell and config home are back, and the arguments reach the shell.
+#[cfg(unix)]
+#[test]
+fn the_wrapper_hides_the_servers_settings_from_the_commands_it_runs() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("writer-shell");
+    std::fs::write(&path, shell_wrapper()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let s = settings_in(std::path::Path::new("/w"));
+    let env = isolated_env(
+        [
+            ("PATH", "/usr/bin:/bin"),
+            ("SHELL", "/bin/sh"),
+            ("XDG_CONFIG_HOME", "/home/fake/.config"),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+        "the-password",
+        &s,
+    );
+    let run = |env: &[(String, String)]| {
+        let out = std::process::Command::new(&path)
+            .args(["-c", "env"])
+            .env_clear()
+            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let seen = run(&env);
+    for name in ["OPENCODE_", "WRITER_USER_", "the-password", "/w/opencode"] {
+        assert!(!seen.contains(name), "the shell sees {name}");
+    }
+    assert!(
+        seen.contains("XDG_CONFIG_HOME=/home/fake/.config"),
+        "{seen}"
+    );
+    assert!(seen.contains("SHELL=/bin/sh"), "{seen}");
+    // a user with no `XDG_CONFIG_HOME` of their own has none, and a missing shell is `sh`
+    let env: Vec<_> = isolated_env(
+        [("PATH", "/usr/bin:/bin")].map(|(k, v)| (k.to_string(), v.to_string())),
+        "pw",
+        &s,
+    );
+    let seen = run(&env);
+    assert!(!seen.contains("XDG_CONFIG_HOME"), "{seen}");
+    assert!(seen.contains("SHELL=/bin/sh"), "{seen}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_start_writes_the_wrapper_executable_and_hands_it_to_the_server_as_its_shell() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = harness("2.4.0");
+    h.server.ensure_started().unwrap();
+    let wrapper = h.dir.path().join("opencode/writer-shell");
+    assert_eq!(std::fs::read_to_string(&wrapper).unwrap(), shell_wrapper());
+    assert_eq!(
+        std::fs::metadata(&wrapper).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    let spec = h.launcher.specs.lock()[0].clone();
+    assert!(spec
+        .env
+        .iter()
+        .any(|(k, v)| k == "SHELL" && *v == wrapper.to_string_lossy()));
+    h.server.shutdown();
+}
+
+#[test]
+fn a_wrapper_path_that_is_not_writers_own_is_never_written() {
+    let mut h = harness("2.4.0");
+    let other = h.dir.path().join("somebodys-shell");
+    let spawner = Spawner::detached();
+    let io = Io::start(&spawner).unwrap();
+    let mut settings = settings_in(h.dir.path());
+    settings.shell_wrapper = other.clone();
+    assert!(!settings.shell_wrapper_is_ours());
+    h.server = OpencodeServer::new(io, h.launcher.clone(), settings, Box::new(Vec::new));
+    assert!(matches!(
+        h.server.ensure_started(),
+        Err(ServerError::Failed(_))
+    ));
+    assert!(!other.exists());
+    assert_eq!(h.launcher.launches(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn the_config_is_written_private_once_and_a_change_reloads_a_running_server_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = harness("2.4.0");
+    let file = h.dir.path().join("opencode/opencode.json");
+    // before any server: written, nothing to reload
+    h.server.apply_config("{\"a\":1}\n").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"a\":1}\n");
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    assert!(fake.find("POST", "/api/location/reload").is_empty());
+    // the same text again: nothing is written, nothing reloads
+    std::fs::write(&file, "touched").unwrap();
+    h.server.apply_config("{\"a\":1}\n").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "touched");
+    assert!(fake.find("POST", "/api/location/reload").is_empty());
+    // a change: written and the running server reads it again, once
+    h.server.apply_config("{\"a\":2}\n").unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"a\":2}\n");
+    assert_eq!(fake.find("POST", "/api/location/reload").len(), 1);
+    h.server.apply_config("{\"a\":2}\n").unwrap();
+    assert_eq!(fake.find("POST", "/api/location/reload").len(), 1);
+    h.server.shutdown();
 }
 
 #[test]
@@ -450,8 +614,9 @@ fn a_config_home_that_is_not_writers_own_is_never_deleted() {
     let settings = ServerSettings {
         program: "opencode".into(),
         root: h.dir.path().to_path_buf(),
-        config_file: h.dir.path().join("opencode.json"),
+        config_file: h.dir.path().join("opencode/opencode.json"),
         config_home: other.clone(),
+        shell_wrapper: h.dir.path().join("opencode/writer-shell"),
         app_data: h.dir.path().to_path_buf(),
     };
     assert!(!settings.config_home_is_ours());
@@ -501,4 +666,230 @@ fn the_endpoint_is_the_one_the_ready_line_names_and_only_loopback_is_accepted() 
         )))
         .err();
     assert!(matches!(err, Some(LaunchError::Failed(_))));
+}
+
+fn exec_event(kind: &str, session: &str) -> String {
+    ev(kind, json!({"sessionID": session}))
+}
+
+/// Another chat's turn is running: the config is written at once, the server reads it when the
+/// last turn ends and not before, every chat is told once, and a reload nobody waits for is
+/// never made.
+#[test]
+fn a_changed_config_is_read_when_the_last_running_turn_ends_and_every_chat_is_told_once() {
+    let h = harness("2.4.0");
+    let (_, seen) = collect(&h.server);
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    h.server.apply_config("{\"v\":1}\n").unwrap();
+    assert_eq!(reloads(), 1, "nothing runs: read at once");
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    fake.emit(&exec_event("session.execution.started", "ses_b"));
+    wait_for("the events", 5, || h.server.dropped() == 2);
+    h.server.apply_config("{\"v\":2}\n").unwrap();
+    let file = h.dir.path().join("opencode/opencode.json");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"v\":2}\n");
+    assert_eq!(reloads(), 1, "written, but a turn is running");
+    fake.emit(&exec_event("session.execution.succeeded", "ses_a"));
+    fake.emit(&exec_event("session.execution.interrupted", "ses_x"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(reloads(), 1, "one turn is still running");
+    fake.emit(&exec_event("session.execution.failed", "ses_b"));
+    wait_for("the reload", 5, || reloads() == 2);
+    wait_for("the chats told", 5, || {
+        kinds(&seen).iter().filter(|k| *k == "reloaded").count() == 2
+    });
+    // idle again: a turn that ends changes nothing
+    fake.emit(&exec_event("session.execution.succeeded", "ses_a"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(reloads(), 2);
+    h.server.shutdown();
+}
+
+/// The end of a turn went by while the stream was down: after the reconnect the gate counts the
+/// turns the server says run, so the next config change is read at once, once.
+#[test]
+fn a_turn_that_ended_unseen_does_not_hold_the_reload_gate() {
+    let h = harness("2.4.0");
+    let (_, seen) = collect(&h.server);
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    wait_for("the event", 5, || h.server.dropped() == 1);
+    // the stream drops, the turn ends where nobody sees it (the server lists no active session)
+    fake.shared.active.lock().clear();
+    fake.drop_streams();
+    wait_for("the reconnect", 5, || fake.streams() == 2);
+    wait_for("the resync", 5, || {
+        kinds(&seen).contains(&"resync".to_string())
+    });
+    h.server.apply_config("{\"v\":1}\n").unwrap();
+    assert_eq!(reloads(), 1, "nothing runs any more: read at once, once");
+    // a turn that still runs after the reconnect is still waited for
+    fake.shared.active.lock().push("ses_b".into());
+    fake.drop_streams();
+    wait_for("the second reconnect", 5, || fake.streams() == 3);
+    wait_for("the second resync", 5, || {
+        kinds(&seen).iter().filter(|k| *k == "resync").count() == 2
+    });
+    h.server.apply_config("{\"v\":2}\n").unwrap();
+    assert_eq!(reloads(), 1, "ses_b runs");
+    fake.emit(&exec_event("session.execution.succeeded", "ses_b"));
+    wait_for("the reload", 5, || reloads() == 2);
+    h.server.shutdown();
+}
+
+/// A reload that waited for a turn whose end went unseen is made when the reconnect finds the
+/// server idle.
+#[test]
+fn a_waiting_reload_is_made_when_the_reconnect_finds_nothing_running() {
+    let h = harness("2.4.0");
+    let (_, seen) = collect(&h.server);
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    wait_for("the event", 5, || h.server.dropped() == 1);
+    h.server.apply_config("{\"v\":1}\n").unwrap();
+    assert_eq!(reloads(), 0, "a turn is running");
+    fake.drop_streams();
+    wait_for("the reconnect", 5, || fake.streams() == 2);
+    wait_for("the reload", 5, || reloads() == 1);
+    wait_for("the chats told", 5, || {
+        kinds(&seen).contains(&"reloaded".to_string())
+    });
+    h.server.shutdown();
+}
+
+/// A chat that goes away takes its running turns, its children's included, out of the count.
+#[test]
+fn a_released_chat_no_longer_holds_the_reload_gate() {
+    let h = harness("2.4.0");
+    let (key, seen) = collect(&h.server);
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    h.server.own(key, "ses_a");
+    h.server.own(key, "ses_child");
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    fake.emit(&exec_event("session.execution.started", "ses_child"));
+    wait_for("the events", 5, || {
+        kinds(&seen)
+            .iter()
+            .filter(|k| *k == "session.execution.started")
+            .count()
+            == 2
+    });
+    h.server.apply_config("{\"v\":1}\n").unwrap();
+    assert_eq!(reloads(), 0, "turns are running");
+    h.server.release(key);
+    wait_for("the reload", 5, || reloads() == 1);
+    h.server.shutdown();
+}
+
+/// An end event that never comes cannot hold the configuration for ever: past the deadline it
+/// is read anyway, once, and a late end changes nothing.
+#[test]
+fn a_reload_that_waited_too_long_is_made_anyway_once() {
+    let h = harness("2.4.0");
+    h.server.ensure_started().unwrap();
+    let fake = h.launcher.current().server.clone();
+    wait_for("the stream", 5, || fake.streams() == 1);
+    let reloads = || fake.find("POST", "/api/location/reload").len();
+    h.server.set_reload_deadline(Duration::from_millis(150));
+    fake.emit(&exec_event("session.execution.started", "ses_a"));
+    wait_for("the event", 5, || h.server.dropped() == 1);
+    h.server.apply_config("{\"v\":1}\n").unwrap();
+    h.server.apply_config("{\"v\":2}\n").unwrap();
+    assert_eq!(reloads(), 0);
+    wait_for("the reload past the deadline", 5, || reloads() == 1);
+    fake.emit(&exec_event("session.execution.succeeded", "ses_a"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(reloads(), 1, "once");
+    h.server.shutdown();
+}
+
+#[test]
+fn a_config_path_that_is_not_writers_own_is_never_written() {
+    let mut h = harness("2.4.0");
+    let spawner = Spawner::detached();
+    let io = Io::start(&spawner).unwrap();
+    let mut settings = settings_in(h.dir.path());
+    settings.config_file = h.dir.path().join("elsewhere.json");
+    assert!(!settings.config_file_is_ours());
+    settings.config_file = h.dir.path().join("opencode/not-json.txt");
+    assert!(!settings.config_file_is_ours());
+    settings.config_file = h.dir.path().join("elsewhere.json");
+    h.server = OpencodeServer::new(io, h.launcher.clone(), settings, Box::new(Vec::new));
+    assert!(matches!(
+        h.server.apply_config("{}"),
+        Err(ServerError::Failed(_))
+    ));
+    assert!(!h.dir.path().join("elsewhere.json").exists());
+}
+
+/// A wrapper that is already there, the same and executable, is not written again; one that
+/// changed is.
+#[cfg(unix)]
+#[test]
+fn the_wrapper_is_not_rewritten_when_it_is_the_same_and_is_when_it_is_not() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let h2 = harness("2.4.0");
+    // the same folder is another harness: stage the same file there, then start
+    let w2 = h2.dir.path().join("opencode/writer-shell");
+    std::fs::create_dir_all(w2.parent().unwrap()).unwrap();
+    std::fs::write(&w2, shell_wrapper()).unwrap();
+    std::fs::set_permissions(&w2, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let ino2 = std::fs::metadata(&w2).unwrap().ino();
+    h2.server.ensure_started().unwrap();
+    assert_eq!(std::fs::metadata(&w2).unwrap().ino(), ino2, "not replaced");
+    h2.server.shutdown();
+    let h3 = harness("2.4.0");
+    let w3 = h3.dir.path().join("opencode/writer-shell");
+    std::fs::create_dir_all(w3.parent().unwrap()).unwrap();
+    std::fs::write(&w3, "#!/bin/sh\nold\n").unwrap();
+    std::fs::set_permissions(&w3, std::fs::Permissions::from_mode(0o755)).unwrap();
+    h3.server.ensure_started().unwrap();
+    assert_eq!(std::fs::read_to_string(&w3).unwrap(), shell_wrapper());
+    assert_eq!(
+        std::fs::metadata(&w3).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    h3.server.shutdown();
+}
+
+/// A server started from a shell that is the wrapper itself would run the wrapper for ever: the
+/// wrapper is never its own user shell.
+#[cfg(unix)]
+#[test]
+fn a_shell_that_is_the_wrapper_itself_falls_back_to_sh() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let s = settings_in(dir.path());
+    let env = isolated_env(
+        [
+            ("PATH", "/usr/bin:/bin"),
+            ("SHELL", &*s.shell_wrapper.to_string_lossy()),
+        ]
+        .map(|(k, v)| (k.to_string(), v.to_string())),
+        "pw",
+        &s,
+    );
+    assert!(env.iter().all(|(k, _)| k != "WRITER_USER_SHELL"));
+    std::fs::create_dir_all(s.shell_wrapper.parent().unwrap()).unwrap();
+    std::fs::write(&s.shell_wrapper, shell_wrapper()).unwrap();
+    std::fs::set_permissions(&s.shell_wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let out = std::process::Command::new(&s.shell_wrapper)
+        .args(["-c", "echo ran $SHELL"])
+        .env_clear()
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), "ran /bin/sh");
 }

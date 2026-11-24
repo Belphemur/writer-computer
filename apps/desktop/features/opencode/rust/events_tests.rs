@@ -21,12 +21,9 @@ pub(super) fn fixtures_dir() -> PathBuf {
     feature_dir().join("fixtures")
 }
 
-/// OpenCode's tool table, as phase 3 hands it to the tracker.
+/// OpenCode's tool table, the adapter's.
 pub(super) fn table() -> &'static ToolTable {
-    static T: std::sync::OnceLock<ToolTable> = std::sync::OnceLock::new();
-    T.get_or_init(|| {
-        ToolTable::parse(include_str!("../tools.json")).expect("tools.json is a valid table")
-    })
+    super::adapter::table()
 }
 
 /// The frames of `<name>.sse` and the REST side `<name>.json` of a fixture.
@@ -150,6 +147,8 @@ fn every_golden_has_its_fixture() {
     for e in std::fs::read_dir(feature_dir().join("goldens"))
         .unwrap()
         .flatten()
+        // folders hold the goldens of other things (`config/`)
+        .filter(|e| e.path().is_file())
     {
         let n = e.file_name().to_string_lossy().into_owned();
         let stem = n.strip_suffix(".events.json").unwrap_or(&n);

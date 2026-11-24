@@ -176,6 +176,9 @@ routes! {
     SKILLS = Get "/api/skill";
     COMMANDS = Get "/api/command";
     AGENTS = Get "/api/agent";
+    /// The sessions that are executing a turn now (absent: inactive): what the stream cannot say
+    /// after it dropped.
+    SESSIONS_ACTIVE = Get "/api/session/active";
     SESSION_CREATE = Post "/api/session", body CreateSessionBody;
     SESSION_GET = Get "/api/session/{sessionID}";
     SESSION_DELETE = Delete "/api/session/{sessionID}";

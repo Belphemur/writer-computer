@@ -1,5 +1,5 @@
 {
-  "$comment": "OpenCode's tools, defined once (spec SPECs/opencode-backend-spec.md, A11 and section 7): tool name -> neutral kind, role, argument names and label words, in the shape of shared/agent-tools/claude.json (read by src-tauri/src/agent/tool_table.rs and, in phase 3, by features/agent/web/lib/tool-kinds.ts through the `agent.backends` point). Recorded against opencode 2.4.0 (fixtures/ and fixtures/tools/s16..s22): edit {path (relative to the session cwd, absolute when a sub-agent wrote it), oldString, newString, replaceAll}; write {path, content} (its permission action is `edit`); shell {command}; read {path}; glob {pattern, path?}; grep {pattern, path?, include?}; webfetch {url, format?}; websearch {query}; subagent {agent, description, prompt}; question {questions[]}; execute {code} (codemode, below). NOT captured, assumed: apply_patch, todowrite and skill were not in the tool list of the free model used for the captures; their rows follow the binary's names and the kinds of section 7 and are marked below. A tool with no row is `other` (the fallback). The `execute` row is Writer's codemode: the mapper shows its inner calls as rows named `<server>_<tool>` (the `mcp.prefix`), so the classes of Writer's own MCP tools are the same as in claude.json and are read from there, not copied (phase 3 wires that: one list for both backends).",
+  "$comment": "OpenCode's tools, defined once (spec SPECs/opencode-backend-spec.md, A11 and section 7): tool name -> neutral kind, role, argument names and label words, in the shape of shared/agent-tools/claude.json (read by src-tauri/src/agent/tool_table.rs and, in phase 3, by features/agent/web/lib/tool-kinds.ts through the `agent.backends` point). Recorded against opencode 2.4.0 (fixtures/ and fixtures/tools/s16..s22): edit {path (relative to the session cwd, absolute when a sub-agent wrote it), oldString, newString, replaceAll}; write {path, content} (its permission action is `edit`); shell {command}; read {path}; glob {pattern, path?}; grep {pattern, path?, include?}; webfetch {url, format?}; websearch {query}; subagent {agent, description, prompt}; question {questions[]}; execute {code} (codemode, below). NOT captured, assumed: apply_patch, todowrite and skill were not in the tool list of the free model used for the captures; their rows follow the binary's names and the kinds of section 7 and are marked below. A tool with no row is `other` (the fallback). The `execute` row is Writer's codemode: the mapper shows its inner calls as rows named `<server>_<tool>` (the `mcp.prefix`), so the classes of Writer's own MCP tools are the same as in claude.json and are read from there, not copied (phase 3 wires that: one list for both backends). Roles beyond Claude's: `skill` and `todo` mark the two tools that change nothing outside the chat (a skill's text, the agent's own list), which the base rules of Writer's config allow with the reads (`features/opencode/rust/config.rs`).",
   "backend": "opencode",
   "protocolOnly": [],
   "fallback": {
@@ -137,6 +137,7 @@
     {
       "name": "todowrite",
       "kind": "other",
+      "role": "todo",
       "past": "Updated",
       "present": "Updating",
       "noun": ["todo list", "todo lists"]
@@ -144,6 +145,7 @@
     {
       "name": "skill",
       "kind": "other",
+      "role": "skill",
       "past": "Used skill",
       "present": "Using skill",
       "noun": ["skill", "skills"],

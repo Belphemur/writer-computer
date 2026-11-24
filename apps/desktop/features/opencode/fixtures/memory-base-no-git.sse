@@ -1,0 +1,48 @@
+data: {"id":"evt_fake0001","type":"server.connected","data":{}}
+
+data: {"id":"evt_fake0002","created":1795507670027,"type":"session.created","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","slug":"clever-island","version":"2.4.0","projectID":"prj_fake0001","location":{"directory":"/vault-no-git-dir-is-root"},"subpath":"","agent":"w","permissions":[],"model":{"id":"fake-model","providerID":"fake-provider"}},"durable":{"aggregateID":"ses_fake0001","seq":0,"version":1}}
+
+data: {"id":"evt_fake0003","created":1795507671699,"type":"session.inbox.enqueued","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"inboxID":"msg_fake0001","sessionID":"ses_fake0001","item":{"type":"user","payload":{"text":"Use your write tool to create the file .memory/note.md containing the word hello. Then say done."},"delivery":"steer"}},"durable":{"aggregateID":"ses_fake0001","seq":1,"version":1}}
+
+data: {"id":"evt_fake0004","created":1795507671701,"type":"session.execution.started","data":{"sessionID":"ses_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":2,"version":1}}
+
+data: {"id":"evt_fake0005","created":1795507671708,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","delta":{"core/codemode":"hash_fake0001","core/skill-guidance":"hash_fake0002","core/date":"hash_fake0003","core/environment":"hash_fake0004"}},"durable":{"aggregateID":"ses_fake0001","seq":3,"version":2}}
+
+data: {"id":"evt_fake0006","created":1795507671708,"type":"session.inbox.delivered","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","inboxID":"msg_fake0001"},"durable":{"aggregateID":"ses_fake0001","seq":4,"version":1}}
+
+data: {"id":"evt_fake0007","created":1795507672757,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":5.12e-05,"tokens":{"input":457,"output":11,"reasoning":0,"cache":{"read":0,"write":0}}}}
+
+data: {"id":"evt_fake0008","created":1795507672757,"type":"session.renamed","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","title":"Create .memory/note.md"},"durable":{"aggregateID":"ses_fake0001","seq":6,"version":1}}
+
+data: {"id":"evt_fake0009","created":1795507672973,"type":"session.step.started","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","agent":"w","model":{"id":"fake-model","providerID":"fake-provider","variant":"default"},"assistantMessageID":"msg_fake0002","started":1795507671716},"durable":{"aggregateID":"ses_fake0001","seq":7,"version":1}}
+
+data: {"id":"evt_fake0010","created":1795507672977,"type":"session.step.first-token","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":8,"version":1}}
+
+data: {"id":"evt_fake0011","created":1795507672979,"type":"session.reasoning.started","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":9,"version":1}}
+
+data: {"id":"evt_fake0012","created":1795507673084,"type":"session.reasoning.delta","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":"The user wants me to create a file `.memory/note.md` containing the word \"hello\" using the write tool, then confirm. Simple"}}
+
+data: {"id":"evt_fake0013","created":1795507673157,"type":"session.reasoning.delta","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"delta":" task: write the file and report back."}}
+
+data: {"id":"evt_fake0014","created":1795507673157,"type":"session.tool.input.started","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-88cd5ddbd9b94096","name":"write"},"durable":{"aggregateID":"ses_fake0001","seq":10,"version":1}}
+
+data: {"id":"evt_fake0015","created":1795507673268,"type":"session.reasoning.ended","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","ordinal":0,"text":"The user wants me to create a file `.memory/note.md` containing the word \"hello\" using the write tool, then confirm. Simple task: write the file and report back.","native":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_fake0001","seq":11,"version":1}}
+
+data: {"id":"evt_fake0016","created":1795507673272,"type":"session.tool.input.ended","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-88cd5ddbd9b94096","text":"{\"path\": \".memory/note.md\", \"content\": \"hello\\n\"}"},"durable":{"aggregateID":"ses_fake0001","seq":12,"version":1}}
+
+data: {"id":"evt_fake0017","created":1795507673273,"type":"session.tool.called","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-88cd5ddbd9b94096","input":{"path":".memory/note.md","content":"hello\n"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":13,"version":1}}
+
+data: {"id":"evt_fake0018","created":1795507673275,"type":"session.step.streamed","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002"},"durable":{"aggregateID":"ses_fake0001","seq":14,"version":1}}
+
+data: {"id":"evt_fake0019","created":1795507673279,"type":"permission.asked","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"id":"per_fake0001","sessionID":"ses_fake0001","action":"edit","resources":[".memory/note.md"],"save":["*"],"metadata":{"files":[{"file":".memory/note.md","patch":"Index: .memory/note.md\n===================================================================\n--- .memory/note.md\n+++ .memory/note.md\n\u0040\u0040 -0,0 +1,1 \u0040\u0040\n+hello\n","status":"added","additions":1,"deletions":0}]},"source":{"type":"tool","messageID":"msg_fake0002","id":"chatcmpl-tool-88cd5ddbd9b94096"}}}
+
+data: {"id":"evt_fake0020","created":1795507673541,"type":"permission.replied","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","requestID":"per_fake0001","reply":"reject"}}
+
+data: {"id":"evt_fake0021","created":1795507673541,"type":"session.tool.failed","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","id":"chatcmpl-tool-88cd5ddbd9b94096","error":{"type":"aborted","message":"The user declined this tool call"},"executed":false},"durable":{"aggregateID":"ses_fake0001","seq":15,"version":2}}
+
+data: {"id":"evt_fake0022","created":1795507673545,"type":"session.step.failed","location":{"directory":"/vault-no-git-dir-is-root"},"data":{"sessionID":"ses_fake0001","assistantMessageID":"msg_fake0002","error":{"type":"aborted","message":"Step interrupted"},"rawFinish":"tool_calls","tokens":{"input":4952,"output":21,"reasoning":38,"cache":{"read":2432,"write":0}},"cost":0.00084526},"durable":{"aggregateID":"ses_fake0001","seq":16,"version":1}}
+
+data: {"id":"evt_fake0023","created":1795507673547,"type":"session.usage.updated","data":{"sessionID":"ses_fake0001","cost":0.00089646,"tokens":{"input":5409,"output":32,"reasoning":38,"cache":{"read":2432,"write":0}}}}
+
+data: {"id":"evt_fake0024","created":1795507673547,"type":"session.execution.interrupted","data":{"sessionID":"ses_fake0001","reason":"shutdown"},"durable":{"aggregateID":"ses_fake0001","seq":17,"version":1}}
+

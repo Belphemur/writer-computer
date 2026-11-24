@@ -3,12 +3,16 @@
 //! through-its-v2-server`). Everything OpenCode-specific is here; `agent/` and `features/agent/`
 //! never name it (`import_graph_tests.rs` says so).
 //!
-//! Phase 2 (this): the wire, the mapper, the server and the transport, tested against a fake
-//! OpenCode server. Not registered and not reachable from the app: the `agent.backends` point, the
-//! picker and the settings are phase 4, the adapters and the config file phase 3. Until then the
-//! pieces have no caller outside the tests (`features/mod.rs` allows dead code outside test
-//! builds, and says why).
+//! Phase 2: the wire, the mapper, the server and the transport, tested against a fake OpenCode
+//! server. Phase 3 (this): the adapter, the config file, the permission modes as a policy and the
+//! isolation of the server's environment. Not registered and not reachable from the app: the
+//! `agent.backends` point, the picker and the settings are phase 4. Until then the pieces have no
+//! caller outside the tests (`features/mod.rs` allows dead code outside test builds, and says
+//! why).
 //!
+//! - [`adapter`]: [`adapter::OpencodeAdapter`], the `RoleAdapter` and `ToolsAdapter` of OpenCode,
+//!   with the tool table (`tools.json`).
+//! - [`config`]: Writer's config file, built from the adapter's output and the vault.
 //! - [`opencode_api`]: routes, request bodies and events, written once; the contract test pins
 //!   them to `contract/openapi-2.4.0.json`.
 //! - [`opencode_events`]: the pure mapper from one event to the neutral `AgentEvent`s.
@@ -18,7 +22,9 @@
 //!   stream, the fan-out to the chats.
 //! - [`transport`]: [`transport::OpencodeTransport`], one per chat, the `Transport` of the agent.
 
+pub mod adapter;
 pub mod client;
+pub mod config;
 pub mod modes;
 pub mod opencode_api;
 pub mod opencode_events;

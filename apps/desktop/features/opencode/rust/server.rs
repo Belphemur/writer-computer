@@ -21,13 +21,13 @@
 //!
 //! Never logged: the password, the port, paths, any event content.
 
-use super::client::{Client, Endpoint, Io, SHORT};
+use super::client::{Client, Endpoint, Io, LONG, SHORT};
 use super::opencode_api::{self as api, Info, SseParser, WireEvent, MIN_VERSION};
 use crate::features::scope::Spawner;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Weak};
@@ -37,6 +37,8 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub enum ChatInput {
     Event(WireEvent),
+    /// The server read its config again: whatever it keeps per session may need to be put back.
+    Reloaded,
     /// The stream dropped and is back: reconcile from the message list.
     Resync,
     /// The server process is gone (a crash, or it was stopped).
@@ -106,8 +108,9 @@ impl std::fmt::Display for ServerError {
     }
 }
 
-/// What a server is started with. The config file is written by the caller (phase 3's builder);
-/// the config home is recreated empty on every start.
+/// What a server is started with. The config file is written by [`OpencodeServer::apply_config`]
+/// (the policy builds its text); the config home and the shell wrapper are recreated on every
+/// start.
 #[derive(Debug, Clone)]
 pub struct ServerSettings {
     pub program: PathBuf,
@@ -117,48 +120,164 @@ pub struct ServerSettings {
     /// Writer's own empty `XDG_CONFIG_HOME`: `<app data>/opencode/xdg-config`, recreated on every
     /// start (see [`ServerSettings::config_home_is_ours`]).
     pub config_home: PathBuf,
-    /// The app data directory the config home must live in.
+    /// The `SHELL` of the server, so the commands the agent runs do not see the server's own
+    /// settings (see [`shell_wrapper`]): `<app data>/opencode/writer-shell`.
+    pub shell_wrapper: PathBuf,
+    /// The app data directory the config home and the wrapper must live in.
     pub app_data: PathBuf,
 }
 
 impl ServerSettings {
     /// The folder about to be deleted is Writer's own and nothing else.
     pub fn config_home_is_ours(&self) -> bool {
-        self.config_home == self.app_data.join("opencode").join("xdg-config")
+        self.is_ours(&self.config_home, CONFIG_HOME_NAME)
+    }
+
+    /// The file about to be written is Writer's own wrapper and nothing else.
+    pub fn shell_wrapper_is_ours(&self) -> bool {
+        self.is_ours(&self.shell_wrapper, SHELL_WRAPPER_NAME)
+    }
+
+    /// The file about to be written is Writer's own config: `<app data>/opencode/<name>.json`.
+    pub fn config_file_is_ours(&self) -> bool {
+        self.config_file.extension().is_some_and(|e| e == "json")
+            && self.config_file.parent() == Some(&self.app_data.join("opencode"))
+    }
+
+    fn is_ours(&self, path: &Path, name: &str) -> bool {
+        path == self.app_data.join("opencode").join(name)
     }
 }
+
+pub const CONFIG_HOME_NAME: &str = "xdg-config";
+pub const SHELL_WRAPPER_NAME: &str = "writer-shell";
+
+/// What Writer sets for the server and no command the agent runs has any business seeing: the
+/// password, Writer's config, the switches and the config home. [`isolated_env`] sets exactly
+/// these (a test says so) and [`shell_wrapper`] unsets exactly these.
+const SERVER_VARS: [&str; 6] = [
+    "OPENCODE_SERVER_PASSWORD",
+    "OPENCODE_CONFIG",
+    "OPENCODE_DISABLE_PROJECT_CONFIG",
+    "OPENCODE_DISABLE_CLAUDE_CODE",
+    "OPENCODE_DISABLE_AUTOUPDATE",
+    "XDG_CONFIG_HOME",
+];
+/// Also unset by the wrapper: the name OpenCode reads before `OPENCODE_SERVER_PASSWORD`, which
+/// Writer never sets.
+const EXTRA_PASSWORD_VAR: &str = "OPENCODE_PASSWORD";
+/// Where [`isolated_env`] keeps what the wrapper gives back to the shell.
+const USER_SHELL_VAR: &str = "WRITER_USER_SHELL";
+const USER_XDG_VAR: &str = "WRITER_USER_XDG_CONFIG_HOME";
 
 /// The environment of the server (spec section 8, "Isolation"): the inherited one with every
 /// `OPENCODE_*` variable removed first (a stray `OPENCODE_CONFIG_CONTENT` would bring the user's
 /// own setup back), then Writer's: the password, Writer's config file, the vault's own
 /// `opencode.json` and `.opencode/` switched off, an empty config home, no Claude Code compatibility
 /// and no self-update. The real `HOME` stays: the user's logins live in OpenCode's data directory.
+///
+/// `SHELL` is Writer's wrapper ([`shell_wrapper`]); the shell the user had and their own
+/// `XDG_CONFIG_HOME` go to the wrapper under `WRITER_USER_*`, which gives them back.
 pub fn isolated_env(
     inherited: impl IntoIterator<Item = (String, String)>,
     password: &str,
     settings: &ServerSettings,
 ) -> Vec<(String, String)> {
+    let mut user_shell = None;
+    let mut user_xdg = None;
     let mut env: Vec<(String, String)> = inherited
         .into_iter()
-        .filter(|(k, _)| !k.starts_with("OPENCODE_") && k != "XDG_CONFIG_HOME")
+        .filter(|(k, v)| match k.as_str() {
+            // never the wrapper itself (a server started from a shell that is one): it would
+            // run itself for ever, so the wrapper falls back to `sh`
+            "SHELL" => {
+                user_shell = (Path::new(v) != settings.shell_wrapper).then(|| v.clone());
+                false
+            }
+            "XDG_CONFIG_HOME" => {
+                user_xdg = Some(v.clone());
+                false
+            }
+            k => !k.starts_with("OPENCODE_") && !k.starts_with("WRITER_USER_"),
+        })
         .collect();
-    let ours = [
-        ("OPENCODE_SERVER_PASSWORD", password.to_string()),
-        (
-            "OPENCODE_CONFIG",
-            settings.config_file.to_string_lossy().into_owned(),
-        ),
-        ("OPENCODE_DISABLE_PROJECT_CONFIG", "1".to_string()),
-        ("OPENCODE_DISABLE_CLAUDE_CODE", "1".to_string()),
-        ("OPENCODE_DISABLE_AUTOUPDATE", "1".to_string()),
-        (
-            "XDG_CONFIG_HOME",
-            settings.config_home.to_string_lossy().into_owned(),
-        ),
+    let path = |p: &Path| p.to_string_lossy().into_owned();
+    let ours: [(&str, String); SERVER_VARS.len()] = [
+        (SERVER_VARS[0], password.to_string()),
+        (SERVER_VARS[1], path(&settings.config_file)),
+        (SERVER_VARS[2], "1".to_string()),
+        (SERVER_VARS[3], "1".to_string()),
+        (SERVER_VARS[4], "1".to_string()),
+        (SERVER_VARS[5], path(&settings.config_home)),
     ];
     env.extend(ours.map(|(k, v)| (k.to_string(), v)));
+    env.push(("SHELL".into(), path(&settings.shell_wrapper)));
+    env.extend(user_shell.map(|v| (USER_SHELL_VAR.to_string(), v)));
+    env.extend(user_xdg.map(|v| (USER_XDG_VAR.to_string(), v)));
     env
 }
+
+/// The script that is the server's `SHELL` (spec 10.9, 12b): OpenCode runs the agent's shell
+/// commands with `$SHELL`, so a command would see the password and Writer's settings in its
+/// environment. The wrapper unsets them, gives the shell and the `XDG_CONFIG_HOME` the user had
+/// back and runs that shell with the arguments it was given. Plain `sh`: it works whatever the
+/// user's shell is.
+///
+/// It does not hide anything from the process table: `ps -E` of the server's pid, by the same user,
+/// still shows its environment (12c). The password stays mandatory; there is no socket or file
+/// option in 2.4.0 (spec 10.9).
+pub fn shell_wrapper() -> String {
+    let unset = SERVER_VARS
+        .iter()
+        .chain([&EXTRA_PASSWORD_VAR])
+        .copied()
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "#!/bin/sh\n\
+         # Writer: the settings the OpenCode server was started with are not for the commands it runs.\n\
+         unset {unset}\n\
+         if [ -n \"${{{USER_XDG_VAR}-}}\" ]; then XDG_CONFIG_HOME=${USER_XDG_VAR}; export XDG_CONFIG_HOME; fi\n\
+         SHELL=${{{USER_SHELL_VAR}-}}\n\
+         [ -x \"$SHELL\" ] || SHELL=/bin/sh\n\
+         export SHELL\n\
+         unset {USER_SHELL_VAR} {USER_XDG_VAR}\n\
+         exec \"$SHELL\" \"$@\"\n"
+    )
+}
+
+/// The wrapper, written fresh at every start (a changed script is never left behind) and made
+/// executable.
+fn write_shell_wrapper(settings: &ServerSettings) -> Result<(), ServerError> {
+    let failed = || ServerError::Failed("OpenCode's shell wrapper could not be written".into());
+    if !settings.shell_wrapper_is_ours() {
+        return Err(failed());
+    }
+    let (Some(dir), Some(name)) = (
+        settings.shell_wrapper.parent(),
+        settings.shell_wrapper.file_name().and_then(|n| n.to_str()),
+    ) else {
+        return Err(failed());
+    };
+    let text = shell_wrapper();
+    // already there, the same and executable: nothing to write
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let same = std::fs::read_to_string(&settings.shell_wrapper).is_ok_and(|t| t == text)
+            && std::fs::metadata(&settings.shell_wrapper)
+                .is_ok_and(|m| m.permissions().mode() & 0o777 == WRAPPER_MODE);
+        if same {
+            return Ok(());
+        }
+    }
+    std::fs::create_dir_all(dir).map_err(|_| failed())?;
+    // 0700 from creation, before the rename that puts it in place
+    crate::plugins::write_atomic_private(dir, name, text.as_bytes(), WRAPPER_MODE)
+        .map_err(|_| failed())
+}
+
+const WRAPPER_MODE: u32 = 0o700;
 
 /// What the ready line of `opencode serve` says: `server listening on http://127.0.0.1:<port>`.
 #[derive(Debug, PartialEq, Eq)]
@@ -237,7 +356,37 @@ struct Inner {
     dropped: AtomicU64,
     starts: AtomicU64,
     closed: AtomicBool,
+    /// The text of the config file as last written and (for a live server) loaded.
+    written: Mutex<Option<String>>,
+    /// The sessions that are executing a turn, and a reload that waits for the last of them.
+    gate: Mutex<Gate>,
+    reload_deadline_ms: AtomicU64,
+    /// The epoch of the server start whose agent list was found to be Writer's own (0: none).
+    agents_ok: AtomicU64,
 }
+
+#[derive(Default)]
+struct Gate {
+    running: std::collections::HashSet<String>,
+    /// A reload waits for the last running turn; the token names the wait, for its deadline.
+    reload_pending: Option<u64>,
+    next_token: u64,
+}
+
+impl Gate {
+    /// A waiting reload is due when nothing runs any more (and is then not waiting).
+    fn take_due(&mut self) -> bool {
+        let due = self.running.is_empty() && self.reload_pending.is_some();
+        if due {
+            self.reload_pending = None;
+        }
+        due
+    }
+}
+
+/// How long a reload waits for running turns before it is made anyway: an end event that was
+/// never seen must not hold the server's configuration for ever.
+const RELOAD_DEADLINE: Duration = Duration::from_secs(600);
 
 pub struct OpencodeServer {
     inner: Arc<Inner>,
@@ -263,6 +412,10 @@ impl OpencodeServer {
                 dropped: AtomicU64::new(0),
                 starts: AtomicU64::new(0),
                 closed: AtomicBool::new(false),
+                written: Mutex::new(None),
+                gate: Mutex::new(Gate::default()),
+                reload_deadline_ms: AtomicU64::new(RELOAD_DEADLINE.as_millis() as u64),
+                agents_ok: AtomicU64::new(0),
             }),
         })
     }
@@ -327,6 +480,7 @@ impl OpencodeServer {
         std::fs::create_dir_all(&inner.settings.config_home).map_err(|_| {
             ServerError::Failed("OpenCode's config folder could not be made".into())
         })?;
+        write_shell_wrapper(&inner.settings)?;
         let spec = LaunchSpec {
             program: inner.settings.program.clone(),
             root: inner.settings.root.clone(),
@@ -400,6 +554,72 @@ impl OpencodeServer {
         })
     }
 
+    /// Writes Writer's config file (spec section 8) when `text` differs from what was written
+    /// before, and has a running server read it again (`POST /api/location/reload`: the roles
+    /// and the MCP server change under it, nothing restarts) at its next idle moment: at once when
+    /// no session is executing a turn, else when the last one ends. Call it before
+    /// [`OpencodeServer::ensure_started`]: a server that starts reads the file as it is. Blocks.
+    pub fn apply_config(&self, text: &str) -> Result<(), ServerError> {
+        let inner = &self.inner;
+        let mut written = inner.written.lock();
+        if written.as_deref() == Some(text) {
+            return Ok(());
+        }
+        let settings = &inner.settings;
+        let file = &settings.config_file;
+        let (true, Some(dir), Some(name)) = (
+            settings.config_file_is_ours(),
+            file.parent(),
+            file.file_name().and_then(|n| n.to_str()),
+        ) else {
+            return Err(ServerError::Failed(
+                "OpenCode's config path is not Writer's".into(),
+            ));
+        };
+        std::fs::create_dir_all(dir).map_err(|_| {
+            ServerError::Failed("OpenCode's config folder could not be made".into())
+        })?;
+        crate::plugins::write_atomic_private(dir, name, text.as_bytes(), 0o600)
+            .map_err(|_| ServerError::Failed("OpenCode's config could not be written".into()))?;
+        // a server that is up has read the old file
+        if self.connection().is_some() {
+            let me = Arc::clone(inner);
+            let done = inner
+                .io
+                .call(async move { reload_when_idle(&me).await }, LONG);
+            if !matches!(done, Some(Ok(()))) {
+                return Err(ServerError::Failed(
+                    "OpenCode did not read its new configuration".into(),
+                ));
+            }
+        }
+        *written = Some(text.to_string());
+        Ok(())
+    }
+
+    /// Has the server read its config again, now when no session is executing a turn, else when
+    /// the last one ends (the stream's events say so).
+    pub async fn reload_when_idle(&self) -> Result<(), super::client::ApiError> {
+        reload_when_idle(&self.inner).await
+    }
+
+    /// Whether this start of the server was found to run Writer's agents and no others.
+    pub fn agents_verified(&self, epoch: u64) -> bool {
+        self.inner.agents_ok.load(Ordering::SeqCst) == epoch
+    }
+
+    pub fn verify_agents(&self, epoch: u64) {
+        self.inner.agents_ok.store(epoch, Ordering::SeqCst);
+    }
+
+    /// How long a waiting reload waits for running turns (tests shorten it).
+    #[cfg(test)]
+    pub fn set_reload_deadline(&self, d: Duration) {
+        self.inner
+            .reload_deadline_ms
+            .store(d.as_millis() as u64, Ordering::SeqCst);
+    }
+
     /// A chat's sink. Its sessions are named with [`OpencodeServer::own`].
     pub fn register(&self, sink: Sink) -> u64 {
         let mut r = self.inner.routes.lock();
@@ -419,9 +639,32 @@ impl OpencodeServer {
 
     /// The chat is gone: its sink and every session it owned (children included).
     pub fn release(&self, key: u64) {
-        let mut r = self.inner.routes.lock();
-        r.sinks.remove(&key);
-        r.owner.retain(|_, k| *k != key);
+        let ids: Vec<String> = {
+            let mut r = self.inner.routes.lock();
+            let ids = r
+                .owner
+                .iter()
+                .filter(|(_, k)| **k == key)
+                .map(|(id, _)| id.clone())
+                .collect();
+            r.sinks.remove(&key);
+            r.owner.retain(|_, k| *k != key);
+            ids
+        };
+        // its turns are not running for anyone to wait for
+        let due = {
+            let mut g = self.inner.gate.lock();
+            for id in &ids {
+                g.running.remove(id);
+            }
+            g.take_due()
+        };
+        if due {
+            let me = Arc::clone(&self.inner);
+            self.inner.io.spawn(async move {
+                let _ = reload_now(&me).await;
+            });
+        }
     }
 
     /// The chat owns this session (or a session below it).
@@ -452,6 +695,27 @@ impl Inner {
         for s in sinks {
             s(input.clone());
         }
+    }
+
+    /// Counts the turns that are running. `true`: the last one just ended and a reload waits.
+    fn track(&self, ev: &WireEvent) -> bool {
+        let Some(session) = ev.session_id() else {
+            return false;
+        };
+        let mut g = self.gate.lock();
+        match ev.kind.as_str() {
+            "session.execution.started" => {
+                g.running.insert(session.to_string());
+            }
+            "session.execution.succeeded"
+            | "session.execution.failed"
+            | "session.execution.interrupted" => {
+                g.running.remove(session);
+                return g.take_due();
+            }
+            _ => {}
+        }
+        false
     }
 
     /// One frame of the stream.
@@ -498,8 +762,79 @@ impl Inner {
                 _ => return,
             }
         }
+        // nothing runs in a process that is gone, and the next one reads the file as it is
+        *self.gate.lock() = Gate::default();
         self.broadcast(&ChatInput::Down(exit));
     }
+}
+
+/// The server's idle-gated reload: now, or recorded for the end of the last running turn.
+async fn reload_when_idle(inner: &Arc<Inner>) -> Result<(), super::client::ApiError> {
+    {
+        let mut g = inner.gate.lock();
+        if !g.running.is_empty() {
+            if g.reload_pending.is_none() {
+                g.next_token += 1;
+                let token = g.next_token;
+                g.reload_pending = Some(token);
+                arm_deadline(inner, token);
+            }
+            return Ok(());
+        }
+    }
+    reload_now(inner).await
+}
+
+/// After the deadline the reload that still waits is made anyway.
+fn arm_deadline(inner: &Arc<Inner>, token: u64) {
+    let weak = Arc::downgrade(inner);
+    let wait = Duration::from_millis(inner.reload_deadline_ms.load(Ordering::SeqCst));
+    inner.io.spawn(async move {
+        tokio::time::sleep(wait).await;
+        let Some(me) = weak.upgrade() else { return };
+        let due = {
+            let mut g = me.gate.lock();
+            let due = g.reload_pending == Some(token);
+            if due {
+                g.reload_pending = None;
+            }
+            due
+        };
+        if due {
+            log::warn!("opencode: a turn did not end in time, reading the configuration anyway");
+            let _ = reload_now(&me).await;
+        }
+    });
+}
+
+/// The turns that are running as the server says now: after a reconnect the end of a turn may
+/// have gone by unseen, so what is counted is replaced by the server's own list (a list that
+/// cannot be read counts nothing: a gate that never opens is worse than a reload mid-turn).
+async fn rebuild_running(inner: &Arc<Inner>, client: &Client) {
+    let active: std::collections::HashSet<String> = client
+        .get(&api::SESSIONS_ACTIVE, &[])
+        .await
+        .ok()
+        .and_then(|v| v["data"].as_object().map(|o| o.keys().cloned().collect()))
+        .unwrap_or_default();
+    let due = {
+        let mut g = inner.gate.lock();
+        g.running = active;
+        g.take_due()
+    };
+    if due {
+        let _ = reload_now(inner).await;
+    }
+}
+
+async fn reload_now(inner: &Arc<Inner>) -> Result<(), super::client::ApiError> {
+    let live = inner.live.lock().as_ref().map(|l| l.client.clone());
+    let Some(client) = live else {
+        return Ok(());
+    };
+    client.request(&api::RELOAD, &[], &[], None, LONG).await?;
+    inner.broadcast(&ChatInput::Reloaded);
+    Ok(())
 }
 
 /// The one `GET /api/event` subscription of one server process, until the process is gone.
@@ -529,6 +864,7 @@ async fn stream_task(
                 failures = 0;
                 let mut parser = SseParser::default();
                 if reconnected {
+                    rebuild_running(&inner_arc, &client).await;
                     // what the stream missed is read back from the message lists
                     inner_arc.broadcast(&ChatInput::Resync);
                 }
@@ -544,7 +880,16 @@ async fn stream_task(
                                 let _ = tx.send(());
                             }
                         }
+                        let due = inner_arc.track(&ev);
                         inner_arc.dispatch(ev);
+                        if due {
+                            // the last turn ended: the reload that waited for it goes now, off
+                            // the stream's own task
+                            let me = Arc::clone(&inner_arc);
+                            inner_arc.io.spawn(async move {
+                                let _ = reload_now(&me).await;
+                            });
+                        }
                     }
                 }
             }

@@ -1,0 +1,142 @@
+{
+ "session_default_agent": null,
+ "immediately": [
+  {
+   "build": [
+    "primary",
+    false,
+    false,
+    null
+   ],
+   "general": [
+    "subagent",
+    false,
+    false,
+    null
+   ],
+   "explore": [
+    "subagent",
+    false,
+    false,
+    null
+   ],
+   "compaction": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "title": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "summary": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "plan": [
+    "primary",
+    false,
+    false,
+    null
+   ]
+  },
+  []
+ ],
+ "later": [
+  {
+   "writer": [
+    "primary",
+    false,
+    false,
+    null
+   ],
+   "compaction": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "summary": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "writer-explorer": [
+    "subagent",
+    false,
+    false,
+    "cheap-model"
+   ],
+   "writer-worker": [
+    "subagent",
+    false,
+    false,
+    "standard-model"
+   ]
+  },
+  [
+   [
+    "opencode_console",
+    "needs_auth"
+   ],
+   [
+    "writer",
+    "connected"
+   ]
+  ]
+ ],
+ "skills": [
+  "OpenCode",
+  "Report",
+  "Browser",
+  "find-skills",
+  "demo"
+ ],
+ "after_reload": [
+  {
+   "writer": [
+    "primary",
+    false,
+    false,
+    null
+   ],
+   "compaction": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "summary": [
+    "primary",
+    true,
+    false,
+    null
+   ],
+   "writer-explorer": [
+    "subagent",
+    false,
+    false,
+    "other-model"
+   ],
+   "writer-worker": [
+    "subagent",
+    false,
+    false,
+    "standard-model"
+   ]
+  },
+  [
+   [
+    "opencode_console",
+    "needs_auth"
+   ]
+  ]
+ ],
+ "session_survives_reload": true
+}

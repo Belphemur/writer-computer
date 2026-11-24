@@ -1,0 +1,31 @@
+{
+ "results": {
+  "1-no-git-dir-is-root": [
+   [
+    "edit",
+    [
+     ".memory/note.md"
+    ],
+    ".memory/note.md"
+   ]
+  ],
+  "2-git-dir-below": [
+   [
+    "edit",
+    [
+     ".memory/note.md"
+    ],
+    ".memory/note.md"
+   ]
+  ],
+  "3-git-dir-is-root": [
+   [
+    "edit",
+    [
+     ".memory/note.md"
+    ],
+    ".memory/note.md"
+   ]
+  ]
+ }
+}
