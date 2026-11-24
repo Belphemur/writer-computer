@@ -19,6 +19,7 @@ Apply `.agents/skills/engineering-philosophy/SKILL.md` (DRY > SOLID > KISS) firs
    - signed commits following git's own config.
 
    If the recommended option is a reduced version of something, offer the complete one, or plan it as a later phase.
+
 3. **They follow up rather than fight.** A refinement after a decision ("also…", "keep in mind…") is an addition to fold in, not a reversal. Update the ADR with a dated note.
 
 ## Defaults that predict their answers
