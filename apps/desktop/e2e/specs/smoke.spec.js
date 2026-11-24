@@ -61,7 +61,9 @@ describe("Writer app", function () {
       // Verify on the host filesystem that the IPC actually wrote the bytes.
       strictEqual(readFileSync(filePath, "utf-8"), expectedContent);
     } finally {
-      rmSync(workspace, { recursive: true, force: true });
+      // Opening the workspace starts the managed-skills sync in the background (`.claude/skills`,
+      // `.agents/skills`), so the folder can still be filling while we delete it: retry ENOTEMPTY.
+      rmSync(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   });
 });
